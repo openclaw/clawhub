@@ -131,10 +131,12 @@ function mockSignedInSettings({
   githubSources = [],
   pendingInvites = [],
   myInvites = [],
+  membersLoading = false,
 }: {
   search?: Record<string, unknown>;
   memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
+  membersLoading?: boolean;
   pendingInvites?: PublisherInviteFixture[];
   myInvites?: PublisherInviteFixture[];
   githubSources?: Array<{
@@ -189,6 +191,7 @@ function mockSignedInSettings({
     if (args === "skip") return undefined;
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
+    if (queryName === "publishers:listMembers" && membersLoading) return undefined;
     if (queryName === "publishers:listMembers") return members;
     if (queryName === "publishers:listInvitesForPublisher") return pendingInvites;
     if (queryName === "publishers:listMyInvites") return myInvites;
@@ -592,6 +595,20 @@ describe("Settings", () => {
       });
     });
     expect(toast.success).toHaveBeenCalledWith("Invitation sent to @dallin");
+  });
+
+  it("does not render member invite controls while existing members are loading", () => {
+    const createInvite = vi.fn().mockResolvedValue({ ok: true, inviteId: "publisherInvites:1" });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:createMemberInvite" ? createInvite : vi.fn(),
+    );
+    mockSignedInSettings({ search: { view: "organizations" }, membersLoading: true });
+
+    render(<Settings />);
+
+    expect(screen.getByLabelText("Loading settings")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Invite member/i })).toBeNull();
+    expect(createInvite).not.toHaveBeenCalled();
   });
 
   it("updates an existing member role from the Members block dialog", async () => {

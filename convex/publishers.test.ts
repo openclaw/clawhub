@@ -3933,6 +3933,7 @@ describe("publishers membership controls", () => {
     invites?: Array<Record<string, unknown>>;
     strangerHandle?: string;
     targetIsMember?: boolean;
+    targetRole?: "owner" | "admin" | "publisher";
   }) {
     const publisherMembers: Array<Record<string, unknown>> = [
       {
@@ -3947,7 +3948,7 @@ describe("publishers membership controls", () => {
         _id: "publisherMembers:target",
         publisherId: "publishers:org",
         userId: "users:target",
-        role: "publisher",
+        role: options.targetRole ?? "publisher",
       });
     }
     const publisherInvites = new Map<string, Record<string, unknown>>();
@@ -4041,13 +4042,24 @@ describe("publishers membership controls", () => {
                   ),
                 };
               }
+              if (table === "publisherMembers" && indexName === "by_publisher") {
+                return {
+                  collect: vi.fn(async () =>
+                    publisherMembers.filter((member) => member.publisherId === fields.publisherId),
+                  ),
+                };
+              }
               if (table === "users" && indexName === "handle") {
                 return {
-                  unique: vi.fn(async () =>
-                    fields.handle === "target"
-                      ? { _id: "users:target", handle: "target", displayName: "Target" }
-                      : null,
-                  ),
+                  unique: vi.fn(async () => {
+                    if (fields.handle === "owner") {
+                      return { _id: "users:owner", handle: "owner", displayName: "Owner" };
+                    }
+                    if (fields.handle === "target") {
+                      return { _id: "users:target", handle: "target", displayName: "Target" };
+                    }
+                    return null;
+                  }),
                 };
               }
               if (table === "publishers" && indexName === "by_handle") {
@@ -4068,10 +4080,7 @@ describe("publishers membership controls", () => {
                   ),
                 };
               }
-              if (
-                table === "publisherInvites" &&
-                indexName === "by_publisher_status_expires"
-              ) {
+              if (table === "publisherInvites" && indexName === "by_publisher_status_expires") {
                 return {
                   take: vi.fn(async (limit: number) =>
                     [...publisherInvites.values()]
@@ -4105,10 +4114,7 @@ describe("publishers membership controls", () => {
                   ),
                 };
               }
-              if (
-                table === "publisherInvites" &&
-                indexName === "by_target_handle_status_expires"
-              ) {
+              if (table === "publisherInvites" && indexName === "by_target_handle_status_expires") {
                 return {
                   take: vi.fn(async (limit: number) =>
                     [...publisherInvites.values()]
@@ -4142,10 +4148,7 @@ describe("publishers membership controls", () => {
                   ),
                 };
               }
-              if (
-                table === "publisherInvites" &&
-                indexName === "by_target_user_status_expires"
-              ) {
+              if (table === "publisherInvites" && indexName === "by_target_user_status_expires") {
                 return {
                   take: vi.fn(async (limit: number) =>
                     [...publisherInvites.values()]
@@ -4207,6 +4210,52 @@ describe("publishers membership controls", () => {
         action: "publisher.member.invite.create",
         targetId: "publishers:org",
       }),
+    );
+  });
+
+  it("prevents admins from demoting org owners through member role updates", async () => {
+    const { ctx, patch } = makeInviteCtx({
+      actorRole: "admin",
+      targetIsMember: true,
+      targetRole: "owner",
+    });
+
+    await expect(
+      addMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:org", userHandle: "target", role: "publisher" } as never,
+      ),
+    ).rejects.toThrow("Only org owners can demote owners");
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("prevents demoting the last remaining org owner through member role updates", async () => {
+    const { ctx, patch } = makeInviteCtx();
+
+    await expect(
+      addMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:org", userHandle: "owner", role: "admin" } as never,
+      ),
+    ).rejects.toThrow("Publisher must have at least one owner");
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("lets org owners demote another owner when one owner remains", async () => {
+    const { ctx, patch } = makeInviteCtx({ targetIsMember: true, targetRole: "owner" });
+
+    await expect(
+      addMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:org", userHandle: "target", role: "admin" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherMembers:target",
+      expect.objectContaining({ role: "admin" }),
     );
   });
 
@@ -4843,9 +4892,12 @@ describe("publishers membership controls", () => {
     });
     try {
       await expect(
-        listInvitesForPublisherHandler(ctx as never, {
-          publisherId: "publishers:org",
-        } as never),
+        listInvitesForPublisherHandler(
+          ctx as never,
+          {
+            publisherId: "publishers:org",
+          } as never,
+        ),
       ).resolves.toEqual([
         expect.objectContaining({
           _id: "publisherInvites:active",
@@ -4866,9 +4918,12 @@ describe("publishers membership controls", () => {
     const { ctx } = makeInviteCtx({ actorRole: "publisher" });
     try {
       await expect(
-        listInvitesForPublisherHandler(ctx as never, {
-          publisherId: "publishers:org",
-        } as never),
+        listInvitesForPublisherHandler(
+          ctx as never,
+          {
+            publisherId: "publishers:org",
+          } as never,
+        ),
       ).rejects.toThrow("Forbidden");
     } finally {
       nowSpy.mockRestore();

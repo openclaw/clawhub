@@ -612,6 +612,10 @@ export function Settings() {
       setInviteError("Enter a user handle.");
       return;
     }
+    if (orgMembers === undefined) {
+      setInviteError("Members are still loading.");
+      return;
+    }
     const normalizedHandle = normalizeSettingsHandle(handle);
     const existingMember = (orgMembers?.members ?? []).find(
       (member) =>
@@ -1242,7 +1246,11 @@ export function Settings() {
                                   <Button
                                     variant="primary"
                                     type="button"
-                                    disabled={!inviteHandle.trim() || isCreatingInvite}
+                                    disabled={
+                                      !inviteHandle.trim() ||
+                                      isCreatingInvite ||
+                                      orgMembers === undefined
+                                    }
                                     onClick={() => void onCreateInvite()}
                                   >
                                     <Send size={15} />

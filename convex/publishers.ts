@@ -3535,6 +3535,21 @@ export const addMember = mutation({
         "New organization members must accept an invitation before they can be added",
       );
     }
+    if (existing.role === "owner" && args.role !== "owner") {
+      if (membership.role !== "owner") {
+        throw new ConvexError("Only org owners can demote owners");
+      }
+      const members = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+        .collect();
+      const remainingOwners = members.filter(
+        (member) => member.role === "owner" && member.userId !== targetUser._id,
+      );
+      if (remainingOwners.length === 0) {
+        throw new ConvexError("Publisher must have at least one owner");
+      }
+    }
     const now = Date.now();
     await ctx.db.patch(existing._id, { role: args.role, updatedAt: now });
     await ctx.db.insert("auditLogs", {
