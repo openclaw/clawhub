@@ -1,3 +1,4 @@
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -42,10 +43,8 @@ const ACTION_CONTINUATION_DELAY_MS = 60_000;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
-const MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER = 3;
-const MAX_REVIEW_DASHBOARD_LIST_LIMIT = 25;
-const MAX_REVIEW_DASHBOARD_SCORE_SCAN_MULTIPLIER = 32;
-const MAX_REVIEW_DASHBOARD_SCORE_SCAN = 2000;
+const DEFAULT_REVIEW_DASHBOARD_PAGE_SIZE = 25;
+const MAX_REVIEW_DASHBOARD_PAGE_SIZE = 25;
 const MAX_BAN_REASON_LENGTH = 500;
 const DEFAULT_TEMPORAL_BATCH_SIZE = 50;
 const MAX_TEMPORAL_BATCH_SIZE = 100;
@@ -95,6 +94,13 @@ type ScoreRun = Doc<"publisherAbuseScoreRuns">;
 type ScoreDoc = Doc<"publisherAbuseScores">;
 type RunPhase = ScoreRun["phase"];
 type TemporalAbuseMode = "current" | "backfill";
+
+const publisherAbuseReviewTabValidator = v.union(
+  v.literal("potential_ban_candidate"),
+  v.literal("review"),
+  v.literal("all_pending"),
+  v.literal("resolved"),
+);
 
 type RunState = {
   runId: Id<"publisherAbuseScoreRuns">;
@@ -292,50 +298,75 @@ export const listReviewDashboard = query({
   args: {
     limit: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, _args) => {
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return emptyPublisherAbuseReviewDashboard();
 
-    const limit = clampInt(
-      args.limit ?? MAX_REVIEW_DASHBOARD_LIST_LIMIT,
-      1,
-      MAX_REVIEW_DASHBOARD_LIST_LIMIT,
-    );
-    const dashboardExclusionBudget = createStaffPublisherManagerExclusionBudget();
     const latestRun = await getLatestPublisherAbuseScoreRun(ctx);
-    const scoreRankRunId = latestRun?.status === "completed" ? latestRun._id : undefined;
-    const pendingPotentialBanCandidateItems = await getPendingPublisherAbuseReviewItemsForLabel(
-      ctx,
-      {
-        status: "pending",
-        label: "potential_ban_candidate",
-        limit,
-        latestCompletedRunId: scoreRankRunId,
-        staffManagerExclusionBudget: dashboardExclusionBudget,
-      },
-    );
-    const pendingReviewItems = await getPendingPublisherAbuseReviewItemsForLabel(ctx, {
-      status: "pending",
-      label: "review",
-      limit,
-      latestCompletedRunId: scoreRankRunId,
-      staffManagerExclusionBudget: dashboardExclusionBudget,
-    });
-    const pendingItems = [...pendingPotentialBanCandidateItems, ...pendingReviewItems]
-      .sort(comparePublisherAbuseReviewItemsByLastScoredAt)
-      .slice(0, limit);
-    const recentResolvedItems = await getRecentResolvedPublisherAbuseReviewItems(
-      ctx,
-      30,
-      dashboardExclusionBudget,
-    );
 
     return {
       latestRun: latestRun ? summarizePublisherAbuseRun(latestRun) : null,
-      pendingItems,
-      pendingPotentialBanCandidateItems,
-      pendingReviewItems,
-      recentResolvedItems,
+      pendingItems: [],
+      pendingPotentialBanCandidateItems: [],
+      pendingReviewItems: [],
+      recentResolvedItems: [],
+    };
+  },
+});
+
+export const listReviewItemsPage = query({
+  args: {
+    tab: publisherAbuseReviewTabValidator,
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const auth = await requirePublisherAbuseDashboardUser(ctx);
+    if (!auth) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      };
+    }
+
+    const paginationOpts = {
+      ...args.paginationOpts,
+      numItems: clampInt(
+        args.paginationOpts.numItems ?? DEFAULT_REVIEW_DASHBOARD_PAGE_SIZE,
+        1,
+        MAX_REVIEW_DASHBOARD_PAGE_SIZE,
+      ),
+    };
+    const dashboardExclusionBudget = createStaffPublisherManagerExclusionBudget();
+    const latestRun = await getLatestPublisherAbuseScoreRun(ctx);
+    const scoreRankRunId = latestRun?.status === "completed" ? latestRun._id : undefined;
+
+    if (args.tab === "potential_ban_candidate" || args.tab === "review") {
+      return await getPendingPublisherAbuseReviewItemsPageForLabel(ctx, {
+        status: "pending",
+        label: args.tab,
+        latestCompletedRunId: scoreRankRunId,
+        paginationOpts,
+        staffManagerExclusionBudget: dashboardExclusionBudget,
+      });
+    }
+
+    if (args.tab === "all_pending") {
+      return await getPublisherAbuseReviewItemsPageFromPendingNominations(ctx, {
+        paginationOpts,
+        staffManagerExclusionBudget: dashboardExclusionBudget,
+      });
+    }
+
+    const recentResolvedItems = await getRecentResolvedPublisherAbuseReviewItems(
+      ctx,
+      paginationOpts.numItems,
+      dashboardExclusionBudget,
+    );
+    return {
+      page: recentResolvedItems,
+      isDone: true,
+      continueCursor: "",
     };
   },
 });
@@ -2963,79 +2994,36 @@ type PublisherAbuseReviewVisibilityOptions = {
   includeScoreDetails?: boolean;
 };
 
-async function getPendingPublisherAbuseReviewItemsForLabel(
+type PublisherAbuseReviewPaginationOpts = {
+  numItems: number;
+  cursor: string | null;
+};
+
+async function getPendingPublisherAbuseReviewItemsPageForLabel(
   ctx: QueryCtx,
   args: {
     status: TriageStatus;
     label: PendingPublisherAbuseReviewLabel;
-    limit: number;
     latestCompletedRunId: Id<"publisherAbuseScoreRuns"> | undefined;
+    paginationOpts: PublisherAbuseReviewPaginationOpts;
     staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
   },
 ) {
   if (!args.latestCompletedRunId) {
-    return await getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(ctx, args);
+    return await getPublisherAbuseReviewItemsPageFromPendingNominations(ctx, args);
   }
 
-  const scoreRankItems = await getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(ctx, {
-    latestCompletedRunId: args.latestCompletedRunId,
-    status: args.status,
-    label: args.label,
-    limit: args.limit,
-    staffManagerExclusionBudget: args.staffManagerExclusionBudget,
-  });
-  if (scoreRankItems.length >= args.limit) return scoreRankItems;
-
-  const lastScoredItems = await getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
-    ctx,
-    args,
-  );
-  return mergePublisherAbuseReviewItems(scoreRankItems, lastScoredItems, args.limit);
-}
-
-function mergePublisherAbuseReviewItems(
-  primary: PublisherAbuseReviewItem[],
-  fallback: PublisherAbuseReviewItem[],
-  limit: number,
-) {
-  const items = [...primary];
-  const seen = new Set(primary.map((item) => item.nomination._id));
-  for (const item of fallback) {
-    if (seen.has(item.nomination._id)) continue;
-    items.push(item);
-    seen.add(item.nomination._id);
-    if (items.length >= limit) break;
-  }
-  return items;
-}
-
-function scoreRankScanLimit(limit: number) {
-  return Math.min(
-    limit * MAX_REVIEW_DASHBOARD_SCORE_SCAN_MULTIPLIER,
-    MAX_REVIEW_DASHBOARD_SCORE_SCAN,
-  );
-}
-
-async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
-  ctx: QueryCtx,
-  args: {
-    latestCompletedRunId: Id<"publisherAbuseScoreRuns">;
-    status: TriageStatus;
-    label: PendingPublisherAbuseReviewLabel;
-    limit: number;
-    staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
-  },
-) {
-  const items: PublisherAbuseReviewItem[] = [];
-  const scores = await ctx.db
+  const latestCompletedRunId = args.latestCompletedRunId;
+  const page = await ctx.db
     .query("publisherAbuseScores")
     .withIndex("by_run_and_label_and_rank", (q) =>
-      q.eq("runId", args.latestCompletedRunId).eq("label", args.label),
+      q.eq("runId", latestCompletedRunId).eq("label", args.label),
     )
     .order("asc")
-    .take(scoreRankScanLimit(args.limit));
+    .paginate(args.paginationOpts);
 
-  for (const score of scores) {
+  const items: PublisherAbuseReviewItem[] = [];
+  for (const score of page.page) {
     const nomination = await ctx.db
       .query("publisherAbuseReviewNominations")
       .withIndex("by_owner_key_and_model_version", (q) =>
@@ -3052,49 +3040,56 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
     }
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
     if (
-      !(await isVisiblePublisherAbuseReviewItem(ctx, item, {
+      await isVisiblePublisherAbuseReviewItem(ctx, item, {
         staffManagerExclusionBudget: args.staffManagerExclusionBudget,
-      }))
+      })
     ) {
-      continue;
+      items.push(item);
     }
-    items.push(item);
-    if (items.length >= args.limit) break;
   }
-  return items;
+
+  return {
+    page: items,
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  };
 }
 
-async function getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
+async function getPublisherAbuseReviewItemsPageFromPendingNominations(
   ctx: QueryCtx,
   args: {
-    status: TriageStatus;
-    label: PendingPublisherAbuseReviewLabel;
-    limit: number;
+    status?: TriageStatus;
+    label?: PendingPublisherAbuseReviewLabel;
+    paginationOpts: PublisherAbuseReviewPaginationOpts;
     staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
   },
 ) {
-  const items: PublisherAbuseReviewItem[] = [];
-  const scanLimit = args.limit * MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER;
-  const nominations = await ctx.db
-    .query("publisherAbuseReviewNominations")
-    .withIndex("by_status_and_label_and_last_scored_at", (q) =>
-      q.eq("status", args.status).eq("label", args.label),
-    )
-    .order("desc")
-    .take(scanLimit);
-  const pageItems = await summarizePublisherAbuseReviewNominations(ctx, nominations);
-  for (const item of pageItems) {
-    if (
-      !(await isVisiblePublisherAbuseReviewItem(ctx, item, {
-        staffManagerExclusionBudget: args.staffManagerExclusionBudget,
-      }))
-    ) {
-      continue;
-    }
-    items.push(item);
-    if (items.length >= args.limit) break;
-  }
-  return items;
+  const label = args.label;
+  const page =
+    label !== undefined
+      ? await ctx.db
+          .query("publisherAbuseReviewNominations")
+          .withIndex("by_status_and_label_and_last_scored_at", (q) =>
+            q.eq("status", args.status ?? "pending").eq("label", label),
+          )
+          .order("desc")
+          .paginate(args.paginationOpts)
+      : await ctx.db
+          .query("publisherAbuseReviewNominations")
+          .withIndex("by_status_and_last_scored_at", (q) =>
+            q.eq("status", args.status ?? "pending"),
+          )
+          .order("desc")
+          .paginate(args.paginationOpts);
+  const items = await summarizeVisiblePublisherAbuseReviewNominations(ctx, page.page, undefined, {
+    staffManagerExclusionBudget: args.staffManagerExclusionBudget,
+  });
+
+  return {
+    page: items,
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  };
 }
 
 async function getLatestPublisherAbuseScoreRun(ctx: QueryCtx) {
@@ -3137,7 +3132,7 @@ async function getRecentResolvedPublisherAbuseReviewItems(
       .query("publisherAbuseReviewNominations")
       .withIndex("by_status_and_reviewed_at", (q) => q.eq("status", status))
       .order("desc")
-      .take(limit * MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER);
+      .take(limit);
     nominations.push(...page);
   }
   nominations.sort((left, right) => (right.reviewedAt ?? 0) - (left.reviewedAt ?? 0));
@@ -3145,18 +3140,6 @@ async function getRecentResolvedPublisherAbuseReviewItems(
     staffManagerExclusionBudget,
     includeInactiveTargets: true,
   });
-}
-
-async function summarizePublisherAbuseReviewNominations(
-  ctx: QueryCtx,
-  nominations: Doc<"publisherAbuseReviewNominations">[],
-  options: PublisherAbuseReviewVisibilityOptions = {},
-) {
-  const items = [];
-  for (const nomination of nominations) {
-    items.push(await summarizePublisherAbuseReviewNomination(ctx, nomination, options));
-  }
-  return items;
 }
 
 async function summarizeVisiblePublisherAbuseReviewNominations(
@@ -3217,16 +3200,6 @@ async function isVisiblePublisherAbuseReviewItem(
     (options.includeInactiveTargets || !targetIsInactive) &&
     !(await isPublisherAbuseExcludedReviewItem(ctx, item, options.staffManagerExclusionBudget))
   );
-}
-
-function comparePublisherAbuseReviewItemsByLastScoredAt(
-  left: PublisherAbuseReviewItem,
-  right: PublisherAbuseReviewItem,
-) {
-  if (left.nomination.lastScoredAt !== right.nomination.lastScoredAt) {
-    return right.nomination.lastScoredAt - left.nomination.lastScoredAt;
-  }
-  return right.nomination._id.localeCompare(left.nomination._id);
 }
 
 function summarizePublisherAbuseRun(run: Doc<"publisherAbuseScoreRuns">) {

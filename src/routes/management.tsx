@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useAction, useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -261,6 +261,15 @@ export function Management() {
   const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
   const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
+  const {
+    results: publisherAbusePageResults,
+    status: publisherAbusePageStatus,
+    loadMore: loadMorePublisherAbuseItems,
+  } = usePaginatedQuery(
+    api.publisherAbuse.listReviewItemsPage,
+    staff && abuseViewActive ? { tab: publisherAbuseTab } : "skip",
+    { initialNumItems: 25 },
+  );
 
   const userQuery = userSearchDebounced.trim();
   const userResult = useStableQuery(
@@ -285,13 +294,18 @@ export function Management() {
 
   const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null;
   const selectedCanonicalSlug = selectedSkill?.canonical?.skill?.slug ?? "";
-  const publisherAbuseItemsForTab = useMemo(
+  const publisherAbuseDashboardFallbackItems = useMemo(
     () =>
       publisherAbuseDashboard
         ? getPublisherAbuseItemsForTab(publisherAbuseDashboard, publisherAbuseTab)
         : [],
     [publisherAbuseDashboard, publisherAbuseTab],
   );
+  const publisherAbusePageItems = (publisherAbusePageResults ?? []) as PublisherAbuseReviewItem[];
+  const publisherAbuseItemsForTab =
+    publisherAbusePageItems.length > 0 || publisherAbuseDashboardFallbackItems.length === 0
+      ? publisherAbusePageItems
+      : publisherAbuseDashboardFallbackItems;
   const filteredPublisherAbuseItems = useMemo(() => {
     const filtered = filterPublisherAbuseItems(publisherAbuseItemsForTab, publisherAbuseSearch);
     if (publisherAbuseTab === "resolved") return filtered;
@@ -621,6 +635,7 @@ export function Management() {
             dashboard={publisherAbuseDashboard}
             detail={selectedPublisherAbuseDetail}
             items={filteredPublisherAbuseItems}
+            pageStatus={publisherAbusePageStatus}
             notes={publisherAbuseNotes}
             search={publisherAbuseSearch}
             selectedItem={selectedPublisherAbuseItem}
@@ -631,6 +646,7 @@ export function Management() {
             onChangeSearch={setPublisherAbuseSearch}
             onChangeTab={setPublisherAbuseTab}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
+            onLoadMore={() => loadMorePublisherAbuseItems(25)}
             onRefresh={() => {
               setConfirmRequest({
                 title: "Run a new abuse scan?",

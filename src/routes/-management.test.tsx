@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Management } from "./management";
 
 const useQueryMock = vi.fn();
+const usePaginatedQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 const useActionMock = vi.fn();
 const navigateMock = vi.fn();
@@ -145,6 +146,7 @@ function linkHref(to: string, search: unknown) {
 
 vi.mock("convex/react", () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
+  usePaginatedQuery: (...args: unknown[]) => usePaginatedQueryMock(...args),
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
 }));
@@ -178,6 +180,7 @@ vi.mock("../lib/useAuthStatus", () => ({
 describe("Management", () => {
   beforeEach(() => {
     useQueryMock.mockReset();
+    usePaginatedQueryMock.mockReset();
     useMutationMock.mockReset();
     useActionMock.mockReset();
     navigateMock.mockReset();
@@ -189,6 +192,11 @@ describe("Management", () => {
     };
     useMutationMock.mockReturnValue(vi.fn());
     useActionMock.mockReturnValue(vi.fn());
+    usePaginatedQueryMock.mockReturnValue({
+      results: [],
+      status: "Exhausted",
+      loadMore: vi.fn(),
+    });
     useQueryMock.mockImplementation((query, args) => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query);

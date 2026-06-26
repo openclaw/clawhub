@@ -42,6 +42,7 @@ export function AbusePage({
   dashboard,
   detail,
   items,
+  pageStatus,
   notes,
   search,
   selectedItem,
@@ -52,6 +53,7 @@ export function AbusePage({
   onChangeSearch,
   onChangeTab,
   onClose,
+  onLoadMore,
   onRefresh,
   onSelect,
   onToggleAutoban,
@@ -68,6 +70,7 @@ export function AbusePage({
   dashboard: PublisherAbuseReviewDashboard | undefined;
   detail: PublisherAbuseReviewDetail | undefined;
   items: PublisherAbuseReviewItem[];
+  pageStatus: string;
   notes: string;
   search: string;
   selectedItem: PublisherAbuseReviewItem | null;
@@ -78,6 +81,7 @@ export function AbusePage({
   onChangeSearch: (value: string) => void;
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
+  onLoadMore: () => void;
   onRefresh: () => void;
   onSelect: (value: Id<"publisherAbuseReviewNominations">) => void;
   onToggleAutoban: () => void;
@@ -87,12 +91,18 @@ export function AbusePage({
   const selectedPublisher = selectedItem?.publisher ?? null;
   const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId);
   const visiblePending = dashboard ? getPublisherAbuseVisiblePendingItems(dashboard) : [];
-  const totalPending = visiblePending.length;
-  const potentialBan = visiblePending.filter(
-    (item) => item.nomination.label === "potential_ban_candidate",
-  ).length;
-  const review = visiblePending.filter((item) => item.nomination.label === "review").length;
-  const resolved = dashboard?.recentResolvedItems.length ?? 0;
+  const potentialBan =
+    dashboard?.latestRun?.potentialBanCandidateCount ??
+    visiblePending.filter((item) => item.nomination.label === "potential_ban_candidate").length;
+  const review =
+    dashboard?.latestRun?.reviewCount ??
+    visiblePending.filter((item) => item.nomination.label === "review").length;
+  const totalPending =
+    dashboard?.latestRun?.potentialBanCandidateCount !== undefined ||
+    dashboard?.latestRun?.reviewCount !== undefined
+      ? potentialBan + review
+      : visiblePending.length;
+  const resolved = tab === "resolved" ? items.length : (dashboard?.recentResolvedItems.length ?? 0);
   const totalForTab =
     tab === "potential_ban_candidate"
       ? potentialBan
@@ -101,7 +111,9 @@ export function AbusePage({
         : tab === "resolved"
           ? resolved
           : totalPending;
-  const loaded = dashboard !== undefined;
+  const loaded = dashboard !== undefined && pageStatus !== "LoadingFirstPage";
+  const canLoadMore = pageStatus === "CanLoadMore";
+  const loadingMore = pageStatus === "LoadingMore";
   const autobanLoaded = autobanSetting !== undefined;
   const autobanEnabled = autobanSetting?.enabled ?? false;
   const autobanStatusLabel = autobanLoaded
@@ -302,9 +314,22 @@ export function AbusePage({
           </table>
         </div>
         <div className="pa-foot">
-          {loaded
-            ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
-            : "Loading…"}
+          <span>
+            {loaded
+              ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
+              : "Loading…"}
+          </span>
+          {canLoadMore || loadingMore ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={loadingMore}
+              onClick={onLoadMore}
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </Button>
+          ) : null}
         </div>
       </Card>
 
@@ -662,21 +687,30 @@ export function canBanPublisherAbuseOwner(
   return true;
 }
 
-export function getPublisherAbuseVisiblePendingItems(dashboard: PublisherAbuseReviewDashboard) {
-  return [...dashboard.pendingPotentialBanCandidateItems, ...dashboard.pendingReviewItems].filter(
-    isVisiblePublisherAbuseItem,
-  );
+export function getPublisherAbuseVisiblePendingItems(
+  dashboard: PublisherAbuseReviewDashboard,
+): PublisherAbuseReviewItem[] {
+  const potentialBanItems =
+    dashboard.pendingPotentialBanCandidateItems as PublisherAbuseReviewItem[];
+  const reviewItems = dashboard.pendingReviewItems as PublisherAbuseReviewItem[];
+  return [...potentialBanItems, ...reviewItems].filter(isVisiblePublisherAbuseItem);
 }
 
 export function getPublisherAbuseItemsForTab(
   dashboard: PublisherAbuseReviewDashboard,
   tab: PublisherAbuseTab,
-) {
+): PublisherAbuseReviewItem[] {
   if (tab === "potential_ban_candidate") {
-    return dashboard.pendingPotentialBanCandidateItems.filter(isVisiblePublisherAbuseItem);
+    return (dashboard.pendingPotentialBanCandidateItems as PublisherAbuseReviewItem[]).filter(
+      isVisiblePublisherAbuseItem,
+    );
   }
-  if (tab === "review") return dashboard.pendingReviewItems.filter(isVisiblePublisherAbuseItem);
-  if (tab === "resolved") return dashboard.recentResolvedItems;
+  if (tab === "review") {
+    return (dashboard.pendingReviewItems as PublisherAbuseReviewItem[]).filter(
+      isVisiblePublisherAbuseItem,
+    );
+  }
+  if (tab === "resolved") return dashboard.recentResolvedItems as PublisherAbuseReviewItem[];
   return getPublisherAbuseVisiblePendingItems(dashboard);
 }
 

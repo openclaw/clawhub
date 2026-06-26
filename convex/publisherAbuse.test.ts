@@ -231,6 +231,20 @@ const listDashboardHandler = (
   >
 )._handler;
 
+const listReviewItemsPageHandler = (
+  publisherAbuse.listReviewItemsPage as unknown as Wrapped<
+    {
+      tab: "potential_ban_candidate" | "review" | "all_pending" | "resolved";
+      paginationOpts: { numItems: number; cursor: string | null };
+    },
+    {
+      page: unknown[];
+      isDone: boolean;
+      continueCursor: string;
+    }
+  >
+)._handler;
+
 const getReviewNominationDetailHandler = (
   publisherAbuse.getReviewNominationDetail as unknown as Wrapped<
     { nominationId: string },
@@ -2697,10 +2711,17 @@ describe("publisher abuse dry-run persistence", () => {
             if (indexName === "by_status_and_label_and_last_scored_at") {
               return {
                 order: () => ({
-                  take: async () =>
-                    constraints.label === "review" && constraints.status === "pending"
-                      ? [nomination]
-                      : [],
+                  paginate: async (paginationOpts: { numItems: number; cursor: string | null }) => {
+                    expect(paginationOpts).toEqual({ numItems: 1, cursor: null });
+                    return {
+                      page:
+                        constraints.label === "review" && constraints.status === "pending"
+                          ? [nomination]
+                          : [],
+                      isDone: true,
+                      continueCursor: "",
+                    };
+                  },
                 }),
               };
             }
@@ -2728,9 +2749,14 @@ describe("publisher abuse dry-run persistence", () => {
       },
     };
 
-    await expect(listDashboardHandler(ctx, { limit: 1 })).resolves.toEqual(
+    await expect(
+      listReviewItemsPageHandler(ctx, {
+        tab: "review",
+        paginationOpts: { numItems: 1, cursor: null },
+      }),
+    ).resolves.toEqual(
       expect.objectContaining({
-        pendingReviewItems: [
+        page: [
           expect.objectContaining({
             nomination: expect.objectContaining({
               _id: "publisherAbuseReviewNominations:failed-run",
@@ -2793,10 +2819,16 @@ describe("publisher abuse dry-run persistence", () => {
       label: "potential_ban_candidate",
       status: "pending",
     });
-    const scoresTake = vi.fn(async (limit: number) => {
-      expect(limit).toBe(32);
-      return [staleScore, hiddenScore, visibleScore];
-    });
+    const scoresPaginate = vi.fn(
+      async (paginationOpts: { numItems: number; cursor: string | null }) => {
+        expect(paginationOpts).toEqual({ numItems: 3, cursor: null });
+        return {
+          page: [staleScore, hiddenScore, visibleScore],
+          isDone: true,
+          continueCursor: "",
+        };
+      },
+    );
     const nominationsByOwnerKey = new Map([
       [staleNomination.ownerKey, staleNomination],
       [hiddenNomination.ownerKey, hiddenNomination],
@@ -2878,8 +2910,10 @@ describe("publisher abuse dry-run persistence", () => {
                 expect(constraints.runId).toBe("publisherAbuseScoreRuns:latest");
                 return {
                   order: () => ({
-                    take:
-                      constraints.label === "potential_ban_candidate" ? scoresTake : async () => [],
+                    paginate:
+                      constraints.label === "potential_ban_candidate"
+                        ? scoresPaginate
+                        : async () => ({ page: [], isDone: true, continueCursor: "" }),
                   }),
                 };
               },
@@ -2925,9 +2959,14 @@ describe("publisher abuse dry-run persistence", () => {
       },
     };
 
-    await expect(listDashboardHandler(ctx, { limit: 1 })).resolves.toEqual(
+    await expect(
+      listReviewItemsPageHandler(ctx, {
+        tab: "potential_ban_candidate",
+        paginationOpts: { numItems: 3, cursor: null },
+      }),
+    ).resolves.toEqual(
       expect.objectContaining({
-        pendingPotentialBanCandidateItems: [
+        page: [
           expect.objectContaining({
             nomination: expect.objectContaining({
               _id: "publisherAbuseReviewNominations:visible",
@@ -2938,7 +2977,7 @@ describe("publisher abuse dry-run persistence", () => {
         ],
       }),
     );
-    expect(scoresTake).toHaveBeenCalledWith(32);
+    expect(scoresPaginate).toHaveBeenCalledWith({ numItems: 3, cursor: null });
   });
 
   it("queries recent resolved nominations by review time", async () => {
@@ -3020,7 +3059,7 @@ describe("publisher abuse dry-run persistence", () => {
               return {
                 order: () => ({
                   take: async (limit: number) => {
-                    expect(limit).toBe(90);
+                    expect(limit).toBe(3);
                     if (constraints.status === "banned") return [bannedResolution];
                     if (constraints.status === "reviewed_no_action") {
                       return [rescoredOldResolution, resolvedNomination];
@@ -3157,8 +3196,11 @@ describe("publisher abuse dry-run persistence", () => {
       },
     };
 
-    const result = await listDashboardHandler(ctx, { limit: 2 });
-    expect(result.recentResolvedItems).toEqual([
+    const result = await listReviewItemsPageHandler(ctx, {
+      tab: "resolved",
+      paginationOpts: { numItems: 3, cursor: null },
+    });
+    expect(result.page).toEqual([
       expect.objectContaining({
         nomination: expect.objectContaining({
           _id: "publisherAbuseReviewNominations:banned-resolution",
