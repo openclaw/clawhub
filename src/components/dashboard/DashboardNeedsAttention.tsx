@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { DashboardAttentionItem } from "./types";
 
-const ATTENTION_STRIP_LIMIT = 3;
+const ATTENTION_STRIP_LIMIT = 5;
 
 type DashboardNeedsAttentionProps = {
   items: DashboardAttentionItem[];
@@ -14,8 +14,11 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
 
   return (
     <section className="dashboard-attention-strip" aria-label="Needs attention">
-      <div className="dashboard-attention-strip-header">
-        <h2 className="browse-list-head-label dashboard-attention-strip-label">Needs attention</h2>
+      <header className="dashboard-section-head dashboard-attention-strip-header">
+        <div className="dashboard-section-head-main">
+          <h2 className="dashboard-section-title">Needs attention</h2>
+          <span className="dashboard-section-count">{items.length}</span>
+        </div>
         {items.length > ATTENTION_STRIP_LIMIT ? (
           <Link
             to="/dashboard"
@@ -25,7 +28,7 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
             View all ({items.length})
           </Link>
         ) : null}
-      </div>
+      </header>
       <div className="results-list">
         {visibleItems.map((item) => (
           <a

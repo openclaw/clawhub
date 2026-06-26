@@ -17,6 +17,7 @@ import { collectAttentionItems } from "../components/dashboard/dashboardAttentio
 import { DashboardCatalogView } from "../components/dashboard/DashboardCatalogView";
 import { DashboardDownloadsInsights } from "../components/dashboard/DashboardDownloadsInsights";
 import { DashboardHeader } from "../components/dashboard/DashboardHeader";
+import { DashboardInventorySection } from "../components/dashboard/DashboardInventorySection";
 import { DashboardRightSidebar } from "../components/dashboard/DashboardRightSidebar";
 import { DashboardNeedsAttention } from "../components/dashboard/DashboardNeedsAttention";
 import { DashboardPublisherSelect } from "../components/dashboard/DashboardPublisherSelect";
@@ -165,6 +166,13 @@ export function Dashboard() {
     skills.length > 0 &&
     skillsStatus === "CanLoadMore";
   const showAttentionStrip = kindFilter !== "attention" && attentionItems.length > 0;
+  const skillDownloadsTotal = skills.reduce(
+    (sum, skill) => sum + (skill.stats?.downloads ?? 0),
+    0,
+  );
+  const pluginDownloadsTotal = packages.reduce((sum, pkg) => sum + (pkg.stats.downloads ?? 0), 0);
+  const showDownloadInsights = skillDownloadsTotal + pluginDownloadsTotal > 0;
+  const inventoryTotal = aggregateStats.skillsCount + aggregateStats.pluginsCount;
 
   useEffect(() => {
     if (!isLoading) {
@@ -232,69 +240,67 @@ export function Dashboard() {
 
         <div className="dashboard-workspace">
           <div className="dashboard-workspace-main">
-            <DashboardDownloadsInsights
-              skills={skills}
-              packages={packages}
-              skillDownloadsTotal={
-                skills.reduce((sum, skill) => sum + (skill.stats?.downloads ?? 0), 0)
-              }
-              pluginDownloadsTotal={packages.reduce(
-                (sum, pkg) => sum + (pkg.stats.downloads ?? 0),
-                0,
-              )}
-              insight={search.insight}
-              onInsightChange={(insight) => patchSearch({ insight })}
-            />
-
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
-            <DashboardToolbar
-              kind={kindFilter}
-              query={query}
-              sort={sort}
-              view={view}
-              stats={aggregateStats}
-              onKindChange={(kind) => patchSearch({ kind })}
-              onQueryChange={(q) => patchSearch({ q: q.trim() ? q : undefined })}
-              onSortChange={(nextSort) => patchSearch({ sort: nextSort })}
-              onViewChange={(nextView) => patchSearch({ view: nextView })}
-            />
-
-            <div className="browse-layout">
-              <div className="browse-results">
-                {catalogItems.length > 0 ? (
-                  <>
-                    <DashboardCatalogView
-                      items={catalogItems}
-                      view={view}
-                      ownerHandle={ownerHandle}
-                      canManage={canManage}
-                    />
-                    {showLoadMore ? (
-                      <div className="dashboard-footer-row">
-                        <Button type="button" variant="outline" size="sm" onClick={() => loadMore(50)}>
-                          Load more
-                        </Button>
-                      </div>
-                    ) : null}
-                    {skillsStatus === "LoadingMore" ? (
-                      <div className="dashboard-footer-row flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        <span>Loading more…</span>
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <CatalogEmpty
-                    hasQuery={hasQuery}
-                    kind={kindFilter}
-                    query={query}
+            <DashboardInventorySection
+              totalCount={inventoryTotal}
+              toolbar={
+                <DashboardToolbar
+                  kind={kindFilter}
+                  query={query}
+                  sort={sort}
+                  view={view}
+                  stats={aggregateStats}
+                  onKindChange={(kind) => patchSearch({ kind })}
+                  onQueryChange={(q) => patchSearch({ q: q.trim() ? q : undefined })}
+                  onSortChange={(nextSort) => patchSearch({ sort: nextSort })}
+                  onViewChange={(nextView) => patchSearch({ view: nextView })}
+                />
+              }
+            >
+              {catalogItems.length > 0 ? (
+                <>
+                  <DashboardCatalogView
+                    items={catalogItems}
+                    view={view}
                     ownerHandle={ownerHandle}
-                    attentionCount={attentionItems.length}
+                    canManage={canManage}
                   />
-                )}
-              </div>
-            </div>
+                  {showLoadMore ? (
+                    <div className="dashboard-footer-row">
+                      <Button type="button" variant="outline" size="sm" onClick={() => loadMore(50)}>
+                        Load more
+                      </Button>
+                    </div>
+                  ) : null}
+                  {skillsStatus === "LoadingMore" ? (
+                    <div className="dashboard-footer-row flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      <span>Loading more…</span>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <CatalogEmpty
+                  hasQuery={hasQuery}
+                  kind={kindFilter}
+                  query={query}
+                  ownerHandle={ownerHandle}
+                  attentionCount={attentionItems.length}
+                />
+              )}
+            </DashboardInventorySection>
+
+            {showDownloadInsights ? (
+              <DashboardDownloadsInsights
+                skills={skills}
+                packages={packages}
+                skillDownloadsTotal={skillDownloadsTotal}
+                pluginDownloadsTotal={pluginDownloadsTotal}
+                insight={search.insight}
+                onInsightChange={(insight) => patchSearch({ insight })}
+              />
+            ) : null}
           </div>
 
           <DashboardRightSidebar ownerHandle={ownerHandle} />

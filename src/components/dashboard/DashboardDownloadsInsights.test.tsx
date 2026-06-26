@@ -48,8 +48,8 @@ describe("DashboardDownloadsInsights", () => {
     fireEvent.mouseEnter(hitZones[0]!);
     expect(container.querySelector(".dashboard-downloads-chart-tooltip")).toBeTruthy();
 
-    const bars = container.querySelectorAll(".dashboard-downloads-timeline-bar");
-    fireEvent.mouseEnter(bars[0]!);
-    expect(container.querySelector(".dashboard-downloads-timeline-bar.is-active")).toBeTruthy();
+    fireEvent.mouseLeave(hitZones[0]!);
+    fireEvent.mouseEnter(hitZones[1] ?? hitZones[0]!);
+    expect(container.querySelector(".dashboard-downloads-chart-tooltip")).toBeTruthy();
   });
 });

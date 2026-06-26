@@ -72,6 +72,24 @@ describe("buildDownloadSeries", () => {
     expect(sumSeries(series)).toBeGreaterThan(0);
   });
 
+  it("builds distinct graceful mock shapes in the 200–300 range", () => {
+    const day = 24 * 60 * 60 * 1000;
+    const skills = [makeSkill({ slug: "alpha-skill", updatedAt: Date.now() - 2 * day })];
+    const packages = [makePackage({ name: "beta-plugin", updatedAt: Date.now() - 2 * day })];
+    const skillSeries = buildDownloadSeries(skills, [], "1w");
+    const pluginSeries = buildDownloadSeries([], packages, "1w");
+    const totalSeries = buildDownloadSeries(skills, packages, "1w");
+
+    expect(skillSeries).not.toEqual(pluginSeries);
+    expect(totalSeries).not.toEqual(skillSeries);
+    expect(totalSeries).not.toEqual(pluginSeries);
+    expect(sumSeries(skillSeries)).toBeGreaterThanOrEqual(200);
+    expect(sumSeries(skillSeries)).toBeLessThan(340);
+    expect(sumSeries(pluginSeries)).toBeGreaterThanOrEqual(200);
+    expect(sumSeries(pluginSeries)).toBeLessThan(340);
+    expect(sumSeries(totalSeries)).toBeGreaterThan(400);
+  });
+
   it("returns artifact download totals", () => {
     expect(artifactDownloads([makeSkill({ stats: { downloads: 77 } } as Partial<DashboardSkill>)], [])).toBe(
       77,

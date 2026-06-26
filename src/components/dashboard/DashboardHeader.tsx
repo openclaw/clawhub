@@ -33,12 +33,18 @@ export function DashboardHeader({
     selectedEntry && shouldShowDashboardPublisherRole(selectedEntry)
       ? formatDashboardPublisherRole(selectedEntry.role)
       : null;
+  const scopeKind = publisher.kind === "org" ? "Org" : "Personal";
 
   return (
     <header className="browse-page-header dashboard-page-header dashboard-header">
       <div className="browse-page-header-main dashboard-page-header-main">
         <div className="dashboard-header-top">
-          <h1 className="browse-title">Dashboard</h1>
+          <div className="dashboard-header-intro">
+            <h1 className="browse-title">Dashboard</h1>
+            <p className="dashboard-header-subtitle">
+              Manage your catalog and review items that need attention.
+            </p>
+          </div>
           <div className="dashboard-header-actions">
             <Button asChild size="sm">
               <Link to="/add" search={addSearchParams({ ownerHandle })}>
@@ -49,16 +55,16 @@ export function DashboardHeader({
           </div>
         </div>
 
-        <div className="dashboard-header-publisher">
-          <span className="dashboard-header-avatar" aria-hidden="true">
+        <div className="dashboard-scope-bar">
+          <span className="dashboard-scope-avatar" aria-hidden="true">
             <MarketplaceIcon
               kind={publisher.kind === "org" ? "org" : "user"}
               label={publisher.displayName || publisher.handle}
               imageUrl={publisher.image}
-              size="md"
+              size="sm"
             />
           </span>
-          <p className="dashboard-header-meta">
+          <div className="dashboard-scope-identity">
             {showPublisherSelector ? (
               <DashboardPublisherSelect
                 variant="identity"
@@ -77,7 +83,8 @@ export function DashboardHeader({
                 <span className="dashboard-header-role">{roleLabel}</span>
               </>
             ) : null}
-          </p>
+          </div>
+          <span className="dashboard-scope-kind">{scopeKind}</span>
         </div>
       </div>
     </header>

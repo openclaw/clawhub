@@ -263,6 +263,38 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
   };
 }
 
+
+function createCatalogSkill(overrides?: Partial<TestSkill>): TestSkill {
+  return createSkill({
+    moderationVerdict: undefined,
+    isSuspicious: false,
+    moderationFlags: [],
+    latestVersion: {
+      version: "1.0.0",
+      createdAt: 1,
+      vtStatus: "clean",
+      llmStatus: "clean",
+      staticScanStatus: "clean",
+    },
+    ...overrides,
+  });
+}
+
+function createCatalogPackage(overrides?: Partial<TestPackage>): TestPackage {
+  return createPackage({
+    scanStatus: "clean",
+    stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
+    latestRelease: {
+      version: "1.0.0",
+      createdAt: 1,
+      vtStatus: "clean",
+      llmStatus: "clean",
+      staticScanStatus: "clean",
+    },
+    ...overrides,
+  });
+}
+
 function arrangeDashboard({
   skills = [],
   packages = [],
@@ -284,8 +316,8 @@ function arrangeDashboard({
   });
 }
 
-function renderDashboard() {
-  mocks.dashboardSearch = {};
+function renderDashboard(search: Record<string, unknown> = {}) {
+  mocks.dashboardSearch = search;
   const view = render(
     <TooltipProvider>
       <Dashboard />
@@ -395,7 +427,7 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getAllByRole("combobox", { name: "Sort" })[0]!);
     fireEvent.click(screen.getByRole("option", { name: "Most installs" }));
 
     expect(screen.getAllByText(/Local Flagged/)[0]?.textContent).toContain("Plugin");
@@ -448,7 +480,10 @@ describe("Dashboard rows", () => {
   });
 
   it("renders catalog rows in list view by default and toggles to grid", () => {
-    arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
+    arrangeDashboard({
+      skills: [createCatalogSkill()],
+      packages: [createCatalogPackage()],
+    });
 
     renderDashboard();
 
@@ -457,23 +492,24 @@ describe("Dashboard rows", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Grid" }));
 
-    expect(document.querySelector(".browse-results-grid")).toBeTruthy();
+    expect(document.querySelector(".dashboard-catalog-grid")).toBeTruthy();
   });
 
   it("shows dashboard header identity without inventory count", () => {
     arrangeDashboard({
-      skills: [createSkill()],
-      packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
+      skills: [createCatalogSkill()],
+      packages: [createCatalogPackage()],
     });
 
     renderDashboard();
 
     const heading = screen.getByRole("heading", { name: "Dashboard" });
     expect(heading.classList.contains("browse-title")).toBe(true);
-    expect(heading.closest(".dashboard-header-publisher")).toBeNull();
-    expect(document.querySelector(".dashboard-header-publisher")).toBeTruthy();
+    expect(heading.closest(".dashboard-scope-bar")).toBeNull();
+    expect(document.querySelector(".dashboard-scope-bar")).toBeTruthy();
     expect(screen.getByText("@local")).toBeTruthy();
     expect(document.querySelector(".dashboard-header-count")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Inventory" })).toBeTruthy();
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
@@ -484,38 +520,27 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    expect(
-      document.querySelector(".dashboard-catalog-row-main[href$='local-flagged-skill']")?.getAttribute(
-        "href",
-      ),
-    ).toBe("/local/local-flagged-skill");
-    expect(
-      document
-        .querySelector(".dashboard-catalog-row-main[href*='local-flagged-runtime-plugin']")
-        ?.getAttribute("href"),
-    ).toBe("/local/plugins/local-flagged-runtime-plugin");
+    expect(screen.getByLabelText("Needs attention")).toBeTruthy();
+    expect(document.querySelectorAll(".dashboard-attention-row").length).toBe(2);
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Blocked").length).toBeGreaterThan(0);
-    expect(screen.getByText("Flagged skill fixture.")).toBeTruthy();
-    expect(screen.getByText("Flagged plugin fixture.")).toBeTruthy();
+    expect(screen.getByText("Needs security review")).toBeTruthy();
+    expect(screen.getByText("Blocked by security checks")).toBeTruthy();
+    expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(0);
+
     expect(screen.queryByText("VT")).toBeNull();
     expect(screen.queryByText("LLM")).toBeNull();
     expect(screen.queryByText("Static")).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
-    expect(screen.queryByText("Downloads")).toBeNull();
-    expect(screen.getByText("1.2k")).toBeTruthy();
-    expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getByText("Code Plugin")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
-    ).toBeTruthy();
+    const downloads = screen.getByRole("region", { name: "Download metrics" });
+    expect(downloads.textContent).toContain("1.2k");
+    expect(downloads.textContent).toContain("42");
   });
 
   it("links public plugin finding counts to the plugin validation tab", () => {
+    // flagged plugin stays in needs-attention queue; use attention filter for inventory drill-down
+
     arrangeDashboard({
       packages: [
         createPackage({
@@ -532,7 +557,7 @@ describe("Dashboard rows", () => {
       ],
     });
 
-    renderDashboard();
+    renderDashboard({ kind: "attention" });
 
     const validationLink = screen.getByRole("link", {
       name: "View 2 validation findings for Local Flagged Runtime Plugin",
@@ -696,7 +721,7 @@ describe("Dashboard rows", () => {
 
   it("uses the canonical skill href when publisher selection is stale", () => {
     arrangeDashboard({
-      skills: [createSkill()],
+      skills: [createCatalogSkill()],
     });
     mocks.useAuthStatus.mockReturnValue({
       isAuthenticated: true,
@@ -729,7 +754,7 @@ describe("Dashboard rows", () => {
   });
 
   it("exposes row actions inside the overflow menu", () => {
-    arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
+    arrangeDashboard({ packages: [createCatalogPackage()] });
 
     renderDashboard();
 

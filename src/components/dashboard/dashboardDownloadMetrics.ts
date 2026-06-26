@@ -94,41 +94,77 @@ const RANGE_BUCKETS: Record<DownloadRange, number> = {
   all: 12,
 };
 
-/** Visual proxy: weight each artifact's downloads toward its last activity bucket. */
+/** Gentle curve shapes — resampled per range so each chart reads differently. */
+const KIND_PROFILES = {
+  skill: [0.08, 0.1, 0.12, 0.14, 0.17, 0.2, 0.19],
+  plugin: [0.11, 0.15, 0.2, 0.21, 0.17, 0.1, 0.06],
+} as const;
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function resampleProfile(profile: readonly number[], bucketCount: number) {
+  if (bucketCount <= 0) return [];
+  if (bucketCount === 1) return [profile.at(-1) ?? 1];
+  if (bucketCount === profile.length) return [...profile];
+
+  return Array.from({ length: bucketCount }, (_, index) => {
+    const position = (index / (bucketCount - 1)) * (profile.length - 1);
+    const left = Math.floor(position);
+    const right = Math.min(left + 1, profile.length - 1);
+    const blend = position - left;
+    return profile[left] * (1 - blend) + profile[right] * blend;
+  });
+}
+
+function mockSeriesTarget(keys: string[], kind: "skill" | "plugin") {
+  if (keys.length === 0) return 0;
+  const base = kind === "skill" ? 236 : 284;
+  const variation =
+    keys.reduce((sum, key) => sum + (hashString(`${kind}:${key}`) % 52), 0) / keys.length;
+  return Math.round(base + variation);
+}
+
+function scaleProfileToTotal(profile: number[], targetTotal: number) {
+  const weightSum = profile.reduce((sum, weight) => sum + weight, 0) || 1;
+  return profile.map((weight) => (weight / weightSum) * targetTotal);
+}
+
+function buildKindSeries(keys: string[], kind: "skill" | "plugin", bucketCount: number) {
+  const profile = resampleProfile(KIND_PROFILES[kind], bucketCount);
+  return scaleProfileToTotal(profile, mockSeriesTarget(keys, kind));
+}
+
+function addSeries(left: number[], right: number[]) {
+  return left.map((value, index) => value + (right[index] ?? 0));
+}
+
+/** Visual proxy: smooth mock curves with totals in the ~200–300 range. */
 export function buildDownloadSeries(
   skills: DashboardSkill[],
   packages: DashboardPackage[],
   range: DownloadRange,
 ): number[] {
   const bucketCount = RANGE_BUCKETS[range];
-  const buckets = Array.from({ length: bucketCount }, () => 0);
-  const now = Date.now();
-  const rangeMs =
-    range === "1d"
-      ? 24 * 60 * 60 * 1000
-      : range === "1w"
-        ? 7 * 24 * 60 * 60 * 1000
-        : range === "1m"
-          ? 30 * 24 * 60 * 60 * 1000
-          : 90 * 24 * 60 * 60 * 1000;
+  const skillKeys = skills.map((skill) => skill.slug);
+  const pluginKeys = packages.map((pkg) => pkg.name);
 
-  const add = (downloads: number, updatedAt: number) => {
-    if (downloads <= 0) return;
-    const age = Math.max(0, now - updatedAt);
-    const ratio = Math.min(1, age / rangeMs);
-    const primary = Math.floor((1 - ratio) * (bucketCount - 1));
-    buckets[primary] += downloads * 0.62;
-    const spill = downloads * 0.38;
-    const spread = Math.max(1, Math.floor(bucketCount / 4));
-    for (let i = 0; i < spread; i++) {
-      buckets[(primary + i) % bucketCount] += spill / spread;
-    }
-  };
+  const skillSeries =
+    skillKeys.length > 0 ? buildKindSeries(skillKeys, "skill", bucketCount) : [];
+  const pluginSeries =
+    pluginKeys.length > 0 ? buildKindSeries(pluginKeys, "plugin", bucketCount) : [];
 
-  for (const skill of skills) add(skillDownloads(skill), skill.updatedAt);
-  for (const pkg of packages) add(pluginDownloads(pkg), pkg.updatedAt);
-
-  return buckets;
+  if (skillSeries.length > 0 && pluginSeries.length > 0) {
+    return addSeries(skillSeries, pluginSeries);
+  }
+  if (skillSeries.length > 0) return skillSeries;
+  if (pluginSeries.length > 0) return pluginSeries;
+  return Array.from({ length: bucketCount }, () => 0);
 }
 
 export function sumSeries(series: number[]) {

@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import { BrowseSegmentedTabs, BrowseSortSelect } from "../BrowseControls";
+import { BrowseControlsDivider, BrowseSegmentedTabs, BrowseSortSelect } from "../BrowseControls";
 import { formatCompactStat } from "../../lib/numberFormat";
 import type { DashboardPackage, DashboardSkill } from "./types";
 import {
@@ -28,7 +28,7 @@ const RANGES: { id: DownloadRange; label: string }[] = [
   { id: "1d", label: "1D" },
   { id: "1w", label: "1W" },
   { id: "1m", label: "1M" },
-  { id: "all", label: "All" },
+  { id: "all", label: "All time" },
 ];
 
 type ChartCoord = { x: number; y: number };
@@ -36,8 +36,8 @@ type ChartCoord = { x: number; y: number };
 export function DashboardDownloadsInsights({
   skills,
   packages,
-  skillDownloadsTotal,
-  pluginDownloadsTotal,
+  skillDownloadsTotal: _skillDownloadsTotal,
+  pluginDownloadsTotal: _pluginDownloadsTotal,
   insight,
   onInsightChange,
 }: DashboardDownloadsInsightsProps) {
@@ -90,31 +90,32 @@ export function DashboardDownloadsInsights({
     ? formatCompactStat(heroDownloads)
     : formatRangeTotal(heroDownloads);
 
-  const rangeTitle = (() => {
-    const base =
-      range === "1d"
-        ? "Today's download activity"
-        : range === "1w"
-          ? "Weekly download activity"
-          : range === "1m"
-            ? "Monthly download activity"
-            : "All-time download trend";
-    if (isFiltered && filtered.label) return `${filtered.label} — ${base.toLowerCase()}`;
-    return base;
+  const sectionTitle = (() => {
+    if (isFiltered && filtered.label) return filtered.label;
+    return "Your stats";
   })();
 
   return (
-    <section className="dashboard-downloads-insights" aria-label="Download metrics">
-      <div className="dashboard-downloads-insights-toolbar">
-        <div className="dashboard-downloads-insights-controls">
-          <BrowseSortSelect
-            options={insightOptions}
-            value={insight ?? "all"}
-            onChange={(value) => {
-              const next = !value || value === "all" ? undefined : value;
-              onInsightChange?.(next);
-            }}
-          />
+    <section
+      className="dashboard-downloads-insights dashboard-downloads-insights--compact"
+      aria-label="Download metrics"
+    >
+      <header className="dashboard-downloads-compact-toolbar">
+        <h2 className="dashboard-section-title">{sectionTitle}</h2>
+        <div className="dashboard-downloads-compact-toolbar-controls">
+          {insightOptions.length > 1 ? (
+            <>
+              <BrowseSortSelect
+                options={insightOptions}
+                value={insight ?? "all"}
+                onChange={(value) => {
+                  const next = !value || value === "all" ? undefined : value;
+                  onInsightChange?.(next);
+                }}
+              />
+              <BrowseControlsDivider />
+            </>
+          ) : null}
           <BrowseSegmentedTabs
             ariaLabel="Time range"
             options={RANGES.map((item) => ({
@@ -129,67 +130,59 @@ export function DashboardDownloadsInsights({
             }}
           />
         </div>
-      </div>
+      </header>
 
-      <div className="dashboard-downloads-grid">
-        <article className="dashboard-downloads-panel dashboard-downloads-panel--hero">
-          <header className="dashboard-downloads-panel-head">
-            <h2 className="dashboard-downloads-panel-title">{rangeTitle}</h2>
-          </header>
-          <div className="dashboard-downloads-hero-body">
-            <div className="dashboard-downloads-hero-metric">
-              <span className="dashboard-downloads-metric-label">{heroMetricLabel}</span>
-              <span className="dashboard-downloads-metric-value">{heroDisplay}</span>
-              <span
-                className={`dashboard-downloads-delta${totalDelta >= 0 ? " is-up" : " is-down"}`}
-              >
-                {totalDelta >= 0 ? "+" : ""}
-                {totalDelta}% vs prior period
-                {isFiltered ? " (estimated)" : ""}
-              </span>
-            </div>
-            <Sparkline
-              series={totalSeries}
-              labels={labels}
-              className="dashboard-downloads-sparkline--hero"
-            />
+      <div className="dashboard-downloads-compact-panel">
+        <div className="dashboard-downloads-compact-primary">
+          <div className="dashboard-downloads-compact-hero-metric">
+            <span className="dashboard-downloads-metric-label">{heroMetricLabel}</span>
+            <span className="dashboard-downloads-metric-value dashboard-downloads-metric-value--compact">
+              {heroDisplay}
+            </span>
+            <span
+              className={`dashboard-downloads-delta${totalDelta >= 0 ? " is-up" : " is-down"}`}
+            >
+              {totalDelta >= 0 ? "+" : ""}
+              {totalDelta}% vs prior period
+              {isFiltered ? " (estimated)" : ""}
+            </span>
           </div>
-          <BarTimeline series={totalSeries} labels={labels} />
-        </article>
+          <Sparkline
+            series={totalSeries}
+            labels={labels}
+            className="dashboard-downloads-sparkline--compact-primary"
+          />
+        </div>
 
-        <div className="dashboard-downloads-side">
+        <div className="dashboard-downloads-compact-split">
           {isFiltered ? (
             <>
-              <MetricCard
+              <CompactStat
                 label="All-time"
                 total={artifactDownloads(activeSkills, activePackages)}
                 series={itemSeries}
                 delta={itemDelta}
-                caption="Recorded downloads"
               />
-              <MetricCard
+              <CompactStat
                 label="In range"
                 total={Math.round(rangeTotal)}
                 series={itemSeries}
                 delta={itemDelta}
-                caption="Estimated activity"
               />
             </>
           ) : (
             <>
-              <MetricCard
+              <CompactStat
                 label="Skills"
-                total={skillDownloadsTotal}
+                total={Math.round(sumSeries(skillSeries))}
                 series={skillSeries}
                 delta={skillDelta}
-                caption="Skill downloads"
               />
-              <MetricCard
+              <CompactStat
                 label="Plugins"
-                total={pluginDownloadsTotal}
+                total={Math.round(sumSeries(pluginSeries))}
                 series={pluginSeries}
                 delta={pluginDelta}
-                caption="Plugin downloads"
               />
             </>
           )}
@@ -199,34 +192,27 @@ export function DashboardDownloadsInsights({
   );
 }
 
-function MetricCard({
+function CompactStat({
   label,
   total,
   series,
   delta,
-  caption,
 }: {
   label: string;
   total: number;
   series: number[];
   delta: number;
-  caption: string;
 }) {
   return (
-    <article className="dashboard-downloads-panel dashboard-downloads-panel--compact">
-      <header className="dashboard-downloads-compact-head">
-        <span className="dashboard-downloads-compact-label">{label}</span>
-        <Sparkline series={series} className="dashboard-downloads-sparkline--compact" />
-      </header>
-      <div className="dashboard-downloads-compact-metric">{formatCompactStat(total)}</div>
-      <footer className="dashboard-downloads-compact-foot">
-        <span>{caption}</span>
-        <span className={`dashboard-downloads-delta${delta >= 0 ? " is-up" : " is-down"}`}>
-          {delta >= 0 ? "+" : ""}
-          {delta}%
-        </span>
-      </footer>
-    </article>
+    <div className="dashboard-downloads-compact-stat">
+      <span className="dashboard-downloads-compact-stat-label">{label}</span>
+      <div className="dashboard-downloads-compact-stat-value">{formatCompactStat(total)}</div>
+      <span className={`dashboard-downloads-delta${delta >= 0 ? " is-up" : " is-down"}`}>
+        {delta >= 0 ? "+" : ""}
+        {delta}%
+      </span>
+      <Sparkline series={series} className="dashboard-downloads-sparkline--compact-stat" />
+    </div>
   );
 }
 
@@ -263,7 +249,6 @@ function Sparkline({
 
   const linePath = useMemo(() => smoothLinePath(coords), [coords]);
   const fillPath = useMemo(() => areaPath(coords, baseline), [coords, baseline]);
-  const last = coords.at(-1);
   const slotWidth = series.length > 0 ? 100 / series.length : 100;
   const activeCoord = activeIndex === null ? null : coords[activeIndex];
   const activeValue = activeIndex === null ? null : series[activeIndex];
@@ -283,7 +268,7 @@ function Sparkline({
       >
         <defs>
           <linearGradient id={`${gradientId}-fill`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity={isCompact ? "0.24" : "0.32"} />
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.3" />
             <stop offset="58%" stopColor="currentColor" stopOpacity="0.1" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
@@ -343,13 +328,6 @@ function Sparkline({
             cy={activeCoord.y}
             r={isCompact ? 2.4 : 3}
           />
-        ) : last ? (
-          <circle
-            className="dashboard-downloads-sparkline-dot"
-            cx={last.x}
-            cy={last.y}
-            r={isCompact ? 2.1 : 2.6}
-          />
         ) : null}
       </svg>
       {activeIndex !== null && activeValue !== null && activeLabel ? (
@@ -363,99 +341,6 @@ function Sparkline({
           </span>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function BarTimeline({ series, labels }: { series: number[]; labels: string[] }) {
-  const rawId = useId();
-  const gradientId = rawId.replace(/:/g, "");
-  const max = Math.max(...series, 1);
-  const baseline = 96;
-  const chartTop = 6;
-  const chartHeight = baseline - chartTop;
-  const slotWidth = series.length > 0 ? 100 / series.length : 100;
-  const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const activeValue = activeIndex === null ? null : series[activeIndex];
-  const activeLabel =
-    activeIndex === null ? null : (labels[activeIndex]?.trim() || `Bucket ${activeIndex + 1}`);
-
-  return (
-    <div className="dashboard-downloads-timeline" onMouseLeave={() => setActiveIndex(null)}>
-      <div className="dashboard-downloads-chart-wrap">
-        <svg
-          className="dashboard-downloads-timeline-chart"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <defs>
-            <linearGradient id={`${gradientId}-bar`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="currentColor" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="currentColor" stopOpacity="0.38" />
-            </linearGradient>
-          </defs>
-          <line
-            className="dashboard-downloads-timeline-baseline"
-            x1="0"
-            y1={baseline}
-            x2="100"
-            y2={baseline}
-          />
-          {activeIndex !== null ? (
-            <line
-              className="dashboard-downloads-chart-crosshair"
-              x1={activeIndex * slotWidth + slotWidth / 2}
-              y1={chartTop}
-              x2={activeIndex * slotWidth + slotWidth / 2}
-              y2={baseline}
-            />
-          ) : null}
-          {series.map((value, index) => {
-            const height = value > 0 ? Math.max(1.5, (value / max) * chartHeight) : 0;
-            const barWidth = slotWidth * 0.5;
-            const x = index * slotWidth + (slotWidth - barWidth) / 2;
-            const label = labels[index]?.trim() || `Bucket ${index + 1}`;
-            return (
-              <rect
-                key={index}
-                className={`dashboard-downloads-timeline-bar${activeIndex === index ? " is-active" : ""}${height <= 0 ? " is-empty" : ""}`}
-                x={x}
-                y={height > 0 ? baseline - height : baseline - 1}
-                width={barWidth}
-                height={height > 0 ? height : 1}
-                rx={1.4}
-                fill={height > 0 ? `url(#${gradientId}-bar)` : "transparent"}
-                style={{ animationDelay: `${index * 0.025}s` }}
-                onMouseEnter={() => setActiveIndex(index)}
-                aria-hidden="true"
-              >
-                <title>
-                  {label}: {formatBucketValue(value)}
-                </title>
-              </rect>
-            );
-          })}
-        </svg>
-        {activeIndex !== null && activeValue !== null && activeLabel ? (
-          <div
-            className="dashboard-downloads-chart-tooltip"
-            style={{ left: `${((activeIndex + 0.5) / series.length) * 100}%` }}
-          >
-            <span className="dashboard-downloads-chart-tooltip-label">{activeLabel}</span>
-            <span className="dashboard-downloads-chart-tooltip-value">
-              {formatBucketValue(activeValue)}
-            </span>
-          </div>
-        ) : null}
-      </div>
-      <div className="dashboard-downloads-timeline-labels">
-        {labels.map((label, index) => (
-          <span key={index} className={activeIndex === index ? "is-active" : undefined}>
-            {label}
-          </span>
-        ))}
-      </div>
     </div>
   );
 }
@@ -490,10 +375,10 @@ function smoothLinePath(coords: ChartCoord[]): string {
     const next = coords[index + 1];
     const following = coords[Math.min(coords.length - 1, index + 2)];
 
-    const cp1x = current.x + (next.x - previous.x) / 6;
-    const cp1y = current.y + (next.y - previous.y) / 6;
-    const cp2x = next.x - (following.x - current.x) / 6;
-    const cp2y = next.y - (following.y - current.y) / 6;
+    const cp1x = current.x + (next.x - previous.x) / 8;
+    const cp1y = current.y + (next.y - previous.y) / 8;
+    const cp2x = next.x - (following.x - current.x) / 8;
+    const cp2y = next.y - (following.y - current.y) / 8;
 
     path += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${next.x.toFixed(2)} ${next.y.toFixed(2)}`;
   }
