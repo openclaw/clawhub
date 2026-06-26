@@ -346,7 +346,9 @@ export const getReviewNominationDetail = query({
     const nomination = await ctx.db.get(args.nominationId);
     if (!nomination) return null;
 
-    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
+    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination, {
+      includeScoreDetails: true,
+    });
     if (await isPublisherAbuseExcludedReviewItem(ctx, item)) return null;
     const scoreHistory = await ctx.db
       .query("publisherAbuseScores")
@@ -2953,6 +2955,7 @@ type PendingPublisherAbuseReviewLabel = Exclude<PublisherAbuseLabel, "pass">;
 type PublisherAbuseReviewVisibilityOptions = {
   staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
   includeInactiveTargets?: boolean;
+  includeScoreDetails?: boolean;
 };
 
 async function getPendingPublisherAbuseReviewItemsForLabel(
@@ -3142,10 +3145,11 @@ async function getRecentResolvedPublisherAbuseReviewItems(
 async function summarizePublisherAbuseReviewNominations(
   ctx: QueryCtx,
   nominations: Doc<"publisherAbuseReviewNominations">[],
+  options: PublisherAbuseReviewVisibilityOptions = {},
 ) {
   const items = [];
   for (const nomination of nominations) {
-    items.push(await summarizePublisherAbuseReviewNomination(ctx, nomination));
+    items.push(await summarizePublisherAbuseReviewNomination(ctx, nomination, options));
   }
   return items;
 }
@@ -3158,7 +3162,7 @@ async function summarizeVisiblePublisherAbuseReviewNominations(
 ) {
   const items = [];
   for (const nomination of nominations) {
-    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
+    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination, visibilityOptions);
     if (await isVisiblePublisherAbuseReviewItem(ctx, item, visibilityOptions)) {
       items.push(item);
     }
@@ -3170,6 +3174,7 @@ async function summarizeVisiblePublisherAbuseReviewNominations(
 async function summarizePublisherAbuseReviewNomination(
   ctx: QueryCtx,
   nomination: Doc<"publisherAbuseReviewNominations">,
+  options: Pick<PublisherAbuseReviewVisibilityOptions, "includeScoreDetails"> = {},
 ) {
   const score = await ctx.db.get(nomination.latestScoreId);
   const publisher = nomination.ownerPublisherId
@@ -3180,7 +3185,11 @@ async function summarizePublisherAbuseReviewNomination(
 
   return {
     nomination,
-    latestScore: score,
+    latestScore: score
+      ? summarizePublisherAbuseScoreForReview(score, {
+          includeTemporalDetails: options.includeScoreDetails === true,
+        })
+      : null,
     publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
     ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
     openedByRun: openedByRun ? summarizePublisherAbuseRun(openedByRun) : null,
@@ -3226,6 +3235,45 @@ function summarizePublisherAbuseRun(run: Doc<"publisherAbuseScoreRuns">) {
     ...summary
   } = run;
   return summary;
+}
+
+function summarizePublisherAbuseScoreForReview(
+  score: ScoreDoc,
+  options: { includeTemporalDetails: boolean },
+) {
+  return {
+    _id: score._id,
+    _creationTime: score._creationTime,
+    runId: score.runId,
+    ownerKey: score.ownerKey,
+    ownerPublisherId: score.ownerPublisherId,
+    ownerUserId: score.ownerUserId,
+    handleSnapshot: score.handleSnapshot,
+    modelVersion: score.modelVersion,
+    label: score.label,
+    rank: score.rank,
+    pressure: score.pressure,
+    logPressure: score.logPressure,
+    zScore: score.zScore,
+    publishedSkills: score.publishedSkills,
+    totalInstalls: score.totalInstalls,
+    totalStars: score.totalStars,
+    totalDownloads: score.totalDownloads,
+    installsPerSkill: score.installsPerSkill,
+    starsPerSkill: score.starsPerSkill,
+    downloadsPerSkill: score.downloadsPerSkill,
+    reasonCodes: score.reasonCodes,
+    temporalHighSkillCount: score.temporalHighSkillCount,
+    temporalP99SkillCount: score.temporalP99SkillCount,
+    temporalSpikeSkillCount: score.temporalSpikeSkillCount,
+    temporalSustainedSkillCount: score.temporalSustainedSkillCount,
+    temporalMaxPressure: score.temporalMaxPressure,
+    temporalBenchmark:
+      options.includeTemporalDetails && score.temporalBenchmark ? score.temporalBenchmark : null,
+    temporalEvidence:
+      options.includeTemporalDetails && score.temporalEvidence ? score.temporalEvidence : [],
+    createdAt: score.createdAt,
+  };
 }
 
 function summarizePublisherForAbuseReview(publisher: Doc<"publishers">) {
