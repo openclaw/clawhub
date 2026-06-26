@@ -31,6 +31,10 @@ on:
         description: "Live export pages per Convex request"
         required: true
         default: "1"
+      page-timeout-ms:
+        description: "Maximum milliseconds for a single Convex export page request"
+        required: true
+        default: "600000"
       concurrency:
         description: "Concurrent live export shards"
         required: true
@@ -69,6 +73,7 @@ jobs:
       SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
       SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
       SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
+      SNAPSHOT_PAGE_TIMEOUT_MS: ${{ inputs['page-timeout-ms'] || '600000' }}
       SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '1' }}
       SNAPSHOT_SHARDS: ${{ inputs.shards || '12' }}
       SNAPSHOT_MAX_SHARDS_PER_SOURCE: ${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '16' }}
@@ -92,6 +97,7 @@ jobs:
           echo "Shard count per source kind: $SNAPSHOT_SHARDS"
           echo "Maximum shards per source kind: $SNAPSHOT_MAX_SHARDS_PER_SOURCE"
           echo "Maximum matrix jobs: $SNAPSHOT_MAX_MATRIX_JOBS"
+          echo "Convex page timeout ms: $SNAPSHOT_PAGE_TIMEOUT_MS"
           if [[ ! "$SNAPSHOT_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::shards must be a positive integer"
             exit 1
@@ -102,6 +108,14 @@ jobs:
           fi
           if [[ ! "$SNAPSHOT_MAX_MATRIX_JOBS" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::SECURITY_DATASET_MAX_MATRIX_JOBS must be a positive integer"
+            exit 1
+          fi
+          if [[ ! "$SNAPSHOT_PAGE_TIMEOUT_MS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::page-timeout-ms must be a positive integer"
+            exit 1
+          fi
+          if (( SNAPSHOT_PAGE_TIMEOUT_MS > 2147483647 )); then
+            echo "::error::page-timeout-ms must be at most 2147483647"
             exit 1
           fi
           bun -e '
@@ -127,6 +141,7 @@ jobs:
             --page-size "$SNAPSHOT_PAGE_SIZE" \
             --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE" \
             --batch-pages "$SNAPSHOT_BATCH_PAGES" \
+            --page-timeout-ms "$SNAPSHOT_PAGE_TIMEOUT_MS" \
             --concurrency "$SNAPSHOT_CONCURRENCY" \
             --shards "$SNAPSHOT_SHARDS" \
             --write-shard-matrix "$matrix_path"
@@ -160,6 +175,7 @@ jobs:
       SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
       SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
       SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
+      SNAPSHOT_PAGE_TIMEOUT_MS: ${{ inputs['page-timeout-ms'] || '600000' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/shard
     steps:
       - uses: actions/checkout@v7
@@ -184,6 +200,7 @@ jobs:
             --page-size "$SNAPSHOT_PAGE_SIZE"
             --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE"
             --batch-pages "$SNAPSHOT_BATCH_PAGES"
+            --page-timeout-ms "$SNAPSHOT_PAGE_TIMEOUT_MS"
             --concurrency 1
             --shards 1
           )

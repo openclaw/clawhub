@@ -111,6 +111,43 @@ describe("security dataset snapshot CLI", () => {
       stderr: expect.stringContaining("--min-page-size must be less than or equal to --page-size."),
     });
   });
+
+  it("rejects a non-positive page timeout", async () => {
+    await expect(
+      execFileAsync(
+        "bun",
+        ["scripts/security-dataset/export-snapshot.ts", "--page-timeout-ms", "0", "--dry-run"],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          maxBuffer: 16 * 1024 * 1024,
+        },
+      ),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Expected positive integer for --page-timeout-ms"),
+    });
+  });
+
+  it("rejects a page timeout above the runtime timer maximum", async () => {
+    await expect(
+      execFileAsync(
+        "bun",
+        [
+          "scripts/security-dataset/export-snapshot.ts",
+          "--page-timeout-ms",
+          "2147483648",
+          "--dry-run",
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          maxBuffer: 16 * 1024 * 1024,
+        },
+      ),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("Expected --page-timeout-ms to be at most 2147483647."),
+    });
+  });
 });
 
 function buildTinyConvexSnapshotZip() {

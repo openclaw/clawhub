@@ -58,6 +58,11 @@ type CompressedConvexPage = {
   payload: string;
 };
 
+type CommandOutputError = Error & {
+  stdout?: string;
+  stderr?: string;
+};
+
 type Options = {
   deployment: string | null;
   convexUrl: string | null;
@@ -72,6 +77,7 @@ type Options = {
   batchPages: number;
   concurrency: number;
   shards: number;
+  pageTimeoutMs: number;
   outDir: string;
   sourceKind: SourceKind | "all";
   timeWindow: CreatedTimeWindow;
@@ -121,6 +127,8 @@ const DEFAULT_BATCH_PAGES = 5;
 const DEFAULT_CONCURRENCY = 6;
 const DEFAULT_SHARDS = 12;
 const DEFAULT_MAX_CONVEX_ATTEMPTS = 6;
+const DEFAULT_CONVEX_PAGE_TIMEOUT_MS = 10 * 60 * 1000;
+const MAX_TIMER_TIMEOUT_MS = 2_147_483_647;
 const DEFAULT_OUT_DIR = ".data/security-dataset/snapshots";
 const CONVEX_RUN_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
 const SOURCE_KINDS: SourceKind[] = ["skill", "package"];
@@ -273,12 +281,21 @@ async function exportShard(input: {
   let cursor: string | null = null;
   let pageSize = options.pageSize;
   let batchPages = options.batchPages;
+  let pageNumber = 1;
   while (!isLimitReached(options, state)) {
+    const startedAt = Date.now();
+    console.error(
+      `[snapshot] ${shard.label} page ${pageNumber} request page-size=${pageSize} batch-pages=${batchPages} cursor=${cursorSummary(cursor)} timeout-ms=${options.pageTimeoutMs}`,
+    );
     const result = await runConvexPage(options, shard, cursor, pageSize, batchPages);
+    const elapsedMs = Date.now() - startedAt;
     pageSize = result.pageSize;
     batchPages = result.batchPages;
     const page = result.page;
     const inputs = reserveExportInputs(page.page, state, options.limit);
+    console.error(
+      `[snapshot] ${shard.label} page ${pageNumber} response artifacts=${page.page.length} reserved=${inputs.length} done=${page.isDone} next-cursor=${cursorSummary(page.continueCursor)} elapsed-ms=${elapsedMs}`,
+    );
     if (inputs.length > 0) {
       await processArtifactInputs({ inputs, state, writers });
       console.error(
@@ -286,7 +303,13 @@ async function exportShard(input: {
       );
     }
     if (page.isDone || inputs.length < page.page.length) return;
+    if (page.continueCursor === cursor) {
+      throw new Error(
+        `Convex pagination for ${shard.label} did not advance cursor ${cursorSummary(cursor)}.`,
+      );
+    }
     cursor = page.continueCursor;
+    pageNumber += 1;
   }
 }
 
@@ -335,6 +358,10 @@ async function runConvexPage(
         };
       } catch (error) {
         lastError = error;
+        if (isLocalConvexPageTimeout(error)) {
+          writeCommandErrorOutput(error);
+          throw error;
+        }
         if (
           isLikelyOversizedConvexBatch(error) &&
           canReduceConvexBatch(options, pageSize, pageCount)
@@ -404,7 +431,11 @@ async function runWorkerAction<T>(
     throw new Error("--convex-url or CONVEX_URL is required when using --worker-token.");
   }
   const client = new ConvexHttpClient(options.convexUrl);
-  const result = await client.action(resolveWorkerAction(functionName), args as never);
+  const result = await withTimeout(
+    client.action(resolveWorkerAction(functionName), args as never),
+    options.pageTimeoutMs,
+    `Convex action ${functionName} exceeded ${options.pageTimeoutMs}ms`,
+  );
   if (validate(result)) return result;
   throw new Error(`Invalid ${functionName} response.`);
 }
@@ -431,6 +462,10 @@ async function runConvexJson<T>(
       return await runConvexJsonOnce(options, functionName, args, validate);
     } catch (error) {
       lastError = error;
+      if (isLocalConvexPageTimeout(error)) {
+        writeCommandErrorOutput(error);
+        throw error;
+      }
       if (attempt === DEFAULT_MAX_CONVEX_ATTEMPTS) break;
       console.error(
         `[snapshot] retrying ${functionName} after attempt ${attempt}: ${errorMessage(error)}`,
@@ -454,7 +489,14 @@ async function runConvexJsonOnce<T>(
     cwd: process.cwd(),
     encoding: "utf8",
     env: convexRunEnv(),
+    timeout: options.pageTimeoutMs,
     maxBuffer: CONVEX_RUN_MAX_BUFFER_BYTES,
+  }).catch((error: unknown) => {
+    if (!isExecFileTimeout(error)) throw error;
+    throw commandOutputError(
+      `Convex run ${functionName} exceeded ${options.pageTimeoutMs}ms`,
+      error,
+    );
   });
   try {
     return parseConvexJsonMatching(result.stdout, validate);
@@ -803,6 +845,21 @@ function delay(ms: number) {
   return new Promise<void>((done) => setTimeout(done, ms));
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
+function cursorSummary(cursor: string | null) {
+  if (cursor === null || cursor.length === 0) return "start";
+  return cursor.length <= 12 ? cursor : `${cursor.slice(0, 6)}...${cursor.slice(-4)}`;
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
@@ -814,6 +871,18 @@ function isLikelyTruncatedConvexOutput(error: unknown) {
 function isLikelyConvexOperationTimeout(error: unknown) {
   return /(?:The operation timed out|operation timeout|deadline exceeded)/i.test(
     errorMessage(error),
+  );
+}
+
+function isLocalConvexPageTimeout(error: unknown) {
+  return /Convex (?:action|run) .* exceeded \d+ms/.test(errorMessage(error));
+}
+
+function isExecFileTimeout(error: unknown) {
+  return (
+    isRecord(error) &&
+    error.killed === true &&
+    (error.signal === "SIGTERM" || error.signal === "SIGKILL")
   );
 }
 
@@ -832,6 +901,15 @@ function writeCommandErrorOutput(error: unknown) {
   } else if (typeof error.stdout === "string" && error.stdout.length > 0) {
     process.stderr.write(error.stdout);
   }
+}
+
+function commandOutputError(message: string, cause: unknown) {
+  const error: CommandOutputError = new Error(message);
+  if (isRecord(cause)) {
+    if (typeof cause.stderr === "string") error.stderr = cause.stderr;
+    if (typeof cause.stdout === "string") error.stdout = cause.stdout;
+  }
+  return error;
 }
 
 function gitSha() {
@@ -855,6 +933,7 @@ function parseArgs(args: string[]): Options {
     batchPages: DEFAULT_BATCH_PAGES,
     concurrency: DEFAULT_CONCURRENCY,
     shards: DEFAULT_SHARDS,
+    pageTimeoutMs: DEFAULT_CONVEX_PAGE_TIMEOUT_MS,
     outDir: DEFAULT_OUT_DIR,
     sourceKind: "all",
     timeWindow: emptyCreatedTimeWindow(),
@@ -892,6 +971,8 @@ function parseArgs(args: string[]): Options {
       options.concurrency = readPositiveInt(readValue(args, ++index, arg), arg);
     } else if (arg === "--shards") {
       options.shards = readPositiveInt(readValue(args, ++index, arg), arg);
+    } else if (arg === "--page-timeout-ms") {
+      options.pageTimeoutMs = readTimerTimeoutMs(readValue(args, ++index, arg), arg);
     } else if (arg === "--out-dir") {
       options.outDir = readValue(args, ++index, arg);
     } else if (arg === "--source-kind") {
@@ -944,6 +1025,14 @@ function readPositiveInt(value: string, flag: string) {
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed <= 0)
     throw new Error(`Expected positive integer for ${flag}`);
+  return parsed;
+}
+
+function readTimerTimeoutMs(value: string, flag: string) {
+  const parsed = readPositiveInt(value, flag);
+  if (parsed > MAX_TIMER_TIMEOUT_MS) {
+    throw new Error(`Expected ${flag} to be at most ${MAX_TIMER_TIMEOUT_MS}.`);
+  }
   return parsed;
 }
 
