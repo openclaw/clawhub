@@ -506,7 +506,7 @@ export async function buildPublisherAbuseWarningEmail(args: PublisherAbuseWarnin
   const deadline = formatUtcTimestamp(args.deadlineAt, "the warning deadline");
   const warningSentAt = formatUtcTimestamp(args.warningSentAt, "this warning");
   const body = [
-    `ClawHub's publisher abuse detection flagged ${publisherLabel}.`,
+    `ClawHub's publisher abuse detection flagged the publisher profile ${publisherLabel}.`,
     "",
     "If this is not resolved before the deadline below, the account linked to this publisher may be suspended the next time the weekly abuse scan confirms the same issue.",
     "",

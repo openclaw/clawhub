@@ -403,7 +403,9 @@ describe("moderation notification email copy", () => {
     });
 
     expect(email.subject).toBe("Action required: ClawHub publisher abuse warning");
-    expect(email.text).toContain("ClawHub's publisher abuse detection flagged @bulkpub.");
+    expect(email.text).toContain(
+      "ClawHub's publisher abuse detection flagged the publisher profile @bulkpub.",
+    );
     expect(email.text).toContain("Deadline: 2026-06-26 04:00:00 UTC");
     expect(email.text).toContain("Delete low-quality, duplicate, placeholder");
     expect(email.text).toContain(
