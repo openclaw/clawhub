@@ -4,6 +4,7 @@ import { createReadStream, createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { buildSecurityDatasetManifest } from "./manifest";
+import { redactBundleContent, redactSkillContent, redactText } from "./normalize";
 
 type DatasetSplit = "train" | "validation" | "test" | "eval_holdout";
 
@@ -102,7 +103,7 @@ async function concatenateSnapshotFiles(
     const writer = createWriteStream(join(snapshotDir, "hf-dataset", "data", `${split}.jsonl`), {
       encoding: "utf8",
     });
-    await concatenateFiles(
+    await concatenateRedactedHuggingFaceRows(
       writer,
       manifests.map(({ dir }) => join(dir, "hf-dataset", "data", `${split}.jsonl`)),
     );
@@ -122,6 +123,59 @@ async function concatenateFiles(writer: WriteStream, paths: string[]) {
     writer.end();
     await once(writer, "finish");
   }
+}
+
+async function concatenateRedactedHuggingFaceRows(writer: WriteStream, paths: string[]) {
+  try {
+    for (const path of paths) {
+      if (!(await isFile(path))) continue;
+      const reader = createReadStream(path, { encoding: "utf8" });
+      let carry = "";
+      for await (const chunk of reader) {
+        carry += chunk;
+        const lines = carry.split("\n");
+        carry = lines.pop() ?? "";
+        for (const line of lines) {
+          await writeRedactedHuggingFaceRow(writer, line);
+        }
+      }
+      if (carry.length > 0) await writeRedactedHuggingFaceRow(writer, carry);
+    }
+  } finally {
+    writer.end();
+    await once(writer, "finish");
+  }
+}
+
+async function writeRedactedHuggingFaceRow(writer: WriteStream, line: string) {
+  if (line.trim() === "") return;
+  const row = redactHuggingFaceRow(JSON.parse(line) as Record<string, unknown>);
+  if (!writer.write(`${JSON.stringify(row)}\n`)) await once(writer, "drain");
+}
+
+function redactHuggingFaceRow(row: Record<string, unknown>) {
+  return {
+    ...row,
+    skill_slug:
+      typeof row.skill_slug === "string" ? redactText(row.skill_slug, 2048) : row.skill_slug,
+    skill_md_content:
+      typeof row.skill_md_content === "string"
+        ? redactSkillContent(row.skill_md_content)
+        : row.skill_md_content,
+    skill_bundle_content: Array.isArray(row.skill_bundle_content)
+      ? row.skill_bundle_content.map(redactHuggingFaceBundleFile)
+      : row.skill_bundle_content,
+  };
+}
+
+function redactHuggingFaceBundleFile(file: unknown) {
+  if (!file || typeof file !== "object" || Array.isArray(file)) return file;
+  const row = file as Record<string, unknown>;
+  return {
+    ...row,
+    path: typeof row.path === "string" ? redactText(row.path, 2048) : row.path,
+    content: typeof row.content === "string" ? redactBundleContent(row.content) : row.content,
+  };
 }
 
 function buildMergedManifest(input: {
