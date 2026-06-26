@@ -265,6 +265,34 @@ const publisherMembers = defineTable({
   .index("by_user", ["userId"])
   .index("by_publisher_user", ["publisherId", "userId"]);
 
+const publisherInvites = defineTable({
+  publisherId: v.id("publishers"),
+  inviterUserId: v.id("users"),
+  targetHandle: v.string(),
+  targetUserId: v.optional(v.id("users")),
+  role: v.union(v.literal("owner"), v.literal("admin"), v.literal("publisher")),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("accepted"),
+    v.literal("declined"),
+    v.literal("revoked"),
+  ),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  acceptedByUserId: v.optional(v.id("users")),
+  declinedAt: v.optional(v.number()),
+  declinedByUserId: v.optional(v.id("users")),
+  revokedAt: v.optional(v.number()),
+  revokedByUserId: v.optional(v.id("users")),
+})
+  .index("by_publisher_status_expires", ["publisherId", "status", "expiresAt"])
+  .index("by_publisher_target_status", ["publisherId", "targetHandle", "status"])
+  .index("by_target_handle_status_expires", ["targetHandle", "status", "expiresAt"])
+  .index("by_target_user_status_expires", ["targetUserId", "status", "expiresAt"])
+  .index("by_expires_at", ["expiresAt"]);
+
 const publisherImageUploadTickets = defineTable({
   publisherId: v.id("publishers"),
   userId: v.id("users"),
@@ -2912,6 +2940,7 @@ export default defineSchema({
   users,
   publishers,
   publisherMembers,
+  publisherInvites,
   publisherImageUploadTickets,
   officialPublishers,
   githubSkillSources,

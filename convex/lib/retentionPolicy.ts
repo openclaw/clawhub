@@ -87,6 +87,12 @@ export const RETENTION_POLICIES = {
   }),
   publishers: permanent("Canonical publisher profiles."),
   publisherMembers: permanent("Canonical publisher membership records."),
+  publisherInvites: ephemeral("Organization member invitations expire if they are not accepted.", {
+    expirationField: "expiresAt",
+    expirationIndex: "by_expires_at",
+    prune: "retention.pruneExpiredPublisherInvitesInternal",
+    retention: "Organization invitation TTL.",
+  }),
   publisherImageUploadTickets: ephemeral(
     "Organization logo upload tickets expire shortly after creation.",
     {

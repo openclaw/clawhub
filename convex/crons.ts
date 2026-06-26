@@ -169,6 +169,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
+    "publisher-invite-retention-prune",
+    { hours: 6 },
+    internal.retention.pruneExpiredPublisherInvitesInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "http-rate-limit-keys-prune",
     { hours: 1 },
     internal.rateLimits.pruneHttpRateLimitKeysInternal,

@@ -96,15 +96,46 @@ const orgMembers = {
   ],
 };
 
+type PublisherInviteFixture = {
+  _id: string;
+  publisher: {
+    _id: string;
+    handle: string;
+    displayName: string;
+    image: string | null;
+  };
+  targetHandle: string;
+  targetUser: {
+    _id: string;
+    handle: string | null;
+    displayName: string | null;
+    image: string | null;
+  } | null;
+  role: "owner" | "admin" | "publisher";
+  status: "pending" | "accepted" | "declined" | "revoked";
+  createdAt: number;
+  expiresAt: number;
+  inviter: {
+    _id: string;
+    handle: string | null;
+    displayName: string | null;
+    image: string | null;
+  } | null;
+};
+
 function mockSignedInSettings({
   search = {},
   memberships = [orgMembership],
   members = orgMembers,
   githubSources = [],
+  pendingInvites = [],
+  myInvites = [],
 }: {
   search?: Record<string, unknown>;
   memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
+  pendingInvites?: PublisherInviteFixture[];
+  myInvites?: PublisherInviteFixture[];
   githubSources?: Array<{
     _id: string;
     repo: string;
@@ -158,6 +189,8 @@ function mockSignedInSettings({
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
     if (queryName === "publishers:listMembers") return members;
+    if (queryName === "publishers:listInvitesForPublisher") return pendingInvites;
+    if (queryName === "publishers:listMyInvites") return myInvites;
     if (queryName === "githubSkillSources:listForManageableOfficialPublishers")
       return githubSources;
     if (args && typeof args === "object" && "publisherHandle" in args) return members;
@@ -533,5 +566,179 @@ describe("Settings", () => {
     render(<Settings />);
 
     expect(navigateMock).toHaveBeenCalledWith({ search: { view: "tokens" }, replace: true });
+  });
+
+  it("loads pending invites and the viewer's invitations on the organizations view", () => {
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listInvitesForPublisher, {
+      publisherId: "publisher_openclaw",
+    });
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMyInvites, {});
+  });
+
+  it("creates a member invite from the Members block invite dialog", async () => {
+    const createInvite = vi.fn().mockResolvedValue({ ok: true, inviteId: "publisherInvites:1" });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:createMemberInvite" ? createInvite : vi.fn(),
+    );
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Invite member/i }));
+    fireEvent.change(await screen.findByLabelText("User handle"), {
+      target: { value: "dallin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send invite/i }));
+
+    await waitFor(() => {
+      expect(createInvite).toHaveBeenCalledWith({
+        publisherId: "publisher_openclaw",
+        userHandle: "dallin",
+        role: "publisher",
+      });
+    });
+    expect(toast.success).toHaveBeenCalledWith("Invitation sent to @dallin");
+  });
+
+  it("shows the convex error when an invite cannot be sent", async () => {
+    const createInvite = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          "[CONVEX M(publishers:createMemberInvite)] [Request ID: test] Server Error Called by client ConvexError: @dallin already has a pending invitation",
+        ),
+      );
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:createMemberInvite" ? createInvite : vi.fn(),
+    );
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Invite member/i }));
+    fireEvent.change(await screen.findByLabelText("User handle"), {
+      target: { value: "dallin" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send invite/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain(
+        "@dallin already has a pending invitation",
+      );
+    });
+    expect(toast.error).toHaveBeenCalledWith("@dallin already has a pending invitation");
+  });
+
+  it("lists pending invites for the selected org and lets owners revoke them", async () => {
+    const revokeInvite = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:revokeMemberInvite" ? revokeInvite : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      pendingInvites: [
+        {
+          _id: "publisherInvites:1",
+          publisher: {
+            _id: "publisher_openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw Team",
+            image: null,
+          },
+          targetHandle: "dallin",
+          targetUser: null,
+          role: "publisher",
+          status: "pending",
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          inviter: {
+            _id: "user_123",
+            handle: "patrick",
+            displayName: "Patrick",
+            image: null,
+          },
+        },
+      ],
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("heading", { name: "Pending invites" })).toBeTruthy();
+    expect(screen.getByText("@dallin")).toBeTruthy();
+    expect(screen.getByText(/Invited by @patrick/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Revoke/i }));
+
+    await waitFor(() => {
+      expect(revokeInvite).toHaveBeenCalledWith({ inviteId: "publisherInvites:1" });
+    });
+    expect(toast.success).toHaveBeenCalledWith("Invitation to @dallin revoked");
+  });
+
+  it("accepts and declines invitations addressed to the viewer", async () => {
+    const acceptInvite = vi.fn().mockResolvedValue({ ok: true });
+    const declineInvite = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) => {
+      const name = getFunctionName(mutation);
+      if (name === "publishers:acceptMemberInvite") return acceptInvite;
+      if (name === "publishers:declineMemberInvite") return declineInvite;
+      return vi.fn();
+    });
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [personalMembership],
+      myInvites: [
+        {
+          _id: "publisherInvites:invite-1",
+          publisher: {
+            _id: "publisher_openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw Team",
+            image: null,
+          },
+          targetHandle: "patrick",
+          targetUser: {
+            _id: "user_123",
+            handle: "patrick",
+            displayName: "Patrick",
+            image: null,
+          },
+          role: "admin",
+          status: "pending",
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          inviter: {
+            _id: "user_other",
+            handle: "dallin",
+            displayName: "Dallin",
+            image: null,
+          },
+        },
+      ],
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("heading", { name: "Invitations" })).toBeTruthy();
+    expect(screen.getByText("OpenClaw Team")).toBeTruthy();
+    expect(screen.getByText(/invited by @dallin/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /Accept/i }));
+
+    await waitFor(() => {
+      expect(acceptInvite).toHaveBeenCalledWith({ inviteId: "publisherInvites:invite-1" });
+    });
+    expect(toast.success).toHaveBeenCalledWith("Joined @openclaw");
+
+    fireEvent.click(screen.getByRole("button", { name: /Decline/i }));
+
+    await waitFor(() => {
+      expect(declineInvite).toHaveBeenCalledWith({ inviteId: "publisherInvites:invite-1" });
+    });
+    expect(toast.success).toHaveBeenCalledWith("Invitation from @openclaw declined");
   });
 });

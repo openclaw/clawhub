@@ -39,6 +39,12 @@ describe("retention policies", () => {
       expirationIndex: "by_expires_at",
       prune: "rateLimits.pruneHttpRateLimitKeysInternal",
     });
+    expect(getRetentionPolicy("publisherInvites")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "retention.pruneExpiredPublisherInvitesInternal",
+    });
   });
 
   it("documents package daily stats as durable analytics", () => {

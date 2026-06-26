@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 const retentionRefs = vi.hoisted(() => ({
   pruneExpiredAuthSessionsInternal: Symbol("pruneExpiredAuthSessionsInternal"),
   pruneExpiredAuthRefreshTokensInternal: Symbol("pruneExpiredAuthRefreshTokensInternal"),
+  pruneExpiredPublisherInvitesInternal: Symbol("pruneExpiredPublisherInvitesInternal"),
 }));
 
 vi.mock("./_generated/api", () => ({
@@ -12,8 +13,11 @@ vi.mock("./_generated/api", () => ({
   },
 }));
 
-const { pruneExpiredAuthRefreshTokensInternal, pruneExpiredAuthSessionsInternal } =
-  await import("./retention");
+const {
+  pruneExpiredAuthRefreshTokensInternal,
+  pruneExpiredAuthSessionsInternal,
+  pruneExpiredPublisherInvitesInternal,
+} = await import("./retention");
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -27,6 +31,12 @@ const pruneSessionsHandler = (
 )._handler;
 const pruneTokensHandler = (
   pruneExpiredAuthRefreshTokensInternal as unknown as WrappedHandler<
+    { batchSize?: number },
+    { deleted: number; hasMore: boolean }
+  >
+)._handler;
+const prunePublisherInvitesHandler = (
+  pruneExpiredPublisherInvitesInternal as unknown as WrappedHandler<
     { batchSize?: number },
     { deleted: number; hasMore: boolean }
   >
@@ -169,5 +179,57 @@ describe("auth retention", () => {
     expect(result).toEqual({ deleted: 1, hasMore: false });
     expect(lt).toHaveBeenCalledWith("expirationTime", now);
     expect(deleteDoc).toHaveBeenCalledWith("authRefreshTokens:expired");
+  });
+
+  it("deletes expired publisher invites by expiry time", async () => {
+    const now = 3_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    const deleteDoc = vi.fn();
+    const rows = [{ _id: "publisherInvites:expired", expiresAt: now - 1 }];
+    const lt = vi.fn(() => ({}));
+
+    const ctx = {
+      db: makeDb({
+        query: vi.fn(() => ({
+          withIndex: vi.fn((_indexName: string, build: (q: unknown) => unknown) => {
+            build({ lt });
+            return { take: vi.fn(async () => rows) };
+          }),
+        })),
+        delete: deleteDoc,
+      }),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    const result = await prunePublisherInvitesHandler(ctx as never, {});
+
+    expect(result).toEqual({ deleted: 1, hasMore: false });
+    expect(lt).toHaveBeenCalledWith("expiresAt", now);
+    expect(deleteDoc).toHaveBeenCalledWith("publisherInvites:expired");
+  });
+
+  it("continues publisher invite retention when the batch is full", async () => {
+    const runAfter = vi.fn();
+    const rows = [{ _id: "publisherInvites:one" }];
+    const deleteDoc = vi.fn();
+    const ctx = {
+      db: makeDb({
+        query: vi.fn(() => ({
+          withIndex: vi.fn((_indexName: string, build: (q: unknown) => unknown) => {
+            build({ lt: vi.fn() });
+            return { take: vi.fn(async () => rows) };
+          }),
+        })),
+        delete: deleteDoc,
+      }),
+      scheduler: { runAfter },
+    };
+
+    const result = await prunePublisherInvitesHandler(ctx as never, { batchSize: 1 });
+
+    expect(result).toEqual({ deleted: 1, hasMore: true });
+    expect(runAfter).toHaveBeenCalledWith(0, retentionRefs.pruneExpiredPublisherInvitesInternal, {
+      batchSize: 1,
+    });
   });
 });

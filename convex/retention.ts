@@ -83,3 +83,29 @@ export const pruneExpiredAuthRefreshTokensInternal = internalMutation({
     return { deleted: stale.length, hasMore };
   },
 });
+
+export const pruneExpiredPublisherInvitesInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = normalizeRetentionBatchSize(args.batchSize);
+    const stale = await ctx.db
+      .query("publisherInvites")
+      .withIndex("by_expires_at", (q) => q.lt("expiresAt", Date.now()))
+      .take(batchSize);
+
+    for (const invite of stale) {
+      await ctx.db.delete(invite._id);
+    }
+
+    const hasMore = stale.length === batchSize;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.retention.pruneExpiredPublisherInvitesInternal, {
+        batchSize,
+      });
+    }
+
+    return { deleted: stale.length, hasMore };
+  },
+});

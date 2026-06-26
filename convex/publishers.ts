@@ -55,6 +55,8 @@ const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
 const PUBLISHER_IMAGE_UPLOAD_TTL_MS = 15 * 60_000;
 const PUBLISHER_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PUBLISHER_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PUBLISHER_INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
+const MAX_PENDING_PUBLISHER_INVITES = 100;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -172,6 +174,73 @@ function assertOrgPublisherMembershipManagement(publisher: Doc<"publishers">) {
   if (publisher.kind !== "org") {
     throw new ConvexError("Personal publishers do not support member management");
   }
+}
+
+async function requireOrgMembershipManager(
+  ctx: Pick<MutationCtx, "db"> | Pick<QueryCtx, "db">,
+  publisherId: Id<"publishers">,
+  actorUserId: Id<"users">,
+) {
+  const publisher = await ctx.db.get(publisherId);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+    throw new ConvexError("Publisher not found");
+  }
+  assertOrgPublisherMembershipManagement(publisher);
+  const membership = await getPublisherMembership(ctx, publisher._id, actorUserId);
+  if (!membership || !isPublisherRoleAllowed(membership.role, ["admin"])) {
+    throw new ConvexError("Forbidden");
+  }
+  return { publisher, membership };
+}
+
+async function hydratePublisherInvite(ctx: Pick<QueryCtx, "db">, invite: Doc<"publisherInvites">) {
+  const [publisher, inviter, targetUser] = await Promise.all([
+    ctx.db.get(invite.publisherId),
+    ctx.db.get(invite.inviterUserId),
+    invite.targetUserId ? ctx.db.get(invite.targetUserId) : Promise.resolve(null),
+  ]);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
+  return {
+    _id: invite._id,
+    publisher: {
+      _id: publisher._id,
+      handle: publisher.handle,
+      displayName: publisher.displayName,
+      image: publisher.image ?? null,
+    },
+    targetHandle: invite.targetHandle,
+    targetUser: targetUser
+      ? {
+          _id: targetUser._id,
+          handle: targetUser.handle ?? null,
+          displayName: targetUser.displayName ?? targetUser.name ?? null,
+          image: targetUser.image ?? null,
+        }
+      : null,
+    role: invite.role,
+    status: invite.status,
+    createdAt: invite.createdAt,
+    expiresAt: invite.expiresAt,
+    inviter: inviter
+      ? {
+          _id: inviter._id,
+          handle: inviter.handle ?? null,
+          displayName: inviter.displayName ?? inviter.name ?? null,
+          image: inviter.image ?? null,
+        }
+      : null,
+  };
+}
+
+async function publisherInviteMatchesUser(
+  ctx: Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">,
+  invite: Doc<"publisherInvites">,
+  user: Doc<"users">,
+) {
+  if (invite.targetUserId === user._id) return true;
+  if (publisherHandlesMatch(user.handle, invite.targetHandle)) return true;
+  const personalPublisher = await getPersonalPublisherForUser(ctx, user._id);
+  return publisherHandlesMatch(personalPublisher?.handle, invite.targetHandle);
 }
 
 async function getUserByHandle(ctx: Pick<MutationCtx, "db">, handle: string) {
@@ -2413,6 +2482,66 @@ export const listMembers = query({
   },
 });
 
+export const listInvitesForPublisher = query({
+  args: { publisherId: v.id("publishers") },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx);
+    await requireOrgMembershipManager(ctx, args.publisherId, userId);
+    const now = Date.now();
+    const invites = await ctx.db
+      .query("publisherInvites")
+      .withIndex("by_publisher_status_expires", (q) =>
+        q.eq("publisherId", args.publisherId).eq("status", "pending").gte("expiresAt", now),
+      )
+      .take(MAX_PENDING_PUBLISHER_INVITES);
+    const hydrated = await Promise.all(
+      invites.map((invite) => hydratePublisherInvite(ctx, invite)),
+    );
+    return hydrated.filter((invite) => invite !== null);
+  },
+});
+
+export const listMyInvites = query({
+  args: {},
+  handler: async (ctx) => {
+    const { user, userId } = await requireUser(ctx);
+    const now = Date.now();
+    const inviteById = new Map<Id<"publisherInvites">, Doc<"publisherInvites">>();
+    const targetHandles = new Set<string>();
+    const userHandle = normalizePublisherHandle(user.handle);
+    if (userHandle) targetHandles.add(userHandle);
+    const personalPublisher = await getPersonalPublisherForUser(ctx, userId);
+    const personalHandle = normalizePublisherHandle(personalPublisher?.handle);
+    if (personalHandle) targetHandles.add(personalHandle);
+
+    for (const targetHandle of targetHandles) {
+      const invites = await ctx.db
+        .query("publisherInvites")
+        .withIndex("by_target_handle_status_expires", (q) =>
+          q.eq("targetHandle", targetHandle).eq("status", "pending").gte("expiresAt", now),
+        )
+        .take(MAX_PENDING_PUBLISHER_INVITES);
+      for (const invite of invites) inviteById.set(invite._id, invite);
+    }
+
+    const directInvites = await ctx.db
+      .query("publisherInvites")
+      .withIndex("by_target_user_status_expires", (q) =>
+        q.eq("targetUserId", userId).eq("status", "pending").gte("expiresAt", now),
+      )
+      .take(MAX_PENDING_PUBLISHER_INVITES);
+    for (const invite of directInvites) inviteById.set(invite._id, invite);
+
+    const hydrated = await Promise.all(
+      [...inviteById.values()].map((invite) => hydratePublisherInvite(ctx, invite)),
+    );
+    return hydrated
+      .filter((invite) => invite !== null)
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, MAX_PENDING_PUBLISHER_INVITES);
+  },
+});
+
 export const createOrg = mutation({
   args: {
     handle: v.string(),
@@ -3164,6 +3293,183 @@ export const deleteSoleOwnerOrgsForAccountDeletionInternal = internalMutation({
     }
 
     return { ok: true as const, deletedOrgs, hiddenSkills, deletedPackages };
+  },
+});
+
+export const createMemberInvite = mutation({
+  args: {
+    publisherId: v.id("publishers"),
+    userHandle: v.string(),
+    role: publisherRoleValidator,
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx);
+    const { publisher, membership } = await requireOrgMembershipManager(
+      ctx,
+      args.publisherId,
+      userId,
+    );
+    if (args.role === "owner" && membership.role !== "owner") {
+      throw new ConvexError("Only org owners can invite new owners");
+    }
+    const targetHandle = normalizePublisherHandle(args.userHandle);
+    if (!targetHandle) throw new ConvexError("User handle is required");
+    const now = Date.now();
+    const targetUser = await getActiveUserByHandleOrPersonalPublisher(ctx, targetHandle);
+    if (targetUser) {
+      const existing = await getPublisherMembership(ctx, publisher._id, targetUser._id);
+      if (existing) throw new ConvexError(`@${targetHandle} is already a member`);
+    }
+
+    const activePending = await ctx.db
+      .query("publisherInvites")
+      .withIndex("by_publisher_target_status", (q) =>
+        q.eq("publisherId", publisher._id).eq("targetHandle", targetHandle).eq("status", "pending"),
+      )
+      .take(1);
+    if (activePending.some((invite) => invite.expiresAt > now)) {
+      throw new ConvexError(`@${targetHandle} already has a pending invitation`);
+    }
+
+    const inviteId = await ctx.db.insert("publisherInvites", {
+      publisherId: publisher._id,
+      inviterUserId: userId,
+      targetHandle,
+      targetUserId: targetUser?._id,
+      role: args.role,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      expiresAt: now + PUBLISHER_INVITE_TTL_MS,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: userId,
+      action: "publisher.member.invite.create",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        inviteId,
+        targetHandle,
+        targetUserId: targetUser?._id,
+        role: args.role,
+      },
+      createdAt: now,
+    });
+    return { ok: true as const, inviteId };
+  },
+});
+
+export const revokeMemberInvite = mutation({
+  args: { inviteId: v.id("publisherInvites") },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx);
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite || invite.status !== "pending") return { ok: true as const };
+    const { publisher } = await requireOrgMembershipManager(ctx, invite.publisherId, userId);
+    const now = Date.now();
+    await ctx.db.patch(invite._id, {
+      status: "revoked",
+      revokedAt: now,
+      revokedByUserId: userId,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: userId,
+      action: "publisher.member.invite.revoke",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        inviteId: invite._id,
+        targetHandle: invite.targetHandle,
+        targetUserId: invite.targetUserId,
+        role: invite.role,
+      },
+      createdAt: now,
+    });
+    return { ok: true as const };
+  },
+});
+
+export const declineMemberInvite = mutation({
+  args: { inviteId: v.id("publisherInvites") },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUser(ctx);
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite || invite.status !== "pending") return { ok: true as const };
+    if (!(await publisherInviteMatchesUser(ctx, invite, user))) throw new ConvexError("Forbidden");
+    const now = Date.now();
+    await ctx.db.patch(invite._id, {
+      status: "declined",
+      declinedAt: now,
+      declinedByUserId: userId,
+      targetUserId: invite.targetUserId ?? userId,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: userId,
+      action: "publisher.member.invite.decline",
+      targetType: "publisher",
+      targetId: invite.publisherId,
+      metadata: {
+        inviteId: invite._id,
+        targetHandle: invite.targetHandle,
+        role: invite.role,
+      },
+      createdAt: now,
+    });
+    return { ok: true as const };
+  },
+});
+
+export const acceptMemberInvite = mutation({
+  args: { inviteId: v.id("publisherInvites") },
+  handler: async (ctx, args) => {
+    const { user, userId } = await requireUser(ctx);
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite || invite.status !== "pending") {
+      throw new ConvexError("Invitation not found");
+    }
+    const now = Date.now();
+    if (invite.expiresAt <= now) throw new ConvexError("Invitation has expired");
+    if (!(await publisherInviteMatchesUser(ctx, invite, user))) throw new ConvexError("Forbidden");
+    const publisher = await ctx.db.get(invite.publisherId);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError("Publisher not found");
+    }
+    assertOrgPublisherMembershipManagement(publisher);
+    const existing = await getPublisherMembership(ctx, publisher._id, userId);
+    if (existing) {
+      await ctx.db.patch(existing._id, { role: invite.role, updatedAt: now });
+    } else {
+      await ctx.db.insert("publisherMembers", {
+        publisherId: publisher._id,
+        userId,
+        role: invite.role,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    await ctx.db.patch(invite._id, {
+      status: "accepted",
+      acceptedAt: now,
+      acceptedByUserId: userId,
+      targetUserId: invite.targetUserId ?? userId,
+      updatedAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: userId,
+      action: "publisher.member.invite.accept",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        inviteId: invite._id,
+        memberUserId: userId,
+        targetHandle: invite.targetHandle,
+        role: invite.role,
+      },
+      createdAt: now,
+    });
+    return { ok: true as const };
   },
 });
 

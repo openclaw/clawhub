@@ -3,21 +3,25 @@ import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-r
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Building2,
+  Check,
   CircleX,
   Code,
   Copy,
   GitBranch,
   KeyRound,
+  Mail,
   Monitor,
   Moon,
   Package,
   Palette,
   Plus,
   Save,
+  Send,
   ShieldAlert,
   Sun,
   Trash2,
   type LucideIcon,
+  UserPlus,
   UserRound,
   Users,
   X,
@@ -138,6 +142,35 @@ type OrgMembersResult = {
   }>;
 };
 
+type PublisherInviteRole = "owner" | "admin" | "publisher";
+
+type PublisherInvite = {
+  _id: Id<"publisherInvites">;
+  publisher: {
+    _id: Id<"publishers">;
+    handle: string;
+    displayName: string;
+    image: string | null;
+  };
+  targetHandle: string;
+  targetUser: {
+    _id: Id<"users">;
+    handle: string | null;
+    displayName: string | null;
+    image: string | null;
+  } | null;
+  role: PublisherInviteRole;
+  status: "pending" | "accepted" | "declined" | "revoked";
+  createdAt: number;
+  expiresAt: number;
+  inviter: {
+    _id: Id<"users">;
+    handle: string | null;
+    displayName: string | null;
+    image: string | null;
+  } | null;
+};
+
 type GitHubSkillSource = {
   _id: Id<"githubSkillSources">;
   repo: string;
@@ -253,6 +286,10 @@ export function Settings() {
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
   const removeOrgMember = useMutation(api.publishers.removeMember);
+  const createMemberInvite = useMutation(api.publishers.createMemberInvite);
+  const revokeMemberInvite = useMutation(api.publishers.revokeMemberInvite);
+  const acceptMemberInvite = useMutation(api.publishers.acceptMemberInvite);
+  const declineMemberInvite = useMutation(api.publishers.declineMemberInvite);
   const configureGitHubSource = useAction(api.githubSkillSync.configurePublicGitHubSkillSource);
   const deleteGitHubSource = useMutation(api.githubSkillSources.deleteForPublisher);
   const [displayName, setDisplayName] = useState("");
@@ -279,6 +316,13 @@ export function Settings() {
   const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false);
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
   const [revokeTokenId, setRevokeTokenId] = useState<Id<"apiTokens"> | null>(null);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteHandle, setInviteHandle] = useState("");
+  const [inviteRole, setInviteRole] = useState<PublisherInviteRole>("publisher");
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
+  const [revokingInviteId, setRevokingInviteId] = useState<Id<"publisherInvites"> | null>(null);
+  const [respondingInviteId, setRespondingInviteId] = useState<Id<"publisherInvites"> | null>(null);
   const { activeView, navigateToView, ownerHandle: requestedOwnerHandle } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
@@ -321,6 +365,19 @@ export function Settings() {
       ? { publisherHandle: selectedOrg.publisher.handle }
       : "skip",
   ) as OrgMembersResult | null | undefined;
+  const pendingInvites = useQuery(
+    api.publishers.listInvitesForPublisher,
+    shouldLoadAccountScopedQueries &&
+      activeView === "organizations" &&
+      selectedOrg &&
+      selectedOrg.role !== "publisher"
+      ? { publisherId: selectedOrg.publisher._id }
+      : "skip",
+  ) as Array<PublisherInvite> | undefined;
+  const myInvites = useQuery(
+    api.publishers.listMyInvites,
+    shouldLoadAccountScopedQueries && activeView === "organizations" ? {} : "skip",
+  ) as Array<PublisherInvite> | undefined;
   const githubSources = useQuery(
     api.githubSkillSources.listForManageableOfficialPublishers,
     shouldLoadAccountScopedQueries &&
@@ -539,6 +596,70 @@ export function Settings() {
     const nextOrg = orgs.find((entry) => entry.publisher.handle !== deletingHandle);
     setSelectedOrgHandle(nextOrg?.publisher.handle ?? "");
     toast.success(`Deleted @${deletingHandle}`);
+  }
+
+  async function onCreateInvite() {
+    if (!selectedOrg) return;
+    const handle = inviteHandle.trim();
+    if (!handle) {
+      setInviteError("Enter a user handle.");
+      return;
+    }
+    setInviteError(null);
+    setIsCreatingInvite(true);
+    try {
+      await createMemberInvite({
+        publisherId: selectedOrg.publisher._id,
+        userHandle: handle,
+        role: inviteRole,
+      });
+      setInviteDialogOpen(false);
+      setInviteHandle("");
+      setInviteRole("publisher");
+      toast.success(`Invitation sent to @${handle}`);
+    } catch (error) {
+      const message = getUserFacingConvexError(error, "Invitation could not be sent.");
+      setInviteError(message);
+      toast.error(message);
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  }
+
+  async function onRevokeInvite(invite: PublisherInvite) {
+    setRevokingInviteId(invite._id);
+    try {
+      await revokeMemberInvite({ inviteId: invite._id });
+      toast.success(`Invitation to @${invite.targetHandle} revoked`);
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Invitation could not be revoked."));
+    } finally {
+      setRevokingInviteId(null);
+    }
+  }
+
+  async function onAcceptInvite(invite: PublisherInvite) {
+    setRespondingInviteId(invite._id);
+    try {
+      await acceptMemberInvite({ inviteId: invite._id });
+      toast.success(`Joined @${invite.publisher.handle}`);
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Invitation could not be accepted."));
+    } finally {
+      setRespondingInviteId(null);
+    }
+  }
+
+  async function onDeclineInvite(invite: PublisherInvite) {
+    setRespondingInviteId(invite._id);
+    try {
+      await declineMemberInvite({ inviteId: invite._id });
+      toast.success(`Invitation from @${invite.publisher.handle} declined`);
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Invitation could not be declined."));
+    } finally {
+      setRespondingInviteId(null);
+    }
   }
 
   async function onConfigureGitHubSource(event: FormEvent) {
@@ -781,6 +902,13 @@ export function Settings() {
               description="Publisher profiles and access."
             >
               <div className="flex flex-col gap-5">
+                <InvitationsBlock
+                  invites={myInvites}
+                  respondingInviteId={respondingInviteId}
+                  onAccept={(invite) => void onAcceptInvite(invite)}
+                  onDecline={(invite) => void onDeclineInvite(invite)}
+                />
+
                 {orgs.length > 0 ? (
                   <>
                     <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1012,6 +1140,93 @@ export function Settings() {
                                 </div>
                               </div>
                             </div>
+                            <Dialog
+                              open={inviteDialogOpen}
+                              onOpenChange={(open) => {
+                                setInviteDialogOpen(open);
+                                if (open) {
+                                  setInviteError(null);
+                                } else {
+                                  setInviteHandle("");
+                                  setInviteRole("publisher");
+                                  setInviteError(null);
+                                }
+                              }}
+                            >
+                              <DialogTrigger asChild>
+                                <Button variant="outline" size="sm" type="button">
+                                  <UserPlus size={15} />
+                                  Invite member
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Invite member</DialogTitle>
+                                  <DialogDescription>
+                                    Send an invitation to @{selectedOrg.publisher.handle}. The
+                                    invitee accepts or declines from their settings.
+                                  </DialogDescription>
+                                </DialogHeader>
+                                <div className="grid gap-4">
+                                  <Field label="User handle" htmlFor="settings-invite-handle">
+                                    <Input
+                                      id="settings-invite-handle"
+                                      value={inviteHandle}
+                                      onChange={(event) => {
+                                        setInviteHandle(event.target.value);
+                                        setInviteError(null);
+                                      }}
+                                      placeholder="user-handle"
+                                    />
+                                  </Field>
+                                  <Field label="Role" htmlFor="settings-invite-role">
+                                    <Select
+                                      value={inviteRole}
+                                      onValueChange={(value) => {
+                                        setInviteRole(value as PublisherInviteRole);
+                                        setInviteError(null);
+                                      }}
+                                    >
+                                      <SelectTrigger id="settings-invite-role" aria-label="Role">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="publisher">Publisher</SelectItem>
+                                        <SelectItem value="admin">Admin</SelectItem>
+                                        {selectedOrg.role === "owner" ? (
+                                          <SelectItem value="owner">Owner</SelectItem>
+                                        ) : null}
+                                      </SelectContent>
+                                    </Select>
+                                  </Field>
+                                </div>
+                                {inviteError ? (
+                                  <p
+                                    className="text-sm font-medium text-red-600 dark:text-red-400"
+                                    role="alert"
+                                  >
+                                    {inviteError}
+                                  </p>
+                                ) : null}
+                                <DialogFooter>
+                                  <Button
+                                    variant="ghost"
+                                    onClick={() => setInviteDialogOpen(false)}
+                                  >
+                                    Cancel
+                                  </Button>
+                                  <Button
+                                    variant="primary"
+                                    type="button"
+                                    disabled={!inviteHandle.trim() || isCreatingInvite}
+                                    onClick={() => void onCreateInvite()}
+                                  >
+                                    <Send size={15} />
+                                    {isCreatingInvite ? "Sending..." : "Send invite"}
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
                           </div>
 
                           <div className="flex min-w-0 flex-col gap-4">
@@ -1077,6 +1292,12 @@ export function Settings() {
                             ) : null}
                           </div>
                         </SettingsBlock>
+
+                        <PendingInvitesBlock
+                          invites={pendingInvites}
+                          revokingInviteId={revokingInviteId}
+                          onRevoke={(invite) => void onRevokeInvite(invite)}
+                        />
 
                         {selectedOrg.role === "owner" ? (
                           <SettingsBlock tone="danger">
@@ -1613,6 +1834,178 @@ function DeletionResourceSummary({
         </p>
       )}
     </div>
+  );
+}
+
+function PendingInvitesBlock({
+  invites,
+  revokingInviteId,
+  onRevoke,
+}: {
+  invites: PublisherInvite[] | undefined;
+  revokingInviteId: Id<"publisherInvites"> | null;
+  onRevoke: (invite: PublisherInvite) => void;
+}) {
+  if (!invites || invites.length === 0) return null;
+
+  return (
+    <SettingsBlock>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+            <Mail size={16} />
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-[color:var(--ink)]">Pending invites</h3>
+              <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
+                {invites.length}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="divide-y divide-[color:var(--line)] overflow-hidden">
+        {invites.map((invite) => {
+          const targetDisplayName =
+            invite.targetUser?.displayName ?? invite.targetUser?.handle ?? invite.targetHandle;
+          const inviterLabel = invite.inviter?.handle ?? invite.inviter?.displayName ?? "unknown";
+          const isRevoking = revokingInviteId === invite._id;
+          return (
+            <div key={invite._id} className="flex items-center justify-between gap-3 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar className="h-9 w-9 rounded-full">
+                  {invite.targetUser?.image ? (
+                    <AvatarImage src={invite.targetUser.image} alt={targetDisplayName} />
+                  ) : null}
+                  <AvatarFallback>
+                    {(targetDisplayName || "U").charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate pr-1 text-sm font-semibold text-[color:var(--ink)]">
+                      @{invite.targetHandle}
+                    </span>
+                    <Badge className="shrink-0 self-center px-2.5 py-0.5 text-fs-xs">
+                      {invite.role}
+                    </Badge>
+                  </div>
+                  <div className="truncate text-xs text-[color:var(--ink-soft)]">
+                    Invited by @{inviterLabel} · expires {formatShortDate(invite.expiresAt)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  disabled={isRevoking}
+                  onClick={() => onRevoke(invite)}
+                >
+                  {isRevoking ? "Revoking..." : "Revoke"}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </SettingsBlock>
+  );
+}
+
+function InvitationsBlock({
+  invites,
+  respondingInviteId,
+  onAccept,
+  onDecline,
+}: {
+  invites: PublisherInvite[] | undefined;
+  respondingInviteId: Id<"publisherInvites"> | null;
+  onAccept: (invite: PublisherInvite) => void;
+  onDecline: (invite: PublisherInvite) => void;
+}) {
+  if (!invites || invites.length === 0) return null;
+
+  return (
+    <SettingsBlock>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+            <Mail size={16} />
+          </span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-[color:var(--ink)]">Invitations</h3>
+              <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
+                {invites.length}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="divide-y divide-[color:var(--line)] overflow-hidden">
+        {invites.map((invite) => {
+          const inviterLabel = invite.inviter?.handle ?? invite.inviter?.displayName ?? "unknown";
+          const isResponding = respondingInviteId === invite._id;
+          return (
+            <div key={invite._id} className="flex items-center justify-between gap-3 py-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <Avatar className="h-9 w-9 rounded-[var(--radius-sm)]">
+                  {invite.publisher.image ? (
+                    <AvatarImage src={invite.publisher.image} alt={invite.publisher.displayName} />
+                  ) : null}
+                  <AvatarFallback>
+                    {(invite.publisher.displayName || invite.publisher.handle || "O")
+                      .charAt(0)
+                      .toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate pr-1 text-sm font-semibold text-[color:var(--ink)]">
+                      {invite.publisher.displayName || `@${invite.publisher.handle}`}
+                    </span>
+                    <Badge className="shrink-0 self-center px-2.5 py-0.5 text-fs-xs">
+                      {invite.role}
+                    </Badge>
+                  </div>
+                  <div className="truncate text-xs text-[color:var(--ink-soft)]">
+                    @{invite.publisher.handle} · invited by @{inviterLabel} · expires{" "}
+                    {formatShortDate(invite.expiresAt)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  type="button"
+                  disabled={isResponding}
+                  onClick={() => onDecline(invite)}
+                >
+                  <X size={15} />
+                  Decline
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  type="button"
+                  disabled={isResponding}
+                  onClick={() => onAccept(invite)}
+                >
+                  <Check size={15} />
+                  {isResponding ? "Accepting..." : "Accept"}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </SettingsBlock>
   );
 }
 

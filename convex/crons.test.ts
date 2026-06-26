@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => {
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
+  const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
   return {
     interval,
     githubSkillSyncRef,
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => {
     packageStatEventPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
+    publisherInvitesPruneRef,
   };
 });
 
@@ -72,6 +74,7 @@ vi.mock("./_generated/api", () => ({
     retention: {
       pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
       pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
+      pruneExpiredPublisherInvitesInternal: mocks.publisherInvitesPruneRef,
     },
   },
 }));
@@ -152,6 +155,17 @@ describe("crons", () => {
       "auth-refresh-token-retention-prune",
       { hours: 6 },
       mocks.authRefreshTokensPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired publisher invites with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-invite-retention-prune",
+      { hours: 6 },
+      mocks.publisherInvitesPruneRef,
       { batchSize: 500 },
     );
   });
