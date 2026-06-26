@@ -2842,11 +2842,7 @@ export const removeOrgPublisherMemberInternal = internalMutation({
         .query("publisherMembers")
         .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
         .collect();
-      const remainingOwners = members.filter(
-        (publisherMember) =>
-          publisherMember.role === "owner" && publisherMember.userId !== targetUser._id,
-      );
-      if (remainingOwners.length === 0) {
+      if (!(await hasActiveOwnerExcept(ctx, members, targetUser._id))) {
         throw new ConvexError("Publisher must have at least one owner");
       }
     }
@@ -3632,10 +3628,7 @@ export const removeMember = mutation({
         .query("publisherMembers")
         .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
         .collect();
-      const remainingOwners = members.filter(
-        (member) => member.role === "owner" && member.userId !== args.userId,
-      );
-      if (remainingOwners.length === 0) {
+      if (!(await hasActiveOwnerExcept(ctx, members, args.userId))) {
         throw new ConvexError("Publisher must have at least one owner");
       }
     }

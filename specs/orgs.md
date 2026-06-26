@@ -111,18 +111,27 @@ Indexes:
 - `by_user`
 - `by_publisher_user`
 
-### Optional: publisher invites
+### Publisher invites
 
-Add later if needed:
+`publisherInvites` is the self-serve path for first-time org membership.
 
-- `publisherInvites`
-- email or GitHub-login based invite target
-- inviter user id
-- target publisher id
-- role
-- token / expiry / status
+Fields:
 
-Keep this out of the first migration if it slows down ownership work.
+- `publisherId`
+- `inviterUserId`
+- `targetHandle`
+- `targetUserId`
+- `role`: `owner | admin | publisher`
+- `status`: `pending | accepted | declined | revoked`
+- `createdAt`
+- `updatedAt`
+- `expiresAt`
+
+Indexes must support bounded manager listing, incoming invite lookup by target
+user or handle, duplicate active invite checks, and expiry pruning. Accepted,
+declined, revoked, and expired invite rows are operational history only; the
+accepted membership row in `publisherMembers` is the authorization source of
+truth.
 
 ## Ownership Changes
 

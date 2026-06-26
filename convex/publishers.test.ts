@@ -3792,6 +3792,93 @@ describe("publishers membership controls", () => {
     ).rejects.toThrow("Publisher must have at least one owner");
   });
 
+  it("ignores inactive owner rows when removing org owners", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "users:inactive-owner") {
+            return {
+              _id: id,
+              handle: "inactive-owner",
+              deactivatedAt: 9_000,
+            };
+          }
+          if (id === "publishers:org") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "acme",
+              displayName: "Acme",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_publisher_user") {
+                  return {
+                    unique: vi
+                      .fn()
+                      .mockResolvedValueOnce({
+                        _id: "publisherMembers:owner-actor",
+                        publisherId: "publishers:org",
+                        userId: "users:owner",
+                        role: "owner",
+                      })
+                      .mockResolvedValueOnce({
+                        _id: "publisherMembers:owner-target",
+                        publisherId: "publishers:org",
+                        userId: "users:owner",
+                        role: "owner",
+                      }),
+                  };
+                }
+                if (indexName === "by_publisher") {
+                  return {
+                    collect: vi.fn().mockResolvedValue([
+                      {
+                        _id: "publisherMembers:owner-target",
+                        publisherId: "publishers:org",
+                        userId: "users:owner",
+                        role: "owner",
+                      },
+                      {
+                        _id: "publisherMembers:inactive-owner",
+                        publisherId: "publishers:org",
+                        userId: "users:inactive-owner",
+                        role: "owner",
+                      },
+                    ]),
+                  };
+                }
+                throw new Error(`unexpected index ${indexName}`);
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      removeMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:org", userId: "users:owner" } as never,
+      ),
+    ).rejects.toThrow("Publisher must have at least one owner");
+
+    expect(ctx.db.delete).not.toHaveBeenCalled();
+  });
+
   it("prevents adding a new org member without invitation acceptance", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const publisherMembers: Array<Record<string, unknown>> = [
@@ -7971,7 +8058,11 @@ describe("legacy publisher migration", () => {
       {
         db: {
           get: vi.fn(async (id: string) =>
-            id === "users:admin" ? { _id: id, role: "admin" } : null,
+            id === "users:admin"
+              ? { _id: id, role: "admin" }
+              : id === "users:vincent"
+                ? { _id: id, handle: "vincentkoc" }
+                : null,
           ),
           query,
           insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
