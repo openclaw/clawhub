@@ -34,7 +34,7 @@ jobs:
       matrix:
         shard: [0, 1, 2, 3]
     env:
-      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL }}
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '4' }}
       SKILL_CARD_WORKER_MAX_JOBS: ${{ github.event.inputs['max-jobs'] || '' }}
       SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES: ${{ github.event.inputs['max-runtime-minutes'] || '40' }}

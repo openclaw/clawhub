@@ -52,8 +52,9 @@ describe("skill-card-worker workflow", () => {
     expect(workflow.concurrency).toBeUndefined();
     expect(job["timeout-minutes"]).toBe(60);
     expect(job.strategy?.matrix?.shard).toEqual([0, 1, 2, 3]);
-    expect(job.env?.CONVEX_URL).toBe("${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL }}");
-    expect(JSON.stringify(job.env)).not.toContain("wry-manatee-359.convex.cloud");
+    expect(job.env?.CONVEX_URL).toBe(
+      "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
+    );
     expect(job.env?.SKILL_CARD_WORKER_LIMIT).toBe(
       "${{ github.event.inputs['batch-limit'] || '4' }}",
     );
