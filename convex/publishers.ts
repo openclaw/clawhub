@@ -3323,11 +3323,15 @@ export const createMemberInvite = mutation({
 
     const activePending = await ctx.db
       .query("publisherInvites")
-      .withIndex("by_publisher_target_status", (q) =>
-        q.eq("publisherId", publisher._id).eq("targetHandle", targetHandle).eq("status", "pending"),
+      .withIndex("by_publisher_target_status_expires", (q) =>
+        q
+          .eq("publisherId", publisher._id)
+          .eq("targetHandle", targetHandle)
+          .eq("status", "pending")
+          .gte("expiresAt", now),
       )
       .take(1);
-    if (activePending.some((invite) => invite.expiresAt > now)) {
+    if (activePending.length > 0) {
       throw new ConvexError(`@${targetHandle} already has a pending invitation`);
     }
 

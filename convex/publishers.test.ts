@@ -14,6 +14,7 @@ import {
   getMyProfileHandle,
   getProfileByHandle,
   createMemberInvite,
+  declineMemberInvite,
   listMembers,
   listPublishedPage,
   listStarredPage,
@@ -66,6 +67,10 @@ const createMemberInviteHandler = (
 
 const revokeMemberInviteHandler = (
   revokeMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
+)._handler;
+
+const declineMemberInviteHandler = (
+  declineMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
 )._handler;
 
 const acceptMemberInviteHandler = (
@@ -3987,12 +3992,20 @@ describe("publishers membership controls", () => {
           withIndex: vi.fn(
             (
               indexName: string,
-              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              builder?: (q: {
+                eq: (field: string, value: string) => unknown;
+                gte: (field: string, value: number) => unknown;
+              }) => unknown,
             ) => {
               const fields: Record<string, string> = {};
+              const lowerBounds: Record<string, number> = {};
               const q = {
                 eq: (field: string, value: string) => {
                   fields[field] = value;
+                  return q;
+                },
+                gte: (field: string, value: number) => {
+                  lowerBounds[field] = value;
                   return q;
                 },
               };
@@ -4036,15 +4049,22 @@ describe("publishers membership controls", () => {
                   ),
                 };
               }
-              if (table === "publisherInvites" && indexName === "by_publisher_target_status") {
+              if (
+                table === "publisherInvites" &&
+                indexName === "by_publisher_target_status_expires"
+              ) {
                 return {
-                  take: vi.fn(async () =>
-                    [...publisherInvites.values()].filter(
-                      (invite) =>
-                        invite.publisherId === fields.publisherId &&
-                        invite.targetHandle === fields.targetHandle &&
-                        invite.status === fields.status,
-                    ),
+                  take: vi.fn(async (limit: number) =>
+                    [...publisherInvites.values()]
+                      .filter(
+                        (invite) =>
+                          invite.publisherId === fields.publisherId &&
+                          invite.targetHandle === fields.targetHandle &&
+                          invite.status === fields.status &&
+                          Number(invite.expiresAt) >= lowerBounds.expiresAt,
+                      )
+                      .sort((left, right) => Number(left.expiresAt) - Number(right.expiresAt))
+                      .slice(0, limit),
                   ),
                 };
               }
@@ -4128,6 +4148,50 @@ describe("publishers membership controls", () => {
     }
   });
 
+  it("rejects duplicate active invitations when an older pending invite is expired", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert } = makeInviteCtx({
+      invites: [
+        {
+          _id: "publisherInvites:expired",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "publisher",
+          status: "pending",
+          createdAt: 1_000,
+          updatedAt: 1_000,
+          expiresAt: 9_000,
+        },
+        {
+          _id: "publisherInvites:active",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "publisher",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        createMemberInviteHandler(
+          ctx as never,
+          { publisherId: "publishers:org", userHandle: "target", role: "admin" } as never,
+        ),
+      ).rejects.toThrow("@target already has a pending invitation");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherInvites", expect.anything());
+  });
+
   it("accepts a matching invitation and creates the membership row", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert, patch } = makeInviteCtx({
@@ -4207,6 +4271,82 @@ describe("publishers membership controls", () => {
 
     expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("lets the invite target decline member invitations", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, patch, insert } = makeInviteCtx({
+      authUserId: "users:target",
+      invites: [
+        {
+          _id: "publisherInvites:target",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "admin",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        declineMemberInviteHandler(ctx as never, { inviteId: "publisherInvites:target" } as never),
+      ).resolves.toEqual({ ok: true });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherInvites:target",
+      expect.objectContaining({
+        status: "declined",
+        declinedByUserId: "users:target",
+        targetUserId: "users:target",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.member.invite.decline",
+        targetId: "publishers:org",
+      }),
+    );
+  });
+
+  it("does not let non-target users decline member invitations", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, patch, insert } = makeInviteCtx({
+      authUserId: "users:stranger",
+      invites: [
+        {
+          _id: "publisherInvites:target",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "admin",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+
+    try {
+      await expect(
+        declineMemberInviteHandler(ctx as never, { inviteId: "publisherInvites:target" } as never),
+      ).rejects.toThrow("Forbidden");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalledWith("auditLogs", expect.anything());
   });
 
   it("lets org managers revoke pending member invitations", async () => {

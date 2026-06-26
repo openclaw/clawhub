@@ -288,7 +288,12 @@ const publisherInvites = defineTable({
   revokedByUserId: v.optional(v.id("users")),
 })
   .index("by_publisher_status_expires", ["publisherId", "status", "expiresAt"])
-  .index("by_publisher_target_status", ["publisherId", "targetHandle", "status"])
+  .index("by_publisher_target_status_expires", [
+    "publisherId",
+    "targetHandle",
+    "status",
+    "expiresAt",
+  ])
   .index("by_target_handle_status_expires", ["targetHandle", "status", "expiresAt"])
   .index("by_target_user_status_expires", ["targetUserId", "status", "expiresAt"])
   .index("by_expires_at", ["expiresAt"]);
