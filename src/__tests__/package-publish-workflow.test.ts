@@ -42,6 +42,15 @@ describe("package publish workflow", () => {
       resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
       "utf8",
     );
+    const parsedWorkflow = parseYaml(workflow) as {
+      on?: {
+        workflow_dispatch?: {
+          inputs?: {
+            dry_run?: { default?: string };
+          };
+        };
+      };
+    };
     const script = readFileSync(resolve("scripts/package-inspector-nightly-scan.ts"), "utf8");
     const http = readFileSync(resolve("convex/packageInspectorHttp.ts"), "utf8");
 
@@ -70,6 +79,7 @@ describe("package publish workflow", () => {
     expect(script).not.toContain("plugin-inspector-bulk-scan-error");
     expect(script).toContain("pluginInspector");
     expect(workflow).toContain("dry_run:");
+    expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.dry_run?.default).toBe("true");
     expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN");
     expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES");
     expect(script).toContain("const dryRun =");
@@ -80,7 +90,7 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("actions/upload-artifact");
   });
 
-  it("dispatches plugin inspector bulk scans after main inspector pin bumps", () => {
+  it("dispatches dry-run plugin inspector bulk scans after main inspector pin bumps", () => {
     const workflowText = readFileSync(
       resolve(".github/workflows/plugin-inspector-pin-bump-dispatch.yml"),
       "utf8",
@@ -114,7 +124,7 @@ describe("package publish workflow", () => {
     expect(workflowText).toContain("gh workflow run plugin-inspector-bulk-scan.yml");
     expect(workflowText).toContain("--ref main");
     expect(workflowText).toContain("batch_size=25");
-    expect(workflowText).toContain("dry_run=false");
+    expect(workflowText).toContain("dry_run=true");
     expect(workflowText).toContain("BASE_SHA: ${{ github.event.before }}");
     expect(workflowText).toContain("HEAD_SHA: ${{ github.sha }}");
     expect(workflowText).toContain(

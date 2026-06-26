@@ -49,7 +49,7 @@ jobs:
           gh workflow run plugin-inspector-bulk-scan.yml \
             --ref main \
             -f batch_size=25 \
-            -f dry_run=false \
+            -f dry_run=true \
             -f dry_run_max_batches=20 \
             -f source_sha=${{ github.sha }}
 

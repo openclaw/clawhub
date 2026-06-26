@@ -10,7 +10,7 @@ on:
       dry_run:
         description: "Preview impact without persisting findings or sending emails"
         required: false
-        default: "false"
+        default: "true"
         type: boolean
       dry_run_max_batches:
         description: "Maximum preview batches to scan when dry_run is enabled"
