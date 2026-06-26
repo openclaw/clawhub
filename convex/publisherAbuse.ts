@@ -43,6 +43,7 @@ const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
 const MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER = 3;
+const MAX_REVIEW_DASHBOARD_LIST_LIMIT = 25;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN_MULTIPLIER = 32;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN = 2000;
 const MAX_BAN_REASON_LENGTH = 500;
@@ -295,7 +296,11 @@ export const listReviewDashboard = query({
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return emptyPublisherAbuseReviewDashboard();
 
-    const limit = clampInt(args.limit ?? 150, 1, 250);
+    const limit = clampInt(
+      args.limit ?? MAX_REVIEW_DASHBOARD_LIST_LIMIT,
+      1,
+      MAX_REVIEW_DASHBOARD_LIST_LIMIT,
+    );
     const dashboardExclusionBudget = createStaffPublisherManagerExclusionBudget();
     const latestRun = await getLatestPublisherAbuseScoreRun(ctx);
     const scoreRankRunId = latestRun?.status === "completed" ? latestRun._id : undefined;

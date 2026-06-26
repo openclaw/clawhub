@@ -217,7 +217,7 @@ export function Management() {
   ) as DuplicateCandidateEntry[] | undefined;
   const publisherAbuseDashboard = useQuery(
     api.publisherAbuse.listReviewDashboard,
-    staff && abuseViewActive ? { limit: 150 } : "skip",
+    staff && abuseViewActive ? { limit: 25 } : "skip",
   );
   const publisherAbuseAutobanSetting = useQuery(
     api.publisherAbuse.getPublisherAbuseAutobanSetting,
