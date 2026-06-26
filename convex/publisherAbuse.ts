@@ -137,10 +137,11 @@ type PublisherMetricsDoc = Pick<
   | "skillTotalDownloads"
 >;
 
-type PublisherAbuseExclusionPublisher = Pick<
-  Doc<"publishers">,
-  "_id" | "kind" | "linkedUserId" | "deletedAt" | "deactivatedAt"
->;
+type PublisherAbuseExclusionPublisher = Pick<Doc<"publishers">, "_id" | "kind"> & {
+  linkedUserId?: Id<"users"> | null;
+  deletedAt?: number | null;
+  deactivatedAt?: number | null;
+};
 
 type TemporalSkillCandidate = {
   ownerKey: string;
@@ -3224,31 +3225,31 @@ function summarizePublisherForAbuseReview(publisher: Doc<"publishers">) {
     handle: publisher.handle,
     displayName: publisher.displayName,
     kind: publisher.kind,
-    linkedUserId: publisher.linkedUserId,
-    publishedSkills: publisher.publishedSkills,
-    publishedPackages: publisher.publishedPackages,
-    totalInstalls: publisher.totalInstalls,
-    totalStars: publisher.totalStars,
-    totalDownloads: publisher.totalDownloads,
-    skillTotalInstalls: publisher.skillTotalInstalls,
-    skillTotalStars: publisher.skillTotalStars,
-    skillTotalDownloads: publisher.skillTotalDownloads,
-    deletedAt: publisher.deletedAt,
-    deactivatedAt: publisher.deactivatedAt,
+    linkedUserId: publisher.linkedUserId ?? null,
+    publishedSkills: publisher.publishedSkills ?? 0,
+    publishedPackages: publisher.publishedPackages ?? 0,
+    totalInstalls: publisher.totalInstalls ?? 0,
+    totalStars: publisher.totalStars ?? 0,
+    totalDownloads: publisher.totalDownloads ?? 0,
+    skillTotalInstalls: publisher.skillTotalInstalls ?? 0,
+    skillTotalStars: publisher.skillTotalStars ?? 0,
+    skillTotalDownloads: publisher.skillTotalDownloads ?? 0,
+    deletedAt: publisher.deletedAt ?? null,
+    deactivatedAt: publisher.deactivatedAt ?? null,
   };
 }
 
 function summarizeUserForAbuseReview(user: Doc<"users">) {
   return {
     _id: user._id,
-    handle: user.handle,
-    name: user.name,
-    displayName: user.displayName,
-    role: user.role,
-    image: user.image,
-    deletedAt: user.deletedAt,
-    deactivatedAt: user.deactivatedAt,
-    banReason: user.banReason,
+    handle: user.handle ?? null,
+    name: user.name ?? null,
+    displayName: user.displayName ?? null,
+    role: user.role ?? "user",
+    image: user.image ?? null,
+    deletedAt: user.deletedAt ?? null,
+    deactivatedAt: user.deactivatedAt ?? null,
+    banReason: user.banReason ?? null,
   };
 }
 

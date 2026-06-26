@@ -468,6 +468,13 @@ function makeEmptyPublisherMembersQuery() {
   };
 }
 
+function hasNoUndefinedValues(value: unknown): boolean {
+  if (value === undefined) return false;
+  if (value === null || typeof value !== "object") return true;
+  if (Array.isArray(value)) return value.every(hasNoUndefinedValues);
+  return Object.values(value).every(hasNoUndefinedValues);
+}
+
 function makeAutoBanNominationQuery(
   nominations: unknown[],
   options: { isDone?: boolean; continueCursor?: string; expectedCursor?: string | null } = {},
@@ -2888,6 +2895,98 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     );
     expect(nominationsPaginate).toHaveBeenCalledWith({ numItems: 2, cursor: null });
+  });
+
+  it("normalizes absent optional publisher and user fields in nomination rows", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:legacy",
+      ownerKey: "publisher:publishers:legacy",
+      ownerPublisherId: "publishers:legacy",
+      ownerUserId: "users:legacy",
+      latestScoreId: "publisherAbuseScores:legacy",
+      label: "potential_ban_candidate",
+      status: "pending",
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:legacy") {
+            return {
+              _id: "publishers:legacy",
+              kind: "user",
+              handle: "legacy",
+              displayName: "Legacy Publisher",
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          if (id === "users:legacy") {
+            return { _id: "users:legacy" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [nomination],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await listReviewItemsPageHandler(ctx, {
+      tab: "potential_ban_candidate",
+      paginationOpts: { numItems: 1, cursor: null },
+    });
+
+    const [item] = result.page as Array<{
+      publisher: unknown;
+      ownerUser: unknown;
+    }>;
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        publisher: expect.objectContaining({
+          linkedUserId: null,
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalStars: 0,
+          totalDownloads: 0,
+          skillTotalInstalls: 0,
+          skillTotalStars: 0,
+          skillTotalDownloads: 0,
+          deletedAt: null,
+          deactivatedAt: null,
+        }),
+        ownerUser: expect.objectContaining({
+          handle: null,
+          name: null,
+          displayName: null,
+          role: "user",
+          image: null,
+          deletedAt: null,
+          deactivatedAt: null,
+          banReason: null,
+        }),
+      }),
+    ]);
+    expect(hasNoUndefinedValues(item.publisher)).toBe(true);
+    expect(hasNoUndefinedValues(item.ownerUser)).toBe(true);
   });
 
   it("queries recent resolved nominations by review time", async () => {
