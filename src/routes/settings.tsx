@@ -290,6 +290,7 @@ export function Settings() {
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
+  const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
   const createMemberInvite = useMutation(api.publishers.createMemberInvite);
   const revokeMemberInvite = useMutation(api.publishers.revokeMemberInvite);
@@ -610,20 +611,37 @@ export function Settings() {
       setInviteError("Enter a user handle.");
       return;
     }
+    const normalizedHandle = normalizeSettingsHandle(handle);
+    const existingMember = (orgMembers?.members ?? []).find(
+      (member) => normalizeSettingsHandle(member.user.handle) === normalizedHandle,
+    );
     setInviteError(null);
     setIsCreatingInvite(true);
     try {
-      await createMemberInvite({
-        publisherId: selectedOrg.publisher._id,
-        userHandle: handle,
-        role: inviteRole,
-      });
+      if (existingMember) {
+        await addOrgMember({
+          publisherId: selectedOrg.publisher._id,
+          userHandle: handle,
+          role: inviteRole,
+        });
+      } else {
+        await createMemberInvite({
+          publisherId: selectedOrg.publisher._id,
+          userHandle: handle,
+          role: inviteRole,
+        });
+      }
       setInviteDialogOpen(false);
       setInviteHandle("");
       setInviteRole("publisher");
-      toast.success(`Invitation sent to @${handle}`);
+      toast.success(
+        existingMember ? `Updated @${handle} role` : `Invitation sent to @${handle}`,
+      );
     } catch (error) {
-      const message = getUserFacingConvexError(error, "Invitation could not be sent.");
+      const message = getUserFacingConvexError(
+        error,
+        existingMember ? "Member role could not be updated." : "Invitation could not be sent.",
+      );
       setInviteError(message);
       toast.error(message);
     } finally {
@@ -2816,4 +2834,8 @@ function formatShortDate(value: number) {
   } catch {
     return String(value);
   }
+}
+
+function normalizeSettingsHandle(handle: string | null | undefined) {
+  return handle?.trim().replace(/^@+/, "").toLowerCase() ?? "";
 }

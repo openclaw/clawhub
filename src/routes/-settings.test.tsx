@@ -604,6 +604,36 @@ describe("Settings", () => {
     expect(toast.success).toHaveBeenCalledWith("Invitation sent to @dallin");
   });
 
+  it("updates an existing member role from the Members block dialog", async () => {
+    const createInvite = vi.fn();
+    const addMember = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) => {
+      const name = getFunctionName(mutation);
+      if (name === "publishers:createMemberInvite") return createInvite;
+      if (name === "publishers:addMember") return addMember;
+      return vi.fn();
+    });
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Invite member/i }));
+    fireEvent.change(await screen.findByLabelText("User handle"), {
+      target: { value: "patrick" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send invite/i }));
+
+    await waitFor(() => {
+      expect(addMember).toHaveBeenCalledWith({
+        publisherId: "publisher_openclaw",
+        userHandle: "patrick",
+        role: "publisher",
+      });
+    });
+    expect(createInvite).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Updated @patrick role");
+  });
+
   it("shows the convex error when an invite cannot be sent", async () => {
     const createInvite = vi
       .fn()
