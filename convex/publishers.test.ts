@@ -8,6 +8,7 @@ import {
 import {
   addMember,
   acceptMemberInvite,
+  listMyInvites,
   listPublicPage,
   listPublic,
   listMine,
@@ -75,6 +76,10 @@ const declineMemberInviteHandler = (
 
 const acceptMemberInviteHandler = (
   acceptMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
+)._handler;
+
+const listMyInvitesHandler = (
+  listMyInvites as unknown as WrappedHandler<Record<string, never>, Array<{ _id: string }>>
 )._handler;
 
 const removeMemberHandler = (
@@ -3917,6 +3922,7 @@ describe("publishers membership controls", () => {
   function makeInviteCtx(options?: {
     authUserId?: string;
     invites?: Array<Record<string, unknown>>;
+    strangerHandle?: string;
     targetIsMember?: boolean;
   }) {
     const publisherMembers: Array<Record<string, unknown>> = [
@@ -3972,7 +3978,11 @@ describe("publishers membership controls", () => {
           if (id === "users:owner") return { _id: id, handle: "owner", displayName: "Owner" };
           if (id === "users:target") return { _id: id, handle: "target", displayName: "Target" };
           if (id === "users:stranger") {
-            return { _id: id, handle: "stranger", displayName: "Stranger" };
+            return {
+              _id: id,
+              handle: options?.strangerHandle ?? "stranger",
+              displayName: "Stranger",
+            };
           }
           if (id === "publishers:org") {
             return { _id: id, kind: "org", handle: "acme", displayName: "Acme" };
@@ -4060,6 +4070,42 @@ describe("publishers membership controls", () => {
                         (invite) =>
                           invite.publisherId === fields.publisherId &&
                           invite.targetHandle === fields.targetHandle &&
+                          invite.status === fields.status &&
+                          Number(invite.expiresAt) >= lowerBounds.expiresAt,
+                      )
+                      .sort((left, right) => Number(left.expiresAt) - Number(right.expiresAt))
+                      .slice(0, limit),
+                  ),
+                };
+              }
+              if (
+                table === "publisherInvites" &&
+                indexName === "by_target_handle_status_expires"
+              ) {
+                return {
+                  take: vi.fn(async (limit: number) =>
+                    [...publisherInvites.values()]
+                      .filter(
+                        (invite) =>
+                          invite.targetHandle === fields.targetHandle &&
+                          invite.status === fields.status &&
+                          Number(invite.expiresAt) >= lowerBounds.expiresAt,
+                      )
+                      .sort((left, right) => Number(left.expiresAt) - Number(right.expiresAt))
+                      .slice(0, limit),
+                  ),
+                };
+              }
+              if (
+                table === "publisherInvites" &&
+                indexName === "by_target_user_status_expires"
+              ) {
+                return {
+                  take: vi.fn(async (limit: number) =>
+                    [...publisherInvites.values()]
+                      .filter(
+                        (invite) =>
+                          invite.targetUserId === fields.targetUserId &&
                           invite.status === fields.status &&
                           Number(invite.expiresAt) >= lowerBounds.expiresAt,
                       )
@@ -4271,6 +4317,80 @@ describe("publishers membership controls", () => {
 
     expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not let a reclaimed handle accept an invitation bound to another user", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert, patch } = makeInviteCtx({
+      authUserId: "users:stranger",
+      strangerHandle: "target",
+      invites: [
+        {
+          _id: "publisherInvites:target",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "admin",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+
+    try {
+      await expect(
+        acceptMemberInviteHandler(ctx as never, { inviteId: "publisherInvites:target" } as never),
+      ).rejects.toThrow("Forbidden");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not list handle-matched invitations bound to another user", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx } = makeInviteCtx({
+      authUserId: "users:stranger",
+      strangerHandle: "target",
+      invites: [
+        {
+          _id: "publisherInvites:bound-to-original",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "admin",
+          status: "pending",
+          createdAt: 8_000,
+          updatedAt: 8_000,
+          expiresAt: 20_000,
+        },
+        {
+          _id: "publisherInvites:handle-only",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          role: "publisher",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+
+    try {
+      await expect(listMyInvitesHandler(ctx as never, {})).resolves.toEqual([
+        expect.objectContaining({ _id: "publisherInvites:handle-only" }),
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("lets the invite target decline member invitations", async () => {

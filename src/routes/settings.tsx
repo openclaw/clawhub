@@ -171,6 +171,11 @@ type PublisherInvite = {
   } | null;
 };
 
+type InviteResponseState = {
+  inviteId: Id<"publisherInvites">;
+  action: "accept" | "decline";
+};
+
 type GitHubSkillSource = {
   _id: Id<"githubSkillSources">;
   repo: string;
@@ -322,7 +327,7 @@ export function Settings() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [revokingInviteId, setRevokingInviteId] = useState<Id<"publisherInvites"> | null>(null);
-  const [respondingInviteId, setRespondingInviteId] = useState<Id<"publisherInvites"> | null>(null);
+  const [respondingInvite, setRespondingInvite] = useState<InviteResponseState | null>(null);
   const { activeView, navigateToView, ownerHandle: requestedOwnerHandle } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
@@ -639,26 +644,26 @@ export function Settings() {
   }
 
   async function onAcceptInvite(invite: PublisherInvite) {
-    setRespondingInviteId(invite._id);
+    setRespondingInvite({ inviteId: invite._id, action: "accept" });
     try {
       await acceptMemberInvite({ inviteId: invite._id });
       toast.success(`Joined @${invite.publisher.handle}`);
     } catch (error) {
       toast.error(getUserFacingConvexError(error, "Invitation could not be accepted."));
     } finally {
-      setRespondingInviteId(null);
+      setRespondingInvite(null);
     }
   }
 
   async function onDeclineInvite(invite: PublisherInvite) {
-    setRespondingInviteId(invite._id);
+    setRespondingInvite({ inviteId: invite._id, action: "decline" });
     try {
       await declineMemberInvite({ inviteId: invite._id });
       toast.success(`Invitation from @${invite.publisher.handle} declined`);
     } catch (error) {
       toast.error(getUserFacingConvexError(error, "Invitation could not be declined."));
     } finally {
-      setRespondingInviteId(null);
+      setRespondingInvite(null);
     }
   }
 
@@ -904,7 +909,7 @@ export function Settings() {
               <div className="flex flex-col gap-5">
                 <InvitationsBlock
                   invites={myInvites}
-                  respondingInviteId={respondingInviteId}
+                  respondingInvite={respondingInvite}
                   onAccept={(invite) => void onAcceptInvite(invite)}
                   onDecline={(invite) => void onDeclineInvite(invite)}
                 />
@@ -1154,7 +1159,7 @@ export function Settings() {
                               }}
                             >
                               <DialogTrigger asChild>
-                                <Button variant="outline" size="sm" type="button">
+                                <Button variant="outline" type="button">
                                   <UserPlus size={15} />
                                   Invite member
                                 </Button>
@@ -1900,7 +1905,6 @@ function PendingInvitesBlock({
               <div className="flex shrink-0 items-center">
                 <Button
                   variant="ghost"
-                  size="sm"
                   type="button"
                   disabled={isRevoking}
                   onClick={() => onRevoke(invite)}
@@ -1918,12 +1922,12 @@ function PendingInvitesBlock({
 
 function InvitationsBlock({
   invites,
-  respondingInviteId,
+  respondingInvite,
   onAccept,
   onDecline,
 }: {
   invites: PublisherInvite[] | undefined;
-  respondingInviteId: Id<"publisherInvites"> | null;
+  respondingInvite: InviteResponseState | null;
   onAccept: (invite: PublisherInvite) => void;
   onDecline: (invite: PublisherInvite) => void;
 }) {
@@ -1950,7 +1954,9 @@ function InvitationsBlock({
       <div className="divide-y divide-[color:var(--line)] overflow-hidden">
         {invites.map((invite) => {
           const inviterLabel = invite.inviter?.handle ?? invite.inviter?.displayName ?? "unknown";
-          const isResponding = respondingInviteId === invite._id;
+          const responseAction =
+            respondingInvite?.inviteId === invite._id ? respondingInvite.action : null;
+          const isResponding = responseAction !== null;
           return (
             <div key={invite._id} className="flex items-center justify-between gap-3 py-3">
               <div className="flex min-w-0 items-center gap-3">
@@ -1982,23 +1988,21 @@ function InvitationsBlock({
               <div className="flex shrink-0 items-center gap-2">
                 <Button
                   variant="ghost"
-                  size="sm"
                   type="button"
                   disabled={isResponding}
                   onClick={() => onDecline(invite)}
                 >
                   <X size={15} />
-                  Decline
+                  {responseAction === "decline" ? "Declining..." : "Decline"}
                 </Button>
                 <Button
                   variant="primary"
-                  size="sm"
                   type="button"
                   disabled={isResponding}
                   onClick={() => onAccept(invite)}
                 >
                   <Check size={15} />
-                  {isResponding ? "Accepting..." : "Accept"}
+                  {responseAction === "accept" ? "Accepting..." : "Accept"}
                 </Button>
               </div>
             </div>

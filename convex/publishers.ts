@@ -237,7 +237,7 @@ async function publisherInviteMatchesUser(
   invite: Doc<"publisherInvites">,
   user: Doc<"users">,
 ) {
-  if (invite.targetUserId === user._id) return true;
+  if (invite.targetUserId) return invite.targetUserId === user._id;
   if (publisherHandlesMatch(user.handle, invite.targetHandle)) return true;
   const personalPublisher = await getPersonalPublisherForUser(ctx, user._id);
   return publisherHandlesMatch(personalPublisher?.handle, invite.targetHandle);
@@ -2521,7 +2521,10 @@ export const listMyInvites = query({
           q.eq("targetHandle", targetHandle).eq("status", "pending").gte("expiresAt", now),
         )
         .take(MAX_PENDING_PUBLISHER_INVITES);
-      for (const invite of invites) inviteById.set(invite._id, invite);
+      for (const invite of invites) {
+        if (invite.targetUserId && invite.targetUserId !== userId) continue;
+        inviteById.set(invite._id, invite);
+      }
     }
 
     const directInvites = await ctx.db
