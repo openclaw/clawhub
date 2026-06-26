@@ -88,7 +88,8 @@ const orgMembers = {
       role: "owner",
       user: {
         _id: "user_123",
-        handle: "patrick",
+        handle: "patrick" as string | null,
+        personalPublisherHandle: "patrick" as string | null,
         displayName: "Patrick",
         image: null,
       },
@@ -632,6 +633,53 @@ describe("Settings", () => {
     });
     expect(createInvite).not.toHaveBeenCalled();
     expect(toast.success).toHaveBeenCalledWith("Updated @patrick role");
+  });
+
+  it("updates an existing member role by personal publisher handle when user handle is missing", async () => {
+    const createInvite = vi.fn();
+    const addMember = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) => {
+      const name = getFunctionName(mutation);
+      if (name === "publishers:createMemberInvite") return createInvite;
+      if (name === "publishers:addMember") return addMember;
+      return vi.fn();
+    });
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      members: {
+        publisher: { _id: "publisher_openclaw", handle: "openclaw" },
+        members: [
+          {
+            role: "admin",
+            user: {
+              _id: "user_no_handle",
+              handle: null,
+              personalPublisherHandle: "legacy-patrick",
+              displayName: "Patrick",
+              image: null,
+            },
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Invite member/i }));
+    fireEvent.change(await screen.findByLabelText("User handle"), {
+      target: { value: "legacy-patrick" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Send invite/i }));
+
+    await waitFor(() => {
+      expect(addMember).toHaveBeenCalledWith({
+        publisherId: "publisher_openclaw",
+        userHandle: "legacy-patrick",
+        role: "publisher",
+      });
+    });
+    expect(createInvite).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith("Updated @legacy-patrick role");
   });
 
   it("shows the convex error when an invite cannot be sent", async () => {

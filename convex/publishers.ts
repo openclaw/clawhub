@@ -2468,6 +2468,7 @@ export const listMembers = query({
           user: {
             _id: user._id,
             handle: user.handle ?? null,
+            personalPublisherHandle: memberPublisher?.handle ?? null,
             displayName: user.displayName ?? user.name ?? null,
             image: user.image ?? null,
             official: await isOfficialPublisher(ctx, memberPublisher),

@@ -136,6 +136,7 @@ type OrgMembersResult = {
     user: {
       _id: Id<"users">;
       handle: string | null;
+      personalPublisherHandle?: string | null;
       displayName: string | null;
       image: string | null;
     };
@@ -613,7 +614,9 @@ export function Settings() {
     }
     const normalizedHandle = normalizeSettingsHandle(handle);
     const existingMember = (orgMembers?.members ?? []).find(
-      (member) => normalizeSettingsHandle(member.user.handle) === normalizedHandle,
+      (member) =>
+        normalizeSettingsHandle(member.user.handle) === normalizedHandle ||
+        normalizeSettingsHandle(member.user.personalPublisherHandle) === normalizedHandle,
     );
     setInviteError(null);
     setIsCreatingInvite(true);
@@ -634,9 +637,7 @@ export function Settings() {
       setInviteDialogOpen(false);
       setInviteHandle("");
       setInviteRole("publisher");
-      toast.success(
-        existingMember ? `Updated @${handle} role` : `Invitation sent to @${handle}`,
-      );
+      toast.success(existingMember ? `Updated @${handle} role` : `Invitation sent to @${handle}`);
     } catch (error) {
       const message = getUserFacingConvexError(
         error,
