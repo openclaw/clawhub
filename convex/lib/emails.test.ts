@@ -384,7 +384,7 @@ describe("moderation notification email copy", () => {
 
   it("builds publisher abuse warning emails with a deadline and Discord maintainer escalation", async () => {
     const email = await buildPublisherAbuseWarningEmail({
-      handle: "octocat",
+      handle: "bulkpub",
       publisherHandle: "bulkpub",
       warningSentAt: Date.UTC(2026, 5, 19, 4, 0, 0),
       deadlineAt: Date.UTC(2026, 5, 26, 4, 0, 0),
@@ -403,6 +403,7 @@ describe("moderation notification email copy", () => {
     });
 
     expect(email.subject).toBe("Action required: ClawHub publisher abuse warning");
+    expect(email.text).toContain("Hi bulkpub,");
     expect(email.text).toContain(
       "ClawHub's publisher abuse detection flagged the publisher profile @bulkpub.",
     );
