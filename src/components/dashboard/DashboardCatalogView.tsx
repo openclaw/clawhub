@@ -1,30 +1,32 @@
 import { AlertTriangle, Download, Star } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
+import { familyLabel } from "../../lib/packageLabels";
 import { buildPluginDetailHref, buildPluginValidationHref } from "../../lib/pluginRoutes";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
+import { ArtifactScanStatusValue } from "../artifacts/ArtifactScanStrip";
 import {
   packageArtifactStatus,
   skillArtifactStatus,
   type ArtifactDisplayStatus,
 } from "../artifacts/artifactStatus";
-import { ArtifactScanStatusValue } from "../artifacts/ArtifactScanStrip";
 import { MarketplaceIcon } from "../MarketplaceIcon";
 import { buildSkillHref } from "../skillDetailUtils";
-import { CatalogRowMenu } from "./CatalogRowMenu";
-import {
-  CatalogRowKindLine,
-  CatalogRowStatusColumn,
-} from "./ArtifactStatusChips";
-import { familyLabel } from "../../lib/packageLabels";
+import { CatalogRowKindLine, CatalogRowStatusColumn } from "./ArtifactStatusChips";
 import {
   packageSecurityStatus,
   packageVisibilityStatus,
   skillSecurityStatus,
   skillVisibilityStatus,
 } from "./artifactStatusLabels";
-import type { DashboardCatalogItem, DashboardPackage, DashboardSkill, DashboardView } from "./types";
+import { CatalogRowMenu } from "./CatalogRowMenu";
+import type {
+  DashboardCatalogItem,
+  DashboardPackage,
+  DashboardSkill,
+  DashboardView,
+} from "./types";
 
 type DashboardCatalogViewProps = {
   items: DashboardCatalogItem[];
@@ -46,11 +48,7 @@ export function DashboardCatalogView({
           item.kind === "skill" ? (
             <SkillGridCard key={`skill:${item.id}`} skill={item.data} ownerHandle={ownerHandle} />
           ) : (
-            <PluginGridCard
-              key={`plugin:${item.id}`}
-              pkg={item.data}
-              ownerHandle={ownerHandle}
-            />
+            <PluginGridCard key={`plugin:${item.id}`} pkg={item.data} ownerHandle={ownerHandle} />
           ),
         )}
       </div>
@@ -62,7 +60,7 @@ export function DashboardCatalogView({
       <div className="browse-list-head dashboard-catalog-list-head" aria-hidden="true">
         <span className="browse-list-head-icon-spacer" />
         <span className="browse-list-head-label">Name</span>
-        <span className="browse-list-head-taxonomy-spacer" aria-hidden="true" />
+        <span className="browse-list-head-label">Status</span>
         <span className="browse-list-head-label browse-list-head-stat">Activity</span>
         <span className="browse-list-head-actions-spacer" />
       </div>
@@ -125,9 +123,7 @@ function SkillListRow({
           visibility={skillVisibilityStatus(skill)}
         />
       }
-      icon={
-        <MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />
-      }
+      icon={<MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />}
       downloads={skill.stats?.downloads ?? 0}
       stars={skill.stats?.stars ?? 0}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
@@ -147,6 +143,7 @@ function PluginListRow({
   canManage: boolean;
 }) {
   const validationCount = pkg.inspectorWarningCount ?? 0;
+  const validationLabel = `${validationCount} validation finding${validationCount === 1 ? "" : "s"}`;
 
   return (
     <CatalogRow
@@ -177,7 +174,7 @@ function PluginListRow({
             href={buildPluginValidationHref(pkg.name)}
             className="skill-list-item-meta-item dashboard-catalog-flag"
             aria-label={`View ${validationCount} validation finding${validationCount === 1 ? "" : "s"} for ${pkg.displayName}`}
-            onClick={(event) => event.stopPropagation()}
+            title={validationLabel}
           >
             <AlertTriangle size={14} aria-hidden="true" />
             {validationCount}
@@ -216,44 +213,45 @@ function CatalogRow({
 
   return (
     <div className="skill-list-item skill-list-item-with-taxonomy dashboard-catalog-row">
-      <a href={href} className="dashboard-catalog-row-link">
-        <span className="dashboard-catalog-row-icon" aria-hidden="true">
-          {icon}
-        </span>
-        <div className="skill-list-item-body">
-          <div className="skill-list-item-main">
-            <span className="skill-list-item-name">{title}</span>
-          </div>
-          {kindLine}
-          {trimmedSummary ? (
-            <p className="skill-list-item-summary">{truncateText(trimmedSummary, 80)}</p>
-          ) : null}
+      <a href={href} className="dashboard-catalog-row-link" aria-label={`Open ${title}`} />
+      <span className="dashboard-catalog-row-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          <span className="skill-list-item-name">{title}</span>
         </div>
-        {statusColumn}
-        <div className="skill-list-item-meta">
-          {stars !== undefined ? (
-            <span className="skill-list-item-meta-item">
-              <Star size={14} aria-hidden="true" /> {formatCompactStat(stars)}
-            </span>
-          ) : null}
-          <span className="skill-list-item-meta-item">
-            <Download size={14} aria-hidden="true" /> {formatCompactStat(downloads)}
+        {kindLine}
+        {trimmedSummary ? (
+          <p className="skill-list-item-summary">{truncateText(trimmedSummary, 80)}</p>
+        ) : null}
+      </div>
+      {statusColumn}
+      <div className="skill-list-item-meta">
+        {stars !== undefined ? (
+          <span className="skill-list-item-meta-item" title={metricLabel(stars, "star")}>
+            <Star size={14} aria-hidden="true" />
+            <span aria-hidden="true">{formatCompactStat(stars)}</span>
+            <span className="sr-only">{metricLabel(stars, "star")}</span>
           </span>
-          {trailing}
-        </div>
-      </a>
+        ) : null}
+        <span className="skill-list-item-meta-item" title={metricLabel(downloads, "download")}>
+          <Download size={14} aria-hidden="true" />
+          <span aria-hidden="true">{formatCompactStat(downloads)}</span>
+          <span className="sr-only">{metricLabel(downloads, "download")}</span>
+        </span>
+        {trailing}
+      </div>
       {menu}
     </div>
   );
 }
 
-function SkillGridCard({
-  skill,
-  ownerHandle,
-}: {
-  skill: DashboardSkill;
-  ownerHandle: string;
-}) {
+function metricLabel(value: number, noun: string) {
+  return `${value} ${noun}${value === 1 ? "" : "s"}`;
+}
+
+function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string }) {
   const { detailHref } = skillHrefs(skill, ownerHandle);
   return (
     <DashboardCatalogGridCard
@@ -269,13 +267,7 @@ function SkillGridCard({
   );
 }
 
-function PluginGridCard({
-  pkg,
-  ownerHandle,
-}: {
-  pkg: DashboardPackage;
-  ownerHandle: string;
-}) {
+function PluginGridCard({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHandle: string }) {
   return (
     <DashboardCatalogGridCard
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
@@ -329,9 +321,10 @@ function DashboardCatalogGridCard({
         <span className="dashboard-catalog-grid-card-scan">
           <ArtifactScanStatusValue status={status} />
         </span>
-        <span>
+        <span title={metricLabel(downloads, "download")}>
           <Download size={13} aria-hidden="true" />
-          {formatCompactStat(downloads)}
+          <span aria-hidden="true">{formatCompactStat(downloads)}</span>
+          <span className="sr-only">{metricLabel(downloads, "download")}</span>
         </span>
         <span>{timeAgo(updatedAt)}</span>
       </div>

@@ -447,7 +447,7 @@ export default function Header() {
                         <SheetClose asChild>
                           <Link
                             to="/add"
-                            search={{ kind: "skill", ownerHandle: undefined }}
+                            search={{ kind: "skill", ownerHandle: undefined, method: undefined }}
                             className="mobile-nav-link"
                           >
                             <Plus size={16} aria-hidden="true" />
@@ -671,7 +671,7 @@ export default function Header() {
                   <DropdownMenuItem asChild>
                     <Link
                       to="/add"
-                      search={{ kind: "skill", ownerHandle: undefined }}
+                      search={{ kind: "skill", ownerHandle: undefined, method: undefined }}
                       className="flex items-center gap-2"
                     >
                       <Plus size={14} aria-hidden="true" />

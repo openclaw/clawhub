@@ -416,7 +416,7 @@ function PublisherProfileChromeActions({
     <div className="publisher-profile-chrome-actions">
       {addHandle ? (
         <Button asChild size="sm" variant="primary">
-          <Link to="/add" search={{ kind: "skill", ownerHandle: addHandle }}>
+          <Link to="/add" search={{ kind: "skill", ownerHandle: addHandle, method: undefined }}>
             <Plus size={15} aria-hidden="true" />
             Add
           </Link>

@@ -202,7 +202,7 @@ export function PublishPluginRoute() {
     payload: unknown;
   }) => Promise<unknown>;
   const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">(
-    search.family ?? "code-plugin",
+    search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
   );
   const [name, setName] = useState(search.name ?? "");
   const [displayName, setDisplayName] = useState(search.displayName ?? "");

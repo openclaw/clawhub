@@ -38,7 +38,7 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
         <div className="dashboard-sidebar-promo-text">
           <h2 className="dashboard-sidebar-promo-title">Import from GitHub</h2>
           <p className="dashboard-sidebar-promo-copy">
-            Bring a public repo into ClawHub in a couple of clicks.
+            Import skills from a public GitHub repository you own.
           </p>
         </div>
         <Link

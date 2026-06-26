@@ -263,7 +263,6 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
   };
 }
 
-
 function createCatalogSkill(overrides?: Partial<TestSkill>): TestSkill {
   return createSkill({
     moderationVerdict: undefined,
@@ -510,6 +509,8 @@ describe("Dashboard rows", () => {
     expect(screen.getByText("@local")).toBeTruthy();
     expect(document.querySelector(".dashboard-header-count")).toBeNull();
     expect(screen.getByRole("heading", { name: "My inventory" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Add to ClawHub" })).toBeTruthy();
+    expect(screen.getByText("Import skills from a public GitHub repository you own.")).toBeTruthy();
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
@@ -522,11 +523,11 @@ describe("Dashboard rows", () => {
 
     expect(screen.getByLabelText("Needs attention")).toBeTruthy();
     expect(document.querySelectorAll(".dashboard-attention-row").length).toBe(2);
-    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Blocked").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Security").length).toBeGreaterThan(0);
     expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
     expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
     const attentionRows = document.querySelectorAll(".dashboard-attention-row");
+    expect(attentionRows[1]?.textContent).toContain("Blocked");
     expect(attentionRows[0]?.getAttribute("aria-label")).toContain("Needs security review");
     expect(attentionRows[1]?.getAttribute("aria-label")).toContain("Blocked by security checks");
     expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(0);
@@ -549,6 +550,7 @@ describe("Dashboard rows", () => {
         createPackage({
           inspectorWarningCount: 2,
           scanStatus: "clean",
+          stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
@@ -568,6 +570,10 @@ describe("Dashboard rows", () => {
     expect(validationLink.getAttribute("href")).toBe(
       "/plugins/local-flagged-runtime-plugin#validation",
     );
+    expect(validationLink.parentElement?.closest("a")).toBeNull();
+    expect(screen.getByRole("link", { name: "Open Local Flagged Runtime Plugin" })).toBeTruthy();
+    expect(screen.getByText("42 downloads", { selector: ".sr-only" })).toBeTruthy();
+    expect(screen.getByText("Status")).toBeTruthy();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {
@@ -691,7 +697,7 @@ describe("Dashboard rows", () => {
       target: { value: "publishers:clawkit" },
     });
 
-    expect((await screen.findByRole("link", { name: /^Add$/i })).getAttribute("href")).toBe(
+    expect((await screen.findByRole("link", { name: "Add to ClawHub" })).getAttribute("href")).toBe(
       "/add?kind=skill&ownerHandle=clawkit",
     );
   });
@@ -751,9 +757,9 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    expect(screen.getAllByRole("link", { name: /Local Flagged Skill/i })[0]?.getAttribute("href")).toBe(
-      "/local/local-flagged-skill",
-    );
+    expect(
+      screen.getAllByRole("link", { name: /Local Flagged Skill/i })[0]?.getAttribute("href"),
+    ).toBe("/local/local-flagged-skill");
   });
 
   it("exposes row actions inside the overflow menu", () => {

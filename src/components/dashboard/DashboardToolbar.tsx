@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { formatCompactStat } from "../../lib/numberFormat";
 import {
   BrowseActions,
   BrowseChipTabs,
@@ -12,7 +13,6 @@ import {
   BrowseViewToggle,
   useBrowseSearchDisclosure,
 } from "../BrowseControls";
-import { formatCompactStat } from "../../lib/numberFormat";
 import type { DashboardAggregateStats } from "./dashboardCatalog";
 import type { DashboardKindFilter, DashboardSortKey, DashboardView } from "./types";
 

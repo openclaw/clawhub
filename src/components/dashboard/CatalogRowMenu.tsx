@@ -77,7 +77,11 @@ export function CatalogRowMenu({ item, ownerHandle, canManage }: CatalogRowMenuP
 
             return (
               <DropdownMenuItem key={action.id} asChild>
-                <Link to={action.href} search={action.search as never} aria-label={action.ariaLabel}>
+                <Link
+                  to={action.href}
+                  search={action.search as never}
+                  aria-label={action.ariaLabel}
+                >
                   <Icon size={14} aria-hidden="true" />
                   {action.label}
                 </Link>

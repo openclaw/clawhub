@@ -91,9 +91,9 @@ describe("buildDownloadSeries", () => {
   });
 
   it("returns artifact download totals", () => {
-    expect(artifactDownloads([makeSkill({ stats: { downloads: 77 } } as Partial<DashboardSkill>)], [])).toBe(
-      77,
-    );
+    expect(
+      artifactDownloads([makeSkill({ stats: { downloads: 77 } } as Partial<DashboardSkill>)], []),
+    ).toBe(77);
   });
 });
 

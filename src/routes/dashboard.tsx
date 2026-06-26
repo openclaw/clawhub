@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
+import { collectAttentionItems } from "../components/dashboard/dashboardAttention";
 import {
   computeDashboardStats,
   excludeAttentionItems,
@@ -13,22 +14,15 @@ import {
   searchDashboardItems,
   sortDashboardItems,
 } from "../components/dashboard/dashboardCatalog";
-import { collectAttentionItems } from "../components/dashboard/dashboardAttention";
 import { DashboardCatalogView } from "../components/dashboard/DashboardCatalogView";
 import { DashboardDownloadsInsights } from "../components/dashboard/DashboardDownloadsInsights";
 import { DashboardHeader } from "../components/dashboard/DashboardHeader";
 import { DashboardInventorySection } from "../components/dashboard/DashboardInventorySection";
-import { DashboardRightSidebar } from "../components/dashboard/DashboardRightSidebar";
 import { DashboardNeedsAttention } from "../components/dashboard/DashboardNeedsAttention";
 import { DashboardPublisherSelect } from "../components/dashboard/DashboardPublisherSelect";
+import { DashboardRightSidebar } from "../components/dashboard/DashboardRightSidebar";
 import { DashboardToolbar } from "../components/dashboard/DashboardToolbar";
 import { DashboardWelcome } from "../components/dashboard/DashboardWelcome";
-import { addSearchParams } from "../lib/addRoutes";
-import {
-  dashboardSearchParams,
-  parseDashboardSearch,
-  type DashboardSearchState,
-} from "../lib/dashboardSearch";
 import type {
   DashboardKindFilter,
   DashboardPackage,
@@ -41,6 +35,12 @@ import { SignInPrompt } from "../components/SignInPrompt";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
+import { addSearchParams } from "../lib/addRoutes";
+import {
+  dashboardSearchParams,
+  parseDashboardSearch,
+  type DashboardSearchState,
+} from "../lib/dashboardSearch";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 /** Matches `packages.list` server cap; plugins are not paginated on the dashboard yet. */
@@ -166,10 +166,7 @@ export function Dashboard() {
     skills.length > 0 &&
     skillsStatus === "CanLoadMore";
   const showAttentionStrip = kindFilter !== "attention" && attentionItems.length > 0;
-  const skillDownloadsTotal = skills.reduce(
-    (sum, skill) => sum + (skill.stats?.downloads ?? 0),
-    0,
-  );
+  const skillDownloadsTotal = skills.reduce((sum, skill) => sum + (skill.stats?.downloads ?? 0), 0);
   const pluginDownloadsTotal = packages.reduce((sum, pkg) => sum + (pkg.stats.downloads ?? 0), 0);
   const showDownloadInsights = skillDownloadsTotal + pluginDownloadsTotal > 0;
 
@@ -266,7 +263,12 @@ export function Dashboard() {
                   />
                   {showLoadMore ? (
                     <div className="dashboard-footer-row">
-                      <Button type="button" variant="outline" size="sm" onClick={() => loadMore(50)}>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => loadMore(50)}
+                      >
                         Load more
                       </Button>
                     </div>

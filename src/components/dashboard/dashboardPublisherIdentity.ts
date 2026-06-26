@@ -4,9 +4,10 @@ function normalizeIdentityText(value: string) {
   return value.trim().toLowerCase().replace(/^@+/, "");
 }
 
-export function formatDashboardPublisherIdentity(
-  publisher: DashboardPublisherEntry["publisher"],
-): { name: string | null; handle: string } {
+export function formatDashboardPublisherIdentity(publisher: DashboardPublisherEntry["publisher"]): {
+  name: string | null;
+  handle: string;
+} {
   const handle = publisher.handle.trim();
   const rawName = publisher.displayName?.trim() ?? "";
   if (!rawName) return { name: null, handle };

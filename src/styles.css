@@ -29169,7 +29169,6 @@ a[class*="rounded-full"] {
   min-width: 0;
 }
 
-
 .dashboard-header-publisher {
   display: flex;
   align-items: center;
@@ -29540,16 +29539,26 @@ a[class*="rounded-full"] {
   justify-content: center;
   width: 34px;
   height: 34px;
+  padding: 0;
+  border: 0;
   border-radius: var(--r-sm);
+  background: transparent;
   color: var(--ink-soft);
+  cursor: pointer;
   transition:
     color 0.12s ease,
     background 0.12s ease;
 }
 
-.dashboard-row-btn:hover {
+.dashboard-row-btn:hover,
+.dashboard-row-btn:focus-visible {
   color: var(--ink);
   background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.dashboard-row-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
 }
 
 .dashboard-row-flag {
@@ -30190,9 +30199,13 @@ a[class*="rounded-full"] {
 
 .browse-page .dashboard-catalog-flag {
   position: relative;
-  z-index: 2;
-  color: #b45309;
+  z-index: 3;
+  color: #fbbf24;
   text-decoration: none;
+}
+
+[data-theme-resolved="light"] .browse-page .dashboard-catalog-flag {
+  color: #92400e;
 }
 
 .browse-page .dashboard-catalog-flag:hover {
@@ -30230,16 +30243,26 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-catalog-row {
+  position: relative;
+  isolation: isolate;
   grid-template-columns: auto minmax(0, 1fr) 180px 190px auto;
 }
 
 .dashboard-catalog-row-link {
-  display: contents;
-  color: inherit;
-  text-decoration: none;
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.dashboard-catalog-row-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
 }
 
 .dashboard-catalog-row .dashboard-row-actions {
+  position: relative;
+  z-index: 3;
   justify-self: end;
 }
 
@@ -30673,7 +30696,6 @@ a[class*="rounded-full"] {
     height: 56px;
   }
 }
-
 
 .dashboard-downloads-insights--compact {
   display: grid;
@@ -31169,4 +31191,3 @@ a.dashboard-sidebar-timeline-name:hover {
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   }
 }
-

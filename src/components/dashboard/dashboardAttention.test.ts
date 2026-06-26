@@ -88,7 +88,8 @@ describe("collectAttentionItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       href: "/local/skills/alpha/security-audit",
-      actionLabel: "Review →",
+      actionLabel: "Review security →",
+      issueType: "security",
       preview: "Suspicious: prompt injection pattern in SKILL.md",
       reason: "Needs security review",
     });
@@ -112,9 +113,9 @@ describe("collectAttentionItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       href: "/plugins/beta-plugin#validation",
-      actionLabel: "Review →",
-      preview:
-        "Package min host version drift. Fix: Bump openclaw.minHostVersion in package.json",
+      actionLabel: "View validation →",
+      issueType: "validation",
+      preview: "Package min host version drift. Fix: Bump openclaw.minHostVersion in package.json",
       reason: "2 validation warnings",
     });
   });
@@ -140,8 +141,91 @@ describe("collectAttentionItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({
       href: "/local/plugins/beta-plugin/security-audit",
-      actionLabel: "Review →",
+      actionLabel: "Review security →",
+      issueType: "security",
       reason: "Blocked by security checks",
     });
+  });
+
+  it("keeps validation and security issues distinct for the same plugin", () => {
+    const items = collectAttentionItems(
+      [],
+      [
+        createPackage({
+          inspectorWarningCount: 1,
+          topInspectorFinding: {
+            message: "deprecated hook",
+            remediation: "Replace the deprecated hook",
+          },
+          scanStatus: "suspicious",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "suspicious",
+            llmStatus: "suspicious",
+            staticScanStatus: "suspicious",
+          },
+        }),
+      ],
+      "local",
+    );
+
+    expect(items).toHaveLength(2);
+    expect(
+      items.map(({ issueType, actionLabel, href }) => ({ issueType, actionLabel, href })),
+    ).toEqual([
+      {
+        issueType: "validation",
+        actionLabel: "View validation →",
+        href: "/plugins/beta-plugin#validation",
+      },
+      {
+        issueType: "security",
+        actionLabel: "Review security →",
+        href: "/local/plugins/beta-plugin/security-audit",
+      },
+    ]);
+  });
+
+  it("keeps remediation visible when a validation finding is long", () => {
+    const items = collectAttentionItems(
+      [],
+      [
+        createPackage({
+          inspectorWarningCount: 1,
+          topInspectorFinding: {
+            message:
+              "legacy before_agent_start hook is deprecated for the current OpenClaw plugin API and will stop working in a future release",
+            remediation: "Replace the legacy hook with the current lifecycle API",
+          },
+        }),
+      ],
+      "local",
+    );
+
+    expect(items[0]?.preview).toContain("Fix: Replace the legacy hook");
+    expect(items[0]?.preview?.length).toBeLessThanOrEqual(140);
+  });
+
+  it("hides internal scanner identifiers from the attention preview", () => {
+    const items = collectAttentionItems(
+      [
+        createSkill({
+          moderationVerdict: "malicious",
+          moderationSummary: "Malicious: malicious.llm_malicious",
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "malicious",
+            llmStatus: "malicious",
+            staticScanStatus: "malicious",
+          },
+        }),
+      ],
+      [],
+      "local",
+    );
+
+    expect(items[0]?.preview).toBe("Malicious behavior detected");
   });
 });

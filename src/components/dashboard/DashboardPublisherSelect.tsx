@@ -29,8 +29,7 @@ export function DashboardPublisherSelect({
         aria-label="Dashboard publisher"
         size={isIdentity ? "sm" : size}
         className={
-          triggerClassName ??
-          (isIdentity ? "dashboard-header-publisher-trigger" : "min-w-[160px]")
+          triggerClassName ?? (isIdentity ? "dashboard-header-publisher-trigger" : "min-w-[160px]")
         }
       >
         {selected?.publisher ? (
@@ -68,11 +67,7 @@ function IdentityPublisherLabel({
   );
 }
 
-function PublisherOption({
-  publisher,
-}: {
-  publisher: DashboardPublisherEntry["publisher"];
-}) {
+function PublisherOption({ publisher }: { publisher: DashboardPublisherEntry["publisher"] }) {
   return (
     <span className="flex min-w-0 items-center gap-2 leading-none">
       <span className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full">

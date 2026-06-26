@@ -1,7 +1,6 @@
 import { useId, useMemo, useState } from "react";
-import { BrowseControlsDivider, BrowseSegmentedTabs, BrowseSortSelect } from "../BrowseControls";
 import { formatCompactStat } from "../../lib/numberFormat";
-import type { DashboardPackage, DashboardSkill } from "./types";
+import { BrowseControlsDivider, BrowseSegmentedTabs, BrowseSortSelect } from "../BrowseControls";
 import {
   artifactDownloads,
   buildDownloadInsightOptions,
@@ -14,6 +13,7 @@ import {
   sumSeries,
   type DownloadRange,
 } from "./dashboardDownloadMetrics";
+import type { DashboardPackage, DashboardSkill } from "./types";
 
 type DashboardDownloadsInsightsProps = {
   skills: DashboardSkill[];
@@ -70,10 +70,7 @@ export function DashboardDownloadsInsights({
     () => buildDownloadSeries([], isFiltered ? [] : packages, range),
     [isFiltered, packages, range],
   );
-  const itemSeries = useMemo(
-    () => (isFiltered ? totalSeries : []),
-    [isFiltered, totalSeries],
-  );
+  const itemSeries = useMemo(() => (isFiltered ? totalSeries : []), [isFiltered, totalSeries]);
 
   const rangeTotal = sumSeries(totalSeries);
   const totalDelta = rangeDelta(totalSeries);
@@ -82,9 +79,7 @@ export function DashboardDownloadsInsights({
   const itemDelta = rangeDelta(itemSeries);
   const labels = rangeLabels(range);
 
-  const heroDownloads = isFiltered
-    ? artifactDownloads(activeSkills, activePackages)
-    : rangeTotal;
+  const heroDownloads = isFiltered ? artifactDownloads(activeSkills, activePackages) : rangeTotal;
   const heroMetricLabel = isFiltered ? "All-time downloads" : "Total downloads";
   const heroDisplay = isFiltered
     ? formatCompactStat(heroDownloads)
@@ -139,9 +134,7 @@ export function DashboardDownloadsInsights({
             <span className="dashboard-downloads-metric-value dashboard-downloads-metric-value--compact">
               {heroDisplay}
             </span>
-            <span
-              className={`dashboard-downloads-delta${totalDelta >= 0 ? " is-up" : " is-down"}`}
-            >
+            <span className={`dashboard-downloads-delta${totalDelta >= 0 ? " is-up" : " is-down"}`}>
               {totalDelta >= 0 ? "+" : ""}
               {totalDelta}% vs prior period
               {isFiltered ? " (estimated)" : ""}
@@ -253,7 +246,7 @@ function Sparkline({
   const activeCoord = activeIndex === null ? null : coords[activeIndex];
   const activeValue = activeIndex === null ? null : series[activeIndex];
   const activeLabel =
-    activeIndex === null ? null : (labels?.[activeIndex]?.trim() || `Bucket ${activeIndex + 1}`);
+    activeIndex === null ? null : labels?.[activeIndex]?.trim() || `Bucket ${activeIndex + 1}`;
 
   return (
     <div

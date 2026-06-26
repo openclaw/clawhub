@@ -1,5 +1,5 @@
-import { BrowseResultsSkeleton } from "./BrowseResultsSkeleton";
 import { Skeleton } from "../ui/skeleton";
+import { BrowseResultsSkeleton } from "./BrowseResultsSkeleton";
 
 export function DashboardSkeleton() {
   return (

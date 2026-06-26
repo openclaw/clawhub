@@ -3,12 +3,12 @@ import { Plus } from "lucide-react";
 import { addSearchParams } from "../../lib/addRoutes";
 import { MarketplaceIcon } from "../MarketplaceIcon";
 import { Button } from "../ui/button";
-import { DashboardPublisherIdentityLine } from "./DashboardPublisherIdentityLine";
-import { DashboardPublisherSelect } from "./DashboardPublisherSelect";
 import {
   formatDashboardPublisherRole,
   shouldShowDashboardPublisherRole,
 } from "./dashboardPublisherIdentity";
+import { DashboardPublisherIdentityLine } from "./DashboardPublisherIdentityLine";
+import { DashboardPublisherSelect } from "./DashboardPublisherSelect";
 import type { DashboardPublisherEntry } from "./types";
 
 type DashboardHeaderProps = {
@@ -49,7 +49,7 @@ export function DashboardHeader({
             <Button asChild size="sm">
               <Link to="/add" search={addSearchParams({ ownerHandle })}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
-                Add
+                Add to ClawHub
               </Link>
             </Button>
           </div>

@@ -94,6 +94,7 @@ export type DashboardView = "list" | "grid";
 export type DashboardAttentionItem = {
   id: string;
   kind: "skill" | "plugin";
+  issueType: "security" | "validation" | "quality" | "visibility";
   title: string;
   reason: string;
   preview?: string;

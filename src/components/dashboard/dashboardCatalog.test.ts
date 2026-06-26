@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { collectAttentionItems } from "./dashboardAttention";
 import {
   computeDashboardStats,
   excludeAttentionItems,
@@ -8,7 +10,6 @@ import {
   searchDashboardItems,
   sortDashboardItems,
 } from "./dashboardCatalog";
-import { collectAttentionItems } from "./dashboardAttention";
 import type { DashboardPackage, DashboardSkill } from "./types";
 
 function createSkill(overrides?: Partial<DashboardSkill>): DashboardSkill {
@@ -127,7 +128,7 @@ describe("dashboardCatalog", () => {
         },
       }),
       createSkill({
-        _id: "skills:clean",
+        _id: "skills:clean" as Id<"skills">,
         slug: "clean",
         displayName: "Clean Skill",
       }),
@@ -168,7 +169,7 @@ describe("dashboardCatalog", () => {
         },
       }),
       createSkill({
-        _id: "skills:clean",
+        _id: "skills:clean" as Id<"skills">,
         slug: "clean",
         displayName: "Clean Skill",
       }),

@@ -37,12 +37,12 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
               key={item.id}
               href={item.href}
               className="skill-list-item skill-list-item-no-icon dashboard-attention-row"
-              aria-label={attentionRowLabel(item, context)}
+              aria-label={attentionRowLabel(item)}
             >
               <div className="skill-list-item-body">
                 <div className="skill-list-item-main dashboard-attention-title-row">
                   <span className={`dashboard-attention-badge is-${item.severity}`}>
-                    {severityLabel(item.severity)}
+                    {issueTypeLabel(item.issueType)}
                   </span>
                   <span className="skill-list-item-name">{item.title}</span>
                 </div>
@@ -67,14 +67,21 @@ function kindLabel(kind: DashboardAttentionItem["kind"]) {
 
 function severityLabel(severity: DashboardAttentionItem["severity"]) {
   if (severity === "destructive") return "Blocked";
-  if (severity === "pending") return "Pending";
-  return "Review";
+  if (severity === "pending") return "Scan pending";
+  return "Needs review";
 }
 
-function isReasonRedundantWithBadge(
-  reason: string,
-  severity: DashboardAttentionItem["severity"],
-) {
+function issueTypeLabel(issueType: DashboardAttentionItem["issueType"]) {
+  if (issueType === "validation") return "Validation";
+  if (issueType === "quality") return "Quality";
+  if (issueType === "visibility") return "Visibility";
+  return "Security";
+}
+
+function isReasonRedundantWithStatus(item: DashboardAttentionItem) {
+  if (item.issueType !== "security") return false;
+
+  const { reason, severity } = item;
   const normalized = reason.trim().toLowerCase();
   if (severity === "destructive") {
     return normalized === "blocked by security checks" || normalized === "blocked";
@@ -86,17 +93,23 @@ function isReasonRedundantWithBadge(
 }
 
 function attentionContextLine(item: DashboardAttentionItem) {
-  const kind = kindLabel(item.kind);
+  const parts = [kindLabel(item.kind), severityLabel(item.severity)];
   const preview = item.preview?.trim();
-  const reasonRedundant = isReasonRedundantWithBadge(item.reason, item.severity);
+  const reasonRedundant = isReasonRedundantWithStatus(item);
 
-  if (preview) return `${kind} · ${preview}`;
-  if (!reasonRedundant) return `${kind} · ${item.reason}`;
-  return kind;
+  if (!reasonRedundant) parts.push(item.reason);
+  if (preview) parts.push(preview);
+  return parts.join(" · ");
 }
 
-function attentionRowLabel(item: DashboardAttentionItem, context: string | null) {
-  const parts = [item.title, severityLabel(item.severity), item.reason];
-  if (context) parts.push(context);
+function attentionRowLabel(item: DashboardAttentionItem) {
+  const parts = [
+    item.title,
+    issueTypeLabel(item.issueType),
+    severityLabel(item.severity),
+    item.reason,
+  ];
+  if (item.preview) parts.push(item.preview);
+  parts.push(item.actionLabel.replace(" →", ""));
   return parts.join(". ");
 }

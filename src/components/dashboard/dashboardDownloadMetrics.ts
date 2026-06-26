@@ -154,8 +154,7 @@ export function buildDownloadSeries(
   const skillKeys = skills.map((skill) => skill.slug);
   const pluginKeys = packages.map((pkg) => pkg.name);
 
-  const skillSeries =
-    skillKeys.length > 0 ? buildKindSeries(skillKeys, "skill", bucketCount) : [];
+  const skillSeries = skillKeys.length > 0 ? buildKindSeries(skillKeys, "skill", bucketCount) : [];
   const pluginSeries =
     pluginKeys.length > 0 ? buildKindSeries(pluginKeys, "plugin", bucketCount) : [];
 

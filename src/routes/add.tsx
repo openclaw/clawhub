@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
-import { ArrowRight, Braces, Download, FolderGit2, Layers, Package, Plus, Upload } from "lucide-react";
+import {
+  ArrowRight,
+  Braces,
+  Download,
+  FolderGit2,
+  Layers,
+  Package,
+  Plus,
+  Upload,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { Container } from "../components/layout/Container";
@@ -10,15 +19,14 @@ import {
 } from "../components/PublisherOwnerSelect";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { Card, CardContent } from "../components/ui/card";
-import { useAuthStatus } from "../lib/useAuthStatus";
 import type { AddKind, AddMethod } from "../lib/addRoutes";
+import { useAuthStatus } from "../lib/useAuthStatus";
 
 type PluginFamily = "code-plugin" | "bundle-plugin";
 
 export const Route = createFileRoute("/add")({
   validateSearch: (search: Record<string, unknown>) => {
-    const kind: AddKind =
-      search.kind === "plugin" || search.type === "plugin" ? "plugin" : "skill";
+    const kind: AddKind = search.kind === "plugin" || search.type === "plugin" ? "plugin" : "skill";
     const method =
       search.method === "github" || search.method === "manual" || search.method === "upload"
         ? (search.method as AddMethod)
