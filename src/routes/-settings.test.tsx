@@ -757,6 +757,43 @@ describe("Settings", () => {
     expect(toast.success).toHaveBeenCalledWith("Invitation to @dallin revoked");
   });
 
+  it("hides owner invite revoke controls from org admins", () => {
+    const adminMembership = { ...orgMembership, role: "admin" as const };
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [adminMembership],
+      pendingInvites: [
+        {
+          _id: "publisherInvites:owner",
+          publisher: {
+            _id: "publisher_openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw Team",
+            image: null,
+          },
+          targetHandle: "dallin",
+          targetUser: null,
+          role: "owner",
+          status: "pending",
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          inviter: {
+            _id: "user_123",
+            handle: "patrick",
+            displayName: "Patrick",
+            image: null,
+          },
+        },
+      ],
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("heading", { name: "Pending invites" })).toBeTruthy();
+    expect(screen.getByText("@dallin")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Revoke/i })).toBeNull();
+  });
+
   it("accepts and declines invitations addressed to the viewer", async () => {
     const acceptInvite = vi.fn().mockResolvedValue({ ok: true });
     const declineInvite = vi.fn().mockResolvedValue({ ok: true });

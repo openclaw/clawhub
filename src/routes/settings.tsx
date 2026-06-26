@@ -1319,6 +1319,7 @@ export function Settings() {
 
                         <PendingInvitesBlock
                           invites={pendingInvites}
+                          viewerRole={selectedOrg.role}
                           revokingInviteId={revokingInviteId}
                           onRevoke={(invite) => void onRevokeInvite(invite)}
                         />
@@ -1863,10 +1864,12 @@ function DeletionResourceSummary({
 
 function PendingInvitesBlock({
   invites,
+  viewerRole,
   revokingInviteId,
   onRevoke,
 }: {
   invites: PublisherInvite[] | undefined;
+  viewerRole: "owner" | "admin" | "publisher";
   revokingInviteId: Id<"publisherInvites"> | null;
   onRevoke: (invite: PublisherInvite) => void;
 }) {
@@ -1896,6 +1899,7 @@ function PendingInvitesBlock({
             invite.targetUser?.displayName ?? invite.targetUser?.handle ?? invite.targetHandle;
           const inviterLabel = invite.inviter?.handle ?? invite.inviter?.displayName ?? "unknown";
           const isRevoking = revokingInviteId === invite._id;
+          const canRevoke = invite.role !== "owner" || viewerRole === "owner";
           return (
             <div key={invite._id} className="flex items-center justify-between gap-3 py-3">
               <div className="flex min-w-0 items-center gap-3">
@@ -1921,16 +1925,18 @@ function PendingInvitesBlock({
                   </div>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  disabled={isRevoking}
-                  onClick={() => onRevoke(invite)}
-                >
-                  {isRevoking ? "Revoking..." : "Revoke"}
-                </Button>
-              </div>
+              {canRevoke ? (
+                <div className="flex shrink-0 items-center">
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={isRevoking}
+                    onClick={() => onRevoke(invite)}
+                  >
+                    {isRevoking ? "Revoking..." : "Revoke"}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           );
         })}
