@@ -292,7 +292,9 @@ export const listReviewDashboard = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
+    const auth = await requirePublisherAbuseDashboardUser(ctx);
+    if (!auth) return emptyPublisherAbuseReviewDashboard();
+    const { user } = auth;
     assertModerator(user);
 
     const limit = clampInt(args.limit ?? 150, 1, 250);
@@ -340,7 +342,9 @@ export const getReviewNominationDetail = query({
     nominationId: v.id("publisherAbuseReviewNominations"),
   },
   handler: async (ctx, args) => {
-    const { user } = await requireUser(ctx);
+    const auth = await requirePublisherAbuseDashboardUser(ctx);
+    if (!auth) return null;
+    const { user } = auth;
     assertModerator(user);
 
     const nomination = await ctx.db.get(args.nominationId);
@@ -372,13 +376,34 @@ export const getReviewNominationDetail = query({
 export const getPublisherAbuseAutobanSetting = query({
   args: {},
   handler: async (ctx) => {
-    const { user } = await requireUser(ctx);
+    const auth = await requirePublisherAbuseDashboardUser(ctx);
+    if (!auth) return summarizePublisherAbuseAutobanSetting(null);
+    const { user } = auth;
     assertModerator(user);
 
     const setting = await getPublisherAbuseAutobanSettingDoc(ctx);
     return summarizePublisherAbuseAutobanSetting(setting);
   },
 });
+
+async function requirePublisherAbuseDashboardUser(ctx: QueryCtx) {
+  try {
+    return await requireUser(ctx);
+  } catch (error) {
+    if (error instanceof Error && error.message === "Unauthorized") return null;
+    throw error;
+  }
+}
+
+function emptyPublisherAbuseReviewDashboard() {
+  return {
+    latestRun: null,
+    pendingItems: [],
+    pendingPotentialBanCandidateItems: [],
+    pendingReviewItems: [],
+    recentResolvedItems: [],
+  };
+}
 
 export const setPublisherAbuseAutobanEnabled = mutation({
   args: {

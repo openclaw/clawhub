@@ -580,6 +580,37 @@ describe("publisher abuse dry-run persistence", () => {
     }
   });
 
+  it("does not crash read-only publisher abuse dashboard queries while auth is missing", async () => {
+    vi.mocked(requireUser).mockRejectedValue(new Error("Unauthorized"));
+    const db = {
+      get: vi.fn(),
+      query: vi.fn(),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
+      latestRun: null,
+      pendingItems: [],
+      pendingPotentialBanCandidateItems: [],
+      pendingReviewItems: [],
+      recentResolvedItems: [],
+    });
+    await expect(getPublisherAbuseAutobanSettingHandler({ db }, {})).resolves.toEqual({
+      enabled: false,
+      updatedAt: null,
+      updatedByUserId: null,
+    });
+    await expect(
+      getReviewNominationDetailHandler(
+        { db },
+        { nominationId: "publisherAbuseReviewNominations:nomination" },
+      ),
+    ).resolves.toBeNull();
+
+    expect(assertModerator).not.toHaveBeenCalled();
+    expect(db.get).not.toHaveBeenCalled();
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
   it("defaults publisher abuse autobans to disabled when no setting exists", async () => {
     const user = { _id: "users:moderator", role: "moderator" };
     vi.mocked(requireUser).mockResolvedValue({
