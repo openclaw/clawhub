@@ -2649,15 +2649,22 @@ async function upsertPublisherAbuseReviewNomination(
     .first();
 
   if (existing) {
+    const failedPressureRunAutobanDeferralReopen = isFailedPressureRunAutobanDeferral(
+      existing,
+      args.score,
+      args.run,
+    );
     const shouldReopen =
       (isReopenableNominationStatus(existing.status) &&
         (isPublisherAbuseLabelEscalation(existing.label, args.score.label) ||
           isDeferredNominationForCurrentTemporalRun(existing.status, args.run) ||
-          isFailedPressureRunAutobanDeferral(existing, args.score, args.run))) ||
+          failedPressureRunAutobanDeferralReopen)) ||
       (await isBannedNominationForActiveOwner(ctx, existing, args.score));
     const ownerUserChanged = existing.ownerUserId !== args.score.ownerUserId;
     const shouldClearWarning =
-      shouldReopen || ownerUserChanged || args.score.label !== "potential_ban_candidate";
+      (shouldReopen && !failedPressureRunAutobanDeferralReopen) ||
+      ownerUserChanged ||
+      args.score.label !== "potential_ban_candidate";
     await ctx.db.patch(existing._id, {
       latestScoreId: args.score._id,
       label: args.score.label,
@@ -2672,6 +2679,13 @@ async function upsertPublisherAbuseReviewNomination(
             warningExpiresAt: undefined,
             warningScoreId: undefined,
             warningRunId: undefined,
+            warningPendingAt: undefined,
+            warningPendingScoreId: undefined,
+            warningPendingRunId: undefined,
+          }
+        : {}),
+      ...(failedPressureRunAutobanDeferralReopen
+        ? {
             warningPendingAt: undefined,
             warningPendingScoreId: undefined,
             warningPendingRunId: undefined,
