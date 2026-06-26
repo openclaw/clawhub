@@ -172,7 +172,6 @@ export function Dashboard() {
   );
   const pluginDownloadsTotal = packages.reduce((sum, pkg) => sum + (pkg.stats.downloads ?? 0), 0);
   const showDownloadInsights = skillDownloadsTotal + pluginDownloadsTotal > 0;
-  const inventoryTotal = aggregateStats.skillsCount + aggregateStats.pluginsCount;
 
   useEffect(() => {
     if (!isLoading) {
@@ -243,7 +242,6 @@ export function Dashboard() {
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
             <DashboardInventorySection
-              totalCount={inventoryTotal}
               toolbar={
                 <DashboardToolbar
                   kind={kindFilter}
@@ -290,20 +288,20 @@ export function Dashboard() {
                 />
               )}
             </DashboardInventorySection>
-
-            {showDownloadInsights ? (
-              <DashboardDownloadsInsights
-                skills={skills}
-                packages={packages}
-                skillDownloadsTotal={skillDownloadsTotal}
-                pluginDownloadsTotal={pluginDownloadsTotal}
-                insight={search.insight}
-                onInsightChange={(insight) => patchSearch({ insight })}
-              />
-            ) : null}
           </div>
 
           <DashboardRightSidebar ownerHandle={ownerHandle} />
+
+          {showDownloadInsights ? (
+            <DashboardDownloadsInsights
+              skills={skills}
+              packages={packages}
+              skillDownloadsTotal={skillDownloadsTotal}
+              pluginDownloadsTotal={pluginDownloadsTotal}
+              insight={search.insight}
+              onInsightChange={(insight) => patchSearch({ insight })}
+            />
+          ) : null}
         </div>
       </main>
     </TooltipProvider>

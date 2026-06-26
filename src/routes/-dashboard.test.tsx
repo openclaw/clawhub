@@ -509,7 +509,7 @@ describe("Dashboard rows", () => {
     expect(document.querySelector(".dashboard-scope-bar")).toBeTruthy();
     expect(screen.getByText("@local")).toBeTruthy();
     expect(document.querySelector(".dashboard-header-count")).toBeNull();
-    expect(screen.getByRole("heading", { name: "Inventory" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "My inventory" })).toBeTruthy();
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
@@ -524,8 +524,11 @@ describe("Dashboard rows", () => {
     expect(document.querySelectorAll(".dashboard-attention-row").length).toBe(2);
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Blocked").length).toBeGreaterThan(0);
-    expect(screen.getByText("Needs security review")).toBeTruthy();
-    expect(screen.getByText("Blocked by security checks")).toBeTruthy();
+    expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
+    expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
+    const attentionRows = document.querySelectorAll(".dashboard-attention-row");
+    expect(attentionRows[0]?.getAttribute("aria-label")).toContain("Needs security review");
+    expect(attentionRows[1]?.getAttribute("aria-label")).toContain("Blocked by security checks");
     expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(0);
 
     expect(screen.queryByText("VT")).toBeNull();
@@ -534,8 +537,8 @@ describe("Dashboard rows", () => {
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
     const downloads = screen.getByRole("region", { name: "Download metrics" });
-    expect(downloads.textContent).toContain("1.2k");
-    expect(downloads.textContent).toContain("42");
+    expect(downloads.textContent).toContain("Total downloads");
+    expect(downloads.textContent).toContain("Skills");
   });
 
   it("links public plugin finding counts to the plugin validation tab", () => {

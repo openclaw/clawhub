@@ -1,4 +1,4 @@
-import { AlertTriangle, Download } from "lucide-react";
+import { AlertTriangle, Download, Star } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginDetailHref, buildPluginValidationHref } from "../../lib/pluginRoutes";
@@ -13,7 +13,17 @@ import { ArtifactScanStatusValue } from "../artifacts/ArtifactScanStrip";
 import { MarketplaceIcon } from "../MarketplaceIcon";
 import { buildSkillHref } from "../skillDetailUtils";
 import { CatalogRowMenu } from "./CatalogRowMenu";
-import { PackageCatalogMeta, SkillCatalogMeta } from "./ArtifactStatusChips";
+import {
+  CatalogRowKindLine,
+  CatalogRowStatusColumn,
+} from "./ArtifactStatusChips";
+import { familyLabel } from "../../lib/packageLabels";
+import {
+  packageSecurityStatus,
+  packageVisibilityStatus,
+  skillSecurityStatus,
+  skillVisibilityStatus,
+} from "./artifactStatusLabels";
 import type { DashboardCatalogItem, DashboardPackage, DashboardSkill, DashboardView } from "./types";
 
 type DashboardCatalogViewProps = {
@@ -49,10 +59,12 @@ export function DashboardCatalogView({
 
   return (
     <div className="browse-list-stack">
-      <div className="browse-list-head browse-list-head-simple" aria-hidden="true">
+      <div className="browse-list-head dashboard-catalog-list-head" aria-hidden="true">
         <span className="browse-list-head-icon-spacer" />
         <span className="browse-list-head-label">Name</span>
+        <span className="browse-list-head-taxonomy-spacer" aria-hidden="true" />
         <span className="browse-list-head-label browse-list-head-stat">Activity</span>
+        <span className="browse-list-head-actions-spacer" />
       </div>
       <div className="results-list">
         {items.map((item) =>
@@ -106,12 +118,18 @@ function SkillListRow({
       href={detailHref}
       title={skill.displayName}
       summary={skill.summary}
-      meta={<SkillCatalogMeta skill={skill} />}
+      kindLine={<CatalogRowKindLine kindLabel="Skill" />}
+      statusColumn={
+        <CatalogRowStatusColumn
+          security={skillSecurityStatus(skill)}
+          visibility={skillVisibilityStatus(skill)}
+        />
+      }
       icon={
         <MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />
       }
       downloads={skill.stats?.downloads ?? 0}
-      updatedAt={skill.updatedAt}
+      stars={skill.stats?.stars ?? 0}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
     />
   );
@@ -135,10 +153,24 @@ function PluginListRow({
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
       title={pkg.displayName}
       summary={pkg.summary}
-      meta={<PackageCatalogMeta pkg={pkg} />}
+      kindLine={
+        <CatalogRowKindLine
+          kindLabel="Plugin"
+          familyLabel={
+            pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+              ? familyLabel(pkg.family)
+              : null
+          }
+        />
+      }
+      statusColumn={
+        <CatalogRowStatusColumn
+          security={packageSecurityStatus(pkg)}
+          visibility={packageVisibilityStatus(pkg)}
+        />
+      }
       icon={<MarketplaceIcon kind="plugin" label={pkg.displayName} size="sm" />}
       downloads={pkg.stats.downloads ?? 0}
-      updatedAt={pkg.updatedAt}
       trailing={
         validationCount > 0 ? (
           <a
@@ -161,20 +193,22 @@ function CatalogRow({
   href,
   title,
   summary,
-  meta,
+  kindLine,
+  statusColumn,
   icon,
   downloads,
-  updatedAt,
+  stars,
   trailing,
   menu,
 }: {
   href: string;
   title: string;
   summary?: string | null;
-  meta: ReactNode;
+  kindLine: ReactNode;
+  statusColumn: ReactNode;
   icon: ReactNode;
   downloads: number;
-  updatedAt: number;
+  stars?: number;
   trailing?: ReactNode;
   menu: ReactNode;
 }) {
@@ -182,22 +216,26 @@ function CatalogRow({
 
   return (
     <div className="skill-list-item skill-list-item-with-taxonomy dashboard-catalog-row">
-      <a href={href} className="dashboard-catalog-row-main">
-        <span className="dashboard-catalog-icon" aria-hidden="true">
+      <a href={href} className="dashboard-catalog-row-link">
+        <span className="dashboard-catalog-row-icon" aria-hidden="true">
           {icon}
         </span>
         <div className="skill-list-item-body">
-          <div className="skill-list-item-main dashboard-catalog-row-title">
+          <div className="skill-list-item-main">
             <span className="skill-list-item-name">{title}</span>
           </div>
-          {meta}
+          {kindLine}
           {trimmedSummary ? (
             <p className="skill-list-item-summary">{truncateText(trimmedSummary, 80)}</p>
           ) : null}
         </div>
-        <div className="skill-list-item-taxonomy" aria-hidden="true" />
+        {statusColumn}
         <div className="skill-list-item-meta">
-          <span className="skill-list-item-meta-item is-updated">Updated {timeAgo(updatedAt)}</span>
+          {stars !== undefined ? (
+            <span className="skill-list-item-meta-item">
+              <Star size={14} aria-hidden="true" /> {formatCompactStat(stars)}
+            </span>
+          ) : null}
           <span className="skill-list-item-meta-item">
             <Download size={14} aria-hidden="true" /> {formatCompactStat(downloads)}
           </span>

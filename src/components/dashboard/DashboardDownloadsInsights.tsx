@@ -268,12 +268,12 @@ function Sparkline({
       >
         <defs>
           <linearGradient id={`${gradientId}-fill`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="currentColor" stopOpacity="0.3" />
-            <stop offset="58%" stopColor="currentColor" stopOpacity="0.1" />
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.12" />
+            <stop offset="72%" stopColor="currentColor" stopOpacity="0.05" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
           </linearGradient>
           <linearGradient id={`${gradientId}-stroke`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="currentColor" stopOpacity="0.5" />
+            <stop offset="0%" stopColor="currentColor" stopOpacity="0.72" />
             <stop offset="100%" stopColor="currentColor" stopOpacity="1" />
           </linearGradient>
         </defs>

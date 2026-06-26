@@ -30,37 +30,32 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
         ) : null}
       </header>
       <div className="results-list">
-        {visibleItems.map((item) => (
-          <a
-            key={item.id}
-            href={item.href}
-            className="skill-list-item skill-list-item-no-icon dashboard-attention-row"
-          >
-            <div className="skill-list-item-body">
-              <div className="skill-list-item-main dashboard-attention-title-row">
-                <span className={`dashboard-attention-badge is-${item.severity}`}>
-                  {severityLabel(item.severity)}
-                </span>
-                <span className="skill-list-item-name">{item.title}</span>
+        {visibleItems.map((item) => {
+          const context = attentionContextLine(item);
+          return (
+            <a
+              key={item.id}
+              href={item.href}
+              className="skill-list-item skill-list-item-no-icon dashboard-attention-row"
+              aria-label={attentionRowLabel(item, context)}
+            >
+              <div className="skill-list-item-body">
+                <div className="skill-list-item-main dashboard-attention-title-row">
+                  <span className={`dashboard-attention-badge is-${item.severity}`}>
+                    {severityLabel(item.severity)}
+                  </span>
+                  <span className="skill-list-item-name">{item.title}</span>
+                </div>
+                {context ? (
+                  <p className="skill-list-item-summary dashboard-attention-context">{context}</p>
+                ) : null}
               </div>
-              <p className="dashboard-catalog-row-details">
-                <span className="dashboard-catalog-kind">{kindLabel(item.kind)}</span>
-                <span className="dashboard-catalog-sep" aria-hidden="true">
-                  ·
-                </span>
-                <span className={`dashboard-catalog-status is-${item.severity}`}>
-                  {severityLabel(item.severity)}
-                </span>
-              </p>
-              <p className="skill-list-item-summary dashboard-attention-context">
-                {item.preview ? `${item.reason} · ${item.preview}` : item.reason}
-              </p>
-            </div>
-            <div className="skill-list-item-meta">
-              <span className="dashboard-attention-cta">{item.actionLabel}</span>
-            </div>
-          </a>
-        ))}
+              <div className="skill-list-item-meta">
+                <span className="dashboard-attention-cta">{item.actionLabel}</span>
+              </div>
+            </a>
+          );
+        })}
       </div>
     </section>
   );
@@ -74,4 +69,34 @@ function severityLabel(severity: DashboardAttentionItem["severity"]) {
   if (severity === "destructive") return "Blocked";
   if (severity === "pending") return "Pending";
   return "Review";
+}
+
+function isReasonRedundantWithBadge(
+  reason: string,
+  severity: DashboardAttentionItem["severity"],
+) {
+  const normalized = reason.trim().toLowerCase();
+  if (severity === "destructive") {
+    return normalized === "blocked by security checks" || normalized === "blocked";
+  }
+  if (severity === "pending") {
+    return normalized === "waiting for security checks";
+  }
+  return normalized === "needs security review";
+}
+
+function attentionContextLine(item: DashboardAttentionItem) {
+  const kind = kindLabel(item.kind);
+  const preview = item.preview?.trim();
+  const reasonRedundant = isReasonRedundantWithBadge(item.reason, item.severity);
+
+  if (preview) return `${kind} · ${preview}`;
+  if (!reasonRedundant) return `${kind} · ${item.reason}`;
+  return kind;
+}
+
+function attentionRowLabel(item: DashboardAttentionItem, context: string | null) {
+  const parts = [item.title, severityLabel(item.severity), item.reason];
+  if (context) parts.push(context);
+  return parts.join(". ");
 }

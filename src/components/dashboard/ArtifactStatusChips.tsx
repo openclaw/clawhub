@@ -1,83 +1,47 @@
-import { Fragment, type ReactNode } from "react";
-import { familyLabel } from "../../lib/packageLabels";
-import type { DashboardPackage, DashboardSkill } from "./types";
-import {
-  packageSecurityStatus,
-  packageVisibilityStatus,
-  skillSecurityStatus,
-  skillVisibilityStatus,
-  type StatusChip,
-} from "./artifactStatusLabels";
+import type { StatusChip } from "./artifactStatusLabels";
 
-export function SkillCatalogMeta({ skill }: { skill: DashboardSkill }) {
-  return (
-    <CatalogRowMeta
-      kindLabel="Skill"
-      security={skillSecurityStatus(skill)}
-      visibility={skillVisibilityStatus(skill)}
-    />
-  );
-}
-
-export function PackageCatalogMeta({ pkg }: { pkg: DashboardPackage }) {
-  const family =
-    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-      ? familyLabel(pkg.family)
-      : null;
-
-  return (
-    <CatalogRowMeta
-      kindLabel="Plugin"
-      familyLabel={family}
-      security={packageSecurityStatus(pkg)}
-      visibility={packageVisibilityStatus(pkg)}
-    />
-  );
-}
-
-type CatalogRowMetaProps = {
+export function CatalogRowKindLine({
+  kindLabel,
+  familyLabel: pluginFamily,
+}: {
   kindLabel: string;
   familyLabel?: string | null;
-  security: StatusChip;
-  visibility: StatusChip;
-};
+}) {
+  return (
+    <p className="dashboard-catalog-row-kind">
+      <span className="dashboard-catalog-kind">{kindLabel}</span>
+      {pluginFamily ? (
+        <>
+          <span className="dashboard-catalog-sep" aria-hidden="true">
+            ·
+          </span>
+          <span>{pluginFamily}</span>
+        </>
+      ) : null}
+    </p>
+  );
+}
 
-function CatalogRowMeta({
-  kindLabel,
-  familyLabel,
+export function CatalogRowStatusColumn({
   security,
   visibility,
-}: CatalogRowMetaProps) {
-  const segments: Array<{ key: string; node: ReactNode }> = [
-    { key: "kind", node: <span className="dashboard-catalog-kind">{kindLabel}</span> },
-  ];
-
-  if (familyLabel) {
-    segments.push({ key: "family", node: <span>{familyLabel}</span> });
-  }
-
-  for (const chip of pickVisibleStatuses(security, visibility)) {
-    segments.push({
-      key: chip.label,
-      node: (
-        <span className={`dashboard-catalog-status is-${chip.tone}`}>{chip.label}</span>
-      ),
-    });
+}: {
+  security: StatusChip;
+  visibility: StatusChip;
+}) {
+  const chips = pickVisibleStatuses(security, visibility);
+  if (chips.length === 0) {
+    return <div className="skill-list-item-taxonomy" aria-hidden="true" />;
   }
 
   return (
-    <p className="dashboard-catalog-row-details">
-      {segments.map((segment, index) => (
-        <Fragment key={segment.key}>
-          {index > 0 ? (
-            <span className="dashboard-catalog-sep" aria-hidden="true">
-              ·
-            </span>
-          ) : null}
-          {segment.node}
-        </Fragment>
+    <div className="skill-list-item-taxonomy" aria-label="Status">
+      {chips.map((chip) => (
+        <span key={chip.label} className={`dashboard-catalog-status is-${chip.tone}`}>
+          {chip.label}
+        </span>
       ))}
-    </p>
+    </div>
   );
 }
 
