@@ -338,14 +338,11 @@ export const listReviewItemsPage = query({
       ),
     };
     const dashboardExclusionBudget = createStaffPublisherManagerExclusionBudget();
-    const latestRun = await getLatestPublisherAbuseScoreRun(ctx);
-    const scoreRankRunId = latestRun?.status === "completed" ? latestRun._id : undefined;
 
     if (args.tab === "potential_ban_candidate" || args.tab === "review") {
-      return await getPendingPublisherAbuseReviewItemsPageForLabel(ctx, {
+      return await getPublisherAbuseReviewItemsPageFromPendingNominations(ctx, {
         status: "pending",
         label: args.tab,
-        latestCompletedRunId: scoreRankRunId,
         paginationOpts,
         staffManagerExclusionBudget: dashboardExclusionBudget,
       });
@@ -2999,62 +2996,6 @@ type PublisherAbuseReviewPaginationOpts = {
   cursor: string | null;
 };
 
-async function getPendingPublisherAbuseReviewItemsPageForLabel(
-  ctx: QueryCtx,
-  args: {
-    status: TriageStatus;
-    label: PendingPublisherAbuseReviewLabel;
-    latestCompletedRunId: Id<"publisherAbuseScoreRuns"> | undefined;
-    paginationOpts: PublisherAbuseReviewPaginationOpts;
-    staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
-  },
-) {
-  if (!args.latestCompletedRunId) {
-    return await getPublisherAbuseReviewItemsPageFromPendingNominations(ctx, args);
-  }
-
-  const latestCompletedRunId = args.latestCompletedRunId;
-  const page = await ctx.db
-    .query("publisherAbuseScores")
-    .withIndex("by_run_and_label_and_rank", (q) =>
-      q.eq("runId", latestCompletedRunId).eq("label", args.label),
-    )
-    .order("asc")
-    .paginate(args.paginationOpts);
-
-  const items: PublisherAbuseReviewItem[] = [];
-  for (const score of page.page) {
-    const nomination = await ctx.db
-      .query("publisherAbuseReviewNominations")
-      .withIndex("by_owner_key_and_model_version", (q) =>
-        q.eq("ownerKey", score.ownerKey).eq("modelVersion", score.modelVersion),
-      )
-      .first();
-    if (
-      !nomination ||
-      nomination.status !== args.status ||
-      nomination.label !== args.label ||
-      nomination.latestScoreId !== score._id
-    ) {
-      continue;
-    }
-    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
-    if (
-      await isVisiblePublisherAbuseReviewItem(ctx, item, {
-        staffManagerExclusionBudget: args.staffManagerExclusionBudget,
-      })
-    ) {
-      items.push(item);
-    }
-  }
-
-  return {
-    page: items,
-    isDone: page.isDone,
-    continueCursor: page.continueCursor,
-  };
-}
-
 async function getPublisherAbuseReviewItemsPageFromPendingNominations(
   ctx: QueryCtx,
   args: {
@@ -3081,9 +3022,14 @@ async function getPublisherAbuseReviewItemsPageFromPendingNominations(
           )
           .order("desc")
           .paginate(args.paginationOpts);
-  const items = await summarizeVisiblePublisherAbuseReviewNominations(ctx, page.page, undefined, {
-    staffManagerExclusionBudget: args.staffManagerExclusionBudget,
-  });
+  const items = await summarizeVisiblePublisherAbuseReviewListNominations(
+    ctx,
+    page.page,
+    undefined,
+    {
+      staffManagerExclusionBudget: args.staffManagerExclusionBudget,
+    },
+  );
 
   return {
     page: items,
@@ -3136,13 +3082,13 @@ async function getRecentResolvedPublisherAbuseReviewItems(
     nominations.push(...page);
   }
   nominations.sort((left, right) => (right.reviewedAt ?? 0) - (left.reviewedAt ?? 0));
-  return await summarizeVisiblePublisherAbuseReviewNominations(ctx, nominations, limit, {
+  return await summarizeVisiblePublisherAbuseReviewListNominations(ctx, nominations, limit, {
     staffManagerExclusionBudget,
     includeInactiveTargets: true,
   });
 }
 
-async function summarizeVisiblePublisherAbuseReviewNominations(
+async function summarizeVisiblePublisherAbuseReviewListNominations(
   ctx: QueryCtx,
   nominations: Doc<"publisherAbuseReviewNominations">[],
   limit?: number,
@@ -3150,13 +3096,31 @@ async function summarizeVisiblePublisherAbuseReviewNominations(
 ) {
   const items = [];
   for (const nomination of nominations) {
-    const item = await summarizePublisherAbuseReviewNomination(ctx, nomination, visibilityOptions);
+    const item = await summarizePublisherAbuseReviewNominationListItem(ctx, nomination);
     if (await isVisiblePublisherAbuseReviewItem(ctx, item, visibilityOptions)) {
       items.push(item);
     }
     if (limit && items.length >= limit) break;
   }
   return items;
+}
+
+async function summarizePublisherAbuseReviewNominationListItem(
+  ctx: QueryCtx,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+) {
+  const publisher = nomination.ownerPublisherId
+    ? await ctx.db.get(nomination.ownerPublisherId)
+    : null;
+  const ownerUser = nomination.ownerUserId ? await ctx.db.get(nomination.ownerUserId) : null;
+
+  return {
+    nomination,
+    latestScore: null,
+    publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
+    ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
+    openedByRun: null,
+  };
 }
 
 async function summarizePublisherAbuseReviewNomination(

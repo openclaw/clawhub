@@ -2768,39 +2768,11 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("uses completed-run score rank while skipping stale and hidden dashboard candidates", async () => {
+  it("pages nomination rows while skipping hidden dashboard candidates", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
     } as never);
-    const latestRun = makeCompletedPressureScoreRun();
-    const staleScore = makeScore({
-      _id: "publisherAbuseScores:stale",
-      ownerKey: "publisher:publishers:stale",
-      ownerPublisherId: "publishers:stale",
-      rank: 1,
-    });
-    const hiddenScore = makeScore({
-      _id: "publisherAbuseScores:hidden",
-      ownerKey: "publisher:publishers:hidden",
-      ownerPublisherId: "publishers:hidden",
-      rank: 2,
-    });
-    const visibleScore = makeScore({
-      _id: "publisherAbuseScores:visible",
-      ownerKey: "publisher:publishers:visible",
-      ownerPublisherId: "publishers:visible",
-      rank: 3,
-    });
-    const staleNomination = makeNomination({
-      _id: "publisherAbuseReviewNominations:stale",
-      ownerKey: "publisher:publishers:stale",
-      ownerPublisherId: "publishers:stale",
-      ownerUserId: "users:stale",
-      latestScoreId: "publisherAbuseScores:old-stale",
-      label: "potential_ban_candidate",
-      status: "pending",
-    });
     const hiddenNomination = makeNomination({
       _id: "publisherAbuseReviewNominations:hidden",
       ownerKey: "publisher:publishers:hidden",
@@ -2819,27 +2791,19 @@ describe("publisher abuse dry-run persistence", () => {
       label: "potential_ban_candidate",
       status: "pending",
     });
-    const scoresPaginate = vi.fn(
+    const nominationsPaginate = vi.fn(
       async (paginationOpts: { numItems: number; cursor: string | null }) => {
-        expect(paginationOpts).toEqual({ numItems: 3, cursor: null });
+        expect(paginationOpts).toEqual({ numItems: 2, cursor: null });
         return {
-          page: [staleScore, hiddenScore, visibleScore],
+          page: [hiddenNomination, visibleNomination],
           isDone: true,
           continueCursor: "",
         };
       },
     );
-    const nominationsByOwnerKey = new Map([
-      [staleNomination.ownerKey, staleNomination],
-      [hiddenNomination.ownerKey, hiddenNomination],
-      [visibleNomination.ownerKey, visibleNomination],
-    ]);
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
-          if (id === "publisherAbuseScoreRuns:latest") return latestRun;
-          if (id === "publisherAbuseScores:hidden") return hiddenScore;
-          if (id === "publisherAbuseScores:visible") return visibleScore;
           if (id === "publishers:hidden") {
             return {
               _id: "publishers:hidden",
@@ -2866,58 +2830,8 @@ describe("publisher abuse dry-run persistence", () => {
           return null;
         }),
         query: vi.fn((table: string) => {
-          if (table === "publisherAbuseScoreRuns") {
-            return {
-              withIndex: (
-                indexName: string,
-                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                expect(indexName).toBe("by_model_version_and_started_at");
-                const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
-                build(q);
-                return {
-                  order: () => ({
-                    first: async () =>
-                      constraints.modelVersion === TEST_MODEL_CONFIG.modelVersion
-                        ? latestRun
-                        : null,
-                  }),
-                };
-              },
-            };
-          }
           if (table === "publisherAbuseScores") {
-            return {
-              withIndex: (
-                indexName: string,
-                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                expect(indexName).toBe("by_run_and_label_and_rank");
-                const constraints: Record<string, unknown> = {};
-                const q = {
-                  eq(field: string, value: unknown) {
-                    constraints[field] = value;
-                    return q;
-                  },
-                };
-                build(q);
-                expect(constraints.runId).toBe("publisherAbuseScoreRuns:latest");
-                return {
-                  order: () => ({
-                    paginate:
-                      constraints.label === "potential_ban_candidate"
-                        ? scoresPaginate
-                        : async () => ({ page: [], isDone: true, continueCursor: "" }),
-                  }),
-                };
-              },
-            };
+            throw new Error("dashboard list pages should not read score documents");
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
@@ -2933,19 +2847,14 @@ describe("publisher abuse dry-run persistence", () => {
                   },
                 };
                 build(q);
-                if (indexName === "by_owner_key_and_model_version") {
-                  return {
-                    first: async () =>
-                      nominationsByOwnerKey.get(String(constraints.ownerKey)) ?? null,
-                  };
-                }
-                if (
-                  indexName === "by_status_and_label_and_last_scored_at" ||
-                  indexName === "by_status_and_reviewed_at"
-                ) {
+                if (indexName === "by_status_and_label_and_last_scored_at") {
+                  expect(constraints).toEqual({
+                    status: "pending",
+                    label: "potential_ban_candidate",
+                  });
                   return {
                     order: () => ({
-                      take: async () => [],
+                      paginate: nominationsPaginate,
                     }),
                   };
                 }
@@ -2962,7 +2871,7 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(
       listReviewItemsPageHandler(ctx, {
         tab: "potential_ban_candidate",
-        paginationOpts: { numItems: 3, cursor: null },
+        paginationOpts: { numItems: 2, cursor: null },
       }),
     ).resolves.toEqual(
       expect.objectContaining({
@@ -2972,12 +2881,13 @@ describe("publisher abuse dry-run persistence", () => {
               _id: "publisherAbuseReviewNominations:visible",
               latestScoreId: "publisherAbuseScores:visible",
             }),
+            latestScore: null,
             publisher: expect.objectContaining({ handle: "visible" }),
           }),
         ],
       }),
     );
-    expect(scoresPaginate).toHaveBeenCalledWith({ numItems: 3, cursor: null });
+    expect(nominationsPaginate).toHaveBeenCalledWith({ numItems: 2, cursor: null });
   });
 
   it("queries recent resolved nominations by review time", async () => {

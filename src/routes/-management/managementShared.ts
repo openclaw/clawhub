@@ -22,9 +22,7 @@ export type PublisherAbuseReviewDashboard = FunctionReturnType<
 export type PublisherAbuseReviewDetail = FunctionReturnType<
   typeof api.publisherAbuse.getReviewNominationDetail
 >;
-export type PublisherAbuseReviewItem = FunctionReturnType<
-  typeof api.publisherAbuse.listReviewItemsPage
->["page"][number];
+export type PublisherAbuseReviewItem = NonNullable<PublisherAbuseReviewDetail>["item"];
 export type PublisherAbuseReviewScore = NonNullable<PublisherAbuseReviewItem["latestScore"]>;
 export type PublisherAbuseTab = "potential_ban_candidate" | "review" | "all_pending" | "resolved";
 
