@@ -3921,6 +3921,7 @@ describe("publishers membership controls", () => {
 
   function makeInviteCtx(options?: {
     authUserId?: string;
+    actorRole?: "owner" | "admin" | "publisher";
     invites?: Array<Record<string, unknown>>;
     strangerHandle?: string;
     targetIsMember?: boolean;
@@ -3930,7 +3931,7 @@ describe("publishers membership controls", () => {
         _id: "publisherMembers:owner",
         publisherId: "publishers:org",
         userId: "users:owner",
-        role: "owner",
+        role: options?.actorRole ?? "owner",
       },
     ];
     if (options?.targetIsMember) {
@@ -4098,6 +4099,25 @@ describe("publishers membership controls", () => {
               }
               if (
                 table === "publisherInvites" &&
+                indexName === "by_publisher_target_user_status_expires"
+              ) {
+                return {
+                  take: vi.fn(async (limit: number) =>
+                    [...publisherInvites.values()]
+                      .filter(
+                        (invite) =>
+                          invite.publisherId === fields.publisherId &&
+                          invite.targetUserId === fields.targetUserId &&
+                          invite.status === fields.status &&
+                          Number(invite.expiresAt) >= lowerBounds.expiresAt,
+                      )
+                      .sort((left, right) => Number(left.expiresAt) - Number(right.expiresAt))
+                      .slice(0, limit),
+                  ),
+                };
+              }
+              if (
+                table === "publisherInvites" &&
                 indexName === "by_target_user_status_expires"
               ) {
                 return {
@@ -4233,6 +4253,38 @@ describe("publishers membership controls", () => {
           publisherId: "publishers:org",
           inviterUserId: "users:owner",
           targetHandle: "target",
+          targetUserId: "users:target",
+          role: "publisher",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        createMemberInviteHandler(
+          ctx as never,
+          { publisherId: "publishers:org", userHandle: "target", role: "admin" } as never,
+        ),
+      ).rejects.toThrow("@target already has a pending invitation");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherInvites", expect.anything());
+  });
+
+  it("rejects duplicate active invitations for the same resolved user", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert } = makeInviteCtx({
+      invites: [
+        {
+          _id: "publisherInvites:active",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target-personal",
           targetUserId: "users:target",
           role: "publisher",
           status: "pending",
@@ -4524,6 +4576,36 @@ describe("publishers membership controls", () => {
       "auditLogs",
       expect.objectContaining({ action: "publisher.member.invite.revoke" }),
     );
+  });
+
+  it("prevents admins from revoking pending owner invitations", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, patch } = makeInviteCtx({
+      actorRole: "admin",
+      invites: [
+        {
+          _id: "publisherInvites:pending",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "owner",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        revokeMemberInviteHandler(ctx as never, { inviteId: "publisherInvites:pending" } as never),
+      ).rejects.toThrow("Only org owners can revoke owner invitations");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("lets org owners update an existing member role", async () => {

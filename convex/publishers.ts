@@ -3338,12 +3338,25 @@ export const createMemberInvite = mutation({
     if (activePending.length > 0) {
       throw new ConvexError(`@${targetHandle} already has a pending invitation`);
     }
+    const activePendingForUser = await ctx.db
+      .query("publisherInvites")
+      .withIndex("by_publisher_target_user_status_expires", (q) =>
+        q
+          .eq("publisherId", publisher._id)
+          .eq("targetUserId", targetUser._id)
+          .eq("status", "pending")
+          .gte("expiresAt", now),
+      )
+      .take(1);
+    if (activePendingForUser.length > 0) {
+      throw new ConvexError(`@${targetHandle} already has a pending invitation`);
+    }
 
     const inviteId = await ctx.db.insert("publisherInvites", {
       publisherId: publisher._id,
       inviterUserId: userId,
       targetHandle,
-      targetUserId: targetUser?._id,
+      targetUserId: targetUser._id,
       role: args.role,
       status: "pending",
       createdAt: now,
@@ -3358,7 +3371,7 @@ export const createMemberInvite = mutation({
       metadata: {
         inviteId,
         targetHandle,
-        targetUserId: targetUser?._id,
+        targetUserId: targetUser._id,
         role: args.role,
       },
       createdAt: now,
@@ -3373,7 +3386,14 @@ export const revokeMemberInvite = mutation({
     const { userId } = await requireUser(ctx);
     const invite = await ctx.db.get(args.inviteId);
     if (!invite || invite.status !== "pending") return { ok: true as const };
-    const { publisher } = await requireOrgMembershipManager(ctx, invite.publisherId, userId);
+    const { publisher, membership } = await requireOrgMembershipManager(
+      ctx,
+      invite.publisherId,
+      userId,
+    );
+    if (invite.role === "owner" && membership.role !== "owner") {
+      throw new ConvexError("Only org owners can revoke owner invitations");
+    }
     const now = Date.now();
     await ctx.db.patch(invite._id, {
       status: "revoked",
