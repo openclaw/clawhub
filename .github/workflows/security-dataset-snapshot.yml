@@ -78,6 +78,8 @@ jobs:
       SNAPSHOT_SHARDS: ${{ inputs.shards || '12' }}
       SNAPSHOT_MAX_SHARDS_PER_SOURCE: ${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '16' }}
       SNAPSHOT_MAX_MATRIX_JOBS: ${{ vars.SECURITY_DATASET_MAX_MATRIX_JOBS || '32' }}
+      SNAPSHOT_HARD_MAX_SHARDS_PER_SOURCE: "16"
+      SNAPSHOT_HARD_MAX_MATRIX_JOBS: "32"
     steps:
       - uses: actions/checkout@v7
 
@@ -97,6 +99,8 @@ jobs:
           echo "Shard count per source kind: $SNAPSHOT_SHARDS"
           echo "Maximum shards per source kind: $SNAPSHOT_MAX_SHARDS_PER_SOURCE"
           echo "Maximum matrix jobs: $SNAPSHOT_MAX_MATRIX_JOBS"
+          echo "Hard maximum shards per source kind: $SNAPSHOT_HARD_MAX_SHARDS_PER_SOURCE"
+          echo "Hard maximum matrix jobs: $SNAPSHOT_HARD_MAX_MATRIX_JOBS"
           echo "Convex page timeout ms: $SNAPSHOT_PAGE_TIMEOUT_MS"
           if [[ ! "$SNAPSHOT_SHARDS" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::shards must be a positive integer"
@@ -110,6 +114,14 @@ jobs:
             echo "::error::SECURITY_DATASET_MAX_MATRIX_JOBS must be a positive integer"
             exit 1
           fi
+          if [[ ! "$SNAPSHOT_HARD_MAX_SHARDS_PER_SOURCE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::SNAPSHOT_HARD_MAX_SHARDS_PER_SOURCE must be a positive integer"
+            exit 1
+          fi
+          if [[ ! "$SNAPSHOT_HARD_MAX_MATRIX_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::SNAPSHOT_HARD_MAX_MATRIX_JOBS must be a positive integer"
+            exit 1
+          fi
           if [[ ! "$SNAPSHOT_PAGE_TIMEOUT_MS" =~ ^[1-9][0-9]*$ ]]; then
             echo "::error::page-timeout-ms must be a positive integer"
             exit 1
@@ -119,12 +131,20 @@ jobs:
             exit 1
           fi
           bun -e '
-          const [shards, maxShards] = process.argv.slice(1);
+          const [shards, maxShards, hardMaxShards, maxJobs, hardMaxJobs] = process.argv.slice(1);
+          const assertAtMost = (name, value, limit) => {
+            if (BigInt(value) > BigInt(limit)) {
+              console.error(`::error::${name}=${value} is above hard cap ${limit}`);
+              process.exit(1);
+            }
+          };
+          assertAtMost("SECURITY_DATASET_MAX_SHARDS_PER_SOURCE", maxShards, hardMaxShards);
+          assertAtMost("SECURITY_DATASET_MAX_MATRIX_JOBS", maxJobs, hardMaxJobs);
           if (BigInt(shards) > BigInt(maxShards)) {
             console.error(`::error::requested ${shards} shards per source kind, above SECURITY_DATASET_MAX_SHARDS_PER_SOURCE=${maxShards}`);
             process.exit(1);
           }
-          ' "$SNAPSHOT_SHARDS" "$SNAPSHOT_MAX_SHARDS_PER_SOURCE"
+          ' "$SNAPSHOT_SHARDS" "$SNAPSHOT_MAX_SHARDS_PER_SOURCE" "$SNAPSHOT_HARD_MAX_SHARDS_PER_SOURCE" "$SNAPSHOT_MAX_MATRIX_JOBS" "$SNAPSHOT_HARD_MAX_MATRIX_JOBS"
 
       - name: Plan live export shards
         id: plan
