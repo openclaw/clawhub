@@ -7,10 +7,38 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { Dashboard } from "./dashboard";
 
+vi.mock("../components/dashboard/DashboardPublisherSelect", () => ({
+  DashboardPublisherSelect: ({
+    value,
+    onValueChange,
+    publishers,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    publishers: Array<{ publisher?: { _id: string; handle: string } | null }>;
+  }) => (
+    <select
+      aria-label="Dashboard publisher"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {publishers
+        .filter((entry) => entry.publisher)
+        .map((entry) => (
+          <option key={entry.publisher!._id} value={entry.publisher!._id}>
+            @{entry.publisher!.handle}
+          </option>
+        ))}
+    </select>
+  ),
+}));
+
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
   useAuthStatus: vi.fn(),
+  dashboardSearch: {} as Record<string, unknown>,
+  rerenderDashboard: null as null | (() => void),
 }));
 
 vi.mock("convex/react", () => ({
@@ -23,7 +51,14 @@ vi.mock("../lib/useAuthStatus", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: unknown) => config,
+  createFileRoute: () => (config: Record<string, unknown>) => ({
+    ...config,
+    useSearch: () => mocks.dashboardSearch,
+    useNavigate: () => (options: { search?: Record<string, unknown> }) => {
+      mocks.dashboardSearch = options.search ?? {};
+      mocks.rerenderDashboard?.();
+    },
+  }),
   Link: ({
     children,
     to,
@@ -250,11 +285,20 @@ function arrangeDashboard({
 }
 
 function renderDashboard() {
-  return render(
+  mocks.dashboardSearch = {};
+  const view = render(
     <TooltipProvider>
       <Dashboard />
     </TooltipProvider>,
   );
+  mocks.rerenderDashboard = () => {
+    view.rerender(
+      <TooltipProvider>
+        <Dashboard />
+      </TooltipProvider>,
+    );
+  };
+  return view;
 }
 
 describe("Dashboard rows", () => {
@@ -262,6 +306,8 @@ describe("Dashboard rows", () => {
     mocks.useQuery.mockReset();
     mocks.usePaginatedQuery.mockReset();
     mocks.useAuthStatus.mockReset();
+    mocks.dashboardSearch = {};
+    mocks.rerenderDashboard = null;
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "LoadingFirstPage",
@@ -274,7 +320,147 @@ describe("Dashboard rows", () => {
     });
   });
 
-  it("renders compact clickable artifact cards with status and inventory context", () => {
+  it("filters catalog items by kind", () => {
+    arrangeDashboard({
+      skills: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+      packages: [
+        createPackage({
+          scanStatus: "clean",
+          stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole("radio", { name: /Skills 1/i }));
+
+    expect(screen.getAllByText("Local Flagged Skill").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Local Flagged Runtime Plugin")).toBeNull();
+  });
+
+  it("reorders catalog items when sort changes", () => {
+    arrangeDashboard({
+      skills: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          stats: { downloads: 5, installsCurrent: 1, installsAllTime: 5, stars: 0, versions: 1 },
+          updatedAt: 500,
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+      packages: [
+        createPackage({
+          scanStatus: "clean",
+          stats: { downloads: 99, installs: 99, stars: 0, versions: 1 },
+          updatedAt: 100,
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("option", { name: "Most installs" }));
+
+    expect(screen.getAllByText(/Local Flagged/)[0]?.textContent).toContain("Plugin");
+  });
+
+  it("filters the catalog with the search box", () => {
+    arrangeDashboard({
+      skills: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+      packages: [
+        createPackage({
+          scanStatus: "clean",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    fireEvent.change(screen.getAllByLabelText("Search catalog")[1]!, {
+      target: { value: "runtime" },
+    });
+
+    expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
+    expect(screen.queryByText("Local Flagged Skill")).toBeNull();
+
+    fireEvent.change(screen.getAllByLabelText("Search catalog")[1]!, {
+      target: { value: "nothing-matches" },
+    });
+
+    expect(screen.getByText(/No matches for/i)).toBeTruthy();
+  });
+
+  it("renders catalog rows in list view by default and toggles to grid", () => {
+    arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
+
+    renderDashboard();
+
+    expect(document.querySelector(".browse-list-stack")).toBeTruthy();
+    expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+
+    expect(document.querySelector(".browse-results-grid")).toBeTruthy();
+  });
+
+  it("shows dashboard header identity without inventory count", () => {
     arrangeDashboard({
       skills: [createSkill()],
       packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
@@ -282,37 +468,54 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    expect(screen.getByRole("link", { name: "Local Flagged Skill" }).getAttribute("href")).toBe(
-      "/local/local-flagged-skill",
-    );
+    const heading = screen.getByRole("heading", { name: "Dashboard" });
+    expect(heading.classList.contains("browse-title")).toBe(true);
+    expect(heading.closest(".dashboard-header-publisher")).toBeNull();
+    expect(document.querySelector(".dashboard-header-publisher")).toBeTruthy();
+    expect(screen.getByText("@local")).toBeTruthy();
+    expect(document.querySelector(".dashboard-header-count")).toBeNull();
+  });
+
+  it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
+    arrangeDashboard({
+      skills: [createSkill()],
+      packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
+    });
+
+    renderDashboard();
+
     expect(
-      screen.getByRole("link", { name: "Local Flagged Runtime Plugin" }).getAttribute("href"),
-    ).toBe("/plugins/local-flagged-runtime-plugin");
+      document.querySelector(".dashboard-catalog-row-main[href$='local-flagged-skill']")?.getAttribute(
+        "href",
+      ),
+    ).toBe("/local/local-flagged-skill");
+    expect(
+      document
+        .querySelector(".dashboard-catalog-row-main[href*='local-flagged-runtime-plugin']")
+        ?.getAttribute("href"),
+    ).toBe("/local/plugins/local-flagged-runtime-plugin");
     expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Malicious").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Security scan").length).toBe(2);
-    expect(screen.queryByText("Flagged skill fixture.")).toBeNull();
-    expect(screen.queryByText("Flagged plugin fixture.")).toBeNull();
+    expect(screen.getAllByText("Blocked").length).toBeGreaterThan(0);
+    expect(screen.getByText("Flagged skill fixture.")).toBeTruthy();
+    expect(screen.getByText("Flagged plugin fixture.")).toBeTruthy();
     expect(screen.queryByText("VT")).toBeNull();
     expect(screen.queryByText("LLM")).toBeNull();
     expect(screen.queryByText("Static")).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
-    expect(screen.getAllByText("Downloads").length).toBe(2);
-    expect(screen.queryByText("Installs")).toBeNull();
-    expect(screen.getByText("1.2K")).toBeTruthy();
+    expect(screen.queryByText("Downloads")).toBeNull();
+    expect(screen.getByText("1.2k")).toBeTruthy();
     expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getAllByText("Current version").length).toBe(2);
-    expect(screen.getAllByText("Last updated").length).toBe(2);
+    expect(screen.getByText("Code Plugin")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Open settings for Local Flagged Skill" }),
+      screen.getByRole("button", { name: "Open actions for Local Flagged Skill" }),
     ).toBeTruthy();
     expect(
-      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
-    ).toBeNull();
+      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
+    ).toBeTruthy();
   });
 
-  it("links public plugin finding counts to the plugin validation section", () => {
+  it("links public plugin finding counts to the plugin validation tab", () => {
     arrangeDashboard({
       packages: [
         createPackage({
@@ -360,7 +563,20 @@ describe("Dashboard rows", () => {
     });
 
     mocks.usePaginatedQuery.mockReturnValue({
-      results: [],
+      results: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
       status: "Exhausted",
       loadMore: vi.fn(),
     });
@@ -388,7 +604,7 @@ describe("Dashboard rows", () => {
         limit: 100,
       }),
     );
-    expect(screen.getByText("@clawkit · Org")).toBeTruthy();
+    expect(screen.getByText(/@clawkit/)).toBeTruthy();
 
     fireEvent.change(selector, { target: { value: "publishers:clawkit" } });
 
@@ -398,7 +614,9 @@ describe("Dashboard rows", () => {
         limit: 100,
       }),
     );
-    expect(screen.getByText("ClawKit for Lovable")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getAllByText("ClawKit for Lovable").length).toBeGreaterThan(0),
+    );
   });
 
   it("passes the selected publisher into skill publishing links", async () => {
@@ -415,7 +633,20 @@ describe("Dashboard rows", () => {
       },
     ];
     mocks.usePaginatedQuery.mockReturnValue({
-      results: [],
+      results: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
       status: "Exhausted",
       loadMore: vi.fn(),
     });
@@ -432,9 +663,9 @@ describe("Dashboard rows", () => {
       target: { value: "publishers:clawkit" },
     });
 
-    expect(
-      (await screen.findByRole("link", { name: "Publish manually" })).getAttribute("href"),
-    ).toBe("/skills/publish?ownerHandle=clawkit");
+    expect((await screen.findByRole("link", { name: /^Add$/i })).getAttribute("href")).toBe(
+      "/add?kind=skill&ownerHandle=clawkit",
+    );
   });
 
   it("renders a skeleton while auth state is loading", () => {
@@ -492,20 +723,19 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    expect(screen.getByRole("link", { name: "Local Flagged Skill" }).getAttribute("href")).toBe(
+    expect(screen.getAllByRole("link", { name: /Local Flagged Skill/i })[0]?.getAttribute("href")).toBe(
       "/local/local-flagged-skill",
     );
   });
 
-  it("does not show plugin settings from the row action", () => {
+  it("exposes row actions inside the overflow menu", () => {
     arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
 
     renderDashboard();
 
     expect(
-      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: /open actions/i })).toBeNull();
+      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: /delete plugin/i })).toBeNull();
   });
 

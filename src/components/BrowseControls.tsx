@@ -629,22 +629,24 @@ type BrowseViewToggleProps = {
 
 export function BrowseViewToggle({ view, onToggle }: BrowseViewToggleProps) {
   return (
-    <div className="browse-view-toggle" role="group" aria-label="Layout">
+    <div className="clawhub-segmented browse-view-toggle" role="group" aria-label="Layout">
       <button
-        className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
+        className={`clawhub-segmented-btn home-v2-listing-view-btn browse-view-btn${view === "list" ? " is-active" : ""}`}
         type="button"
         aria-label="List"
+        aria-pressed={view === "list"}
         onClick={view === "grid" ? onToggle : undefined}
       >
-        <List size={17} aria-hidden="true" />
+        <List size={16} aria-hidden="true" />
       </button>
       <button
-        className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
+        className={`clawhub-segmented-btn home-v2-listing-view-btn browse-view-btn${view === "grid" ? " is-active" : ""}`}
         type="button"
         aria-label="Grid"
+        aria-pressed={view === "grid"}
         onClick={view === "list" ? onToggle : undefined}
       >
-        <LayoutGrid size={17} aria-hidden="true" />
+        <LayoutGrid size={16} aria-hidden="true" />
       </button>
     </div>
   );

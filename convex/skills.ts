@@ -1959,6 +1959,7 @@ type DashboardSkillListItem = {
   stats: Doc<"skills">["stats"];
   moderationStatus?: Doc<"skills">["moderationStatus"];
   moderationReason?: string;
+  moderationSummary?: string;
   moderationVerdict?: Doc<"skills">["moderationVerdict"];
   moderationFlags?: string[];
   isSuspicious?: boolean;
@@ -2364,6 +2365,7 @@ async function toDashboardSkillListItem(
     stats,
     moderationStatus: skill.moderationStatus,
     moderationReason: skill.moderationReason,
+    moderationSummary: skill.moderationSummary,
     moderationVerdict: skill.moderationVerdict,
     moderationFlags: skill.moderationFlags,
     isSuspicious: skill.isSuspicious,

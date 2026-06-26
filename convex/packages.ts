@@ -1001,6 +1001,10 @@ type DashboardPackageListItem = {
   ownerPublisherId?: Id<"publishers">;
   latestVersion: string | null;
   inspectorWarningCount: number;
+  topInspectorFinding?: {
+    message: string;
+    remediation?: string;
+  };
   stats: Doc<"packages">["stats"];
   verification: Doc<"packages">["verification"];
   scanStatus: Doc<"packages">["scanStatus"];
@@ -1388,7 +1392,7 @@ async function toDashboardPackageListItem(
 ): Promise<DashboardPackageListItem | null> {
   if (pkg.softDeletedAt) return null;
   const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg.latestReleaseId);
+  const inspectorAttention = await getInspectorAttentionForRelease(ctx, pkg.latestReleaseId);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1402,7 +1406,8 @@ async function toDashboardPackageListItem(
     ownerUserId: pkg.ownerUserId,
     ownerPublisherId: pkg.ownerPublisherId,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
-    inspectorWarningCount,
+    inspectorWarningCount: inspectorAttention.count,
+    topInspectorFinding: inspectorAttention.topFinding,
     stats: pkg.stats,
     verification: pkg.verification,
     scanStatus: pkg.scanStatus,
@@ -1422,13 +1427,29 @@ async function toDashboardPackageListItem(
   };
 }
 
-async function countPackageInspectorFindings(
+async function getInspectorAttentionForRelease(
   ctx: DbReaderCtx,
   latestReleaseId?: Id<"packageReleases">,
-) {
-  if (!latestReleaseId) return 0;
+): Promise<{
+  count: number;
+  topFinding?: {
+    message: string;
+    remediation?: string;
+  };
+}> {
+  if (!latestReleaseId) return { count: 0 };
   const findings = await takeAuthorRemediationWarningsByRelease(ctx, latestReleaseId, 101);
-  return findings.length > 100 ? 100 : findings.length;
+  const count = findings.length > 100 ? 100 : findings.length;
+  const top = findings[0];
+  if (!top) return { count };
+  const remediation = top.authorRemediation?.summary?.trim();
+  return {
+    count,
+    topFinding: {
+      message: top.message,
+      remediation: remediation || undefined,
+    },
+  };
 }
 
 async function listDashboardPackagesForOwnerPublisher(
