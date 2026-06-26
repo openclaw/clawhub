@@ -2889,7 +2889,10 @@ describe("publisher abuse dry-run persistence", () => {
               latestScoreId: "publisherAbuseScores:visible",
             }),
             latestScore: null,
-            publisher: expect.objectContaining({ handle: "visible" }),
+            publisher: expect.objectContaining({
+              displayName: null,
+              handle: "visible",
+            }),
           }),
         ],
       }),
@@ -2919,7 +2922,6 @@ describe("publisher abuse dry-run persistence", () => {
               _id: "publishers:legacy",
               kind: "user",
               handle: "legacy",
-              displayName: "Legacy Publisher",
               createdAt: 1,
               updatedAt: 1,
             };
@@ -2961,6 +2963,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(result.page).toEqual([
       expect.objectContaining({
         publisher: expect.objectContaining({
+          displayName: null,
           linkedUserId: null,
           publishedSkills: 0,
           publishedPackages: 0,
