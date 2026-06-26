@@ -99,14 +99,14 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
 
   crons.interval(
     "publisher-abuse-score-refresh",
-    { hours: 168 },
+    { hours: 24 },
     internal.publisherAbuse.runPublisherAbuseScoreRunInternal,
     { batchSize: 250, maxPages: 5, trigger: "cron" },
   );
 
   crons.interval(
     "publisher-temporal-abuse-scan",
-    { hours: 168 },
+    { hours: 24 },
     internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
     {
       mode: "current",

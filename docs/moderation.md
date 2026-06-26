@@ -90,7 +90,7 @@ listing can return to public surfaces.
 
 Accounts that violate ClawHub policy may lose publishing access. Severe abuse can
 result in account bans, token revocation, hidden content, or removed listings.
-Publisher abuse pressure signals are checked weekly. Signals that reach
+Publisher abuse pressure signals are checked daily. Signals that reach
 ClawHub's potential-ban threshold can trigger an automatic warning. If the next
 eligible scan after the warning deadline still places the publisher in the
 potential-ban threshold, ClawHub may apply the account action automatically.

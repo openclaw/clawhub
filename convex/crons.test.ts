@@ -141,7 +141,7 @@ describe("crons", () => {
 
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-abuse-score-refresh",
-      { hours: 168 },
+      { hours: 24 },
       mocks.publisherAbuseScoreRefreshRef,
       {
         batchSize: 250,
@@ -151,7 +151,7 @@ describe("crons", () => {
     );
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-temporal-abuse-scan",
-      { hours: 168 },
+      { hours: 24 },
       mocks.publisherTemporalAbuseScanRef,
       {
         mode: "current",
