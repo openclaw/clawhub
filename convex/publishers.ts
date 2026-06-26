@@ -3466,9 +3466,7 @@ export const acceptMemberInvite = mutation({
     }
     assertOrgPublisherMembershipManagement(publisher);
     const existing = await getPublisherMembership(ctx, publisher._id, userId);
-    if (existing) {
-      await ctx.db.patch(existing._id, { role: invite.role, updatedAt: now });
-    } else {
+    if (!existing) {
       await ctx.db.insert("publisherMembers", {
         publisherId: publisher._id,
         userId,

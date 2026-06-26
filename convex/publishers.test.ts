@@ -4357,6 +4357,55 @@ describe("publishers membership controls", () => {
     );
   });
 
+  it("does not let stale invitations overwrite an existing member role", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert, patch, publisherMembers } = makeInviteCtx({
+      authUserId: "users:target",
+      targetIsMember: true,
+      invites: [
+        {
+          _id: "publisherInvites:accepted",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "owner",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        acceptMemberInviteHandler(
+          ctx as never,
+          {
+            inviteId: "publisherInvites:accepted",
+          } as never,
+        ),
+      ).resolves.toEqual({ ok: true });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
+    expect(publisherMembers).toContainEqual(
+      expect.objectContaining({
+        _id: "publisherMembers:target",
+        role: "publisher",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherInvites:accepted",
+      expect.objectContaining({
+        status: "accepted",
+        acceptedByUserId: "users:target",
+      }),
+    );
+  });
+
   it("does not let non-target users accept member invitations", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert, patch } = makeInviteCtx({
