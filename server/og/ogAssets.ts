@@ -33,6 +33,7 @@ const PUBLISHER_FONT_PATHS = [
   "node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2",
   ...SHARED_FONT_PATHS,
 ];
+export const OG_FONT_PATHS = Array.from(new Set([...DEFAULT_FONT_PATHS, ...PUBLISHER_FONT_PATHS]));
 
 function getServerRootUrl() {
   const nitroMain = (globalThis as unknown as GlobalNitroMain).__nitro_main__;

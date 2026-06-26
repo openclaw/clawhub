@@ -6,6 +6,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
 import { defineConfig, type Plugin } from "vite";
+import { copyOgAssets } from "./scripts/copy-og-assets";
 
 const require = createRequire(import.meta.url);
 
@@ -167,6 +168,16 @@ function patchArkSafariInOperator(): Plugin {
   };
 }
 
+function copyOgAssetsPlugin(): Plugin {
+  return {
+    name: "copy-og-assets",
+    apply: "build",
+    async closeBundle() {
+      await copyOgAssets();
+    },
+  };
+}
+
 const config = defineConfig({
   resolve: {
     dedupe: ["convex", "@convex-dev/auth", "react", "react-dom"],
@@ -197,6 +208,7 @@ const config = defineConfig({
     tailwindcss(),
     tanstackStart(),
     viteReact(),
+    copyOgAssetsPlugin(),
   ],
   build: {
     // Keep the shipped client bundle parseable in Safari/WebKit.
