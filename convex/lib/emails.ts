@@ -15,6 +15,30 @@ const PUBLISHER_ABUSE_POLICY_ITEMS = [
   "Artificially inflating installs, downloads, stars, or other engagement metrics.",
   "Abnormal download activity with little or no corresponding install activity.",
 ];
+const PUBLISHER_ABUSE_WARNING_REASON_MESSAGES: Record<string, string> = {
+  extreme_volume_low_engagement: "Large catalog size combined with very low engagement.",
+  high_catalog_volume: "Unusually large number of published listings.",
+  low_installs_per_skill: "Very low installs per listing.",
+  low_downloads_per_skill: "Very low downloads per listing.",
+  low_stars_per_skill: "Very low stars per listing.",
+  temporal_download_spike_flat_installs:
+    "Download spikes with little corresponding install activity.",
+  temporal_sustained_downloads_flat_installs:
+    "Sustained download activity with little corresponding install activity.",
+  temporal_installs_track_downloads:
+    "Install and download patterns that are far outside normal conversion behavior.",
+};
+const PUBLISHER_ABUSE_WARNING_REASON_PRIORITY = [
+  "extreme_volume_low_engagement",
+  "high_catalog_volume",
+  "low_installs_per_skill",
+  "low_downloads_per_skill",
+  "low_stars_per_skill",
+  "temporal_download_spike_flat_installs",
+  "temporal_sustained_downloads_flat_installs",
+  "temporal_installs_track_downloads",
+] as const;
+const MAX_PUBLISHER_ABUSE_WARNING_REASONS = 3;
 
 export type NotificationArtifact = {
   kind: "skill" | "plugin";
@@ -199,6 +223,19 @@ function formatUtcTimestamp(value: number | undefined, fallback: string) {
     .toISOString()
     .replace("T", " ")
     .replace(/\.\d{3}Z$/, " UTC");
+}
+
+function publisherAbuseWarningReasonLines(reasonCodes: string[]) {
+  const uniqueReasonCodes = new Set(reasonCodes);
+  const priorityReasonCodes = new Set<string>(PUBLISHER_ABUSE_WARNING_REASON_PRIORITY);
+  const sortedReasonCodes = [
+    ...PUBLISHER_ABUSE_WARNING_REASON_PRIORITY.filter((code) => uniqueReasonCodes.has(code)),
+    ...reasonCodes.filter((code) => !priorityReasonCodes.has(code)),
+  ];
+  const lines = sortedReasonCodes
+    .map((code) => PUBLISHER_ABUSE_WARNING_REASON_MESSAGES[code])
+    .filter((message): message is string => Boolean(message));
+  return Array.from(new Set(lines)).slice(0, MAX_PUBLISHER_ABUSE_WARNING_REASONS);
 }
 
 async function renderAccountSuspendedTemplate(args: {
@@ -505,8 +542,17 @@ export async function buildPublisherAbuseWarningEmail(args: PublisherAbuseWarnin
   const publisherLabel = publisherHandle ? `@${publisherHandle}` : "your publisher";
   const deadline = formatUtcTimestamp(args.deadlineAt, "the warning deadline");
   const warningSentAt = formatUtcTimestamp(args.warningSentAt, "this warning");
+  const reasonLines = publisherAbuseWarningReasonLines(args.score.reasonCodes);
+  const signalLines = reasonLines.length
+    ? reasonLines.map((line) => `- ${line}`)
+    : ["- Catalog size and engagement patterns were far outside normal publisher behavior."];
   const body = [
     `ClawHub's publisher abuse detection flagged the publisher profile ${publisherLabel}.`,
+    "",
+    "This profile is far outside normal ClawHub publishing patterns. The warning threshold starts at 2.5 standard deviations above the normal range for scanned ClawHub publishers.",
+    "",
+    "The biggest signals were:",
+    ...signalLines,
     "",
     "If this is not resolved before the deadline below, the account linked to this publisher may be suspended the next time the daily abuse scan confirms the same issue.",
     "",

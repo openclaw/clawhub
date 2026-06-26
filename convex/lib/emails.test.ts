@@ -407,6 +407,12 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain(
       "ClawHub's publisher abuse detection flagged the publisher profile @bulkpub.",
     );
+    expect(email.text).toContain(
+      "The warning threshold starts at 2.5 standard deviations above the normal range for scanned ClawHub publishers.",
+    );
+    expect(email.text).toContain("The biggest signals were:");
+    expect(email.text).toContain("- Unusually large number of published listings.");
+    expect(email.text).toContain("- Very low installs per listing.");
     expect(email.text).toContain("Deadline: 2026-06-26 04:00:00 UTC");
     expect(email.text).toContain("Delete low-quality, duplicate, placeholder");
     expect(email.text).toContain(
@@ -421,6 +427,7 @@ describe("moderation notification email copy", () => {
     expect(email.text).not.toContain("Low Installs Per Skill");
     expect(email.html).toContain("Action required: publisher abuse warning");
     expect(email.html).toContain("@bulkpub");
+    expect(email.html).toContain("Very low installs per listing.");
     expect(email.html).toContain("2026-06-26 04:00:00 UTC");
     expect(email.html).toContain(OPENCLAW_DISCORD_URL);
   });
