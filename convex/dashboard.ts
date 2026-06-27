@@ -13,7 +13,7 @@ import { normalizePackageName } from "./lib/packageRegistry";
 import { canAccessPublisherOwnerScope } from "./lib/publishers";
 import { readCanonicalStat } from "./lib/skillStats";
 
-const DASHBOARD_METRICS_ITEM_LIMIT = 100;
+const DASHBOARD_METRICS_PAGE_SIZE = 100;
 
 const dashboardMetricSelectionValidator = v.union(
   v.object({ kind: v.literal("skill"), slug: v.string() }),
@@ -83,35 +83,58 @@ async function listPublisherSkills(
   publisher: Doc<"publishers">,
   userId: Id<"users">,
 ) {
+  const skills: Doc<"skills">[] = [];
+  let cursor: string | null = null;
+
   if (publisher.kind === "user" && !publisher.linkedUserId) {
-    const skills = await ctx.db
+    while (true) {
+      const page = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_active_updated", (q) =>
+          q.eq("ownerUserId", userId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
+      skills.push(
+        ...page.page.filter(
+          (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === publisher._id,
+        ),
+      );
+      if (page.isDone) return skills;
+      cursor = page.continueCursor;
+    }
+  }
+
+  while (true) {
+    const page = await ctx.db
       .query("skills")
-      .withIndex("by_owner_active_updated", (q) =>
-        q.eq("ownerUserId", userId).eq("softDeletedAt", undefined),
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .take(DASHBOARD_METRICS_ITEM_LIMIT);
-    return skills.filter(
-      (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === publisher._id,
-    );
+      .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
+    skills.push(...page.page);
+    if (page.isDone) return skills;
+    cursor = page.continueCursor;
   }
-  return await ctx.db
-    .query("skills")
-    .withIndex("by_owner_publisher_active_updated", (q) =>
-      q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
-    )
-    .order("desc")
-    .take(DASHBOARD_METRICS_ITEM_LIMIT);
 }
 
 async function listPublisherPackages(ctx: QueryCtx, publisherId: Id<"publishers">) {
-  return await ctx.db
-    .query("packages")
-    .withIndex("by_owner_publisher_active_updated", (q) =>
-      q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
-    )
-    .order("desc")
-    .take(DASHBOARD_METRICS_ITEM_LIMIT);
+  const packages: Doc<"packages">[] = [];
+  let cursor: string | null = null;
+
+  while (true) {
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
+    packages.push(...page.page);
+    if (page.isDone) return packages;
+    cursor = page.continueCursor;
+  }
 }
 
 export const getDownloadMetrics = query({
