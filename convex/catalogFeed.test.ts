@@ -344,7 +344,7 @@ describe("catalog feed projection", () => {
   });
 
   it("caps oversized skills feeds instead of blocking plugin publication", async () => {
-    const skillEntries = Array.from({ length: 501 }, (_, index) => makeFeedSkillEntry(index));
+    const skillEntries = Array.from({ length: 1001 }, (_, index) => makeFeedSkillEntry(index));
     const runMutation = vi.fn(
       async (_ref: unknown, args: { feedId: string; entries: unknown[] }) => ({
         feedId: args.feedId,
@@ -377,17 +377,17 @@ describe("catalog feed projection", () => {
       expect.anything(),
       expect.objectContaining({
         feedId: CATALOG_SKILLS_FEED_ID,
-        entries: expect.arrayContaining([expect.objectContaining({ id: "@openclaw/demo-499" })]),
+        entries: expect.arrayContaining([expect.objectContaining({ id: "@openclaw/demo-999" })]),
       }),
     );
     expect(
       vi
         .mocked(runMutation)
         .mock.calls.find(([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID)?.[1].entries,
-    ).toHaveLength(500);
+    ).toHaveLength(1000);
     expect(result).toEqual([
       { feedId: CATALOG_FEED_ID, entryCount: 0 },
-      { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 500 },
+      { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 1000 },
     ]);
   });
 
@@ -482,6 +482,26 @@ describe("catalog feed projection", () => {
         "githubSkillSources:1": makeGitHubSource(),
       }),
       { publisherId: "publishers:1", cursor: null },
+    )) as { entries: unknown[] };
+
+    expect(result.entries).toEqual([]);
+  });
+
+  it("excludes GitHub-backed skills from non-official publishers", async () => {
+    vi.mocked((await import("./lib/officialPublishers")).isOfficialPublisher).mockResolvedValue(
+      false,
+    );
+
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx([makeGitHubSkill({ slug: "community-source" })], {
+        "publishers:community": {
+          _id: "publishers:community",
+          kind: "org",
+          handle: "community",
+        },
+        "githubSkillSources:1": makeGitHubSource({ ownerPublisherId: "publishers:community" }),
+      }),
+      { publisherId: "publishers:community", cursor: null },
     )) as { entries: unknown[] };
 
     expect(result.entries).toEqual([]);

@@ -29,7 +29,7 @@ import {
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
 const CATALOG_FEED_PAGE_SIZE = 100;
-const MAX_CATALOG_FEED_ENTRIES = 500;
+const MAX_CATALOG_FEED_ENTRIES = 1000;
 const CATALOG_FEED_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
