@@ -32412,6 +32412,29 @@ a.dashboard-sidebar-timeline-name:hover {
   padding: 30px 0 30px 28px;
   border-top: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
   scroll-margin-top: 88px;
+  transition:
+    opacity 180ms ease,
+    background-color 180ms ease;
+}
+
+.changelog-timeline:has(.changelog-entry:target) .changelog-entry:not(:target) {
+  opacity: 0.42;
+}
+
+.changelog-entry:target {
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .changelog-timeline:has(.changelog-entry:hover) .changelog-entry:not(:hover) {
+    opacity: 0.42;
+    background: transparent;
+  }
+
+  .changelog-timeline:has(.changelog-entry:hover) .changelog-entry:hover {
+    opacity: 1;
+    background: color-mix(in srgb, var(--ink) 3%, transparent);
+  }
 }
 
 .changelog-entry::before {

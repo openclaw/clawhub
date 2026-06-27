@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowseTabs } from "../components/BrowseControls";
 import {
   PLATFORM_CHANGELOG_ENTRIES,
@@ -16,6 +16,20 @@ function ChangelogPage() {
   const visibleEntries = PLATFORM_CHANGELOG_ENTRIES.filter(
     (entry) => surface === "All" || entry.surfaces.includes(surface),
   );
+
+  useEffect(() => {
+    const openAnchoredEntry = () => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (PLATFORM_CHANGELOG_ENTRIES.some((entry) => entry.id === id)) {
+        setSurface("All");
+        setExpandedEntryId(id);
+      }
+    };
+
+    openAnchoredEntry();
+    window.addEventListener("hashchange", openAnchoredEntry);
+    return () => window.removeEventListener("hashchange", openAnchoredEntry);
+  }, []);
 
   return (
     <main className="browse-page browse-page-borderless-header changelog-page">
