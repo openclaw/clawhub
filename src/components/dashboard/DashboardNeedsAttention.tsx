@@ -88,7 +88,6 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
         <header className="dashboard-section-head dashboard-attention-strip-header">
           <div className="dashboard-section-head-main">
             <h2 className="dashboard-section-title">Needs attention</h2>
-            <span className="dashboard-section-count">{groups.length}</span>
           </div>
           {groups.length > ATTENTION_STRIP_LIMIT ? (
             <Link

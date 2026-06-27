@@ -29760,7 +29760,7 @@ a[class*="rounded-full"] {
 .dashboard-welcome-publisher-trigger {
   width: auto;
   min-width: 0;
-  max-width: 220px;
+  max-width: none;
   border: 0;
   background: transparent;
   box-shadow: none;
@@ -29904,7 +29904,7 @@ a[class*="rounded-full"] {
   }
 
   .dashboard-welcome-publisher-trigger {
-    max-width: min(220px, 100%);
+    max-width: 100%;
   }
 }
 
@@ -31850,7 +31850,7 @@ a.dashboard-sidebar-timeline-name:hover {
       color-mix(in srgb, var(--bg) 68%, transparent) 72%,
       var(--bg) 100%
     ),
-    url("https://plucky-waffle-w2jy.here.now/droppie-2026-06-27T00-58-58Z.png") center 32% /
+    url("https://opaque-plume-8ktq.here.now/droppie-2026-06-27T02-35-09Z.png") center 32% /
       cover no-repeat;
   content: "";
   opacity: 0.78;
@@ -32029,5 +32029,122 @@ a.dashboard-sidebar-timeline-name:hover {
     position: static;
     max-width: none;
     grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+}
+
+/* Dashboard final — triage cards, canonical package listing, publisher sidebar. */
+.browse-page.dashboard-route.dashboard-final {
+  max-width: 1296px;
+  padding-inline: 48px;
+}
+
+.dashboard-final .dashboard-workspace {
+  grid-template-columns: minmax(0, 1fr) 276px;
+  gap: 32px;
+}
+
+.dashboard-final .dashboard-attention-strip-header {
+  height: 28px;
+  margin-bottom: 12px;
+}
+
+.dashboard-final .dashboard-attention-strip .results-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-final .dashboard-attention-row.skill-list-item-no-icon {
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  padding: 16px;
+  border: 1px solid var(--hv2-border);
+  border-radius: calc(var(--r-md) + 2px);
+  background: color-mix(in srgb, var(--hv2-surface) 95%, transparent);
+  transition:
+    border-color var(--hv2-duration-ui) var(--hv2-ease-out),
+    background var(--hv2-duration-ui) var(--hv2-ease-out),
+    transform var(--hv2-duration-ui) var(--hv2-ease-out);
+}
+
+.dashboard-final .dashboard-attention-row.skill-list-item-no-icon:hover,
+.dashboard-final .dashboard-attention-row.skill-list-item-no-icon:focus-within {
+  border-color: var(--hv2-border-hover);
+  background: var(--hv2-surface-hover);
+}
+
+.dashboard-final .dashboard-attention-row.skill-list-item-no-icon:active {
+  transform: scale(0.992);
+  transition-duration: 100ms;
+}
+
+.dashboard-final .dashboard-attention-row.skill-list-item-no-icon .skill-list-item-body {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  align-content: start;
+  min-height: 76px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--hv2-border) 60%, transparent);
+}
+
+.dashboard-final .dashboard-attention-summary {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: start;
+}
+
+.dashboard-final .dashboard-attention-row .skill-list-item-meta {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: end;
+  justify-self: end;
+}
+
+.dashboard-final .dashboard-attention-state {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.dashboard-final .dashboard-attention-state.is-destructive {
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+}
+
+.dashboard-final .dashboard-attention-state.is-warning {
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.dashboard-final .dashboard-right-sidebar {
+  max-width: 276px;
+  margin-top: 40px;
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 1180px) {
+  .dashboard-final .dashboard-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-final .dashboard-right-sidebar {
+    max-width: none;
+    margin-top: 0;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .browse-page.dashboard-route.dashboard-final {
+    padding-inline: 20px;
+  }
+
+  .dashboard-final .dashboard-attention-strip .results-list,
+  .dashboard-final .dashboard-right-sidebar {
+    grid-template-columns: 1fr;
   }
 }

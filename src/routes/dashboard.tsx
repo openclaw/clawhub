@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { Loader2, Plus } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -48,7 +48,6 @@ const DASHBOARD_PACKAGES_LIMIT = 100;
 const DASHBOARD_LOAD_TIMEOUT_MS = 20_000;
 const DASHBOARD_SIDEBAR_STORAGE_KEY = "clawhub.dashboard.sidebar";
 const DASHBOARD_VIEW_STORAGE_KEY = "clawhub.dashboard.view";
-
 const DEFAULT_SORT_DIR = {
   name: "asc",
   downloads: "desc",
@@ -233,7 +232,9 @@ export function Dashboard() {
 
   return (
     <TooltipProvider>
-      <main className="browse-page browse-page-borderless-header dashboard-route">
+      <main
+        className={`browse-page browse-page-borderless-header dashboard-route dashboard-final${isSidebarVisible ? "" : " is-dashboard-sidebar-hidden"}`}
+      >
         <DashboardHeader
           publishers={resolvedPublishers}
           activePublisherId={activePublisherId}
@@ -257,6 +258,7 @@ export function Dashboard() {
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
             <DashboardInventorySection
+              count={catalogItems.length}
               toolbar={
                 <DashboardToolbar
                   kind={kindFilter}
@@ -325,6 +327,7 @@ export function Dashboard() {
             onInsightChange={(insight) => patchSearch({ insight })}
           />
         ) : null}
+
       </main>
     </TooltipProvider>
   );

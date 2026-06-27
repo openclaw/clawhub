@@ -68,7 +68,7 @@ function IdentityPublisherLabel({
 
 function PublisherOption({ publisher }: { publisher: DashboardPublisherEntry["publisher"] }) {
   return (
-    <span className="flex min-w-0 items-center gap-2 leading-none">
+    <span className="flex min-w-0 items-center gap-2">
       <span className="inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full">
         <MarketplaceIcon
           kind={publisher.kind === "org" ? "org" : "user"}
