@@ -32,10 +32,6 @@ Seeded skill fixtures:
 - `local-flagged-wallet-sync`: intentionally malicious/hidden-style skill fixture.
 - `local-agentic-risk-demo`: intentionally suspicious/review-style skill fixture with ClawScan findings.
 
-Both skill versions persist deterministic SkillSpector analyses with issue metadata, source ranges,
-explanations, and remediation so local dashboard sheets and security-audit pages can render the
-complete review UI without invoking an external scanner.
-
 Seeded plugin fixtures:
 
 - `local-flagged-runtime-plugin`: intentionally malicious plugin/package fixture.
