@@ -13,8 +13,6 @@ import { normalizePackageName } from "./lib/packageRegistry";
 import { canAccessPublisherOwnerScope } from "./lib/publishers";
 import { readCanonicalStat } from "./lib/skillStats";
 
-const DASHBOARD_METRICS_PAGE_SIZE = 100;
-
 const dashboardMetricSelectionValidator = v.union(
   v.object({ kind: v.literal("skill"), slug: v.string() }),
   v.object({ kind: v.literal("plugin"), name: v.string() }),
@@ -83,41 +81,28 @@ async function listPublisherSkills(
   publisher: Doc<"publishers">,
   userId: Id<"users">,
 ) {
-  const skills: Doc<"skills">[] = [];
-  let cursor: string | null = null;
   const legacyOwnerUserId = legacyPersonalOwnerUserId(publisher, userId);
 
   if (legacyOwnerUserId) {
-    while (true) {
-      const page = await ctx.db
-        .query("skills")
-        .withIndex("by_owner_active_updated", (q) =>
-          q.eq("ownerUserId", legacyOwnerUserId).eq("softDeletedAt", undefined),
-        )
-        .order("desc")
-        .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
-      skills.push(
-        ...page.page.filter(
-          (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === publisher._id,
-        ),
-      );
-      if (page.isDone) return skills;
-      cursor = page.continueCursor;
-    }
-  }
-
-  while (true) {
-    const page = await ctx.db
+    const skills = await ctx.db
       .query("skills")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
-        q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+      .withIndex("by_owner_active_updated", (q) =>
+        q.eq("ownerUserId", legacyOwnerUserId).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
-    skills.push(...page.page);
-    if (page.isDone) return skills;
-    cursor = page.continueCursor;
+      .collect();
+    return skills.filter(
+      (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === publisher._id,
+    );
   }
+
+  return await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .collect();
 }
 
 function uniquePackages(packages: Doc<"packages">[]) {
@@ -152,39 +137,26 @@ async function listPublisherPackages(
   publisher: Doc<"publishers">,
   userId: Id<"users">,
 ) {
-  const packages: Doc<"packages">[] = [];
-  let cursor: string | null = null;
-
-  while (true) {
-    const page = await ctx.db
-      .query("packages")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
-        q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
-    packages.push(...page.page);
-    if (page.isDone) break;
-    cursor = page.continueCursor;
-  }
+  const packages = await ctx.db
+    .query("packages")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .collect();
 
   const legacyOwnerUserId = legacyPersonalOwnerUserId(publisher, userId);
-  cursor = null;
   if (legacyOwnerUserId) {
-    while (true) {
-      const page = await ctx.db
-        .query("packages")
-        .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyOwnerUserId))
-        .order("desc")
-        .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
-      packages.push(
-        ...page.page.filter(
-          (pkg) => !pkg.softDeletedAt && isOwnedByDashboardPublisher(pkg, publisher, userId),
-        ),
-      );
-      if (page.isDone) break;
-      cursor = page.continueCursor;
-    }
+    const legacyPackages = await ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyOwnerUserId))
+      .order("desc")
+      .collect();
+    packages.push(
+      ...legacyPackages.filter(
+        (pkg) => !pkg.softDeletedAt && isOwnedByDashboardPublisher(pkg, publisher, userId),
+      ),
+    );
   }
 
   return uniquePackages(packages);
