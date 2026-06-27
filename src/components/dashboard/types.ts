@@ -98,6 +98,7 @@ export type DashboardAttentionItem = {
   ownerHandle?: string;
   packageName?: string;
   version?: string;
+  updatedAt?: number;
   issueType: "security" | "validation" | "quality" | "visibility";
   title: string;
   reason: string;

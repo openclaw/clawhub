@@ -185,6 +185,10 @@ export function rangeDelta(series: number[]) {
 }
 
 export function rangeLabels(range: DownloadRange): string[] {
+  const now = new Date();
+  const formatDate = (date: Date) =>
+    date.toLocaleString("en-US", { month: "short", day: "numeric" });
+
   if (range === "1d") {
     return Array.from({ length: 24 }, (_, hour) => {
       const h = hour % 12 || 12;
@@ -193,10 +197,19 @@ export function rangeLabels(range: DownloadRange): string[] {
     });
   }
   if (range === "1w") {
-    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(now);
+      date.setDate(now.getDate() - (6 - index));
+      return formatDate(date);
+    });
   }
   if (range === "1m") {
-    return Array.from({ length: 30 }, (_, index) => (index % 7 === 0 ? `${index + 1}` : ""));
+    return Array.from({ length: 30 }, (_, index) => {
+      if (index % 7 !== 0 && index !== 29) return "";
+      const date = new Date(now);
+      date.setDate(now.getDate() - (29 - index));
+      return formatDate(date);
+    });
   }
   return Array.from({ length: 12 }, (_, index) => {
     const month = new Date();

@@ -3,8 +3,12 @@ import { useQuery } from "convex/react";
 import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
+import { buildSkillDetailHref } from "../../lib/ownerRoute";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
+import { timeAgo } from "../../lib/timeAgo";
 import { InstallCopyButton } from "../InstallCopyButton";
+import { SkillSpectorAuditPanel } from "../SecurityAuditPage";
+import type { SkillSpectorAnalysis } from "../SkillSecurityScanResults";
 import type { DashboardAttentionItem } from "./types";
 
 const ATTENTION_STRIP_LIMIT = 5;
@@ -20,29 +24,17 @@ type DashboardAttentionGroup = {
   primary: DashboardAttentionItem;
 };
 
-type SkillSpectorIssue = {
-  issueId?: string;
-  severity?: string;
-  explanation?: string;
-  remediation?: string;
-  file?: string;
-  startLine?: number;
-  endLine?: number;
-  codeSnippet?: string;
-};
-
 type SkillAuditResult = {
+  skill?: {
+    displayName?: string;
+  } | null;
+  owner?: {
+    _id?: string;
+    handle?: string | null;
+  } | null;
   latestVersion?: {
-    skillSpectorAnalysis?: {
-      status?: string;
-      severity?: string;
-      recommendation?: string;
-      issues?: SkillSpectorIssue[];
-    } | null;
-    llmAnalysis?: {
-      status?: string;
-      summary?: string;
-    } | null;
+    version?: string;
+    skillSpectorAnalysis?: SkillSpectorAnalysis | null;
   } | null;
 };
 
@@ -70,11 +62,19 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
 
   useEffect(() => {
     if (!selectedGroup) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setSelectedGroup(null);
     };
     window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
   }, [selectedGroup]);
 
   if (items.length === 0) return null;
@@ -116,14 +116,17 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
               >
                 <div className="skill-list-item-body">
                   <div className="skill-list-item-main">
+                    <span className="dashboard-attention-kind">
+                      {primary.kind === "plugin" ? "Plugin" : "Skill"}
+                    </span>
                     <span className="skill-list-item-name">{group.title}</span>
-                    {groupVisibilityLabel(group) ? (
-                      <span className="dashboard-attention-visibility">
-                        <EyeOff size={12} aria-hidden="true" />
-                        {groupVisibilityLabel(group)}
-                      </span>
-                    ) : null}
                   </div>
+                  {groupVisibilityLabel(group) ? (
+                    <span className="dashboard-attention-visibility">
+                      <EyeOff size={12} aria-hidden="true" />
+                      {groupVisibilityLabel(group)}
+                    </span>
+                  ) : null}
                   {secondary ? (
                     <p className="skill-list-item-summary dashboard-attention-context">
                       {secondary}
@@ -192,10 +195,14 @@ function DashboardReviewSheetContent({
     <div className="security-report-panel security-report-panel-compact dashboard-review-report">
       <div className="dashboard-review-sheet-head security-report-panel-header">
         <div>
-          <p className="dashboard-review-sheet-kicker">
-            {isSkill ? "Skillspector review" : "Validation review"}
-          </p>
           <h2>{group.title}</h2>
+          <div className="dashboard-review-sheet-meta">
+            {reviewHeaderMeta(group).map((item) => (
+              <span key={item.key} className={`is-${item.key}`}>
+                {item.label}
+              </span>
+            ))}
+          </div>
         </div>
         <button
           type="button"
@@ -207,22 +214,11 @@ function DashboardReviewSheetContent({
         </button>
       </div>
 
-      <div className="dashboard-review-sheet-status">
-        <span className={`dashboard-attention-state is-${group.primary.severity}`}>
-          {severityLabel(group.primary.severity)}
-        </span>
-        <span>{groupIssueLabel(group)}</span>
-      </div>
-
       {isSkill ? (
         <SkillSpectorSheetReview group={group} audit={skillAudit} />
       ) : (
         <PluginValidationSheetReview group={group} findings={pluginFindings} />
       )}
-
-      <a href={group.primary.href} className="dashboard-review-sheet-action">
-        Open full review
-      </a>
     </div>
   );
 }
@@ -235,49 +231,23 @@ function SkillSpectorSheetReview({
   audit?: SkillAuditResult;
 }) {
   const analysis = audit?.latestVersion?.skillSpectorAnalysis;
-  const issues = analysis?.issues ?? [];
-  const llmSummary = audit?.latestVersion?.llmAnalysis?.summary?.trim();
+  const ownerSegment =
+    audit?.owner?.handle ?? group.primary.ownerHandle ?? audit?.owner?._id ?? "local";
+  const slug = group.primary.slug ?? group.key;
 
   return (
-    <div className="security-report-panel-body security-report-panel-body-findings dashboard-review-sheet-section">
-      <div className="skillspector-findings-block">
-        <div className="skillspector-subsection-title">
-          {issues.length > 0 ? `Findings (${issues.length})` : "Findings"}
-        </div>
-        <div className="dashboard-review-findings-list">
-          {issues.length > 0
-            ? issues.map((issue, index) => (
-                <article
-                  key={`${issue.issueId ?? issue.file ?? "skillspector"}:${index}`}
-                  className="dashboard-review-finding"
-                >
-                  <span>{issue.severity ?? issue.issueId ?? "SkillSpector"}</span>
-                  <p>{issue.explanation ?? attentionIssueSummary(group.primary)}</p>
-                  {issue.file ? (
-                    <code>
-                      {issue.file}
-                      {issue.startLine ? `:${issue.startLine}` : ""}
-                    </code>
-                  ) : null}
-                  {issue.codeSnippet ? <pre>{issue.codeSnippet}</pre> : null}
-                </article>
-              ))
-            : group.items.map((item) => (
-                <article key={item.id} className="dashboard-review-finding">
-                  <span>{issueTypeLabel(item.issueType)}</span>
-                  <p>{attentionIssueSummary(item)}</p>
-                </article>
-              ))}
-        </div>
-      </div>
-      <div className="skillspector-findings-block">
-        <div className="skillspector-subsection-title">Recommendation</div>
-        <p>
-          {analysis?.recommendation ??
-            llmSummary ??
-            "Review the SkillSpector evidence before restoring visibility or publishing a new version."}
-        </p>
-      </div>
+    <div className="dashboard-review-skillspector">
+      <SkillSpectorAuditPanel
+        entity={{
+          kind: "skill",
+          title: audit?.skill?.displayName ?? group.title,
+          name: slug,
+          version: audit?.latestVersion?.version ?? group.primary.version ?? null,
+          owner: audit?.owner ?? null,
+          detailPath: buildSkillDetailHref(ownerSegment, slug),
+        }}
+        analysis={analysis ?? null}
+      />
     </div>
   );
 }
@@ -304,7 +274,7 @@ function PluginValidationSheetReview({
   const instructions = buildValidationInstructions(group.title, version, displayedFindings);
 
   return (
-    <section className="plugin-validation-panel dashboard-review-complete-validation">
+    <>
       <header className="plugin-validation-overview">
         <div className="plugin-validation-panel-title-row">
           <h3 className="plugin-validation-panel-title">Validation</h3>
@@ -351,11 +321,13 @@ function PluginValidationSheetReview({
           </div>
         </div>
       </header>
+      <section className="plugin-validation-panel dashboard-review-complete-validation">
       <section className="plugin-validation-panel-findings" aria-label="Issues to review">
         <ValidationFindingGroup label="Errors" kind="error" findings={errors} />
         <ValidationFindingGroup label="Warnings" kind="warning" findings={warnings} />
       </section>
     </section>
+    </>
   );
 }
 
@@ -598,8 +570,16 @@ function issueTypeLabel(issueType: DashboardAttentionItem["issueType"]) {
   return "Security";
 }
 
-function groupIssueLabel(group: DashboardAttentionGroup) {
-  return Array.from(new Set(group.items.map((item) => issueTypeLabel(item.issueType)))).join(" · ");
+function reviewHeaderMeta(group: DashboardAttentionGroup) {
+  const { primary } = group;
+  return [
+    { key: "kind", label: primary.kind === "plugin" ? "Plugin" : "Skill" },
+    primary.ownerHandle ? { key: "owner", label: `@${primary.ownerHandle}` } : null,
+    primary.version ? { key: "version", label: `v${primary.version}` } : null,
+    primary.updatedAt
+      ? { key: "updated", label: `Updated ${timeAgo(primary.updatedAt)}` }
+      : null,
+  ].filter((item): item is { key: string; label: string } => item !== null);
 }
 
 function groupVisibilityLabel(group: DashboardAttentionGroup) {

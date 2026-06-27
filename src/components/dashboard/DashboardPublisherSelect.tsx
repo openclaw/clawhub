@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { MarketplaceIcon } from "../MarketplaceIcon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import type { DashboardPublisherEntry } from "./types";
@@ -9,6 +10,7 @@ type DashboardPublisherSelectProps = {
   triggerClassName?: string;
   size?: "sm" | "default";
   variant?: "default" | "identity";
+  triggerIcon?: ReactNode;
 };
 
 export function DashboardPublisherSelect({
@@ -18,6 +20,7 @@ export function DashboardPublisherSelect({
   triggerClassName,
   size = "sm",
   variant = "default",
+  triggerIcon,
 }: DashboardPublisherSelectProps) {
   const selected = publishers.find((entry) => entry.publisher?._id === value) ?? null;
   const isIdentity = variant === "identity";
@@ -27,6 +30,7 @@ export function DashboardPublisherSelect({
       <SelectTrigger
         aria-label="Dashboard publisher"
         size={isIdentity ? "sm" : size}
+        icon={triggerIcon}
         className={
           triggerClassName ?? (isIdentity ? "dashboard-header-publisher-trigger" : "min-w-[160px]")
         }
@@ -41,11 +45,15 @@ export function DashboardPublisherSelect({
           <SelectValue placeholder="Select publisher" />
         )}
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="dashboard-publisher-select-content">
         {publishers
           .filter((entry) => entry.publisher)
           .map((entry) => (
-            <SelectItem key={entry.publisher!._id} value={entry.publisher!._id}>
+            <SelectItem
+              key={entry.publisher!._id}
+              value={entry.publisher!._id}
+              className="dashboard-publisher-select-item"
+            >
               <PublisherOption publisher={entry.publisher!} />
             </SelectItem>
           ))}
@@ -78,7 +86,7 @@ function PublisherOption({ publisher }: { publisher: DashboardPublisherEntry["pu
         />
       </span>
       <span className="truncate">
-        @{publisher.handle} · {publisher.kind === "org" ? "Org" : "Personal"}
+        {publisher.displayName || publisher.handle}
       </span>
     </span>
   );

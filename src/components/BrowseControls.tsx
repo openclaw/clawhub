@@ -207,13 +207,13 @@ export function BrowseSortSelect({ options, value, onChange }: BrowseSortSelectP
                     role="option"
                     aria-selected={active}
                     className={`browse-sort-option${active ? " is-selected" : ""}`}
-                    onClick={() => pick(active ? undefined : option.value)}
+                    onClick={() => pick(option.value)}
                   >
-                    <span className="browse-sort-option-mark" aria-hidden="true">
-                      {active ? <Check size={12} strokeWidth={2.5} /> : null}
-                    </span>
                     {option.icon}
                     <span className="browse-sort-option-label">{option.label}</span>
+                    <span className="browse-sort-option-mark" aria-hidden="true">
+                      {active ? <Check size={14} strokeWidth={2.4} /> : null}
+                    </span>
                   </button>
                 </li>
               );

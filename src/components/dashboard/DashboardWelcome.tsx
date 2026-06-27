@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { Box, Compass, Package, Plus, Sparkles } from "lucide-react";
+import { ArrowUpRight, Compass, Package, Plug, Plus } from "lucide-react";
 import type { ReactNode } from "react";
 import { addSearchParams } from "../../lib/addRoutes";
+import { CLAWHUB_DOCS_URL } from "../../lib/publicRegistry";
 import { Button } from "../ui/button";
 
 const emptySkillsSearch = {
@@ -27,13 +28,20 @@ export function DashboardWelcome({ ownerHandle, publisherSelector }: DashboardWe
 
       <section className="dashboard-welcome">
         <div className="dashboard-welcome-hero">
-          <span className="dashboard-welcome-icon">
-            <Sparkles className="h-6 w-6" aria-hidden="true" />
+          <span className="dashboard-welcome-icon" aria-hidden="true">
+            <span className="dashboard-welcome-icon-tile dashboard-welcome-icon-tile--back dashboard-welcome-icon-tile--package">
+              <Package className="h-4 w-4" />
+            </span>
+            <span className="dashboard-welcome-icon-tile dashboard-welcome-icon-tile--back dashboard-welcome-icon-tile--plugin">
+              <Plug className="h-4 w-4" />
+            </span>
+            <span className="dashboard-welcome-icon-tile dashboard-welcome-icon-tile--brand">
+              <img src="/logo-transparent.png" alt="" draggable={false} />
+            </span>
           </span>
           <h1 className="dashboard-welcome-title">Welcome to ClawHub</h1>
           <p className="dashboard-welcome-body">
-            You're signed in as <strong>@{ownerHandle}</strong>. Add your first skill or plugin to
-            make it available through ClawHub and OpenClaw.
+            Publish your first skill or plugin for others to discover and use.
           </p>
         </div>
 
@@ -41,62 +49,26 @@ export function DashboardWelcome({ ownerHandle, publisherSelector }: DashboardWe
           <Button asChild size="lg" variant="primary">
             <Link to="/add" search={addSearchParams({ ownerHandle })}>
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Add to ClawHub
+              Add skill or plugin
             </Link>
           </Button>
         </div>
 
-        <div className="dashboard-welcome-actions">
-          <Link
-            to="/add"
-            search={addSearchParams({ kind: "skill", ownerHandle })}
-            className="dashboard-welcome-card"
-            aria-label="Add a skill"
-          >
-            <span className="dashboard-welcome-card-icon">
-              <Box className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <span className="dashboard-welcome-card-title">Skill</span>
-            <span className="dashboard-welcome-card-desc">
-              Reusable instructions and workflows centered around SKILL.md.
-            </span>
-          </Link>
-
-          <Link
-            to="/add"
-            search={addSearchParams({ kind: "plugin", ownerHandle })}
-            className="dashboard-welcome-card"
-            aria-label="Add a plugin"
-          >
-            <span className="dashboard-welcome-card-icon">
-              <Package className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <span className="dashboard-welcome-card-title">Plugin</span>
-            <span className="dashboard-welcome-card-desc">
-              OpenClaw package, integration, or executable extension.
-            </span>
-          </Link>
-
-          <Link
-            to="/add"
-            search={addSearchParams({ kind: "skill", ownerHandle, method: "github" })}
-            className="dashboard-welcome-card"
-            aria-label="Import from GitHub"
-          >
-            <span className="dashboard-welcome-card-icon">
-              <Compass className="h-4 w-4" aria-hidden="true" />
-            </span>
-            <span className="dashboard-welcome-card-title">Import from GitHub</span>
-            <span className="dashboard-welcome-card-desc">
-              Bring a public repository into ClawHub in a couple of clicks.
-            </span>
-          </Link>
+        <div className="dashboard-welcome-explore">
+          <span className="dashboard-welcome-explore-label">
+            <Compass className="h-3.5 w-3.5" aria-hidden="true" />
+            Or explore ClawHub
+          </span>
+          <nav className="dashboard-welcome-explore-links" aria-label="Explore ClawHub">
+            <Link to="/skills" search={emptySkillsSearch}>Skills</Link>
+            <Link to="/plugins">Plugins</Link>
+            <Link to="/creators">Creators</Link>
+            <a href={CLAWHUB_DOCS_URL} target="_blank" rel="noreferrer">
+              Docs
+              <ArrowUpRight size={12} aria-hidden="true" />
+            </a>
+          </nav>
         </div>
-
-        <Link to="/skills" search={emptySkillsSearch} className="dashboard-welcome-link">
-          <Compass className="h-4 w-4" aria-hidden="true" />
-          Browse examples
-        </Link>
       </section>
     </main>
   );

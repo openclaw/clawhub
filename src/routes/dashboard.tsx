@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { ChevronsUpDown, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -210,6 +210,7 @@ export function Dashboard() {
           value={activePublisherId}
           onValueChange={setSelectedPublisherId}
           triggerClassName="dashboard-welcome-publisher-trigger"
+          triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
         />
       </div>
     ) : null;
@@ -312,20 +313,35 @@ export function Dashboard() {
                 />
               )}
             </DashboardInventorySection>
+
+            {showDownloadInsights ? (
+              <div className="dashboard-downloads-mobile-slot">
+                <DashboardDownloadsInsights
+                  skills={skills}
+                  packages={packages}
+                  skillDownloadsTotal={skillDownloadsTotal}
+                  pluginDownloadsTotal={pluginDownloadsTotal}
+                  insight={search.insight}
+                  onInsightChange={(insight) => patchSearch({ insight })}
+                />
+              </div>
+            ) : null}
           </div>
 
           {isSidebarVisible ? <DashboardRightSidebar ownerHandle={ownerHandle} /> : null}
         </div>
 
         {showDownloadInsights ? (
-          <DashboardDownloadsInsights
-            skills={skills}
-            packages={packages}
-            skillDownloadsTotal={skillDownloadsTotal}
-            pluginDownloadsTotal={pluginDownloadsTotal}
-            insight={search.insight}
-            onInsightChange={(insight) => patchSearch({ insight })}
-          />
+          <div className="dashboard-downloads-desktop-slot">
+            <DashboardDownloadsInsights
+              skills={skills}
+              packages={packages}
+              skillDownloadsTotal={skillDownloadsTotal}
+              pluginDownloadsTotal={pluginDownloadsTotal}
+              insight={search.insight}
+              onInsightChange={(insight) => patchSearch({ insight })}
+            />
+          </div>
         ) : null}
 
       </main>

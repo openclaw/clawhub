@@ -52,7 +52,7 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
         <div className="dashboard-sidebar-promo-text">
           <h2 className="dashboard-sidebar-promo-title">Import from GitHub</h2>
           <p className="dashboard-sidebar-promo-copy">
-            Bring in skills from a repo you control.
+            Import skills directly from your GitHub repositories.
           </p>
         </div>
         <Link

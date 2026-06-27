@@ -4,7 +4,6 @@ import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
-import { ArtifactScanStatusValue } from "../artifacts/ArtifactScanStrip";
 import {
   artifactStatusToScanStatus,
   packageArtifactStatus,
@@ -104,6 +103,7 @@ function SkillListRow({
   return (
     <CatalogRow
       href={detailHref}
+      kindLabel="Skill"
       title={skill.displayName}
       titleAccessory={visibilityIcon(visibility.label)}
       secondary={packageRowSecondary(skill.latestVersion?.version, skill.updatedAt)}
@@ -128,6 +128,7 @@ function PluginListRow({
   return (
     <CatalogRow
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
+      kindLabel="Plugin"
       title={pkg.displayName}
       secondary={packageRowSecondary(pkg.latestVersion ?? pkg.latestRelease?.version, pkg.updatedAt)}
       status={packageArtifactStatus(pkg)}
@@ -139,6 +140,7 @@ function PluginListRow({
 
 function CatalogRow({
   href,
+  kindLabel,
   title,
   titleAccessory,
   secondary,
@@ -147,6 +149,7 @@ function CatalogRow({
   menu,
 }: {
   href: string;
+  kindLabel: string;
   title: string;
   titleAccessory?: ReactNode;
   secondary: string;
@@ -162,7 +165,11 @@ function CatalogRow({
           <span className="skill-list-item-name">{title}</span>
           {titleAccessory}
         </div>
-        <p className="skill-list-item-summary dashboard-catalog-row-secondary">{secondary}</p>
+        <p className="skill-list-item-summary dashboard-catalog-row-secondary">
+          <span className="dashboard-catalog-kind-inline">{kindLabel}</span>
+          <span aria-hidden="true"> · </span>
+          {secondary}
+        </p>
       </div>
       <div className="dashboard-catalog-review" aria-label="Review trend">
         <SecurityAuditMiniStatus status={status} />
@@ -223,6 +230,7 @@ function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHan
       summary={skill.summary}
       summaryFallback="Agent-ready skill pack."
       icon={<MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />}
+      kindLabel="Skill"
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
       updatedAt={skill.updatedAt}
@@ -238,6 +246,7 @@ function PluginGridCard({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHand
       summary={pkg.summary}
       summaryFallback="Gateway plugin for OpenClaw workflows."
       icon={<MarketplaceIcon kind="plugin" label={pkg.displayName} size="sm" />}
+      kindLabel="Plugin"
       status={packageArtifactStatus(pkg)}
       downloads={pkg.stats.downloads ?? 0}
       updatedAt={pkg.updatedAt}
@@ -251,6 +260,7 @@ function DashboardCatalogGridCard({
   summary,
   summaryFallback,
   icon,
+  kindLabel,
   status,
   downloads,
   updatedAt,
@@ -260,18 +270,21 @@ function DashboardCatalogGridCard({
   summary?: string | null;
   summaryFallback: string;
   icon: ReactNode;
+  kindLabel: "Skill" | "Plugin";
   status: ArtifactDisplayStatus;
   downloads: number;
   updatedAt: number;
 }) {
   return (
     <a href={href} className="home-v2-listing-card dashboard-catalog-grid-card">
+      <span className="dashboard-catalog-grid-card-kind">{kindLabel}</span>
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           {icon}
         </span>
         <div className="home-v2-listing-card-id">
           <span className="home-v2-listing-card-name">{truncateText(title, 40)}</span>
+          <span className="dashboard-catalog-grid-card-updated">{timeAgo(updatedAt)}</span>
         </div>
       </div>
       <p className="home-v2-listing-card-summary">
@@ -282,14 +295,13 @@ function DashboardCatalogGridCard({
         aria-label="Catalog activity"
       >
         <span className="dashboard-catalog-grid-card-scan">
-          <ArtifactScanStatusValue status={status} />
+          <SecurityAuditMiniStatus status={status} />
         </span>
-        <span title={metricLabel(downloads, "download")}>
+        <span className="dashboard-catalog-grid-card-downloads" title={metricLabel(downloads, "download")}>
           <Download size={13} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>
           <span className="sr-only">{metricLabel(downloads, "download")}</span>
         </span>
-        <span>{timeAgo(updatedAt)}</span>
       </div>
     </a>
   );

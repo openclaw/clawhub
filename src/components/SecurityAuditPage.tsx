@@ -45,7 +45,7 @@ type OwnerRef = {
   handle?: string | null;
 };
 
-type EntityRef = {
+export type EntityRef = {
   kind: "skill" | "plugin";
   title: string;
   name: string;
@@ -847,6 +847,21 @@ function SecurityAuditScannerSection({
       {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>
+  );
+}
+
+export function SkillSpectorAuditPanel({
+  entity,
+  analysis,
+}: {
+  entity: EntityRef;
+  analysis?: SkillSpectorAnalysis | null;
+}) {
+  return (
+    <SecurityAuditScannerSection
+      kind="skillspector"
+      props={{ entity, skillSpectorAnalysis: analysis ?? null }}
+    />
   );
 }
 

@@ -140,11 +140,14 @@ export function DashboardDownloadsInsights({
               {isFiltered ? " (estimated)" : ""}
             </span>
           </div>
-          <Sparkline
-            series={totalSeries}
-            labels={labels}
-            className="dashboard-downloads-sparkline--compact-primary"
-          />
+          <div className="dashboard-downloads-chart-column">
+            <Sparkline
+              series={totalSeries}
+              labels={labels}
+              className="dashboard-downloads-sparkline--compact-primary"
+            />
+            <ChartAxis labels={labels} range={range} />
+          </div>
         </div>
 
         <div className="dashboard-downloads-compact-split">
@@ -205,6 +208,26 @@ function CompactStat({
         {delta}%
       </span>
       <Sparkline series={series} className="dashboard-downloads-sparkline--compact-stat" />
+    </div>
+  );
+}
+
+function ChartAxis({ labels, range }: { labels: string[]; range: DownloadRange }) {
+  const visibleLabels = labels
+    .map((label, index) => ({ label: label.trim(), index }))
+    .filter((item) => item.label);
+  const axisLabels =
+    visibleLabels.length <= 4
+      ? visibleLabels
+      : visibleLabels.filter((_, index, list) => {
+          return index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1;
+        });
+
+  return (
+    <div className="dashboard-downloads-chart-axis" aria-hidden="true">
+      {axisLabels.map((item) => (
+        <span key={`${item.index}-${item.label}`}>{item.label}</span>
+      ))}
     </div>
   );
 }
