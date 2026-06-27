@@ -105,8 +105,9 @@ function SkillListRow({
       href={detailHref}
       kindLabel="Skill"
       title={skill.displayName}
+      version={skill.latestVersion?.version}
       titleAccessory={visibilityIcon(visibility.label)}
-      secondary={packageRowSecondary(skill.latestVersion?.version, skill.updatedAt)}
+      secondary={packageRowSecondary(skill.updatedAt)}
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
@@ -130,7 +131,8 @@ function PluginListRow({
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
       kindLabel="Plugin"
       title={pkg.displayName}
-      secondary={packageRowSecondary(pkg.latestVersion ?? pkg.latestRelease?.version, pkg.updatedAt)}
+      version={pkg.latestVersion ?? pkg.latestRelease?.version}
+      secondary={packageRowSecondary(pkg.updatedAt)}
       status={packageArtifactStatus(pkg)}
       downloads={pkg.stats.downloads ?? 0}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
@@ -142,6 +144,7 @@ function CatalogRow({
   href,
   kindLabel,
   title,
+  version,
   titleAccessory,
   secondary,
   status,
@@ -151,6 +154,7 @@ function CatalogRow({
   href: string;
   kindLabel: string;
   title: string;
+  version?: string | null;
   titleAccessory?: ReactNode;
   secondary: string;
   status: ArtifactDisplayStatus;
@@ -163,6 +167,7 @@ function CatalogRow({
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-name">{title}</span>
+          {version ? <span className="dashboard-catalog-version">v{version}</span> : null}
           {titleAccessory}
         </div>
         <p className="skill-list-item-summary dashboard-catalog-row-secondary">
@@ -186,8 +191,8 @@ function CatalogRow({
   );
 }
 
-function packageRowSecondary(version: string | null | undefined, updatedAt: number) {
-  return [version ? `v${version}` : null, `Updated ${timeAgo(updatedAt)}`].filter(Boolean).join(" · ");
+function packageRowSecondary(updatedAt: number) {
+  return `Updated ${timeAgo(updatedAt)}`;
 }
 
 function SecurityAuditMiniStatus({ status }: { status: ArtifactDisplayStatus }) {

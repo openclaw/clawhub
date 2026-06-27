@@ -4,6 +4,7 @@ import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { buildSkillDetailHref } from "../../lib/ownerRoute";
+import { buildPluginDetailHref } from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { timeAgo } from "../../lib/timeAgo";
 import { InstallCopyButton } from "../InstallCopyButton";
@@ -190,18 +191,29 @@ function DashboardReviewSheetContent({
     api.packages.listPackageInspectorWarningsForManager,
     !isSkill && group.primary.packageName ? { name: group.primary.packageName, limit: 100 } : "skip",
   ) as PluginInspectorFinding[] | undefined;
+  const detailHref = isSkill
+    ? buildSkillDetailHref(group.primary.ownerHandle ?? "local", group.primary.slug ?? group.key)
+    : buildPluginDetailHref(group.primary.packageName ?? group.key, {
+        ownerHandle: group.primary.ownerHandle,
+      });
 
   return (
     <div className="security-report-panel security-report-panel-compact dashboard-review-report">
       <div className="dashboard-review-sheet-head security-report-panel-header">
         <div>
           <h2>{group.title}</h2>
-          <div className="dashboard-review-sheet-meta">
-            {reviewHeaderMeta(group).map((item) => (
-              <span key={item.key} className={`is-${item.key}`}>
-                {item.label}
-              </span>
-            ))}
+          <div className="dashboard-review-sheet-support">
+            <div className="dashboard-review-sheet-meta">
+              {reviewHeaderMeta(group).map((item) => (
+                <span key={item.key} className={`is-${item.key}`}>
+                  {item.label}
+                </span>
+              ))}
+            </div>
+            <a href={detailHref} className="dashboard-review-sheet-view-link">
+              View {isSkill ? "skill" : "plugin"}
+              <ChevronRight size={13} aria-hidden="true" />
+            </a>
           </div>
         </div>
         <button

@@ -30567,6 +30567,14 @@ a[class*="rounded-full"] {
   gap: 8px;
 }
 
+.dashboard-catalog-version {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .dashboard-catalog-row-secondary {
   color: var(--ink-soft);
   font-size: 11px;
@@ -30770,6 +30778,11 @@ a[class*="rounded-full"] {
   position: fixed;
   z-index: 79;
   inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  box-sizing: border-box;
+  padding: 16px;
   background: rgba(0, 0, 0, 0.26);
   transition: background-color 180ms ease;
 
@@ -30780,23 +30793,22 @@ a[class*="rounded-full"] {
 
 .dashboard-review-sheet {
   --dashboard-sheet-ease: cubic-bezier(0.32, 0.72, 0, 1);
-  position: fixed;
+  position: relative;
   z-index: 80;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(520px, 100vw);
-  height: 100vh;
-  max-height: none;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: min(560px, calc(100vw - 32px));
+  height: min(860px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
   overflow: auto;
   padding: 22px;
-  border: 0;
-  border-left: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
-  border-radius: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--surface) 93%, transparent);
   backdrop-filter: blur(28px) saturate(1.06);
   box-shadow:
-    -24px 0 80px color-mix(in srgb, #000 42%, transparent),
+    0 24px 80px color-mix(in srgb, #000 38%, transparent),
     inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
   opacity: 1;
   transform: translateX(0);
@@ -30825,6 +30837,19 @@ a[class*="rounded-full"] {
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
+.dashboard-review-sheet-head > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.dashboard-review-sheet-support {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+}
+
 .dashboard-review-sheet h2,
 .dashboard-review-sheet h3,
 .dashboard-review-sheet p {
@@ -30843,11 +30868,30 @@ a[class*="rounded-full"] {
   flex-wrap: wrap;
   align-items: center;
   gap: 0;
-  margin-top: 7px;
+  margin-top: 0;
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 550;
   line-height: 1.45;
+}
+
+.dashboard-review-sheet-view-link {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 3px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.dashboard-review-sheet-view-link:hover,
+.dashboard-review-sheet-view-link:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .dashboard-review-sheet-meta > span {
@@ -31514,6 +31558,7 @@ a[class*="rounded-full"] {
   flex: 1 1 0;
   min-width: 0;
   padding-inline: 8px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
@@ -31541,9 +31586,44 @@ a[class*="rounded-full"] {
 
 .dashboard-downloads-compact-hero-metric {
   display: grid;
+  grid-template-rows: auto auto 1fr;
   align-content: start;
   gap: 4px;
+  height: 100%;
   padding-top: 2px;
+}
+
+.dashboard-downloads-compact-hero-metric .dashboard-downloads-delta {
+  align-self: end;
+}
+
+.dashboard-review-sheet .plugin-validation-toolbar {
+  border-color: color-mix(in srgb, var(--line) 92%, transparent);
+  background: color-mix(in srgb, var(--surface) 96%, var(--bg));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
+}
+
+.dashboard-review-sheet .plugin-validation-command {
+  color: color-mix(in srgb, var(--ink) 88%, var(--ink-soft));
+  font-weight: 550;
+}
+
+@media (max-width: 640px) {
+  .dashboard-review-layer {
+    padding: 8px;
+  }
+
+  .dashboard-review-sheet {
+    width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+
+  .dashboard-review-sheet-support {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
 }
 
 .dashboard-downloads-metric-value--compact {
