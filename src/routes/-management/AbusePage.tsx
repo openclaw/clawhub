@@ -857,8 +857,10 @@ function zScoreClass(value: number) {
   return "pa-z-ok";
 }
 
-function formatPressureLabel(score: Pick<PublisherAbuseReviewScore, "pressure">) {
-  const pressure = score.pressure;
+function formatPressureLabel(
+  score: Pick<PublisherAbuseReviewScore, "pressure" | "temporalMaxPressure">,
+) {
+  const pressure = score.temporalMaxPressure ?? score.pressure;
   const formatted = formatRatio(pressure);
   if (pressure >= 100) return `Very High (${formatted})`;
   if (pressure >= 10) return `High (${formatted})`;

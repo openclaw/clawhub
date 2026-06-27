@@ -769,7 +769,8 @@ describe("Management", () => {
       zScore: 2.65,
       scoreOverrides: {
         modelVersion: "publisher-abuse-temporal.v1",
-        pressure: 1,
+        pressure: 1101,
+        temporalMaxPressure: 1,
         reasonCodes: ["temporal_sustained_downloads_flat_installs"],
         temporalBenchmark: {
           sampleSize: 1000,
