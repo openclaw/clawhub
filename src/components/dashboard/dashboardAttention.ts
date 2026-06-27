@@ -101,6 +101,22 @@ function pushSkillAttention(
       href: auditHref,
       actionLabel: "Review security →",
     });
+  } else if (security.tone === "pending" || security.tone === "warning") {
+    items.push({
+      id: `skill:${skill._id}:${security.tone === "pending" ? "pending-scan" : "review"}`,
+      kind: "skill",
+      slug: skill.slug,
+      ownerHandle,
+      version: skill.latestVersion?.version,
+      updatedAt: skill.updatedAt,
+      issueType: "security",
+      title: skill.displayName,
+      reason: security.tone === "pending" ? "Waiting for security checks" : "Needs security review",
+      preview: auditPreview,
+      severity: security.tone,
+      href: auditHref,
+      actionLabel: security.tone === "pending" ? "View progress →" : "Review security →",
+    });
   }
   if (visibility.label === "Hidden" || visibility.label === "Removed") {
     items.push({
