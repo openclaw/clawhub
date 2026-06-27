@@ -8,7 +8,6 @@ import {
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
   seedLocalModerationFixturesHandler,
-  seedLocalPublisherSwitcherContentMutation,
   seedPublicCorpusBatch,
   seedPublicCorpusBatchMutation,
   seedSkillMutation,
@@ -29,9 +28,6 @@ const seedGitHubBackedSkillSourceHandler = (
 )._handler;
 const seedLocalFixturesHandler = (
   seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
-)._handler;
-const seedLocalPublisherSwitcherContentHandler = (
-  seedLocalPublisherSwitcherContentMutation as unknown as WrappedHandler<{ reset?: boolean }>
 )._handler;
 const seedPublicCorpusBatchActionHandler = (
   seedPublicCorpusBatch as unknown as WrappedHandler<Record<string, unknown>>
@@ -185,94 +181,15 @@ describe("devSeed local fixtures", () => {
 
     const result = await seedLocalFixturesHandler(ctx as never, { reset: true });
 
-    expect(mutationCalls).toHaveLength(2);
+    expect(mutationCalls).toHaveLength(1);
     expect(mutationCalls[0]?.args).toMatchObject({
-      reset: true,
-    });
-    expect(mutationCalls[1]?.args).toMatchObject({
       reset: true,
     });
     expect(result).toEqual(
       expect.objectContaining({
         ok: true,
-        results: [
-          expect.objectContaining({ slug: "local-moderation-fixtures" }),
-          expect.objectContaining({ slug: "local-publisher-switcher-content" }),
-        ],
+        results: [expect.objectContaining({ slug: "local-moderation-fixtures" })],
       }),
-    );
-  });
-
-  it("seeds switcher content for the local official member and org publishers", async () => {
-    const { db, tables } = createDb();
-
-    await seedLocalPublisherSwitcherContentHandler(createMutationCtx(db) as never, {
-      reset: true,
-    });
-
-    const memberUser = tables.users?.find((user) => user.handle === "local-official-member");
-    const memberPublisher = tables.publishers?.find(
-      (publisher) => publisher.handle === "local-official-member",
-    );
-    const orgPublisher = tables.publishers?.find(
-      (publisher) => publisher.handle === "local-official-org",
-    );
-
-    expect(memberUser).toEqual(
-      expect.objectContaining({
-        displayName: "Local Official Org Member",
-        name: "Local Official Org Member",
-      }),
-    );
-    expect(memberPublisher).toEqual(
-      expect.objectContaining({
-        kind: "user",
-        linkedUserId: memberUser?._id,
-      }),
-    );
-    expect(orgPublisher).toEqual(
-      expect.objectContaining({
-        kind: "org",
-        displayName: "Local Official Org",
-      }),
-    );
-    expect(tables.publisherMembers).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          publisherId: orgPublisher?._id,
-          userId: memberUser?._id,
-          role: "admin",
-        }),
-      ]),
-    );
-    expect(tables.skills).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          slug: "member-inbox-triage",
-          ownerPublisherId: memberPublisher?._id,
-        }),
-        expect.objectContaining({
-          slug: "org-release-checklist",
-          ownerPublisherId: orgPublisher?._id,
-        }),
-      ]),
-    );
-    expect(tables.packages).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "member-sandbox-runner",
-          ownerPublisherId: memberPublisher?._id,
-        }),
-        expect.objectContaining({
-          name: "org-audit-reporter",
-          ownerPublisherId: orgPublisher?._id,
-        }),
-      ]),
-    );
-    expect(tables.packageReleases).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ packageId: expect.stringMatching(/^packages:/) }),
-      ]),
     );
   });
 
