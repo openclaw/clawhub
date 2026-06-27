@@ -16,6 +16,7 @@ import type * as catalogFeed from "../catalogFeed.js";
 import type * as catalogTopics from "../catalogTopics.js";
 import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as crons from "../crons.js";
+import type * as dashboard from "../dashboard.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
 import type * as devSeed from "../devSeed.js";
 import type * as devSeedExtra from "../devSeedExtra.js";
@@ -173,6 +174,7 @@ declare const fullApi: ApiFromModules<{
   catalogTopics: typeof catalogTopics;
   cliDeviceAuth: typeof cliDeviceAuth;
   crons: typeof crons;
+  dashboard: typeof dashboard;
   depRegistryScan: typeof depRegistryScan;
   devSeed: typeof devSeed;
   devSeedExtra: typeof devSeedExtra;

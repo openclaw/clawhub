@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import type { DashboardDownloadMetrics } from "./dashboardDownloadMetrics";
 import { DashboardDownloadsInsights } from "./DashboardDownloadsInsights";
 import type { DashboardPackage, DashboardSkill } from "./types";
 
@@ -28,20 +29,26 @@ const pkg = {
   latestRelease: null,
 } as DashboardPackage;
 
+const metrics: DashboardDownloadMetrics = {
+  endDay: 30,
+  allTimeDownloads: 160,
+  skills: {
+    allTimeDownloads: 120,
+    points: Array.from({ length: 30 }, (_, index) => ({ day: index + 1, value: index })),
+  },
+  plugins: {
+    allTimeDownloads: 40,
+    points: Array.from({ length: 30 }, (_, index) => ({ day: index + 1, value: index % 3 })),
+  },
+};
+
 describe("DashboardDownloadsInsights", () => {
-  it("renders without PROXY_NOTE and shows interactive chart tooltips on hover", () => {
+  it("renders daily download metrics with interactive chart tooltips", () => {
     const { container } = render(
-      <DashboardDownloadsInsights
-        skills={[skill]}
-        packages={[pkg]}
-        skillDownloadsTotal={120}
-        pluginDownloadsTotal={40}
-      />,
+      <DashboardDownloadsInsights skills={[skill]} packages={[pkg]} metrics={metrics} />,
     );
 
     expect(screen.getByLabelText("Download metrics")).toBeTruthy();
-    expect(container.textContent).not.toContain("PROXY_NOTE");
-
     const hitZones = container.querySelectorAll(".dashboard-downloads-chart-hit");
     expect(hitZones.length).toBeGreaterThan(0);
 

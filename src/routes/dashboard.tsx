@@ -14,6 +14,7 @@ import {
   sortDashboardItems,
 } from "../components/dashboard/dashboardCatalog";
 import { DashboardCatalogView } from "../components/dashboard/DashboardCatalogView";
+import { downloadMetricQuerySelection } from "../components/dashboard/dashboardDownloadMetrics";
 import { DashboardDownloadsInsights } from "../components/dashboard/DashboardDownloadsInsights";
 import { DashboardHeader } from "../components/dashboard/DashboardHeader";
 import { DashboardInventorySection } from "../components/dashboard/DashboardInventorySection";
@@ -34,6 +35,7 @@ import { SignInPrompt } from "../components/SignInPrompt";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { Button } from "../components/ui/button";
 import { TooltipProvider } from "../components/ui/tooltip";
+import { getActivityTrendEndDay } from "../lib/activityTrend";
 import { addSearchParams } from "../lib/addRoutes";
 import {
   dashboardSearchParams,
@@ -121,6 +123,16 @@ export function Dashboard() {
         ? { ownerUserId: me._id, limit: DASHBOARD_PACKAGES_LIMIT }
         : "skip",
   ) as DashboardPackage[] | undefined;
+  const downloadMetrics = useQuery(
+    api.dashboard.getDownloadMetrics,
+    activePublisherId
+      ? {
+          publisherId: activePublisherId as Doc<"publishers">["_id"],
+          endDay: getActivityTrendEndDay(),
+          selection: downloadMetricQuerySelection(search.insight),
+        }
+      : "skip",
+  );
 
   const skills = mySkills ?? [];
   const packages = myPackages ?? [];
@@ -166,7 +178,8 @@ export function Dashboard() {
   const showAttentionStrip = kindFilter !== "attention" && attentionItems.length > 0;
   const skillDownloadsTotal = skills.reduce((sum, skill) => sum + (skill.stats?.downloads ?? 0), 0);
   const pluginDownloadsTotal = packages.reduce((sum, pkg) => sum + (pkg.stats.downloads ?? 0), 0);
-  const showDownloadInsights = skillDownloadsTotal + pluginDownloadsTotal > 0;
+  const showDownloadInsights =
+    skillDownloadsTotal + pluginDownloadsTotal > 0 && downloadMetrics !== undefined;
 
   useEffect(() => {
     const savedSidebar = window.localStorage.getItem(DASHBOARD_SIDEBAR_STORAGE_KEY);
@@ -310,13 +323,12 @@ export function Dashboard() {
               )}
             </DashboardInventorySection>
 
-            {showDownloadInsights ? (
+            {showDownloadInsights && downloadMetrics ? (
               <div className="dashboard-downloads-mobile-slot">
                 <DashboardDownloadsInsights
                   skills={skills}
                   packages={packages}
-                  skillDownloadsTotal={skillDownloadsTotal}
-                  pluginDownloadsTotal={pluginDownloadsTotal}
+                  metrics={downloadMetrics}
                   insight={search.insight}
                   onInsightChange={(insight) => patchSearch({ insight })}
                 />
@@ -327,13 +339,12 @@ export function Dashboard() {
           {isSidebarVisible ? <DashboardRightSidebar ownerHandle={ownerHandle} /> : null}
         </div>
 
-        {showDownloadInsights ? (
+        {showDownloadInsights && downloadMetrics ? (
           <div className="dashboard-downloads-desktop-slot">
             <DashboardDownloadsInsights
               skills={skills}
               packages={packages}
-              skillDownloadsTotal={skillDownloadsTotal}
-              pluginDownloadsTotal={pluginDownloadsTotal}
+              metrics={downloadMetrics}
               insight={search.insight}
               onInsightChange={(insight) => patchSearch({ insight })}
             />

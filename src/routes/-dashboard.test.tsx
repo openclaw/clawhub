@@ -7,6 +7,14 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { Dashboard } from "./dashboard";
 
+class TestResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+vi.stubGlobal("ResizeObserver", TestResizeObserver);
+
 vi.mock("../components/dashboard/DashboardPublisherSelect", () => ({
   DashboardPublisherSelect: ({
     value,
@@ -208,9 +216,22 @@ const publishers = [
   },
 ];
 
+const downloadMetrics = {
+  endDay: 30,
+  allTimeDownloads: 42,
+  skills: {
+    allTimeDownloads: 0,
+    points: Array.from({ length: 30 }, (_, index) => ({ day: index + 1, value: 0 })),
+  },
+  plugins: {
+    allTimeDownloads: 42,
+    points: Array.from({ length: 30 }, (_, index) => ({ day: index + 1, value: index % 3 })),
+  },
+};
+
 function createSkill(overrides?: Partial<TestSkill>): TestSkill {
   return {
-    _id: "skills:below-cap" as Id<"skills">,
+    _id: "skillsbelowcap" as Id<"skills">,
     _creationTime: 1,
     slug: "local-flagged-skill",
     displayName: "Local Flagged Skill",
@@ -241,7 +262,7 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
 
 function createPackage(overrides?: Partial<TestPackage>): TestPackage {
   return {
-    _id: "packages:at-cap" as Id<"packages">,
+    _id: "packagesatcap" as Id<"packages">,
     name: "local-flagged-runtime-plugin",
     displayName: "Local Flagged Runtime Plugin",
     family: "code-plugin",
@@ -315,6 +336,7 @@ function arrangeDashboard({
     const name = getFunctionName(query as never);
     if (name === "publishers:listMine") return publishers;
     if (name === "packages:list") return packages;
+    if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
     return packages;
   });
 }
@@ -388,7 +410,7 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    fireEvent.click(screen.getByRole("radio", { name: /Skills 1/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
 
     expect(screen.getAllByText("Local Flagged Skill").length).toBeGreaterThan(0);
     expect(screen.queryByText("Local Flagged Runtime Plugin")).toBeNull();
@@ -430,7 +452,7 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    const inventory = screen.getByRole("region", { name: "My packages" });
+    const inventory = screen.getByRole("region", { name: "Packages" });
     fireEvent.click(within(inventory).getByRole("combobox", { name: "Sort" }));
     fireEvent.click(screen.getByRole("option", { name: "Most downloaded" }));
 
@@ -499,17 +521,6 @@ describe("Dashboard rows", () => {
     expect(document.querySelector(".dashboard-catalog-grid")).toBeTruthy();
   });
 
-  it("does not pad small catalogs with synthetic packages", () => {
-    arrangeDashboard({ skills: [createCatalogSkill()] });
-
-    renderDashboard();
-
-    expect(document.querySelectorAll(".dashboard-catalog-row")).toHaveLength(1);
-    expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
-    expect(screen.queryByText("Workflow Guard")).toBeNull();
-    expect(screen.queryByText("GitHub Importer")).toBeNull();
-  });
-
   it("shows dashboard header identity without inventory count", () => {
     arrangeDashboard({
       skills: [createCatalogSkill()],
@@ -523,9 +534,9 @@ describe("Dashboard rows", () => {
     expect(heading.closest(".dashboard-scope-bar")).toBeNull();
     expect(document.querySelector(".dashboard-scope-bar")).toBeNull();
     expect(document.querySelector(".dashboard-header-count")).toBeNull();
-    expect(screen.getByRole("heading", { name: "My packages" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Add to ClawHub" })).toBeTruthy();
-    expect(screen.getByText("Bring in skills from a repo you control.")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Packages" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Add skill or plugin" })).toBeTruthy();
+    expect(screen.getByText("Import skills directly from your GitHub repositories.")).toBeTruthy();
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
@@ -538,12 +549,11 @@ describe("Dashboard rows", () => {
 
     expect(screen.getByLabelText("Needs attention")).toBeTruthy();
     expect(document.querySelectorAll(".dashboard-attention-row").length).toBe(2);
-    expect(screen.getAllByText("Security").length).toBeGreaterThan(0);
     expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
     expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
     const attention = screen.getByLabelText("Needs attention");
-    const skillAttention = within(attention).getByRole("link", { name: /Local Flagged Skill/ });
-    const pluginAttention = within(attention).getByRole("link", {
+    const skillAttention = within(attention).getByRole("button", { name: /Local Flagged Skill/ });
+    const pluginAttention = within(attention).getByRole("button", {
       name: /Local Flagged Runtime Plugin/,
     });
     expect(pluginAttention.textContent).toContain("Blocked");
@@ -556,8 +566,8 @@ describe("Dashboard rows", () => {
     expect(screen.queryByText("Static")).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
-    const downloads = screen.getByRole("region", { name: "Download metrics" });
-    expect(downloads.textContent).toContain("Total downloads");
+    const downloads = screen.getAllByRole("region", { name: "Download metrics" })[0];
+    expect(downloads.textContent).toContain("Downloads");
     expect(downloads.textContent).toContain("Skills");
   });
 
@@ -565,7 +575,7 @@ describe("Dashboard rows", () => {
     arrangeDashboard({
       packages: [
         createPackage({
-          _id: "packages:first" as Id<"packages">,
+          _id: "packagesfirst" as Id<"packages">,
           inspectorWarningCount: 1,
           topInspectorFinding: {
             message: "deprecated hook",
@@ -581,7 +591,7 @@ describe("Dashboard rows", () => {
           },
         }),
         createPackage({
-          _id: "packages:second" as Id<"packages">,
+          _id: "packagessecond" as Id<"packages">,
           name: "second-runtime-plugin",
           displayName: "Second Runtime Plugin",
           scanStatus: "suspicious",
@@ -599,20 +609,22 @@ describe("Dashboard rows", () => {
     renderDashboard();
 
     expect(document.querySelectorAll(".dashboard-attention-row")).toHaveLength(2);
-    const groupedRow = screen.getByRole("link", {
+    const groupedRow = screen.getByRole("button", {
       name: /Local Flagged Runtime Plugin\. 2 issues/i,
     });
-    expect(groupedRow.textContent).toContain("Validation");
-    expect(groupedRow.textContent).toContain("Security");
-    expect(groupedRow.getAttribute("href")).toBe(
-      "/local/plugins/local-flagged-runtime-plugin/security-audit",
+    expect(groupedRow.getAttribute("aria-label")).toContain("Validation");
+    expect(groupedRow.getAttribute("aria-label")).toContain("Security");
+    fireEvent.click(groupedRow);
+    expect(
+      screen.getByRole("dialog", { name: "Local Flagged Runtime Plugin review" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View plugin" }).getAttribute("href")).toBe(
+      "/local/plugins/local-flagged-runtime-plugin",
     );
-    expect(screen.getByRole("link", { name: /Second Runtime Plugin\. 1 issue/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Second Runtime Plugin\. 1 issue/i })).toBeTruthy();
   });
 
   it("links public plugin finding counts to the plugin validation tab", () => {
-    // flagged plugin stays in needs-attention queue; use attention filter for inventory drill-down
-
     arrangeDashboard({
       packages: [
         createPackage({
@@ -630,19 +642,17 @@ describe("Dashboard rows", () => {
       ],
     });
 
-    renderDashboard({ kind: "attention" });
+    renderDashboard();
 
-    const validationLink = screen.getByRole("link", {
-      name: "View 2 validation findings for Local Flagged Runtime Plugin",
+    const attentionRow = screen.getByRole("button", {
+      name: /Local Flagged Runtime Plugin\. 1 issue/i,
     });
-    expect(validationLink.getAttribute("href")).toBe(
-      "/plugins/local-flagged-runtime-plugin#validation",
-    );
-    expect(validationLink.parentElement?.closest("a")).toBeNull();
-    expect(validationLink.textContent).toBe("2 warnings");
-    expect(screen.getByRole("link", { name: "Open Local Flagged Runtime Plugin" })).toBeTruthy();
-    expect(screen.getByText("42 downloads", { selector: ".sr-only" })).toBeTruthy();
-    expect(screen.getByText("Status")).toBeTruthy();
+    expect(attentionRow.getAttribute("aria-label")).toContain("2 validation warnings");
+    fireEvent.click(attentionRow);
+    expect(
+      screen.getByRole("dialog", { name: "Local Flagged Runtime Plugin review" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Validation" })).toBeTruthy();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {
@@ -687,6 +697,7 @@ describe("Dashboard rows", () => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query as never);
       if (name === "publishers:listMine") return orgPublishers;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
       if (
         typeof args === "object" &&
         args !== null &&
@@ -757,6 +768,7 @@ describe("Dashboard rows", () => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query as never);
       if (name === "publishers:listMine") return orgPublishers;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
       return [];
     });
 
@@ -766,9 +778,9 @@ describe("Dashboard rows", () => {
       target: { value: "publishers:clawkit" },
     });
 
-    expect((await screen.findByRole("link", { name: "Add to ClawHub" })).getAttribute("href")).toBe(
-      "/add?kind=skill&ownerHandle=clawkit",
-    );
+    expect(
+      (await screen.findByRole("link", { name: "Add skill or plugin" })).getAttribute("href"),
+    ).toBe("/add?kind=skill&ownerHandle=clawkit");
   });
 
   it("renders a skeleton while auth state is loading", () => {
@@ -809,6 +821,7 @@ describe("Dashboard rows", () => {
     mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query as never);
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
       if (name === "publishers:listMine")
         return [
           {

@@ -2,15 +2,16 @@ import { useId, useMemo, useState } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { BrowseControlsDivider, BrowseSegmentedTabs, BrowseSortSelect } from "../BrowseControls";
 import {
-  artifactDownloads,
   buildDownloadInsightOptions,
-  buildDownloadSeries,
+  combineMetricSeries,
   formatRangeTotal,
+  metricSeries,
   parseDownloadInsight,
   rangeDelta,
   rangeLabels,
   resolveDownloadInsight,
   sumSeries,
+  type DashboardDownloadMetrics,
   type DownloadRange,
 } from "./dashboardDownloadMetrics";
 import type { DashboardPackage, DashboardSkill } from "./types";
@@ -18,14 +19,12 @@ import type { DashboardPackage, DashboardSkill } from "./types";
 type DashboardDownloadsInsightsProps = {
   skills: DashboardSkill[];
   packages: DashboardPackage[];
-  skillDownloadsTotal: number;
-  pluginDownloadsTotal: number;
+  metrics: DashboardDownloadMetrics;
   insight?: string;
   onInsightChange?: (insight: string | undefined) => void;
 };
 
 const RANGES: { id: DownloadRange; label: string }[] = [
-  { id: "1d", label: "1D" },
   { id: "1w", label: "1W" },
   { id: "1m", label: "1M" },
   { id: "all", label: "All time" },
@@ -36,8 +35,7 @@ type ChartCoord = { x: number; y: number };
 export function DashboardDownloadsInsights({
   skills,
   packages,
-  skillDownloadsTotal: _skillDownloadsTotal,
-  pluginDownloadsTotal: _pluginDownloadsTotal,
+  metrics,
   insight,
   onInsightChange,
 }: DashboardDownloadsInsightsProps) {
@@ -55,35 +53,22 @@ export function DashboardDownloadsInsights({
     [skills, packages],
   );
 
-  const activeSkills = filtered.missing ? skills : filtered.skills;
-  const activePackages = filtered.missing ? packages : filtered.packages;
-
-  const totalSeries = useMemo(
-    () => buildDownloadSeries(activeSkills, activePackages, range),
-    [activeSkills, activePackages, range],
-  );
-  const skillSeries = useMemo(
-    () => buildDownloadSeries(isFiltered ? [] : skills, [], range),
-    [isFiltered, skills, range],
-  );
-  const pluginSeries = useMemo(
-    () => buildDownloadSeries([], isFiltered ? [] : packages, range),
-    [isFiltered, packages, range],
-  );
-  const itemSeries = useMemo(() => (isFiltered ? totalSeries : []), [isFiltered, totalSeries]);
+  const skillSeries = metricSeries(metrics.skills.points, range);
+  const pluginSeries = metricSeries(metrics.plugins.points, range);
+  const totalSeries = combineMetricSeries(skillSeries, pluginSeries);
+  const itemSeries = isFiltered ? totalSeries : [];
 
   const rangeTotal = sumSeries(totalSeries);
   const totalDelta = rangeDelta(totalSeries);
   const skillDelta = rangeDelta(skillSeries);
   const pluginDelta = rangeDelta(pluginSeries);
   const itemDelta = rangeDelta(itemSeries);
-  const labels = rangeLabels(range);
+  const labels = rangeLabels(range, metrics.endDay);
 
-  const heroDownloads = isFiltered ? artifactDownloads(activeSkills, activePackages) : rangeTotal;
-  const heroMetricLabel = isFiltered ? "All-time downloads" : "Total downloads";
-  const heroDisplay = isFiltered
-    ? formatCompactStat(heroDownloads)
-    : formatRangeTotal(heroDownloads);
+  const heroDownloads = range === "all" ? metrics.allTimeDownloads : rangeTotal;
+  const heroMetricLabel = range === "all" ? "All-time downloads" : "Downloads";
+  const heroDisplay =
+    range === "all" ? formatCompactStat(heroDownloads) : formatRangeTotal(heroDownloads);
 
   return (
     <section
@@ -114,7 +99,7 @@ export function DashboardDownloadsInsights({
             }))}
             value={range}
             onChange={(value) => {
-              if (value === "1d" || value === "1w" || value === "1m" || value === "all") {
+              if (value === "1w" || value === "1m" || value === "all") {
                 setRange(value);
               }
             }}
@@ -130,9 +115,9 @@ export function DashboardDownloadsInsights({
               {heroDisplay}
             </span>
             <span className={`dashboard-downloads-delta${totalDelta >= 0 ? " is-up" : " is-down"}`}>
-              {totalDelta >= 0 ? "+" : ""}
-              {totalDelta}% vs prior period
-              {isFiltered ? " (estimated)" : ""}
+              {range === "all"
+                ? "Recent 30-day activity"
+                : `${totalDelta >= 0 ? "+" : ""}${totalDelta}% vs prior period`}
             </span>
           </div>
           <div className="dashboard-downloads-chart-column">
@@ -150,13 +135,15 @@ export function DashboardDownloadsInsights({
             <>
               <CompactStat
                 label="All-time"
-                total={artifactDownloads(activeSkills, activePackages)}
+                total={metrics.allTimeDownloads}
                 series={itemSeries}
                 delta={itemDelta}
               />
               <CompactStat
                 label="In range"
-                total={Math.round(rangeTotal)}
+                total={
+                  range === "all" ? Math.round(sumSeries(totalSeries)) : Math.round(rangeTotal)
+                }
                 series={itemSeries}
                 delta={itemDelta}
               />
@@ -165,13 +152,21 @@ export function DashboardDownloadsInsights({
             <>
               <CompactStat
                 label="Skills"
-                total={Math.round(sumSeries(skillSeries))}
+                total={
+                  range === "all"
+                    ? metrics.skills.allTimeDownloads
+                    : Math.round(sumSeries(skillSeries))
+                }
                 series={skillSeries}
                 delta={skillDelta}
               />
               <CompactStat
                 label="Plugins"
-                total={Math.round(sumSeries(pluginSeries))}
+                total={
+                  range === "all"
+                    ? metrics.plugins.allTimeDownloads
+                    : Math.round(sumSeries(pluginSeries))
+                }
                 series={pluginSeries}
                 delta={pluginDelta}
               />
