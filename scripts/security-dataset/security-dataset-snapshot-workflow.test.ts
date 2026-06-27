@@ -28,6 +28,10 @@ describe("security-dataset-snapshot workflow", () => {
         };
       };
       permissions?: Record<string, string>;
+      concurrency?: {
+        group?: string;
+        "cancel-in-progress"?: string | boolean;
+      };
     };
 
     const planJob = workflow.jobs["plan-security-dataset"];
@@ -36,16 +40,18 @@ describe("security-dataset-snapshot workflow", () => {
     const planStep = planJob.steps.find((step) => step.id === "plan");
 
     expect(workflow.permissions?.actions).toBe("read");
-    expect(workflow.on?.workflow_dispatch?.inputs?.shards?.default).toBe("12");
+    expect(workflow.on?.workflow_dispatch?.inputs?.shards?.default).toBe("48");
     expect(workflow.on?.workflow_dispatch?.inputs?.["reuse-shards-run-id"]?.default).toBe("");
+    expect(workflow.concurrency?.group).toContain("manual-dry-run");
+    expect(workflow.concurrency?.["cancel-in-progress"]).toContain("inputs.upload != 'true'");
     expect(planJob.if).toContain("reuse-shards-run-id");
-    expect(planJob.env?.SNAPSHOT_SHARDS).toBe("${{ inputs.shards || '12' }}");
+    expect(planJob.env?.SNAPSHOT_SHARDS).toBe("${{ inputs.shards || '48' }}");
     expect(planJob.env?.HF_DATASET_REPO).toBe("OpenClaw/clawhub-security-signals-live");
     expect(planJob.env?.SNAPSHOT_MAX_SHARDS_PER_SOURCE).toBe(
-      "${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '128' }}",
+      "${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '64' }}",
     );
     expect(planJob.env?.SNAPSHOT_MAX_MATRIX_JOBS).toBe(
-      "${{ vars.SECURITY_DATASET_MAX_MATRIX_JOBS || '256' }}",
+      "${{ vars.SECURITY_DATASET_MAX_MATRIX_JOBS || '128' }}",
     );
     expect(planJob.steps.find((step) => step.run?.includes("Maximum matrix jobs"))?.run).toContain(
       "requested ${shards} shards per source kind",
