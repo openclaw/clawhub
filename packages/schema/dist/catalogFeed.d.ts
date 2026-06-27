@@ -183,7 +183,7 @@ export declare const CatalogFeedSchema: import("arktype/internal/variants/object
     description?: string | undefined;
 }, {}>;
 export type CatalogFeed = (typeof CatalogFeedSchema)[inferred];
-export declare const CATALOG_FEED_SCHEMA_VERSION = 2;
+export declare const CATALOG_FEED_SCHEMA_VERSION = 1;
 export declare const CATALOG_FEED_ID = "clawhub-official";
 export declare const CATALOG_FEED_SOURCE_REF = "public-clawhub";
 export declare const CATALOG_FEED_GITHUB_SOURCE_REF = "public-github";

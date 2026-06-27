@@ -15,7 +15,7 @@ skill records; they are not second catalogs.
 ## Contract
 
 - Feed id: `clawhub-official`
-- Schema version: `2`
+- Schema version: `1`
 - Initial scope: `code-plugin` and `bundle-plugin` packages plus official skills
 - Source profiles: `public-clawhub` for ClawHub-hosted artifacts and
   `public-github` for source-backed skills available through the public feed

@@ -51,7 +51,7 @@ export const CatalogFeedSchema = type({
     description: "string?",
     entries: CatalogFeedEntrySchema.array(),
 });
-export const CATALOG_FEED_SCHEMA_VERSION = 2;
+export const CATALOG_FEED_SCHEMA_VERSION = 1;
 export const CATALOG_FEED_ID = "clawhub-official";
 export const CATALOG_FEED_SOURCE_REF = "public-clawhub";
 export const CATALOG_FEED_GITHUB_SOURCE_REF = "public-github";

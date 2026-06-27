@@ -95,7 +95,7 @@ describe("catalog feed schema", () => {
   });
 
   it("rejects unsupported versions and expired feeds", () => {
-    expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 1 } as never))).toThrow(
+    expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 2 } as never))).toThrow(
       "Unsupported catalog feed schema version",
     );
     expect(() => parseCatalogFeed(makeFeed({ expiresAt: "2026-06-22T00:00:00.000Z" }))).toThrow(
