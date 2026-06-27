@@ -85,13 +85,15 @@ async function listPublisherSkills(
 ) {
   const skills: Doc<"skills">[] = [];
   let cursor: string | null = null;
+  const legacyPersonalOwnerUserId =
+    publisher.kind === "user" ? (publisher.linkedUserId ?? userId) : undefined;
 
-  if (publisher.kind === "user" && !publisher.linkedUserId) {
+  if (legacyPersonalOwnerUserId) {
     while (true) {
       const page = await ctx.db
         .query("skills")
         .withIndex("by_owner_active_updated", (q) =>
-          q.eq("ownerUserId", userId).eq("softDeletedAt", undefined),
+          q.eq("ownerUserId", legacyPersonalOwnerUserId).eq("softDeletedAt", undefined),
         )
         .order("desc")
         .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
@@ -119,7 +121,22 @@ async function listPublisherSkills(
   }
 }
 
-async function listPublisherPackages(ctx: QueryCtx, publisherId: Id<"publishers">) {
+function uniquePackages(packages: Doc<"packages">[]) {
+  const seen = new Set<Id<"packages">>();
+  const unique: Doc<"packages">[] = [];
+  for (const pkg of packages) {
+    if (seen.has(pkg._id)) continue;
+    seen.add(pkg._id);
+    unique.push(pkg);
+  }
+  return unique;
+}
+
+async function listPublisherPackages(
+  ctx: QueryCtx,
+  publisher: Doc<"publishers">,
+  userId: Id<"users">,
+) {
   const packages: Doc<"packages">[] = [];
   let cursor: string | null = null;
 
@@ -127,14 +144,37 @@ async function listPublisherPackages(ctx: QueryCtx, publisherId: Id<"publishers"
     const page = await ctx.db
       .query("packages")
       .withIndex("by_owner_publisher_active_updated", (q) =>
-        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+        q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
     packages.push(...page.page);
-    if (page.isDone) return packages;
+    if (page.isDone) break;
     cursor = page.continueCursor;
   }
+
+  const legacyPersonalOwnerUserId =
+    publisher.kind === "user" ? (publisher.linkedUserId ?? userId) : undefined;
+  cursor = null;
+  if (legacyPersonalOwnerUserId) {
+    while (true) {
+      const page = await ctx.db
+        .query("packages")
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyPersonalOwnerUserId))
+        .order("desc")
+        .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
+      packages.push(
+        ...page.page.filter(
+          (pkg) =>
+            !pkg.softDeletedAt && (!pkg.ownerPublisherId || pkg.ownerPublisherId === publisher._id),
+        ),
+      );
+      if (page.isDone) break;
+      cursor = page.continueCursor;
+    }
+  }
+
+  return uniquePackages(packages);
 }
 
 export const getDownloadMetrics = query({
@@ -182,7 +222,7 @@ export const getDownloadMetrics = query({
     } else {
       [skills, packages] = await Promise.all([
         listPublisherSkills(ctx, publisher, userId),
-        listPublisherPackages(ctx, publisher._id),
+        listPublisherPackages(ctx, publisher, userId),
       ]);
     }
 
