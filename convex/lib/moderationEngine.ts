@@ -94,10 +94,14 @@ const GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN =
   /https?:\/\/[^\s"'`]*\/spreadsheets\/([A-Za-z0-9_-]{20,})\/[^\s"'`]*/i;
 const DESTRUCTIVE_DELETE_PATTERN =
   /\brm\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\s+(["']?)(\/root\/\.openclaw\/|\/home\/[^/\s"'`]+\/\.openclaw\/|\/Users\/[^/\s"'`]+\/\.openclaw\/|~\/\.openclaw\/|\$HOME\/\.openclaw\/|\$\{HOME\}\/\.openclaw\/|\/etc\/|\/usr\/|\/opt\/|\/Library\/|\/Applications\/)[^\s"'`;|&)]*\1/i;
-const SECRET_ASSIGNMENT_PATTERN =
-  /\b(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key|token)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer(?:[_\s-]?token)?|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|(?:openrouter|supabase|storj)[_\s-]?(?:key|token|secret|access[_\s-]?grant)|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+const SECRET_FIELD_PATTERN_SOURCE = String.raw`(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key|token)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer(?:[_\s-]?token)?|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|(?:openrouter|supabase|storj)[_\s-]?(?:key|token|secret|access[_\s-]?grant)|password)`;
+const SECRET_ASSIGNMENT_PATTERN = new RegExp(
+  String.raw`\b${SECRET_FIELD_PATTERN_SOURCE}\b\s*[:=]\s*(.+)$`,
+  "i",
+);
 const AUTH_HEADER_SECRET_PATTERN =
-  /\b(?:authorization|x-api-key|x-api-secret)\b\s*[:=]\s*(?:Bearer\s+)?["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
+  /\b(?:authorization|x-api-key|x-api-secret)\b\s*[:=]\s*(?:Bearer\s+)?(?:(["'`])([^"'`]{15,})\1|([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,}))/i;
+const KNOWN_SECRET_PREFIX_PATTERN = /^(?:sk[-_]|ak[-_]|pk[-_]|gh[opsu]_|xox[baprs]-|ya29\.|eyJ)/;
 const SHELL_CREDENTIAL_VARIABLE_PATTERN =
   /\$(?:\{)?[A-Z_][A-Z0-9_]*(?:TOKEN|PAT|SECRET|KEY)[A-Z0-9_]*(?:\})?/;
 const GIT_REMOTE_CREDENTIAL_URL_PATTERN =
@@ -214,18 +218,141 @@ function looksLikePlaceholderSecret(secret: string) {
   if (!normalized) return true;
   if (/^(?:x+|_+|-+|\*+|\.{3})$/.test(normalized)) return true;
   if (/process\.env\.|os\.environ[.[]|getenv\s*\(/.test(normalized)) return true;
+  if (normalized.startsWith("secretref:")) return true;
   return /(your|example|placeholder|change-?me|replace|redacted|dummy|sample|test-token|token-here|secret-here|api-key-here)/i.test(
     normalized,
   );
 }
 
-function findHardcodedSecret(content: string) {
+function readSecretCandidate(value: string): { secret: string; quoted: boolean } | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const quote = trimmed[0];
+  if (quote === '"' || quote === "'" || quote === "`") {
+    let escaped = false;
+    for (let i = 1; i < trimmed.length; i += 1) {
+      const char = trimmed[i];
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) return { secret: trimmed.slice(1, i), quoted: true };
+    }
+    return null;
+  }
+
+  const token = trimmed.match(/^[^\s,;#)"'`]+/)?.[0];
+  return token ? { secret: token, quoted: false } : null;
+}
+
+function looksLikeCodeSecretReference(path: string, secret: string, quoted: boolean) {
+  if (/[$}{]/.test(secret)) return true;
+  if (quoted) return false;
+  if (/^(?:process\.env|os\.environ|os\.getenv|getenv)\b/.test(secret)) return true;
+  if (CODE_EXTENSION.test(path)) {
+    if (/^[A-Za-z_$][\w$]*\??\./.test(secret)) return true;
+    if (/^[A-Za-z_$][\w$]*\s*\(/.test(secret)) return true;
+    if (/^[A-Za-z_$][\w$]*$/.test(secret)) return true;
+  }
+  return false;
+}
+
+function looksLikeHardcodedSecret(path: string, secret: string, quoted: boolean) {
+  if (secret.length < 16) return false;
+  const hasKnownSecretPrefix = KNOWN_SECRET_PREFIX_PATTERN.test(secret);
+  if (hasKnownSecretPrefix) return true;
+  if (looksLikePlaceholderSecret(secret)) return false;
+  if (looksLikeCodeSecretReference(path, secret, quoted)) return false;
+
+  const hasLetter = /[A-Za-z]/.test(secret);
+  const hasLongNumericCredential = /\d{16,}/.test(secret);
+  return hasKnownSecretPrefix || hasLetter || hasLongNumericCredential;
+}
+
+function findSecretAssignmentMatch(path: string, line: string) {
+  const authMatch = line.match(AUTH_HEADER_SECRET_PATTERN);
+  const authSecret = authMatch?.[2] ?? authMatch?.[3];
+  if (authSecret && looksLikeHardcodedSecret(path, authSecret, Boolean(authMatch?.[2]))) {
+    return authSecret;
+  }
+
+  const assignmentMatch = line.match(SECRET_ASSIGNMENT_PATTERN);
+  const candidate = assignmentMatch?.[1] ? readSecretCandidate(assignmentMatch[1]) : null;
+  if (!candidate) return null;
+  return looksLikeHardcodedSecret(path, candidate.secret, candidate.quoted)
+    ? candidate.secret
+    : null;
+}
+
+function isTestFixtureFile(path: string) {
+  return /(?:^|\/)(?:__tests__|fixtures?)\/|(?:\.test|\.spec)\.[^/]+$/i.test(path);
+}
+
+function isAllowedTestFixtureSecret(
+  path: string,
+  lines: string[],
+  lineIndex: number,
+  secret: string,
+) {
+  if (!isTestFixtureFile(path)) return false;
+  if (KNOWN_SECRET_PREFIX_PATTERN.test(secret)) return false;
+  if (looksLikeNamedTestFixtureSecret(secret)) return true;
+  const context = lines.slice(Math.max(0, lineIndex - 20), lineIndex + 3).join("\n");
+  const escapedSecret = secret.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parsedFromColonDelimitedToken = new RegExp(
+    String.raw`\btoken\s*:\s*(["'])[^"'\n:]{1,80}:${escapedSecret}\1`,
+  ).test(context);
+  return (
+    parsedFromColonDelimitedToken && /\bexpect\b[\s\S]{0,500}\btoStrictEqual\s*\(/.test(context)
+  );
+}
+
+function looksLikeNamedTestFixtureSecret(secret: string) {
+  const normalized = secret.trim().toLowerCase();
+  if (normalized !== secret.trim()) return false;
+  if (/\d/.test(normalized)) return false;
+  const parts = normalized.split(/[-_:/&=]+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  const fixtureWords = new Set([
+    "api",
+    "guid",
+    "inline",
+    "legacy",
+    "level",
+    "my",
+    "new",
+    "old",
+    "ops",
+    "password",
+    "react",
+    "recreated",
+    "regression",
+    "resolved",
+    "secret",
+    "socket",
+    "stale",
+    "super",
+    "token",
+    "top",
+  ]);
+  const credentialWords = new Set(["api", "password", "secret", "token"]);
+  return (
+    parts.every((part) => fixtureWords.has(part)) && parts.some((part) => credentialWords.has(part))
+  );
+}
+
+function findHardcodedSecret(path: string, content: string) {
   const lines = content.split("\n");
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    const match = line.match(SECRET_ASSIGNMENT_PATTERN) ?? line.match(AUTH_HEADER_SECRET_PATTERN);
-    const secret = match?.[1];
-    if (!secret || looksLikePlaceholderSecret(secret)) continue;
+    const secret = findSecretAssignmentMatch(path, line);
+    if (!secret) continue;
+    if (isAllowedTestFixtureSecret(path, lines, i, secret)) continue;
     return {
       line: i + 1,
       text: line.replaceAll(secret, "[REDACTED]"),
@@ -280,7 +407,7 @@ function findHostPlatformSourcePatch(content: string) {
 }
 
 function scanSecretLiteralFile(path: string, content: string, findings: ModerationFinding[]) {
-  const secretMatch = findHardcodedSecret(content);
+  const secretMatch = findHardcodedSecret(path, content);
   if (!secretMatch) return;
 
   addFinding(findings, {
@@ -430,14 +557,428 @@ function isSafeLiteralChildProcessCall(callName: string, callText: string) {
   return !/^(?:sh|bash|zsh|fish|cmd|powershell|pwsh)$/.test(basename);
 }
 
-function findDangerousChildProcessCall(content: string) {
+function isSafeFixedArgvChildProcessCall(
+  callName: string,
+  callText: string,
+  helperContext: string,
+  helperCallIndex: number,
+  runtimeFiles: TextFile[],
+  helperFilePath: string,
+) {
+  if (!["execFile", "execFileSync", "spawn", "spawnSync"].includes(callName)) return false;
+  if (/\bshell\s*:\s*true\b/.test(callText)) return false;
+  if (!new RegExp(String.raw`\b${callName}\s*\(\s*command\s*,\s*args\s*,`).test(callText)) {
+    return false;
+  }
+
+  const fixedArgvDestructuring = findFixedArgvDestructuring(helperContext);
+  return (
+    /\brunFixedCommandWithTimeout\b/.test(helperContext) &&
+    fixedArgvDestructuring !== null &&
+    !mutatesFixedArgvBeforeChildProcessCall(
+      helperContext,
+      helperCallIndex,
+      fixedArgvDestructuring,
+    ) &&
+    /\b(?:timeoutMs|setTimeout)\b/.test(helperContext) &&
+    !hasRuntimeReExportOfRunFixedCommandHelper(runtimeFiles, helperFilePath) &&
+    hasOnlyFixedRunCommandArgvCallSites(runtimeFiles)
+  );
+}
+
+function findFixedArgvDestructuring(helperContext: string) {
+  const match = /\bconst\s+\[\s*command\s*,\s*\.\.\.\s*args\s*\]\s*=\s*(params\.argv|argv)/.exec(
+    helperContext,
+  );
+  if (match?.index === undefined) return null;
+  return {
+    source: match[1] ?? "params.argv",
+    start: match.index,
+    end: match.index + match[0].length,
+  };
+}
+
+function mutatesFixedArgvBeforeChildProcessCall(
+  helperContext: string,
+  helperCallIndex: number,
+  fixedArgvDestructuring: { source: string; start: number; end: number },
+) {
+  if (
+    helperCallIndex < 0 ||
+    helperCallIndex > helperContext.length ||
+    fixedArgvDestructuring.end > helperCallIndex ||
+    fixedArgvDestructuring.start < findInnermostBlockStart(helperContext, helperCallIndex)
+  ) {
+    return true;
+  }
+
+  const beforeDestructuring = helperContext.slice(0, fixedArgvDestructuring.start);
+  const betweenDestructuringAndCall = helperContext.slice(
+    fixedArgvDestructuring.end,
+    helperCallIndex,
+  );
+  const beforeArgvRefs = findFixedArgvMutableReferences(
+    beforeDestructuring,
+    new Set(["params.argv"]),
+  );
+  if (!beforeArgvRefs.has(fixedArgvDestructuring.source)) return true;
+
+  return (
+    hasStandaloneAssignment(betweenDestructuringAndCall, "command") ||
+    hasFixedArgvMutationInRefs(beforeDestructuring, beforeArgvRefs) ||
+    hasFixedArgvMutations(betweenDestructuringAndCall, new Set(["args"]))
+  );
+}
+
+function hasFixedArgvMutations(prefix: string, initialRefs: Set<string>) {
+  const argvRefs = findFixedArgvMutableReferences(prefix, initialRefs);
+  return hasFixedArgvMutationInRefs(prefix, argvRefs);
+}
+
+function hasFixedArgvMutationInRefs(prefix: string, argvRefs: Set<string>) {
+  return [...argvRefs].some((ref) => hasFixedArgvMutation(prefix, ref));
+}
+
+function findFixedArgvMutableReferences(prefix: string, initialRefs: Set<string>) {
+  const refs = new Set(initialRefs);
+  if (refs.has("params.argv")) {
+    for (const match of prefix.matchAll(
+      /\b(?:const|let|var)\s*\{([^}]+)\}\s*=\s*params\s*(?:[;\n]|$)/g,
+    )) {
+      for (const property of (match[1] ?? "").split(",")) {
+        const aliasMatch = property.match(/^\s*argv\s*(?::\s*([A-Za-z_$][\w$]*))?(?:\s*=.+)?\s*$/);
+        if (!aliasMatch) continue;
+        refs.add(aliasMatch[1] ?? "argv");
+      }
+    }
+  }
+  const aliasPattern =
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)(?:\s*:\s*[^=;\n]+)?\s*=\s*([A-Za-z_$][\w$]*|params\.argv)\s*(?:[;\n]|$)/g;
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const match of prefix.matchAll(aliasPattern)) {
+      const [, alias, source] = match;
+      if (!alias || !source || refs.has(alias) || !refs.has(source)) continue;
+      refs.add(alias);
+      changed = true;
+    }
+  }
+  return refs;
+}
+
+function hasFixedArgvMutation(prefix: string, ref: string) {
+  const refPattern = buildFixedArgvReferencePattern(ref);
+  return (
+    hasStandaloneAssignment(prefix, ref) ||
+    new RegExp(String.raw`\bdelete\s+${refPattern}\s*(?:\.|\[)`).test(prefix) ||
+    new RegExp(
+      String.raw`${refPattern}\s*(?:\[[^\]]+\]|\.\s*[A-Za-z_$][\w$]*)\s*${ASSIGNMENT_OPERATOR_PATTERN}`,
+    ).test(prefix) ||
+    new RegExp(
+      String.raw`${refPattern}\s*(?:\?\.\s*|\.\s*)${MUTATING_ARRAY_METHOD_PATTERN}\s*(?:\?\.)?\s*\(`,
+    ).test(prefix) ||
+    new RegExp(
+      String.raw`${refPattern}\s*(?:\?\.\s*)?\[\s*["']${MUTATING_ARRAY_METHOD_PATTERN}["']\s*\]\s*(?:\?\.)?\s*\(`,
+    ).test(prefix) ||
+    new RegExp(
+      String.raw`\bObject\.(?:assign|defineProperties|defineProperty|setPrototypeOf)\s*\(\s*${refPattern}\s*,`,
+    ).test(prefix) ||
+    new RegExp(
+      String.raw`\bReflect\.(?:deleteProperty|set|setPrototypeOf)\s*\(\s*${refPattern}\s*,`,
+    ).test(prefix) ||
+    new RegExp(
+      String.raw`\bArray\.prototype\.(?:copyWithin|fill|pop|push|reverse|shift|sort|splice|unshift)\s*\.\s*(?:call|apply)\s*\(\s*${refPattern}\s*,`,
+    ).test(prefix)
+  );
+}
+
+function hasStandaloneAssignment(prefix: string, ref: string) {
+  const assignmentPattern = new RegExp(
+    String.raw`${buildFixedArgvReferencePattern(ref)}\s*${ASSIGNMENT_OPERATOR_PATTERN}`,
+    "g",
+  );
+  for (const match of prefix.matchAll(assignmentPattern)) {
+    const index = match.index ?? 0;
+    if (isDeclarationInitializer(prefix, index)) continue;
+    return true;
+  }
+  return false;
+}
+
+const ASSIGNMENT_OPERATOR_PATTERN = String.raw`(?:(?:\|\||&&|\?\?|<<|>>>|>>|\*\*)|[-+*/%&|^])?=(?!=|>)`;
+const MUTATING_ARRAY_METHOD_PATTERN = String.raw`(?:copyWithin|fill|pop|push|reverse|shift|sort|splice|unshift)`;
+
+function isDeclarationInitializer(prefix: string, refIndex: number) {
+  const before = prefix.slice(Math.max(0, refIndex - 120), refIndex);
+  return /\b(?:const|let|var)\s*$/.test(before);
+}
+
+function buildFixedArgvReferencePattern(ref: string) {
+  return ref === "params.argv"
+    ? String.raw`(?<![\w$.])params\.argv(?![\w$])`
+    : String.raw`(?<![\w$.])${escapeRegExp(ref)}(?![\w$])`;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasRuntimeReExportOfRunFixedCommandHelper(files: TextFile[], helperFilePath: string) {
+  for (const file of files) {
+    if (file.path === helperFilePath) continue;
+    if (/\bexport\s*\{[^}]*\brunFixedCommandWithTimeout\b[^}]*\}/.test(file.content)) {
+      return true;
+    }
+    if (/\bexport\s+\*\s+from\s+["'][^"']*(?:deps|run)\.js["']/.test(file.content)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function findBlockEnd(content: string, openBraceIndex: number) {
+  let depth = 0;
+  let quote: '"' | "'" | "`" | undefined;
+  let escaped = false;
+
+  for (let i = openBraceIndex; i < content.length; i += 1) {
+    const char = content[i];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+
+  return content.length;
+}
+
+function findInnermostBlockStart(content: string, targetIndex: number) {
+  const stack: number[] = [];
+  let quote: '"' | "'" | "`" | undefined;
+  let escaped = false;
+
+  for (let i = 0; i < targetIndex; i += 1) {
+    const char = content[i];
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        continue;
+      }
+      if (char === quote) quote = undefined;
+      continue;
+    }
+
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") stack.push(i);
+    if (char === "}") stack.pop();
+  }
+
+  return (stack.at(-1) ?? -1) + 1;
+}
+
+function findNamedFunctionContextAtIndex(content: string, callIndex: number, functionName: string) {
+  const pattern = new RegExp(String.raw`\bfunction\s+${functionName}\s*\(`, "g");
+  for (const match of content.matchAll(pattern)) {
+    const start = match.index;
+    if (start === undefined) continue;
+    const openParenIndex = content.indexOf("(", start);
+    if (openParenIndex === -1) continue;
+    const closeParenIndex = findCallEnd(content, openParenIndex);
+    const openBraceIndex = content.indexOf("{", closeParenIndex);
+    if (openBraceIndex === -1) continue;
+    const end = findBlockEnd(content, openBraceIndex);
+    if (callIndex >= openBraceIndex && callIndex < end) {
+      return { start, text: content.slice(start, end) };
+    }
+  }
+  return null;
+}
+
+function hasOnlyFixedRunCommandArgvCallSites(files: TextFile[]) {
+  let fixedCallSites = 0;
+  for (const file of files) {
+    const fileFixedCallSites = countFixedRunCommandArgvCallSites(file.content);
+    if (fileFixedCallSites === null) return false;
+    fixedCallSites += fileFixedCallSites;
+  }
+  return fixedCallSites > 0;
+}
+
+function countFixedRunCommandArgvCallSites(context: string) {
+  const runnerNames = new Set(["runFixedCommandWithTimeout"]);
+  for (const match of context.matchAll(
+    /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*[^\n;]*\brunFixedCommandWithTimeout\b/g,
+  )) {
+    if (match[1]) runnerNames.add(match[1]);
+  }
+  for (const match of context.matchAll(
+    /\bimport\s*\{[^}]*\brunFixedCommandWithTimeout\s+as\s+([A-Za-z_$][\w$]*)[^}]*\}/g,
+  )) {
+    if (match[1]) runnerNames.add(match[1]);
+  }
+  for (const match of context.matchAll(
+    /\b(?:const|let|var)\s*\{[^}]*\brunFixedCommandWithTimeout\s*:\s*([A-Za-z_$][\w$]*)[^}]*\}\s*=\s*require\(/g,
+  )) {
+    if (match[1]) runnerNames.add(match[1]);
+  }
+
+  let fixedCallSites = 0;
+  const runnerPattern = new RegExp(String.raw`\b(${Array.from(runnerNames).join("|")})\s*\(`, "g");
+  for (const match of context.matchAll(runnerPattern)) {
+    const callIndex = match.index;
+    if (callIndex === undefined) continue;
+    const before = context.slice(Math.max(0, callIndex - 32), callIndex);
+    if (/\bfunction\s+$/.test(before)) continue;
+
+    const openParenIndex = context.indexOf("(", callIndex);
+    const callEnd = findCallEnd(context, openParenIndex);
+    const callText = context.slice(callIndex, callEnd);
+    const callScope = context.slice(findInnermostBlockStart(context, callIndex), callIndex);
+    if (!hasFixedArgvArrayProperty(callText, callScope)) return null;
+    fixedCallSites += 1;
+  }
+  return fixedCallSites;
+}
+
+function findConstAssignment(content: string, identifier: string) {
+  const escapedIdentifier = identifier.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return content.match(new RegExp(String.raw`\bconst\s+${escapedIdentifier}\s*=\s*([^\n;]+)`))?.[1];
+}
+
+function isKnownFixedArgvIdentifier(identifier: string, content: string) {
+  const assignment = findConstAssignment(content, identifier)?.trim();
+  if (!assignment) return false;
+  if (identifier === "nodeExecutable") {
+    return /^(?:params\.nodeExecutable\s*\?\?\s*)?process\.execPath$/.test(assignment);
+  }
+  if (identifier === "scriptPath") {
+    return /^resolveFn\(\s*["']@matrix-org\/matrix-sdk-crypto-nodejs\/download-lib\.js["']\s*\)$/.test(
+      assignment,
+    );
+  }
+  return false;
+}
+
+function isFixedArgvItem(item: string, content: string) {
+  if (/^(["']).*\1$/.test(item)) return true;
+  if (item === "process.execPath") return true;
+  if (/^[A-Za-z_$][\w$]*$/.test(item)) return isKnownFixedArgvIdentifier(item, content);
+  return false;
+}
+
+function readQuotedArgvItem(item: string) {
+  const match = item.match(/^(["'])(.*)\1$/);
+  return match?.[2];
+}
+
+function hasFixedArgvArrayProperty(callText: string, content: string) {
+  const argvMatch = callText.match(/\bargv\s*:\s*\[([\s\S]*?)\]/);
+  const argvItems = argvMatch?.[1];
+  if (!argvItems) return false;
+  const items = argvItems
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const executable = readQuotedArgvItem(items[0] ?? "")
+    ?.split(/[\\/]/)
+    .at(-1)
+    ?.toLowerCase();
+  if (executable && /^(?:sh|bash|zsh|fish|cmd|powershell|pwsh)$/.test(executable)) {
+    return false;
+  }
+  return items.every((item) => isFixedArgvItem(item, content));
+}
+
+function findChildProcessNamespaceAliases(content: string) {
+  const aliases = new Set<string>();
+  const moduleNameIdentifiers = new Set<string>();
+  for (const match of content.matchAll(
+    /\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*["'](?:node:)?child_process["']/g,
+  )) {
+    if (match[1]) moduleNameIdentifiers.add(match[1]);
+  }
+  const patterns = [
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*require\(\s*["'](?:node:)?child_process["']\s*\)/g,
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*await\s+import\(\s*["'](?:node:)?child_process["']\s*\)/g,
+    /\bimport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+["'](?:node:)?child_process["']/g,
+    /\bimport\s+([A-Za-z_$][\w$]*)\s+from\s+["'](?:node:)?child_process["']/g,
+    /\bimport\s+([A-Za-z_$][\w$]*)\s*=\s*require\(\s*["'](?:node:)?child_process["']\s*\)/g,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of content.matchAll(pattern)) {
+      if (match[1]) aliases.add(match[1]);
+    }
+  }
+  for (const moduleName of moduleNameIdentifiers) {
+    const escapedModuleName = escapeRegExp(moduleName);
+    for (const match of content.matchAll(
+      new RegExp(
+        String.raw`\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+import|require)\(\s*${escapedModuleName}\s*\)`,
+        "g",
+      ),
+    )) {
+      if (match[1]) aliases.add(match[1]);
+    }
+  }
+
+  return aliases;
+}
+
+function isChildProcessCallMatch(
+  content: string,
+  callIndex: number,
+  namespaceAliases: Set<string>,
+) {
+  const previous = content[callIndex - 1];
+  if (!previous || !/[\w$.]/.test(previous)) return true;
+  if (previous !== ".") return false;
+
+  const prefix = content.slice(Math.max(0, callIndex - 200), callIndex);
+  const namespace = prefix.match(/([A-Za-z_$][\w$]*)\??\.$/)?.[1];
+  if (namespace && namespaceAliases.has(namespace)) return true;
+  return (
+    /require\(\s*["'](?:node:)?child_process["']\s*\)\s*\??\.$/.test(prefix) ||
+    /import\(\s*["'](?:node:)?child_process["']\s*\)\s*\)?\s*\??\.$/.test(prefix)
+  );
+}
+
+function findDangerousChildProcessCall(path: string, content: string, runtimeFiles: TextFile[]) {
   if (!/child_process/.test(content)) return null;
 
+  const namespaceAliases = findChildProcessNamespaceAliases(content);
   const execPattern = /\b(exec|execSync|spawn|spawnSync|execFile|execFileSync)\s*\(/g;
   for (const match of content.matchAll(execPattern)) {
     const callName = match[1];
     const callIndex = match.index;
     if (callIndex === undefined || !callName) continue;
+    if (!isChildProcessCallMatch(content, callIndex, namespaceAliases)) continue;
 
     if (
       callName === "execFile" ||
@@ -449,6 +990,24 @@ function findDangerousChildProcessCall(content: string) {
       const callEnd = findCallEnd(content, openParenIndex);
       const callText = content.slice(callIndex, callEnd);
       if (isSafeLiteralChildProcessCall(callName, callText)) continue;
+      const helperContext = findNamedFunctionContextAtIndex(
+        content,
+        callIndex,
+        "runFixedCommandWithTimeout",
+      );
+      if (
+        helperContext &&
+        isSafeFixedArgvChildProcessCall(
+          callName,
+          callText,
+          helperContext.text,
+          callIndex - helperContext.start,
+          runtimeFiles,
+          path,
+        )
+      ) {
+        continue;
+      }
     }
 
     return findLineAtIndex(content, callIndex);
@@ -707,10 +1266,11 @@ function scanCodeFile(
   content: string,
   findings: ModerationFinding[],
   declaredEnvNames: Set<string>,
+  runtimeFiles: TextFile[],
 ) {
   if (!CODE_EXTENSION.test(path)) return;
 
-  const dangerousChildProcessCall = findDangerousChildProcessCall(content);
+  const dangerousChildProcessCall = findDangerousChildProcessCall(path, content, runtimeFiles);
   if (dangerousChildProcessCall) {
     addFinding(findings, {
       code: REASON_CODES.DANGEROUS_EXEC,
@@ -1147,12 +1707,13 @@ function completedCodexStatus(status?: string, analysis?: LlmAnalysis) {
 export function runStaticModerationScan(input: StaticScanInput): StaticScanResult {
   const findings: ModerationFinding[] = [];
   const files = [...input.fileContents].sort((a, b) => a.path.localeCompare(b.path));
+  const runtimeFiles = files.filter((file) => !isTestFixtureFile(file.path));
   const declaredEnvNames = collectDeclaredEnvNames(input);
 
   for (const file of files) {
     scanSecretLiteralFile(file.path, file.content, findings);
     scanPlaintextCgnatEndpointFile(file.path, file.content, findings);
-    scanCodeFile(file.path, file.content, findings, declaredEnvNames);
+    scanCodeFile(file.path, file.content, findings, declaredEnvNames, runtimeFiles);
     scanMarkdownFile(file.path, file.content, findings, input.slug);
     scanManifestFile(file.path, file.content, findings);
   }

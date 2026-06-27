@@ -96,6 +96,81 @@ describe("moderationEngine", () => {
     );
   });
 
+  it("flags unquoted alphanumeric hardcoded secrets", () => {
+    const alphanumericKey = "AbCdEfGhIjKl1234567890";
+    const result = runStaticModerationScan({
+      slug: "plain-token",
+      displayName: "Plain Token",
+      summary: "Uses a provider API",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: ".env.example", size: 128 }],
+      fileContents: [
+        {
+          path: ".env.example",
+          content: `PROVIDER_API_KEY=${alphanumericKey}`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings[0]?.evidence).not.toContain(alphanumericKey);
+  });
+
+  it("flags long numeric hardcoded credentials", () => {
+    const numericKey = "1234567890123456";
+    const result = runStaticModerationScan({
+      slug: "numeric-token",
+      displayName: "Numeric Token",
+      summary: "Uses a numeric provider key",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: ".env.example", size: 128 }],
+      fileContents: [
+        {
+          path: ".env.example",
+          content: `PROVIDER_API_KEY=${numericKey}`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings[0]?.evidence).not.toContain(numericKey);
+  });
+
+  it("flags all-letter hardcoded secrets in env and quoted code values", () => {
+    const envKey = "abcdefghijklmnopqrstuvwxyz";
+    const passphrase = "CorrectHorseBatteryStaple";
+    const result = runStaticModerationScan({
+      slug: "letter-secret",
+      displayName: "Letter Secret",
+      summary: "Uses provider credentials",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: ".env.example", size: 128 },
+        { path: "src/config.ts", size: 128 },
+      ],
+      fileContents: [
+        {
+          path: ".env.example",
+          content: `API_KEY=${envKey}`,
+        },
+        {
+          path: "src/config.ts",
+          content: `password: "${passphrase}",`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings.map((finding) => finding.evidence).join("\n")).not.toContain(envKey);
+    expect(result.findings.map((finding) => finding.evidence).join("\n")).not.toContain(passphrase);
+  });
+
   it("flags code that disables HTTPS certificate verification", () => {
     const result = runStaticModerationScan({
       slug: "cms-config-myclaw",
@@ -175,6 +250,97 @@ describe("moderationEngine", () => {
     expect(result.findings.map((finding) => finding.evidence).join("\n")).toContain("[REDACTED]");
   });
 
+  it("flags known-prefix test-mode provider keys", () => {
+    const stripeTestKey = "sk_test_1234567890abcdefSECRET";
+    const result = runStaticModerationScan({
+      slug: "stripe-demo",
+      displayName: "Stripe Demo",
+      summary: "Uses Stripe",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: ".env.example", size: 128 }],
+      fileContents: [
+        {
+          path: ".env.example",
+          content: `STRIPE_API_KEY=${stripeTestKey}`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings[0]?.evidence).not.toContain(stripeTestKey);
+  });
+
+  it("flags generic secrets that contain a test segment", () => {
+    const key = "prod-test-AbCdEfGhIjKl1234567890";
+    const result = runStaticModerationScan({
+      slug: "provider-demo",
+      displayName: "Provider Demo",
+      summary: "Uses provider credentials",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: ".env.example", size: 128 }],
+      fileContents: [
+        {
+          path: ".env.example",
+          content: `PROVIDER_API_KEY=${key}`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings[0]?.evidence).not.toContain(key);
+  });
+
+  it("flags lowercase credential-shaped literals instead of treating them as placeholders", () => {
+    const key = "api-token-a1b2c3d4e5f6g7h8";
+    const result = runStaticModerationScan({
+      slug: "provider-demo",
+      displayName: "Provider Demo",
+      summary: "Uses provider credentials",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: ".env.example", size: 128 }],
+      fileContents: [
+        {
+          path: ".env.example",
+          content: `PROVIDER_API_KEY=${key}`,
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+    expect(result.findings[0]?.evidence).not.toContain(key);
+  });
+
+  it("does not flag low-entropy named secret fixtures in test files", () => {
+    const result = runStaticModerationScan({
+      slug: "fixture-secret",
+      displayName: "Fixture Secret",
+      summary: "Uses test credentials",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/config.test.ts", size: 256 }],
+      fileContents: [
+        {
+          path: "src/config.test.ts",
+          content: [
+            'const cfg = { accessToken: "recreated-stale-legacy-token" };',
+            'const old = { accessToken: "secret-token-old" };',
+            'const log = "GET /api/v1/attachment?password=secret&guid=socket-secret&token=api-token";',
+            'expect(resolveSecret()).toBe("resolved-top-level-secret");',
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("clean");
+  });
+
   it("does not flag placeholder or env-var secret examples", () => {
     const result = runStaticModerationScan({
       slug: "demo",
@@ -197,6 +363,130 @@ describe("moderationEngine", () => {
 
     expect(result.reasonCodes).not.toContain("suspicious.exposed_secret_literal");
     expect(result.status).toBe("clean");
+  });
+
+  it("does not flag credential field plumbing as hardcoded secrets", () => {
+    const result = runStaticModerationScan({
+      slug: "matrix",
+      displayName: "Matrix",
+      summary: "Matrix channel integration",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/matrix/sdk/http-client.ts", size: 256 },
+        { path: "src/config-schema.ts", size: 256 },
+        { path: "src/engine/config/setup-logic.ts", size: 256 },
+      ],
+      fileContents: [
+        {
+          path: "src/matrix/sdk/http-client.ts",
+          content: [
+            "constructor(params: MatrixAuthedHttpClientParams) {",
+            "  this.homeserver = params.homeserver;",
+            "  this.accessToken = params.accessToken;",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/config-schema.ts",
+          content: [
+            "export const configSchema = z.object({",
+            "  accessToken: buildSecretInputSchema().optional(),",
+            "  clientSecret: buildSecretInputSchema().optional(),",
+            "});",
+          ].join("\n"),
+        },
+        {
+          path: "src/engine/config/setup-logic.ts",
+          content: [
+            "const clientSecret = params.input.clientSecret?.trim();",
+            "return clientSecret ? { clientSecret, clientSecretFile: undefined } : undefined;",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not flag hardcoded-looking credential fixtures in tests", () => {
+    const result = runStaticModerationScan({
+      slug: "qqbot",
+      displayName: "QQ Bot",
+      summary: "QQ Bot channel integration",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/config.test.ts", size: 256 }],
+      fileContents: [
+        {
+          path: "src/config.test.ts",
+          content: [
+            "const next = setup.applyAccountConfig?.({",
+            "  input: {",
+            '    token: "102905186:Oi2Mg1Mh2Ni3:Pl7TpBXuHe1OmAYwKi7W",',
+            "  },",
+            "});",
+            "const accountConfig = readAccountConfig(next);",
+            "expect(accountConfig).toStrictEqual({",
+            '  appId: "102905186",',
+            '  clientSecret: "Oi2Mg1Mh2Ni3:Pl7TpBXuHe1OmAYwKi7W",',
+            "});",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("clean");
+  });
+
+  it("still flags known-prefix secrets in test files", () => {
+    const result = runStaticModerationScan({
+      slug: "test-secret",
+      displayName: "Test Secret",
+      summary: "Test fixture with a real key",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/config.test.ts", size: 256 }],
+      fileContents: [
+        {
+          path: "src/config.test.ts",
+          content: [
+            "expect(accountConfig).toStrictEqual({",
+            '  apiKey: "sk_live_1234567890abcdefSECRET",',
+            "});",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags generic hardcoded secrets in test expectations", () => {
+    const result = runStaticModerationScan({
+      slug: "test-secret",
+      displayName: "Test Secret",
+      summary: "Test fixture with a real key",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/config.test.ts", size: 256 }],
+      fileContents: [
+        {
+          path: "src/config.test.ts",
+          content: [
+            "expect(accountConfig).toStrictEqual({",
+            '  clientSecret: "AbCdEfGhIjKl1234567890",',
+            "});",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.exposed_secret_literal");
+    expect(result.status).toBe("suspicious");
   });
 
   it("flags instructions that persist credential variables into git remotes or memory", () => {
@@ -424,6 +714,142 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
+  it("does not treat RegExp exec as child process execution", () => {
+    const result = runStaticModerationScan({
+      slug: "bluebubbles",
+      displayName: "BlueBubbles",
+      summary: "BlueBubbles channel integration",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/monitor-reply-fetch.ts", size: 256 }],
+      fileContents: [
+        {
+          path: "src/monitor-reply-fetch.ts",
+          content: [
+            'import { execFile } from "node:child_process";',
+            "const execFileAsync = promisify(execFile);",
+            "const match = PART_INDEX_REPLY_TO_ID_PATTERN.exec(trimmed);",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("still flags child_process namespace exec calls", () => {
+    const result = runStaticModerationScan({
+      slug: "namespace-exec",
+      displayName: "Namespace Exec",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/run.js", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/run.js",
+          content: [
+            'const childProcess = require("node:child_process");',
+            "childProcess.exec(userCommand);",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags child_process aliases loaded through module name variables", () => {
+    const result = runStaticModerationScan({
+      slug: "dynamic-namespace-exec",
+      displayName: "Dynamic Namespace Exec",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/run.js", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/run.js",
+          content: [
+            'const moduleName = "node:child_process";',
+            "const childProcess = require(moduleName);",
+            "childProcess.exec(userCommand);",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags optional-chained child_process namespace exec calls", () => {
+    const result = runStaticModerationScan({
+      slug: "optional-namespace-exec",
+      displayName: "Optional Namespace Exec",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/run.js", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/run.js",
+          content: [
+            'const childProcess = require("node:child_process");',
+            "childProcess?.exec(userCommand);",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags optional-chained direct child_process require exec calls", () => {
+    const result = runStaticModerationScan({
+      slug: "optional-direct-require-exec",
+      displayName: "Optional Direct Require Exec",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/run.js", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/run.js",
+          content: 'require("node:child_process")?.exec(userCommand);',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags TypeScript import-equals child_process namespace exec calls", () => {
+    const result = runStaticModerationScan({
+      slug: "import-equals-namespace-exec",
+      displayName: "Import Equals Namespace Exec",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "scripts/run.ts", size: 256 }],
+      fileContents: [
+        {
+          path: "scripts/run.ts",
+          content: ['import cp = require("node:child_process");', "cp.exec(userCommand);"].join(
+            "\n",
+          ),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
   it("flags install scripts that patch host platform source and rebuild it", () => {
     const result = runStaticModerationScan({
       slug: "shell-security-ultimate",
@@ -474,6 +900,1249 @@ describe("moderationEngine", () => {
 
     expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
     expect(result.status).toBe("clean");
+  });
+
+  it("does not flag bounded fixed-argv spawn helpers as dangerous exec", () => {
+    const result = runStaticModerationScan({
+      slug: "matrix",
+      displayName: "Matrix",
+      summary: "Matrix channel integration",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/matrix/deps.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/matrix/deps.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, {",
+            "    cwd: params.cwd,",
+            "    stdio: ['ignore', 'pipe', 'pipe'],",
+            "  });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime(params: {",
+            "  runCommand?: typeof runFixedCommandWithTimeout;",
+            "}) {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  const runCommand = params.runCommand ?? runFixedCommandWithTimeout;",
+            "  await runCommand({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not flag fixed-argv helpers that update unrelated arrays before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "fixed-wrapper-logs",
+      displayName: "Fixed Wrapper Logs",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const logs: string[] = [];",
+            "  const [command, ...args] = params.argv;",
+            '  logs.push("starting");',
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer, logs);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not flag fixed-argv helpers that read args before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "fixed-wrapper-args-read",
+      displayName: "Fixed Wrapper Args Read",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  if (args.length === 0) {",
+            "    throw new Error('command args are required');",
+            "  }",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not flag fixed-argv helpers that alias params.argv before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "fixed-wrapper-argv-alias",
+      displayName: "Fixed Wrapper Argv Alias",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const argv = params.argv;",
+            "  const [command, ...args] = argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("does not flag fixed-argv helpers that destructure params.argv before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "fixed-wrapper-argv-destructuring",
+      displayName: "Fixed Wrapper Argv Destructuring",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const { argv } = params;",
+            "  const [command, ...args] = argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).not.toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("clean");
+  });
+
+  it("still flags fixed-argv helpers that execute shells", () => {
+    const result = runStaticModerationScan({
+      slug: "shell-wrapper",
+      displayName: "Shell Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function runShell() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: ["bash", "-c", "echo unsafe"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("flags fixed-argv helpers when the matching spawn call follows an args mutation", () => {
+    const result = runStaticModerationScan({
+      slug: "duplicate-spawn-wrapper",
+      displayName: "Duplicate Spawn Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const first = spawn(command, args, { cwd: params.cwd });",
+            "  args.push(params.cwd);",
+            "  const second = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => second.kill('SIGTERM'), params.timeoutMs);",
+            "  first.kill('SIGTERM');",
+            "  return await waitForExit(second, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that use mutable argv destructuring", () => {
+    const result = runStaticModerationScan({
+      slug: "mutable-wrapper",
+      displayName: "Mutable Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  let [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate args before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "mutating-wrapper",
+      displayName: "Mutating Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  args.push(params.cwd);",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that call bracketed args mutators before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "bracket-mutating-wrapper",
+      displayName: "Bracket Mutating Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  args['push']?.(params.cwd);",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that use compound args assignment before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "compound-mutating-wrapper",
+      displayName: "Compound Mutating Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  args[0] ||= params.cwd;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate args through indirect array APIs", () => {
+    const result = runStaticModerationScan({
+      slug: "indirect-mutating-wrapper",
+      displayName: "Indirect Mutating Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            '  Object.assign(args, ["-e", params.cwd]);',
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate params.argv before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "mutating-params-wrapper",
+      displayName: "Mutating Params Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  params.argv.push(params.cwd);",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate bare argv before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "mutating-bare-argv-wrapper",
+      displayName: "Mutating Bare Argv Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const { argv } = params;",
+            "  argv.push(params.cwd);",
+            "  const [command, ...args] = argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate destructured argv before spawning", () => {
+    const result = runStaticModerationScan({
+      slug: "mutating-destructured-argv-wrapper",
+      displayName: "Mutating Destructured Argv Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const { argv } = params;",
+            "  argv.push(params.cwd);",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags nested dynamic child process calls inside fixed-argv helpers", () => {
+    const result = runStaticModerationScan({
+      slug: "nested-dynamic-wrapper",
+      displayName: "Nested Dynamic Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  function runUserCommand(command: string, args: string[]) {",
+            "    return spawn(command, args, { cwd: params.cwd });",
+            "  }",
+            "  return runUserCommand(command, args);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate args through an alias", () => {
+    const result = runStaticModerationScan({
+      slug: "mutating-alias-wrapper",
+      displayName: "Mutating Alias Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const mutableArgs = args;",
+            "  mutableArgs.push(params.cwd);",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags fixed-argv helpers that mutate args through a typed alias", () => {
+    const result = runStaticModerationScan({
+      slug: "mutating-typed-alias-wrapper",
+      displayName: "Mutating Typed Alias Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const mutableArgs: string[] = args;",
+            "  mutableArgs.push(params.cwd);",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags dynamic argv wrappers as dangerous exec", () => {
+    const result = runStaticModerationScan({
+      slug: "dynamic-wrapper",
+      displayName: "Dynamic Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "export async function runUserCommand(params: { argv: string[] }) {",
+            "  return await runFixedCommandWithTimeout({",
+            "    argv: params.argv,",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags renamed dynamic argv items as dangerous exec", () => {
+    const result = runStaticModerationScan({
+      slug: "renamed-dynamic-wrapper",
+      displayName: "Renamed Dynamic Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "export async function runUserCommand(request: { binary: string; flags: string }) {",
+            "  const bin = request.binary;",
+            "  const flags = request.flags;",
+            "  return await runFixedCommandWithTimeout({",
+            "    argv: [bin, flags],",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags cross-file dynamic argv callers for exported helpers", () => {
+    const result = runStaticModerationScan({
+      slug: "cross-file-wrapper",
+      displayName: "Cross File Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/run.ts", size: 1024 },
+        { path: "src/caller.ts", size: 512 },
+      ],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/caller.ts",
+          content: [
+            'import { runFixedCommandWithTimeout } from "./run";',
+            "export async function runUserCommand(request: { binary: string; flags: string }) {",
+            "  const bin = request.binary;",
+            "  const flags = request.flags;",
+            "  return await runFixedCommandWithTimeout({",
+            "    argv: [bin, flags],",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags namespace dynamic argv callers for exported helpers", () => {
+    const result = runStaticModerationScan({
+      slug: "namespace-wrapper",
+      displayName: "Namespace Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/run.ts", size: 1024 },
+        { path: "src/caller.ts", size: 512 },
+      ],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/caller.ts",
+          content: [
+            'import * as run from "./run";',
+            "export async function runUserCommand(request: { argv: string[] }) {",
+            "  return await run.runFixedCommandWithTimeout({",
+            "    argv: request.argv,",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not reuse fixed argv assignments from other files", () => {
+    const result = runStaticModerationScan({
+      slug: "cross-file-shadowed-wrapper",
+      displayName: "Cross File Shadowed Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/run.ts", size: 1024 },
+        { path: "src/caller.ts", size: 512 },
+      ],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/caller.ts",
+          content: [
+            'import { runFixedCommandWithTimeout } from "./run";',
+            "export async function runUserCommand(request: { scriptPath: string }) {",
+            "  const nodeExecutable = process.execPath;",
+            "  const scriptPath = request.scriptPath;",
+            "  return await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("does not reuse fixed argv assignments from another function in the same file", () => {
+    const result = runStaticModerationScan({
+      slug: "same-file-shadowed-wrapper",
+      displayName: "Same File Shadowed Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+            "export async function runUserCommand(request: { scriptPath: string }) {",
+            "  const nodeExecutable = process.execPath;",
+            "  const scriptPath = request.scriptPath;",
+            "  return await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags imported alias dynamic argv callers", () => {
+    const result = runStaticModerationScan({
+      slug: "import-alias-wrapper",
+      displayName: "Import Alias Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/run.ts", size: 1024 },
+        { path: "src/caller.ts", size: 512 },
+      ],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/caller.ts",
+          content: [
+            'import { runFixedCommandWithTimeout as runCommand } from "./run";',
+            "export async function runUserCommand(params: { argv: string[] }) {",
+            "  return await runCommand({",
+            "    argv: params.argv,",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags CommonJS alias dynamic argv callers", () => {
+    const result = runStaticModerationScan({
+      slug: "cjs-alias-wrapper",
+      displayName: "CJS Alias Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/run.ts", size: 1024 },
+        { path: "src/caller.ts", size: 512 },
+      ],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            '  const scriptPath = resolveFn("@matrix-org/matrix-sdk-crypto-nodejs/download-lib.js");',
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/caller.ts",
+          content: [
+            'const { runFixedCommandWithTimeout: runCommand } = require("./run");',
+            "export async function runUserCommand(params: { argv: string[] }) {",
+            "  return await runCommand({",
+            "    argv: params.argv,",
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags exported fixed-argv helpers that are re-exported from runtime files", () => {
+    const result = runStaticModerationScan({
+      slug: "reexported-wrapper",
+      displayName: "Re-exported Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [
+        { path: "src/run.ts", size: 1024 },
+        { path: "src/index.ts", size: 128 },
+      ],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  await runFixedCommandWithTimeout({",
+            '    argv: [process.execPath, "./download-lib.js"],',
+            "    cwd: process.cwd(),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+          ].join("\n"),
+        },
+        {
+          path: "src/index.ts",
+          content: 'export { runFixedCommandWithTimeout } from "./run.js";',
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
+  });
+
+  it("still flags unrelated dynamic child process calls beside a safe fixed-argv helper", () => {
+    const result = runStaticModerationScan({
+      slug: "mixed-wrapper",
+      displayName: "Mixed Wrapper",
+      summary: "Runs helper commands",
+      frontmatter: {},
+      metadata: {},
+      files: [{ path: "src/run.ts", size: 1024 }],
+      fileContents: [
+        {
+          path: "src/run.ts",
+          content: [
+            'import { spawn } from "node:child_process";',
+            "export async function runFixedCommandWithTimeout(params: {",
+            "  argv: string[];",
+            "  cwd: string;",
+            "  timeoutMs: number;",
+            "}) {",
+            "  const [command, ...args] = params.argv;",
+            "  const proc = spawn(command, args, { cwd: params.cwd });",
+            "  const timer = setTimeout(() => proc.kill('SIGTERM'), params.timeoutMs);",
+            "  return await waitForExit(proc, timer);",
+            "}",
+            "async function ensureRuntime() {",
+            "  const nodeExecutable = process.execPath;",
+            "  const scriptPath = resolveDownloadScript();",
+            "  await runFixedCommandWithTimeout({",
+            "    argv: [nodeExecutable, scriptPath],",
+            "    cwd: path.dirname(scriptPath),",
+            "    timeoutMs: 300_000,",
+            "  });",
+            "}",
+            "export function runUserCommand(command: string, args: string[]) {",
+            "  return spawn(command, args);",
+            "}",
+          ].join("\n"),
+        },
+      ],
+    });
+
+    expect(result.reasonCodes).toContain("suspicious.dangerous_exec");
+    expect(result.status).toBe("suspicious");
   });
 
   it("still flags execFileSync when shell mode is enabled", () => {

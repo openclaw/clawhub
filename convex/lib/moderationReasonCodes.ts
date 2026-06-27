@@ -12,7 +12,7 @@ export type ModerationFinding = {
   evidence: string;
 };
 
-export const MODERATION_ENGINE_VERSION = "v2.4.25";
+export const MODERATION_ENGINE_VERSION = "v2.4.26";
 
 export const REASON_CODES = {
   LLM_REVIEW: "review.llm_review",
