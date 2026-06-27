@@ -254,7 +254,9 @@ export function Dashboard() {
           }
         />
 
-        <div className={`dashboard-workspace${isSidebarVisible ? "" : " is-sidebar-hidden"}`}>
+        <div
+          className={`dashboard-workspace${isSidebarVisible ? "" : " is-sidebar-hidden"}${showAttentionStrip ? "" : " has-no-attention"}`}
+        >
           <div className="dashboard-workspace-main">
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
@@ -343,7 +345,6 @@ export function Dashboard() {
             />
           </div>
         ) : null}
-
       </main>
     </TooltipProvider>
   );

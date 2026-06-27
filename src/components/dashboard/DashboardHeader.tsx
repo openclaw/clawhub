@@ -34,7 +34,6 @@ export function DashboardHeader({
           {showPublisherSelector ? (
             <div className="dashboard-header-publisher-center">
               <div className="dashboard-welcome-publisher-control">
-                <span className="dashboard-welcome-publisher-label">Viewing as</span>
                 <DashboardPublisherSelect
                   publishers={publishers}
                   value={activePublisherId}

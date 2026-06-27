@@ -32768,6 +32768,10 @@ a.dashboard-sidebar-timeline-name:hover {
   }
 }
 
+.dashboard-final .dashboard-workspace.has-no-attention .dashboard-right-sidebar {
+  margin-top: 8px;
+}
+
 .dashboard-downloads-mobile-slot {
   display: none;
 }
