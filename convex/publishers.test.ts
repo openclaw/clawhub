@@ -17,6 +17,7 @@ import {
   getProfileByHandle,
   createMemberInvite,
   declineMemberInvite,
+  getOgMetaByHandle,
   listMembers,
   listPublishedPage,
   listStarredPage,
@@ -303,6 +304,24 @@ const getProfileByHandleHandler = (
   getProfileByHandle as unknown as WrappedHandler<{ handle: string }>
 )._handler;
 
+const getOgMetaByHandleHandler = (
+  getOgMetaByHandle as unknown as WrappedHandler<
+    { handle: string },
+    {
+      displayName?: string | null;
+      affiliations?: Array<{
+        publisher?: {
+          handle?: string | null;
+          displayName?: string | null;
+          image?: string | null;
+        } | null;
+        role?: string;
+      }>;
+      stats: { downloads: number; installs: number; stars: number };
+    } | null
+  >
+)._handler;
+
 const getPublishedDisplayManifestHandler = (
   getPublishedDisplayManifest as unknown as WrappedHandler<
     {
@@ -451,22 +470,30 @@ const resolvePublishTargetForUserInternalHandler = (
 )._handler;
 
 function indexedRows(rows: unknown[]) {
+  const paginate = vi.fn(
+    async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+      const offset = cursor ? Number(cursor) : 0;
+      const page = rows.slice(offset, offset + numItems);
+      const nextOffset = offset + page.length;
+      const isDone = nextOffset >= rows.length;
+      return {
+        page,
+        isDone,
+        continueCursor: isDone ? "" : String(nextOffset),
+      };
+    },
+  );
   return {
+    async *[Symbol.asyncIterator]() {
+      for (const row of rows) yield row;
+    },
     collect: vi.fn(async () => rows),
+    take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+    paginate,
     order: vi.fn(() => ({
       collect: vi.fn(async () => rows),
       take: vi.fn(async (limit: number) => rows.slice(0, limit)),
-      paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
-        const offset = cursor ? Number(cursor) : 0;
-        const page = rows.slice(offset, offset + numItems);
-        const nextOffset = offset + page.length;
-        const isDone = nextOffset >= rows.length;
-        return {
-          page,
-          isDone,
-          continueCursor: isDone ? "" : String(nextOffset),
-        };
-      }),
+      paginate,
     })),
   };
 }
@@ -2785,6 +2812,284 @@ describe("publishers membership controls", () => {
         installs: 300,
       },
     ]);
+  });
+
+  it("computes OG metadata stats when publisher denormalized stats are missing", async () => {
+    const publisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 1,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skill = {
+      _id: "skills:demo",
+      ownerPublisherId: "publishers:openclaw",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      stats: { downloads: 42, stars: 2, installsCurrent: 4, installsAllTime: 7 },
+    };
+    const pkg = {
+      _id: "packages:demo",
+      ownerPublisherId: "publishers:openclaw",
+      softDeletedAt: undefined,
+      stats: { downloads: 8, installs: 5, stars: 1 },
+    };
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () => (fields.handle === "openclaw" ? publisher : null)),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(fields.ownerPublisherId === publisher._id ? [skill] : []);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(fields.ownerPublisherId === publisher._id ? [pkg] : []);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await getOgMetaByHandleHandler(ctx as never, { handle: "openclaw" });
+
+    expect(result?.stats).toEqual({
+      skills: 1,
+      packages: 1,
+      installs: 12,
+      downloads: 50,
+      stars: 3,
+    });
+  });
+
+  it("returns verified visible organization affiliations for user OG metadata", async () => {
+    const personalPublisher = {
+      _id: "publishers:teoslayer",
+      _creationTime: 1,
+      kind: "user",
+      userId: "users:teoslayer",
+      linkedUserId: "users:teoslayer",
+      handle: "teoslayer",
+      displayName: null,
+      createdAt: 1,
+      updatedAt: 1,
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 3,
+      totalDownloads: 10,
+      totalStars: 4,
+      statsDownloads: 10,
+      statsInstallsCurrent: 2,
+      statsInstallsAllTime: 3,
+      statsStars: 4,
+      stats: { downloads: 10, installsCurrent: 2, installsAllTime: 3, stars: 4 },
+    };
+    const user = {
+      _id: "users:teoslayer",
+      handle: "teoslayer",
+      displayName: "Calin Teodor",
+      image: "https://example.com/avatar.png",
+      bio: "Publisher @teoslayer on ClawHub.",
+    };
+    const openclawPublisher = {
+      _id: "publishers:openclaw",
+      _creationTime: 2,
+      kind: "org",
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      image: "https://example.com/openclaw.png",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const deactivatedPublisher = {
+      _id: "publishers:archived",
+      _creationTime: 3,
+      kind: "org",
+      handle: "archived",
+      displayName: "Archived",
+      image: "https://example.com/archived.png",
+      createdAt: 1,
+      updatedAt: 1,
+      deactivatedAt: 2,
+    };
+    const irrelevantMemberships = Array.from({ length: 70 }, (_, index) => ({
+      _id: `publisherMembers:missing-${index}`,
+      publisherId: `publishers:missing-${index}`,
+      userId: user._id,
+      role: "publisher",
+    }));
+    const memberships = [
+      {
+        _id: "publisherMembers:self",
+        publisherId: personalPublisher._id,
+        userId: user._id,
+        role: "owner",
+      },
+      ...irrelevantMemberships,
+      {
+        _id: "publisherMembers:openclaw",
+        publisherId: openclawPublisher._id,
+        userId: user._id,
+        role: "publisher",
+      },
+      {
+        _id: "publisherMembers:archived",
+        publisherId: deactivatedPublisher._id,
+        userId: user._id,
+        role: "publisher",
+      },
+    ];
+    const publishersById = new Map<string, unknown>([
+      [personalPublisher._id, personalPublisher],
+      [openclawPublisher._id, openclawPublisher],
+      [deactivatedPublisher._id, deactivatedPublisher],
+    ]);
+    const usersById = new Map<string, unknown>([[user._id, user]]);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => publishersById.get(id) ?? usersById.get(id) ?? null),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === personalPublisher.handle ? personalPublisher : null,
+                ),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "publisherMembers" && indexName === "by_user") {
+              return indexedRows(fields.userId === user._id ? memberships : []);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await getOgMetaByHandleHandler(ctx as never, { handle: "teoslayer" });
+
+    expect(result?.displayName).toBe("Calin Teodor");
+    expect(result?.affiliations).toEqual([
+      {
+        publisher: expect.objectContaining({
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: "https://example.com/openclaw.png",
+        }),
+        role: "publisher",
+      },
+    ]);
+  });
+
+  it("bounds raw membership rows scanned for user OG metadata", async () => {
+    const personalPublisher = {
+      _id: "publishers:teoslayer",
+      _creationTime: 1,
+      kind: "user",
+      linkedUserId: "users:teoslayer",
+      handle: "teoslayer",
+      displayName: null,
+      createdAt: 1,
+      updatedAt: 1,
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 3,
+      totalDownloads: 10,
+      totalStars: 4,
+      statsDownloads: 10,
+      statsInstallsCurrent: 2,
+      statsInstallsAllTime: 3,
+      statsStars: 4,
+      stats: { downloads: 10, installsCurrent: 2, installsAllTime: 3, stars: 4 },
+    };
+    const user = {
+      _id: "users:teoslayer",
+      handle: "teoslayer",
+      displayName: "Calin Teodor",
+      image: "https://example.com/avatar.png",
+      bio: "Publisher @teoslayer on ClawHub.",
+    };
+    const memberships = [
+      {
+        _id: "publisherMembers:self",
+        publisherId: personalPublisher._id,
+        userId: user._id,
+        role: "owner",
+      },
+      ...Array.from({ length: 600 }, (_, index) => ({
+        _id: `publisherMembers:missing-${index}`,
+        publisherId: `publishers:missing-${index}`,
+        userId: user._id,
+        role: "publisher",
+      })),
+    ];
+    const usersById = new Map<string, unknown>([[user._id, user]]);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => usersById.get(id) ?? null),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === personalPublisher.handle ? personalPublisher : null,
+                ),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "publisherMembers" && indexName === "by_user") {
+              return indexedRows(fields.userId === user._id ? memberships : []);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await getOgMetaByHandleHandler(ctx as never, { handle: "teoslayer" });
+
+    expect(result?.affiliations).toEqual([]);
+    expect(ctx.db.get).toHaveBeenCalledWith("publishers:missing-510");
+    expect(ctx.db.get).not.toHaveBeenCalledWith("publishers:missing-511");
   });
 
   it("excludes hidden and removed skills from publisher catalogs", async () => {

@@ -36,11 +36,11 @@ vi.mock("h3", () => ({
   setHeader: (...args: unknown[]) => setHeaderMock(...args),
 }));
 
-vi.mock("../../og/fetchSkillOgMeta", () => ({
+vi.mock("./fetchSkillOgMeta", () => ({
   fetchSkillOgMeta: (...args: unknown[]) => fetchSkillOgMetaMock(...args),
 }));
 
-vi.mock("../../og/ogAssets", () => ({
+vi.mock("./ogAssets", () => ({
   FONT_MONO: "IBM Plex Mono",
   FONT_SANS: "Bricolage Grotesque",
   getMarkDataUrl: (...args: unknown[]) => getMarkDataUrlMock(...args),
@@ -49,11 +49,11 @@ vi.mock("../../og/ogAssets", () => ({
   getFontBuffers: (...args: unknown[]) => getFontBuffersMock(...args),
 }));
 
-vi.mock("../../og/fetchImageDataUrl", () => ({
+vi.mock("./fetchImageDataUrl", () => ({
   fetchImageDataUrl: vi.fn(async () => null),
 }));
 
-vi.mock("../../og/skillOgSvg", () => ({
+vi.mock("./skillOgSvg", () => ({
   buildSkillOgSvg: (...args: unknown[]) => buildSkillOgSvgMock(...args),
 }));
 
@@ -93,7 +93,7 @@ describe("skill og route", () => {
   it("returns plain text when slug is missing", async () => {
     getQueryMock.mockReturnValue({});
 
-    const handler = (await import("./skill.png")).default;
+    const handler = (await import("../routes/og/skill.png")).default;
     await expect(handler({} as never)).resolves.toBe("Missing `slug` query param.");
 
     expect(setHeaderMock).toHaveBeenCalledWith({}, "Content-Type", "text/plain; charset=utf-8");
@@ -111,7 +111,7 @@ describe("skill og route", () => {
       downloads: "0",
     });
 
-    const handler = (await import("./skill.png")).default;
+    const handler = (await import("../routes/og/skill.png")).default;
     const response = (await handler({} as never)) as Response;
     await expect(response.arrayBuffer()).resolves.toEqual(new Uint8Array([7, 8, 9]).buffer);
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
@@ -161,7 +161,7 @@ describe("skill og route", () => {
       moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
     });
 
-    const handler = (await import("./skill.png")).default;
+    const handler = (await import("../routes/og/skill.png")).default;
     const response = (await handler({} as never)) as Response;
 
     expect(fetchSkillOgMetaMock).toHaveBeenCalledWith(
@@ -195,7 +195,7 @@ describe("skill og route", () => {
       installs: "9.9k",
     });
 
-    const handler = (await import("./skill.png")).default;
+    const handler = (await import("../routes/og/skill.png")).default;
     await handler({} as never);
 
     expect(fetchSkillOgMetaMock).not.toHaveBeenCalled();
@@ -219,7 +219,7 @@ describe("skill og route", () => {
       downloads: "43456",
     });
 
-    const handler = (await import("./skill.png")).default;
+    const handler = (await import("../routes/og/skill.png")).default;
     await handler({} as never);
 
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(

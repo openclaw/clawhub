@@ -1,4 +1,5 @@
 import { ConvexHttpClient } from "convex/browser";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "../../convex/_generated/api";
 
 export type PublisherOgMeta = {
@@ -18,26 +19,7 @@ export type PublisherOgMeta = {
   };
 };
 
-type PublisherProfileResult = {
-  handle?: string | null;
-  kind?: "user" | "org";
-  official?: boolean;
-  displayName?: string | null;
-  bio?: string | null;
-  image?: string | null;
-  affiliations?: Array<{
-    publisher?: {
-      handle?: string | null;
-      displayName?: string | null;
-      image?: string | null;
-    } | null;
-  }>;
-  stats?: {
-    downloads?: number;
-    installs?: number;
-  };
-} | null;
-
+type PublisherProfileResult = FunctionReturnType<typeof api.publishers.getOgMetaByHandle>;
 type PublisherProfileAffiliations = NonNullable<PublisherProfileResult>["affiliations"];
 
 export async function fetchPublisherOgMeta(
@@ -46,9 +28,9 @@ export async function fetchPublisherOgMeta(
 ): Promise<PublisherOgMeta | null> {
   try {
     const client = new ConvexHttpClient(convexUrl);
-    const profile = (await client.query(api.publishers.getProfileByHandle, {
+    const profile = await client.query(api.publishers.getOgMetaByHandle, {
       handle,
-    })) as PublisherProfileResult;
+    });
     if (!profile) return null;
     return {
       handle: profile.handle ?? null,

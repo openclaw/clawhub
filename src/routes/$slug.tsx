@@ -21,6 +21,8 @@ export const Route = createFileRoute("/$slug")({
       bio: publisher.bio,
       image: publisher.image,
       kind: publisher.kind,
+      official: publisher.official ?? null,
+      affiliations: publisher.affiliations ?? null,
       downloads: publisher.stats.downloads,
     });
     return {

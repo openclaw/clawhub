@@ -24,6 +24,9 @@ async function loadRoute() {
   return (await import("../routes/user/$handle")).Route as unknown as {
     __config: {
       loader?: (args: { params: { handle: string } }) => Promise<unknown>;
+      head?: (args: { params: { handle: string }; loaderData?: unknown }) => {
+        meta?: Array<{ property?: string; name?: string; content: string }>;
+      };
     };
   };
 }
@@ -56,5 +59,41 @@ describe("user profile route loader", () => {
     await expect(runLoader("active")).resolves.toEqual({
       publisher: { _id: "publishers:active", handle: "active" },
     });
+  });
+
+  it("includes official and affiliation metadata in legacy publisher OG images", async () => {
+    const route = await loadRoute();
+    const head = route.__config.head?.({
+      params: { handle: "teoslayer" },
+      loaderData: {
+        publisher: {
+          _id: "publishers:teoslayer",
+          handle: "teoslayer",
+          displayName: "Calin Teodor",
+          bio: "Publisher @teoslayer on ClawHub.",
+          image: "https://example.com/avatar.png",
+          kind: "user",
+          official: true,
+          affiliations: [
+            {
+              publisher: {
+                displayName: "OpenClaw",
+                image: "https://example.com/openclaw.png",
+              },
+              role: "publisher",
+            },
+          ],
+          stats: {
+            downloads: 73878,
+          },
+        },
+      },
+    });
+
+    const image = head?.meta?.find((item) => item.property === "og:image")?.content ?? "";
+    expect(image).toContain("/og/profile?");
+    expect(image).toContain("official=1");
+    expect(image).toContain("orgState=1");
+    expect(image).toContain("orgImages=https%3A%2F%2Fexample.com%2Fopenclaw.png");
   });
 });

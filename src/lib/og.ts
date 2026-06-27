@@ -34,8 +34,8 @@ type PublisherMetaSource = {
   bio?: string | null;
   image?: string | null;
   kind?: "user" | "org";
-  official?: boolean | null;
-  affiliations?: Array<{
+  official: boolean | null;
+  affiliations: Array<{
     publisher?: {
       displayName?: string | null;
       image?: string | null;
@@ -146,7 +146,6 @@ export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
   imageParams.set("v", OG_PUBLISHER_IMAGE_LAYOUT_VERSION);
   imageParams.set("handle", handle);
   imageParams.set("title", displayName);
-  imageParams.set("description", truncate(description, 200));
   if (source.kind === "org") imageParams.set("kind", "org");
   imageParams.set("official", source.official ? "1" : "0");
   const organizationCount = source.affiliations?.length ?? 0;

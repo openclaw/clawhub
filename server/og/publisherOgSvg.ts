@@ -8,6 +8,7 @@ export type PublisherOgSvgParams = {
   official?: boolean;
   title: string;
   handleLabel: string;
+  organizationCount?: number;
   organizationLogos?: string[];
   stats?: RegistryOgStat[];
 };
@@ -28,14 +29,27 @@ const PUBLISHER_GRADIENT_FADE = "#6C1B2B";
 const PUBLISHER_TEXT_WEIGHT = 700;
 const PUBLISHER_LABEL_SIZE = 24;
 const PUBLISHER_VALUE_SIZE = 44;
+const GRAPHEME_SEGMENTER =
+  typeof Intl.Segmenter === "function"
+    ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
+    : null;
+const FULL_WIDTH_GLYPH_RE =
+  /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\u3000-\u303f\uff00-\uffef]/u;
+
+function textSegments(value: string) {
+  return GRAPHEME_SEGMENTER
+    ? Array.from(GRAPHEME_SEGMENTER.segment(value), (part) => part.segment)
+    : Array.from(value);
+}
 
 function estimateTextWidth(value: string, fontSize: number) {
-  return [...value].reduce((width, char) => {
+  return textSegments(value).reduce((width, char) => {
     if (char === " ") return width + fontSize * 0.28;
     if (/[ilI.,:;|!'"`]/.test(char)) return width + fontSize * 0.28;
     if (/[mwMW@%&]/.test(char)) return width + fontSize * 0.9;
     if (/[A-Z]/.test(char)) return width + fontSize * 0.68;
     if (/[0-9]/.test(char)) return width + fontSize * 0.6;
+    if (FULL_WIDTH_GLYPH_RE.test(char)) return width + fontSize;
     return width + fontSize * 0.56;
   }, 0);
 }
@@ -97,7 +111,7 @@ function wrapTextWithoutEllipsis(value: string, maxWidth: number, fontSize: numb
     if (estimateTextWidth(word, fontSize) <= maxWidth) return [word];
     const parts: string[] = [];
     let chunk = "";
-    for (const char of word) {
+    for (const char of textSegments(word)) {
       const next = chunk + char;
       if (chunk && estimateTextWidth(next, fontSize) > maxWidth) {
         parts.push(chunk);
@@ -181,7 +195,7 @@ function truncateWithDots(value: string, maxWidth: number, fontSize: number) {
   if (estimateTextWidth(value, fontSize) <= maxWidth) return value;
   const dots = "...";
   const dotsWidth = estimateTextWidth(dots, fontSize);
-  const chars = [...value];
+  const chars = textSegments(value);
   while (chars.length > 0 && estimateTextWidth(chars.join(""), fontSize) + dotsWidth > maxWidth) {
     chars.pop();
   }
@@ -217,24 +231,30 @@ function statColumn(
   </g>`;
 }
 
-function orgLogoTiles(logos: string[], fallbackLogoDataUrl: string, x: number, yOffset: number) {
+function orgLogoTiles(
+  logos: string[],
+  organizationCount: number,
+  fallbackLogoDataUrl: string,
+  x: number,
+  yOffset: number,
+) {
   const visibleLogos = logos.slice(0, 5);
-  if (visibleLogos.length === 0) return "";
+  const visibleCount = Math.min(Math.max(organizationCount, visibleLogos.length), 5);
+  if (visibleCount === 0) return "";
   const y = 459 + yOffset;
   const size = 48;
   const gap = 10;
-  const tiles = visibleLogos
-    .map((logo, index) => {
-      const tileX = x + index * (size + gap);
-      const clipId = `orgLogoClip${index}`;
-      return `<g>
+  const tiles = Array.from({ length: visibleCount }, (_, index) => {
+    const logo = visibleLogos[index] || fallbackLogoDataUrl;
+    const tileX = x + index * (size + gap);
+    const clipId = `orgLogoClip${index}`;
+    return `<g>
         <clipPath id="${clipId}">
           <rect x="${tileX}" y="${y}" width="${size}" height="${size}" rx="8"/>
         </clipPath>
-        <image href="${logo || fallbackLogoDataUrl}" x="${tileX}" y="${y}" width="${size}" height="${size}" clip-path="url(#${clipId})" preserveAspectRatio="xMidYMid slice"/>
+        <image href="${logo}" x="${tileX}" y="${y}" width="${size}" height="${size}" clip-path="url(#${clipId})" preserveAspectRatio="xMidYMid slice"/>
       </g>`;
-    })
-    .join("");
+  }).join("");
   return `<g>
     <text x="${x}" y="${438 + yOffset}"
       fill="${PUBLISHER_RED}"
@@ -250,7 +270,11 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
   const avatar = params.avatarDataUrl || params.clawHubLogoDataUrl;
   const avatarShape = params.avatarShape ?? "circle";
   const organizationLogos = params.organizationLogos?.filter(Boolean) ?? [];
-  const hasOrganizations = organizationLogos.length > 0;
+  const organizationCount = Math.min(
+    Math.max(params.organizationCount ?? 0, organizationLogos.length),
+    5,
+  );
+  const hasOrganizations = organizationCount > 0;
   const normalLayout = hasOrganizations
     ? {
         titleX: 509,
@@ -410,7 +434,13 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
       font-family="${FONT_SANS}, sans-serif">on ClawHub</text>
 
     ${statsMarkup}
-    ${orgLogoTiles(organizationLogos, params.clawHubLogoDataUrl, orgLogosX, organizationExtraGap)}
+    ${orgLogoTiles(
+      organizationLogos,
+      organizationCount,
+      params.clawHubLogoDataUrl,
+      orgLogosX,
+      organizationExtraGap,
+    )}
   </g>
 </svg>`;
 }

@@ -57,6 +57,9 @@ const PUBLISHER_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
 const PUBLISHER_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PUBLISHER_INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 const MAX_PENDING_PUBLISHER_INVITES = 100;
+const PUBLISHER_OG_AFFILIATION_LIMIT = 5;
+const PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE = 64;
+const PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT = 512;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -795,6 +798,61 @@ async function getUserPublisherAffiliations(
       role: Doc<"publisherMembers">["role"];
     } => Boolean(item),
   );
+}
+
+async function getUserPublisherOgAffiliations(
+  ctx: Pick<QueryCtx, "db">,
+  userId: Id<"users">,
+  currentPublisherId: Id<"publishers">,
+) {
+  const affiliations: Array<{
+    publisher: NonNullable<ReturnType<typeof toPublicPublisher>>;
+    role: Doc<"publisherMembers">["role"];
+  }> = [];
+  let cursor: string | null = null;
+  let scannedMemberships = 0;
+
+  while (
+    affiliations.length < PUBLISHER_OG_AFFILIATION_LIMIT &&
+    scannedMemberships < PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT
+  ) {
+    const page = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .paginate({
+        cursor,
+        numItems: Math.min(
+          PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE,
+          PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT - scannedMemberships,
+        ),
+      });
+    scannedMemberships += page.page.length;
+
+    for (const membership of page.page) {
+      if (affiliations.length >= PUBLISHER_OG_AFFILIATION_LIMIT) break;
+      if (membership.publisherId === currentPublisherId) continue;
+      const publisher = await ctx.db.get(membership.publisherId);
+      if (
+        !publisher ||
+        publisher.kind !== "org" ||
+        publisher.deletedAt ||
+        publisher.deactivatedAt
+      ) {
+        continue;
+      }
+      const publicPublisher = await toPublicPublisherWithOfficial(ctx, publisher);
+      if (!publicPublisher) continue;
+      affiliations.push({
+        publisher: publicPublisher,
+        role: membership.role,
+      });
+    }
+
+    if (page.isDone || page.page.length === 0) break;
+    cursor = page.continueCursor;
+  }
+
+  return affiliations;
 }
 
 async function toPublicPublisherWithLinkedImage(
@@ -2196,6 +2254,35 @@ export const getProfileByHandle = query({
       includePublishedItems: true,
       includeStarredCount: true,
     });
+  },
+});
+
+export const getOgMetaByHandle = query({
+  args: { handle: v.string() },
+  handler: async (ctx, args) => {
+    const visibility = await getPublicPublisherVisibility(
+      ctx,
+      await getPublisherByHandle(ctx, args.handle),
+    );
+    if (!visibility) return null;
+    const publicPublisher = await toPublicPublisherWithOfficial(ctx, visibility.publisher);
+    if (!publicPublisher) return null;
+    const visibleUserId = visibility.publisher.kind === "user" ? visibility.linkedUser?._id : null;
+    const stats = hasPublisherStats(visibility.publisher)
+      ? getPublisherDenormalizedStats(visibility.publisher)
+      : getIndexedPublisherStatsFromRows(
+          await getPublisherPublishedRows(ctx, visibility.publisher._id),
+        );
+    return {
+      ...publicPublisher,
+      displayName: resolvePublisherDisplayName(visibility.publisher, visibility.linkedUser),
+      image: publicPublisher.image ?? visibility.linkedUser?.image,
+      bio: publicPublisher.bio ?? visibility.linkedUser?.bio,
+      stats,
+      affiliations: visibleUserId
+        ? await getUserPublisherOgAffiliations(ctx, visibleUserId, visibility.publisher._id)
+        : [],
+    };
   },
 });
 

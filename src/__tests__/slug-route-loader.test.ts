@@ -16,6 +16,9 @@ async function loadRoute() {
   return (await import("../routes/$slug")).Route as unknown as {
     __config: {
       loader: (args: { params: { slug: string } }) => Promise<unknown>;
+      head: (args: { params: { slug: string }; loaderData?: unknown }) => {
+        meta?: Array<{ property?: string; name?: string; content: string }>;
+      };
     };
   };
 }
@@ -56,6 +59,42 @@ describe("top-level slug route loader", () => {
     expect(await runLoader("steipete")).toEqual({
       publisher: { _id: "publishers:steipete", handle: "steipete" },
     });
+  });
+
+  it("includes official and affiliation metadata in canonical publisher OG images", async () => {
+    const route = await loadRoute();
+    const head = route.__config.head({
+      params: { slug: "nvidia" },
+      loaderData: {
+        publisher: {
+          _id: "publishers:nvidia",
+          handle: "nvidia",
+          displayName: "NVIDIA",
+          bio: "Official NVIDIA publisher.",
+          image: "https://example.com/nvidia.png",
+          kind: "org",
+          official: true,
+          affiliations: [
+            {
+              publisher: {
+                displayName: "OpenClaw",
+                image: "https://example.com/openclaw.png",
+              },
+              role: "publisher",
+            },
+          ],
+          stats: {
+            downloads: 1200,
+          },
+        },
+      },
+    });
+
+    const image = head.meta?.find((item) => item.property === "og:image")?.content ?? "";
+    expect(image).toContain("/og/profile?");
+    expect(image).toContain("official=1");
+    expect(image).toContain("orgState=1");
+    expect(image).toContain("orgImages=https%3A%2F%2Fexample.com%2Fopenclaw.png");
   });
 
   it("returns not found for unknown slugs", async () => {

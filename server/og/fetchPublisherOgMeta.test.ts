@@ -16,7 +16,7 @@ vi.mock("convex/browser", () => ({
 }));
 
 vi.mock("../../convex/_generated/api", () => ({
-  api: { publishers: { getProfileByHandle: "publishers.getProfileByHandle" } },
+  api: { publishers: { getOgMetaByHandle: "publishers.getOgMetaByHandle" } },
 }));
 
 describe("fetchPublisherOgMeta", () => {
@@ -53,7 +53,7 @@ describe("fetchPublisherOgMeta", () => {
     const meta = await fetchPublisherOgMeta("openclaw", "https://example.convex.cloud");
 
     expect(clientCtorMock).toHaveBeenCalledWith("https://example.convex.cloud");
-    expect(queryMock).toHaveBeenCalledWith("publishers.getProfileByHandle", {
+    expect(queryMock).toHaveBeenCalledWith("publishers.getOgMetaByHandle", {
       handle: "openclaw",
     });
     expect(meta?.stats.downloads).toBe(99);

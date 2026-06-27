@@ -144,8 +144,23 @@ describe("buildPublisherOgSvg", () => {
     expect(svg).not.toContain('rx="8" fill="#F7F1EA"');
   });
 
+  it("renders fallback organization tiles when verified affiliations have no logos", () => {
+    const svg = buildSvg({
+      organizationCount: 2,
+      organizationLogos: [],
+    });
+    expect(svg).toContain("Organizations");
+    expect(svg).toContain("orgLogoClip0");
+    expect(svg).toContain("orgLogoClip1");
+    expect(svg).not.toContain("orgLogoClip2");
+    expect(svg).toContain(
+      `<image href="${clawHubLogoDataUrl}" x="169" y="459" width="48" height="48" clip-path="url(#orgLogoClip0)"`,
+    );
+  });
+
   it("caps rendered organization logos at five", () => {
     const svg = buildSvg({
+      organizationCount: 6,
       organizationLogos: [
         transparentPixel,
         transparentPixel,
@@ -186,5 +201,19 @@ describe("buildPublisherOgSvg", () => {
     expect(svg).toContain('x="110" y="500" width="48" height="48"');
     expect(svg).toContain('x="447" y="547"');
     expect(svg).toContain(">41.9k</text>");
+  });
+
+  it("accounts for full-width glyphs when fitting publisher text", () => {
+    const svg = buildSvg({
+      official: true,
+      title: "这是一个非常长的发布者名称测试测试测试测试测试",
+      handleLabel: "@测试测试测试测试测试测试测试测试测试测试",
+    });
+
+    expect(svg).toContain('<tspan x="447" dy="0">这是一个非常长的</tspan>');
+    expect(svg).toContain('<tspan x="447" dy="84">发布者名称测试...</tspan>');
+    expect(svg).toContain("@测试测试测试测试测试测试测...");
+    expect(readOfficialBadgeX(svg)).toBe(1037.7);
+    expect(svg).not.toContain("发布者名称测试测试测试测试测试</tspan>");
   });
 });

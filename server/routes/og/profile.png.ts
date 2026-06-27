@@ -52,6 +52,11 @@ function readOrganizationImagesQuery(value: unknown) {
     .slice(0, 5);
 }
 
+function readOrganizationStateQuery(value: unknown) {
+  const raw = cleanString(value).toLowerCase();
+  return raw !== "" && raw !== "0" && raw !== "false" && raw !== "none";
+}
+
 export default defineEventHandler(async (event) => {
   const query = getQuery(event) as OgQuery;
   const handle = cleanString(query.handle).replace(/^@+/, "");
@@ -65,26 +70,40 @@ export default defineEventHandler(async (event) => {
   const avatarFromQuery = cleanString(query.avatar);
   const organizationImagesFromQuery = readOrganizationImagesQuery(query.orgImages);
   const convexUrl = getConvexUrl();
+  const requestsTrustedPublisherState =
+    readBooleanQuery(query.official) ||
+    readOrganizationStateQuery(query.orgState) ||
+    organizationImagesFromQuery.length > 0;
   const needFetch =
     !titleFromQuery ||
     !readOgDownloadsQuery(query) ||
     !avatarFromQuery ||
-    !cleanString(query.official) ||
-    !cleanString(query.orgState) ||
-    !cleanString(query.orgImages);
+    requestsTrustedPublisherState;
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
+  const fetchedTrustedPublisherState =
+    Boolean(meta?.official) || (meta?.affiliations.length ?? 0) > 0;
+  const useVerifiedPublisherState =
+    meta !== null && (requestsTrustedPublisherState || fetchedTrustedPublisherState);
+  const verifiedMeta = useVerifiedPublisherState ? meta : null;
   const handleLabel = `@${meta?.handle || handle}`;
-  const title = titleFromQuery || meta?.displayName || handleLabel;
+  const title = verifiedMeta
+    ? verifiedMeta.displayName || handleLabel
+    : titleFromQuery || meta?.displayName || handleLabel;
+  const avatarUrl = verifiedMeta ? verifiedMeta.image : avatarFromQuery || meta?.image;
+  const avatarKind = verifiedMeta ? verifiedMeta.kind : kindFromQuery || meta?.kind;
+  const statsQuery = useVerifiedPublisherState ? {} : query;
 
   const [clawHubLogoDataUrl, fontBuffers] = await Promise.all([
     getClawHubLogoDataUrl(),
     ensureResvgWasm().then(() => getPublisherFontBuffers()),
   ]);
-  const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarFromQuery || meta?.image);
+  const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarUrl);
   const organizationImageUrls =
-    organizationImagesFromQuery.length > 0
-      ? organizationImagesFromQuery
-      : (meta?.affiliations.map((affiliation) => affiliation.image).filter(Boolean) ?? []);
+    verifiedMeta?.affiliations
+      .map((affiliation) => affiliation.image)
+      .filter(Boolean)
+      .slice(0, 5) ?? [];
+  const organizationCount = Math.min(verifiedMeta?.affiliations.length ?? 0, 5);
   const organizationLogoDataUrls = (
     await Promise.all(
       organizationImageUrls.map(async (imageUrl) => {
@@ -100,12 +119,13 @@ export default defineEventHandler(async (event) => {
   const svg = buildPublisherOgSvg({
     clawHubLogoDataUrl,
     avatarDataUrl,
-    avatarShape: kindFromQuery === "org" || meta?.kind === "org" ? "rounded" : "circle",
-    official: cleanString(query.official) ? readBooleanQuery(query.official) : meta?.official,
+    avatarShape: avatarKind === "org" ? "rounded" : "circle",
+    official: verifiedMeta?.official ?? false,
     title,
     handleLabel,
+    organizationCount,
     organizationLogos: organizationLogoDataUrls,
-    stats: [buildOgDownloadsStat(resolveOgDownloadsDisplay(query, meta?.stats.downloads))],
+    stats: [buildOgDownloadsStat(resolveOgDownloadsDisplay(statsQuery, meta?.stats.downloads))],
   });
 
   const resvg = new Resvg(svg, {

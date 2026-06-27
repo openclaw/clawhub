@@ -36,11 +36,11 @@ vi.mock("h3", () => ({
   setHeader: (...args: unknown[]) => setHeaderMock(...args),
 }));
 
-vi.mock("../../og/fetchPluginOgMeta", () => ({
+vi.mock("./fetchPluginOgMeta", () => ({
   fetchPluginOgMeta: (...args: unknown[]) => fetchPluginOgMetaMock(...args),
 }));
 
-vi.mock("../../og/ogAssets", () => ({
+vi.mock("./ogAssets", () => ({
   FONT_MONO: "IBM Plex Mono",
   FONT_SANS: "Bricolage Grotesque",
   getMarkDataUrl: (...args: unknown[]) => getMarkDataUrlMock(...args),
@@ -49,11 +49,11 @@ vi.mock("../../og/ogAssets", () => ({
   getFontBuffers: (...args: unknown[]) => getFontBuffersMock(...args),
 }));
 
-vi.mock("../../og/fetchImageDataUrl", () => ({
+vi.mock("./fetchImageDataUrl", () => ({
   fetchImageDataUrl: vi.fn(async () => null),
 }));
 
-vi.mock("../../og/pluginOgSvg", () => ({
+vi.mock("./pluginOgSvg", () => ({
   buildPluginOgSvg: (...args: unknown[]) => buildPluginOgSvgMock(...args),
 }));
 
@@ -93,7 +93,7 @@ describe("plugin og route", () => {
   it("returns plain text when name is missing", async () => {
     getQueryMock.mockReturnValue({});
 
-    const handler = (await import("./plugin.png")).default;
+    const handler = (await import("../routes/og/plugin.png")).default;
     await expect(handler({} as never)).resolves.toBe("Missing `name` query param.");
 
     expect(setHeaderMock).toHaveBeenCalledWith({}, "Content-Type", "text/plain; charset=utf-8");
@@ -115,7 +115,7 @@ describe("plugin og route", () => {
       verification: { scanStatus: "pending" },
     });
 
-    const handler = (await import("./plugin.png")).default;
+    const handler = (await import("../routes/og/plugin.png")).default;
     const response = (await handler({} as never)) as Response;
 
     expect(fetchPluginOgMetaMock).toHaveBeenCalledWith(
@@ -146,7 +146,7 @@ describe("plugin og route", () => {
       verification: { scanStatus: "clean" },
     });
 
-    const handler = (await import("./plugin.png")).default;
+    const handler = (await import("../routes/og/plugin.png")).default;
     const response = (await handler({} as never)) as Response;
 
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
@@ -169,7 +169,7 @@ describe("plugin og route", () => {
       downloads: "0",
     });
 
-    const handler = (await import("./plugin.png")).default;
+    const handler = (await import("../routes/og/plugin.png")).default;
     await handler({} as never);
 
     expect(fetchPluginOgMetaMock).not.toHaveBeenCalled();
@@ -193,7 +193,7 @@ describe("plugin og route", () => {
       installs: "9.9k",
     });
 
-    const handler = (await import("./plugin.png")).default;
+    const handler = (await import("../routes/og/plugin.png")).default;
     await handler({} as never);
 
     expect(fetchPluginOgMetaMock).not.toHaveBeenCalled();

@@ -59,4 +59,26 @@ describe("normalizeOgLogoDataUrl", () => {
     await expect(visibleAlphaBounds(paddedLogo ?? "")).resolves.toEqual({ width: 48, height: 48 });
     await expect(visibleAlphaBounds(tightLogo ?? "")).resolves.toEqual({ width: 48, height: 48 });
   });
+
+  it("fails closed for non-image and invalid image data URLs", async () => {
+    await expect(normalizeOgLogoDataUrl("data:text/plain;base64,SGVsbG8=")).resolves.toBeNull();
+    await expect(normalizeOgLogoDataUrl("data:image/png;base64,bm90LWEtcG5n")).resolves.toBeNull();
+  });
+
+  it("fails closed for images above the input pixel cap", async () => {
+    const oversizedImage = await sharp({
+      create: {
+        width: 2001,
+        height: 2001,
+        channels: 4,
+        background: { r: 212, g: 69, b: 58, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    await expect(
+      normalizeOgLogoDataUrl(`data:image/png;base64,${oversizedImage.toString("base64")}`),
+    ).resolves.toBeNull();
+  });
 });
