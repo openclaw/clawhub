@@ -24,7 +24,6 @@ import { DashboardToolbar } from "../components/dashboard/DashboardToolbar";
 import { DashboardWelcome } from "../components/dashboard/DashboardWelcome";
 import type {
   DashboardKindFilter,
-  DashboardCatalogItem,
   DashboardPackage,
   DashboardPublisherEntry,
   DashboardSkill,
@@ -148,12 +147,7 @@ export function Dashboard() {
           : byKind;
     const bySearch = searchDashboardItems(afterAttention, query);
     const sorted = sortDashboardItems(bySearch, sort, sort ? DEFAULT_SORT_DIR[sort] : undefined);
-    return addVisualCatalogMocks(sorted, {
-      kind: kindFilter,
-      ownerHandle,
-      query,
-      sort,
-    });
+    return sorted;
   }, [skills, packages, kindFilter, query, sort, attentionItems]);
 
   const skillsQuerySkipped = skillsQueryArgs === "skip";
@@ -348,157 +342,6 @@ export function Dashboard() {
       </main>
     </TooltipProvider>
   );
-}
-
-function addVisualCatalogMocks(
-  items: DashboardCatalogItem[],
-  options: {
-    kind: DashboardKindFilter;
-    ownerHandle: string;
-    query: string;
-    sort?: DashboardSortKey;
-  },
-) {
-  if (options.kind === "attention" || items.length >= 5) return items;
-  const existing = new Set(items.map((item) => `${item.kind}:${item.id}`));
-  const mocks = searchDashboardItems(
-    filterByKind(buildVisualCatalogMocks(options.ownerHandle), options.kind),
-    options.query,
-  ).filter((item) => !existing.has(`${item.kind}:${item.id}`));
-  const sortedMocks = sortDashboardItems(
-    mocks,
-    options.sort,
-    options.sort ? DEFAULT_SORT_DIR[options.sort] : undefined,
-  );
-  return [...items, ...sortedMocks.slice(0, 5 - items.length)];
-}
-
-function buildVisualCatalogMocks(ownerHandle: string): DashboardCatalogItem[] {
-  const now = Date.now();
-  const skillBase = {
-    _creationTime: now,
-    ownerUserId: "users:local",
-    ownerPublisherId: "publishers:local",
-    ownerPath: ownerHandle,
-    canonicalSkillId: null,
-    forkOf: null,
-    latestVersionId: null,
-    tags: {},
-    badges: {},
-    moderationStatus: "active",
-    moderationReason: null,
-    moderationSummary: null,
-    moderationVerdict: "clean",
-    moderationFlags: [],
-    isSuspicious: false,
-    createdAt: now,
-    pendingReview: false,
-    qualityDecision: "pass",
-    latestVersion: {
-      version: "1.0.0",
-      createdAt: now,
-      vtStatus: "clean",
-      llmStatus: "clean",
-      staticScanStatus: "clean",
-    },
-  } satisfies Partial<DashboardSkill>;
-
-  const skills = [
-    {
-      _id: "visual-skill:workflow-guard",
-      slug: "workflow-guard",
-      displayName: "Workflow Guard",
-      summary: "Review local agent workflows before publishing.",
-      categories: ["security"],
-      topics: ["workflows", "review"],
-      updatedAt: now - 86_400_000,
-      stats: { downloads: 184, installsCurrent: 18, installsAllTime: 42, stars: 12, versions: 3 },
-    },
-    {
-      _id: "visual-skill:prompt-hooks-kit",
-      slug: "prompt-hooks-kit",
-      displayName: "Prompt Hooks Kit",
-      summary: "Reusable prompt hook patterns for runtime plugins.",
-      categories: ["automation"],
-      topics: ["prompts", "hooks"],
-      updatedAt: now - 172_800_000,
-      stats: { downloads: 136, installsCurrent: 11, installsAllTime: 29, stars: 8, versions: 2 },
-    },
-    {
-      _id: "visual-skill:catalog-review",
-      slug: "catalog-review",
-      displayName: "Catalog Review Assistant",
-      summary: "Checks package metadata, release notes, and changelog copy.",
-      categories: ["agents"],
-      topics: ["catalog", "publishing"],
-      updatedAt: now - 259_200_000,
-      stats: { downloads: 92, installsCurrent: 9, installsAllTime: 21, stars: 5, versions: 4 },
-    },
-  ].map((skill) => ({
-    kind: "skill" as const,
-    id: skill._id,
-    name: skill.displayName,
-    searchText: `${skill.displayName} ${skill.slug}`.toLowerCase(),
-    data: { ...skillBase, ...skill } as DashboardSkill,
-    updatedAt: skill.updatedAt,
-    installs: skill.stats.installsAllTime,
-    downloads: skill.stats.downloads,
-  }));
-
-  const pluginBase = {
-    family: "code-plugin",
-    channel: "community",
-    isOfficial: false,
-    sourceRepo: null,
-    runtimeId: null,
-    latestVersion: "1.0.0",
-    inspectorWarningCount: 0,
-    updatedAt: now,
-    verification: null,
-    scanStatus: "clean",
-    pendingReview: false,
-    latestRelease: {
-      version: "1.0.0",
-      createdAt: now,
-      vtStatus: "clean",
-      llmStatus: "clean",
-      staticScanStatus: "clean",
-    },
-  } satisfies Partial<DashboardPackage>;
-
-  const plugins = [
-    {
-      _id: "visual-plugin:github-importer",
-      name: "github-importer",
-      displayName: "GitHub Importer",
-      summary: "Imports skills from public repositories.",
-      categories: ["tools"],
-      topics: ["github", "import"],
-      stats: { downloads: 221, installs: 37, stars: 14, versions: 5 },
-      updatedAt: now - 43_200_000,
-    },
-    {
-      _id: "visual-plugin:runtime-adapter",
-      name: "runtime-adapter",
-      displayName: "Runtime Adapter",
-      summary: "Bridges current prompt hooks into older packages.",
-      categories: ["runtime"],
-      topics: ["compatibility", "hooks"],
-      stats: { downloads: 118, installs: 19, stars: 7, versions: 3 },
-      updatedAt: now - 302_400_000,
-    },
-  ].map((pkg) => ({
-    kind: "plugin" as const,
-    id: pkg._id,
-    name: pkg.displayName,
-    searchText: `${pkg.displayName} ${pkg.name}`.toLowerCase(),
-    data: { ...pluginBase, ...pkg } as DashboardPackage,
-    updatedAt: pkg.updatedAt,
-    installs: pkg.stats.installs,
-    downloads: pkg.stats.downloads,
-  }));
-
-  return [...skills, ...plugins];
 }
 
 function DashboardLoadError({ onRetry }: { onRetry: () => void }) {

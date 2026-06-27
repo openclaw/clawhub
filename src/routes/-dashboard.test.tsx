@@ -499,6 +499,17 @@ describe("Dashboard rows", () => {
     expect(document.querySelector(".dashboard-catalog-grid")).toBeTruthy();
   });
 
+  it("does not pad small catalogs with synthetic packages", () => {
+    arrangeDashboard({ skills: [createCatalogSkill()] });
+
+    renderDashboard();
+
+    expect(document.querySelectorAll(".dashboard-catalog-row")).toHaveLength(1);
+    expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
+    expect(screen.queryByText("Workflow Guard")).toBeNull();
+    expect(screen.queryByText("GitHub Importer")).toBeNull();
+  });
+
   it("shows dashboard header identity without inventory count", () => {
     arrangeDashboard({
       skills: [createCatalogSkill()],
