@@ -2791,6 +2791,14 @@ describe("publisher abuse dry-run persistence", () => {
       label: "potential_ban_candidate",
       status: "pending",
     });
+    const hiddenScore = makeScore({
+      _id: "publisherAbuseScores:hidden",
+      ownerKey: hiddenNomination.ownerKey,
+    });
+    const visibleScore = makeScore({
+      _id: "publisherAbuseScores:visible",
+      ownerKey: visibleNomination.ownerKey,
+    });
     const nominationsPaginate = vi.fn(
       async (paginationOpts: { numItems: number; cursor: string | null }) => {
         expect(paginationOpts).toEqual({ numItems: 2, cursor: null });
@@ -2821,6 +2829,8 @@ describe("publisher abuse dry-run persistence", () => {
               linkedUserId: "users:visible",
             };
           }
+          if (id === "publisherAbuseScores:hidden") return hiddenScore;
+          if (id === "publisherAbuseScores:visible") return visibleScore;
           if (id === "users:hidden") {
             return { _id: "users:hidden", handle: "hidden", role: "user" };
           }
@@ -2830,9 +2840,6 @@ describe("publisher abuse dry-run persistence", () => {
           return null;
         }),
         query: vi.fn((table: string) => {
-          if (table === "publisherAbuseScores") {
-            throw new Error("dashboard list pages should not read score documents");
-          }
           if (table === "publisherAbuseReviewNominations") {
             return {
               withIndex: (
@@ -2881,7 +2888,11 @@ describe("publisher abuse dry-run persistence", () => {
               _id: "publisherAbuseReviewNominations:visible",
               latestScoreId: "publisherAbuseScores:visible",
             }),
-            latestScore: null,
+            latestScore: expect.objectContaining({
+              _id: "publisherAbuseScores:visible",
+              zScore: visibleScore.zScore,
+              reasonCodes: visibleScore.reasonCodes,
+            }),
             publisher: expect.objectContaining({
               displayName: null,
               handle: "visible",

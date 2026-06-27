@@ -644,6 +644,9 @@ describe("Management", () => {
     expect(screen.getByRole("columnheader", { name: "Reasons" })).toBeTruthy();
     // Empty-state copy must not show when there are rows.
     expect(screen.queryByText("Queue clear")).toBeNull();
+    // Latest-run candidate counts are not the same as the open queue size.
+    expect(screen.getByRole("tab", { name: /Potential ban 2/ })).toBeTruthy();
+    expect(screen.getByText("Showing 2 of 2 nominations")).toBeTruthy();
 
     // The handle shows in the queue row; the detail drawer is closed until a
     // row is activated, so detail-only content is not on screen yet.
@@ -656,6 +659,7 @@ describe("Management", () => {
     });
     expect(screen.getByText("Published skills")).toBeTruthy();
     expect(screen.getByText("of 42 scored")).toBeTruthy();
+    expect(screen.getByText("Elevated (9)")).toBeTruthy();
     expect(screen.getAllByText("spammy-pub").length).toBeGreaterThanOrEqual(2);
 
     expect(screen.getByText("Triage note")).toBeTruthy();
@@ -762,8 +766,10 @@ describe("Management", () => {
   it("shows temporal download/install evidence in the abuse drawer", () => {
     const item = makePublisherAbuseItem({
       handle: "temporal-pub",
+      zScore: 2.65,
       scoreOverrides: {
         modelVersion: "publisher-abuse-temporal.v1",
+        pressure: 1,
         reasonCodes: ["temporal_sustained_downloads_flat_installs"],
         temporalBenchmark: {
           sampleSize: 1000,
@@ -825,6 +831,8 @@ describe("Management", () => {
     fireEvent.click(screen.getByText("temporal-pub"));
 
     expect(screen.getByText("Temporal signal")).toBeTruthy();
+    expect(screen.getByText("Low (1)")).toBeTruthy();
+    expect(screen.queryByText("Very High")).toBeNull();
     expect(screen.getByText(/Compared with 1,000 scanned skills/)).toBeTruthy();
     expect(screen.getByText("Download Burst")).toBeTruthy();
     expect(screen.getByText("16,200")).toBeTruthy();

@@ -3109,10 +3109,13 @@ async function summarizePublisherAbuseReviewNominationListItem(
     ? await ctx.db.get(nomination.ownerPublisherId)
     : null;
   const ownerUser = nomination.ownerUserId ? await ctx.db.get(nomination.ownerUserId) : null;
+  const latestScore = await ctx.db.get(nomination.latestScoreId);
 
   return {
     nomination,
-    latestScore: null,
+    latestScore: latestScore
+      ? summarizePublisherAbuseScoreForReview(latestScore, { includeTemporalDetails: false })
+      : null,
     publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
     ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
     openedByRun: null,

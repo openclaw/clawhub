@@ -103,7 +103,8 @@ export function AbusePage({
       ? potentialBan + review
       : visiblePending.length;
   const resolved = tab === "resolved" ? items.length : (dashboard?.recentResolvedItems.length ?? 0);
-  const totalForTab =
+  const loaded = dashboard !== undefined && pageStatus !== "LoadingFirstPage";
+  const latestRunTotalForTab =
     tab === "potential_ban_candidate"
       ? potentialBan
       : tab === "review"
@@ -111,9 +112,22 @@ export function AbusePage({
         : tab === "resolved"
           ? resolved
           : totalPending;
-  const loaded = dashboard !== undefined && pageStatus !== "LoadingFirstPage";
+  const totalForTab = loaded ? Math.max(latestRunTotalForTab, items.length) : latestRunTotalForTab;
+  const potentialBanTabCount =
+    tab === "potential_ban_candidate" && loaded
+      ? Math.max(potentialBan, items.length)
+      : potentialBan;
+  const reviewTabCount = tab === "review" && loaded ? Math.max(review, items.length) : review;
+  const allPendingTabCount =
+    tab === "all_pending" && loaded ? Math.max(totalPending, items.length) : totalPending;
   const canLoadMore = pageStatus === "CanLoadMore";
   const loadingMore = pageStatus === "LoadingMore";
+  const nominationCountLabel =
+    loaded && (canLoadMore || loadingMore)
+      ? `Showing ${formatWholeNumber(items.length)}+ nominations`
+      : loaded
+        ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
+        : "Loading…";
   const autobanLoaded = autobanSetting !== undefined;
   const autobanEnabled = autobanSetting?.enabled ?? false;
   const autobanStatusLabel = autobanLoaded
@@ -193,19 +207,19 @@ export function AbusePage({
       <div className="pa-tabs" role="tablist" aria-label="Publisher abuse queue">
         <PublisherAbuseTabButton
           active={tab === "potential_ban_candidate"}
-          count={loaded ? potentialBan : undefined}
+          count={loaded ? potentialBanTabCount : undefined}
           label="Potential ban"
           onClick={() => onChangeTab("potential_ban_candidate")}
         />
         <PublisherAbuseTabButton
           active={tab === "review"}
-          count={loaded ? review : undefined}
+          count={loaded ? reviewTabCount : undefined}
           label="On the brink"
           onClick={() => onChangeTab("review")}
         />
         <PublisherAbuseTabButton
           active={tab === "all_pending"}
-          count={loaded ? totalPending : undefined}
+          count={loaded ? allPendingTabCount : undefined}
           label="All flagged"
           onClick={() => onChangeTab("all_pending")}
         />
@@ -314,11 +328,7 @@ export function AbusePage({
           </table>
         </div>
         <div className="pa-foot">
-          <span>
-            {loaded
-              ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
-              : "Loading…"}
-          </span>
+          <span>{nominationCountLabel}</span>
           {canLoadMore || loadingMore ? (
             <Button
               type="button"
@@ -847,9 +857,11 @@ function zScoreClass(value: number) {
   return "pa-z-ok";
 }
 
-function formatPressureLabel(score: Pick<PublisherAbuseReviewScore, "zScore">) {
-  if (score.zScore >= 2.5) return "Very High";
-  if (score.zScore >= 1.5) return "High";
-  if (score.zScore >= 0.5) return "Elevated";
-  return "Low";
+function formatPressureLabel(score: Pick<PublisherAbuseReviewScore, "pressure">) {
+  const pressure = score.pressure;
+  const formatted = formatRatio(pressure);
+  if (pressure >= 100) return `Very High (${formatted})`;
+  if (pressure >= 10) return `High (${formatted})`;
+  if (pressure >= 2) return `Elevated (${formatted})`;
+  return `Low (${formatted})`;
 }
