@@ -114,7 +114,7 @@ function buildRowActions(item: DashboardCatalogItem, ownerHandle: string): RowAc
       },
       {
         id: "public",
-        label: "View public page",
+        label: "View page",
         ariaLabel: `View public page for ${skill.displayName}`,
         href: detailHref,
         external: true,
@@ -141,7 +141,7 @@ function buildRowActions(item: DashboardCatalogItem, ownerHandle: string): RowAc
   return [
     {
       id: "public",
-      label: "View public page",
+      label: "View page",
       ariaLabel: `View public page for ${pkg.displayName}`,
       href: detailHref,
       external: true,

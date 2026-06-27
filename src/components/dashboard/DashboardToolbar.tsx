@@ -1,30 +1,27 @@
 import { useRef } from "react";
-import { formatCompactStat } from "../../lib/numberFormat";
 import {
   BrowseActions,
-  BrowseChipTabs,
   BrowseControls,
   BrowseControlsDivider,
   BrowseControlsRow,
   BrowseSearchInput,
   BrowseSearchPanel,
   BrowseSearchTrigger,
+  BrowseSegmentedTabs,
   BrowseSortSelect,
   BrowseViewToggle,
   useBrowseSearchDisclosure,
 } from "../BrowseControls";
-import type { DashboardAggregateStats } from "./dashboardCatalog";
 import type { DashboardKindFilter, DashboardSortKey, DashboardView } from "./types";
 
 type DashboardToolbarProps = {
   kind: DashboardKindFilter;
   query: string;
-  sort: DashboardSortKey;
+  sort?: DashboardSortKey;
   view: DashboardView;
-  stats: DashboardAggregateStats;
   onKindChange: (kind: DashboardKindFilter) => void;
   onQueryChange: (query: string) => void;
-  onSortChange: (sort: DashboardSortKey) => void;
+  onSortChange: (sort: DashboardSortKey | undefined) => void;
   onViewChange: (view: DashboardView) => void;
 };
 
@@ -36,7 +33,7 @@ const KIND_OPTIONS = [
 
 const SORT_OPTIONS = [
   { value: "updated", label: "Recently updated" },
-  { value: "installs", label: "Most installs" },
+  { value: "downloads", label: "Most downloaded" },
   { value: "name", label: "Name (A–Z)" },
 ] as const;
 
@@ -45,7 +42,6 @@ export function DashboardToolbar({
   query,
   sort,
   view,
-  stats,
   onKindChange,
   onQueryChange,
   onSortChange,
@@ -58,22 +54,12 @@ export function DashboardToolbar({
     inputRef: searchInputRef,
   });
 
-  const counts = {
-    all: formatCompactStat(stats.skillsCount + stats.pluginsCount),
-    skill: formatCompactStat(stats.skillsCount),
-    plugin: formatCompactStat(stats.pluginsCount),
-  } as const;
-
   return (
     <BrowseControls>
       <BrowseControlsRow>
-        <BrowseChipTabs
+        <BrowseSegmentedTabs
           ariaLabel="Filter catalog by type"
-          options={KIND_OPTIONS.map((option) => ({
-            value: option.value,
-            label: option.label,
-            count: counts[option.value],
-          }))}
+          options={KIND_OPTIONS}
           value={kind}
           onChange={(value) => {
             if (value === "all" || value === "skill" || value === "plugin") {
@@ -89,7 +75,12 @@ export function DashboardToolbar({
           }))}
           value={sort}
           onChange={(value) => {
-            if (value === "updated" || value === "installs" || value === "name") {
+            if (
+              value === undefined ||
+              value === "updated" ||
+              value === "downloads" ||
+              value === "name"
+            ) {
               onSortChange(value);
             }
           }}

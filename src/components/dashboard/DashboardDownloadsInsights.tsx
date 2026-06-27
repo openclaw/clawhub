@@ -87,7 +87,7 @@ export function DashboardDownloadsInsights({
 
   const sectionTitle = (() => {
     if (isFiltered && filtered.label) return filtered.label;
-    return "Your stats";
+    return "Stats";
   })();
 
   return (

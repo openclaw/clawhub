@@ -1,25 +1,21 @@
-import { AlertTriangle, Download, Star } from "lucide-react";
 import type { ReactNode } from "react";
+import { Download, EyeOff } from "lucide-react";
 import { formatCompactStat } from "../../lib/numberFormat";
-import { familyLabel } from "../../lib/packageLabels";
-import { buildPluginDetailHref, buildPluginValidationHref } from "../../lib/pluginRoutes";
+import { buildPluginDetailHref } from "../../lib/pluginRoutes";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
 import { ArtifactScanStatusValue } from "../artifacts/ArtifactScanStrip";
 import {
+  artifactStatusToScanStatus,
   packageArtifactStatus,
   skillArtifactStatus,
   type ArtifactDisplayStatus,
 } from "../artifacts/artifactStatus";
+import { auditVerdictMeterLevel } from "../DetailSecuritySummary";
 import { MarketplaceIcon } from "../MarketplaceIcon";
+import { getScanStatusInfo } from "../SkillSecurityScanResults";
 import { buildSkillHref } from "../skillDetailUtils";
-import { CatalogRowKindLine, CatalogRowStatusColumn } from "./ArtifactStatusChips";
-import {
-  packageSecurityStatus,
-  packageVisibilityStatus,
-  skillSecurityStatus,
-  skillVisibilityStatus,
-} from "./artifactStatusLabels";
+import { skillVisibilityStatus } from "./artifactStatusLabels";
 import { CatalogRowMenu } from "./CatalogRowMenu";
 import type {
   DashboardCatalogItem,
@@ -57,13 +53,6 @@ export function DashboardCatalogView({
 
   return (
     <div className="browse-list-stack">
-      <div className="browse-list-head dashboard-catalog-list-head" aria-hidden="true">
-        <span className="browse-list-head-icon-spacer" />
-        <span className="browse-list-head-label">Name</span>
-        <span className="browse-list-head-label">Status</span>
-        <span className="browse-list-head-label browse-list-head-stat">Activity</span>
-        <span className="browse-list-head-actions-spacer" />
-      </div>
       <div className="results-list">
         {items.map((item) =>
           item.kind === "skill" ? (
@@ -111,21 +100,15 @@ function SkillListRow({
   canManage: boolean;
 }) {
   const { detailHref } = skillHrefs(skill, ownerHandle);
+  const visibility = skillVisibilityStatus(skill);
   return (
     <CatalogRow
       href={detailHref}
       title={skill.displayName}
-      summary={skill.summary}
-      kindLine={<CatalogRowKindLine kindLabel="Skill" />}
-      statusColumn={
-        <CatalogRowStatusColumn
-          security={skillSecurityStatus(skill)}
-          visibility={skillVisibilityStatus(skill)}
-        />
-      }
-      icon={<MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />}
+      titleAccessory={visibilityIcon(visibility.label)}
+      secondary={packageRowSecondary(skill.latestVersion?.version, skill.updatedAt)}
+      status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
-      stars={skill.stats?.stars ?? 0}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
     />
   );
@@ -142,45 +125,13 @@ function PluginListRow({
   ownerHandle: string;
   canManage: boolean;
 }) {
-  const validationCount = pkg.inspectorWarningCount ?? 0;
-  const validationLabel = `${validationCount} validation finding${validationCount === 1 ? "" : "s"}`;
-
   return (
     <CatalogRow
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
       title={pkg.displayName}
-      summary={pkg.summary}
-      kindLine={
-        <CatalogRowKindLine
-          kindLabel="Plugin"
-          familyLabel={
-            pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
-              ? familyLabel(pkg.family)
-              : null
-          }
-        />
-      }
-      statusColumn={
-        <CatalogRowStatusColumn
-          security={packageSecurityStatus(pkg)}
-          visibility={packageVisibilityStatus(pkg)}
-        />
-      }
-      icon={<MarketplaceIcon kind="plugin" label={pkg.displayName} size="sm" />}
+      secondary={packageRowSecondary(pkg.latestVersion ?? pkg.latestRelease?.version, pkg.updatedAt)}
+      status={packageArtifactStatus(pkg)}
       downloads={pkg.stats.downloads ?? 0}
-      trailing={
-        validationCount > 0 ? (
-          <a
-            href={buildPluginValidationHref(pkg.name)}
-            className="skill-list-item-meta-item dashboard-catalog-flag"
-            aria-label={`View ${validationCount} validation finding${validationCount === 1 ? "" : "s"} for ${pkg.displayName}`}
-            title={validationLabel}
-          >
-            <AlertTriangle size={14} aria-hidden="true" />
-            {validationCount}
-          </a>
-        ) : null
-      }
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
     />
   );
@@ -189,66 +140,78 @@ function PluginListRow({
 function CatalogRow({
   href,
   title,
-  summary,
-  kindLine,
-  statusColumn,
-  icon,
+  titleAccessory,
+  secondary,
+  status,
   downloads,
-  stars,
-  trailing,
   menu,
 }: {
   href: string;
   title: string;
-  summary?: string | null;
-  kindLine: ReactNode;
-  statusColumn: ReactNode;
-  icon: ReactNode;
+  titleAccessory?: ReactNode;
+  secondary: string;
+  status: ArtifactDisplayStatus;
   downloads: number;
-  stars?: number;
-  trailing?: ReactNode;
   menu: ReactNode;
 }) {
-  const trimmedSummary = summary?.trim();
-
   return (
     <div className="skill-list-item skill-list-item-with-taxonomy dashboard-catalog-row">
       <a href={href} className="dashboard-catalog-row-link" aria-label={`Open ${title}`} />
-      <span className="dashboard-catalog-row-icon" aria-hidden="true">
-        {icon}
-      </span>
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-name">{title}</span>
+          {titleAccessory}
         </div>
-        {kindLine}
-        {trimmedSummary ? (
-          <p className="skill-list-item-summary">{truncateText(trimmedSummary, 80)}</p>
-        ) : null}
+        <p className="skill-list-item-summary dashboard-catalog-row-secondary">{secondary}</p>
       </div>
-      {statusColumn}
+      <div className="dashboard-catalog-review" aria-label="Review trend">
+        <SecurityAuditMiniStatus status={status} />
+      </div>
       <div className="skill-list-item-meta">
-        {stars !== undefined ? (
-          <span className="skill-list-item-meta-item" title={metricLabel(stars, "star")}>
-            <Star size={14} aria-hidden="true" />
-            <span aria-hidden="true">{formatCompactStat(stars)}</span>
-            <span className="sr-only">{metricLabel(stars, "star")}</span>
-          </span>
-        ) : null}
-        <span className="skill-list-item-meta-item" title={metricLabel(downloads, "download")}>
+        <span className="dashboard-catalog-downloads" title={metricLabel(downloads, "download")}>
           <Download size={14} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>
           <span className="sr-only">{metricLabel(downloads, "download")}</span>
         </span>
-        {trailing}
       </div>
       {menu}
     </div>
   );
 }
 
+function packageRowSecondary(version: string | null | undefined, updatedAt: number) {
+  return [version ? `v${version}` : null, `Updated ${timeAgo(updatedAt)}`].filter(Boolean).join(" · ");
+}
+
+function SecurityAuditMiniStatus({ status }: { status: ArtifactDisplayStatus }) {
+  const scanStatus = artifactStatusToScanStatus(status);
+  const statusInfo = getScanStatusInfo(scanStatus);
+  return (
+    <div className="dashboard-mini-audit security-audit-sidebar-value-row" aria-hidden="true">
+      <span className="security-audit-sidebar-verdict" data-status={scanStatus}>
+        {statusInfo.label}
+      </span>
+      <span className="security-audit-meter" data-level={auditVerdictMeterLevel(scanStatus)}>
+        <span />
+        <span />
+        <span />
+      </span>
+    </div>
+  );
+}
+
 function metricLabel(value: number, noun: string) {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
+}
+
+function visibilityIcon(label: string) {
+  if (label !== "Hidden" && label !== "Removed") return undefined;
+  return (
+    <span className="dashboard-catalog-title-icon" title={`${label} from public catalog`}>
+      <EyeOff size={13} aria-hidden="true" />
+      <span className="sr-only">{label} from public catalog</span>
+    </span>
+  );
 }
 
 function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string }) {

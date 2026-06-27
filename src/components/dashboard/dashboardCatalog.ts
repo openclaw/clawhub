@@ -1,4 +1,10 @@
 import { collectAttentionItems } from "./dashboardAttention";
+import {
+  packageSecurityStatus,
+  packageVisibilityStatus,
+  skillSecurityStatus,
+  skillVisibilityStatus,
+} from "./artifactStatusLabels";
 import type {
   DashboardAttentionItem,
   DashboardCatalogItem,
@@ -57,6 +63,7 @@ export function mergeDashboardItems(
     data: skill,
     updatedAt: skill.updatedAt,
     installs: readSkillInstalls(skill),
+    downloads: readSkillDownloads(skill),
   }));
   const packageItems: DashboardCatalogItem[] = packages.map((pkg) => ({
     kind: "plugin",
@@ -66,6 +73,7 @@ export function mergeDashboardItems(
     data: pkg,
     updatedAt: pkg.updatedAt,
     installs: pkg.stats.installs ?? 0,
+    downloads: pkg.stats.downloads ?? 0,
   }));
 
   return [...skillItems, ...packageItems];
@@ -98,8 +106,8 @@ export function excludeAttentionItems(
 
 function attentionEntityKey(item: DashboardAttentionItem) {
   const parts = item.id.split(":");
-  if (parts.length < 3) return item.id;
-  return `${parts[0]}:${parts[1]}:${parts[2]}`;
+  if (parts.length < 2) return item.id;
+  return `${parts[0]}:${parts[1]}`;
 }
 
 export function searchDashboardItems(
@@ -113,17 +121,27 @@ export function searchDashboardItems(
 
 export function sortDashboardItems(
   items: DashboardCatalogItem[],
-  key: DashboardSortKey,
-  dir: DashboardSortDir,
+  key?: DashboardSortKey,
+  dir?: DashboardSortDir,
 ): DashboardCatalogItem[] {
-  const factor = dir === "asc" ? 1 : -1;
+  const resolvedDir = dir ?? (key === "name" ? "asc" : "desc");
+  const factor = resolvedDir === "asc" ? 1 : -1;
   const sorted = [...items];
   sorted.sort((left, right) => {
     let delta: number;
+    if (!key) {
+      delta = defaultDashboardPriority(left) - defaultDashboardPriority(right);
+      if (delta === 0) delta = left.downloads - right.downloads;
+      if (delta === 0) delta = left.updatedAt - right.updatedAt;
+      if (delta === 0) {
+        return left.name.localeCompare(right.name, "en", { sensitivity: "base" });
+      }
+      return -delta;
+    }
     if (key === "name") {
       delta = left.name.localeCompare(right.name, "en", { sensitivity: "base" });
-    } else if (key === "installs") {
-      delta = left.installs - right.installs;
+    } else if (key === "downloads") {
+      delta = left.downloads - right.downloads;
     } else {
       delta = left.updatedAt - right.updatedAt;
     }
@@ -134,4 +152,25 @@ export function sortDashboardItems(
     return delta * factor;
   });
   return sorted;
+}
+
+function defaultDashboardPriority(item: DashboardCatalogItem) {
+  if (item.kind === "plugin") {
+    const security = packageSecurityStatus(item.data);
+    if (security.tone === "destructive") return 60;
+    if (security.tone === "pending") return 50;
+    if (security.tone === "warning") return 40;
+    if ((item.data.inspectorWarningCount ?? 0) > 0) return 30;
+    if (packageVisibilityStatus(item.data).tone !== "success") return 20;
+    return 0;
+  }
+
+  const security = skillSecurityStatus(item.data);
+  const visibility = skillVisibilityStatus(item.data);
+  if (security.tone === "destructive") return 60;
+  if (security.tone === "pending") return 50;
+  if (security.tone === "warning") return 40;
+  if (visibility.label === "Quality hold") return 30;
+  if (visibility.label === "Hidden" || visibility.label === "Removed") return 20;
+  return 0;
 }

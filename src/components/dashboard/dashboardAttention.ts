@@ -38,7 +38,9 @@ function skillAuditPreview(skill: DashboardSkill) {
   );
   if (internalRuleSummary) {
     const finding = internalRuleSummary[1]?.toLowerCase();
-    return `${finding === "malicious" ? "Malicious" : "Suspicious"} behavior detected`;
+    return finding === "malicious"
+      ? "Security scan classified this version as malicious."
+      : "Security scan requires manual review.";
   }
 
   return truncatePreview(summary);
@@ -47,14 +49,29 @@ function skillAuditPreview(skill: DashboardSkill) {
 function pluginValidationPreview(pkg: DashboardPackage) {
   const finding = pkg.topInspectorFinding;
   if (!finding) return undefined;
-  const message = formatValidationFindingMessage(finding.message);
-  const remediation = finding.remediation?.trim();
+  const message = conciseValidationMessage(formatValidationFindingMessage(finding.message));
+  const remediation = finding.remediation ? conciseValidationRemediation(finding.remediation) : "";
   if (remediation) {
     const fix = truncatePreview(remediation, VALIDATION_FIX_LIMIT);
     const messageBudget = ATTENTION_PREVIEW_LIMIT - fix.length - " Fix: ".length;
     return `${truncatePreview(message, messageBudget)} Fix: ${fix}`;
   }
   return truncatePreview(message);
+}
+
+function conciseValidationMessage(message: string) {
+  if (/before_agent_start hook is deprecated/i.test(message)) {
+    return "Deprecated before_agent_start hook.";
+  }
+  return message;
+}
+
+function conciseValidationRemediation(remediation: string) {
+  const trimmed = remediation.trim();
+  if (/replace the legacy before_agent_start hook with current prompt hooks/i.test(trimmed)) {
+    return "Replace with current prompt hooks.";
+  }
+  return trimmed;
 }
 
 function pushSkillAttention(
@@ -72,6 +89,9 @@ function pushSkillAttention(
     items.push({
       id: `skill:${skill._id}:blocked`,
       kind: "skill",
+      slug: skill.slug,
+      ownerHandle,
+      version: skill.latestVersion?.version,
       issueType: "security",
       title: skill.displayName,
       reason: "Blocked by security checks",
@@ -80,48 +100,14 @@ function pushSkillAttention(
       href: auditHref,
       actionLabel: "Review security →",
     });
-    return;
   }
-  if (security.tone === "pending") {
-    items.push({
-      id: `skill:${skill._id}:pending-scan`,
-      kind: "skill",
-      issueType: "security",
-      title: skill.displayName,
-      reason: "Waiting for security checks",
-      preview: auditPreview,
-      severity: "pending",
-      href: auditHref,
-      actionLabel: "View progress →",
-    });
-  } else if (security.tone === "warning") {
-    items.push({
-      id: `skill:${skill._id}:review`,
-      kind: "skill",
-      issueType: "security",
-      title: skill.displayName,
-      reason: "Needs security review",
-      preview: auditPreview,
-      severity: "warning",
-      href: auditHref,
-      actionLabel: "Review security →",
-    });
-  }
-  if (visibility.label === "Quality hold") {
-    items.push({
-      id: `skill:${skill._id}:quality`,
-      kind: "skill",
-      issueType: "quality",
-      title: skill.displayName,
-      reason: "Held for quality review",
-      severity: "warning",
-      href: detailHref,
-      actionLabel: "Review quality →",
-    });
-  } else if (visibility.label === "Hidden" || visibility.label === "Removed") {
+  if (visibility.label === "Hidden" || visibility.label === "Removed") {
     items.push({
       id: `skill:${skill._id}:visibility`,
       kind: "skill",
+      slug: skill.slug,
+      ownerHandle,
+      version: skill.latestVersion?.version,
       issueType: "visibility",
       title: skill.displayName,
       reason: visibility.label,
@@ -146,6 +132,8 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:validation`,
       kind: "plugin",
+      packageName: pkg.name,
+      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
       issueType: "validation",
       title: pkg.displayName,
       reason: `${warningCount} validation warning${warningCount === 1 ? "" : "s"}`,
@@ -159,6 +147,8 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:blocked`,
       kind: "plugin",
+      packageName: pkg.name,
+      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
       issueType: "security",
       title: pkg.displayName,
       reason: "Blocked by security checks",
@@ -172,6 +162,8 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:pending-scan`,
       kind: "plugin",
+      packageName: pkg.name,
+      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
       issueType: "security",
       title: pkg.displayName,
       reason: "Waiting for security checks",
@@ -183,6 +175,8 @@ function pushPackageAttention(
     items.push({
       id: `plugin:${pkg._id}:review`,
       kind: "plugin",
+      packageName: pkg.name,
+      version: pkg.latestVersion ?? pkg.latestRelease?.version ?? undefined,
       issueType: "security",
       title: pkg.displayName,
       reason: "Needs security review",

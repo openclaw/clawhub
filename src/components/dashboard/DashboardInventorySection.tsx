@@ -7,10 +7,10 @@ type DashboardInventorySectionProps = {
 
 export function DashboardInventorySection({ toolbar, children }: DashboardInventorySectionProps) {
   return (
-    <section className="dashboard-inventory-section" aria-label="My inventory">
+    <section className="dashboard-inventory-section" aria-label="My packages">
       <header className="dashboard-section-head">
         <div className="dashboard-section-head-main">
-          <h2 className="dashboard-section-title">My inventory</h2>
+          <h2 className="dashboard-section-title">My packages</h2>
         </div>
       </header>
 

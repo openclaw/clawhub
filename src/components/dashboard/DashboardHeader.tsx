@@ -1,39 +1,28 @@
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { addSearchParams } from "../../lib/addRoutes";
-import { MarketplaceIcon } from "../MarketplaceIcon";
 import { Button } from "../ui/button";
-import {
-  formatDashboardPublisherRole,
-  shouldShowDashboardPublisherRole,
-} from "./dashboardPublisherIdentity";
-import { DashboardPublisherIdentityLine } from "./DashboardPublisherIdentityLine";
 import { DashboardPublisherSelect } from "./DashboardPublisherSelect";
 import type { DashboardPublisherEntry } from "./types";
 
 type DashboardHeaderProps = {
-  publisher: DashboardPublisherEntry["publisher"];
   publishers: DashboardPublisherEntry[];
   activePublisherId: string;
   onPublisherChange: (publisherId: string) => void;
   ownerHandle: string;
+  isSidebarVisible: boolean;
+  onToggleSidebar: () => void;
 };
 
 export function DashboardHeader({
-  publisher,
   publishers,
   activePublisherId,
   onPublisherChange,
   ownerHandle,
+  isSidebarVisible,
+  onToggleSidebar,
 }: DashboardHeaderProps) {
   const showPublisherSelector = publishers.length > 1;
-  const selectedEntry =
-    publishers.find((entry) => entry.publisher?._id === activePublisherId) ?? null;
-  const roleLabel =
-    selectedEntry && shouldShowDashboardPublisherRole(selectedEntry)
-      ? formatDashboardPublisherRole(selectedEntry.role)
-      : null;
-  const scopeKind = publisher.kind === "org" ? "Org" : "Personal";
 
   return (
     <header className="browse-page-header dashboard-page-header dashboard-header">
@@ -41,30 +30,8 @@ export function DashboardHeader({
         <div className="dashboard-header-top">
           <div className="dashboard-header-intro">
             <h1 className="browse-title">Dashboard</h1>
-            <p className="dashboard-header-subtitle">
-              Manage your catalog and review items that need attention.
-            </p>
           </div>
           <div className="dashboard-header-actions">
-            <Button asChild size="sm">
-              <Link to="/add" search={addSearchParams({ ownerHandle })}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                Add to ClawHub
-              </Link>
-            </Button>
-          </div>
-        </div>
-
-        <div className="dashboard-scope-bar">
-          <span className="dashboard-scope-avatar" aria-hidden="true">
-            <MarketplaceIcon
-              kind={publisher.kind === "org" ? "org" : "user"}
-              label={publisher.displayName || publisher.handle}
-              imageUrl={publisher.image}
-              size="sm"
-            />
-          </span>
-          <div className="dashboard-scope-identity">
             {showPublisherSelector ? (
               <DashboardPublisherSelect
                 variant="identity"
@@ -72,21 +39,40 @@ export function DashboardHeader({
                 value={activePublisherId}
                 onValueChange={onPublisherChange}
               />
-            ) : (
-              <DashboardPublisherIdentityLine publisher={publisher} />
-            )}
-            {roleLabel ? (
-              <>
-                <span className="dashboard-header-meta-sep" aria-hidden="true">
-                  ·
-                </span>
-                <span className="dashboard-header-role">{roleLabel}</span>
-              </>
             ) : null}
+            <Button asChild size="sm">
+              <Link to="/add" search={addSearchParams({ ownerHandle })}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add skill or plugin
+              </Link>
+            </Button>
+            <button
+              type="button"
+              className="dashboard-sidebar-toggle"
+              aria-label={isSidebarVisible ? "Hide dashboard sidebar" : "Show dashboard sidebar"}
+              aria-pressed={!isSidebarVisible}
+              title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+              onClick={onToggleSidebar}
+            >
+              <DashboardSidebarToggleIcon hidden={!isSidebarVisible} />
+            </button>
           </div>
-          <span className="dashboard-scope-kind">{scopeKind}</span>
         </div>
       </div>
     </header>
+  );
+}
+
+function DashboardSidebarToggleIcon({ hidden }: { hidden: boolean }) {
+  return (
+    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <rect x="2.5" y="3" width="13" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M10.5 3.5v11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      {hidden ? (
+        <path d="M5.4 9h2.8M6.8 7.6 5.4 9l1.4 1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      ) : (
+        <path d="M7.8 9H5M6.4 7.6 7.8 9l-1.4 1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      )}
+    </svg>
   );
 }

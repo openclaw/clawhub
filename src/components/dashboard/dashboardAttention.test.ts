@@ -196,14 +196,16 @@ describe("collectAttentionItems", () => {
           topInspectorFinding: {
             message:
               "legacy before_agent_start hook is deprecated for the current OpenClaw plugin API and will stop working in a future release",
-            remediation: "Replace the legacy hook with the current lifecycle API",
+            remediation: "Replace the legacy before_agent_start hook with current prompt hooks",
           },
         }),
       ],
       "local",
     );
 
-    expect(items[0]?.preview).toContain("Fix: Replace the legacy hook");
+    expect(items[0]?.preview).toBe(
+      "Deprecated before_agent_start hook. Fix: Replace with current prompt hooks.",
+    );
     expect(items[0]?.preview?.length).toBeLessThanOrEqual(140);
   });
 

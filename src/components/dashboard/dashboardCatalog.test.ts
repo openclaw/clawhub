@@ -94,7 +94,7 @@ describe("dashboardCatalog", () => {
       [
         createPackage({
           updatedAt: 200,
-          stats: { downloads: 0, installs: 50, stars: 0, versions: 1 },
+          stats: { downloads: 50, installs: 20, stars: 0, versions: 1 },
         }),
       ],
     );
@@ -107,8 +107,8 @@ describe("dashboardCatalog", () => {
     expect(searchDashboardItems(items, "nope")).toHaveLength(0);
 
     expect(sortDashboardItems(items, "updated", "desc")[0]?.kind).toBe("plugin");
-    expect(sortDashboardItems(items, "installs", "desc")[0]?.kind).toBe("plugin");
-    expect(sortDashboardItems(items, "installs", "asc")[0]?.kind).toBe("skill");
+    expect(sortDashboardItems(items, "downloads", "desc")[0]?.kind).toBe("plugin");
+    expect(sortDashboardItems(items, "downloads", "asc")[0]?.kind).toBe("skill");
     expect(sortDashboardItems(items, "name", "asc")[0]?.name).toBe("Alpha");
     expect(sortDashboardItems(items, "name", "desc")[0]?.name).toBe("Beta Plugin");
   });

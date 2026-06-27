@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -167,6 +167,10 @@ type TestPackage = {
   summary: string;
   latestVersion: string;
   inspectorWarningCount?: number;
+  topInspectorFinding?: {
+    message: string;
+    remediation?: string;
+  };
   updatedAt: number;
   stats: {
     downloads: number;
@@ -426,8 +430,9 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    fireEvent.click(screen.getAllByRole("combobox", { name: "Sort" })[0]!);
-    fireEvent.click(screen.getByRole("option", { name: "Most installs" }));
+    const inventory = screen.getByRole("region", { name: "My packages" });
+    fireEvent.click(within(inventory).getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("option", { name: "Most downloaded" }));
 
     expect(screen.getAllByText(/Local Flagged/)[0]?.textContent).toContain("Plugin");
   });
@@ -505,12 +510,11 @@ describe("Dashboard rows", () => {
     const heading = screen.getByRole("heading", { name: "Dashboard" });
     expect(heading.classList.contains("browse-title")).toBe(true);
     expect(heading.closest(".dashboard-scope-bar")).toBeNull();
-    expect(document.querySelector(".dashboard-scope-bar")).toBeTruthy();
-    expect(screen.getByText("@local")).toBeTruthy();
+    expect(document.querySelector(".dashboard-scope-bar")).toBeNull();
     expect(document.querySelector(".dashboard-header-count")).toBeNull();
-    expect(screen.getByRole("heading", { name: "My inventory" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "My packages" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Add to ClawHub" })).toBeTruthy();
-    expect(screen.getByText("Import skills from a public GitHub repository you own.")).toBeTruthy();
+    expect(screen.getByText("Bring in skills from a repo you control.")).toBeTruthy();
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
@@ -526,10 +530,14 @@ describe("Dashboard rows", () => {
     expect(screen.getAllByText("Security").length).toBeGreaterThan(0);
     expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
     expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
-    const attentionRows = document.querySelectorAll(".dashboard-attention-row");
-    expect(attentionRows[1]?.textContent).toContain("Blocked");
-    expect(attentionRows[0]?.getAttribute("aria-label")).toContain("Needs security review");
-    expect(attentionRows[1]?.getAttribute("aria-label")).toContain("Blocked by security checks");
+    const attention = screen.getByLabelText("Needs attention");
+    const skillAttention = within(attention).getByRole("link", { name: /Local Flagged Skill/ });
+    const pluginAttention = within(attention).getByRole("link", {
+      name: /Local Flagged Runtime Plugin/,
+    });
+    expect(pluginAttention.textContent).toContain("Blocked");
+    expect(skillAttention.getAttribute("aria-label")).toContain("Security: Needs review");
+    expect(pluginAttention.getAttribute("aria-label")).toContain("Security: Blocked");
     expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(0);
 
     expect(screen.queryByText("VT")).toBeNull();
@@ -540,6 +548,55 @@ describe("Dashboard rows", () => {
     const downloads = screen.getByRole("region", { name: "Download metrics" });
     expect(downloads.textContent).toContain("Total downloads");
     expect(downloads.textContent).toContain("Skills");
+  });
+
+  it("groups issues by artifact without merging distinct Convex ids", () => {
+    arrangeDashboard({
+      packages: [
+        createPackage({
+          _id: "packages:first" as Id<"packages">,
+          inspectorWarningCount: 1,
+          topInspectorFinding: {
+            message: "deprecated hook",
+            remediation: "Replace the deprecated hook",
+          },
+          scanStatus: "suspicious",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "suspicious",
+            llmStatus: "suspicious",
+            staticScanStatus: "suspicious",
+          },
+        }),
+        createPackage({
+          _id: "packages:second" as Id<"packages">,
+          name: "second-runtime-plugin",
+          displayName: "Second Runtime Plugin",
+          scanStatus: "suspicious",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "suspicious",
+            llmStatus: "suspicious",
+            staticScanStatus: "suspicious",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    expect(document.querySelectorAll(".dashboard-attention-row")).toHaveLength(2);
+    const groupedRow = screen.getByRole("link", {
+      name: /Local Flagged Runtime Plugin\. 2 issues/i,
+    });
+    expect(groupedRow.textContent).toContain("Validation");
+    expect(groupedRow.textContent).toContain("Security");
+    expect(groupedRow.getAttribute("href")).toBe(
+      "/local/plugins/local-flagged-runtime-plugin/security-audit",
+    );
+    expect(screen.getByRole("link", { name: /Second Runtime Plugin\. 1 issue/i })).toBeTruthy();
   });
 
   it("links public plugin finding counts to the plugin validation tab", () => {
@@ -571,6 +628,7 @@ describe("Dashboard rows", () => {
       "/plugins/local-flagged-runtime-plugin#validation",
     );
     expect(validationLink.parentElement?.closest("a")).toBeNull();
+    expect(validationLink.textContent).toBe("2 warnings");
     expect(screen.getByRole("link", { name: "Open Local Flagged Runtime Plugin" })).toBeTruthy();
     expect(screen.getByText("42 downloads", { selector: ".sr-only" })).toBeTruthy();
     expect(screen.getByText("Status")).toBeTruthy();

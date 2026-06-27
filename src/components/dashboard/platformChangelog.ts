@@ -3,6 +3,7 @@ import { CLAWHUB_REPOSITORY_URL, clawhubDocsUrl } from "../../lib/publicRegistry
 export const CLAWHUB_PLATFORM_CHANGELOG_URL = `${CLAWHUB_REPOSITORY_URL}/releases`;
 
 export type PlatformChangelogCategory = "Feature" | "Improvement";
+export type PlatformChangelogSurface = "Web" | "CLI" | "API";
 
 export type PlatformChangelogEntry = {
   id: string;
@@ -11,6 +12,7 @@ export type PlatformChangelogEntry = {
   /** Optional ISO date for the `<time dateTime>` attribute. */
   iso?: string;
   category: PlatformChangelogCategory;
+  surface: PlatformChangelogSurface;
   title: string;
   /** Internal TanStack route target. */
   to?: string;
@@ -25,6 +27,7 @@ export const PLATFORM_CHANGELOG_ENTRIES: PlatformChangelogEntry[] = [
     id: "github-import",
     when: "Recent",
     category: "Feature",
+    surface: "Web",
     title: "Import skills from GitHub",
     to: "/import",
   },
@@ -32,6 +35,7 @@ export const PLATFORM_CHANGELOG_ENTRIES: PlatformChangelogEntry[] = [
     id: "publisher-workspace",
     when: "Recent",
     category: "Feature",
+    surface: "Web",
     title: "Publisher workspace on the dashboard",
     to: "/dashboard",
   },
@@ -39,6 +43,7 @@ export const PLATFORM_CHANGELOG_ENTRIES: PlatformChangelogEntry[] = [
     id: "download-insights",
     when: "Recent",
     category: "Feature",
+    surface: "Web",
     title: "Download insights for your catalog",
     to: "/dashboard",
   },
@@ -46,6 +51,7 @@ export const PLATFORM_CHANGELOG_ENTRIES: PlatformChangelogEntry[] = [
     id: "needs-attention",
     when: "Recent",
     category: "Improvement",
+    surface: "Web",
     title: "Needs attention strip for validation issues",
     to: "/dashboard",
     search: { kind: "attention" },
@@ -55,6 +61,7 @@ export const PLATFORM_CHANGELOG_ENTRIES: PlatformChangelogEntry[] = [
     when: "Jun 2026",
     iso: "2026-06-06",
     category: "Improvement",
+    surface: "CLI",
     title: "Plugin validation findings and fix guides",
     href: clawhubDocsUrl("plugin-validation-fixes"),
   },
@@ -63,6 +70,7 @@ export const PLATFORM_CHANGELOG_ENTRIES: PlatformChangelogEntry[] = [
     when: "Jun 2026",
     iso: "2026-06-23",
     category: "Improvement",
+    surface: "Web",
     title: "Upload org publisher logos from settings",
     to: "/settings",
     search: { view: "organizations" },

@@ -87,13 +87,17 @@ export type DashboardPublisherEntry = {
 };
 
 export type DashboardKindFilter = "all" | "skill" | "plugin" | "attention";
-export type DashboardSortKey = "name" | "installs" | "updated";
+export type DashboardSortKey = "name" | "downloads" | "updated";
 export type DashboardSortDir = "asc" | "desc";
 export type DashboardView = "list" | "grid";
 
 export type DashboardAttentionItem = {
   id: string;
   kind: "skill" | "plugin";
+  slug?: string;
+  ownerHandle?: string;
+  packageName?: string;
+  version?: string;
   issueType: "security" | "validation" | "quality" | "visibility";
   title: string;
   reason: string;
@@ -112,6 +116,7 @@ export type DashboardCatalogItem =
       data: DashboardSkill;
       updatedAt: number;
       installs: number;
+      downloads: number;
     }
   | {
       kind: "plugin";
@@ -121,4 +126,5 @@ export type DashboardCatalogItem =
       data: DashboardPackage;
       updatedAt: number;
       installs: number;
+      downloads: number;
     };

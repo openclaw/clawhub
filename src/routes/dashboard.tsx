@@ -1,12 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { collectAttentionItems } from "../components/dashboard/dashboardAttention";
 import {
-  computeDashboardStats,
   excludeAttentionItems,
   filterByAttention,
   filterByKind,
@@ -25,6 +24,7 @@ import { DashboardToolbar } from "../components/dashboard/DashboardToolbar";
 import { DashboardWelcome } from "../components/dashboard/DashboardWelcome";
 import type {
   DashboardKindFilter,
+  DashboardCatalogItem,
   DashboardPackage,
   DashboardPublisherEntry,
   DashboardSkill,
@@ -46,10 +46,12 @@ import { useAuthStatus } from "../lib/useAuthStatus";
 /** Matches `packages.list` server cap; plugins are not paginated on the dashboard yet. */
 const DASHBOARD_PACKAGES_LIMIT = 100;
 const DASHBOARD_LOAD_TIMEOUT_MS = 20_000;
+const DASHBOARD_SIDEBAR_STORAGE_KEY = "clawhub.dashboard.sidebar";
+const DASHBOARD_VIEW_STORAGE_KEY = "clawhub.dashboard.view";
 
 const DEFAULT_SORT_DIR = {
   name: "asc",
-  installs: "desc",
+  downloads: "desc",
   updated: "desc",
 } as const;
 
@@ -65,7 +67,7 @@ export function Dashboard() {
 
   const kindFilter: DashboardKindFilter = search.kind ?? "all";
   const query = search.q ?? "";
-  const sort: DashboardSortKey = search.sort ?? "updated";
+  const sort: DashboardSortKey | undefined = search.sort;
   const view: DashboardView = search.view ?? "list";
 
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
@@ -73,6 +75,7 @@ export function Dashboard() {
     | undefined;
   const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
   const patchSearch = (patch: Partial<DashboardSearchState>) => {
     void navigate({
@@ -130,10 +133,6 @@ export function Dashboard() {
     me?.displayName ??
     me?._id ??
     "publisher";
-  const aggregateStats = useMemo(
-    () => computeDashboardStats(skills, packages, ownerHandle),
-    [skills, packages, ownerHandle],
-  );
   const attentionItems = useMemo(
     () => collectAttentionItems(skills, packages, ownerHandle),
     [skills, packages, ownerHandle],
@@ -149,7 +148,13 @@ export function Dashboard() {
           ? excludeAttentionItems(byKind, attentionItems)
           : byKind;
     const bySearch = searchDashboardItems(afterAttention, query);
-    return sortDashboardItems(bySearch, sort, DEFAULT_SORT_DIR[sort]);
+    const sorted = sortDashboardItems(bySearch, sort, sort ? DEFAULT_SORT_DIR[sort] : undefined);
+    return addVisualCatalogMocks(sorted, {
+      kind: kindFilter,
+      ownerHandle,
+      query,
+      sort,
+    });
   }, [skills, packages, kindFilter, query, sort, attentionItems]);
 
   const skillsQuerySkipped = skillsQueryArgs === "skip";
@@ -171,9 +176,19 @@ export function Dashboard() {
   const showDownloadInsights = skillDownloadsTotal + pluginDownloadsTotal > 0;
 
   useEffect(() => {
+    const savedSidebar = window.localStorage.getItem(DASHBOARD_SIDEBAR_STORAGE_KEY);
+    if (savedSidebar === "hidden") setIsSidebarVisible(false);
+
+    if (!search.view) {
+      const savedView = window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
+      if (savedView === "list" || savedView === "grid") patchSearch({ view: savedView });
+    }
+  }, []);
+
+  useEffect(() => {
     if (!isLoading) {
       setLoadTimedOut(false);
-      return;
+      return undefined;
     }
     const timer = window.setTimeout(() => setLoadTimedOut(true), DASHBOARD_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
@@ -216,25 +231,28 @@ export function Dashboard() {
     return <DashboardWelcome ownerHandle={ownerHandle} publisherSelector={publisherSelector} />;
   }
 
-  const headerPublisher = selectedPublisher?.publisher ?? {
-    _id: activePublisherId || me._id,
-    handle: ownerHandle,
-    displayName: me.displayName ?? me.name ?? ownerHandle,
-    kind: "user" as const,
-  };
-
   return (
     <TooltipProvider>
       <main className="browse-page browse-page-borderless-header dashboard-route">
         <DashboardHeader
-          publisher={headerPublisher}
           publishers={resolvedPublishers}
           activePublisherId={activePublisherId}
           onPublisherChange={setSelectedPublisherId}
           ownerHandle={ownerHandle}
+          isSidebarVisible={isSidebarVisible}
+          onToggleSidebar={() =>
+            setIsSidebarVisible((value) => {
+              const nextValue = !value;
+              window.localStorage.setItem(
+                DASHBOARD_SIDEBAR_STORAGE_KEY,
+                nextValue ? "visible" : "hidden",
+              );
+              return nextValue;
+            })
+          }
         />
 
-        <div className="dashboard-workspace">
+        <div className={`dashboard-workspace${isSidebarVisible ? "" : " is-sidebar-hidden"}`}>
           <div className="dashboard-workspace-main">
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
@@ -245,11 +263,13 @@ export function Dashboard() {
                   query={query}
                   sort={sort}
                   view={view}
-                  stats={aggregateStats}
                   onKindChange={(kind) => patchSearch({ kind })}
                   onQueryChange={(q) => patchSearch({ q: q.trim() ? q : undefined })}
                   onSortChange={(nextSort) => patchSearch({ sort: nextSort })}
-                  onViewChange={(nextView) => patchSearch({ view: nextView })}
+                  onViewChange={(nextView) => {
+                    window.localStorage.setItem(DASHBOARD_VIEW_STORAGE_KEY, nextView);
+                    patchSearch({ view: nextView });
+                  }}
                 />
               }
             >
@@ -292,22 +312,173 @@ export function Dashboard() {
             </DashboardInventorySection>
           </div>
 
-          <DashboardRightSidebar ownerHandle={ownerHandle} />
-
-          {showDownloadInsights ? (
-            <DashboardDownloadsInsights
-              skills={skills}
-              packages={packages}
-              skillDownloadsTotal={skillDownloadsTotal}
-              pluginDownloadsTotal={pluginDownloadsTotal}
-              insight={search.insight}
-              onInsightChange={(insight) => patchSearch({ insight })}
-            />
-          ) : null}
+          {isSidebarVisible ? <DashboardRightSidebar ownerHandle={ownerHandle} /> : null}
         </div>
+
+        {showDownloadInsights ? (
+          <DashboardDownloadsInsights
+            skills={skills}
+            packages={packages}
+            skillDownloadsTotal={skillDownloadsTotal}
+            pluginDownloadsTotal={pluginDownloadsTotal}
+            insight={search.insight}
+            onInsightChange={(insight) => patchSearch({ insight })}
+          />
+        ) : null}
       </main>
     </TooltipProvider>
   );
+}
+
+function addVisualCatalogMocks(
+  items: DashboardCatalogItem[],
+  options: {
+    kind: DashboardKindFilter;
+    ownerHandle: string;
+    query: string;
+    sort?: DashboardSortKey;
+  },
+) {
+  if (options.kind === "attention" || items.length >= 5) return items;
+  const existing = new Set(items.map((item) => `${item.kind}:${item.id}`));
+  const mocks = searchDashboardItems(
+    filterByKind(buildVisualCatalogMocks(options.ownerHandle), options.kind),
+    options.query,
+  ).filter((item) => !existing.has(`${item.kind}:${item.id}`));
+  const sortedMocks = sortDashboardItems(
+    mocks,
+    options.sort,
+    options.sort ? DEFAULT_SORT_DIR[options.sort] : undefined,
+  );
+  return [...items, ...sortedMocks.slice(0, 5 - items.length)];
+}
+
+function buildVisualCatalogMocks(ownerHandle: string): DashboardCatalogItem[] {
+  const now = Date.now();
+  const skillBase = {
+    _creationTime: now,
+    ownerUserId: "users:local",
+    ownerPublisherId: "publishers:local",
+    ownerPath: ownerHandle,
+    canonicalSkillId: null,
+    forkOf: null,
+    latestVersionId: null,
+    tags: {},
+    badges: {},
+    moderationStatus: "active",
+    moderationReason: null,
+    moderationSummary: null,
+    moderationVerdict: "clean",
+    moderationFlags: [],
+    isSuspicious: false,
+    createdAt: now,
+    pendingReview: false,
+    qualityDecision: "pass",
+    latestVersion: {
+      version: "1.0.0",
+      createdAt: now,
+      vtStatus: "clean",
+      llmStatus: "clean",
+      staticScanStatus: "clean",
+    },
+  } satisfies Partial<DashboardSkill>;
+
+  const skills = [
+    {
+      _id: "visual-skill:workflow-guard",
+      slug: "workflow-guard",
+      displayName: "Workflow Guard",
+      summary: "Review local agent workflows before publishing.",
+      categories: ["security"],
+      topics: ["workflows", "review"],
+      updatedAt: now - 86_400_000,
+      stats: { downloads: 184, installsCurrent: 18, installsAllTime: 42, stars: 12, versions: 3 },
+    },
+    {
+      _id: "visual-skill:prompt-hooks-kit",
+      slug: "prompt-hooks-kit",
+      displayName: "Prompt Hooks Kit",
+      summary: "Reusable prompt hook patterns for runtime plugins.",
+      categories: ["automation"],
+      topics: ["prompts", "hooks"],
+      updatedAt: now - 172_800_000,
+      stats: { downloads: 136, installsCurrent: 11, installsAllTime: 29, stars: 8, versions: 2 },
+    },
+    {
+      _id: "visual-skill:catalog-review",
+      slug: "catalog-review",
+      displayName: "Catalog Review Assistant",
+      summary: "Checks package metadata, release notes, and changelog copy.",
+      categories: ["agents"],
+      topics: ["catalog", "publishing"],
+      updatedAt: now - 259_200_000,
+      stats: { downloads: 92, installsCurrent: 9, installsAllTime: 21, stars: 5, versions: 4 },
+    },
+  ].map((skill) => ({
+    kind: "skill" as const,
+    id: skill._id,
+    name: skill.displayName,
+    searchText: `${skill.displayName} ${skill.slug}`.toLowerCase(),
+    data: { ...skillBase, ...skill } as DashboardSkill,
+    updatedAt: skill.updatedAt,
+    installs: skill.stats.installsAllTime,
+    downloads: skill.stats.downloads,
+  }));
+
+  const pluginBase = {
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    sourceRepo: null,
+    runtimeId: null,
+    latestVersion: "1.0.0",
+    inspectorWarningCount: 0,
+    updatedAt: now,
+    verification: null,
+    scanStatus: "clean",
+    pendingReview: false,
+    latestRelease: {
+      version: "1.0.0",
+      createdAt: now,
+      vtStatus: "clean",
+      llmStatus: "clean",
+      staticScanStatus: "clean",
+    },
+  } satisfies Partial<DashboardPackage>;
+
+  const plugins = [
+    {
+      _id: "visual-plugin:github-importer",
+      name: "github-importer",
+      displayName: "GitHub Importer",
+      summary: "Imports skills from public repositories.",
+      categories: ["tools"],
+      topics: ["github", "import"],
+      stats: { downloads: 221, installs: 37, stars: 14, versions: 5 },
+      updatedAt: now - 43_200_000,
+    },
+    {
+      _id: "visual-plugin:runtime-adapter",
+      name: "runtime-adapter",
+      displayName: "Runtime Adapter",
+      summary: "Bridges current prompt hooks into older packages.",
+      categories: ["runtime"],
+      topics: ["compatibility", "hooks"],
+      stats: { downloads: 118, installs: 19, stars: 7, versions: 3 },
+      updatedAt: now - 302_400_000,
+    },
+  ].map((pkg) => ({
+    kind: "plugin" as const,
+    id: pkg._id,
+    name: pkg.displayName,
+    searchText: `${pkg.displayName} ${pkg.name}`.toLowerCase(),
+    data: { ...pluginBase, ...pkg } as DashboardPackage,
+    updatedAt: pkg.updatedAt,
+    installs: pkg.stats.installs,
+    downloads: pkg.stats.downloads,
+  }));
+
+  return [...skills, ...plugins];
 }
 
 function DashboardLoadError({ onRetry }: { onRetry: () => void }) {

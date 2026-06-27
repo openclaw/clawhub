@@ -1,6 +1,5 @@
 import { MarketplaceIcon } from "../MarketplaceIcon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { DashboardPublisherIdentityLine } from "./DashboardPublisherIdentityLine";
 import type { DashboardPublisherEntry } from "./types";
 
 type DashboardPublisherSelectProps = {
@@ -62,7 +61,7 @@ function IdentityPublisherLabel({
 }) {
   return (
     <span className="dashboard-header-publisher-label">
-      <DashboardPublisherIdentityLine publisher={publisher} />
+      <span className="dashboard-header-handle">@{publisher.handle}</span>
     </span>
   );
 }

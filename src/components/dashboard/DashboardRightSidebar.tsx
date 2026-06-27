@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
+import { useEffect, useState, type SyntheticEvent } from "react";
 import {
-  CLAWHUB_PLATFORM_CHANGELOG_URL,
   PLATFORM_CHANGELOG_ENTRIES,
   type PlatformChangelogEntry,
 } from "./platformChangelog";
@@ -15,6 +15,7 @@ function GitHubLogo({ className }: { className?: string }) {
 }
 
 const CHANGELOG_VISIBLE_LIMIT = 4;
+const CHANGELOG_STORAGE_KEY = "clawhub.dashboard.changelog";
 
 type DashboardRightSidebarProps = {
   ownerHandle: string;
@@ -22,6 +23,19 @@ type DashboardRightSidebarProps = {
 
 export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProps) {
   const changelogEntries = PLATFORM_CHANGELOG_ENTRIES.slice(0, CHANGELOG_VISIBLE_LIMIT);
+  const [isChangelogOpen, setIsChangelogOpen] = useState(true);
+
+  useEffect(() => {
+    if (window.localStorage.getItem(CHANGELOG_STORAGE_KEY) === "closed") {
+      setIsChangelogOpen(false);
+    }
+  }, []);
+
+  function handleChangelogToggle(event: SyntheticEvent<HTMLDetailsElement>) {
+    const nextOpen = event.currentTarget.open;
+    setIsChangelogOpen(nextOpen);
+    window.localStorage.setItem(CHANGELOG_STORAGE_KEY, nextOpen ? "open" : "closed");
+  }
 
   return (
     <aside className="dashboard-right-sidebar" aria-label="Publisher sidebar">
@@ -38,7 +52,7 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
         <div className="dashboard-sidebar-promo-text">
           <h2 className="dashboard-sidebar-promo-title">Import from GitHub</h2>
           <p className="dashboard-sidebar-promo-copy">
-            Import skills from a public GitHub repository you own.
+            Bring in skills from a repo you control.
           </p>
         </div>
         <Link
@@ -51,11 +65,13 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
         </Link>
       </article>
 
-      <details className="dashboard-sidebar-changelog" open>
+      <details
+        className="dashboard-sidebar-changelog"
+        open={isChangelogOpen}
+        onToggle={handleChangelogToggle}
+      >
         <summary className="dashboard-sidebar-changelog-summary">
-          <span className="dashboard-sidebar-changelog-summary-label">
-            Latest from our changelog
-          </span>
+          <span className="dashboard-sidebar-changelog-summary-label">Latest updates</span>
         </summary>
         <ol className="dashboard-sidebar-timeline" aria-label="Recent platform updates">
           {changelogEntries.map((entry) => (
@@ -69,16 +85,14 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
             </li>
           ))}
         </ol>
-        <a
-          href={CLAWHUB_PLATFORM_CHANGELOG_URL}
+        <Link
+          to="/changelog"
           className="dashboard-sidebar-feed-link"
-          aria-label="View full platform changelog on GitHub"
-          target="_blank"
-          rel="noreferrer"
+          aria-label="See changelog"
         >
-          View changelog
+          See changelog
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </a>
+        </Link>
       </details>
     </aside>
   );
@@ -95,13 +109,9 @@ function ChangelogEntryLine({
 
   return (
     <div className="dashboard-sidebar-timeline-entry">
-      {isRecent ? (
-        <span className="dashboard-sidebar-timeline-kind">{entry.category}</span>
-      ) : (
-        <time className="dashboard-sidebar-timeline-date" dateTime={entry.iso}>
-          {entry.when}
-        </time>
-      )}
+      <span className="dashboard-sidebar-timeline-kind">
+        {entry.category} · {isRecent ? "2d ago" : entry.when}
+      </span>
       <PlatformChangelogTitle entry={entry} ownerHandle={ownerHandle} />
     </div>
   );

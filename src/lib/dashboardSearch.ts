@@ -23,7 +23,7 @@ function parseInsightParam(value: unknown): string | undefined {
 }
 
 const KIND_FILTERS = new Set<DashboardKindFilter>(["all", "skill", "plugin", "attention"]);
-const SORT_KEYS = new Set<DashboardSortKey>(["name", "installs", "updated"]);
+const SORT_KEYS = new Set<DashboardSortKey>(["name", "downloads", "updated"]);
 const VIEWS = new Set<DashboardView>(["list", "grid"]);
 
 export function parseDashboardSearch(search: Record<string, unknown>): DashboardSearchState {
@@ -32,10 +32,13 @@ export function parseDashboardSearch(search: Record<string, unknown>): Dashboard
       ? (search.kind as DashboardKindFilter)
       : undefined;
   const q = typeof search.q === "string" && search.q.trim() ? search.q : undefined;
-  const sort =
-    typeof search.sort === "string" && SORT_KEYS.has(search.sort as DashboardSortKey)
-      ? (search.sort as DashboardSortKey)
-      : undefined;
+  const sort = (() => {
+    if (search.sort === "installs") return "downloads";
+    if (typeof search.sort === "string" && SORT_KEYS.has(search.sort as DashboardSortKey)) {
+      return search.sort as DashboardSortKey;
+    }
+    return undefined;
+  })();
   const view =
     typeof search.view === "string" && VIEWS.has(search.view as DashboardView)
       ? (search.view as DashboardView)
@@ -49,7 +52,7 @@ export function dashboardSearchParams(state: DashboardSearchState) {
   return {
     kind: state.kind && state.kind !== "all" ? state.kind : undefined,
     q: state.q,
-    sort: state.sort && state.sort !== "updated" ? state.sort : undefined,
+    sort: state.sort,
     view: state.view && state.view !== "list" ? state.view : undefined,
     insight: state.insight,
   };
