@@ -30816,11 +30816,28 @@ a[class*="rounded-full"] {
   transition:
     transform 240ms var(--dashboard-sheet-ease),
     opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  scrollbar-color: color-mix(in srgb, var(--ink-soft) 46%, transparent) transparent;
+  scrollbar-width: thin;
 
   @starting-style {
     opacity: 0;
     transform: translateX(100%);
   }
+}
+
+.dashboard-review-sheet::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dashboard-review-sheet::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dashboard-review-sheet::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-soft) 46%, transparent);
+  background-clip: padding-box;
 }
 
 .dashboard-review-report {
@@ -30833,7 +30850,7 @@ a[class*="rounded-full"] {
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding-bottom: 14px;
+  padding: 4px 2px 18px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
@@ -30847,7 +30864,7 @@ a[class*="rounded-full"] {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 
 .dashboard-review-sheet h2,
@@ -30858,9 +30875,15 @@ a[class*="rounded-full"] {
 
 .dashboard-review-sheet h2 {
   color: var(--ink);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.dashboard-review-skillspector .security-report-overview-body p {
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .dashboard-review-sheet-meta {
@@ -31691,7 +31714,7 @@ a[class*="rounded-full"] {
 @media (min-width: 760px) {
   .dashboard-downloads-compact-panel {
     grid-template-columns: minmax(0, 1.65fr) minmax(260px, 1fr);
-    align-items: end;
+    align-items: stretch;
   }
 
   .dashboard-downloads-compact-split {
@@ -32543,10 +32566,14 @@ a.dashboard-sidebar-timeline-name:hover {
   grid-column: 1 / -1;
   grid-row: 1;
   align-content: start;
-  min-height: 76px;
+  min-height: 92px;
   padding-right: 68px;
   padding-bottom: 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--hv2-border) 60%, transparent);
+}
+
+.dashboard-final .dashboard-attention-context {
+  -webkit-line-clamp: 2;
 }
 
 .dashboard-final .dashboard-attention-row .skill-list-item-main {
@@ -32623,7 +32650,8 @@ a.dashboard-sidebar-timeline-name:hover {
 
 .dashboard-review-complete-validation .plugin-warning-item-details[open] {
   border-radius: 10px;
-  background: color-mix(in srgb, var(--surface-muted) 78%, var(--surface));
+  overflow: hidden;
+  background: #26262b;
 }
 
 .dashboard-review-complete-validation
@@ -32638,7 +32666,7 @@ a.dashboard-sidebar-timeline-name:hover {
 [data-theme-resolved="light"]
   .dashboard-review-complete-validation
   .plugin-warning-item-details[open] {
-  background: color-mix(in srgb, var(--surface-muted) 92%, var(--surface));
+  background: #e1e5ea;
 }
 
 @media (max-width: 1180px) {

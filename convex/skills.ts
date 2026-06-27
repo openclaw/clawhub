@@ -2754,6 +2754,54 @@ export const getBySlug = query({
   },
 });
 
+export const getSecurityReviewForManager = query({
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { skill } = await resolveSkillBySlugOrAliasForOwner(
+      ctx,
+      args.slug,
+      args.ownerHandle,
+    );
+    if (!skill) return null;
+
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return null;
+
+    const ownerPublisher = skill.ownerPublisherId
+      ? await ctx.db.get(skill.ownerPublisherId)
+      : null;
+    const canManagePublisher = ownerPublisher
+      ? await canAccessPublisherOwnerScope(ctx, {
+          publisher: ownerPublisher,
+          userId,
+          legacyOwnerUserId: skill.ownerUserId,
+        })
+      : false;
+    if (!isDirectSkillOwner(skill, userId) && !canManagePublisher) return null;
+
+    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    if (!latestVersion || latestVersion.skillId !== skill._id || latestVersion.softDeletedAt) {
+      return null;
+    }
+
+    const publicOwner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      }),
+    );
+
+    return {
+      skill: { displayName: skill.displayName },
+      owner: publicOwner,
+      latestVersion: {
+        version: latestVersion.version,
+        skillSpectorAnalysis: latestVersion.skillSpectorAnalysis ?? null,
+      },
+    };
+  },
+});
+
 export const getGitHubDownloadTargetInternal = internalQuery({
   args: { skillId: v.id("skills") },
   handler: async (ctx, args) => {

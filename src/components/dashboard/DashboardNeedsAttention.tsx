@@ -182,7 +182,7 @@ function DashboardReviewSheetContent({
 }) {
   const isSkill = group.primary.kind === "skill";
   const skillAudit = useQuery(
-    api.skills.getBySlug,
+    api.skills.getSecurityReviewForManager,
     isSkill && group.primary.slug
       ? { slug: group.primary.slug, ownerHandle: group.primary.ownerHandle }
       : "skip",
