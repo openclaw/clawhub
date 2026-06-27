@@ -455,7 +455,8 @@ code {
     .plugin-detail-page,
     .security-audit-page,
     .publisher-profile-route,
-    .dashboard-route
+    .dashboard-route,
+    .changelog-page
   )::before {
   position: absolute;
   top: 0;
@@ -479,6 +480,21 @@ code {
 }
 
 .app-shell:has(.dashboard-route)::before {
+  height: 520px;
+  background:
+    radial-gradient(
+      ellipse 52% 30% at 52% 0%,
+      color-mix(in srgb, #6478ff 7%, transparent) 0%,
+      transparent 64%
+    ),
+    radial-gradient(
+      ellipse 42% 24% at 30% 6%,
+      color-mix(in srgb, var(--ink) 5%, transparent) 0%,
+      transparent 68%
+    );
+}
+
+.app-shell:has(.changelog-page)::before {
   height: 520px;
   background:
     radial-gradient(
@@ -557,7 +573,8 @@ code {
     .plugin-detail-page,
     .security-audit-page,
     .publisher-profile-route,
-    .dashboard-route
+    .dashboard-route,
+    .changelog-page
   )::before {
   display: none;
 }
@@ -567,7 +584,8 @@ code {
     .plugin-detail-page,
     .security-audit-page,
     .publisher-profile-route,
-    .dashboard-route
+    .dashboard-route,
+    .changelog-page
   )
   .navbar.navbar-calm {
   background: transparent;
@@ -1972,7 +1990,7 @@ code {
 
 .skillspector-check-patterns {
   color: var(--ink-soft);
-  font-size: 0.95rem;
+  font-size: 14px;
   line-height: 1.35;
 }
 
@@ -15720,7 +15738,7 @@ a.agentic-risk-finding-title:focus-visible {
   overflow-wrap: anywhere;
   border-radius: 8px;
   background: var(--surface);
-  padding: 8px 10px;
+  padding: 8px 10px 8px 0;
   font-family: var(--font-mono);
   font-size: 0.76rem;
   line-height: 1.45;
@@ -30568,9 +30586,9 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-catalog-version {
-  color: var(--ink-muted);
-  font-size: 11px;
-  font-weight: 550;
+  color: color-mix(in srgb, var(--ink-muted) 68%, transparent);
+  font-size: 10px;
+  font-weight: 500;
   line-height: 1;
   white-space: nowrap;
 }
@@ -30801,8 +30819,8 @@ a[class*="rounded-full"] {
   width: min(560px, calc(100vw - 32px));
   height: min(860px, calc(100dvh - 32px));
   max-height: calc(100dvh - 32px);
-  overflow: auto;
-  padding: 22px;
+  overflow: hidden;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   border-radius: var(--r-md);
   background: color-mix(in srgb, var(--surface) 93%, transparent);
@@ -30816,8 +30834,6 @@ a[class*="rounded-full"] {
   transition:
     transform 240ms var(--dashboard-sheet-ease),
     opacity 180ms cubic-bezier(0.23, 1, 0.32, 1);
-  scrollbar-color: color-mix(in srgb, var(--ink-soft) 46%, transparent) transparent;
-  scrollbar-width: thin;
 
   @starting-style {
     opacity: 0;
@@ -30825,19 +30841,62 @@ a[class*="rounded-full"] {
   }
 }
 
-.dashboard-review-sheet::-webkit-scrollbar {
+.dashboard-review-sheet-scroll {
+  height: 100%;
+  overflow: auto;
+  padding: 22px;
+  scrollbar-color: color-mix(in srgb, var(--ink-soft) 46%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.dashboard-review-sheet-scroll::-webkit-scrollbar {
   width: 8px;
 }
 
-.dashboard-review-sheet::-webkit-scrollbar-track {
+.dashboard-review-sheet-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.dashboard-review-sheet::-webkit-scrollbar-thumb {
+.dashboard-review-sheet-scroll::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: color-mix(in srgb, var(--ink-soft) 46%, transparent);
   background-clip: padding-box;
+}
+
+.dashboard-review-scroll-fade {
+  position: absolute;
+  z-index: 4;
+  right: 1px;
+  left: 1px;
+  height: 32px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+
+.dashboard-review-scroll-fade.is-visible {
+  opacity: 1;
+}
+
+.dashboard-review-scroll-fade.is-top {
+  top: 1px;
+  border-radius: calc(var(--r-md) - 1px) calc(var(--r-md) - 1px) 0 0;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--surface) 96%, transparent),
+    transparent
+  );
+}
+
+.dashboard-review-scroll-fade.is-bottom {
+  bottom: 1px;
+  border-radius: 0 0 calc(var(--r-md) - 1px) calc(var(--r-md) - 1px);
+  background: linear-gradient(
+    to top,
+    color-mix(in srgb, var(--surface) 96%, transparent),
+    transparent
+  );
 }
 
 .dashboard-review-report {
@@ -30861,9 +30920,9 @@ a[class*="rounded-full"] {
 
 .dashboard-review-sheet-support {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 8px;
   margin-top: 12px;
 }
 
@@ -31021,6 +31080,14 @@ a[class*="rounded-full"] {
 
 .dashboard-review-sheet .security-report-panel-body-findings {
   gap: 18px;
+}
+
+.dashboard-review-skillspector .security-report-panel-body-findings {
+  padding-top: 4px;
+}
+
+.dashboard-review-skillspector .skillspector-checks {
+  margin-top: 6px;
 }
 
 .dashboard-review-sheet-section p {
@@ -32193,6 +32260,10 @@ a.dashboard-sidebar-timeline-name:hover {
   padding-bottom: 0;
 }
 
+.app-shell main.changelog-page {
+  padding-bottom: 0;
+}
+
 .changelog-page-header {
   display: grid;
   gap: 12px;
@@ -32247,7 +32318,9 @@ a.dashboard-sidebar-timeline-name:hover {
 
 .changelog-filter-bar .browse-tab {
   position: relative;
+  min-width: 68px;
   min-height: 46px;
+  justify-content: center;
 }
 
 .changelog-filter-bar .browse-tab.is-active {
@@ -32357,7 +32430,7 @@ a.dashboard-sidebar-timeline-name:hover {
 }
 
 .changelog-entry:last-child {
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-bottom: 0;
 }
 
 .changelog-entry-meta {
@@ -32663,7 +32736,7 @@ a.dashboard-sidebar-timeline-name:hover {
 .dashboard-review-complete-validation .plugin-warning-item-details[open] {
   border-radius: 10px;
   overflow: hidden;
-  background: #26262b;
+  background: color-mix(in srgb, var(--ink) 10%, var(--surface));
 }
 
 .dashboard-review-complete-validation
@@ -32675,10 +32748,25 @@ a.dashboard-sidebar-timeline-name:hover {
   background: transparent;
 }
 
+.dashboard-review-complete-validation
+  .plugin-warning-item-details[open]
+  > .plugin-warning-item-summary:hover,
+.dashboard-review-complete-validation
+  .plugin-warning-item-details[open]
+  > .plugin-warning-item-summary:focus-visible {
+  background: transparent;
+}
+
+.dashboard-review-complete-validation
+  .plugin-warning-item-details[open]
+  + .plugin-warning-item-details[open] {
+  margin-top: 8px;
+}
+
 [data-theme-resolved="light"]
   .dashboard-review-complete-validation
   .plugin-warning-item-details[open] {
-  background: #e1e5ea;
+  background: color-mix(in srgb, var(--ink) 5%, var(--surface));
 }
 
 @media (max-width: 1180px) {

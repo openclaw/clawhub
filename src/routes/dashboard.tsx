@@ -66,7 +66,7 @@ export function Dashboard() {
 
   const kindFilter: DashboardKindFilter = search.kind ?? "all";
   const query = search.q ?? "";
-  const sort: DashboardSortKey | undefined = search.sort;
+  const sort: DashboardSortKey = search.sort ?? "updated";
   const view: DashboardView = search.view ?? "list";
 
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as

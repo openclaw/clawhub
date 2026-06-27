@@ -85,18 +85,13 @@ export function DashboardDownloadsInsights({
     ? formatCompactStat(heroDownloads)
     : formatRangeTotal(heroDownloads);
 
-  const sectionTitle = (() => {
-    if (isFiltered && filtered.label) return filtered.label;
-    return "Stats";
-  })();
-
   return (
     <section
       className="dashboard-downloads-insights dashboard-downloads-insights--compact"
       aria-label="Download metrics"
     >
       <header className="dashboard-downloads-compact-toolbar">
-        <h2 className="dashboard-section-title">{sectionTitle}</h2>
+        <h2 className="dashboard-section-title">Stats</h2>
         <div className="dashboard-downloads-compact-toolbar-controls">
           {insightOptions.length > 1 ? (
             <>

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { buildSkillDetailHref } from "../../lib/ownerRoute";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
@@ -60,6 +60,18 @@ const PLUGIN_VALIDATE_CLI = "clawhub package validate <path-to-plugin>";
 
 export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps) {
   const [selectedGroup, setSelectedGroup] = useState<DashboardAttentionGroup | null>(null);
+  const reviewScrollRef = useRef<HTMLDivElement>(null);
+  const [reviewScrollEdges, setReviewScrollEdges] = useState({ top: false, bottom: false });
+
+  const updateReviewScrollEdges = useCallback(() => {
+    const element = reviewScrollRef.current;
+    if (!element) return;
+    const top = element.scrollTop > 4;
+    const bottom = element.scrollTop + element.clientHeight < element.scrollHeight - 4;
+    setReviewScrollEdges((current) =>
+      current.top === top && current.bottom === bottom ? current : { top, bottom },
+    );
+  }, []);
 
   useEffect(() => {
     if (!selectedGroup) return undefined;
@@ -77,6 +89,23 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
       window.removeEventListener("keydown", closeOnEscape);
     };
   }, [selectedGroup]);
+
+  useEffect(() => {
+    const element = reviewScrollRef.current;
+    if (!selectedGroup || !element) return undefined;
+
+    const frame = window.requestAnimationFrame(updateReviewScrollEdges);
+    const resizeObserver = new ResizeObserver(updateReviewScrollEdges);
+    const mutationObserver = new MutationObserver(updateReviewScrollEdges);
+    resizeObserver.observe(element);
+    mutationObserver.observe(element, { childList: true, subtree: true, characterData: true });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      resizeObserver.disconnect();
+      mutationObserver.disconnect();
+    };
+  }, [selectedGroup, updateReviewScrollEdges]);
 
   if (items.length === 0) return null;
 
@@ -162,9 +191,27 @@ export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps)
             aria-modal="true"
             aria-label={`${selectedGroup.title} review`}
           >
-            <DashboardReviewSheetContent
-              group={selectedGroup}
-              onClose={() => setSelectedGroup(null)}
+            <div
+              ref={reviewScrollRef}
+              className="dashboard-review-sheet-scroll"
+              onScroll={updateReviewScrollEdges}
+            >
+              <DashboardReviewSheetContent
+                group={selectedGroup}
+                onClose={() => setSelectedGroup(null)}
+              />
+            </div>
+            <span
+              className={`dashboard-review-scroll-fade is-top${
+                reviewScrollEdges.top ? " is-visible" : ""
+              }`}
+              aria-hidden="true"
+            />
+            <span
+              className={`dashboard-review-scroll-fade is-bottom${
+                reviewScrollEdges.bottom ? " is-visible" : ""
+              }`}
+              aria-hidden="true"
             />
           </aside>
         </div>

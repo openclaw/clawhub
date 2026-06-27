@@ -80,7 +80,7 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
                 <span className="dashboard-sidebar-timeline-node" />
               </div>
               <div className="dashboard-sidebar-timeline-copy">
-                <ChangelogEntryLine entry={entry} ownerHandle={ownerHandle} />
+                <ChangelogEntryLine entry={entry} />
               </div>
             </li>
           ))}
@@ -100,10 +100,8 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
 
 function ChangelogEntryLine({
   entry,
-  ownerHandle,
 }: {
   entry: PlatformChangelogEntry;
-  ownerHandle: string;
 }) {
   const isRecent = entry.when === "Recent";
 
@@ -112,40 +110,20 @@ function ChangelogEntryLine({
       <span className="dashboard-sidebar-timeline-kind">
         {entry.category} · {isRecent ? "2d ago" : entry.when}
       </span>
-      <PlatformChangelogTitle entry={entry} ownerHandle={ownerHandle} />
+      <PlatformChangelogTitle entry={entry} />
     </div>
   );
 }
 
 function PlatformChangelogTitle({
   entry,
-  ownerHandle,
 }: {
   entry: PlatformChangelogEntry;
-  ownerHandle: string;
 }) {
   const className = "dashboard-sidebar-timeline-name";
-
-  if (entry.to) {
-    const search =
-      entry.to === "/import"
-        ? { ownerHandle: ownerHandle || undefined, ...entry.search }
-        : entry.search;
-
-    return (
-      <Link to={entry.to} search={search} className={className}>
-        {entry.title}
-      </Link>
-    );
-  }
-
-  if (entry.href) {
-    return (
-      <a href={entry.href} className={className} target="_blank" rel="noreferrer">
-        {entry.title}
-      </a>
-    );
-  }
-
-  return <span className={className}>{entry.title}</span>;
+  return (
+    <a href={`/changelog#${entry.id}`} className={className}>
+      {entry.title}
+    </a>
+  );
 }
