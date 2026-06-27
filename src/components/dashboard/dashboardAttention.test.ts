@@ -228,6 +228,6 @@ describe("collectAttentionItems", () => {
       "local",
     );
 
-    expect(items[0]?.preview).toBe("Malicious behavior detected");
+    expect(items[0]?.preview).toBe("Security scan classified this version as malicious.");
   });
 });
