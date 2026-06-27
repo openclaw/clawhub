@@ -29151,23 +29151,21 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-header-top {
-  display: grid;
-  gap: 16px;
-  width: 100%;
-  min-width: 0;
-}
-
-.dashboard-header-controls {
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
   width: 100%;
   min-width: 0;
 }
 
 .dashboard-header-publisher-center {
-  min-width: 0;
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
 }
 
 .dashboard-header-intro {
@@ -30209,7 +30207,14 @@ a[class*="rounded-full"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .dashboard-header-controls {
+  .dashboard-header-publisher-center {
+    position: static;
+    order: 3;
+    width: 100%;
+    transform: none;
+  }
+
+  .dashboard-header-top {
     flex-wrap: wrap;
   }
 }

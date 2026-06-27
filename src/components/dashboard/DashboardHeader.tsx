@@ -31,38 +31,36 @@ export function DashboardHeader({
           <div className="dashboard-header-intro">
             <h1 className="browse-title">Dashboard</h1>
           </div>
-          <div className="dashboard-header-controls">
-            {showPublisherSelector ? (
-              <div className="dashboard-header-publisher-center">
-                <div className="dashboard-welcome-publisher-control">
-                  <DashboardPublisherSelect
-                    publishers={publishers}
-                    value={activePublisherId}
-                    onValueChange={onPublisherChange}
-                    triggerClassName="dashboard-welcome-publisher-trigger"
-                    triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
-                  />
-                </div>
+          {showPublisherSelector ? (
+            <div className="dashboard-header-publisher-center">
+              <div className="dashboard-welcome-publisher-control">
+                <DashboardPublisherSelect
+                  publishers={publishers}
+                  value={activePublisherId}
+                  onValueChange={onPublisherChange}
+                  triggerClassName="dashboard-welcome-publisher-trigger"
+                  triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
+                />
               </div>
-            ) : null}
-            <div className="dashboard-header-actions">
-              <Button asChild size="sm">
-                <Link to="/add" search={addSearchParams({ ownerHandle })}>
-                  <Plus className="h-4 w-4" aria-hidden="true" />
-                  Add skill or plugin
-                </Link>
-              </Button>
-              <button
-                type="button"
-                className="dashboard-sidebar-toggle"
-                aria-label={isSidebarVisible ? "Hide dashboard sidebar" : "Show dashboard sidebar"}
-                aria-pressed={!isSidebarVisible}
-                title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
-                onClick={onToggleSidebar}
-              >
-                <DashboardSidebarToggleIcon hidden={!isSidebarVisible} />
-              </button>
             </div>
+          ) : null}
+          <div className="dashboard-header-actions">
+            <Button asChild size="sm">
+              <Link to="/add" search={addSearchParams({ ownerHandle })}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add skill or plugin
+              </Link>
+            </Button>
+            <button
+              type="button"
+              className="dashboard-sidebar-toggle"
+              aria-label={isSidebarVisible ? "Hide dashboard sidebar" : "Show dashboard sidebar"}
+              aria-pressed={!isSidebarVisible}
+              title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+              onClick={onToggleSidebar}
+            >
+              <DashboardSidebarToggleIcon hidden={!isSidebarVisible} />
+            </button>
           </div>
         </div>
       </div>
