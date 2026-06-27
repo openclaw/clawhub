@@ -12,6 +12,8 @@ import {
 import * as codexScanWorker from "./run-codex-scan-worker";
 import {
   buildPrompt,
+  claimBatchDrainedQueue,
+  claimFailuresAreFatal,
   normalizeSkillSpectorAnalysis,
   processJob,
   resolveSkillSpectorScanInput,
@@ -59,6 +61,19 @@ function unsafeFixtureLabels() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
+  it("treats transient claim failures as fatal only when no jobs were claimed", () => {
+    expect(claimFailuresAreFatal(0, 0)).toBe(false);
+    expect(claimFailuresAreFatal(1, 0)).toBe(true);
+    expect(claimFailuresAreFatal(1, 3)).toBe(false);
+  });
+
+  it("keeps claiming after partial transient claim failures", () => {
+    expect(claimBatchDrainedQueue(0, 0, 4)).toBe(true);
+    expect(claimBatchDrainedQueue(0, 3, 4)).toBe(true);
+    expect(claimBatchDrainedQueue(1, 3, 4)).toBe(false);
+    expect(claimBatchDrainedQueue(0, 4, 4)).toBe(false);
+  });
+
   it("keeps successful claims when a parallel claim request fails", async () => {
     const claimCodexScanJobBatch = (
       codexScanWorker as typeof codexScanWorker & {

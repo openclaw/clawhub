@@ -1323,6 +1323,18 @@ export async function claimCodexScanJobBatch(
   return { claimFailures, jobs };
 }
 
+export function claimFailuresAreFatal(claimFailures: number, claimedJobs: number) {
+  return claimFailures > 0 && claimedJobs === 0;
+}
+
+export function claimBatchDrainedQueue(
+  claimFailures: number,
+  claimedJobs: number,
+  claimLimit: number,
+) {
+  return claimFailures === 0 && claimedJobs < claimLimit;
+}
+
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, diagnosticsRoot } = parseArgs();
   assertCodexWorkerExecutionAllowed(process.env);
@@ -1342,6 +1354,7 @@ async function main() {
   let totalClaimed = 0;
   let totalCompleted = 0;
   let totalFailed = 0;
+  let totalClaimFailures = 0;
 
   logger.info(
     { diagnosticsRoot, event: "security_scan_diagnostics_directory", workerId },
@@ -1376,7 +1389,10 @@ async function main() {
         })) as ClaimedJob[],
     );
     const { claimFailures, jobs } = claimBatch;
-    totalFailed += claimFailures;
+    totalClaimFailures += claimFailures;
+    if (claimFailuresAreFatal(claimFailures, jobs.length)) {
+      totalFailed += claimFailures;
+    }
     logger.info(
       {
         claimed: jobs.length,
@@ -1397,7 +1413,7 @@ async function main() {
     totalCompleted += results.filter(Boolean).length;
     totalFailed += results.filter((ok) => !ok).length;
 
-    if (jobs.length < claimLimit) break;
+    if (claimBatchDrainedQueue(claimFailures, jobs.length, claimLimit)) break;
   }
 
   logger.info(
@@ -1405,6 +1421,7 @@ async function main() {
       elapsedMs: Date.now() - startedAt,
       event: "security_scan_worker_summary",
       totalClaimed,
+      totalClaimFailures,
       totalCompleted,
       totalFailed,
       workerId,
