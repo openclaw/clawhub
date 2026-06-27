@@ -29151,21 +29151,23 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-header-top {
-  position: relative;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+}
+
+.dashboard-header-controls {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: flex-end;
   gap: 16px;
   width: 100%;
   min-width: 0;
 }
 
 .dashboard-header-publisher-center {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  z-index: 1;
-  transform: translateX(-50%);
+  min-width: 0;
 }
 
 .dashboard-header-intro {
@@ -30207,14 +30209,7 @@ a[class*="rounded-full"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .dashboard-header-publisher-center {
-    position: static;
-    order: 3;
-    width: 100%;
-    transform: none;
-  }
-
-  .dashboard-header-top {
+  .dashboard-header-controls {
     flex-wrap: wrap;
   }
 }
