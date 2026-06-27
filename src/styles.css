@@ -29150,21 +29150,22 @@ a[class*="rounded-full"] {
   gap: 16px;
 }
 
-.dashboard-header-context-bar {
-  display: flex;
-  justify-content: center;
-  width: 100%;
-  padding-bottom: 18px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-}
-
 .dashboard-header-top {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   width: 100%;
   min-width: 0;
+}
+
+.dashboard-header-publisher-center {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
 }
 
 .dashboard-header-intro {
@@ -30204,6 +30205,13 @@ a[class*="rounded-full"] {
 @media (max-width: 900px) {
   .dashboard-summary-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboard-header-publisher-center {
+    position: static;
+    order: 3;
+    width: 100%;
+    transform: none;
   }
 
   .dashboard-header-top {
