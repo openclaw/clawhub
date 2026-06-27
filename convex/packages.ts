@@ -644,6 +644,8 @@ type PublicPackageListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion: string | null;
+  categories?: string[];
+  topics?: string[];
   verificationTier: PackageVerificationTier | null;
   stats: Doc<"packages">["stats"];
 };
@@ -1373,8 +1375,6 @@ async function toPublicPackageListItemFromPackage(
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     summary: pkg.summary ?? null,
-    categories: pkg.categories,
-    topics: pkg.topics,
     icon: pkg.icon ?? null,
     ownerHandle: owner?.handle ?? null,
     createdAt: pkg.createdAt,
