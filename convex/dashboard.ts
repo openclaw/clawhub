@@ -85,15 +85,14 @@ async function listPublisherSkills(
 ) {
   const skills: Doc<"skills">[] = [];
   let cursor: string | null = null;
-  const legacyPersonalOwnerUserId =
-    publisher.kind === "user" ? (publisher.linkedUserId ?? userId) : undefined;
+  const legacyOwnerUserId = legacyPersonalOwnerUserId(publisher, userId);
 
-  if (legacyPersonalOwnerUserId) {
+  if (legacyOwnerUserId) {
     while (true) {
       const page = await ctx.db
         .query("skills")
         .withIndex("by_owner_active_updated", (q) =>
-          q.eq("ownerUserId", legacyPersonalOwnerUserId).eq("softDeletedAt", undefined),
+          q.eq("ownerUserId", legacyOwnerUserId).eq("softDeletedAt", undefined),
         )
         .order("desc")
         .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
@@ -132,6 +131,22 @@ function uniquePackages(packages: Doc<"packages">[]) {
   return unique;
 }
 
+function legacyPersonalOwnerUserId(publisher: Doc<"publishers">, userId: Id<"users">) {
+  return publisher.kind === "user" ? (publisher.linkedUserId ?? userId) : undefined;
+}
+
+function isOwnedByDashboardPublisher(
+  item: { ownerUserId: Id<"users">; ownerPublisherId?: Id<"publishers"> },
+  publisher: Doc<"publishers">,
+  userId: Id<"users">,
+) {
+  if (item.ownerPublisherId === publisher._id) return true;
+  const legacyOwnerUserId = legacyPersonalOwnerUserId(publisher, userId);
+  return Boolean(
+    legacyOwnerUserId && item.ownerUserId === legacyOwnerUserId && !item.ownerPublisherId,
+  );
+}
+
 async function listPublisherPackages(
   ctx: QueryCtx,
   publisher: Doc<"publishers">,
@@ -153,20 +168,18 @@ async function listPublisherPackages(
     cursor = page.continueCursor;
   }
 
-  const legacyPersonalOwnerUserId =
-    publisher.kind === "user" ? (publisher.linkedUserId ?? userId) : undefined;
+  const legacyOwnerUserId = legacyPersonalOwnerUserId(publisher, userId);
   cursor = null;
-  if (legacyPersonalOwnerUserId) {
+  if (legacyOwnerUserId) {
     while (true) {
       const page = await ctx.db
         .query("packages")
-        .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyPersonalOwnerUserId))
+        .withIndex("by_owner", (q) => q.eq("ownerUserId", legacyOwnerUserId))
         .order("desc")
         .paginate({ numItems: DASHBOARD_METRICS_PAGE_SIZE, cursor });
       packages.push(
         ...page.page.filter(
-          (pkg) =>
-            !pkg.softDeletedAt && (!pkg.ownerPublisherId || pkg.ownerPublisherId === publisher._id),
+          (pkg) => !pkg.softDeletedAt && isOwnedByDashboardPublisher(pkg, publisher, userId),
         ),
       );
       if (page.isDone) break;
@@ -200,25 +213,36 @@ export const getDownloadMetrics = query({
 
     const selection = args.selection;
     if (selection?.kind === "skill") {
-      const candidates = await ctx.db
+      const publisherOwned = await ctx.db
         .query("skills")
-        .withIndex("by_slug", (q) => q.eq("slug", selection.slug))
+        .withIndex("by_owner_publisher_slug", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("slug", selection.slug),
+        )
         .take(10);
+      const legacyOwnerUserId = legacyPersonalOwnerUserId(publisher, userId);
+      const legacyOwned = legacyOwnerUserId
+        ? await ctx.db
+            .query("skills")
+            .withIndex("by_owner_slug", (q) =>
+              q.eq("ownerUserId", legacyOwnerUserId).eq("slug", selection.slug),
+            )
+            .take(10)
+        : [];
+      const candidates = [...publisherOwned, ...legacyOwned];
       skills = candidates.filter(
-        (skill) =>
+        (skill, index, all) =>
           !skill.softDeletedAt &&
-          (skill.ownerPublisherId === publisher._id ||
-            (publisher.kind === "user" &&
-              !publisher.linkedUserId &&
-              skill.ownerUserId === userId &&
-              !skill.ownerPublisherId)),
+          isOwnedByDashboardPublisher(skill, publisher, userId) &&
+          all.findIndex((candidate) => candidate._id === skill._id) === index,
       );
     } else if (selection?.kind === "plugin") {
       const pkg = await ctx.db
         .query("packages")
         .withIndex("by_name", (q) => q.eq("normalizedName", normalizePackageName(selection.name)))
         .unique();
-      if (pkg && !pkg.softDeletedAt && pkg.ownerPublisherId === publisher._id) packages = [pkg];
+      if (pkg && !pkg.softDeletedAt && isOwnedByDashboardPublisher(pkg, publisher, userId)) {
+        packages = [pkg];
+      }
     } else {
       [skills, packages] = await Promise.all([
         listPublisherSkills(ctx, publisher, userId),
