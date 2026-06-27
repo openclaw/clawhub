@@ -29158,26 +29158,16 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-header-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 16px;
   width: 100%;
   min-width: 0;
 }
 
 .dashboard-header-publisher-center {
-  grid-column: 2;
   min-width: 0;
-}
-
-.dashboard-header-controls > .dashboard-header-actions {
-  grid-column: 3;
-  justify-self: end;
-}
-
-.dashboard-header-controls > .dashboard-header-actions:only-child {
-  grid-column: 1 / -1;
 }
 
 .dashboard-header-intro {
