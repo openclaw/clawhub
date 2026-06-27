@@ -29160,10 +29160,14 @@ a[class*="rounded-full"] {
 .dashboard-header-controls {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 16px;
   width: 100%;
   min-width: 0;
+}
+
+.dashboard-header-controls > .dashboard-header-actions:only-child {
+  margin-left: auto;
 }
 
 .dashboard-header-publisher-center {
