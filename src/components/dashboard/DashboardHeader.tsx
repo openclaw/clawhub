@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { ChevronsUpDown, Plus } from "lucide-react";
 import { addSearchParams } from "../../lib/addRoutes";
 import { Button } from "../ui/button";
 import { DashboardPublisherSelect } from "./DashboardPublisherSelect";
@@ -31,15 +31,21 @@ export function DashboardHeader({
           <div className="dashboard-header-intro">
             <h1 className="browse-title">Dashboard</h1>
           </div>
+          {showPublisherSelector ? (
+            <div className="dashboard-header-publisher-center">
+              <div className="dashboard-welcome-publisher-control">
+                <span className="dashboard-welcome-publisher-label">Viewing as</span>
+                <DashboardPublisherSelect
+                  publishers={publishers}
+                  value={activePublisherId}
+                  onValueChange={onPublisherChange}
+                  triggerClassName="dashboard-welcome-publisher-trigger"
+                  triggerIcon={<ChevronsUpDown className="h-4 w-4 opacity-50" />}
+                />
+              </div>
+            </div>
+          ) : null}
           <div className="dashboard-header-actions">
-            {showPublisherSelector ? (
-              <DashboardPublisherSelect
-                variant="identity"
-                publishers={publishers}
-                value={activePublisherId}
-                onValueChange={onPublisherChange}
-              />
-            ) : null}
             <Button asChild size="sm">
               <Link to="/add" search={addSearchParams({ ownerHandle })}>
                 <Plus className="h-4 w-4" aria-hidden="true" />
@@ -69,9 +75,21 @@ function DashboardSidebarToggleIcon({ hidden }: { hidden: boolean }) {
       <rect x="2.5" y="3" width="13" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
       <path d="M10.5 3.5v11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
       {hidden ? (
-        <path d="M5.4 9h2.8M6.8 7.6 5.4 9l1.4 1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          d="M5.4 9h2.8M6.8 7.6 5.4 9l1.4 1.4"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       ) : (
-        <path d="M7.8 9H5M6.4 7.6 7.8 9l-1.4 1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+        <path
+          d="M7.8 9H5M6.4 7.6 7.8 9l-1.4 1.4"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
       )}
     </svg>
   );
