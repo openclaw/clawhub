@@ -73,6 +73,11 @@ export const CatalogFeedSchema = type({
 });
 export type CatalogFeed = (typeof CatalogFeedSchema)[inferred];
 
+/**
+ * Cross-repo wire contract with OpenClaw's hosted feed consumer. Bump this only
+ * after the matching OpenClaw parser/validation support has shipped, otherwise
+ * clients reject the hosted feed and fall back to bundled data.
+ */
 export const CATALOG_FEED_SCHEMA_VERSION = 1;
 export const CATALOG_FEED_ID = "clawhub-official";
 export const CATALOG_FEED_SOURCE_REF = "public-clawhub";

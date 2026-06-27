@@ -26,6 +26,11 @@ skill records; they are not second catalogs.
 - Initial entry state: `available`
 - Required feed metadata: `generatedAt`, monotonic `sequence`, and `expiresAt`
 
+`schemaVersion` is a cross-repo wire contract with the OpenClaw hosted feed
+consumer. Do not bump it until matching OpenClaw parser and validation support
+has shipped, or current clients will reject the hosted feed and fall back to
+bundled data.
+
 The producer excludes soft-deleted packages, inactive releases, releases without
 an artifact digest, and releases blocked by ClawHub security or moderation
 state. The feed contains no registry URLs, credentials, source tokens, or
