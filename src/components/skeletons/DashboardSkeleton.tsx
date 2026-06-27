@@ -1,4 +1,4 @@
-import { Skeleton } from '../ui/skeleton';
+import { Skeleton } from "../ui/skeleton";
 
 const ATTENTION_PLACEHOLDERS = 3;
 const PACKAGE_PLACEHOLDERS = 5;

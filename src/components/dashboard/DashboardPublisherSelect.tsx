@@ -85,9 +85,7 @@ function PublisherOption({ publisher }: { publisher: DashboardPublisherEntry["pu
           size="xs"
         />
       </span>
-      <span className="truncate">
-        {publisher.displayName || publisher.handle}
-      </span>
+      <span className="truncate">{publisher.displayName || publisher.handle}</span>
     </span>
   );
 }

@@ -1,10 +1,10 @@
-import { collectAttentionItems } from "./dashboardAttention";
 import {
   packageSecurityStatus,
   packageVisibilityStatus,
   skillSecurityStatus,
   skillVisibilityStatus,
 } from "./artifactStatusLabels";
+import { collectAttentionItems } from "./dashboardAttention";
 import type {
   DashboardAttentionItem,
   DashboardCatalogItem,

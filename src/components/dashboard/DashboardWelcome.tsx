@@ -60,7 +60,9 @@ export function DashboardWelcome({ ownerHandle, publisherSelector }: DashboardWe
             Or explore ClawHub
           </span>
           <nav className="dashboard-welcome-explore-links" aria-label="Explore ClawHub">
-            <Link to="/skills" search={emptySkillsSearch}>Skills</Link>
+            <Link to="/skills" search={emptySkillsSearch}>
+              Skills
+            </Link>
             <Link to="/plugins">Plugins</Link>
             <Link to="/creators">Creators</Link>
             <a href={CLAWHUB_DOCS_URL} target="_blank" rel="noreferrer">

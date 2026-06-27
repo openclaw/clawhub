@@ -2757,19 +2757,13 @@ export const getBySlug = query({
 export const getSecurityReviewForManager = query({
   args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { skill } = await resolveSkillBySlugOrAliasForOwner(
-      ctx,
-      args.slug,
-      args.ownerHandle,
-    );
+    const { skill } = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     if (!skill) return null;
 
     const userId = await getOptionalActiveAuthUserId(ctx);
     if (!userId) return null;
 
-    const ownerPublisher = skill.ownerPublisherId
-      ? await ctx.db.get(skill.ownerPublisherId)
-      : null;
+    const ownerPublisher = skill.ownerPublisherId ? await ctx.db.get(skill.ownerPublisherId) : null;
     const canManagePublisher = ownerPublisher
       ? await canAccessPublisherOwnerScope(ctx, {
           publisher: ownerPublisher,

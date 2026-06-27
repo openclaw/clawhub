@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import { Download, EyeOff } from "lucide-react";
+import type { ReactNode } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
 import { timeAgo } from "../../lib/timeAgo";
@@ -12,8 +12,8 @@ import {
 } from "../artifacts/artifactStatus";
 import { auditVerdictMeterLevel } from "../DetailSecuritySummary";
 import { MarketplaceIcon } from "../MarketplaceIcon";
-import { getScanStatusInfo } from "../SkillSecurityScanResults";
 import { buildSkillHref } from "../skillDetailUtils";
+import { getScanStatusInfo } from "../SkillSecurityScanResults";
 import { skillVisibilityStatus } from "./artifactStatusLabels";
 import { CatalogRowMenu } from "./CatalogRowMenu";
 import type {
@@ -302,7 +302,10 @@ function DashboardCatalogGridCard({
         <span className="dashboard-catalog-grid-card-scan">
           <SecurityAuditMiniStatus status={status} />
         </span>
-        <span className="dashboard-catalog-grid-card-downloads" title={metricLabel(downloads, "download")}>
+        <span
+          className="dashboard-catalog-grid-card-downloads"
+          title={metricLabel(downloads, "download")}
+        >
           <Download size={13} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>
           <span className="sr-only">{metricLabel(downloads, "download")}</span>

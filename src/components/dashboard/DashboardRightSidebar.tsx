@@ -1,10 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState, type SyntheticEvent } from "react";
-import {
-  PLATFORM_CHANGELOG_ENTRIES,
-  type PlatformChangelogEntry,
-} from "./platformChangelog";
+import { PLATFORM_CHANGELOG_ENTRIES, type PlatformChangelogEntry } from "./platformChangelog";
 
 function GitHubLogo({ className }: { className?: string }) {
   return (
@@ -85,11 +82,7 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
             </li>
           ))}
         </ol>
-        <Link
-          to="/changelog"
-          className="dashboard-sidebar-feed-link"
-          aria-label="See changelog"
-        >
+        <Link to="/changelog" className="dashboard-sidebar-feed-link" aria-label="See changelog">
           See changelog
           <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </Link>
@@ -98,11 +91,7 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
   );
 }
 
-function ChangelogEntryLine({
-  entry,
-}: {
-  entry: PlatformChangelogEntry;
-}) {
+function ChangelogEntryLine({ entry }: { entry: PlatformChangelogEntry }) {
   const isRecent = entry.when === "Recent";
 
   return (
@@ -115,11 +104,7 @@ function ChangelogEntryLine({
   );
 }
 
-function PlatformChangelogTitle({
-  entry,
-}: {
-  entry: PlatformChangelogEntry;
-}) {
+function PlatformChangelogTitle({ entry }: { entry: PlatformChangelogEntry }) {
   const className = "dashboard-sidebar-timeline-name";
   return (
     <a href={`/changelog#${entry.id}`} className={className}>

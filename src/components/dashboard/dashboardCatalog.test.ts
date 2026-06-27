@@ -14,7 +14,7 @@ import type { DashboardPackage, DashboardSkill } from "./types";
 
 function createSkill(overrides?: Partial<DashboardSkill>): DashboardSkill {
   return {
-    _id: "skills:a",
+    _id: "skillsa",
     _creationTime: 1,
     slug: "alpha",
     displayName: "Alpha",
@@ -54,7 +54,7 @@ function createSkill(overrides?: Partial<DashboardSkill>): DashboardSkill {
 
 function createPackage(overrides?: Partial<DashboardPackage>): DashboardPackage {
   return {
-    _id: "packages:b",
+    _id: "packagesb",
     name: "beta-plugin",
     displayName: "Beta Plugin",
     family: "code-plugin",
@@ -128,7 +128,7 @@ describe("dashboardCatalog", () => {
         },
       }),
       createSkill({
-        _id: "skills:clean" as Id<"skills">,
+        _id: "skillsclean" as Id<"skills">,
         slug: "clean",
         displayName: "Clean Skill",
       }),
@@ -169,7 +169,7 @@ describe("dashboardCatalog", () => {
         },
       }),
       createSkill({
-        _id: "skills:clean" as Id<"skills">,
+        _id: "skillsclean" as Id<"skills">,
         slug: "clean",
         displayName: "Clean Skill",
       }),

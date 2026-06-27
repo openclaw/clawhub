@@ -126,7 +126,7 @@ export function DashboardDownloadsInsights({
               labels={labels}
               className="dashboard-downloads-sparkline--compact-primary"
             />
-            <ChartAxis labels={labels} range={range} />
+            <ChartAxis labels={labels} />
           </div>
         </div>
 
@@ -202,7 +202,7 @@ function CompactStat({
   );
 }
 
-function ChartAxis({ labels, range }: { labels: string[]; range: DownloadRange }) {
+function ChartAxis({ labels }: { labels: string[] }) {
   const visibleLabels = labels
     .map((label, index) => ({ label: label.trim(), index }))
     .filter((item) => item.label);
@@ -311,7 +311,7 @@ function Sparkline({
             y2={baseline}
           />
         ) : null}
-        {series.map((value, index) => (
+        {series.map((_, index) => (
           <rect
             key={index}
             className="dashboard-downloads-chart-hit"
