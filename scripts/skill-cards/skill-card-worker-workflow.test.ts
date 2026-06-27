@@ -85,7 +85,7 @@ describe("skill-card-worker workflow", () => {
     const dependenciesInstall = job.steps.find(
       (step) => step.name === "Install Codex CLI and renderer dependencies",
     )?.run;
-    expect(dependenciesInstall).toContain("npm install -g @openai/codex@0.115.0");
+    expect(dependenciesInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(dependenciesInstall).toContain("python3 -m pip install --user 'jinja2==3.1.6'");
     expect(dependenciesInstall).not.toContain("@latest");
     expect(dependenciesInstall).not.toMatch(/pip install --user jinja2(?:\s|$)/);
