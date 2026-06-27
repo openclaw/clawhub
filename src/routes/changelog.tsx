@@ -75,6 +75,7 @@ function ChangelogPage() {
                   {entry.to ? (
                     <Link to={entry.to} search={entry.search} className="changelog-entry-link">
                       {entry.actionLabel}
+                      <ArrowUpRight size={14} aria-hidden="true" />
                     </Link>
                   ) : entry.href ? (
                     <a
@@ -84,7 +85,7 @@ function ChangelogPage() {
                       rel="noreferrer"
                     >
                       {entry.actionLabel}
-                      <ArrowUpRight size={13} aria-hidden="true" />
+                      <ArrowUpRight size={14} aria-hidden="true" />
                     </a>
                   ) : null}
                   <button

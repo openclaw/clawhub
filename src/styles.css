@@ -32563,8 +32563,12 @@ a.dashboard-sidebar-timeline-name:hover {
 .changelog-entry-link {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
   width: fit-content;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
   color: var(--ink);
   font-size: 13px;
   font-weight: 650;
@@ -32572,6 +32576,7 @@ a.dashboard-sidebar-timeline-name:hover {
 }
 
 .changelog-entry-link:hover {
+  border-color: color-mix(in srgb, var(--ink) 18%, var(--line));
   color: var(--ink);
   text-decoration: none;
 }
