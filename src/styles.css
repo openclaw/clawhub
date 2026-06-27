@@ -32543,6 +32543,9 @@ a.dashboard-sidebar-timeline-name:hover {
 }
 
 .changelog-entry-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   width: fit-content;
   color: var(--ink);
   font-size: 13px;

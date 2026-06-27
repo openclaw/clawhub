@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { BrowseTabs } from "../components/BrowseControls";
 import {
@@ -68,13 +69,6 @@ function ChangelogPage() {
             <div className="changelog-entry-body">
               <h2>{entry.title}</h2>
               <p>{entry.summary}</p>
-              <button
-                type="button"
-                className="changelog-entry-read-more"
-                onClick={() => setExpandedEntryId(expandedEntryId === entry.id ? null : entry.id)}
-              >
-                {expandedEntryId === entry.id ? "Show less −" : "Read more +"}
-              </button>
               {expandedEntryId === entry.id ? (
                 <div className="changelog-entry-expanded">
                   <p>{entry.details}</p>
@@ -90,10 +84,26 @@ function ChangelogPage() {
                       rel="noreferrer"
                     >
                       {entry.actionLabel}
+                      <ArrowUpRight size={13} aria-hidden="true" />
                     </a>
                   ) : null}
+                  <button
+                    type="button"
+                    className="changelog-entry-read-more"
+                    onClick={() => setExpandedEntryId(null)}
+                  >
+                    Show less −
+                  </button>
                 </div>
-              ) : null}
+              ) : (
+                <button
+                  type="button"
+                  className="changelog-entry-read-more"
+                  onClick={() => setExpandedEntryId(entry.id)}
+                >
+                  Read more +
+                </button>
+              )}
             </div>
           </article>
         ))}
