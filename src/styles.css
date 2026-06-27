@@ -30965,6 +30965,7 @@ a[class*="rounded-full"] {
   flex-shrink: 0;
   align-items: center;
   gap: 3px;
+  margin-top: 4px;
   color: var(--ink-soft);
   font-size: 12px;
   font-weight: 650;
