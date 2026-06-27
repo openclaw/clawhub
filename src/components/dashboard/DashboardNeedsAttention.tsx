@@ -4,7 +4,7 @@ import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { buildSkillDetailHref } from "../../lib/ownerRoute";
-import { buildPluginDetailHref } from "../../lib/pluginRoutes";
+import { buildPluginDetailHref, buildPluginSecurityAuditHref } from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { timeAgo } from "../../lib/timeAgo";
 import { InstallCopyButton } from "../InstallCopyButton";
@@ -228,6 +228,7 @@ function DashboardReviewSheetContent({
   onClose: () => void;
 }) {
   const isSkill = group.primary.kind === "skill";
+  const isPluginValidation = !isSkill && group.primary.issueType === "validation";
   const skillAudit = useQuery(
     api.skills.getSecurityReviewForManager,
     isSkill && group.primary.slug
@@ -236,7 +237,7 @@ function DashboardReviewSheetContent({
   ) as SkillAuditResult | undefined;
   const pluginFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
-    !isSkill && group.primary.packageName
+    isPluginValidation && group.primary.packageName
       ? { name: group.primary.packageName, limit: 100 }
       : "skip",
   ) as PluginInspectorFinding[] | undefined;
@@ -277,8 +278,10 @@ function DashboardReviewSheetContent({
 
       {isSkill ? (
         <SkillSpectorSheetReview group={group} audit={skillAudit} />
-      ) : (
+      ) : isPluginValidation ? (
         <PluginValidationSheetReview group={group} findings={pluginFindings} />
+      ) : (
+        <PluginSecuritySheetReview group={group} />
       )}
     </div>
   );
@@ -310,6 +313,50 @@ function SkillSpectorSheetReview({
         analysis={analysis ?? null}
       />
     </div>
+  );
+}
+
+function PluginSecuritySheetReview({ group }: { group: DashboardAttentionGroup }) {
+  const packageName = group.primary.packageName ?? group.key;
+  const auditHref =
+    group.primary.href ??
+    buildPluginSecurityAuditHref(packageName, { ownerHandle: group.primary.ownerHandle });
+  const issues = group.items.filter((item) => item.issueType === "security");
+
+  return (
+    <section className="plugin-validation-overview dashboard-review-security-summary">
+      <div className="plugin-validation-panel-title-row">
+        <h3 className="plugin-validation-panel-title">Security review</h3>
+        <span className="plugin-validation-panel-stats" aria-label="Security summary">
+          {severityLabel(group.primary.severity)}
+        </span>
+      </div>
+      <p className="plugin-validation-summary-hint">
+        {group.title} needs security review before it should be treated as ready.
+      </p>
+      <div className="plugin-warning-list">
+        {issues.map((item) => (
+          <div key={item.id} className={`plugin-warning-item is-${item.severity}`}>
+            <div className="plugin-warning-item-summary">
+              <div className="plugin-warning-item-lead">
+                <span
+                  className={`plugin-warning-severity-dot is-${item.severity}`}
+                  aria-hidden="true"
+                />
+                <div className="plugin-warning-item-copy">
+                  <p className="plugin-warning-item-message">{attentionIssueSummary(item)}</p>
+                  {item.preview ? <p className="plugin-warning-item-meta">{item.preview}</p> : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <a className="dashboard-review-sheet-view-link" href={auditHref}>
+        Open security audit
+        <ChevronRight size={13} aria-hidden="true" />
+      </a>
+    </section>
   );
 }
 
