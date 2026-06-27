@@ -45,7 +45,7 @@ type OwnerRef = {
   handle?: string | null;
 };
 
-export type EntityRef = {
+type EntityRef = {
   kind: "skill" | "plugin";
   title: string;
   name: string;

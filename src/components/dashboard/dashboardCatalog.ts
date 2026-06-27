@@ -15,7 +15,7 @@ import type {
   DashboardSortKey,
 } from "./types";
 
-export type DashboardAggregateStats = {
+type DashboardAggregateStats = {
   skillsCount: number;
   pluginsCount: number;
   totalInstalls: number;

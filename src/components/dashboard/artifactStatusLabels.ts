@@ -1,6 +1,6 @@
 import type { DashboardPackage, DashboardSkill } from "./types";
 
-export type StatusChip = {
+type StatusChip = {
   label: string;
   tone: "success" | "warning" | "destructive" | "pending" | "muted";
 };

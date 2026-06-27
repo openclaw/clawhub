@@ -2,7 +2,7 @@ import type { DashboardPackage, DashboardSkill } from "./types";
 
 export type DownloadRange = "1w" | "1m" | "all";
 
-export type DashboardDownloadMetricPoint = { day: number; value: number };
+type DashboardDownloadMetricPoint = { day: number; value: number };
 
 export type DashboardDownloadMetrics = {
   endDay: number;
@@ -17,7 +17,7 @@ export type DashboardDownloadMetrics = {
   };
 };
 
-export type DownloadInsightSelection =
+type DownloadInsightSelection =
   | { scope: "all" }
   | { scope: "skill"; slug: string }
   | { scope: "plugin"; name: string };
@@ -41,17 +41,11 @@ export function downloadMetricQuerySelection(value: string | undefined) {
   return undefined;
 }
 
-export function formatDownloadInsight(selection: DownloadInsightSelection): string | undefined {
-  if (selection.scope === "all") return undefined;
-  if (selection.scope === "skill") return `skill:${selection.slug}`;
-  return `plugin:${selection.name}`;
-}
-
-export function skillDownloads(skill: DashboardSkill) {
+function skillDownloads(skill: DashboardSkill) {
   return skill.stats?.downloads ?? 0;
 }
 
-export function pluginDownloads(pkg: DashboardPackage) {
+function pluginDownloads(pkg: DashboardPackage) {
   return pkg.stats.downloads ?? 0;
 }
 

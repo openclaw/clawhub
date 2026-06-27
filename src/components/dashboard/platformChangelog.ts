@@ -2,7 +2,7 @@ import { CLAWHUB_REPOSITORY_URL, clawhubDocsUrl } from "../../lib/publicRegistry
 
 export const CLAWHUB_PLATFORM_CHANGELOG_URL = `${CLAWHUB_REPOSITORY_URL}/releases`;
 
-export type PlatformChangelogCategory = "Feature" | "Improvement";
+type PlatformChangelogCategory = "Feature" | "Improvement";
 export type PlatformChangelogSurface = "Web" | "CLI" | "API";
 
 export type PlatformChangelogEntry = {
