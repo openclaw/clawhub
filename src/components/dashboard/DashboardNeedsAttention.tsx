@@ -44,7 +44,7 @@ type PluginInspectorFinding = {
   code?: string;
   packageName?: string;
   version?: string;
-  findingKind?: "error" | "warning" | string;
+  findingKind?: string;
   issueClass?: string;
   severity?: string;
   message?: string;
