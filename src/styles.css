@@ -32279,6 +32279,21 @@ a.dashboard-sidebar-timeline-name:hover {
   margin-top: 80px;
   overflow: hidden;
   transform: translateX(-50%);
+}
+
+.changelog-art-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  user-select: none;
+}
+
+.changelog-art::after {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   background:
     linear-gradient(to bottom, var(--bg) 0%, transparent 22%, transparent 78%, var(--bg) 100%),
     linear-gradient(
@@ -32287,14 +32302,12 @@ a.dashboard-sidebar-timeline-name:hover {
       transparent 30%,
       transparent 72%,
       color-mix(in srgb, var(--bg) 52%, transparent) 100%
-    ),
-    url("https://opaque-plume-8ktq.here.now/droppie-2026-06-27T02-35-09Z.png")
-      center center / cover no-repeat;
+    );
+  content: "";
 }
 
-[data-theme-resolved="light"] .changelog-art {
-  background: url("https://opaque-plume-8ktq.here.now/droppie-2026-06-27T02-35-09Z.png")
-    center center / cover no-repeat;
+[data-theme-resolved="light"] .changelog-art::after {
+  display: none;
 }
 
 .changelog-timeline::before {
@@ -32409,7 +32422,6 @@ a.dashboard-sidebar-timeline-name:hover {
   .changelog-art {
     height: 300px;
     margin-top: 56px;
-    background-position: center center;
   }
 }
 

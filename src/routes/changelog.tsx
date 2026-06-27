@@ -88,7 +88,14 @@ function ChangelogPage() {
         ) : null}
       </section>
 
-      <section className="changelog-art" aria-hidden="true" />
+      <section className="changelog-art" aria-label="Changelog artwork">
+        <img
+          src="https://wander-bonnet-3cat.here.now/droppie-2026-06-27T18-55-59Z.png"
+          alt=""
+          className="changelog-art-image"
+          draggable={false}
+        />
+      </section>
     </main>
   );
 }
