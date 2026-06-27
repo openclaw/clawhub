@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { hasSecretLikeValue } from "./normalize";
@@ -15,7 +15,6 @@ type Finding = {
   reason: string;
 };
 
-const HF_SPLITS = ["train", "validation", "test", "eval_holdout"] as const;
 const RAW_CONVEX_REF_PATTERN = /\b(?:skillVersions|packageReleases):[a-z0-9]{6,}\b/i;
 const RAW_STORAGE_PATH_PATTERN = /(^|\/)_storage\//;
 
@@ -23,14 +22,15 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const snapshotDir = resolve(options.snapshotDir);
   const findings: Finding[] = [];
+  const dataDir = join(snapshotDir, "hf-dataset", "data");
 
   await assertFile(join(snapshotDir, "manifest.json"));
-  await assertDirectory(join(snapshotDir, "hf-dataset", "data"));
+  await assertDirectory(dataDir);
   await inspectJsonFile(join(snapshotDir, "manifest.json"), snapshotDir, findings);
 
-  for (const split of HF_SPLITS) {
-    const file = join(snapshotDir, "hf-dataset", "data", `${split}.jsonl`);
-    await assertFile(file);
+  const dataFiles = await listDataFiles(dataDir);
+  if (dataFiles.length === 0) throw new Error(`Expected at least one JSONL data file: ${dataDir}`);
+  for (const file of dataFiles) {
     await inspectJsonlFile(file, snapshotDir, findings);
   }
 
@@ -56,6 +56,14 @@ async function assertDirectory(path: string) {
 async function assertFile(path: string) {
   const entry = await stat(path);
   if (!entry.isFile()) throw new Error(`Expected file: ${path}`);
+}
+
+async function listDataFiles(dataDir: string) {
+  const entries = await readdir(dataDir, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => join(dataDir, entry.name))
+    .sort();
 }
 
 async function inspectJsonFile(path: string, root: string, findings: Finding[]) {

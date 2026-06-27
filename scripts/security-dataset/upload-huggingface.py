@@ -72,6 +72,14 @@ with tempfile.TemporaryDirectory(prefix="clawhub-hf-upload-") as staging_root:
         manifest_path,
         staging_dir / "metadata" / "latest-manifest.json",
     )
+    readme_path = Path(
+        os.environ.get(
+            "HF_DATASET_README",
+            "scripts/security-dataset/huggingface-live/README.md",
+        )
+    )
+    if readme_path.exists():
+        shutil.copy2(readme_path, staging_dir / "README.md")
     dataset_commit = api.upload_folder(
         folder_path=str(staging_dir),
         path_in_repo="",

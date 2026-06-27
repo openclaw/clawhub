@@ -40,6 +40,7 @@ describe("security-dataset-snapshot workflow", () => {
     expect(workflow.on?.workflow_dispatch?.inputs?.["reuse-shards-run-id"]?.default).toBe("");
     expect(planJob.if).toContain("reuse-shards-run-id");
     expect(planJob.env?.SNAPSHOT_SHARDS).toBe("${{ inputs.shards || '12' }}");
+    expect(planJob.env?.HF_DATASET_REPO).toBe("OpenClaw/clawhub-security-signals-live");
     expect(planJob.env?.SNAPSHOT_MAX_SHARDS_PER_SOURCE).toBe(
       "${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '128' }}",
     );

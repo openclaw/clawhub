@@ -67,12 +67,10 @@ async function createSnapshot(rows: unknown[]) {
   const snapshotDir = await mkdtemp(join(tmpdir(), "clawhub-security-guardrails-"));
   await mkdir(join(snapshotDir, "hf-dataset", "data"), { recursive: true });
   await writeFile(join(snapshotDir, "manifest.json"), JSON.stringify({ ok: true }));
-  for (const split of ["train", "validation", "test", "eval_holdout"]) {
-    await writeFile(
-      join(snapshotDir, "hf-dataset", "data", `${split}.jsonl`),
-      split === "train" ? rows.map((row) => JSON.stringify(row)).join("\n") : "",
-    );
-  }
+  await writeFile(
+    join(snapshotDir, "hf-dataset", "data", "latest.jsonl"),
+    rows.map((row) => JSON.stringify(row)).join("\n"),
+  );
   return snapshotDir;
 }
 

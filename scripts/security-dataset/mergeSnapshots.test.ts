@@ -41,7 +41,7 @@ describe("security dataset snapshot merge CLI", () => {
           "--source-snapshot-id",
           "live-convex-test-1",
           "--hf-repo",
-          "OpenClaw/clawhub-security-signals",
+          "OpenClaw/clawhub-security-signals-live",
           "--hf-revision",
           "main",
         ],
@@ -58,7 +58,7 @@ describe("security dataset snapshot merge CLI", () => {
           source_snapshot_id: string;
           row_counts: { source_artifacts: number; huggingface_rows: number };
           created_time_window: { created_at_gte: number; created_at_lt: number };
-          huggingface_dataset: { rowCountsBySplit: Record<string, number> };
+          huggingface_dataset: { splitNames: string[]; rowCountsBySplit: Record<string, number> };
         };
       } = JSON.parse(result.stdout);
 
@@ -69,23 +69,27 @@ describe("security dataset snapshot merge CLI", () => {
         created_at_gte: 100,
         created_at_lt: 300,
       });
-      expect(summary.manifest.huggingface_dataset.rowCountsBySplit).toMatchObject({
-        train: 1,
-        test: 2,
-      });
+      expect(summary.manifest.huggingface_dataset.splitNames).toEqual(["latest"]);
+      expect(summary.manifest.huggingface_dataset.rowCountsBySplit).toEqual({ latest: 3 });
 
       await expect(
-        readFile(join(summary.snapshotDir, "hf-dataset", "data", "train.jsonl"), "utf8"),
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
       ).resolves.toContain('"id":"row-a"');
       await expect(
-        readFile(join(summary.snapshotDir, "hf-dataset", "data", "train.jsonl"), "utf8"),
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
       ).resolves.toContain("[REDACTED_SECRET]");
       await expect(
-        readFile(join(summary.snapshotDir, "hf-dataset", "data", "train.jsonl"), "utf8"),
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
       ).resolves.not.toContain("supersecretvalue123");
       await expect(
-        readFile(join(summary.snapshotDir, "hf-dataset", "data", "test.jsonl"), "utf8"),
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
       ).resolves.toContain('"id":"row-b"');
+      await expect(
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
+      ).resolves.toContain('"split":"latest"');
+      await expect(
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
+      ).resolves.not.toContain('"split":"train"');
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -120,6 +124,7 @@ async function writeShardSnapshot(
     const rows = Array.from({ length: rowCount }, (_, index) =>
       JSON.stringify({
         id: index === 0 ? input.rowId : `${input.rowId}-${index}`,
+        split,
         skill_slug: "owner/sk-abcdefghijklmnopqrstuvwxyz",
         skill_md_content: "Use this skill. skill secret: supersecretvalue123",
         skill_bundle_content: [
@@ -162,16 +167,13 @@ async function writeShardSnapshot(
       createdAtLt: input.createdAtLt,
     },
     huggingFaceDataset: {
-      repo: "OpenClaw/clawhub-security-signals",
+      repo: "OpenClaw/clawhub-security-signals-live",
       revision: "main",
       commit: null,
       configNames: ["default"],
-      splitNames: ["train", "validation", "test", "eval_holdout"],
+      splitNames: ["latest"],
       rowCountsBySplit: {
-        train: input.split === "train" ? input.sourceArtifacts : 0,
-        validation: 0,
-        test: input.split === "test" ? input.sourceArtifacts : 0,
-        eval_holdout: 0,
+        latest: input.sourceArtifacts,
       },
     },
   });

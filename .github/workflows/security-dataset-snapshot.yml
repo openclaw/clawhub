@@ -71,7 +71,7 @@ jobs:
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals-live
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SNAPSHOT_LIMIT: ${{ inputs.limit || '' }}
@@ -195,7 +195,7 @@ jobs:
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals-live
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
       SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
@@ -258,8 +258,8 @@ jobs:
       contents: read
       id-token: write
     env:
-      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
-      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals-live
+      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals-live
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
@@ -343,8 +343,8 @@ jobs:
       id-token: write
     env:
       GH_TOKEN: ${{ github.token }}
-      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
-      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals-live
+      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals-live
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       HF_UPLOAD: ${{ inputs.upload == 'true' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized

@@ -18,7 +18,6 @@ import { buildSecurityDatasetManifest } from "./manifest";
 import {
   normalizeArtifactExport,
   type ArtifactExportInput,
-  type DatasetSplit,
   type NormalizedDatasetRows,
   type SourceKind,
 } from "./normalize";
@@ -107,7 +106,7 @@ type SnapshotState = {
     splits: number;
     huggingFaceRows: number;
   };
-  huggingFaceRowCountsBySplit: Record<DatasetSplit, number>;
+  huggingFaceRowCountsBySplit: Record<HuggingFaceLiveSplit, number>;
   scannerVersions: Set<string>;
   modelNames: Set<string>;
 };
@@ -119,7 +118,7 @@ type SnapshotWriters = {
   clawScanFindings: WriteStream;
   labels: WriteStream;
   splits: WriteStream;
-  huggingFaceSplits?: Record<DatasetSplit, WriteStream>;
+  huggingFaceSplits?: Record<HuggingFaceLiveSplit, WriteStream>;
 };
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -132,7 +131,8 @@ const MAX_TIMER_TIMEOUT_MS = 2_147_483_647;
 const DEFAULT_OUT_DIR = ".data/security-dataset/snapshots";
 const CONVEX_RUN_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
 const SOURCE_KINDS: SourceKind[] = ["skill", "package"];
-const HF_SPLITS: DatasetSplit[] = ["train", "validation", "test", "eval_holdout"];
+const HF_LIVE_SPLIT = "latest";
+type HuggingFaceLiveSplit = typeof HF_LIVE_SPLIT;
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -566,7 +566,7 @@ function buildManifest(input: {
           revision: options.huggingFaceRevision,
           commit: null,
           configNames: ["default"],
-          splitNames: HF_SPLITS,
+          splitNames: [HF_LIVE_SPLIT],
           rowCountsBySplit: state.huggingFaceRowCountsBySplit,
         }
       : undefined,
@@ -607,10 +607,7 @@ function createSnapshotState(): SnapshotState {
       huggingFaceRows: 0,
     },
     huggingFaceRowCountsBySplit: {
-      train: 0,
-      validation: 0,
-      test: 0,
-      eval_holdout: 0,
+      latest: 0,
     },
     scannerVersions: new Set(),
     modelNames: new Set(),
@@ -632,9 +629,7 @@ async function processArtifactInputs(input: {
   state.rowCounts.labels += rows.labels.length;
   state.rowCounts.splits += rows.splits.length;
   state.rowCounts.huggingFaceRows += hfRows.length;
-  for (const row of hfRows) {
-    state.huggingFaceRowCountsBySplit[row.split] += 1;
-  }
+  state.huggingFaceRowCountsBySplit.latest += hfRows.length;
   for (const row of rows.scanResults) {
     if (row.scanner_version) state.scannerVersions.add(row.scanner_version);
     if (row.model) state.modelNames.add(row.model);
@@ -668,10 +663,7 @@ async function openSnapshotWriters(
     const dataDir = join(snapshotDir, "hf-dataset", "data");
     await mkdir(dataDir, { recursive: true });
     writers.huggingFaceSplits = {
-      train: createWriteStream(join(dataDir, "train.jsonl"), { encoding: "utf8" }),
-      validation: createWriteStream(join(dataDir, "validation.jsonl"), { encoding: "utf8" }),
-      test: createWriteStream(join(dataDir, "test.jsonl"), { encoding: "utf8" }),
-      eval_holdout: createWriteStream(join(dataDir, "eval_holdout.jsonl"), { encoding: "utf8" }),
+      latest: createWriteStream(join(dataDir, "latest.jsonl"), { encoding: "utf8" }),
     };
   }
   return writers;
@@ -711,15 +703,13 @@ async function writeJsonlRows(stream: WriteStream, rows: unknown[]) {
 }
 
 async function writeHuggingFaceRows(
-  streams: Record<DatasetSplit, WriteStream>,
+  streams: Record<HuggingFaceLiveSplit, WriteStream>,
   rows: HuggingFaceSecuritySignalRow[],
 ) {
-  for (const split of HF_SPLITS) {
-    await writeJsonlRows(
-      streams[split],
-      rows.filter((row) => row.split === split),
-    );
-  }
+  await writeJsonlRows(
+    streams.latest,
+    rows.map((row) => ({ ...row, split: HF_LIVE_SPLIT })),
+  );
 }
 
 async function collectOutputSizes(root: string) {
@@ -940,7 +930,7 @@ function parseArgs(args: string[]): Options {
     convexExportZip: null,
     sourceSnapshotId: null,
     huggingFaceDataset: false,
-    huggingFaceRepo: process.env.HF_DATASET_REPO ?? "OpenClaw/clawhub-security-signals",
+    huggingFaceRepo: process.env.HF_DATASET_REPO ?? "OpenClaw/clawhub-security-signals-live",
     huggingFaceRevision: process.env.HF_REVISION ?? "main",
     writeShardMatrix: null,
   };

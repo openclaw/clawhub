@@ -40,21 +40,24 @@ describe("security dataset snapshot CLI", () => {
         manifest: {
           source_snapshot_id: string;
           row_counts: { huggingface_rows: number };
-          huggingface_dataset: { repo: string; rowCountsBySplit: Record<string, number> };
+          huggingface_dataset: {
+            repo: string;
+            splitNames: string[];
+            rowCountsBySplit: Record<string, number>;
+          };
         };
       } = JSON.parse(result.stdout);
 
       expect(summary.manifest.source_snapshot_id).toBe("live-export-prod-123-1");
       expect(summary.manifest.row_counts.huggingface_rows).toBe(1);
-      expect(summary.manifest.huggingface_dataset.repo).toBe("OpenClaw/clawhub-security-signals");
+      expect(summary.manifest.huggingface_dataset.repo).toBe(
+        "OpenClaw/clawhub-security-signals-live",
+      );
+      expect(summary.manifest.huggingface_dataset.splitNames).toEqual(["latest"]);
+      expect(summary.manifest.huggingface_dataset.rowCountsBySplit).toEqual({ latest: 1 });
       const dataDir = join(summary.snapshotDir, "hf-dataset", "data");
       const files = await readdir(dataDir);
-      expect(files.sort()).toEqual([
-        "eval_holdout.jsonl",
-        "test.jsonl",
-        "train.jsonl",
-        "validation.jsonl",
-      ]);
+      expect(files.sort()).toEqual(["latest.jsonl"]);
 
       const splitContents = await Promise.all(
         files.map(async (file) => readFile(join(dataDir, file), "utf8")),

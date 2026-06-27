@@ -6,7 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import { buildSecurityDatasetManifest } from "./manifest";
 import { redactBundleContent, redactSkillContent, redactText } from "./normalize";
 
-type DatasetSplit = "train" | "validation" | "test" | "eval_holdout";
+type PaperDatasetSplit = "train" | "validation" | "test" | "eval_holdout";
+type LiveDatasetSplit = "latest";
 
 type Options = {
   shardsDir: string;
@@ -47,8 +48,8 @@ type ShardManifest = {
     created_at_lt: number | null;
   };
   huggingface_dataset: {
-    rowCountsBySplit?: Record<DatasetSplit, number>;
-    row_counts_by_split?: Record<DatasetSplit, number>;
+    rowCountsBySplit?: Record<string, number>;
+    row_counts_by_split?: Record<string, number>;
   } | null;
 };
 
@@ -60,7 +61,8 @@ const JSONL_FILES = [
   "labels.jsonl",
   "splits.jsonl",
 ] as const;
-const HF_SPLITS: DatasetSplit[] = ["train", "validation", "test", "eval_holdout"];
+const HF_LIVE_SPLIT: LiveDatasetSplit = "latest";
+const PAPER_HF_SPLITS: PaperDatasetSplit[] = ["train", "validation", "test", "eval_holdout"];
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
@@ -99,15 +101,22 @@ async function concatenateSnapshotFiles(
     );
   }
 
-  for (const split of HF_SPLITS) {
-    const writer = createWriteStream(join(snapshotDir, "hf-dataset", "data", `${split}.jsonl`), {
+  {
+    const writer = createWriteStream(join(snapshotDir, "hf-dataset", "data", "latest.jsonl"), {
       encoding: "utf8",
     });
     await concatenateRedactedHuggingFaceRows(
       writer,
-      manifests.map(({ dir }) => join(dir, "hf-dataset", "data", `${split}.jsonl`)),
+      manifests.flatMap(({ dir }) => huggingFaceShardRowPaths(dir)),
     );
   }
+}
+
+function huggingFaceShardRowPaths(dir: string) {
+  return [
+    join(dir, "hf-dataset", "data", "latest.jsonl"),
+    ...PAPER_HF_SPLITS.map((split) => join(dir, "hf-dataset", "data", `${split}.jsonl`)),
+  ];
 }
 
 async function concatenateFiles(writer: WriteStream, paths: string[]) {
@@ -156,6 +165,7 @@ async function writeRedactedHuggingFaceRow(writer: WriteStream, line: string) {
 function redactHuggingFaceRow(row: Record<string, unknown>) {
   return {
     ...row,
+    split: HF_LIVE_SPLIT,
     skill_slug:
       typeof row.skill_slug === "string" ? redactText(row.skill_slug, 2048) : row.skill_slug,
     skill_md_content:
@@ -220,7 +230,7 @@ function buildMergedManifest(input: {
       revision: options.huggingFaceRevision,
       commit: null,
       configNames: ["default"],
-      splitNames: HF_SPLITS,
+      splitNames: [HF_LIVE_SPLIT],
       rowCountsBySplit,
     },
   });
@@ -251,16 +261,15 @@ function sumRowCounts(manifests: ShardManifest[]) {
   );
 }
 
-function sumHuggingFaceSplitCounts(manifests: ShardManifest[]): Record<DatasetSplit, number> {
-  const counts = { train: 0, validation: 0, test: 0, eval_holdout: 0 };
+function sumHuggingFaceSplitCounts(manifests: ShardManifest[]): Record<LiveDatasetSplit, number> {
+  const counts = { latest: 0 };
   for (const manifest of manifests) {
     const shardCounts =
       manifest.huggingface_dataset?.rowCountsBySplit ??
-      manifest.huggingface_dataset?.row_counts_by_split ??
-      counts;
-    for (const split of HF_SPLITS) {
-      counts[split] += shardCounts[split] ?? 0;
-    }
+      manifest.huggingface_dataset?.row_counts_by_split;
+    counts.latest +=
+      shardCounts?.latest ??
+      PAPER_HF_SPLITS.reduce((sum, split) => sum + (shardCounts?.[split] ?? 0), 0);
   }
   return counts;
 }
@@ -342,7 +351,7 @@ function parseArgs(args: string[]): Options {
     outDir: ".data/security-dataset/merged",
     snapshotId: null,
     sourceSnapshotId: null,
-    huggingFaceRepo: process.env.HF_DATASET_REPO ?? "OpenClaw/clawhub-security-signals",
+    huggingFaceRepo: process.env.HF_DATASET_REPO ?? "OpenClaw/clawhub-security-signals-live",
     huggingFaceRevision: process.env.HF_REVISION ?? "main",
   };
 
