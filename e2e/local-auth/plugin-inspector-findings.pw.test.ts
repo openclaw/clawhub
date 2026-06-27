@@ -123,20 +123,25 @@ async function expectHealthyInspectorPage(page: Page, errors: string[]) {
   );
 }
 
-async function expectDashboardWarningLink(page: Page, warningName: string) {
-  const dashboardWarningLink = page.locator(`a[href="${buildPluginValidationHref(warningName)}"]`);
+async function expectDashboardWarningReview(page: Page, warningName: string) {
+  const dashboardWarningRow = page
+    .locator("button.dashboard-attention-row")
+    .filter({ hasText: new RegExp(escapeRegExp(warningName), "i") });
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
     await waitForHydration(page);
     try {
-      await expect(dashboardWarningLink).toBeVisible({ timeout: 30_000 });
-      return dashboardWarningLink;
+      await expect(dashboardWarningRow).toBeVisible({ timeout: 30_000 });
+      await dashboardWarningRow.click();
+      const reviewDialog = page.getByRole("dialog", { name: /review$/i });
+      await expect(reviewDialog).toBeVisible();
+      return reviewDialog.getByRole("link", { name: "View plugin" });
     } catch (error) {
       if (attempt >= 3) throw error;
       await page.waitForTimeout(1_000 * attempt);
     }
   }
-  return dashboardWarningLink;
+  throw new Error(`Dashboard review did not appear for ${warningName}`);
 }
 
 async function expectValidationSectionVisible(page: Page, warningName: string) {
@@ -264,13 +269,11 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   });
   await captureProof(page, testInfo, "02-upload-warning-success");
 
-  const dashboardWarningLink = await expectDashboardWarningLink(page, warningName);
+  const dashboardPluginLink = await expectDashboardWarningReview(page, warningName);
   await captureProof(page, testInfo, "03-dashboard-warning-count");
-  await dashboardWarningLink.click();
+  await dashboardPluginLink.click();
 
-  await expect(page).toHaveURL(
-    new RegExp(`${escapeRegExp(buildPluginValidationHref(warningName))}$`),
-  );
+  await expect(page).toHaveURL(new RegExp(`/plugins/${escapeRegExp(warningName)}$`));
   await expectValidationSectionVisible(page, warningName);
   await expect(
     page.locator(".plugin-warning-item-code").filter({
