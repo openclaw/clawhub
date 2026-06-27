@@ -42,6 +42,13 @@ type CatalogFeedPublicationResult = {
   entryCount: number;
 };
 
+function appendEntriesWithinFeedLimit<T>(target: T[], entries: T[]) {
+  const remaining = MAX_CATALOG_FEED_ENTRIES - target.length;
+  if (remaining <= 0) return false;
+  target.push(...entries.slice(0, remaining));
+  return entries.length <= remaining;
+}
+
 const catalogFeedEntryFields = {
   id: v.string(),
   title: v.string(),
@@ -420,7 +427,9 @@ export const publish = internalAction({
     const skillEntries: CatalogFeedSkillEntry[] = [];
     const seenPublisherIds = new Set<string>();
     let publisherCursor: string | null = null;
-    while (true) {
+    // The skills feed currently ships as one bounded snapshot. Cap it instead
+    // of blocking the plugin feed refresh until skills pagination/sharding lands.
+    publisherLoop: while (true) {
       const publisherPage: {
         publishers: Doc<"publishers">[];
         isDone: boolean;
@@ -441,10 +450,7 @@ export const publish = internalAction({
             publisherId: publisher._id,
             cursor: skillCursor,
           });
-          skillEntries.push(...skillPage.entries);
-          if (skillEntries.length > MAX_CATALOG_FEED_ENTRIES) {
-            throw new Error(`Catalog skills feed exceeds ${MAX_CATALOG_FEED_ENTRIES} entries`);
-          }
+          if (!appendEntriesWithinFeedLimit(skillEntries, skillPage.entries)) break publisherLoop;
           if (skillPage.isDone) break;
           skillCursor = skillPage.continueCursor;
         }

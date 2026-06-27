@@ -1,5 +1,6 @@
+import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID } from "clawhub-schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listOfficialEntries, listOfficialSkillEntries } from "./catalogFeed";
+import { listOfficialEntries, listOfficialSkillEntries, publish } from "./catalogFeed";
 
 vi.mock("./lib/publishers", () => ({
   getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
@@ -23,6 +24,9 @@ const listOfficialSkillEntriesHandler = (
     { publisherId: string; cursor: string | null },
     unknown
   >
+)._handler;
+const publishHandler = (
+  publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
 )._handler;
 
 function makePackage(overrides: Record<string, unknown> = {}) {
@@ -103,6 +107,28 @@ function makeGitHubSource(overrides: Record<string, unknown> = {}) {
     ownerPublisherId: "publishers:1",
     defaultBranch: "main",
     ...overrides,
+  };
+}
+
+function makeFeedSkillEntry(index: number) {
+  const id = `@openclaw/demo-${index.toString().padStart(3, "0")}`;
+  return {
+    type: "skill",
+    id,
+    title: `Demo ${index}`,
+    version: "1.0.0",
+    state: "available",
+    publisher: { id: "openclaw", trust: "official" },
+    install: {
+      candidates: [
+        {
+          sourceRef: "public-clawhub",
+          package: id,
+          version: "1.0.0",
+          integrity: `sha256:skill-${index}`,
+        },
+      ],
+    },
   };
 }
 
@@ -315,6 +341,54 @@ describe("catalog feed projection", () => {
       ],
       isDone: true,
     });
+  });
+
+  it("caps oversized skills feeds instead of blocking plugin publication", async () => {
+    const skillEntries = Array.from({ length: 501 }, (_, index) => makeFeedSkillEntry(index));
+    const runMutation = vi.fn(
+      async (_ref: unknown, args: { feedId: string; entries: unknown[] }) => ({
+        feedId: args.feedId,
+        entryCount: args.entries.length,
+      }),
+    );
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("family" in args) return [];
+      if ("publisherId" in args) {
+        return { entries: skillEntries, isDone: true, continueCursor: "" };
+      }
+      return {
+        publishers: [{ _id: "publishers:1" }],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+
+    const result = await publishHandler(
+      { runQuery, runMutation },
+      { expiresAt: "2026-06-30T00:00:00.000Z" },
+    );
+
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ feedId: CATALOG_FEED_ID, entries: [] }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        feedId: CATALOG_SKILLS_FEED_ID,
+        entries: expect.arrayContaining([expect.objectContaining({ id: "@openclaw/demo-499" })]),
+      }),
+    );
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.find(([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID)?.[1].entries,
+    ).toHaveLength(500);
+    expect(result).toEqual([
+      { feedId: CATALOG_FEED_ID, entryCount: 0 },
+      { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 500 },
+    ]);
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {

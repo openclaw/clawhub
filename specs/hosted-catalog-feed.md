@@ -61,6 +61,9 @@ Suspicious GitHub-backed entries follow the same public feed visibility pattern
 as suspicious hosted packages and skills.
 Pending, failed, malicious, missing, removed, hidden, soft-deleted, or
 incomplete GitHub-backed skills are not emitted.
+Until the skills feed has pagination or sharding, it publishes at most 500
+eligible entries per snapshot so a large skills corpus does not block the plugin
+feed publication path.
 
 ## Publication
 
