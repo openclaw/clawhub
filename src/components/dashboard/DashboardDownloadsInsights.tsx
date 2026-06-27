@@ -215,7 +215,9 @@ function ChartAxis({ labels, range }: { labels: string[]; range: DownloadRange }
     visibleLabels.length <= 4
       ? visibleLabels
       : visibleLabels.filter((_, index, list) => {
-          return index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1;
+          return (
+            index === 0 || index === Math.floor((list.length - 1) / 2) || index === list.length - 1
+          );
         });
 
   return (
@@ -324,13 +326,7 @@ function Sparkline({
             height="100"
             onMouseEnter={() => setActiveIndex(index)}
             aria-hidden="true"
-          >
-            <title>
-              {labels?.[index]?.trim()
-                ? `${labels[index]}: ${formatBucketValue(value)}`
-                : formatBucketValue(value)}
-            </title>
-          </rect>
+          />
         ))}
         {activeCoord ? (
           <circle

@@ -31407,8 +31407,8 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-downloads-chart-wrap.is-compact .dashboard-downloads-chart-tooltip {
-  top: 4px;
-  transform: translateX(-50%);
+  top: -8px;
+  transform: translate(-50%, -100%);
 }
 
 .dashboard-downloads-chart-hit {
