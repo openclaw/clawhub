@@ -15,6 +15,7 @@ let searchMock: Record<string, unknown> = {};
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (_config: { component: unknown; validateSearch: unknown }) => ({
+    useLoaderData: () => null,
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
@@ -32,6 +33,7 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../../src/convex/client", () => ({
   convexHttp: {
+    action: (...args: unknown[]) => convexHttpMock.action(...args),
     query: (...args: unknown[]) => convexHttpMock.query(...args),
   },
 }));

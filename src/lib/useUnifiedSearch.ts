@@ -43,9 +43,26 @@ export type UnifiedCreatorResult = {
 
 type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult | UnifiedCreatorResult;
 
+export type UnifiedSearchInitialData = {
+  query: string;
+  activeType: UnifiedSearchType;
+  limits: {
+    skills: number;
+    plugins: number;
+    creators: number;
+  };
+  skillResults: UnifiedSkillResult[];
+  pluginResults: UnifiedPluginResult[];
+  creatorResults: UnifiedCreatorResult[];
+  skillHasMore: boolean;
+  pluginHasMore: boolean;
+  creatorHasMore: boolean;
+};
+
 type UnifiedSearchOptions = {
   debounceMs?: number;
   enabled?: boolean;
+  initialData?: UnifiedSearchInitialData | null;
   limits?: {
     skills?: number;
     plugins?: number;
@@ -53,26 +70,35 @@ type UnifiedSearchOptions = {
   };
 };
 
+function mergeUnifiedResults(
+  activeType: UnifiedSearchType,
+  skillResults: UnifiedSkillResult[],
+  pluginResults: UnifiedPluginResult[],
+  creatorResults: UnifiedCreatorResult[],
+) {
+  const merged: UnifiedResult[] = [];
+  if (activeType === "all") {
+    merged.push(...skillResults, ...pluginResults, ...creatorResults);
+  } else if (activeType === "skills") {
+    merged.push(...skillResults);
+  } else if (activeType === "plugins") {
+    merged.push(...pluginResults);
+  } else {
+    merged.push(...creatorResults);
+  }
+  return merged;
+}
+
 export function useUnifiedSearch(
   query: string,
   activeType: UnifiedSearchType,
   options: UnifiedSearchOptions = {},
 ) {
   const searchSkills = useAction(api.search.searchSkills);
-  const [results, setResults] = useState<UnifiedResult[]>([]);
-  const [skillResults, setSkillResults] = useState<UnifiedSkillResult[]>([]);
-  const [pluginResults, setPluginResults] = useState<UnifiedPluginResult[]>([]);
-  const [creatorResults, setCreatorResults] = useState<UnifiedCreatorResult[]>([]);
-  const [skillCount, setSkillCount] = useState(0);
-  const [pluginCount, setPluginCount] = useState(0);
-  const [creatorCount, setCreatorCount] = useState(0);
-  const [skillHasMore, setSkillHasMore] = useState(false);
-  const [pluginHasMore, setPluginHasMore] = useState(false);
-  const [creatorHasMore, setCreatorHasMore] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const requestRef = useRef(0);
   const debounceMs = options.debounceMs ?? 300;
   const enabled = options.enabled ?? true;
+  const initialData = options.initialData ?? null;
   const skillLimit = Math.max(0, Math.min(options.limits?.skills ?? 25, MAX_UNIFIED_SEARCH_LIMIT));
   const pluginLimit = Math.max(
     0,
@@ -83,10 +109,77 @@ export function useUnifiedSearch(
     Math.min(options.limits?.creators ?? 25, MAX_CREATOR_SEARCH_LIMIT),
   );
   const creatorRequestLimit = Math.min(creatorLimit + 1, MAX_CREATOR_SEARCH_LIMIT);
+  const trimmedQuery = query.trim();
+  const matchedInitialData =
+    initialData &&
+    initialData.query === trimmedQuery &&
+    initialData.activeType === activeType &&
+    initialData.limits.skills === skillLimit &&
+    initialData.limits.plugins === pluginLimit &&
+    initialData.limits.creators === creatorLimit
+      ? initialData
+      : null;
+  const [results, setResults] = useState<UnifiedResult[]>(() =>
+    matchedInitialData
+      ? mergeUnifiedResults(
+          activeType,
+          matchedInitialData.skillResults,
+          matchedInitialData.pluginResults,
+          matchedInitialData.creatorResults,
+        )
+      : [],
+  );
+  const [skillResults, setSkillResults] = useState<UnifiedSkillResult[]>(
+    () => matchedInitialData?.skillResults ?? [],
+  );
+  const [pluginResults, setPluginResults] = useState<UnifiedPluginResult[]>(
+    () => matchedInitialData?.pluginResults ?? [],
+  );
+  const [creatorResults, setCreatorResults] = useState<UnifiedCreatorResult[]>(
+    () => matchedInitialData?.creatorResults ?? [],
+  );
+  const [skillCount, setSkillCount] = useState(() => matchedInitialData?.skillResults.length ?? 0);
+  const [pluginCount, setPluginCount] = useState(
+    () => matchedInitialData?.pluginResults.length ?? 0,
+  );
+  const [creatorCount, setCreatorCount] = useState(
+    () => matchedInitialData?.creatorResults.length ?? 0,
+  );
+  const [skillHasMore, setSkillHasMore] = useState(() => matchedInitialData?.skillHasMore ?? false);
+  const [pluginHasMore, setPluginHasMore] = useState(
+    () => matchedInitialData?.pluginHasMore ?? false,
+  );
+  const [creatorHasMore, setCreatorHasMore] = useState(
+    () => matchedInitialData?.creatorHasMore ?? false,
+  );
+  const [isSearching, setIsSearching] = useState(
+    () => enabled && trimmedQuery.length > 0 && !matchedInitialData,
+  );
 
   useEffect(() => {
-    const trimmed = query.trim();
-    if (!enabled || !trimmed) {
+    if (!matchedInitialData) return;
+    setSkillResults(matchedInitialData.skillResults);
+    setPluginResults(matchedInitialData.pluginResults);
+    setCreatorResults(matchedInitialData.creatorResults);
+    setSkillCount(matchedInitialData.skillResults.length);
+    setPluginCount(matchedInitialData.pluginResults.length);
+    setCreatorCount(matchedInitialData.creatorResults.length);
+    setSkillHasMore(matchedInitialData.skillHasMore);
+    setPluginHasMore(matchedInitialData.pluginHasMore);
+    setCreatorHasMore(matchedInitialData.creatorHasMore);
+    setResults(
+      mergeUnifiedResults(
+        activeType,
+        matchedInitialData.skillResults,
+        matchedInitialData.pluginResults,
+        matchedInitialData.creatorResults,
+      ),
+    );
+    setIsSearching(false);
+  }, [activeType, matchedInitialData]);
+
+  useEffect(() => {
+    if (!enabled || !trimmedQuery) {
       requestRef.current += 1;
       setResults([]);
       setSkillResults([]);
@@ -118,14 +211,14 @@ export function useUnifiedSearch(
 
           if (activeType === "all" || activeType === "skills") {
             promises[0] = searchSkills({
-              query: trimmed,
+              query: trimmedQuery,
               limit: skillLimit + 1,
             });
           }
 
           if (activeType === "all" || activeType === "plugins") {
             promises[1] = fetchPluginCatalog({
-              q: trimmed,
+              q: trimmedQuery,
               limit: pluginLimit + 1,
               signal: controller.signal,
             });
@@ -133,7 +226,7 @@ export function useUnifiedSearch(
 
           if (activeType === "all" || activeType === "creators") {
             promises[2] = convexHttp.query(api.publishers.listPublicPage, {
-              query: trimmed,
+              query: trimmedQuery,
               paginationOpts: { cursor: null, numItems: creatorRequestLimit },
             });
           }
@@ -192,18 +285,14 @@ export function useUnifiedSearch(
           setPluginResults(nextPluginResults);
           setCreatorResults(nextCreatorResults);
 
-          const merged: UnifiedResult[] = [];
-          if (activeType === "all") {
-            merged.push(...nextSkillResults, ...nextPluginResults, ...nextCreatorResults);
-          } else if (activeType === "skills") {
-            merged.push(...nextSkillResults);
-          } else if (activeType === "plugins") {
-            merged.push(...nextPluginResults);
-          } else {
-            merged.push(...nextCreatorResults);
-          }
-
-          setResults(merged);
+          setResults(
+            mergeUnifiedResults(
+              activeType,
+              nextSkillResults,
+              nextPluginResults,
+              nextCreatorResults,
+            ),
+          );
         } catch (error) {
           console.error("Unified search failed:", error);
           if (requestId === requestRef.current) {
@@ -232,7 +321,7 @@ export function useUnifiedSearch(
       window.clearTimeout(handle);
     };
   }, [
-    query,
+    trimmedQuery,
     activeType,
     searchSkills,
     debounceMs,

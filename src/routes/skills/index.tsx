@@ -17,6 +17,7 @@ import {
   BrowseViewToggle,
   useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
+import { convexHttp } from "../../convex/client";
 import { formatBrowseCount } from "../../lib/browseCount";
 import {
   parseBrowseTopicFromSearchInput,
@@ -26,7 +27,10 @@ import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/cate
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
+import type { SkillSearchEntry } from "./-types";
 import {
+  buildSkillsSearchKey,
+  type InitialSkillsSearchData,
   normalizeSkillsView,
   useSkillsBrowseModel,
   type SkillsSearchState,
@@ -45,6 +49,7 @@ const SKILLS_SORT_OPTIONS = [
   { value: "newest", label: "Newest" },
   { value: "name", label: "Name" },
 ];
+const SKILLS_INITIAL_SEARCH_LIMIT = 25;
 
 function parseSkillCategorySlug(value: unknown) {
   return typeof value === "string" ? resolveSkillBrowseCategorySlug(value) : undefined;
@@ -70,16 +75,54 @@ export const Route = createFileRoute("/skills/")({
       focus: search.focus === "search" ? "search" : undefined,
     };
   },
+  loaderDeps: ({ search }) => ({
+    q: search.q,
+    featured: search.featured,
+    highlighted: search.highlighted,
+    category: search.category,
+    topic: search.topic,
+  }),
+  loader: async ({ deps }): Promise<InitialSkillsSearchData> => await loadInitialSkillsSearch(deps),
   component: SkillsIndex,
 });
+
+async function loadInitialSkillsSearch(
+  search: SkillsSearchState,
+): Promise<InitialSkillsSearchData> {
+  const query = search.q?.trim();
+  if (!query) return null;
+
+  const featuredOnly = search.featured ?? search.highlighted ?? false;
+  const key = buildSkillsSearchKey({
+    query,
+    featuredOnly,
+    categorySlug: search.category,
+    topic: search.topic,
+  });
+  try {
+    const results = (await convexHttp.action(api.search.searchSkills, {
+      query,
+      highlightedOnly: featuredOnly,
+      categorySlug: search.category,
+      topic: search.topic,
+      limit: SKILLS_INITIAL_SEARCH_LIMIT,
+    })) as SkillSearchEntry[];
+    return { key, limit: SKILLS_INITIAL_SEARCH_LIMIT, results };
+  } catch (error) {
+    console.error("Failed to load initial skills search:", error);
+    return null;
+  }
+}
 
 export function SkillsIndex() {
   const navigate = Route.useNavigate();
   const routeSearch = Route.useSearch();
+  const initialSearch = Route.useLoaderData() as InitialSkillsSearchData | undefined;
   const { search, activeTopic } = useBrowseTopicSearch(routeSearch, navigate);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const model = useSkillsBrowseModel({
+    initialSearch,
     navigate,
     search,
     searchInputRef,

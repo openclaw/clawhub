@@ -9,14 +9,22 @@ let searchMock: {
   q?: string;
   type?: "all" | "skills" | "plugins" | "creators";
 } = {};
+let loaderDataMock: unknown = null;
 const useUnifiedSearchMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component?: unknown; validateSearch?: unknown }) => ({
     __config: config,
+    useLoaderData: () => loaderDataMock,
     useSearch: () => searchMock,
   }),
   useNavigate: () => navigateMock,
+}));
+
+vi.mock("../convex/client", () => ({
+  convexHttp: {
+    action: vi.fn(),
+  },
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
@@ -67,6 +75,7 @@ async function loadRoute() {
 describe("search route", () => {
   beforeEach(() => {
     searchMock = { q: "first" };
+    loaderDataMock = null;
     navigateMock.mockReset();
     useUnifiedSearchMock.mockReset();
     useUnifiedSearchMock.mockReturnValue({
@@ -465,6 +474,45 @@ describe("search route", () => {
     render(<Component />);
 
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("hello", "all", {
+      limits: { skills: 25, plugins: 25, creators: 25 },
+    });
+  });
+
+  it("passes loader-backed skill results to unified search", async () => {
+    searchMock = { q: "japanese-reading-grader" };
+    loaderDataMock = {
+      query: "japanese-reading-grader",
+      activeType: "all",
+      limits: { skills: 25, plugins: 25, creators: 25 },
+      skillResults: [
+        {
+          type: "skill",
+          skill: {
+            _id: "skill-japanese-reading-grader",
+            slug: "japanese-reading-grader",
+            displayName: "Japanese Reading Grader",
+            ownerUserId: "users:1",
+            stats: { downloads: 0, stars: 0 },
+            updatedAt: 1,
+            createdAt: 1,
+          },
+          ownerHandle: "bianmaxingkong",
+          score: 1,
+        },
+      ],
+      pluginResults: [],
+      creatorResults: [],
+      skillHasMore: false,
+      pluginHasMore: false,
+      creatorHasMore: false,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("japanese-reading-grader", "all", {
+      initialData: loaderDataMock,
       limits: { skills: 25, plugins: 25, creators: 25 },
     });
   });

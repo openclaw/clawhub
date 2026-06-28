@@ -42,6 +42,12 @@ export type SkillsSearchState = {
   focus?: "search";
 };
 
+export type InitialSkillsSearchData = {
+  key: string;
+  limit: number;
+  results: SkillSearchEntry[];
+} | null;
+
 type SkillsNavigate = (options: {
   search: (prev: SkillsSearchState) => SkillsSearchState;
   replace?: boolean;
@@ -49,19 +55,35 @@ type SkillsNavigate = (options: {
 
 type ListStatus = "loading" | "idle" | "loadingMore" | "done";
 
+export function buildSkillsSearchKey({
+  categorySlug,
+  featuredOnly,
+  query,
+  topic,
+}: {
+  categorySlug?: string;
+  featuredOnly: boolean;
+  query: string;
+  topic?: string;
+}) {
+  const trimmed = query.trim();
+  return trimmed
+    ? `${trimmed}::${featuredOnly ? "1" : "0"}::${categorySlug ?? ""}::${topic ?? ""}`
+    : "";
+}
+
 export function useSkillsBrowseModel({
+  initialSearch,
   search,
   navigate,
   searchInputRef,
 }: {
+  initialSearch?: InitialSkillsSearchData;
   search: SkillsSearchState;
   navigate: SkillsNavigate;
   searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState(search.q ?? "");
-  const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>([]);
-  const [searchLimit, setSearchLimit] = useState(pageSize);
-  const [isSearching, setIsSearching] = useState(false);
   const searchRequest = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
@@ -89,9 +111,22 @@ export function useSkillsBrowseModel({
         : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
   const listSort = sort === "trending" ? undefined : toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
-  const searchKey = hasQuery
-    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${activeCategory?.slug ?? ""}::${activeTopic ?? ""}`
-    : "";
+  const searchKey = buildSkillsSearchKey({
+    query: trimmedQuery,
+    featuredOnly,
+    categorySlug: activeCategory?.slug,
+    topic: activeTopic,
+  });
+  const matchedInitialSearch = initialSearch?.key === searchKey ? initialSearch : null;
+  const initialSearchMatches = matchedInitialSearch !== null;
+  const [searchResults, setSearchResults] = useState<Array<SkillSearchEntry>>(() =>
+    matchedInitialSearch ? matchedInitialSearch.results : [],
+  );
+  const [searchLimit, setSearchLimit] = useState(() =>
+    matchedInitialSearch ? matchedInitialSearch.limit : pageSize,
+  );
+  const [isSearching, setIsSearching] = useState(() => hasQuery && !initialSearchMatches);
+  const appliedInitialSearchKey = useRef(matchedInitialSearch ? matchedInitialSearch.key : null);
 
   // One-shot paginated fetches (no reactive subscription)
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
@@ -213,11 +248,21 @@ export function useSkillsBrowseModel({
     if (!searchKey) {
       setSearchResults([]);
       setIsSearching(false);
+      appliedInitialSearchKey.current = null;
       return;
     }
+    if (matchedInitialSearch && appliedInitialSearchKey.current !== matchedInitialSearch.key) {
+      setSearchResults(matchedInitialSearch.results);
+      setSearchLimit(matchedInitialSearch.limit);
+      setIsSearching(false);
+      appliedInitialSearchKey.current = matchedInitialSearch.key;
+    }
+    if (matchedInitialSearch) return;
     setSearchResults([]);
     setSearchLimit(pageSize);
-  }, [searchKey]);
+    setIsSearching(true);
+    appliedInitialSearchKey.current = null;
+  }, [matchedInitialSearch, searchKey]);
 
   useEffect(() => {
     if (!hasQuery) return () => {};

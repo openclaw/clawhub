@@ -12,10 +12,12 @@ import {
 
 const navigateMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
+let loaderDataMock: unknown = null;
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown; validateSearch: unknown }) => ({
     __config: config,
+    useLoaderData: () => loaderDataMock,
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
@@ -33,6 +35,7 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../../src/convex/client", () => ({
   convexHttp: {
+    action: (...args: unknown[]) => convexHttpMock.action(...args),
     query: (...args: unknown[]) => convexHttpMock.query(...args),
   },
 }));
@@ -42,6 +45,7 @@ describe("SkillsIndex", () => {
     resetConvexReactMocks();
     navigateMock.mockReset();
     searchMock = {};
+    loaderDataMock = null;
     setupDefaultConvexReactMocks();
   });
 
@@ -336,6 +340,30 @@ describe("SkillsIndex", () => {
     expect(screen.getByText("No skills found")).toBeTruthy();
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
     expect(screen.queryByText(/Loading skills/)).toBeNull();
+  });
+
+  it("renders URL-query skill search results from loader data before client refresh", async () => {
+    searchMock = { q: "japanese-conversation-scorer" };
+    loaderDataMock = {
+      key: "japanese-conversation-scorer::0::::",
+      limit: 25,
+      results: [
+        {
+          skill: makeListResult("japanese-conversation-scorer", "Japanese Conversation Scorer")
+            .skill,
+          version: null,
+          ownerHandle: "bianmaxingkong",
+          owner: null,
+          score: 1,
+        },
+      ],
+    };
+    convexReactMocks.useAction.mockReturnValue(vi.fn(() => new Promise(() => {})));
+
+    render(<SkillsIndex />);
+
+    expect(screen.getByText("Japanese Conversation Scorer")).toBeTruthy();
+    expect(screen.queryByText("No skills found")).toBeNull();
   });
 
   it("skips list fetch and calls search when query is set", async () => {

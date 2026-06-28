@@ -1,14 +1,17 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Plus, Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { api } from "../../convex/_generated/api";
 import { PluginListItem } from "../components/PluginListItem";
 import { PublisherListItem } from "../components/PublisherListItem";
 import { BrowseResultsSkeleton } from "../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../components/SkillListItem";
 import { Card } from "../components/ui/card";
+import { convexHttp } from "../convex/client";
 import type { PublicSkill } from "../lib/publicUser";
 import {
   useUnifiedSearch,
+  type UnifiedSearchInitialData,
   type UnifiedSearchType,
   type UnifiedCreatorResult,
   type UnifiedPluginResult,
@@ -30,11 +33,59 @@ export const Route = createFileRoute("/search")({
         ? search.type
         : undefined,
   }),
+  loaderDeps: ({ search }) => ({
+    q: search.q,
+  }),
+  loader: async ({ deps }): Promise<UnifiedSearchInitialData | null> =>
+    await loadInitialSearchResults(deps.q),
   component: UnifiedSearchPage,
 });
 
+async function loadInitialSearchResults(query: string | undefined) {
+  const trimmed = query?.trim();
+  if (!trimmed) return null;
+
+  try {
+    const skillsRaw = (await convexHttp.action(api.search.searchSkills, {
+      query: trimmed,
+      limit: SEARCH_PAGE_SIZE + 1,
+    })) as Array<{
+      skill: UnifiedSkillResult["skill"];
+      ownerHandle: string | null;
+      owner?: UnifiedSkillResult["owner"];
+      score: number;
+    }>;
+    const skillMatches = skillsRaw.map((entry) => ({
+      type: "skill" as const,
+      skill: entry.skill,
+      ownerHandle: entry.ownerHandle,
+      owner: entry.owner ?? null,
+      score: entry.score,
+    }));
+    return {
+      query: trimmed,
+      activeType: "all" as const,
+      limits: {
+        skills: SEARCH_PAGE_SIZE,
+        plugins: SEARCH_PAGE_SIZE,
+        creators: SEARCH_PAGE_SIZE,
+      },
+      skillResults: skillMatches.slice(0, SEARCH_PAGE_SIZE),
+      pluginResults: [],
+      creatorResults: [],
+      skillHasMore: skillMatches.length > SEARCH_PAGE_SIZE,
+      pluginHasMore: false,
+      creatorHasMore: false,
+    };
+  } catch (error) {
+    console.error("Failed to load initial search results:", error);
+    return null;
+  }
+}
+
 function UnifiedSearchPage() {
   const search = Route.useSearch();
+  const initialSearch = Route.useLoaderData() as UnifiedSearchInitialData | null | undefined;
   const navigate = useNavigate();
   const activeType = search.type ?? "all";
   const [query, setQuery] = useState(search.q ?? "");
@@ -61,6 +112,7 @@ function UnifiedSearchPage() {
     creatorHasMore,
     isSearching,
   } = useUnifiedSearch(search.q ?? "", "all", {
+    ...(initialSearch ? { initialData: initialSearch } : null),
     limits: {
       skills: resultLimit,
       plugins: resultLimit,
