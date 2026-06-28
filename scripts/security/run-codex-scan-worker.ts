@@ -109,9 +109,16 @@ type JobDiagnosticInput = {
 
 type CodexScanWorkerClient = Pick<ConvexHttpClient, "action">;
 
+type ProcessJobResult = {
+  completed: boolean;
+  hardFailed: boolean;
+  retryableFailed: boolean;
+};
+
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
+const CLAIM_WINDOW_SHUTDOWN_BUFFER_MS = 3 * 60 * 1000;
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
@@ -1134,6 +1141,18 @@ function codexScanTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CODEX_SCAN_TIMEOUT_MS;
 }
 
+export function minimumClaimWindowMs(maxRuntimeMs: number, scanTimeoutMs: number) {
+  return Math.min(maxRuntimeMs, scanTimeoutMs + CLAIM_WINDOW_SHUTDOWN_BUFFER_MS);
+}
+
+export function shouldClaimSecurityScanBatch(
+  totalClaimed: number,
+  remainingRuntimeMs: number,
+  minClaimWindowMs: number,
+) {
+  return totalClaimed === 0 || remainingRuntimeMs >= minClaimWindowMs;
+}
+
 async function runCodex(
   job: ClaimedJob,
   workspace: string,
@@ -1205,7 +1224,7 @@ export async function processJob(
   token: string,
   job: ClaimedJob,
   diagnosticsRoot: string | undefined,
-): Promise<boolean> {
+): Promise<ProcessJobResult> {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
   const codex: CodexCommandDiagnostic = {};
@@ -1245,7 +1264,7 @@ export async function processJob(
       },
       "security scan job completed",
     );
-    return true;
+    return { completed: true, hardFailed: false, retryableFailed: false };
   } catch (error) {
     errorMessage = sanitizeWorkerErrorMessage(
       error instanceof Error ? error.message : String(error),
@@ -1268,7 +1287,11 @@ export async function processJob(
       },
       "security scan job failed",
     );
-    return false;
+    return {
+      completed: false,
+      hardFailed: !failResult?.retry,
+      retryableFailed: Boolean(failResult?.retry),
+    };
   } finally {
     try {
       await writeJobDiagnostic({
@@ -1350,10 +1373,11 @@ async function main() {
     }:${process.env.CODEX_SECURITY_SCAN_SHARD ?? process.env.GITHUB_JOB ?? "0"}`;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
-  const minClaimWindowMs = Math.min(maxRuntimeMs, codexScanTimeoutMs() + 60_000);
+  const minClaimWindowMs = minimumClaimWindowMs(maxRuntimeMs, codexScanTimeoutMs());
   let totalClaimed = 0;
   let totalCompleted = 0;
   let totalFailed = 0;
+  let totalRetryableFailed = 0;
   let totalClaimFailures = 0;
 
   logger.info(
@@ -1363,7 +1387,7 @@ async function main() {
 
   while (Date.now() < claimDeadline) {
     const remainingRuntimeMs = claimDeadline - Date.now();
-    if (remainingRuntimeMs < minClaimWindowMs) {
+    if (!shouldClaimSecurityScanBatch(totalClaimed, remainingRuntimeMs, minClaimWindowMs)) {
       logger.info(
         {
           event: "security_scan_claim_window_closed",
@@ -1410,8 +1434,9 @@ async function main() {
     const results = await Promise.all(
       jobs.map((job) => processJob(client, token, job, diagnosticsRoot)),
     );
-    totalCompleted += results.filter(Boolean).length;
-    totalFailed += results.filter((ok) => !ok).length;
+    totalCompleted += results.filter((result) => result.completed).length;
+    totalFailed += results.filter((result) => result.hardFailed).length;
+    totalRetryableFailed += results.filter((result) => result.retryableFailed).length;
 
     if (claimBatchDrainedQueue(claimFailures, jobs.length, claimLimit)) break;
   }
@@ -1424,6 +1449,7 @@ async function main() {
       totalClaimFailures,
       totalCompleted,
       totalFailed,
+      totalRetryableFailed,
       workerId,
     },
     "security scan worker summary",

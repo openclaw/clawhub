@@ -14,10 +14,12 @@ import {
   buildPrompt,
   claimBatchDrainedQueue,
   claimFailuresAreFatal,
+  minimumClaimWindowMs,
   normalizeSkillSpectorAnalysis,
   processJob,
   resolveSkillSpectorScanInput,
   resolveSkillSpectorScanInputs,
+  shouldClaimSecurityScanBatch,
   writeArtifactWorkspace,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
@@ -72,6 +74,17 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(claimBatchDrainedQueue(0, 3, 4)).toBe(true);
     expect(claimBatchDrainedQueue(1, 3, 4)).toBe(false);
     expect(claimBatchDrainedQueue(0, 4, 4)).toBe(false);
+  });
+
+  it("keeps enough wall-clock room for one Codex scan plus cleanup before claiming", () => {
+    expect(minimumClaimWindowMs(8 * 60_000, 4 * 60_000)).toBe(7 * 60_000);
+    expect(minimumClaimWindowMs(5 * 60_000, 4 * 60_000)).toBe(5 * 60_000);
+  });
+
+  it("always allows the first claim even when the configured runtime is short", () => {
+    expect(shouldClaimSecurityScanBatch(0, 1, 5 * 60_000)).toBe(true);
+    expect(shouldClaimSecurityScanBatch(1, 1, 5 * 60_000)).toBe(false);
+    expect(shouldClaimSecurityScanBatch(1, 5 * 60_000, 5 * 60_000)).toBe(true);
   });
 
   it("keeps successful claims when a parallel claim request fails", async () => {
@@ -734,7 +747,11 @@ describe("run-codex-scan-worker diagnostics", () => {
         },
         undefined,
       ),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({
+      completed: false,
+      hardFailed: true,
+      retryableFailed: false,
+    });
 
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
@@ -768,7 +785,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     process.env.GITHUB_ACTIONS = "true";
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const client = {
-      action: vi.fn(async (..._args: unknown[]) => ({ retry: false })),
+      action: vi.fn(async (..._args: unknown[]) => ({ retry: true })),
     };
 
     await expect(
@@ -799,7 +816,11 @@ describe("run-codex-scan-worker diagnostics", () => {
         },
         undefined,
       ),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({
+      completed: false,
+      hardFailed: false,
+      retryableFailed: true,
+    });
 
     const failArgs = client.action.mock.calls[0]?.[1] as { error?: unknown } | undefined;
     const error = String(failArgs?.error);
