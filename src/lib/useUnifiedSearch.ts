@@ -195,6 +195,17 @@ export function useUnifiedSearch(
       return () => {};
     }
 
+    const shouldFetchSkills =
+      (activeType === "all" || activeType === "skills") && !matchedInitialData;
+    const shouldFetchPlugins = activeType === "all" || activeType === "plugins";
+    const shouldFetchCreators = activeType === "all" || activeType === "creators";
+
+    if (!shouldFetchSkills && !shouldFetchPlugins && !shouldFetchCreators) {
+      requestRef.current += 1;
+      setIsSearching(false);
+      return () => {};
+    }
+
     requestRef.current += 1;
     const requestId = requestRef.current;
     const controller = new AbortController();
@@ -209,14 +220,14 @@ export function useUnifiedSearch(
             Promise<{ page: PublicPublisherListItem[]; isDone?: boolean }> | null,
           ] = [null, null, null];
 
-          if (activeType === "all" || activeType === "skills") {
+          if (shouldFetchSkills) {
             promises[0] = searchSkills({
               query: trimmedQuery,
               limit: skillLimit + 1,
             });
           }
 
-          if (activeType === "all" || activeType === "plugins") {
+          if (shouldFetchPlugins) {
             promises[1] = fetchPluginCatalog({
               q: trimmedQuery,
               limit: pluginLimit + 1,
@@ -224,7 +235,7 @@ export function useUnifiedSearch(
             });
           }
 
-          if (activeType === "all" || activeType === "creators") {
+          if (shouldFetchCreators) {
             promises[2] = convexHttp.query(api.publishers.listPublicPage, {
               query: trimmedQuery,
               paginationOpts: { cursor: null, numItems: creatorRequestLimit },
@@ -239,20 +250,22 @@ export function useUnifiedSearch(
           const pluginsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
           const creatorsRaw = settled[2].status === "fulfilled" ? settled[2].value : null;
 
-          const skillMatches: UnifiedSkillResult[] = (
-            (skillsRaw as Array<{
-              skill: UnifiedSkillResult["skill"];
-              ownerHandle: string | null;
-              owner?: PublicPublisher | null;
-              score: number;
-            }>) ?? []
-          ).map((entry) => ({
-            type: "skill" as const,
-            skill: entry.skill,
-            ownerHandle: entry.ownerHandle,
-            owner: entry.owner ?? null,
-            score: entry.score,
-          }));
+          const skillMatches: UnifiedSkillResult[] =
+            matchedInitialData?.skillResults ??
+            (
+              (skillsRaw as Array<{
+                skill: UnifiedSkillResult["skill"];
+                ownerHandle: string | null;
+                owner?: PublicPublisher | null;
+                score: number;
+              }>) ?? []
+            ).map((entry) => ({
+              type: "skill" as const,
+              skill: entry.skill,
+              ownerHandle: entry.ownerHandle,
+              owner: entry.owner ?? null,
+              score: entry.score,
+            }));
           const nextSkillResults = skillMatches.slice(0, skillLimit);
 
           const pluginMatches: UnifiedPluginResult[] = (
@@ -274,7 +287,9 @@ export function useUnifiedSearch(
           setSkillCount(nextSkillResults.length);
           setPluginCount(nextPluginResults.length);
           setCreatorCount(nextCreatorResults.length);
-          setSkillHasMore(skillMatches.length > skillLimit);
+          setSkillHasMore(
+            matchedInitialData ? matchedInitialData.skillHasMore : skillMatches.length > skillLimit,
+          );
           setPluginHasMore(pluginMatches.length > pluginLimit);
           setCreatorHasMore(
             creatorLimit < MAX_CREATOR_SEARCH_LIMIT &&
@@ -330,6 +345,7 @@ export function useUnifiedSearch(
     pluginLimit,
     creatorLimit,
     creatorRequestLimit,
+    matchedInitialData,
   ]);
 
   return {

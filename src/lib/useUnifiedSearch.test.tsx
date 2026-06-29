@@ -81,7 +81,7 @@ describe("useUnifiedSearch", () => {
     convexQueryMock.mockReset();
   });
 
-  it("uses matching loader data before the client refresh completes", () => {
+  it("uses matching loader data without repeating the initial skill search", async () => {
     searchSkillsMock.mockResolvedValue([]);
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     convexQueryMock.mockResolvedValue({ page: [], continueCursor: null, isDone: true });
@@ -98,7 +98,7 @@ describe("useUnifiedSearch", () => {
       ],
       pluginResults: [],
       creatorResults: [],
-      skillHasMore: false,
+      skillHasMore: true,
       pluginHasMore: false,
       creatorHasMore: false,
     };
@@ -106,6 +106,7 @@ describe("useUnifiedSearch", () => {
     const { result } = renderHook(() =>
       useUnifiedSearch("japanese-reading-grader", "all", {
         initialData,
+        debounceMs: 0,
         limits: { skills: 25, plugins: 25, creators: 25 },
       }),
     );
@@ -114,6 +115,15 @@ describe("useUnifiedSearch", () => {
       "japanese-reading-grader",
     ]);
     expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
+    expect(result.current.skillHasMore).toBe(true);
+
+    await waitFor(() => {
+      expect(fetchPluginCatalogMock).toHaveBeenCalled();
+      expect(convexQueryMock).toHaveBeenCalled();
+    });
+
+    expect(searchSkillsMock).not.toHaveBeenCalled();
+    expect(result.current.skillHasMore).toBe(true);
   });
 
   it("requests one extra result and exposes hasMore without inflating counts", async () => {

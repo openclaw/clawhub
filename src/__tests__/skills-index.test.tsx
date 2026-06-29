@@ -342,7 +342,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/Loading skills/)).toBeNull();
   });
 
-  it("renders URL-query skill search results from loader data before client refresh", async () => {
+  it("renders URL-query skill search results from loader data without a duplicate refresh", async () => {
     searchMock = { q: "japanese-conversation-scorer" };
     loaderDataMock = {
       key: "japanese-conversation-scorer::0::::",
@@ -358,12 +358,14 @@ describe("SkillsIndex", () => {
         },
       ],
     };
-    convexReactMocks.useAction.mockReturnValue(vi.fn(() => new Promise(() => {})));
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
 
     render(<SkillsIndex />);
 
     expect(screen.getByText("Japanese Conversation Scorer")).toBeTruthy();
     expect(screen.queryByText("No skills found")).toBeNull();
+    expect(actionFn).not.toHaveBeenCalled();
   });
 
   it("skips list fetch and calls search when query is set", async () => {

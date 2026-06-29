@@ -266,6 +266,12 @@ export function useSkillsBrowseModel({
 
   useEffect(() => {
     if (!hasQuery) return () => {};
+    if (matchedInitialSearch && searchLimit === matchedInitialSearch.limit) {
+      searchRequest.current += 1;
+      setIsSearching(false);
+      return () => {};
+    }
+
     searchRequest.current += 1;
     const requestId = searchRequest.current;
     setIsSearching(true);
@@ -293,6 +299,7 @@ export function useSkillsBrowseModel({
     activeTopic,
     hasQuery,
     featuredOnly,
+    matchedInitialSearch,
     searchLimit,
     searchSkills,
     trimmedQuery,
