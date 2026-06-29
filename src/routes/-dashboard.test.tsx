@@ -102,8 +102,7 @@ type TestSkill = {
   badges: {};
   stats: {
     downloads: number;
-    installsCurrent: number;
-    installsAllTime: number;
+    installs: number;
     stars: number;
     versions: number;
   };
@@ -184,7 +183,7 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
     ownerPublisherId: publishers[0].publisher._id,
     tags: {},
     badges: {},
-    stats: { downloads: 1_234, installsCurrent: 12, installsAllTime: 56, stars: 7, versions: 3 },
+    stats: { downloads: 1_234, installs: 56, stars: 7, versions: 3 },
     moderationVerdict: "suspicious",
     moderationFlags: ["flagged.suspicious"],
     isSuspicious: true,

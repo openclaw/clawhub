@@ -118,8 +118,7 @@ function makeListResult(slug: string, displayName: string) {
       tags: {},
       stats: {
         downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
+        installs: 0,
         stars: 0,
         versions: 1,
         comments: 0,

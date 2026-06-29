@@ -1049,8 +1049,7 @@ function makeListResult(
       tags: {},
       stats: {
         downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
+        installs: 0,
         stars: 0,
         versions: 1,
         comments: 0,
@@ -1075,8 +1074,7 @@ function makeSearchResults(count: number) {
       tags: {},
       stats: {
         downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
+        installs: 0,
         stars: 0,
         versions: 1,
         comments: 0,
@@ -1099,8 +1097,7 @@ function makeSearchResult(slug: string, displayName: string, score: number, crea
       tags: {},
       stats: {
         downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
+        installs: 0,
         stars: 0,
         versions: 1,
         comments: 0,
@@ -1128,8 +1125,7 @@ function makeSearchEntry(params: {
       tags: {},
       stats: {
         downloads: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
+        installs: 0,
         stars: params.stars,
         versions: 1,
         comments: 0,

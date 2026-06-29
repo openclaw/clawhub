@@ -216,35 +216,37 @@ describe("cmdExplore", () => {
     const [, args] = mockApiRequest.mock.calls[0] ?? [];
     const url = new URL(String(args?.url));
     expect(url.searchParams.get("limit")).toBe("10");
-    expect(url.searchParams.get("sort")).toBe("installsAllTime");
+    expect(url.searchParams.get("sort")).toBe("installs");
     expect(mockLog).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
   });
 
-  it("supports all-time installs and trending sorts", async () => {
+  it("supports installs and trending sorts", async () => {
     mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
 
     await cmdExplore(makeOpts(), { limit: 5, sort: "newest" });
-    await cmdExplore(makeOpts(), { limit: 5, sort: "installsAllTime" });
+    await cmdExplore(makeOpts(), { limit: 5, sort: "installs" });
     await cmdExplore(makeOpts(), { limit: 5, sort: "trending" });
 
     const first = new URL(String(mockApiRequest.mock.calls[0]?.[1]?.url));
     const second = new URL(String(mockApiRequest.mock.calls[1]?.[1]?.url));
     const third = new URL(String(mockApiRequest.mock.calls[2]?.[1]?.url));
     expect(first.searchParams.get("sort")).toBe("createdAt");
-    expect(second.searchParams.get("sort")).toBe("installsAllTime");
+    expect(second.searchParams.get("sort")).toBe("installs");
     expect(third.searchParams.get("sort")).toBe("trending");
   });
 
-  it("keeps explicit current-install aliases on the current install sort", async () => {
+  it("normalizes legacy install aliases to installs", async () => {
     mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
 
     await cmdExplore(makeOpts(), { sort: "installsCurrent" });
     await cmdExplore(makeOpts(), { sort: "installs-current" });
     await cmdExplore(makeOpts(), { sort: "current" });
+    await cmdExplore(makeOpts(), { sort: "installsAllTime" });
+    await cmdExplore(makeOpts(), { sort: "installs-all-time" });
 
     for (const call of mockApiRequest.mock.calls) {
       const url = new URL(String(call[1]?.url));
-      expect(url.searchParams.get("sort")).toBe("installsCurrent");
+      expect(url.searchParams.get("sort")).toBe("installs");
     }
   });
 
@@ -260,7 +262,7 @@ describe("cmdExplore", () => {
     }
   });
 
-  it("keeps legacy install aliases on the all-time install sort", async () => {
+  it("keeps install alias on the installs sort", async () => {
     mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
 
     await cmdExplore(makeOpts(), { sort: "installs" });
@@ -268,13 +270,13 @@ describe("cmdExplore", () => {
 
     for (const call of mockApiRequest.mock.calls) {
       const url = new URL(String(call[1]?.url));
-      expect(url.searchParams.get("sort")).toBe("installsAllTime");
+      expect(url.searchParams.get("sort")).toBe("installs");
     }
   });
 
-  it("lists accepted legacy install aliases in invalid sort guidance", async () => {
+  it("lists accepted install aliases in invalid sort guidance", async () => {
     await expect(cmdExplore(makeOpts(), { sort: "bad-sort" })).rejects.toThrow(
-      'Invalid sort "bad-sort". Use newest, updated, rating, downloads, installs, installs-current, installs-all-time, or trending.',
+      'Invalid sort "bad-sort". Use newest, updated, rating, downloads, installs, or trending.',
     );
     expect(mockApiRequest).not.toHaveBeenCalled();
   });

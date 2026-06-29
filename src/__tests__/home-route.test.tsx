@@ -15,7 +15,7 @@ const initialListingFixture = {
         _id: "skills:initial",
         slug: "initial-skill",
         displayName: "Initial Skill",
-        stats: { installsAllTime: 10 },
+        stats: { installs: 10 },
       },
       ownerHandle: "builder",
     },

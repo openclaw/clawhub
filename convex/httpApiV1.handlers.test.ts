@@ -2315,6 +2315,10 @@ describe("httpApiV1 handlers", () => {
       ["rating", "stars"],
       ["downloads", "downloads"],
       ["installs", "downloads"],
+      ["installsCurrent", "downloads"],
+      ["installs-current", "downloads"],
+      ["current", "downloads"],
+      ["installsAllTime", "downloads"],
       ["installs-all-time", "downloads"],
       ["trending", null],
     ];

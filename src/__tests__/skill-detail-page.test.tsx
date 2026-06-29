@@ -142,8 +142,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -224,8 +223,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -318,8 +316,7 @@ describe("SkillDetailPage", () => {
           stats: {
             stars: 12,
             downloads: 34,
-            installsCurrent: 5,
-            installsAllTime: 8,
+            installs: 8,
             versions: 1,
             comments: 0,
           },
@@ -420,8 +417,7 @@ describe("SkillDetailPage", () => {
           stats: {
             stars: 12,
             downloads: 34,
-            installsCurrent: 5,
-            installsAllTime: 8,
+            installs: 8,
             versions: 1,
             comments: 0,
           },
@@ -507,8 +503,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 0,
                 downloads: 0,
-                installsCurrent: 0,
-                installsAllTime: 0,
+                installs: 0,
                 versions: 0,
                 comments: 0,
               },
@@ -562,8 +557,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -627,8 +621,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 0,
                 downloads: 0,
-                installsCurrent: 0,
-                installsAllTime: 0,
+                installs: 0,
                 versions: 0,
                 comments: 0,
               },
@@ -700,8 +693,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 0,
                 downloads: 0,
-                installsCurrent: 0,
-                installsAllTime: 0,
+                installs: 0,
                 versions: 0,
                 comments: 0,
               },
@@ -756,8 +748,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -835,8 +826,7 @@ describe("SkillDetailPage", () => {
           stats: {
             stars: 12,
             downloads: 34,
-            installsCurrent: 5,
-            installsAllTime: 8,
+            installs: 8,
             versions: 1,
             comments: 0,
           },
@@ -949,8 +939,7 @@ describe("SkillDetailPage", () => {
                 stats: {
                   stars: 4,
                   downloads: 12,
-                  installsCurrent: 1,
-                  installsAllTime: 3,
+                  installs: 3,
                   versions: 1,
                   comments: 0,
                 },
@@ -986,8 +975,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -1058,8 +1046,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -1180,8 +1167,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -1288,8 +1274,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -1360,8 +1345,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -1482,8 +1466,7 @@ describe("SkillDetailPage", () => {
             stats: {
               stars: 0,
               downloads: 0,
-              installsCurrent: 0,
-              installsAllTime: 0,
+              installs: 0,
               versions: 1,
               comments: 0,
             },
@@ -1575,8 +1558,7 @@ describe("SkillDetailPage", () => {
               stats: {
                 stars: 12,
                 downloads: 34,
-                installsCurrent: 5,
-                installsAllTime: 8,
+                installs: 8,
                 versions: 1,
                 comments: 0,
               },
@@ -1650,8 +1632,7 @@ describe("SkillDetailPage", () => {
             stats: {
               stars: 8,
               downloads: 34,
-              installsCurrent: 5,
-              installsAllTime: 8,
+              installs: 8,
               versions: 1,
               comments: 0,
             },
@@ -1731,8 +1712,7 @@ describe("SkillDetailPage", () => {
             stats: {
               stars: 1,
               downloads: 34,
-              installsCurrent: 5,
-              installsAllTime: 8,
+              installs: 8,
               versions: 1,
               comments: 0,
             },

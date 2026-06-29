@@ -30,7 +30,7 @@ type SkillAuditRow = {
     icon?: string;
     stats: {
       downloads: number;
-      installsAllTime?: number;
+      installs?: number;
       stars: number;
     };
     updatedAt: number;

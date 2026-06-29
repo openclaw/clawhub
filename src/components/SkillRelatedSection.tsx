@@ -111,7 +111,7 @@ export function SkillRelatedSection({
                       </span>
                       <span className="related-skill-stat">
                         <Download size={13} aria-hidden="true" />
-                        {formattedStats.installsAllTime}
+                        {formattedStats.installs}
                       </span>
                     </span>
                   ) : (

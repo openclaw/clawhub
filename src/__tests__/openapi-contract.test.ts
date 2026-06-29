@@ -39,9 +39,7 @@ describe("OpenAPI contract", () => {
       "downloads",
       "stars",
       "rating",
-      "installsCurrent",
       "installs",
-      "installsAllTime",
       "trending",
     ]);
   });

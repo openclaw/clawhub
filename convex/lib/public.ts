@@ -12,36 +12,48 @@ export type PublicPublisher = Pick<
   "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
 > & { official?: boolean };
 
-export type PublicSkill = Pick<
-  Doc<"skills">,
-  | "_id"
-  | "_creationTime"
-  | "slug"
-  | "displayName"
-  | "summary"
-  | "icon"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "canonicalSkillId"
-  | "forkOf"
-  | "latestVersionId"
-  | "installKind"
-  | "githubPath"
-  | "githubCurrentCommit"
-  | "githubCurrentStatus"
-  | "githubScanStatus"
-  | "githubHasSkillCard"
-  | "tags"
-  | "categories"
-  | "inferredCategories"
-  | "inferredFromVersionId"
-  | "topics"
-  | "badges"
-  | "stats"
-  | "isSuspicious"
-  | "createdAt"
-  | "updatedAt"
+export type PublicSkillStats = {
+  downloads: number;
+  stars: number;
+  installs: number;
+  versions: number;
+  comments: number;
+};
+
+export type PublicSkill = Omit<
+  Pick<
+    Doc<"skills">,
+    | "_id"
+    | "_creationTime"
+    | "slug"
+    | "displayName"
+    | "summary"
+    | "icon"
+    | "ownerUserId"
+    | "ownerPublisherId"
+    | "canonicalSkillId"
+    | "forkOf"
+    | "latestVersionId"
+    | "installKind"
+    | "githubPath"
+    | "githubCurrentCommit"
+    | "githubCurrentStatus"
+    | "githubScanStatus"
+    | "githubHasSkillCard"
+    | "tags"
+    | "categories"
+    | "inferredCategories"
+    | "inferredFromVersionId"
+    | "topics"
+    | "badges"
+    | "stats"
+    | "isSuspicious"
+    | "createdAt"
+    | "updatedAt"
+  >,
+  "stats"
 > & {
+  stats: PublicSkillStats;
   githubSourceRepo?: string;
 };
 
@@ -128,8 +140,7 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
   const stats = {
     downloads: readCanonicalStat(skill, "downloads"),
     stars: readCanonicalStat(skill, "stars"),
-    installsCurrent: readCanonicalStat(skill, "installsCurrent"),
-    installsAllTime: readCanonicalStat(skill, "installsAllTime"),
+    installs: readCanonicalStat(skill, "installsAllTime"),
     versions: skill.stats?.versions ?? 0,
     comments: skill.stats?.comments ?? 0,
   };

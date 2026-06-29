@@ -235,7 +235,10 @@ function comparePopularityStats(a: PopularityStats, b: PopularityStats) {
 function compareSkillTrustAndUsage(a: SkillSearchEntry, b: SkillSearchEntry) {
   return (
     Number(Boolean(b.owner?.official)) - Number(Boolean(a.owner?.official)) ||
-    comparePopularityStats(a.skill.stats, b.skill.stats) ||
+    comparePopularityStats(
+      { stars: a.skill.stats.stars, installsAllTime: a.skill.stats.installs },
+      { stars: b.skill.stats.stars, installsAllTime: b.skill.stats.installs },
+    ) ||
     (b.skill.stats.downloads ?? 0) - (a.skill.stats.downloads ?? 0)
   );
 }
@@ -490,7 +493,7 @@ export const searchSkills: ReturnType<typeof action> = action({
             entry.skill.displayName,
             entry.skill.slug,
             {
-              installsAllTime: entry.skill.stats.installsAllTime,
+              installsAllTime: entry.skill.stats.installs,
               stars: entry.skill.stats.stars,
             },
           ),

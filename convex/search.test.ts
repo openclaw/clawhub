@@ -1159,7 +1159,7 @@ describe("search helpers", () => {
           slug: "antigravity-image-generator",
           displayName: "Antigravity Image Generator",
           downloads: 1_000_000_000,
-          installsAllTime: 1_000,
+          installs: 1_000,
           stars: 100,
         }),
         version: null,
@@ -1833,7 +1833,7 @@ describe("search helpers", () => {
         slug: "tool-installed",
         displayName: "Tool",
         downloads: 0,
-        installsAllTime: 1_000,
+        installs: 1_000,
         stars: 0,
       }),
       version: null,
@@ -1847,7 +1847,7 @@ describe("search helpers", () => {
         slug: "tool-downloaded",
         displayName: "Tool",
         downloads: 1_000_000_000,
-        installsAllTime: 0,
+        installs: 0,
         stars: 0,
       }),
       version: null,
@@ -1883,7 +1883,7 @@ describe("search helpers", () => {
         slug: "tool-installed",
         displayName: "Tool",
         downloads: 0,
-        installsAllTime: 1_000,
+        installs: 1_000,
         stars: 1_000,
       }),
       version: null,
@@ -1896,7 +1896,7 @@ describe("search helpers", () => {
         slug: "tool-downloaded",
         displayName: "Tool",
         downloads: 1_000_000_000,
-        installsAllTime: 0,
+        installs: 0,
         stars: 1_000,
       }),
       version: null,
@@ -1947,8 +1947,8 @@ describe("search helpers", () => {
       stats: skillDoc.stats,
       statsDownloads: skillDoc.stats.downloads,
       statsStars: skillDoc.stats.stars,
-      statsInstallsCurrent: skillDoc.stats.installsCurrent,
-      statsInstallsAllTime: skillDoc.stats.installsAllTime,
+      statsInstallsCurrent: skillDoc.stats.installsCurrent ?? 0,
+      statsInstallsAllTime: skillDoc.stats.installsAllTime ?? 0,
       softDeletedAt: skillDoc.softDeletedAt,
       moderationStatus: skillDoc.moderationStatus,
       moderationFlags: skillDoc.moderationFlags,
@@ -2250,7 +2250,7 @@ function makePublicSkill(params: {
   summary?: string;
   downloads?: number;
   ownerPublisherId?: string;
-  installsAllTime?: number;
+  installs?: number;
   stars?: number;
   categories?: string[];
   topics?: string[];
@@ -2274,8 +2274,7 @@ function makePublicSkill(params: {
     badges: {},
     stats: {
       downloads: params.downloads ?? 0,
-      installsCurrent: 0,
-      installsAllTime: params.installsAllTime ?? 0,
+      installs: params.installs ?? 0,
       stars: params.stars ?? 0,
       versions: 1,
       comments: 0,
@@ -2294,6 +2293,9 @@ function makeSkillDoc(params: {
   moderationFlags?: string[];
   moderationReason?: string;
   softDeletedAt?: number;
+  downloads?: number;
+  installs?: number;
+  stars?: number;
   categories?: string[];
   topics?: string[];
   inferredCategories?: string[];
@@ -2301,6 +2303,14 @@ function makeSkillDoc(params: {
 }) {
   return {
     ...makePublicSkill(params),
+    stats: {
+      downloads: params.downloads ?? 0,
+      installsCurrent: 0,
+      installsAllTime: params.installs ?? 0,
+      stars: params.stars ?? 0,
+      versions: 1,
+      comments: 0,
+    },
     _creationTime: 1,
     moderationStatus: "active",
     moderationFlags: params.moderationFlags ?? [],

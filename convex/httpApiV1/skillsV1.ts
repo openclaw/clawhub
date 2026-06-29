@@ -93,8 +93,7 @@ type SearchSkillEntry = {
     stats: {
       downloads?: number;
       stars?: number;
-      installsCurrent?: number;
-      installsAllTime?: number;
+      installs?: number;
     };
     statsDownloads?: number;
   } | null;
@@ -1448,11 +1447,11 @@ function parseListSort(value: string | null): SkillListSort | null {
     normalized === "installs" ||
     normalized === "install" ||
     normalized === "installscurrent" ||
-    normalized === "installs-current"
+    normalized === "installs-current" ||
+    normalized === "current" ||
+    normalized === "installsalltime" ||
+    normalized === "installs-all-time"
   ) {
-    return "downloads";
-  }
-  if (normalized === "installsalltime" || normalized === "installs-all-time") {
     return "downloads";
   }
   if (normalized === "trending") return "trending";

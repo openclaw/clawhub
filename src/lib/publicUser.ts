@@ -84,35 +84,47 @@ export function readPublicDownloadCount(value: { downloads?: number; installs?: 
   return value.downloads ?? value.installs ?? 0;
 }
 
-export type PublicSkill = Pick<
-  Doc<"skills">,
-  | "_id"
-  | "_creationTime"
-  | "slug"
-  | "displayName"
-  | "summary"
-  | "icon"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "canonicalSkillId"
-  | "forkOf"
-  | "latestVersionId"
-  | "installKind"
-  | "githubPath"
-  | "githubCurrentCommit"
-  | "githubCurrentStatus"
-  | "githubScanStatus"
-  | "githubHasSkillCard"
-  | "tags"
-  | "categories"
-  | "inferredCategories"
-  | "inferredFromVersionId"
-  | "topics"
-  | "badges"
-  | "stats"
-  | "isSuspicious"
-  | "createdAt"
-  | "updatedAt"
+type PublicSkillStats = {
+  downloads: number;
+  stars: number;
+  installs: number;
+  versions: number;
+  comments: number;
+};
+
+export type PublicSkill = Omit<
+  Pick<
+    Doc<"skills">,
+    | "_id"
+    | "_creationTime"
+    | "slug"
+    | "displayName"
+    | "summary"
+    | "icon"
+    | "ownerUserId"
+    | "ownerPublisherId"
+    | "canonicalSkillId"
+    | "forkOf"
+    | "latestVersionId"
+    | "installKind"
+    | "githubPath"
+    | "githubCurrentCommit"
+    | "githubCurrentStatus"
+    | "githubScanStatus"
+    | "githubHasSkillCard"
+    | "tags"
+    | "categories"
+    | "inferredCategories"
+    | "inferredFromVersionId"
+    | "topics"
+    | "badges"
+    | "stats"
+    | "isSuspicious"
+    | "createdAt"
+    | "updatedAt"
+  >,
+  "stats"
 > & {
+  stats: PublicSkillStats;
   githubSourceRepo?: string;
 };

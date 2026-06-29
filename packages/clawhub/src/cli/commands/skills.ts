@@ -911,15 +911,8 @@ export async function cmdUninstall(
   }
 }
 
-type ExploreSort = "newest" | "rating" | "downloads" | "installs" | "installsAllTime" | "trending";
-type ApiExploreSort =
-  | "createdAt"
-  | "updated"
-  | "downloads"
-  | "stars"
-  | "installsCurrent"
-  | "installsAllTime"
-  | "trending";
+type ExploreSort = "newest" | "rating" | "downloads" | "installs" | "trending";
+type ApiExploreSort = "createdAt" | "updated" | "downloads" | "stars" | "installs" | "trending";
 
 export async function cmdExplore(
   opts: GlobalOpts,
@@ -1150,23 +1143,22 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
     return { sort: "downloads", apiSort: "downloads" };
   }
   if (normalized === "installs" || normalized === "install") {
-    return { sort: "installs", apiSort: "installsAllTime" };
+    return { sort: "installs", apiSort: "installs" };
   }
   if (
     normalized === "installscurrent" ||
     normalized === "installs-current" ||
-    normalized === "current"
+    normalized === "current" ||
+    normalized === "installsalltime" ||
+    normalized === "installs-all-time"
   ) {
-    return { sort: "installs", apiSort: "installsCurrent" };
-  }
-  if (normalized === "installsalltime" || normalized === "installs-all-time") {
-    return { sort: "installsAllTime", apiSort: "installsAllTime" };
+    return { sort: "installs", apiSort: "installs" };
   }
   if (normalized === "trending") {
     return { sort: "trending", apiSort: "trending" };
   }
   return fail(
-    `Invalid sort "${raw}". Use newest, updated, rating, downloads, installs, installs-current, installs-all-time, or trending.`,
+    `Invalid sort "${raw}". Use newest, updated, rating, downloads, installs, or trending.`,
   );
 }
 

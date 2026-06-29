@@ -59,8 +59,7 @@ describe("public skill mapping", () => {
     expect(mapped?.stats).toEqual({
       downloads: 12,
       stars: 3,
-      installsCurrent: 5,
-      installsAllTime: 7,
+      installs: 7,
       versions: 0,
       comments: 0,
     });

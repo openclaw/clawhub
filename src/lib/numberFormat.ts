@@ -1,7 +1,7 @@
 export type SkillStatsTriplet = {
   stars: number;
   downloads: number;
-  installsAllTime?: number | null;
+  installs?: number | null;
 };
 
 const THOUSAND = 1_000;
@@ -31,7 +31,7 @@ export function formatSkillStatsTriplet(stats: SkillStatsTriplet) {
   return {
     stars: formatCompactStat(stats.stars),
     downloads: formatCompactStat(stats.downloads),
-    installsAllTime: formatCompactStat(stats.installsAllTime ?? 0),
+    installs: formatCompactStat(stats.installs ?? 0),
   };
 }
 
