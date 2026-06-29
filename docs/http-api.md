@@ -76,9 +76,11 @@ Client guidance:
 
 IP source:
 
-- Uses trusted client IP headers, including `cf-connecting-ip`, only when the
-  deployment explicitly enables trusted forwarded headers and the request was
-  marked by ClawHub's edge trust secret.
+- Uses trusted client IP headers only when the deployment explicitly enables
+  trusted forwarded headers and the request was marked by ClawHub's edge trust
+  secret.
+- Prefers the edge-stamped `x-forwarded-for` value over connection IP headers
+  so Vercel rewrites are attributed to the original client, not Vercel egress.
 - ClawHub uses trusted forwarding headers to identify client IPs at the edge;
   direct Convex-origin requests without the edge secret use fallback buckets.
 - If no trusted client IP is available, anonymous requests use fallback buckets

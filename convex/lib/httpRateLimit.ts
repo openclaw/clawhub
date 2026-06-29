@@ -187,23 +187,21 @@ function getAuthenticatedRateLimit(kind: RateLimitKind, user: Pick<Doc<"users">,
 export function getClientIp(request: Request): string | null {
   if (!shouldTrustClientIpHeaders(request)) return null;
 
-  const cfHeader = request.headers.get("cf-connecting-ip");
-  if (cfHeader) return splitFirstIp(cfHeader);
-
   const forwarded =
     request.headers.get("x-forwarded-for") ??
     request.headers.get("x-real-ip") ??
-    request.headers.get("fly-client-ip");
+    request.headers.get("fly-client-ip") ??
+    request.headers.get("cf-connecting-ip");
 
   return splitFirstIp(forwarded);
 }
 
 function getClientIpSource(request: Request) {
   if (!shouldTrustClientIpHeaders(request)) return "none";
-  if (request.headers.get("cf-connecting-ip")) return "cf-connecting-ip";
   if (request.headers.get("x-forwarded-for")) return "x-forwarded-for";
   if (request.headers.get("x-real-ip")) return "x-real-ip";
   if (request.headers.get("fly-client-ip")) return "fly-client-ip";
+  if (request.headers.get("cf-connecting-ip")) return "cf-connecting-ip";
   return "none";
 }
 

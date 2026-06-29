@@ -136,8 +136,11 @@ Ensure Convex env is set (auth + embeddings):
 `TRUST_FORWARDED_IPS=true` is only effective when Convex also has
 `CLAWHUB_EDGE_SECRET`. The Vercel middleware strips caller-supplied client IP and
 edge trust headers before adding its own secret plus `x-forwarded-for` /
-`x-real-ip` for `/api/*` and hosted feed rewrites. Direct `*.convex.site` calls
-without the secret remain in the missing-IP fallback bucket.
+`x-real-ip` for `/api/*` and hosted feed rewrites. Convex prefers that
+edge-stamped `x-forwarded-for` value over connection IP headers, because the
+connection into Convex may be Vercel rather than the original client. Direct
+`*.convex.site` calls without the secret remain in the missing-IP fallback
+bucket.
 
 ## 2) Deploy web app (Vercel)
 

@@ -148,7 +148,7 @@ describe("getClientIp", () => {
     expect(getClientIp(request)).toBeNull();
   });
 
-  it("returns first ip from cf-connecting-ip when trusted edge mode is enabled", () => {
+  it("falls back to cf-connecting-ip when trusted edge mode has no forwarded header", () => {
     const request = new Request("https://example.com", {
       headers: {
         "x-clawhub-edge-secret": "edge-secret",
@@ -172,10 +172,11 @@ describe("getClientIp", () => {
     expect(getClientIp(request)).toBe("203.0.113.9");
   });
 
-  it("prefers x-forwarded-for over x-real-ip when trusted edge mode is enabled", () => {
+  it("prefers x-forwarded-for over edge connection IP headers", () => {
     const request = new Request("https://example.com", {
       headers: {
         "x-clawhub-edge-secret": "edge-secret",
+        "cf-connecting-ip": "192.0.2.44",
         "x-forwarded-for": "203.0.113.9, 198.51.100.2",
         "x-real-ip": "198.51.100.77",
       },
