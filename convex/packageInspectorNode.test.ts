@@ -47,7 +47,7 @@ describe("package inspector publish normalization", () => {
   it("keeps legacy author-facing warnings and drops internal coverage findings", () => {
     const result = normalizeInspectorReportForPublish({
       status: "pass",
-      summary: { breakageCount: 0, warningCount: 2, issueCount: 2 },
+      summary: { breakageCount: 0, warningCount: 3, issueCount: 3 },
       warnings: [
         {
           code: "package-plugin-api-compat-missing",
@@ -60,6 +60,12 @@ describe("package inspector publish normalization", () => {
           level: "warning",
           message: "runtime tools need capture before contract judgment",
         },
+        {
+          code: "sdk-session-file-helper",
+          level: "warning",
+          issueClass: "deprecation-warning",
+          message: "deprecated session file-path helper is still used",
+        },
       ],
     });
 
@@ -67,8 +73,8 @@ describe("package inspector publish normalization", () => {
       status: "pass",
       summary: {
         breakageCount: 0,
-        warningCount: 1,
-        issueCount: 1,
+        warningCount: 2,
+        issueCount: 2,
       },
       warnings: [
         {
@@ -77,6 +83,15 @@ describe("package inspector publish normalization", () => {
             summary: "Declare the OpenClaw plugin API range this package supports.",
             docsUrl:
               "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
+          },
+        },
+        {
+          code: "sdk-session-file-helper",
+          authorRemediation: {
+            summary:
+              "Replace deprecated session file-path helpers with session entry and transcript identity APIs.",
+            docsUrl:
+              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#sdk-session-file-helper",
           },
         },
       ],

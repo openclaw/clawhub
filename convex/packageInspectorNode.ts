@@ -80,6 +80,16 @@ const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
   "reserved-sdk-import": "Stop importing reserved bundled-plugin SDK compatibility paths.",
   "security-manifest-schema-unavailable":
     "Remove or update the unsupported security manifest schema reference.",
+  "sdk-load-session-store":
+    "Replace deprecated loadSessionStore whole-store access with row-scoped session helpers.",
+  "sdk-session-file-helper":
+    "Replace deprecated session file-path helpers with session entry and transcript identity APIs.",
+  "sdk-session-store-write":
+    "Replace deprecated whole-store session writes with row-scoped session helpers.",
+  "sdk-session-transcript-file-target":
+    "Replace legacy transcript file targets with public transcript identity or target helpers.",
+  "sdk-session-transcript-low-level":
+    "Replace low-level transcript writes with the structured transcript runtime helpers.",
   "unrecognized-security-manifest":
     "Remove unsupported security manifest files until OpenClaw documents a versioned security manifest schema.",
 } satisfies Record<string, string>;
