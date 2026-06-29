@@ -81,7 +81,7 @@
     "@fontsource/manrope": "5.2.8",
     "@fontsource/noto-sans-sc": "5.2.9",
     "@monaco-editor/react": "4.7.0",
-    "@openclaw/plugin-inspector": "0.3.15",
+    "@openclaw/plugin-inspector": "0.3.16",
     "@radix-ui/react-avatar": "1.2.0",
     "@radix-ui/react-dialog": "1.1.17",
     "@radix-ui/react-dropdown-menu": "2.1.18",
