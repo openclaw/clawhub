@@ -2164,6 +2164,52 @@ describe("package commands", () => {
     }
   });
 
+  it("prefers openclaw.plugin.json over skills markers when detecting package family", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await mkdir(join(folder, "skills", "demo"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "demo.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "skills", "demo", "SKILL.md"), "---\nname: demo\n---\n", "utf8");
+      await writeFile(join(folder, "dist", "index.js"), "export default {};\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_code",
+        releaseId: "rel_code",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "demo-plugin", {
+        sourceRepo: "openclaw/demo-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(getPublishPayload()).toMatchObject({
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+      });
+      expect(getUploadedClawPackNames()).toEqual(["demo-plugin-1.0.0.tgz"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects code-plugin publish without source metadata", async () => {
     const workdir = await makeTmpWorkdir();
     try {

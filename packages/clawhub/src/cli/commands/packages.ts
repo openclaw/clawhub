@@ -2117,19 +2117,20 @@ const REAL_BUNDLE_MANIFESTS = [
   { path: ".cursor-plugin/plugin.json", format: "cursor" },
 ] as const;
 
-function hasRealBundleMarker(fileSet: Set<string>) {
-  return (
-    REAL_BUNDLE_MANIFESTS.some((marker) => fileSet.has(marker.path)) ||
-    Array.from(fileSet).some(
-      (path) =>
-        path.startsWith("skills/") ||
-        path.startsWith("commands/") ||
-        path.startsWith("agents/") ||
-        path === "hooks/hooks.json" ||
-        path === ".mcp.json" ||
-        path === ".lsp.json" ||
-        path === "settings.json",
-    )
+function hasRealBundleManifest(fileSet: Set<string>) {
+  return REAL_BUNDLE_MANIFESTS.some((marker) => fileSet.has(marker.path));
+}
+
+function hasLooseBundleMarker(fileSet: Set<string>) {
+  return Array.from(fileSet).some(
+    (path) =>
+      path.startsWith("skills/") ||
+      path.startsWith("commands/") ||
+      path.startsWith("agents/") ||
+      path === "hooks/hooks.json" ||
+      path === ".mcp.json" ||
+      path === ".lsp.json" ||
+      path === "settings.json",
   );
 }
 
@@ -2138,8 +2139,9 @@ function detectPackageFamily(
   explicit?: "code-plugin" | "bundle-plugin",
 ): "code-plugin" | "bundle-plugin" {
   if (explicit) return explicit;
-  if (hasRealBundleMarker(fileSet)) return "bundle-plugin";
+  if (hasRealBundleManifest(fileSet)) return "bundle-plugin";
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
+  if (hasLooseBundleMarker(fileSet)) return "bundle-plugin";
   return fail("Could not detect package family. Use --family.");
 }
 
