@@ -1,7 +1,11 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { normalizeFindings } from "./package-inspector-nightly-scan";
+import {
+  normalizeFindings,
+  parsePackageNames,
+  resolveArtifactKind,
+} from "./package-inspector-nightly-scan";
 
 describe("package-inspector-nightly-scan", () => {
   it("preserves author remediation when normalizing inspector issues for upload", () => {
@@ -60,5 +64,31 @@ describe("package-inspector-nightly-scan", () => {
         authorRemediation: undefined,
       }),
     ]);
+  });
+
+  it("parses targeted package names from comma or newline separated workflow input", () => {
+    expect(
+      parsePackageNames(`
+        @openclaw/discord, @botcord/botcord
+        @openclaw/discord
+        watcher-channel
+      `),
+    ).toEqual(["@openclaw/discord", "@botcord/botcord", "watcher-channel"]);
+  });
+
+  it("resolves artifact kind from the worker artifact header for targeted scans", () => {
+    expect(
+      resolveArtifactKind(
+        undefined,
+        new Headers({ "X-ClawHub-Artifact-Type": "npm-pack-tarball" }),
+      ),
+    ).toBe("npm-pack");
+    expect(
+      resolveArtifactKind(
+        undefined,
+        new Headers({ "X-ClawHub-Artifact-Type": "legacy-plugin-zip" }),
+      ),
+    ).toBe("legacy-zip");
+    expect(resolveArtifactKind("npm-pack", new Headers())).toBe("npm-pack");
   });
 });

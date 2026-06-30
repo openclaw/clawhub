@@ -12,7 +12,7 @@ type ClaimItem = {
   ownerPublisherId?: string;
   packageName: string;
   version: string;
-  artifactKind: string;
+  artifactKind?: string;
   downloadUrl: string;
 };
 
@@ -58,6 +58,7 @@ const siteUrl = (process.env.CLAWHUB_SITE_URL ?? "https://clawhub.ai").replace(/
 const token = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
 const batchSize = process.env.PLUGIN_INSPECTOR_BATCH_SIZE ?? "25";
 const dryRun = parseBoolean(process.env.PLUGIN_INSPECTOR_DRY_RUN);
+const targetPackageNames = parsePackageNames(process.env.PLUGIN_INSPECTOR_PACKAGE_NAMES);
 const dryRunMaxBatches = Math.max(
   1,
   Math.min(
@@ -84,92 +85,37 @@ export async function runPackageInspectorNightlyScan() {
   let batches = 0;
   let truncated = false;
 
-  do {
-    const claim = await claimBatch(cursor);
-    batches += 1;
-    cursor = claim.nextCursor ?? null;
-    claimed += claim.items.length;
+  if (targetPackageNames.length > 0) {
+    const items = await resolveTargetPackageItems(targetPackageNames);
+    batches = 1;
+    claimed = items.length;
+    for (const item of items) {
+      const result = await inspectPackageItem(item, inspectorVersion);
+      if (result.failed) hadWorkerFailure = true;
+      if (result.impactEntry) impactEntries.push(result.impactEntry);
+      if (result.scanned) scanned += 1;
+    }
+  } else {
+    do {
+      const claim = await claimBatch(cursor);
+      batches += 1;
+      cursor = claim.nextCursor ?? null;
+      claimed += claim.items.length;
 
-    for (const item of claim.items) {
-      const workRoot = path.join(
-        tmpdir(),
-        `clawhub-plugin-inspector-bulk-scan-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      );
-      const pluginRoot = path.join(workRoot, "plugin");
-      const reportDir = path.resolve(
-        artifactRoot,
-        safeArtifactName(`${item.packageName}-${item.version}`),
-      );
-      await mkdir(pluginRoot, { recursive: true });
-      await mkdir(reportDir, { recursive: true });
-      try {
-        const artifactPath = path.join(
-          workRoot,
-          item.artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
-        );
-        const artifact = await fetch(item.downloadUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!artifact.ok) {
-          throw new Error(`download failed ${artifact.status}: ${await artifact.text()}`);
-        }
-        await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
-        if (item.artifactKind === "npm-pack") {
-          run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
-        } else {
-          run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
-        }
-        const scanRoot =
-          item.artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
-            ? path.join(pluginRoot, "package")
-            : pluginRoot;
-        await writeSyntheticConfigIfNeeded(scanRoot, item.packageName);
-        const scan = spawnSync(
-          "bun",
-          [clawhubCliEntry, "package", "validate", scanRoot, "--out", reportDir, "--json"],
-          { cwd: repoRoot, encoding: "utf8" },
-        );
-        await writeFile(path.join(reportDir, "stdout.txt"), scan.stdout ?? "");
-        await writeFile(path.join(reportDir, "stderr.txt"), scan.stderr ?? "");
-        const reportPath = path.join(reportDir, "plugin-inspector-report.json");
-        if (!existsSync(reportPath)) {
-          throw new Error(
-            scan.stderr || scan.stdout || `clawhub package validate exited ${scan.status}`,
-          );
-        }
-        const report = JSON.parse(await readFile(reportPath, "utf8"));
-        const findings = normalizeFindings(report);
-        const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
-        scanned += 1;
-        if (dryRun) {
-          impactEntries.push(toImpactEntry(item, findings, targetOpenClawVersion));
-        }
-        if (!dryRun) {
-          await postJson(`${siteUrl}/api/v1/package-inspector/results`, {
-            packageId: item.packageId,
-            releaseId: item.releaseId,
-            inspectorVersion,
-            targetOpenClawVersion,
-            findings,
-          });
-        }
-      } catch (error) {
-        hadWorkerFailure = true;
-        const message = error instanceof Error ? error.message : String(error);
-        await writeFile(path.join(reportDir, "error.txt"), message);
-        console.error(`Plugin Inspector bulk scan failed for ${item.packageName}@${item.version}`);
-        console.error(message);
-      } finally {
-        await rm(workRoot, { recursive: true, force: true });
+      for (const item of claim.items) {
+        const result = await inspectPackageItem(item, inspectorVersion);
+        if (result.failed) hadWorkerFailure = true;
+        if (result.impactEntry) impactEntries.push(result.impactEntry);
+        if (result.scanned) scanned += 1;
       }
-    }
 
-    if (!dryRun) break;
-    if (cursor && batches >= dryRunMaxBatches) {
-      truncated = true;
-      break;
-    }
-  } while (dryRun && cursor);
+      if (!dryRun) break;
+      if (cursor && batches >= dryRunMaxBatches) {
+        truncated = true;
+        break;
+      }
+    } while (dryRun && cursor);
+  }
 
   if (dryRun) {
     const summary = summarizeImpact({
@@ -196,6 +142,90 @@ export async function runPackageInspectorNightlyScan() {
   }
 }
 
+async function inspectPackageItem(item: ClaimItem, inspectorVersion: string) {
+  const workRoot = path.join(
+    tmpdir(),
+    `clawhub-plugin-inspector-bulk-scan-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  );
+  const pluginRoot = path.join(workRoot, "plugin");
+  const reportDir = path.resolve(
+    artifactRoot,
+    safeArtifactName(`${item.packageName}-${item.version}`),
+  );
+  await mkdir(pluginRoot, { recursive: true });
+  await mkdir(reportDir, { recursive: true });
+  try {
+    const artifact = await fetch(item.downloadUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!artifact.ok) {
+      throw new Error(`download failed ${artifact.status}: ${await artifact.text()}`);
+    }
+    const artifactKind = resolveArtifactKind(item.artifactKind, artifact.headers);
+    const artifactPath = path.join(
+      workRoot,
+      artifactKind === "npm-pack" ? "plugin.tgz" : "plugin.zip",
+    );
+    await writeFile(artifactPath, Buffer.from(await artifact.arrayBuffer()));
+    if (artifactKind === "npm-pack") {
+      run("tar", ["-xzf", artifactPath, "-C", pluginRoot, "--strip-components=1"]);
+    } else {
+      run("unzip", ["-q", artifactPath, "-d", pluginRoot]);
+    }
+    const scanRoot =
+      artifactKind === "legacy-zip" && existsSync(path.join(pluginRoot, "package"))
+        ? path.join(pluginRoot, "package")
+        : pluginRoot;
+    await writeSyntheticConfigIfNeeded(scanRoot, item.packageName);
+    const scan = spawnSync(
+      "bun",
+      [clawhubCliEntry, "package", "validate", scanRoot, "--out", reportDir, "--json"],
+      { cwd: repoRoot, encoding: "utf8" },
+    );
+    await writeFile(path.join(reportDir, "stdout.txt"), scan.stdout ?? "");
+    await writeFile(path.join(reportDir, "stderr.txt"), scan.stderr ?? "");
+    const reportPath = path.join(reportDir, "plugin-inspector-report.json");
+    if (!existsSync(reportPath)) {
+      throw new Error(
+        scan.stderr || scan.stdout || `clawhub package validate exited ${scan.status}`,
+      );
+    }
+    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const findings = normalizeFindings(report);
+    const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
+    if (!dryRun) {
+      await postJson(`${siteUrl}/api/v1/package-inspector/results`, {
+        packageId: item.packageId,
+        releaseId: item.releaseId,
+        inspectorVersion,
+        targetOpenClawVersion,
+        findings,
+      });
+    }
+    return {
+      failed: false,
+      scanned: true,
+      impactEntry: dryRun ? toImpactEntry(item, findings, targetOpenClawVersion) : undefined,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await writeFile(path.join(reportDir, "error.txt"), message);
+    console.error(`Plugin Inspector bulk scan failed for ${item.packageName}@${item.version}`);
+    console.error(message);
+    return { failed: true, scanned: false, impactEntry: undefined };
+  } finally {
+    await rm(workRoot, { recursive: true, force: true });
+  }
+}
+
+export function resolveArtifactKind(value: string | undefined, headers: Headers) {
+  if (value === "npm-pack" || value === "legacy-zip") return value;
+  const header = headers.get("X-ClawHub-Artifact-Type")?.trim();
+  if (header === "npm-pack-tarball") return "npm-pack";
+  if (header === "legacy-plugin-zip") return "legacy-zip";
+  return "legacy-zip";
+}
+
 if (import.meta.main) {
   await runPackageInspectorNightlyScan();
 }
@@ -206,6 +236,47 @@ async function claimBatch(cursor: string | null) {
   url.searchParams.set("dryRun", dryRun ? "true" : "false");
   if (dryRun && cursor) url.searchParams.set("cursor", cursor);
   return await postJson<ClaimResponse>(url.toString(), {});
+}
+
+async function resolveTargetPackageItems(packageNames: string[]): Promise<ClaimItem[]> {
+  const items: ClaimItem[] = [];
+  for (const packageName of packageNames) {
+    const detail = await fetch(`${siteUrl}/api/v1/packages/${encodeURIComponent(packageName)}`);
+    if (!detail.ok) {
+      throw new Error(
+        `package lookup failed for ${packageName} ${detail.status}: ${await detail.text()}`,
+      );
+    }
+    const payload = (await detail.json()) as { package?: unknown };
+    const pkg = payload.package;
+    if (!isPlainObject(pkg))
+      throw new Error(`package lookup returned no package for ${packageName}`);
+    const packageRecord = pkg as Record<string, unknown>;
+    const packageId = stringValue(packageRecord._id);
+    const releaseId = stringValue(packageRecord.latestReleaseId);
+    const version = stringValue(packageRecord.latestVersion);
+    const family = stringValue(packageRecord.family);
+    const channel = stringValue(packageRecord.channel);
+    if (!packageId || !releaseId || !version) {
+      throw new Error(
+        `package lookup returned incomplete latest release metadata for ${packageName}`,
+      );
+    }
+    if (family !== "code-plugin" && family !== "bundle-plugin") {
+      throw new Error(`${packageName} is not a plugin package`);
+    }
+    if (channel === "private") {
+      throw new Error(`${packageName} is private and cannot be scanned by this workflow`);
+    }
+    items.push({
+      packageId,
+      releaseId,
+      packageName: stringValue(packageRecord.name) ?? packageName,
+      version,
+      downloadUrl: `${siteUrl}/api/v1/package-inspector/artifact?releaseId=${encodeURIComponent(releaseId)}`,
+    });
+  }
+  return items;
 }
 
 async function postJson<T = unknown>(url: string, body: unknown): Promise<T> {
@@ -478,6 +549,17 @@ function safeArtifactName(value: string) {
 
 function parseBoolean(value: string | undefined) {
   return ["1", "true", "yes", "on"].includes((value ?? "").trim().toLowerCase());
+}
+
+export function parsePackageNames(value: string | undefined) {
+  return [
+    ...new Set(
+      (value ?? "")
+        .split(/[\s,]+/)
+        .map((name) => name.trim())
+        .filter(Boolean),
+    ),
+  ];
 }
 
 function run(command: string, args: string[]) {

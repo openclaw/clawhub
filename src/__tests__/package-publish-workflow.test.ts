@@ -47,6 +47,7 @@ describe("package publish workflow", () => {
         workflow_dispatch?: {
           inputs?: {
             dry_run?: { default?: string };
+            package_names?: { default?: string };
           };
         };
       };
@@ -82,7 +83,10 @@ describe("package publish workflow", () => {
     expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.dry_run?.default).toBe("true");
     expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN");
     expect(workflow).toContain("PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES");
+    expect(workflow).toContain("PLUGIN_INSPECTOR_PACKAGE_NAMES");
+    expect(parsedWorkflow.on?.workflow_dispatch?.inputs?.package_names?.default).toBe("");
     expect(script).toContain("const dryRun =");
+    expect(script).toContain("targetPackageNames");
     expect(script).toContain('dryRun ? "true" : "false"');
     expect(script).toContain("impact-summary.json");
     expect(script).toContain("summarizeImpact");
