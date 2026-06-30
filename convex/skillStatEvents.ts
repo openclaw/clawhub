@@ -23,6 +23,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { toDayKey } from "./lib/leaderboards";
+import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
 import { applySkillStatDeltas, bumpDailySkillStats } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
@@ -488,10 +489,12 @@ export const processSkillStatEventBatchInternal = internalMutation({
           installsAllTime: deltas.installsAllTime,
           installsCurrent: deltas.installsCurrent,
         });
+        const nextSkill = { ...skill, ...patch };
         // Don't update `updatedAt` — stat changes shouldn't move the
         // skill's position in the by_active_updated index.
         await ctx.db.patch(skill._id, patch);
-        await adjustUserSkillStatsForSkillChange(ctx, skill, { ...skill, ...patch });
+        await upsertSkillSearchDigest(ctx, await extractValidatedDigestFields(ctx, nextSkill));
+        await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
         skillsUpdated += 1;
       }
 
