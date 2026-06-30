@@ -125,30 +125,29 @@ export function rangeDelta(series: number[]) {
 
 const DAY_MS = 86_400_000;
 
-export function rangeLabels(range: DownloadRange, endDay: number): string[] {
+function rangeDates(length: number, endDay: number) {
   const endDate = new Date(endDay * DAY_MS);
-  const formatDate = (date: Date) =>
-    date.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-
-  if (range === "1w") {
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(endDate);
-      date.setDate(endDate.getDate() - (6 - index));
-      return formatDate(date);
-    });
-  }
-  if (range === "1m") {
-    return Array.from({ length: 30 }, (_, index) => {
-      if (index % 7 !== 0 && index !== 29) return "";
-      const date = new Date(endDate);
-      date.setDate(endDate.getDate() - (29 - index));
-      return formatDate(date);
-    });
-  }
-  return Array.from({ length: 30 }, (_, index) => {
-    if (index % 7 !== 0 && index !== 29) return "";
+  return Array.from({ length }, (_, index) => {
     const date = new Date(endDate);
-    date.setDate(endDate.getDate() - (29 - index));
-    return formatDate(date);
+    date.setDate(endDate.getDate() - (length - 1 - index));
+    return date;
   });
+}
+
+function formatRangeDate(date: Date) {
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+export function rangeLabels(range: DownloadRange, endDay: number): string[] {
+  if (range === "1w") {
+    return rangeDates(7, endDay).map(formatRangeDate);
+  }
+  return rangeDates(30, endDay).map((date, index) => {
+    if (index % 7 !== 0 && index !== 29) return "";
+    return formatRangeDate(date);
+  });
+}
+
+export function rangeTooltipLabels(range: DownloadRange, endDay: number): string[] {
+  return rangeDates(range === "1w" ? 7 : 30, endDay).map(formatRangeDate);
 }

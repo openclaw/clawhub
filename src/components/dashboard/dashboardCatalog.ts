@@ -96,14 +96,6 @@ export function filterByAttention(
   return items.filter((item) => keys.has(`${item.kind}:${item.id}`));
 }
 
-export function excludeAttentionItems(
-  items: DashboardCatalogItem[],
-  attentionItems: DashboardAttentionItem[],
-): DashboardCatalogItem[] {
-  const keys = new Set(attentionItems.map(attentionEntityKey));
-  return items.filter((item) => !keys.has(`${item.kind}:${item.id}`));
-}
-
 function attentionEntityKey(item: DashboardAttentionItem) {
   const parts = item.id.split(":");
   if (parts.length < 2) return item.id;

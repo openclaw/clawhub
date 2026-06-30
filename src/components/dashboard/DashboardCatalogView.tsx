@@ -201,7 +201,7 @@ function SecurityAuditMiniStatus({ status }: { status: ArtifactDisplayStatus }) 
   return (
     <div className="dashboard-mini-audit security-audit-sidebar-value-row" aria-hidden="true">
       <span className="security-audit-sidebar-verdict" data-status={scanStatus}>
-        {statusInfo.label}
+        {status.label === "Review" ? "Needs review" : status.label || statusInfo.label}
       </span>
       <span className="security-audit-meter" data-level={auditVerdictMeterLevel(scanStatus)}>
         <span />

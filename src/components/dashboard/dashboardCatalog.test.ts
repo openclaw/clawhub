@@ -3,7 +3,6 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { collectAttentionItems } from "./dashboardAttention";
 import {
   computeDashboardStats,
-  excludeAttentionItems,
   filterByAttention,
   filterByKind,
   mergeDashboardItems,
@@ -154,7 +153,7 @@ describe("dashboardCatalog", () => {
     );
   });
 
-  it("excludes attention items from the catalog list", () => {
+  it("keeps attention items in the default catalog list", () => {
     const skills = [
       createSkill({
         moderationVerdict: "suspicious",
@@ -187,9 +186,9 @@ describe("dashboardCatalog", () => {
       }),
     ];
     const items = mergeDashboardItems(skills, packages);
-    const attention = collectAttentionItems(skills, packages, "local");
 
-    expect(excludeAttentionItems(items, attention)).toHaveLength(1);
-    expect(excludeAttentionItems(items, attention)[0]?.name).toBe("Clean Skill");
+    expect(filterByKind(items, "all").map((item) => item.name)).toEqual(
+      expect.arrayContaining(["Alpha", "Beta Plugin", "Clean Skill"]),
+    );
   });
 });

@@ -9,6 +9,7 @@ import {
   parseDownloadInsight,
   rangeDelta,
   rangeLabels,
+  rangeTooltipLabels,
   resolveDownloadInsight,
   sumSeries,
   type DashboardDownloadMetrics,
@@ -64,6 +65,7 @@ export function DashboardDownloadsInsights({
   const pluginDelta = rangeDelta(pluginSeries);
   const itemDelta = rangeDelta(itemSeries);
   const labels = rangeLabels(range, metrics.endDay);
+  const tooltipLabels = rangeTooltipLabels(range, metrics.endDay);
 
   const heroDownloads = range === "all" ? metrics.allTimeDownloads : rangeTotal;
   const heroMetricLabel = range === "all" ? "All-time downloads" : "Downloads";
@@ -123,7 +125,7 @@ export function DashboardDownloadsInsights({
           <div className="dashboard-downloads-chart-column">
             <Sparkline
               series={totalSeries}
-              labels={labels}
+              labels={tooltipLabels}
               className="dashboard-downloads-sparkline--compact-primary"
             />
             <ChartAxis labels={labels} />
@@ -137,6 +139,7 @@ export function DashboardDownloadsInsights({
                 label="All-time"
                 total={metrics.allTimeDownloads}
                 series={itemSeries}
+                labels={tooltipLabels}
                 delta={itemDelta}
               />
               <CompactStat
@@ -145,6 +148,7 @@ export function DashboardDownloadsInsights({
                   range === "all" ? Math.round(sumSeries(totalSeries)) : Math.round(rangeTotal)
                 }
                 series={itemSeries}
+                labels={tooltipLabels}
                 delta={itemDelta}
               />
             </>
@@ -158,6 +162,7 @@ export function DashboardDownloadsInsights({
                     : Math.round(sumSeries(skillSeries))
                 }
                 series={skillSeries}
+                labels={tooltipLabels}
                 delta={skillDelta}
               />
               <CompactStat
@@ -168,6 +173,7 @@ export function DashboardDownloadsInsights({
                     : Math.round(sumSeries(pluginSeries))
                 }
                 series={pluginSeries}
+                labels={tooltipLabels}
                 delta={pluginDelta}
               />
             </>
@@ -182,11 +188,13 @@ function CompactStat({
   label,
   total,
   series,
+  labels,
   delta,
 }: {
   label: string;
   total: number;
   series: number[];
+  labels: string[];
   delta: number;
 }) {
   return (
@@ -197,7 +205,11 @@ function CompactStat({
         {delta >= 0 ? "+" : ""}
         {delta}%
       </span>
-      <Sparkline series={series} className="dashboard-downloads-sparkline--compact-stat" />
+      <Sparkline
+        series={series}
+        labels={labels}
+        className="dashboard-downloads-sparkline--compact-stat"
+      />
     </div>
   );
 }
@@ -261,7 +273,7 @@ function Sparkline({
   const activeCoord = activeIndex === null ? null : coords[activeIndex];
   const activeValue = activeIndex === null ? null : series[activeIndex];
   const activeLabel =
-    activeIndex === null ? null : labels?.[activeIndex]?.trim() || `Bucket ${activeIndex + 1}`;
+    activeIndex === null ? null : labels?.[activeIndex]?.trim() || `Point ${activeIndex + 1}`;
 
   return (
     <div
@@ -354,8 +366,15 @@ function buildChartCoords(
   const chartHeight = 100 - options.topPad - options.bottomPad;
   if (series.length === 0) return [];
 
-  const max = Math.max(...series, 1);
+  const max = Math.max(...series);
   const divisor = Math.max(1, series.length - 1);
+  if (max <= 0) {
+    const y = options.topPad + chartHeight * 0.58;
+    return series.map((_, index) => ({
+      x: (index / divisor) * 100,
+      y,
+    }));
+  }
 
   return series.map((value, index) => ({
     x: (index / divisor) * 100,

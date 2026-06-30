@@ -6,7 +6,6 @@ import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { collectAttentionItems } from "../components/dashboard/dashboardAttention";
 import {
-  excludeAttentionItems,
   filterByAttention,
   filterByKind,
   mergeDashboardItems,
@@ -17,10 +16,10 @@ import { DashboardCatalogView } from "../components/dashboard/DashboardCatalogVi
 import { downloadMetricQuerySelection } from "../components/dashboard/dashboardDownloadMetrics";
 import { DashboardDownloadsInsights } from "../components/dashboard/DashboardDownloadsInsights";
 import { DashboardHeader } from "../components/dashboard/DashboardHeader";
+import { DashboardImportBanner } from "../components/dashboard/DashboardImportBanner";
 import { DashboardInventorySection } from "../components/dashboard/DashboardInventorySection";
 import { DashboardNeedsAttention } from "../components/dashboard/DashboardNeedsAttention";
 import { DashboardPublisherSelect } from "../components/dashboard/DashboardPublisherSelect";
-import { DashboardRightSidebar } from "../components/dashboard/DashboardRightSidebar";
 import { DashboardToolbar } from "../components/dashboard/DashboardToolbar";
 import { DashboardWelcome } from "../components/dashboard/DashboardWelcome";
 import type {
@@ -148,13 +147,8 @@ export function Dashboard() {
   const catalogItems = useMemo(() => {
     const merged = mergeDashboardItems(skills, packages);
     const byKind = filterByKind(merged, kindFilter);
-    const showAttentionStrip = kindFilter !== "attention" && attentionItems.length > 0;
     const afterAttention =
-      kindFilter === "attention"
-        ? filterByAttention(byKind, attentionItems)
-        : showAttentionStrip
-          ? excludeAttentionItems(byKind, attentionItems)
-          : byKind;
+      kindFilter === "attention" ? filterByAttention(byKind, attentionItems) : byKind;
     const bySearch = searchDashboardItems(afterAttention, query);
     const sorted = sortDashboardItems(bySearch, sort, sort ? DEFAULT_SORT_DIR[sort] : undefined);
     return sorted;
@@ -243,8 +237,10 @@ export function Dashboard() {
           ownerHandle={ownerHandle}
         />
 
-        <div className={`dashboard-workspace${showAttentionStrip ? "" : " has-no-attention"}`}>
+        <div className="dashboard-workspace">
           <div className="dashboard-workspace-main">
+            <DashboardImportBanner ownerHandle={ownerHandle} />
+
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
             <DashboardInventorySection
@@ -315,8 +311,6 @@ export function Dashboard() {
               </div>
             ) : null}
           </div>
-
-          <DashboardRightSidebar ownerHandle={ownerHandle} />
         </div>
 
         {showDownloadInsights && downloadMetrics ? (

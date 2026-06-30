@@ -187,7 +187,7 @@ type TestPackage = {
     versions: number;
   };
   verification: null;
-  scanStatus: "clean" | "suspicious" | "malicious";
+  scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
   latestRelease: {
     version: string;
     createdAt: number;
@@ -365,6 +365,7 @@ describe("Dashboard rows", () => {
     mocks.useAuthStatus.mockReset();
     mocks.dashboardSearch = {};
     mocks.rerenderDashboard = null;
+    window.localStorage.clear();
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "LoadingFirstPage",
@@ -537,8 +538,15 @@ describe("Dashboard rows", () => {
     expect(screen.getByRole("heading", { name: "Packages" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Add skill or plugin" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /dashboard sidebar/i })).toBeNull();
+    expect(document.querySelector(".dashboard-right-sidebar")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Import from GitHub" })).toBeTruthy();
     expect(screen.getByText("Import skills directly from your GitHub repositories.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss GitHub import banner" })).toBeTruthy();
     expect(screen.queryByText("Latest updates")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss GitHub import banner" }));
+    expect(screen.queryByRole("heading", { name: "Import from GitHub" })).toBeNull();
+    expect(window.localStorage.getItem("clawhub.dashboard.importBannerDismissed")).toBe("1");
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
@@ -551,8 +559,8 @@ describe("Dashboard rows", () => {
 
     expect(screen.getByLabelText("Needs attention")).toBeTruthy();
     expect(document.querySelectorAll(".dashboard-attention-row").length).toBe(2);
-    expect(screen.getByText("Local Flagged Skill")).toBeTruthy();
-    expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
+    expect(screen.getAllByText("Local Flagged Skill").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Local Flagged Runtime Plugin").length).toBeGreaterThanOrEqual(2);
     const attention = screen.getByLabelText("Needs attention");
     const skillAttention = within(attention).getByRole("button", { name: /Local Flagged Skill/ });
     const pluginAttention = within(attention).getByRole("button", {
@@ -561,7 +569,9 @@ describe("Dashboard rows", () => {
     expect(pluginAttention.textContent).toContain("Blocked");
     expect(skillAttention.getAttribute("aria-label")).toContain("Security: Needs review");
     expect(pluginAttention.getAttribute("aria-label")).toContain("Security: Blocked");
-    expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(0);
+    expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(2);
+    expect(screen.getAllByText("Needs review").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Blocked").length).toBeGreaterThanOrEqual(2);
 
     expect(screen.queryByText("VT")).toBeNull();
     expect(screen.queryByText("LLM")).toBeNull();
@@ -583,7 +593,7 @@ describe("Dashboard rows", () => {
             message: "deprecated hook",
             remediation: "Replace the deprecated hook",
           },
-          scanStatus: "suspicious",
+          scanStatus: "pending",
           latestRelease: {
             version: "1.0.0",
             createdAt: 1,
@@ -620,9 +630,12 @@ describe("Dashboard rows", () => {
     expect(
       screen.getByRole("dialog", { name: "Local Flagged Runtime Plugin review" }),
     ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "View plugin" }).getAttribute("href")).toBe(
-      "/local/plugins/local-flagged-runtime-plugin",
-    );
+    expect(screen.queryByRole("link", { name: "View plugin" })).toBeNull();
+    const securityReview = within(screen.getByLabelText("Security review"));
+    expect(securityReview.getByText("Scan pending")).toBeTruthy();
+    expect(
+      securityReview.getByRole("link", { name: "Security audit" }).getAttribute("href"),
+    ).toContain("/security-audit");
     expect(screen.getByRole("button", { name: /Second Runtime Plugin\. 1 issue/i })).toBeTruthy();
   });
 

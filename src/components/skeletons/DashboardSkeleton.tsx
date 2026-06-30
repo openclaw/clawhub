@@ -23,6 +23,15 @@ export function DashboardSkeleton() {
 
       <div className="dashboard-workspace">
         <div className="dashboard-workspace-main">
+          <div className="dashboard-skeleton-import-banner">
+            <div className="dashboard-skeleton-import-copy">
+              <Skeleton className="dashboard-skeleton-import-title" />
+              <Skeleton className="dashboard-skeleton-import-text" />
+            </div>
+            <Skeleton className="dashboard-skeleton-import-art" />
+            <Skeleton className="dashboard-skeleton-import-action" />
+          </div>
+
           <section className="dashboard-attention-strip dashboard-skeleton-attention">
             <Skeleton className="dashboard-skeleton-section-title" />
             <div className="dashboard-skeleton-attention-grid">
@@ -86,15 +95,6 @@ export function DashboardSkeleton() {
             <DashboardStatsSkeleton />
           </div>
         </div>
-
-        <aside className="dashboard-right-sidebar dashboard-skeleton-sidebar">
-          <div className="dashboard-skeleton-promo">
-            <Skeleton className="dashboard-skeleton-promo-art" />
-            <Skeleton className="dashboard-skeleton-promo-title" />
-            <Skeleton className="dashboard-skeleton-promo-copy" />
-            <Skeleton className="dashboard-skeleton-promo-action" />
-          </div>
-        </aside>
       </div>
 
       <div className="dashboard-downloads-desktop-slot">

@@ -59,4 +59,21 @@ describe("DashboardDownloadsInsights", () => {
     fireEvent.mouseEnter(hitZones[1] ?? hitZones[0]!);
     expect(container.querySelector(".dashboard-downloads-chart-tooltip")).toBeTruthy();
   });
+
+  it("uses date labels instead of internal bucket labels for compact stat tooltips", () => {
+    const { container } = render(
+      <DashboardDownloadsInsights skills={[skill]} packages={[pkg]} metrics={metrics} />,
+    );
+
+    const compactHitZone = container.querySelector(
+      ".dashboard-downloads-compact-stat .dashboard-downloads-chart-hit",
+    );
+    expect(compactHitZone).toBeTruthy();
+
+    fireEvent.mouseEnter(compactHitZone!);
+
+    expect(container.querySelector(".dashboard-downloads-chart-tooltip")?.textContent).not.toMatch(
+      /bucket/i,
+    );
+  });
 });

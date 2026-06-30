@@ -4,7 +4,6 @@ import { ChevronRight, EyeOff, Hammer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { buildSkillDetailHref } from "../../lib/ownerRoute";
-import { buildPluginDetailHref, buildPluginSecurityAuditHref } from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { timeAgo } from "../../lib/timeAgo";
 import { InstallCopyButton } from "../InstallCopyButton";
@@ -228,7 +227,9 @@ function DashboardReviewSheetContent({
   onClose: () => void;
 }) {
   const isSkill = group.primary.kind === "skill";
-  const isPluginValidation = !isSkill && group.primary.issueType === "validation";
+  const hasPluginSecurity = !isSkill && group.items.some((item) => item.issueType === "security");
+  const hasPluginValidation =
+    !isSkill && group.items.some((item) => item.issueType === "validation");
   const skillAudit = useQuery(
     api.skills.getSecurityReviewForManager,
     isSkill && group.primary.slug
@@ -237,15 +238,10 @@ function DashboardReviewSheetContent({
   ) as SkillAuditResult | undefined;
   const pluginFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
-    isPluginValidation && group.primary.packageName
+    hasPluginValidation && group.primary.packageName
       ? { name: group.primary.packageName, limit: 100 }
       : "skip",
   ) as PluginInspectorFinding[] | undefined;
-  const detailHref = isSkill
-    ? buildSkillDetailHref(group.primary.ownerHandle ?? "local", group.primary.slug ?? group.key)
-    : buildPluginDetailHref(group.primary.packageName ?? group.key, {
-        ownerHandle: group.primary.ownerHandle,
-      });
 
   return (
     <div className="security-report-panel security-report-panel-compact dashboard-review-report">
@@ -260,10 +256,6 @@ function DashboardReviewSheetContent({
                 </span>
               ))}
             </div>
-            <a href={detailHref} className="dashboard-review-sheet-view-link">
-              View {isSkill ? "skill" : "plugin"}
-              <ChevronRight size={13} aria-hidden="true" />
-            </a>
           </div>
         </div>
         <button
@@ -278,10 +270,13 @@ function DashboardReviewSheetContent({
 
       {isSkill ? (
         <SkillSpectorSheetReview group={group} audit={skillAudit} />
-      ) : isPluginValidation ? (
-        <PluginValidationSheetReview group={group} findings={pluginFindings} />
       ) : (
-        <PluginSecuritySheetReview group={group} />
+        <>
+          {hasPluginSecurity ? <PluginSecuritySheetReview group={group} /> : null}
+          {hasPluginValidation ? (
+            <PluginValidationSheetReview group={group} findings={pluginFindings} />
+          ) : null}
+        </>
       )}
     </div>
   );
@@ -317,43 +312,20 @@ function SkillSpectorSheetReview({
 }
 
 function PluginSecuritySheetReview({ group }: { group: DashboardAttentionGroup }) {
-  const packageName = group.primary.packageName ?? group.key;
-  const auditHref =
-    group.primary.href ??
-    buildPluginSecurityAuditHref(packageName, { ownerHandle: group.primary.ownerHandle });
-  const issues = group.items.filter((item) => item.issueType === "security");
+  const securityItem =
+    group.items
+      .filter((item) => item.issueType === "security")
+      .sort((left, right) => attentionPriority(right) - attentionPriority(left))[0] ??
+    group.primary;
 
   return (
-    <section className="plugin-validation-overview dashboard-review-security-summary">
-      <div className="plugin-validation-panel-title-row">
-        <h3 className="plugin-validation-panel-title">Security review</h3>
-        <span className="plugin-validation-panel-stats" aria-label="Security summary">
-          {severityLabel(group.primary.severity)}
-        </span>
-      </div>
-      <p className="plugin-validation-summary-hint">
-        {group.title} needs security review before it should be treated as ready.
-      </p>
-      <div className="plugin-warning-list">
-        {issues.map((item) => (
-          <div key={item.id} className={`plugin-warning-item is-${item.severity}`}>
-            <div className="plugin-warning-item-summary">
-              <div className="plugin-warning-item-lead">
-                <span
-                  className={`plugin-warning-severity-dot is-${item.severity}`}
-                  aria-hidden="true"
-                />
-                <div className="plugin-warning-item-copy">
-                  <p className="plugin-warning-item-message">{attentionIssueSummary(item)}</p>
-                  {item.preview ? <p className="plugin-warning-item-meta">{item.preview}</p> : null}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <a className="dashboard-review-sheet-view-link" href={auditHref}>
-        Open security audit
+    <section className="dashboard-review-security-summary" aria-label="Security review">
+      <h3 className="plugin-validation-panel-title">Security review</h3>
+      <span className={`dashboard-attention-state is-${securityItem.severity}`}>
+        {severityLabel(securityItem.severity)}
+      </span>
+      <a href={securityItem.href} className="dashboard-review-security-audit-link">
+        Security audit
         <ChevronRight size={13} aria-hidden="true" />
       </a>
     </section>
@@ -368,12 +340,14 @@ function PluginValidationSheetReview({
   findings?: PluginInspectorFinding[];
 }) {
   const visibleFindings = findings?.length ? findings.filter((finding) => finding.message) : [];
-  const fallbackFindings: PluginInspectorFinding[] = group.items.map((item) => ({
-    _id: item.id,
-    findingKind: item.severity === "destructive" ? "error" : "warning",
-    message: attentionIssueSummary(item),
-    issueClass: issueTypeLabel(item.issueType),
-  }));
+  const fallbackFindings: PluginInspectorFinding[] = group.items
+    .filter((item) => item.issueType === "validation")
+    .map((item) => ({
+      _id: item.id,
+      findingKind: item.severity === "destructive" ? "error" : "warning",
+      message: attentionIssueSummary(item),
+      issueClass: issueTypeLabel(item.issueType),
+    }));
   const baseFindings = visibleFindings.length ? visibleFindings : fallbackFindings;
   const displayedFindings = baseFindings.sort(compareFindings);
   const errors = displayedFindings.filter((finding) => finding.findingKind === "error");
