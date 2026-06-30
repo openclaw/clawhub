@@ -1,7 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
-import { useEffect, useState, type SyntheticEvent } from "react";
-import { PLATFORM_CHANGELOG_ENTRIES, type PlatformChangelogEntry } from "./platformChangelog";
 
 function GitHubLogo({ className }: { className?: string }) {
   return (
@@ -11,29 +8,11 @@ function GitHubLogo({ className }: { className?: string }) {
   );
 }
 
-const CHANGELOG_VISIBLE_LIMIT = 4;
-const CHANGELOG_STORAGE_KEY = "clawhub.dashboard.changelog";
-
 type DashboardRightSidebarProps = {
   ownerHandle: string;
 };
 
 export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProps) {
-  const changelogEntries = PLATFORM_CHANGELOG_ENTRIES.slice(0, CHANGELOG_VISIBLE_LIMIT);
-  const [isChangelogOpen, setIsChangelogOpen] = useState(true);
-
-  useEffect(() => {
-    if (window.localStorage.getItem(CHANGELOG_STORAGE_KEY) === "closed") {
-      setIsChangelogOpen(false);
-    }
-  }, []);
-
-  function handleChangelogToggle(event: SyntheticEvent<HTMLDetailsElement>) {
-    const nextOpen = event.currentTarget.open;
-    setIsChangelogOpen(nextOpen);
-    window.localStorage.setItem(CHANGELOG_STORAGE_KEY, nextOpen ? "open" : "closed");
-  }
-
   return (
     <aside className="dashboard-right-sidebar" aria-label="Publisher sidebar">
       <article className="dashboard-sidebar-promo">
@@ -61,54 +40,6 @@ export function DashboardRightSidebar({ ownerHandle }: DashboardRightSidebarProp
           Import skills
         </Link>
       </article>
-
-      <details
-        className="dashboard-sidebar-changelog"
-        open={isChangelogOpen}
-        onToggle={handleChangelogToggle}
-      >
-        <summary className="dashboard-sidebar-changelog-summary">
-          <span className="dashboard-sidebar-changelog-summary-label">Latest updates</span>
-        </summary>
-        <ol className="dashboard-sidebar-timeline" aria-label="Recent platform updates">
-          {changelogEntries.map((entry) => (
-            <li key={entry.id} className="dashboard-sidebar-timeline-item">
-              <div className="dashboard-sidebar-timeline-rail" aria-hidden="true">
-                <span className="dashboard-sidebar-timeline-node" />
-              </div>
-              <div className="dashboard-sidebar-timeline-copy">
-                <ChangelogEntryLine entry={entry} />
-              </div>
-            </li>
-          ))}
-        </ol>
-        <Link to="/changelog" className="dashboard-sidebar-feed-link" aria-label="See changelog">
-          See changelog
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </Link>
-      </details>
     </aside>
-  );
-}
-
-function ChangelogEntryLine({ entry }: { entry: PlatformChangelogEntry }) {
-  const isRecent = entry.when === "Recent";
-
-  return (
-    <div className="dashboard-sidebar-timeline-entry">
-      <span className="dashboard-sidebar-timeline-kind">
-        {entry.category} · {isRecent ? "2d ago" : entry.when}
-      </span>
-      <PlatformChangelogTitle entry={entry} />
-    </div>
-  );
-}
-
-function PlatformChangelogTitle({ entry }: { entry: PlatformChangelogEntry }) {
-  const className = "dashboard-sidebar-timeline-name";
-  return (
-    <a href={`/changelog#${entry.id}`} className={className}>
-      {entry.title}
-    </a>
   );
 }

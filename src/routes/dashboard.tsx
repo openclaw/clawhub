@@ -47,7 +47,6 @@ import { useAuthStatus } from "../lib/useAuthStatus";
 /** Matches `packages.list` server cap; plugins are not paginated on the dashboard yet. */
 const DASHBOARD_PACKAGES_LIMIT = 100;
 const DASHBOARD_LOAD_TIMEOUT_MS = 20_000;
-const DASHBOARD_SIDEBAR_STORAGE_KEY = "clawhub.dashboard.sidebar";
 const DASHBOARD_VIEW_STORAGE_KEY = "clawhub.dashboard.view";
 const DEFAULT_SORT_DIR = {
   name: "asc",
@@ -75,7 +74,6 @@ export function Dashboard() {
     | undefined;
   const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
   const [loadTimedOut, setLoadTimedOut] = useState(false);
-  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
 
   const patchSearch = (patch: Partial<DashboardSearchState>) => {
     void navigate({
@@ -182,9 +180,6 @@ export function Dashboard() {
     skillDownloadsTotal + pluginDownloadsTotal > 0 && downloadMetrics !== undefined;
 
   useEffect(() => {
-    const savedSidebar = window.localStorage.getItem(DASHBOARD_SIDEBAR_STORAGE_KEY);
-    if (savedSidebar === "hidden") setIsSidebarVisible(false);
-
     if (!search.view) {
       const savedView = window.localStorage.getItem(DASHBOARD_VIEW_STORAGE_KEY);
       if (savedView === "list" || savedView === "grid") patchSearch({ view: savedView });
@@ -240,30 +235,15 @@ export function Dashboard() {
 
   return (
     <TooltipProvider>
-      <main
-        className={`browse-page browse-page-borderless-header dashboard-route dashboard-final${isSidebarVisible ? "" : " is-dashboard-sidebar-hidden"}`}
-      >
+      <main className="browse-page browse-page-borderless-header dashboard-route dashboard-final">
         <DashboardHeader
           publishers={resolvedPublishers}
           activePublisherId={activePublisherId}
           onPublisherChange={setSelectedPublisherId}
           ownerHandle={ownerHandle}
-          isSidebarVisible={isSidebarVisible}
-          onToggleSidebar={() =>
-            setIsSidebarVisible((value) => {
-              const nextValue = !value;
-              window.localStorage.setItem(
-                DASHBOARD_SIDEBAR_STORAGE_KEY,
-                nextValue ? "visible" : "hidden",
-              );
-              return nextValue;
-            })
-          }
         />
 
-        <div
-          className={`dashboard-workspace${isSidebarVisible ? "" : " is-sidebar-hidden"}${showAttentionStrip ? "" : " has-no-attention"}`}
-        >
+        <div className={`dashboard-workspace${showAttentionStrip ? "" : " has-no-attention"}`}>
           <div className="dashboard-workspace-main">
             {showAttentionStrip ? <DashboardNeedsAttention items={attentionItems} /> : null}
 
@@ -336,7 +316,7 @@ export function Dashboard() {
             ) : null}
           </div>
 
-          {isSidebarVisible ? <DashboardRightSidebar ownerHandle={ownerHandle} /> : null}
+          <DashboardRightSidebar ownerHandle={ownerHandle} />
         </div>
 
         {showDownloadInsights && downloadMetrics ? (

@@ -2,7 +2,6 @@ import { Skeleton } from "../ui/skeleton";
 
 const ATTENTION_PLACEHOLDERS = 3;
 const PACKAGE_PLACEHOLDERS = 5;
-const UPDATE_PLACEHOLDERS = 3;
 
 export function DashboardSkeleton() {
   return (
@@ -17,7 +16,6 @@ export function DashboardSkeleton() {
             <Skeleton className="dashboard-skeleton-title" />
             <div className="dashboard-skeleton-header-actions">
               <Skeleton className="dashboard-skeleton-add-action" />
-              <Skeleton className="dashboard-skeleton-sidebar-action" />
             </div>
           </div>
         </div>
@@ -95,20 +93,6 @@ export function DashboardSkeleton() {
             <Skeleton className="dashboard-skeleton-promo-title" />
             <Skeleton className="dashboard-skeleton-promo-copy" />
             <Skeleton className="dashboard-skeleton-promo-action" />
-          </div>
-          <div className="dashboard-skeleton-updates">
-            <Skeleton className="dashboard-skeleton-updates-title" />
-            {Array.from({ length: UPDATE_PLACEHOLDERS }, (_, index) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: fixed visual placeholders
-              <div className="dashboard-skeleton-update" key={index}>
-                <Skeleton className="dashboard-skeleton-update-dot" />
-                <div>
-                  <Skeleton className="dashboard-skeleton-update-meta" />
-                  <Skeleton className="dashboard-skeleton-update-title" />
-                </div>
-              </div>
-            ))}
-            <Skeleton className="dashboard-skeleton-updates-action" />
           </div>
         </aside>
       </div>

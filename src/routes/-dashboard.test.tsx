@@ -423,7 +423,7 @@ describe("Dashboard rows", () => {
           moderationVerdict: undefined,
           isSuspicious: false,
           moderationFlags: [],
-          stats: { downloads: 5, installsCurrent: 1, installsAllTime: 5, stars: 0, versions: 1 },
+          stats: { downloads: 5, installs: 5, stars: 0, versions: 1 },
           updatedAt: 500,
           latestVersion: {
             version: "1.0.0",
@@ -536,7 +536,9 @@ describe("Dashboard rows", () => {
     expect(document.querySelector(".dashboard-header-count")).toBeNull();
     expect(screen.getByRole("heading", { name: "Packages" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Add skill or plugin" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /dashboard sidebar/i })).toBeNull();
     expect(screen.getByText("Import skills directly from your GitHub repositories.")).toBeTruthy();
+    expect(screen.queryByText("Latest updates")).toBeNull();
   });
 
   it("renders scannable list rows with status, downloads, summaries, and row menus", () => {

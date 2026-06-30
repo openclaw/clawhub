@@ -10,8 +10,6 @@ type DashboardHeaderProps = {
   activePublisherId: string;
   onPublisherChange: (publisherId: string) => void;
   ownerHandle: string;
-  isSidebarVisible: boolean;
-  onToggleSidebar: () => void;
 };
 
 export function DashboardHeader({
@@ -19,8 +17,6 @@ export function DashboardHeader({
   activePublisherId,
   onPublisherChange,
   ownerHandle,
-  isSidebarVisible,
-  onToggleSidebar,
 }: DashboardHeaderProps) {
   const showPublisherSelector = publishers.length > 1;
 
@@ -51,45 +47,9 @@ export function DashboardHeader({
                 Add skill or plugin
               </Link>
             </Button>
-            <button
-              type="button"
-              className="dashboard-sidebar-toggle"
-              aria-label={isSidebarVisible ? "Hide dashboard sidebar" : "Show dashboard sidebar"}
-              aria-pressed={!isSidebarVisible}
-              title={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
-              onClick={onToggleSidebar}
-            >
-              <DashboardSidebarToggleIcon hidden={!isSidebarVisible} />
-            </button>
           </div>
         </div>
       </div>
     </header>
-  );
-}
-
-function DashboardSidebarToggleIcon({ hidden }: { hidden: boolean }) {
-  return (
-    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <rect x="2.5" y="3" width="13" height="12" rx="3" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M10.5 3.5v11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      {hidden ? (
-        <path
-          d="M5.4 9h2.8M6.8 7.6 5.4 9l1.4 1.4"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      ) : (
-        <path
-          d="M7.8 9H5M6.4 7.6 7.8 9l-1.4 1.4"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      )}
-    </svg>
   );
 }

@@ -18,7 +18,6 @@ import { Route as PublishPluginRouteImport } from './routes/publish-plugin'
 import { Route as ManagementRouteImport } from './routes/management'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as ChangelogRouteImport } from './routes/changelog'
 import { Route as AuditsRouteImport } from './routes/audits'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AddRouteImport } from './routes/add'
@@ -105,11 +104,6 @@ const ImportRoute = ImportRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangelogRoute = ChangelogRouteImport.update({
-  id: '/changelog',
-  path: '/changelog',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditsRoute = AuditsRouteImport.update({
@@ -339,7 +333,6 @@ export interface FileRoutesByFullPath {
   '/add': typeof AddRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
-  '/changelog': typeof ChangelogRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
@@ -393,7 +386,6 @@ export interface FileRoutesByTo {
   '/add': typeof AddRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
-  '/changelog': typeof ChangelogRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
@@ -448,7 +440,6 @@ export interface FileRoutesById {
   '/add': typeof AddRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
-  '/changelog': typeof ChangelogRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
   '/management': typeof ManagementRoute
@@ -504,7 +495,6 @@ export interface FileRouteTypes {
     | '/add'
     | '/admin'
     | '/audits'
-    | '/changelog'
     | '/dashboard'
     | '/import'
     | '/management'
@@ -558,7 +548,6 @@ export interface FileRouteTypes {
     | '/add'
     | '/admin'
     | '/audits'
-    | '/changelog'
     | '/dashboard'
     | '/import'
     | '/management'
@@ -612,7 +601,6 @@ export interface FileRouteTypes {
     | '/add'
     | '/admin'
     | '/audits'
-    | '/changelog'
     | '/dashboard'
     | '/import'
     | '/management'
@@ -667,7 +655,6 @@ export interface RootRouteChildren {
   AddRoute: typeof AddRoute
   AdminRoute: typeof AdminRoute
   AuditsRoute: typeof AuditsRoute
-  ChangelogRoute: typeof ChangelogRoute
   DashboardRoute: typeof DashboardRoute
   ImportRoute: typeof ImportRoute
   ManagementRoute: typeof ManagementRoute
@@ -766,13 +753,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/changelog': {
-      id: '/changelog'
-      path: '/changelog'
-      fullPath: '/changelog'
-      preLoaderRoute: typeof ChangelogRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/audits': {
@@ -1151,7 +1131,6 @@ const rootRouteChildren: RootRouteChildren = {
   AddRoute: AddRoute,
   AdminRoute: AdminRoute,
   AuditsRoute: AuditsRoute,
-  ChangelogRoute: ChangelogRoute,
   DashboardRoute: DashboardRoute,
   ImportRoute: ImportRoute,
   ManagementRoute: ManagementRoute,
