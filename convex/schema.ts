@@ -2771,7 +2771,7 @@ const publisherAbuseSignals = defineTable({
   skillId: v.id("skills"),
   skillSlug: v.string(),
   skillDisplayName: v.string(),
-  latestRunId: v.id("publisherAbuseScoreRuns"),
+  latestRunId: v.optional(v.id("publisherAbuseScoreRuns")),
   latestScoreId: v.optional(v.id("publisherAbuseScores")),
   firstSeenAt: v.number(),
   lastSeenAt: v.number(),
@@ -2789,7 +2789,8 @@ const publisherAbuseSignals = defineTable({
   .index("by_last_seen_at", ["lastSeenAt"])
   .index("by_signal_type_and_last_seen_at", ["signalType", "lastSeenAt"])
   .index("by_owner_key_and_last_seen_at", ["ownerKey", "lastSeenAt"])
-  .index("by_skill_and_signal_type", ["skillId", "signalType"]);
+  .index("by_skill_and_signal_type", ["skillId", "signalType"])
+  .index("by_skill_signal_type_and_owner_key", ["skillId", "signalType", "ownerKey"]);
 
 const vtScanLogs = defineTable({
   type: v.union(v.literal("daily_rescan"), v.literal("backfill"), v.literal("pending_poll")),

@@ -313,6 +313,26 @@ describe("publisherAbuseDevSeed.seed", () => {
           nominationId: "publisherAbuseReviewNominations:old-demo",
         },
       ],
+      skills: [
+        {
+          _id: "skills:old-temporal",
+          slug: "demo-temporal-download-burst",
+        },
+      ],
+      skillDailyStats: [
+        {
+          _id: "skillDailyStats:old-temporal",
+          skillId: "skills:old-temporal",
+          day: 19_000,
+        },
+      ],
+      publisherAbuseSignals: [
+        {
+          _id: "publisherAbuseSignals:old-temporal",
+          signalType: "sustained_downloads_flat_installs",
+          skillId: "skills:old-temporal",
+        },
+      ],
       users: [{ _id: "users:old-demo", handle: "demo-abuse-pub-01" }],
     });
 
@@ -329,6 +349,13 @@ describe("publisherAbuseDevSeed.seed", () => {
     );
     expect(tables.publisherAbuseReviewEvents.map((doc) => doc._id)).not.toContain(
       "publisherAbuseReviewEvents:old-demo",
+    );
+    expect(tables.skills.map((doc) => doc._id)).not.toContain("skills:old-temporal");
+    expect(tables.skillDailyStats.map((doc) => doc._id)).not.toContain(
+      "skillDailyStats:old-temporal",
+    );
+    expect(tables.publisherAbuseSignals.map((doc) => doc._id)).not.toContain(
+      "publisherAbuseSignals:old-temporal",
     );
     expect(tables.users.map((doc) => doc._id)).not.toContain("users:old-demo");
     expect(tables.users.filter((doc) => doc.handle === "demo-abuse-pub-01")).toHaveLength(1);

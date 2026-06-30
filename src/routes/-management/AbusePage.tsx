@@ -9,7 +9,6 @@ import {
   ShieldCheck,
   ShieldOff,
 } from "lucide-react";
-import { useRef } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -51,6 +50,7 @@ export function AbusePage({
   selectedItem,
   selectedNominationId,
   signalItems,
+  signalLoadedCount,
   signalPageStatus,
   tab,
   onBanOwner,
@@ -81,6 +81,7 @@ export function AbusePage({
   selectedItem: PublisherAbuseReviewItem | null;
   selectedNominationId: Id<"publisherAbuseReviewNominations"> | null;
   signalItems: PublisherAbuseSignalEntry[];
+  signalLoadedCount: number;
   signalPageStatus: string;
   tab: PublisherAbuseTab;
   onBanOwner: (item: PublisherAbuseReviewItem) => void;
@@ -112,6 +113,7 @@ export function AbusePage({
   const nominationPageLoaded = pageStatus !== "LoadingFirstPage";
   const loaded = dashboardLoaded && nominationPageLoaded;
   const signalsLoaded = signalPageStatus !== "LoadingFirstPage";
+  const signalDashboardCount = dashboard?.signalCount ?? 0;
   const latestRunTotalForTab =
     tab === "potential_ban_candidate"
       ? potentialBan
@@ -120,36 +122,30 @@ export function AbusePage({
         : tab === "resolved"
           ? resolved
           : tab === "signals"
-            ? signalItems.length
+            ? signalDashboardCount
             : totalPending;
   const totalForTab = loaded ? Math.max(latestRunTotalForTab, items.length) : latestRunTotalForTab;
-  const observedTabCountsRef = useRef<Partial<Record<PublisherAbuseTab, number>>>({});
-  if (tab !== "signals" && loaded) {
-    observedTabCountsRef.current[tab] = Math.max(
-      observedTabCountsRef.current[tab] ?? 0,
-      totalForTab,
-    );
-  }
-  if (tab === "signals" && signalsLoaded) {
-    observedTabCountsRef.current.signals = Math.max(
-      observedTabCountsRef.current.signals ?? 0,
-      signalItems.length,
-    );
-  }
+  const currentPageTotalForTab = loaded ? totalForTab : 0;
   const potentialBanTabCount = Math.max(
     potentialBan,
-    observedTabCountsRef.current.potential_ban_candidate ?? 0,
+    tab === "potential_ban_candidate" ? currentPageTotalForTab : 0,
   );
-  const reviewTabCount = Math.max(review, observedTabCountsRef.current.review ?? 0);
+  const reviewTabCount = Math.max(review, tab === "review" ? currentPageTotalForTab : 0);
   const allPendingTabCount = Math.max(
     totalPending,
-    observedTabCountsRef.current.all_pending ?? 0,
+    tab === "all_pending" ? currentPageTotalForTab : 0,
     potentialBanTabCount + reviewTabCount,
   );
-  const signalDashboardCount = dashboard?.signalCount ?? 0;
-  const signalTabCount = Math.max(signalDashboardCount, observedTabCountsRef.current.signals ?? 0);
+  const signalTabCount = Math.max(
+    signalDashboardCount,
+    tab === "signals" && signalsLoaded ? signalLoadedCount : 0,
+  );
+  const signalTabHasMore =
+    dashboard?.signalCountHasMore ||
+    signalPageStatus === "CanLoadMore" ||
+    signalPageStatus === "LoadingMore";
   const signalTabCountLabel =
-    dashboard?.signalCountHasMore && signalTabCount === signalDashboardCount
+    signalTabHasMore && signalTabCount > 0
       ? `${formatWholeNumber(signalTabCount)}+`
       : formatWholeNumber(signalTabCount);
   const canLoadMore = pageStatus === "CanLoadMore";
@@ -164,9 +160,11 @@ export function AbusePage({
         : "Loading…";
   const signalCountLabel =
     signalsLoaded && (signalsCanLoadMore || signalsLoadingMore)
-      ? `Showing ${formatWholeNumber(signalItems.length)}+ signals`
+      ? `Showing ${formatWholeNumber(signalItems.length)} of ${formatWholeNumber(signalLoadedCount)}+ signals`
       : signalsLoaded
-        ? `Showing ${formatWholeNumber(signalItems.length)} signals`
+        ? signalItems.length === signalLoadedCount
+          ? `Showing ${formatWholeNumber(signalLoadedCount)} signals`
+          : `Showing ${formatWholeNumber(signalItems.length)} of ${formatWholeNumber(signalLoadedCount)} signals`
         : "Loading…";
   const activeCanLoadMore = tab === "signals" ? signalsCanLoadMore : canLoadMore;
   const activeLoadingMore = tab === "signals" ? signalsLoadingMore : loadingMore;
@@ -278,8 +276,8 @@ export function AbusePage({
         />
         <PublisherAbuseTabButton
           active={tab === "signals"}
-          count={signalsLoaded ? signalItems.length : dashboardLoaded ? signalTabCount : undefined}
-          countLabel={signalsLoaded || !dashboardLoaded ? undefined : signalTabCountLabel}
+          count={dashboardLoaded || signalsLoaded ? signalTabCount : undefined}
+          countLabel={dashboardLoaded || signalsLoaded ? signalTabCountLabel : undefined}
           label="Signals"
           loading={tab === "signals" && !signalsLoaded}
           onClick={() => onChangeTab("signals")}
@@ -301,7 +299,12 @@ export function AbusePage({
           />
         </label>
         {tab === "signals" ? (
-          <PublisherAbuseSignalsTable items={signalItems} loaded={signalsLoaded} />
+          <PublisherAbuseSignalsTable
+            canLoadMore={signalsCanLoadMore || signalsLoadingMore}
+            items={signalItems}
+            loaded={signalsLoaded}
+            searchActive={search.trim().length > 0}
+          />
         ) : (
           <div className="pa-table-wrap">
             <table className="pa-table">
@@ -689,12 +692,17 @@ function publisherAbuseSkeletonWidth(columnIndex: number, rowIndex: number) {
 }
 
 function PublisherAbuseSignalsTable({
+  canLoadMore,
   items,
   loaded,
+  searchActive,
 }: {
+  canLoadMore: boolean;
   items: PublisherAbuseSignalEntry[];
   loaded: boolean;
+  searchActive: boolean;
 }) {
+  const emptyState = publisherAbuseSignalEmptyState(searchActive, canLoadMore);
   return (
     <div className="pa-table-wrap">
       <table className="pa-table pa-signals-table">
@@ -717,8 +725,8 @@ function PublisherAbuseSignalsTable({
           ) : items.length === 0 ? (
             <tr className="pa-empty-row">
               <td colSpan={9}>
-                <strong>No archived signals</strong>
-                No durable publisher abuse evidence matches this view.
+                <strong>{emptyState.title}</strong>
+                {emptyState.body}
               </td>
             </tr>
           ) : (
@@ -794,6 +802,27 @@ function PublisherAbuseSignalsTable({
       </table>
     </div>
   );
+}
+
+function publisherAbuseSignalEmptyState(searchActive: boolean, canLoadMore: boolean) {
+  if (searchActive) {
+    return {
+      title: "No matching signals",
+      body: canLoadMore
+        ? "Load more to search additional archived rows."
+        : "No loaded signal matches this search.",
+    };
+  }
+  if (canLoadMore) {
+    return {
+      title: "No visible signals loaded",
+      body: "Load more to keep scanning archived rows.",
+    };
+  }
+  return {
+    title: "No archived signals",
+    body: "No durable publisher abuse evidence matches this view.",
+  };
 }
 
 function PublisherAbuseSignalRatioCell({

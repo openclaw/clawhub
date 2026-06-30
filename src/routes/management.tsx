@@ -660,6 +660,7 @@ export function Management() {
             selectedItem={selectedPublisherAbuseItem}
             selectedNominationId={selectedPublisherAbuseNominationId}
             signalItems={filteredPublisherAbuseSignals}
+            signalLoadedCount={publisherAbuseSignalItems.length}
             signalPageStatus={publisherAbuseSignalPageStatus}
             tab={publisherAbuseTab}
             onBanOwner={banPublisherAbuseOwner}

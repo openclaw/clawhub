@@ -461,6 +461,125 @@ describe("Management", () => {
     ).toBe(true);
   });
 
+  it("updates publisher abuse tab badges when live counts decrease", () => {
+    const firstItem = makePublisherAbuseItem({ id: "1", handle: "first-pub" });
+    const secondItem = makePublisherAbuseItem({ id: "2", handle: "second-pub" });
+    let potentialBanItems = [firstItem, secondItem];
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: {
+            status: "completed",
+            scannedPublishers: potentialBanItems.length,
+            scoredPublishers: potentialBanItems.length,
+            potentialBanCandidateCount: potentialBanItems.length,
+            reviewCount: 0,
+          },
+          pendingItems: potentialBanItems,
+          pendingPotentialBanCandidateItems: potentialBanItems,
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: 0,
+          signalCountHasMore: false,
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+    usePaginatedQueryMock.mockImplementation((query, args) => {
+      if (getFunctionName(query) === "publisherAbuse:listReviewItemsPage" && args !== "skip") {
+        return {
+          results: potentialBanItems,
+          status: "Exhausted",
+          loadMore: vi.fn(),
+        };
+      }
+      return {
+        results: [],
+        status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
+        loadMore: vi.fn(),
+      };
+    });
+
+    const { rerender } = render(<Management />);
+
+    expect(screen.getByRole("tab", { name: /Potential ban 2/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /All flagged 2/ })).toBeTruthy();
+    expect(screen.getByText("Showing 2 of 2 nominations")).toBeTruthy();
+
+    potentialBanItems = [firstItem];
+    rerender(<Management />);
+
+    expect(screen.getByRole("tab", { name: /Potential ban 1/ })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: /All flagged 1/ })).toBeTruthy();
+    expect(screen.getByText("Showing 1 of 1 nominations")).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Potential ban 2/ })).toBeNull();
+  });
+
+  it("keeps the signals badge on the raw total and loads more signal pages", () => {
+    const signal = makePublisherAbuseSignal();
+    const loadMoreSignals = vi.fn();
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: 25,
+          signalCountHasMore: true,
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+    usePaginatedQueryMock.mockImplementation((query, args) => {
+      const name = getFunctionName(query);
+      if (name === "publisherAbuse:listSignalsPage") {
+        return {
+          results: args === "skip" ? [] : [signal],
+          status: args === "skip" ? "LoadingFirstPage" : "CanLoadMore",
+          loadMore: loadMoreSignals,
+        };
+      }
+      return {
+        results: [],
+        status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
+        loadMore: vi.fn(),
+      };
+    });
+
+    render(<Management />);
+
+    expect(screen.getByRole("tab", { name: /Signals 25\+/ })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: /Signals/ }));
+
+    expect(screen.getByRole("tab", { name: /Signals 25\+/ })).toBeTruthy();
+    expect(screen.getByText("Showing 1 of 1+ signals")).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("Search signal, skill, publisher, or user"), {
+      target: { value: "does-not-match" },
+    });
+
+    expect(screen.getByRole("tab", { name: /Signals 25\+/ })).toBeTruthy();
+    expect(screen.getByText("No matching signals")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(loadMoreSignals).toHaveBeenCalledWith(25);
+  });
+
   it("shows table skeleton rows while the active publisher abuse page is loading", () => {
     usePaginatedQueryMock.mockImplementation((query, args) => ({
       results: [],

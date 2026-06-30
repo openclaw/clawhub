@@ -46,6 +46,7 @@ const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
 const DEFAULT_REVIEW_DASHBOARD_PAGE_SIZE = 25;
 const MAX_REVIEW_DASHBOARD_PAGE_SIZE = 25;
 const DASHBOARD_SIGNAL_COUNT_LIMIT = 25;
+const DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT = 100;
 const MAX_BAN_REASON_LENGTH = 500;
 const DEFAULT_TEMPORAL_BATCH_SIZE = 50;
 const MAX_TEMPORAL_BATCH_SIZE = 100;
@@ -60,6 +61,11 @@ const MAX_TEMPORAL_DAILY_STAT_READS_PER_PAGE = 8_000;
 const MAX_TEMPORAL_DRY_RUN_CANDIDATES = 50;
 const MAX_TEMPORAL_EVIDENCE_SKILLS = 5;
 const MAX_TEMPORAL_STALE_NOMINATION_CLEARS = 250;
+const DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_BATCH_SIZE = 50;
+const MAX_TEMPORAL_SIGNAL_ARCHIVE_BATCH_SIZE = 100;
+const DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 5;
+const MAX_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 50;
+const MAX_TEMPORAL_SIGNAL_ARCHIVE_CONTINUATION_CANDIDATES = 250;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN = 100;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_READS_PER_PAGE = 2_000;
 const STAFF_PUBLISHER_MANAGER_ROLES = ["owner", "admin"] as const;
@@ -395,15 +401,16 @@ export const listSignalsPage = query({
       };
     }
 
-    const paginationOpts = {
-      ...args.paginationOpts,
-      numItems: clampInt(
-        args.paginationOpts.numItems ?? DEFAULT_REVIEW_DASHBOARD_PAGE_SIZE,
-        1,
-        MAX_REVIEW_DASHBOARD_PAGE_SIZE,
-      ),
-    };
+    const requestedItems = clampInt(
+      args.paginationOpts.numItems ?? DEFAULT_REVIEW_DASHBOARD_PAGE_SIZE,
+      1,
+      MAX_REVIEW_DASHBOARD_PAGE_SIZE,
+    );
     const signalType = args.signalType;
+    const paginationOpts: PublisherAbuseReviewPaginationOpts = {
+      cursor: args.paginationOpts.cursor ?? null,
+      numItems: requestedItems,
+    };
     const page = signalType
       ? await ctx.db
           .query("publisherAbuseSignals")
@@ -417,7 +424,9 @@ export const listSignalsPage = query({
           .paginate(paginationOpts);
 
     return {
-      page: await summarizePublisherAbuseSignals(ctx, page.page),
+      page: await summarizeVisiblePublisherAbuseSignals(ctx, page.page, {
+        staffManagerExclusionBudget: createStaffPublisherManagerExclusionBudget(),
+      }),
       isDone: page.isDone,
       continueCursor: page.continueCursor,
     };
@@ -1286,10 +1295,20 @@ export const persistTemporalPublisherAbuseCandidatesInternal = internalMutation(
   handler: persistTemporalPublisherAbuseCandidatesInternalHandler,
 });
 
+export const archiveTemporalPublisherAbuseSignalsPageInternal = internalMutation({
+  args: {
+    runId: v.optional(v.id("publisherAbuseScoreRuns")),
+    candidates: v.array(temporalCandidateValidator),
+    now: v.number(),
+  },
+  handler: archiveTemporalPublisherAbuseSignalsPageInternalHandler,
+});
+
 export const runTemporalPublisherAbuseScanInternal = internalAction({
   args: {
     mode: v.optional(v.union(v.literal("current"), v.literal("backfill"))),
     dryRun: v.optional(v.boolean()),
+    archiveDryRunSignals: v.optional(v.boolean()),
     candidateLimit: v.optional(v.number()),
     batchSize: v.optional(v.number()),
     maxPages: v.optional(v.number()),
@@ -1299,6 +1318,18 @@ export const runTemporalPublisherAbuseScanInternal = internalAction({
     actorUserId: v.optional(v.id("users")),
   },
   handler: runTemporalPublisherAbuseScanInternalHandler,
+});
+
+export const archiveTemporalPublisherAbuseSignalsInternal = internalAction({
+  args: {
+    runId: v.optional(v.id("publisherAbuseScoreRuns")),
+    candidates: v.array(temporalCandidateValidator),
+    now: v.number(),
+    offset: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    maxPages: v.optional(v.number()),
+  },
+  handler: archiveTemporalPublisherAbuseSignalsInternalHandler,
 });
 
 export const processPublisherAbuseAutobansInternal = internalAction({
@@ -1925,13 +1956,6 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
   const nominationRun = { ...run, temporalScanComplete: args.scanComplete } as ScoreRun;
 
   const now = Date.now();
-  if (args.mode === "current" && args.scanComplete) {
-    await archiveTemporalPublisherAbuseSignals(ctx, {
-      runId,
-      candidates: args.candidates,
-      now,
-    });
-  }
   let nominations = 0;
   let rank = 0;
   const sortedAggregates = [...aggregates].sort(
@@ -1996,6 +2020,103 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
   });
 
   return { runId, nominations, flaggedPublishers: sortedAggregates.length };
+}
+
+export async function archiveTemporalPublisherAbuseSignalsInternalHandler(
+  ctx: Pick<ActionCtx, "runMutation" | "scheduler">,
+  args: {
+    runId?: Id<"publisherAbuseScoreRuns">;
+    candidates: TemporalSkillCandidate[];
+    now: number;
+    offset?: number;
+    batchSize?: number;
+    maxPages?: number;
+  },
+) {
+  return await archiveTemporalPublisherAbuseSignalPages(ctx, args);
+}
+
+async function archiveTemporalPublisherAbuseSignalPages(
+  ctx: Pick<ActionCtx, "runMutation" | "scheduler">,
+  args: {
+    runId?: Id<"publisherAbuseScoreRuns">;
+    candidates: TemporalSkillCandidate[];
+    now: number;
+    offset?: number;
+    batchSize?: number;
+    maxPages?: number;
+  },
+) {
+  const batchSize = clampInt(
+    args.batchSize ?? DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_BATCH_SIZE,
+    1,
+    MAX_TEMPORAL_SIGNAL_ARCHIVE_BATCH_SIZE,
+  );
+  const maxPages = clampInt(
+    args.maxPages ?? DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES,
+    1,
+    MAX_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES,
+  );
+  let offset = clampInt(args.offset ?? 0, 0, args.candidates.length);
+  let pages = 0;
+  let archivedCandidates = 0;
+  let archivedSignals = 0;
+
+  while (pages < maxPages && offset < args.candidates.length) {
+    const batch = args.candidates.slice(offset, offset + batchSize);
+    const result: { archivedCandidates: number; archivedSignals: number } = await ctx.runMutation(
+      internal.publisherAbuse.archiveTemporalPublisherAbuseSignalsPageInternal,
+      {
+        ...(args.runId ? { runId: args.runId } : {}),
+        candidates: batch,
+        now: args.now,
+      },
+    );
+    pages += 1;
+    offset += batch.length;
+    archivedCandidates += result.archivedCandidates;
+    archivedSignals += result.archivedSignals;
+  }
+
+  if (offset < args.candidates.length) {
+    const continuationCandidateLimit = Math.min(
+      batchSize * maxPages,
+      MAX_TEMPORAL_SIGNAL_ARCHIVE_CONTINUATION_CANDIDATES,
+    );
+    const continuationCandidates = args.candidates.slice(offset);
+    const continuationChunks = chunkArray(continuationCandidates, continuationCandidateLimit);
+    for (const candidates of continuationChunks) {
+      await ctx.scheduler.runAfter(
+        ACTION_CONTINUATION_DELAY_MS,
+        internal.publisherAbuse.archiveTemporalPublisherAbuseSignalsInternal,
+        {
+          ...(args.runId ? { runId: args.runId } : {}),
+          candidates,
+          now: args.now,
+          offset: 0,
+          batchSize,
+          maxPages,
+        },
+      );
+    }
+  }
+
+  return {
+    ok: true as const,
+    pages,
+    archivedCandidates,
+    archivedSignals,
+    isDone: offset >= args.candidates.length,
+    offset,
+  };
+}
+
+function chunkArray<T>(values: T[], chunkSize: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
 }
 
 async function persistTemporalPublisherAbuseAggregate(
@@ -2070,6 +2191,7 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
   args: {
     mode?: TemporalAbuseMode;
     dryRun?: boolean;
+    archiveDryRunSignals?: boolean;
     candidateLimit?: number;
     batchSize?: number;
     maxPages?: number;
@@ -2091,6 +2213,7 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
 }> {
   const mode = args.mode ?? "current";
   const dryRun = args.dryRun ?? false;
+  const archiveDryRunSignals = args.archiveDryRunSignals ?? false;
   const requestedCandidateLimit = clampInt(
     args.candidateLimit ?? DEFAULT_TEMPORAL_CANDIDATE_LIMIT,
     1,
@@ -2153,6 +2276,12 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
 
   const flaggedPublishers = aggregateTemporalPublisherCandidates(highTemporalCandidates).length;
   if (dryRun || !scanComplete || (mode !== "current" && highTemporalCandidates.length === 0)) {
+    if (dryRun && archiveDryRunSignals && mode === "current" && highTemporalCandidates.length > 0) {
+      await archiveTemporalPublisherAbuseSignalPages(ctx, {
+        candidates: highTemporalCandidates,
+        now: Date.now(),
+      });
+    }
     return {
       ok: true,
       dryRun,
@@ -2205,7 +2334,11 @@ async function finishTemporalPublisherAbuseScan(
         candidate.temporalScore.sustained ||
         candidate.temporalScore.nearConversion,
     );
-  const saved: { nominations: number; flaggedPublishers: number } = await ctx.runMutation(
+  const saved: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    nominations: number;
+    flaggedPublishers: number;
+  } = await ctx.runMutation(
     internal.publisherAbuse.persistTemporalPublisherAbuseCandidatesInternal,
     {
       mode: args.mode,
@@ -2217,6 +2350,11 @@ async function finishTemporalPublisherAbuseScan(
     },
   );
   if (args.mode === "current" && args.scanComplete) {
+    await archiveTemporalPublisherAbuseSignalPages(ctx, {
+      runId: saved.runId,
+      candidates: highTemporalCandidates,
+      now: Date.now(),
+    });
     await processPublisherAbuseAutobanPages(ctx, {});
   }
   return {
@@ -2467,11 +2605,12 @@ function temporalEvidenceFromCandidate(candidate: TemporalSkillCandidate) {
 async function archiveTemporalPublisherAbuseSignals(
   ctx: Pick<MutationCtx, "db">,
   args: {
-    runId: Id<"publisherAbuseScoreRuns">;
+    runId?: Id<"publisherAbuseScoreRuns">;
     candidates: TemporalSkillCandidate[];
     now: number;
   },
 ) {
+  let archivedSignals = 0;
   for (const candidate of args.candidates) {
     for (const signalType of signalTypesForTemporalCandidate(candidate)) {
       await upsertPublisherAbuseSignal(ctx, {
@@ -2480,8 +2619,21 @@ async function archiveTemporalPublisherAbuseSignals(
         signalType,
         now: args.now,
       });
+      archivedSignals += 1;
     }
   }
+  return { archivedCandidates: args.candidates.length, archivedSignals };
+}
+
+export async function archiveTemporalPublisherAbuseSignalsPageInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    runId?: Id<"publisherAbuseScoreRuns">;
+    candidates: TemporalSkillCandidate[];
+    now: number;
+  },
+) {
+  return await archiveTemporalPublisherAbuseSignals(ctx, args);
 }
 
 function signalTypesForTemporalCandidate(
@@ -2500,7 +2652,7 @@ function signalTypesForTemporalCandidate(
 async function upsertPublisherAbuseSignal(
   ctx: Pick<MutationCtx, "db">,
   args: {
-    runId: Id<"publisherAbuseScoreRuns">;
+    runId?: Id<"publisherAbuseScoreRuns">;
     candidate: TemporalSkillCandidate;
     signalType: PublisherAbuseSignalType;
     now: number;
@@ -2508,8 +2660,11 @@ async function upsertPublisherAbuseSignal(
 ) {
   const signal = await ctx.db
     .query("publisherAbuseSignals")
-    .withIndex("by_skill_and_signal_type", (q) =>
-      q.eq("skillId", args.candidate.skillId).eq("signalType", args.signalType),
+    .withIndex("by_skill_signal_type_and_owner_key", (q) =>
+      q
+        .eq("skillId", args.candidate.skillId)
+        .eq("signalType", args.signalType)
+        .eq("ownerKey", args.candidate.ownerKey),
     )
     .first();
   const snapshot = publisherAbuseSignalSnapshot(args);
@@ -2532,7 +2687,7 @@ async function upsertPublisherAbuseSignal(
 }
 
 function publisherAbuseSignalSnapshot(args: {
-  runId: Id<"publisherAbuseScoreRuns">;
+  runId?: Id<"publisherAbuseScoreRuns">;
   candidate: TemporalSkillCandidate;
   signalType: PublisherAbuseSignalType;
 }) {
@@ -2546,7 +2701,7 @@ function publisherAbuseSignalSnapshot(args: {
     skillId: candidate.skillId,
     skillSlug: candidate.slug,
     skillDisplayName: candidate.displayName,
-    latestRunId: args.runId,
+    ...(args.runId ? { latestRunId: args.runId } : {}),
     recent7Downloads: candidate.temporalScore.recent7Downloads,
     recent7Installs: candidate.temporalScore.recent7Installs,
     recent7InstallDownloadRatio: installDownloadRatio({
@@ -3275,20 +3430,33 @@ async function summarizeVisiblePublisherAbuseReviewListNominations(
   return items;
 }
 
-async function summarizePublisherAbuseSignals(ctx: QueryCtx, signals: PublisherAbuseSignalDoc[]) {
-  return await Promise.all(
-    signals.map(async (signal) => {
-      const [publisher, ownerUser] = await Promise.all([
-        signal.ownerPublisherId ? ctx.db.get(signal.ownerPublisherId) : null,
-        signal.ownerUserId ? ctx.db.get(signal.ownerUserId) : null,
-      ]);
-      return {
-        signal,
-        publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
-        ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
-      };
-    }),
-  );
+async function summarizeVisiblePublisherAbuseSignals(
+  ctx: QueryCtx,
+  signals: PublisherAbuseSignalDoc[],
+  options: PublisherAbuseReviewVisibilityOptions = {},
+) {
+  const items = [];
+  for (const signal of signals) {
+    const [publisher, ownerUser] = await Promise.all([
+      signal.ownerPublisherId ? ctx.db.get(signal.ownerPublisherId) : null,
+      signal.ownerUserId ? ctx.db.get(signal.ownerUserId) : null,
+    ]);
+    if (
+      await isPublisherExcludedFromPublisherAbuse(
+        ctx,
+        publisher,
+        options.staffManagerExclusionBudget,
+      )
+    ) {
+      continue;
+    }
+    items.push({
+      signal,
+      publisher: publisher ? summarizePublisherForAbuseReview(publisher) : null,
+      ownerUser: ownerUser ? summarizeUserForAbuseReview(ownerUser) : null,
+    });
+  }
+  return items;
 }
 
 async function getPublisherAbuseSignalCountSummary(ctx: QueryCtx) {
@@ -3296,10 +3464,23 @@ async function getPublisherAbuseSignalCountSummary(ctx: QueryCtx) {
     .query("publisherAbuseSignals")
     .withIndex("by_last_seen_at")
     .order("desc")
-    .take(DASHBOARD_SIGNAL_COUNT_LIMIT + 1);
-  const signalCountHasMore = signals.length > DASHBOARD_SIGNAL_COUNT_LIMIT;
+    .take(DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT + 1);
+  const scannedSignals = signals.slice(0, DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT);
+  const staffManagerExclusionBudget = createStaffPublisherManagerExclusionBudget();
+  let visibleCount = 0;
+  for (const signal of scannedSignals) {
+    const publisher = signal.ownerPublisherId ? await ctx.db.get(signal.ownerPublisherId) : null;
+    if (await isPublisherExcludedFromPublisherAbuse(ctx, publisher, staffManagerExclusionBudget)) {
+      continue;
+    }
+    visibleCount += 1;
+    if (visibleCount > DASHBOARD_SIGNAL_COUNT_LIMIT) break;
+  }
+  const signalCountHasMore =
+    visibleCount > DASHBOARD_SIGNAL_COUNT_LIMIT ||
+    signals.length > DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT;
   return {
-    signalCount: Math.min(signals.length, DASHBOARD_SIGNAL_COUNT_LIMIT),
+    signalCount: Math.min(visibleCount, DASHBOARD_SIGNAL_COUNT_LIMIT),
     signalCountHasMore,
   };
 }

@@ -44,14 +44,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 - Publisher abuse scoring classifies bulk-publishing abuse for staff review and
   warning-first automatic enforcement. Scheduled pressure scoring runs daily.
-  Scheduled temporal scoring is a bounded dry-run signal until it has persisted
-  aggregation/cursor state. The `review` label remains a calibration/manual-review
-  signal. The `potential_ban_candidate` label is an enforcement signal only for
-  pressure-score nominations: the first eligible enforcement sweep must warn the
-  linked non-staff user by email and persist the warning score/run/deadline on the
-  nomination. A later sweep may automatically ban only after the warning deadline
-  has passed and a newer pressure score still places the publisher in
-  `potential_ban_candidate`. A stale warning by itself is not enough to ban.
+  Plain temporal dry runs are read-only. The scheduled temporal scan explicitly
+  opts into archived dry-run signal rows for the staff Signals tab until it has
+  persisted aggregation/cursor state. The `review` label remains a
+  calibration/manual-review signal. The `potential_ban_candidate` label is an
+  enforcement signal only for pressure-score nominations: the first eligible
+  enforcement sweep must warn the linked non-staff user by email and persist the
+  warning score/run/deadline on the nomination. A later sweep may automatically
+  ban only after the warning deadline has passed and a newer pressure score
+  still places the publisher in `potential_ban_candidate`. A stale warning by
+  itself is not enough to ban.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score

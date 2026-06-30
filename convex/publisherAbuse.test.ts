@@ -24,6 +24,12 @@ vi.mock("./_generated/api", () => ({
       autoBanPublisherAbuseCandidatesPageInternal: Symbol(
         "autoBanPublisherAbuseCandidatesPageInternal",
       ),
+      archiveTemporalPublisherAbuseSignalsInternal: Symbol(
+        "archiveTemporalPublisherAbuseSignalsInternal",
+      ),
+      archiveTemporalPublisherAbuseSignalsPageInternal: Symbol(
+        "archiveTemporalPublisherAbuseSignalsPageInternal",
+      ),
       collectPublisherAbuseScoresPageInternal: Symbol("collectPublisherAbuseScoresPageInternal"),
       collectTemporalPublisherAbuseSkillCandidatesPageInternal: Symbol(
         "collectTemporalPublisherAbuseSkillCandidatesPageInternal",
@@ -81,6 +87,7 @@ const TEST_MODEL_CONFIG = {
 
 type Handler<TArgs, TResult> = (ctx: unknown, args: TArgs) => Promise<TResult>;
 type Wrapped<TArgs, TResult> = { _handler: Handler<TArgs, TResult> };
+type TemporalSkillCandidate = ReturnType<typeof temporalCandidate>;
 
 const collectHandler = (
   publisherAbuse.collectPublisherAbuseScoresPageInternal as unknown as Wrapped<
@@ -122,6 +129,7 @@ const temporalRunHandler = (
       runId?: string;
       mode?: "current" | "backfill";
       dryRun?: boolean;
+      archiveDryRunSignals?: boolean;
       candidateLimit?: number;
       batchSize?: number;
       maxPages?: number;
@@ -259,6 +267,41 @@ const listSignalsPageHandler = (
       page: unknown[];
       isDone: boolean;
       continueCursor: string;
+    }
+  >
+)._handler;
+
+const archiveTemporalPublisherAbuseSignalsPageHandler = (
+  publisherAbuse.archiveTemporalPublisherAbuseSignalsPageInternal as unknown as Wrapped<
+    {
+      runId: string;
+      candidates: TemporalSkillCandidate[];
+      now: number;
+    },
+    {
+      archivedCandidates: number;
+      archivedSignals: number;
+    }
+  >
+)._handler;
+
+const archiveTemporalPublisherAbuseSignalsHandler = (
+  publisherAbuse.archiveTemporalPublisherAbuseSignalsInternal as unknown as Wrapped<
+    {
+      runId: string;
+      candidates: TemporalSkillCandidate[];
+      now: number;
+      offset?: number;
+      batchSize?: number;
+      maxPages?: number;
+    },
+    {
+      ok: true;
+      pages: number;
+      archivedCandidates: number;
+      archivedSignals: number;
+      isDone: boolean;
+      offset: number;
     }
   >
 )._handler;
@@ -735,9 +778,11 @@ describe("publisher abuse dry-run persistence", () => {
       _id: `publisherAbuseSignals:${index}`,
     }));
     const db = {
+      get: vi.fn(async () => null),
       query: vi.fn((table: string) => {
         if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
         if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
+        if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
         throw new Error(`unexpected table ${table}`);
       }),
     };
@@ -753,6 +798,128 @@ describe("publisher abuse dry-run persistence", () => {
     });
 
     expect(db.query).toHaveBeenCalledWith("publisherAbuseSignals");
+  });
+
+  it("does not mark the signal count as approximate at the exact scan limit", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signals = Array.from({ length: 100 }, (_, index) => ({
+      _id: `publisherAbuseSignals:${index}`,
+      ownerPublisherId: index === 0 ? undefined : `publishers:staff-${index}`,
+    }));
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id.startsWith("publishers:staff-")) {
+          const index = id.replace("publishers:staff-", "");
+          return {
+            _id: id,
+            kind: "user",
+            handle: `staff-${index}`,
+            linkedUserId: `users:staff-${index}`,
+          };
+        }
+        if (id.startsWith("users:staff-")) return { _id: id, role: "admin" };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
+        if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
+      latestRun: null,
+      pendingItems: [],
+      pendingPotentialBanCandidateItems: [],
+      pendingReviewItems: [],
+      recentResolvedItems: [],
+      signalCount: 1,
+      signalCountHasMore: false,
+    });
+
+    expect(db.query).toHaveBeenCalledWith("publisherAbuseSignals");
+  });
+
+  it("excludes official publishers from the publisher abuse signal count", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signals = [
+      {
+        _id: "publisherAbuseSignals:official",
+        ownerPublisherId: "publishers:official",
+      },
+      {
+        _id: "publisherAbuseSignals:visible",
+        ownerPublisherId: "publishers:visible",
+      },
+    ];
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id === "publishers:official") {
+          return {
+            _id: "publishers:official",
+            kind: "user",
+            handle: "official",
+            linkedUserId: "users:official",
+          };
+        }
+        if (id === "publishers:visible") {
+          return {
+            _id: "publishers:visible",
+            kind: "user",
+            handle: "visible",
+            linkedUserId: "users:visible",
+          };
+        }
+        if (id === "users:visible" || id === "users:official") return { _id: id, role: "user" };
+        throw new Error(`unexpected get ${id}`);
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
+        if (table === "officialPublishers") {
+          return {
+            withIndex: (
+              indexName: string,
+              build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              expect(indexName).toBe("by_publisher");
+              const constraints: Record<string, unknown> = {};
+              const q = {
+                eq(field: string, value: unknown) {
+                  constraints[field] = value;
+                  return q;
+                },
+              };
+              build(q);
+              return {
+                unique: async () =>
+                  constraints.publisherId === "publishers:official"
+                    ? { _id: "officialPublishers:official" }
+                    : null,
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
+      latestRun: null,
+      pendingItems: [],
+      pendingPotentialBanCandidateItems: [],
+      pendingReviewItems: [],
+      recentResolvedItems: [],
+      signalCount: 1,
+      signalCountHasMore: false,
+    });
   });
 
   it("defaults publisher abuse autobans to disabled when no setting exists", async () => {
@@ -3271,6 +3438,7 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -3299,6 +3467,331 @@ describe("publisher abuse dry-run persistence", () => {
       continueCursor: "",
     });
     expect(signalPaginate).toHaveBeenCalledWith({ numItems: 10, cursor: null });
+  });
+
+  it("pages unfiltered archived publisher abuse signals by last seen time", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const freshSignal = {
+      _id: "publisherAbuseSignals:fresh",
+      _creationTime: 100,
+      signalType: "high_install_download_ratio",
+      ownerKey: "publisher:publishers:fresh",
+      ownerPublisherId: "publishers:fresh",
+      ownerUserId: "users:fresh",
+      handleSnapshot: "fresh",
+      skillId: "skills:fresh",
+      skillSlug: "fresh-skill",
+      skillDisplayName: "Fresh Skill",
+      latestRunId: "publisherAbuseScoreRuns:temporal",
+      firstSeenAt: 100,
+      lastSeenAt: 300,
+      seenCount: 1,
+      recent7Downloads: 500,
+      recent7Installs: 75,
+      recent7InstallDownloadRatio: 0.15,
+      recent30Downloads: 1_000,
+      recent30Installs: 150,
+      recent30InstallDownloadRatio: 0.15,
+      allTimeDownloads: 1_000,
+      allTimeInstalls: 150,
+      allTimeInstallDownloadRatio: 0.15,
+    };
+    const olderSignal = {
+      ...freshSignal,
+      _id: "publisherAbuseSignals:older",
+      ownerKey: "publisher:publishers:older",
+      ownerPublisherId: "publishers:older",
+      ownerUserId: "users:older",
+      handleSnapshot: "older",
+      skillId: "skills:older",
+      skillSlug: "older-skill",
+      skillDisplayName: "Older Skill",
+      lastSeenAt: 200,
+    };
+    const signalPaginate = vi.fn(async () => ({
+      page: [freshSignal, olderSignal],
+      isDone: true,
+      continueCursor: "",
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:fresh" || id === "publishers:older") {
+            const handle = id.split(":").at(-1);
+            return {
+              _id: id,
+              kind: "user",
+              handle,
+              linkedUserId: `users:${handle}`,
+            };
+          }
+          if (id === "users:fresh" || id === "users:older") {
+            const handle = id.split(":").at(-1);
+            return { _id: id, handle, role: "user" };
+          }
+          throw new Error(`unexpected get ${id}`);
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseSignals") {
+            return {
+              withIndex: (indexName: string) => {
+                expect(indexName).toBe("by_last_seen_at");
+                return {
+                  order: (direction: string) => {
+                    expect(direction).toBe("desc");
+                    return { paginate: signalPaginate };
+                  },
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listSignalsPageHandler(ctx, {
+        paginationOpts: { numItems: 2, cursor: null },
+      }),
+    ).resolves.toEqual({
+      page: [
+        expect.objectContaining({
+          signal: freshSignal,
+          publisher: expect.objectContaining({ handle: "fresh" }),
+          ownerUser: expect.objectContaining({ handle: "fresh" }),
+        }),
+        expect.objectContaining({
+          signal: olderSignal,
+          publisher: expect.objectContaining({ handle: "older" }),
+          ownerUser: expect.objectContaining({ handle: "older" }),
+        }),
+      ],
+      isDone: true,
+      continueCursor: "",
+    });
+    expect(signalPaginate).toHaveBeenCalledWith({ numItems: 2, cursor: null });
+  });
+
+  it("excludes archived publisher abuse signals for now-excluded publishers", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signal = {
+      _id: "publisherAbuseSignals:official",
+      _creationTime: 100,
+      signalType: "high_install_download_ratio",
+      ownerKey: "publisher:publishers:official",
+      ownerPublisherId: "publishers:official",
+      ownerUserId: "users:official",
+      handleSnapshot: "official",
+      skillId: "skills:official",
+      skillSlug: "official-skill",
+      skillDisplayName: "Official Skill",
+      latestRunId: "publisherAbuseScoreRuns:temporal",
+      firstSeenAt: 100,
+      lastSeenAt: 300,
+      seenCount: 1,
+      recent7Downloads: 500,
+      recent7Installs: 75,
+      recent7InstallDownloadRatio: 0.15,
+      recent30Downloads: 1_000,
+      recent30Installs: 150,
+      recent30InstallDownloadRatio: 0.15,
+      allTimeDownloads: 1_000,
+      allTimeInstalls: 150,
+      allTimeInstallDownloadRatio: 0.15,
+    };
+    const signalPaginate = vi.fn(async () => ({
+      page: [signal],
+      isDone: true,
+      continueCursor: "",
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:official") {
+            return {
+              _id: "publishers:official",
+              kind: "user",
+              handle: "official",
+              linkedUserId: "users:official",
+            };
+          }
+          if (id === "users:official") return { _id: "users:official", role: "user" };
+          throw new Error(`unexpected get ${id}`);
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseSignals") {
+            return {
+              withIndex: (indexName: string) => {
+                expect(indexName).toBe("by_last_seen_at");
+                return {
+                  order: (direction: string) => {
+                    expect(direction).toBe("desc");
+                    return { paginate: signalPaginate };
+                  },
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_publisher");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  unique: async () =>
+                    constraints.publisherId === "publishers:official"
+                      ? { _id: "officialPublishers:official" }
+                      : null,
+                };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listSignalsPageHandler(ctx, {
+        paginationOpts: { numItems: 1, cursor: null },
+      }),
+    ).resolves.toEqual({
+      page: [],
+      isDone: true,
+      continueCursor: "",
+    });
+    expect(signalPaginate).toHaveBeenCalledWith({ numItems: 1, cursor: null });
+  });
+
+  it("returns a nonfinal empty signal page when the raw page is excluded", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const officialSignal = {
+      _id: "publisherAbuseSignals:official",
+      _creationTime: 100,
+      signalType: "high_install_download_ratio",
+      ownerKey: "publisher:publishers:official",
+      ownerPublisherId: "publishers:official",
+      ownerUserId: "users:official",
+      handleSnapshot: "official",
+      skillId: "skills:official",
+      skillSlug: "official-skill",
+      skillDisplayName: "Official Skill",
+      latestRunId: "publisherAbuseScoreRuns:temporal",
+      firstSeenAt: 100,
+      lastSeenAt: 300,
+      seenCount: 1,
+      recent7Downloads: 500,
+      recent7Installs: 75,
+      recent7InstallDownloadRatio: 0.15,
+      recent30Downloads: 1_000,
+      recent30Installs: 150,
+      recent30InstallDownloadRatio: 0.15,
+      allTimeDownloads: 1_000,
+      allTimeInstalls: 150,
+      allTimeInstallDownloadRatio: 0.15,
+    };
+    const signalPaginate = vi.fn(
+      async (paginationOpts: { numItems: number; cursor: string | null }) => {
+        expect(paginationOpts).toEqual({ numItems: 1, cursor: null });
+        return {
+          page: [officialSignal],
+          isDone: false,
+          continueCursor: "after-official",
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:official") {
+            const handle = id.split(":").at(-1);
+            return {
+              _id: id,
+              kind: "user",
+              handle,
+              linkedUserId: `users:${handle}`,
+            };
+          }
+          if (id === "users:official") {
+            const handle = id.split(":").at(-1);
+            return { _id: id, handle, role: "user" };
+          }
+          throw new Error(`unexpected get ${id}`);
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseSignals") {
+            return {
+              withIndex: (indexName: string) => {
+                expect(indexName).toBe("by_last_seen_at");
+                return {
+                  order: (direction: string) => {
+                    expect(direction).toBe("desc");
+                    return { paginate: signalPaginate };
+                  },
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_publisher");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  unique: async () =>
+                    constraints.publisherId === "publishers:official"
+                      ? { _id: "officialPublishers:official" }
+                      : null,
+                };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listSignalsPageHandler(ctx, {
+        paginationOpts: { numItems: 1, cursor: null },
+      }),
+    ).resolves.toEqual({
+      page: [],
+      isDone: false,
+      continueCursor: "after-official",
+    });
+    expect(signalPaginate).toHaveBeenCalledTimes(1);
   });
 
   it("queries recent resolved nominations by review time", async () => {
@@ -6675,6 +7168,182 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.runMutation).not.toHaveBeenCalled();
   });
 
+  it("keeps current temporal dry-runs read-only unless archival is requested", async () => {
+    const candidate = temporalCandidate("skills:read-only-ratio", {
+      slug: "read-only-ratio",
+      displayName: "Read Only Ratio",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.nearConversion = true;
+    candidate.temporalScore.recent7Downloads = 800;
+    candidate.temporalScore.recent7Installs = 96;
+    candidate.temporalScore.recent30Downloads = 2_400;
+    candidate.temporalScore.recent30Installs = 288;
+    candidate.temporalScore.installDownloadRatio7 = 0.12;
+    candidate.temporalScore.installDownloadRatio30 = 0.12;
+    candidate.temporalScore.installDownloadExcessZScore7 = 12;
+    candidate.temporalScore.installDownloadExcessZScore30 = 12;
+    candidate.temporalScore.reasonCodes = ["temporal_installs_track_downloads"];
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 1,
+        candidates: [candidate],
+      })),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: true,
+        candidateLimit: 1,
+        batchSize: 1,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      mode: "current",
+      scannedSkills: 1,
+      highTemporalSkills: 1,
+      flaggedPublishers: 1,
+      nominations: 0,
+    });
+
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("archives completed current temporal dry-run signals when requested", async () => {
+    const candidate = temporalCandidate("skills:ratio", {
+      slug: "ratio",
+      displayName: "Ratio",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.nearConversion = true;
+    candidate.temporalScore.recent7Downloads = 800;
+    candidate.temporalScore.recent7Installs = 96;
+    candidate.temporalScore.recent30Downloads = 2_400;
+    candidate.temporalScore.recent30Installs = 288;
+    candidate.temporalScore.installDownloadRatio7 = 0.12;
+    candidate.temporalScore.installDownloadRatio30 = 0.12;
+    candidate.temporalScore.installDownloadExcessZScore7 = 12;
+    candidate.temporalScore.installDownloadExcessZScore30 = 12;
+    candidate.temporalScore.reasonCodes = ["temporal_installs_track_downloads"];
+    const runMutation = vi.fn(async (_target: unknown, _args: unknown) => ({
+      archivedCandidates: 1,
+      archivedSignals: 1,
+    }));
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 1,
+        candidates: [candidate],
+      })),
+      runMutation,
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: true,
+        archiveDryRunSignals: true,
+        candidateLimit: 1,
+        batchSize: 1,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      mode: "current",
+      scannedSkills: 1,
+      highTemporalSkills: 1,
+      flaggedPublishers: 1,
+      nominations: 0,
+    });
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
+    expect(String(ctx.runMutation.mock.calls[0]?.[0])).toContain(
+      "archiveTemporalPublisherAbuseSignalsPageInternal",
+    );
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        candidates: [expect.objectContaining({ skillId: "skills:ratio" })],
+      }),
+    );
+    expect(ctx.runMutation.mock.calls[0]?.[1]).not.toHaveProperty("runId");
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("archives bounded current temporal dry-run signals before scan completion when requested", async () => {
+    const candidate = temporalCandidate("skills:bounded-ratio", {
+      slug: "bounded-ratio",
+      displayName: "Bounded Ratio",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.nearConversion = true;
+    candidate.temporalScore.recent7Downloads = 800;
+    candidate.temporalScore.recent7Installs = 96;
+    candidate.temporalScore.recent30Downloads = 2_400;
+    candidate.temporalScore.recent30Installs = 288;
+    candidate.temporalScore.installDownloadRatio7 = 0.12;
+    candidate.temporalScore.installDownloadRatio30 = 0.12;
+    candidate.temporalScore.installDownloadExcessZScore7 = 12;
+    candidate.temporalScore.installDownloadExcessZScore30 = 12;
+    candidate.temporalScore.reasonCodes = ["temporal_installs_track_downloads"];
+    const runMutation = vi.fn(async (_target: unknown, _args: unknown) => ({
+      archivedCandidates: 1,
+      archivedSignals: 1,
+    }));
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runQuery: vi.fn(async () => ({
+        cursor: "next-page",
+        isDone: false,
+        scannedSkills: 1,
+        candidates: [candidate],
+      })),
+      runMutation,
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: true,
+        archiveDryRunSignals: true,
+        candidateLimit: 2,
+        batchSize: 1,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      mode: "current",
+      scannedSkills: 1,
+      highTemporalSkills: 1,
+      flaggedPublishers: 1,
+      nominations: 0,
+    });
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        candidates: [expect.objectContaining({ skillId: "skills:bounded-ratio" })],
+      }),
+    );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
   it("caps temporal scan candidate limits below Convex array limits", async () => {
     const ctx = {
       runQuery: vi.fn(async (_query: unknown, args: { batchSize: number }) => ({
@@ -7395,7 +8064,7 @@ describe("publisher abuse dry-run persistence", () => {
                 indexName: string,
                 build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
               ) => {
-                expect(indexName).toBe("by_skill_and_signal_type");
+                expect(indexName).toBe("by_skill_signal_type_and_owner_key");
                 const constraints: Record<string, unknown> = {};
                 const q = {
                   eq(field: string, value: unknown) {
@@ -7408,7 +8077,8 @@ describe("publisher abuse dry-run persistence", () => {
                 return {
                   first: async () =>
                     constraints.skillId === highRatio.skillId &&
-                    constraints.signalType === "high_install_download_ratio"
+                    constraints.signalType === "high_install_download_ratio" &&
+                    constraints.ownerKey === highRatio.ownerKey
                       ? existingSignal
                       : null,
                 };
@@ -7441,22 +8111,27 @@ describe("publisher abuse dry-run persistence", () => {
     };
 
     await expect(
-      persistTemporalHandler(ctx, {
-        mode: "current",
-        trigger: "cron",
-        scanComplete: true,
-        benchmark: temporalBenchmark(),
+      archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:temporal",
         candidates: [highRatio, sustained, spikeOnly],
+        now: 1_234,
       }),
     ).resolves.toEqual({
-      runId: "publisherAbuseScoreRuns:temporal",
-      flaggedPublishers: 1,
-      nominations: 1,
+      archivedCandidates: 3,
+      archivedSignals: 2,
     });
 
     expect(signalLookups).toEqual([
-      { skillId: "skills:ratio", signalType: "high_install_download_ratio" },
-      { skillId: "skills:sustained", signalType: "sustained_downloads_flat_installs" },
+      {
+        skillId: "skills:ratio",
+        signalType: "high_install_download_ratio",
+        ownerKey: highRatio.ownerKey,
+      },
+      {
+        skillId: "skills:sustained",
+        signalType: "sustained_downloads_flat_installs",
+        ownerKey: sustained.ownerKey,
+      },
     ]);
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseSignals:existing-ratio",
@@ -7465,6 +8140,7 @@ describe("publisher abuse dry-run persistence", () => {
         recent7Downloads: 800,
         recent7Installs: 96,
         recent7InstallDownloadRatio: 0.12,
+        lastSeenAt: 1_234,
         seenCount: 6,
       }),
     );
@@ -7474,19 +8150,127 @@ describe("publisher abuse dry-run persistence", () => {
         skillId: "skills:sustained",
         skillSlug: "sustained",
         recent30Downloads: 5_000,
-        firstSeenAt: expect.any(Number),
-        lastSeenAt: expect.any(Number),
+        firstSeenAt: 1_234,
+        lastSeenAt: 1_234,
         seenCount: 1,
       }),
     ]);
-    expect(insert).toHaveBeenCalledWith(
-      "publisherAbuseScores",
+  });
+
+  it("archives temporal review signals in bounded pages and schedules continuation", async () => {
+    const candidates = [
+      temporalCandidate("skills:first", { slug: "first", displayName: "First" }),
+      temporalCandidate("skills:second", { slug: "second", displayName: "Second" }),
+      temporalCandidate("skills:third", { slug: "third", displayName: "Third" }),
+      temporalCandidate("skills:fourth", { slug: "fourth", displayName: "Fourth" }),
+      temporalCandidate("skills:fifth", { slug: "fifth", displayName: "Fifth" }),
+    ];
+    const runMutation = vi.fn(async (_fn: unknown, args: { candidates: unknown[] }) => ({
+      archivedCandidates: args.candidates.length,
+      archivedSignals: args.candidates.length,
+    }));
+    const scheduler = {
+      runAfter: vi.fn(async () => null),
+    };
+
+    await expect(
+      archiveTemporalPublisherAbuseSignalsHandler(
+        { runMutation, scheduler },
+        {
+          runId: "publisherAbuseScoreRuns:temporal",
+          candidates,
+          now: 1_234,
+          batchSize: 1,
+          maxPages: 2,
+        },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      pages: 2,
+      archivedCandidates: 2,
+      archivedSignals: 2,
+      isDone: false,
+      offset: 2,
+    });
+
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    const mutationCandidateSkillIds = runMutation.mock.calls.map(([, args]) => {
+      const callArgs = args as { candidates: TemporalSkillCandidate[] };
+      return callArgs.candidates[0].skillId;
+    });
+    expect(mutationCandidateSkillIds).toEqual(["skills:first", "skills:second"]);
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(2);
+    expect(scheduler.runAfter).toHaveBeenNthCalledWith(
+      1,
+      60_000,
+      expect.any(Symbol),
       expect.objectContaining({
-        label: "review",
-        temporalHighSkillCount: 3,
-        temporalSustainedSkillCount: 1,
+        runId: "publisherAbuseScoreRuns:temporal",
+        candidates: [candidates[2], candidates[3]],
+        now: 1_234,
+        offset: 0,
+        batchSize: 1,
+        maxPages: 2,
       }),
     );
+    expect(scheduler.runAfter).toHaveBeenNthCalledWith(
+      2,
+      60_000,
+      expect.any(Symbol),
+      expect.objectContaining({
+        runId: "publisherAbuseScoreRuns:temporal",
+        candidates: [candidates[4]],
+        now: 1_234,
+        offset: 0,
+        batchSize: 1,
+        maxPages: 2,
+      }),
+    );
+  });
+
+  it("caps temporal signal archive continuation payloads independently", async () => {
+    const candidates = Array.from({ length: 601 }, (_value, index) =>
+      temporalCandidate(`skills:payload-${index}`, {
+        slug: `payload-${index}`,
+        displayName: `Payload ${index}`,
+      }),
+    );
+    const runMutation = vi.fn(async (_fn: unknown, args: { candidates: unknown[] }) => ({
+      archivedCandidates: args.candidates.length,
+      archivedSignals: args.candidates.length,
+    }));
+    const scheduler = {
+      runAfter: vi.fn(async () => null),
+    };
+
+    await expect(
+      archiveTemporalPublisherAbuseSignalsHandler(
+        { runMutation, scheduler },
+        {
+          runId: "publisherAbuseScoreRuns:temporal",
+          candidates,
+          now: 1_234,
+          batchSize: 100,
+          maxPages: 3,
+        },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      pages: 3,
+      archivedCandidates: 300,
+      archivedSignals: 300,
+      isDone: false,
+      offset: 300,
+    });
+
+    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(2);
+    const scheduledCandidateCounts = (
+      scheduler.runAfter.mock.calls as unknown as Array<
+        [number, unknown, { candidates: TemporalSkillCandidate[] }]
+      >
+    ).map(([, , scheduledArgs]) => scheduledArgs.candidates.length);
+    expect(scheduledCandidateCounts).toEqual([250, 51]);
   });
 
   it("does not clear stale temporal nominations when the current scan is partial", async () => {

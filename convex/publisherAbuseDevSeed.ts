@@ -531,7 +531,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     rank: 1,
     pressure: 18,
     logPressure: Math.log10(18),
-    zScore: 3.13,
+    zScore: 2.14,
     publishedSkills: 1,
     totalInstalls: 0,
     totalStars: 0,
