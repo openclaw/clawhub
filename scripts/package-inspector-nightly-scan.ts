@@ -54,6 +54,12 @@ type ImpactEntry = {
   findings: NormalizedFinding[];
 };
 
+type UploadResult = {
+  ok: true;
+  inserted: number;
+  shouldEmailOwner: boolean;
+};
+
 const siteUrl = (process.env.CLAWHUB_SITE_URL ?? "https://clawhub.ai").replace(/\/+$/, "");
 const token = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
 const batchSize = process.env.PLUGIN_INSPECTOR_BATCH_SIZE ?? "25";
@@ -194,13 +200,23 @@ async function inspectPackageItem(item: ClaimItem, inspectorVersion: string) {
     const findings = normalizeFindings(report);
     const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
     if (!dryRun) {
-      await postJson(`${siteUrl}/api/v1/package-inspector/results`, {
-        packageId: item.packageId,
-        releaseId: item.releaseId,
-        inspectorVersion,
-        targetOpenClawVersion,
-        findings,
-      });
+      const uploadResult = await postJson<UploadResult>(
+        `${siteUrl}/api/v1/package-inspector/results`,
+        {
+          packageId: item.packageId,
+          releaseId: item.releaseId,
+          inspectorVersion,
+          targetOpenClawVersion,
+          findings,
+        },
+      );
+      await writeFile(
+        path.join(reportDir, "upload-result.json"),
+        `${JSON.stringify({ findingCount: findings.length, ...uploadResult }, null, 2)}\n`,
+      );
+      console.log(
+        `Uploaded ${item.packageName}@${item.version}: findings=${findings.length}, inserted=${uploadResult.inserted}, shouldEmailOwner=${uploadResult.shouldEmailOwner}`,
+      );
     }
     return {
       failed: false,
