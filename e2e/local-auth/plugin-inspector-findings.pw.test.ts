@@ -1,5 +1,5 @@
 import { writeFile } from "node:fs/promises";
-import { expect, type Page, test, type TestInfo } from "@playwright/test";
+import { expect, type APIRequestContext, type Page, test, type TestInfo } from "@playwright/test";
 import { strToU8, zipSync } from "fflate";
 import {
   expectNoFatalErrorUi,
@@ -7,7 +7,13 @@ import {
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
-import { buildPluginValidationHref, escapeRegExp, signInAsLocalPersona } from "./helpers";
+import {
+  buildPluginDetailHref,
+  buildPluginValidationHref,
+  completeMockPrePublicationChecks,
+  escapeRegExp,
+  signInAsLocalPersona,
+} from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -162,6 +168,25 @@ async function expectValidationSectionVisible(page: Page, warningName: string) {
   await expect(validationSection).toBeVisible({ timeout: 10_000 });
 }
 
+async function publicPackageVersionExists(
+  request: APIRequestContext,
+  name: string,
+  version: string,
+) {
+  const siteUrl = process.env.VITE_CONVEX_SITE_URL;
+  if (!siteUrl) throw new Error("VITE_CONVEX_SITE_URL is required");
+  const url = `${siteUrl.replace(/\/$/u, "")}/api/v1/packages/${encodeURIComponent(
+    name,
+  )}/versions/${encodeURIComponent(version)}`;
+  const response = await request.get(url, { timeout: 2_000 }).catch(() => null);
+  if (!response?.ok()) return false;
+  const body = (await response.json().catch(() => null)) as {
+    package?: { name?: unknown };
+    version?: { version?: unknown };
+  } | null;
+  return body?.package?.name === name && body?.version?.version === version;
+}
+
 async function publishWarningPluginWithRetry(args: {
   errors: string[];
   page: Page;
@@ -192,8 +217,13 @@ async function publishWarningPluginWithRetry(args: {
       const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
       await expect(publishButton).toBeEnabled({ timeout: 60_000 });
       await publishButton.click({ timeout: 15_000 });
-      await expect(args.page.getByText("Published. Pending security checks")).toBeVisible({
+      await expect(args.page.getByText("Running TruffleHog and ClawScan")).toBeVisible({
         timeout: 60_000,
+      });
+      await completeMockPrePublicationChecks({
+        kind: "package",
+        slug: warningName,
+        version: "1.0.0",
       });
       return { warningDisplayName, warningName };
     } catch (error) {
@@ -246,6 +276,57 @@ async function publishHardErrorPluginWithRetry(args: {
   }
   throw lastError;
 }
+
+test("plugin publish stays private until mocked TruffleHog and ClawScan pass", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const suffix = Date.now().toString(36);
+  const name = `pw-staged-plugin-${suffix}`;
+  const displayName = `Playwright Staged Plugin ${suffix}`;
+  const version = "1.0.0";
+
+  await signInAsLocalPersona(page, "admin");
+  await page.goto("/plugins/publish", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await uploadPluginZip(
+    page,
+    await writePluginZip(testInfo, {
+      name,
+      displayName,
+      kind: "warning",
+    }),
+  );
+  await expect(page.locator("#pluginName")).toHaveValue(name);
+  await page.locator("#pluginSourceCommit").fill("abc123");
+  const publishButton = page.getByRole("button", { name: "Publish plugin" });
+  await expect(publishButton).toBeEnabled({ timeout: 60_000 });
+  await publishButton.click({ timeout: 15_000 });
+  await expect(page.getByText("Running TruffleHog and ClawScan")).toBeVisible({
+    timeout: 60_000,
+  });
+
+  await expect(await publicPackageVersionExists(request, name, version)).toBe(false);
+  await completeMockPrePublicationChecks({
+    kind: "package",
+    slug: name,
+    version,
+  });
+  await expect
+    .poll(() => publicPackageVersionExists(request, name, version), {
+      timeout: 60_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toBe(true);
+
+  await page.goto(buildPluginDetailHref(name), { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expectHealthyInspectorPage(page, errors);
+});
 
 test("plugin inspector blocks hard publish errors and publishes warning findings", async ({
   page,

@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
-import { publishVersionForUser, __test } from "./skillPublish";
+import {
+  finalizeSkillPublishAttempt,
+  publishVersionForUser,
+  stageSkillPublishAttemptForUser,
+  __test,
+} from "./skillPublish";
 
 vi.mock("./embeddings", () => ({
   generateEmbedding: vi.fn(async () => [0, 1, 2]),
@@ -50,7 +55,7 @@ description: Automation workflow for recurring reports.
       },
     };
 
-    await publishVersionForUser(
+    const result = await publishVersionForUser(
       ctx as never,
       "users:1" as never,
       {
@@ -82,6 +87,11 @@ description: Automation workflow for recurring reports.
       },
     );
 
+    expect(result).toEqual({
+      skillId: "skills:demo",
+      versionId: "skillVersions:demo",
+      embeddingId: "skillEmbeddings:demo",
+    });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -182,11 +192,12 @@ description: Org helper.
         },
       );
 
-      await vi.waitFor(() => {
-        expect(ctx.runQuery).toHaveBeenCalledWith(expect.anything(), {
-          slug: "org-helper",
-          ownerHandle: "org-demo",
-        });
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      expect(ctx.runQuery).toHaveBeenCalledWith(expect.anything(), {
+        slug: "org-helper",
+        ownerHandle: "org-demo",
       });
     } finally {
       if (previousWebhookUrl === undefined) {
@@ -352,7 +363,7 @@ description: Research helper for literature reviews.
     );
   });
 
-  it("schedules security scan enqueue after publish instead of awaiting it inline", async () => {
+  it("stages publish attempts without creating a public version inline", async () => {
     const storedFiles = new Map([
       [
         "_storage:skill",
@@ -364,14 +375,13 @@ description: Security scanner smoke fixture.
       ],
     ]);
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("version" in args && "embedding" in args) {
+      if ("skillInsertArgs" in args) {
         return {
-          skillId: "skills:demo",
-          versionId: "skillVersions:demo",
-          embeddingId: "skillEmbeddings:demo",
+          attemptId: "publishAttempts:security-scanner-smoke",
+          status: "pending_checks",
         };
       }
-      throw new Error("publish should not await follow-up scan enqueue mutations");
+      throw new Error("publish should not create a public version before checks pass");
     });
     const scheduler = { runAfter: vi.fn() };
     const ctx = {
@@ -389,7 +399,7 @@ description: Security scanner smoke fixture.
       },
     };
 
-    await publishVersionForUser(
+    const result = await stageSkillPublishAttemptForUser(
       ctx as never,
       "users:1" as never,
       {
@@ -414,25 +424,267 @@ description: Security scanner smoke fixture.
       },
     );
 
+    expect(result).toEqual({
+      status: "pending",
+      attemptId: "publishAttempts:security-scanner-smoke",
+      slug: "security-scanner-smoke",
+      version: "1.0.0",
+    });
     expect(runMutation).toHaveBeenCalledTimes(1);
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      0,
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        versionId: "skillVersions:demo",
-        source: "publish",
+        skillInsertArgs: expect.objectContaining({
+          slug: "security-scanner-smoke",
+          version: "1.0.0",
+        }),
       }),
     );
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      15_000,
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate staged skill versions before creating a publish attempt", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error("duplicate publish should not create an attempt");
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "security-scanner-smoke",
+          softDeletedAt: undefined,
+        })
+        .mockResolvedValueOnce({
+          _id: "skillVersions:demo",
+          skillId: "skills:demo",
+          version: "1.0.0",
+        }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      stageSkillPublishAttemptForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          slug: "security-scanner-smoke",
+          displayName: "Security Scanner Smoke",
+          version: "1.0.0",
+          changelog: "Duplicate release",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 90,
+              storageId: "_storage:skill" as never,
+              sha256: "a".repeat(64),
+              contentType: "text/markdown",
+            },
+          ],
+        },
+        {
+          bypassGitHubAccountAge: true,
+          bypassQualityGate: true,
+          skipWebhook: true,
+        },
+      ),
+    ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(ctx.storage.get).not.toHaveBeenCalled();
+  });
+
+  it("finalizes a clean staged publish through insertVersion and then enqueues scans", async () => {
+    const insertArgs = {
+      userId: "users:1",
+      slug: "security-scanner-smoke",
+      displayName: "Security Scanner Smoke",
+      version: "1.0.0",
+      embedding: [0, 1, 2],
+    };
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("claimId" in args && !("result" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:security-scanner-smoke",
+          skillInsertArgs: insertArgs,
+          followup: {
+            skipWebhook: true,
+            slug: "security-scanner-smoke",
+            version: "1.0.0",
+            displayName: "Security Scanner Smoke",
+          },
+        };
+      }
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      if ("result" in args) {
+        return {
+          attemptId: "publishAttempts:security-scanner-smoke",
+          status: "finalized",
+          result: args.result,
+        };
+      }
+      return {
+        attemptId: "publishAttempts:security-scanner-smoke",
+        status: "ready_to_finalize",
+      };
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      runMutation,
+      scheduler,
+    };
+
+    const result = await finalizeSkillPublishAttempt(
+      ctx as never,
+      "publishAttempts:security-scanner-smoke" as never,
+    );
+
+    expect(result).toEqual({
+      skillId: "skills:demo",
+      versionId: "skillVersions:demo",
+      embeddingId: "skillEmbeddings:demo",
+    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), insertArgs);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      versionId: "skillVersions:demo",
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      versionId: "skillVersions:demo",
+      source: "publish",
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(15_000, expect.anything(), {
+      versionId: "skillVersions:demo",
+      source: "publish",
+      preserveActiveJob: true,
+      preserveExistingJob: true,
+    });
+  });
+
+  it("releases the staged publish finalization claim when insertion fails", async () => {
+    const insertArgs = {
+      userId: "users:1",
+      slug: "security-scanner-smoke",
+      displayName: "Security Scanner Smoke",
+      version: "1.0.0",
+      embedding: [0, 1, 2],
+    };
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("claimId" in args && !("error" in args) && !("result" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:security-scanner-smoke",
+          skillInsertArgs: insertArgs,
+          followup: {
+            skipWebhook: true,
+            slug: "security-scanner-smoke",
+            version: "1.0.0",
+            displayName: "Security Scanner Smoke",
+          },
+        };
+      }
+      if ("version" in args && "embedding" in args) {
+        throw new Error("transient insert failure");
+      }
+      if ("error" in args) {
+        return {
+          attemptId: "publishAttempts:security-scanner-smoke",
+          status: "ready_to_finalize",
+        };
+      }
+      throw new Error("unexpected mutation");
+    });
+    const ctx = {
+      runMutation,
+      runQuery: vi.fn(async () => null),
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await expect(
+      finalizeSkillPublishAttempt(ctx as never, "publishAttempts:security-scanner-smoke" as never),
+    ).rejects.toThrow("transient insert failure");
+
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        versionId: "skillVersions:demo",
-        source: "publish",
-        preserveActiveJob: true,
-        preserveExistingJob: true,
+        attemptId: "publishAttempts:security-scanner-smoke",
+        error: "transient insert failure",
       }),
     );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("recovers an already-created public version when retrying finalization", async () => {
+    const insertArgs = {
+      userId: "users:1",
+      slug: "security-scanner-smoke",
+      displayName: "Security Scanner Smoke",
+      version: "1.0.0",
+      embedding: [0, 1, 2],
+    };
+    const recoveredResult = {
+      skillId: "skills:demo",
+      versionId: "skillVersions:demo",
+      embeddingId: "skillEmbeddings:demo",
+    };
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("claimId" in args && !("result" in args)) {
+        return {
+          status: "claimed",
+          attemptId: "publishAttempts:security-scanner-smoke",
+          skillInsertArgs: insertArgs,
+          followup: {
+            skipWebhook: true,
+            slug: "security-scanner-smoke",
+            version: "1.0.0",
+            displayName: "Security Scanner Smoke",
+          },
+        };
+      }
+      if ("version" in args && "embedding" in args) {
+        throw new Error(
+          "Version 1.0.0 already exists. Increment the version number and try again.",
+        );
+      }
+      if ("result" in args) {
+        return {
+          attemptId: "publishAttempts:security-scanner-smoke",
+          status: "finalized",
+          result: args.result,
+        };
+      }
+      throw new Error("unexpected mutation");
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      runMutation,
+      runQuery: vi.fn(async () => recoveredResult),
+      scheduler,
+    };
+
+    const result = await finalizeSkillPublishAttempt(
+      ctx as never,
+      "publishAttempts:security-scanner-smoke" as never,
+    );
+
+    expect(result).toEqual(recoveredResult);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ result: recoveredResult }),
+    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      versionId: "skillVersions:demo",
+    });
   });
 
   it("merges github source into metadata", () => {

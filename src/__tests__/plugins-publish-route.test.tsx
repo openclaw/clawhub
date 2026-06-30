@@ -284,6 +284,13 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
     });
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /Published\. Pending security checks and verification before public listing\./i,
+        ),
+      ).toBeTruthy();
+    });
 
     expect(generateUploadUrl).toHaveBeenCalledTimes(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -829,7 +836,14 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("shows pending verification messaging after plugin publish", async () => {
+  it("shows pending verification messaging after staged plugin publish", async () => {
+    publishRelease.mockResolvedValueOnce({
+      ok: true,
+      status: "pending",
+      attemptId: "publishAttempts:1",
+      packageName: "demo-plugin",
+      version: "1.0.0",
+    });
     renderPublishRoute();
 
     const packageJson = withRelativePath(
@@ -865,7 +879,7 @@ describe("plugins publish route", () => {
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
     expect(
-      await screen.findByText(/Pending security checks and verification before public listing\./i),
+      await screen.findByText(/Running TruffleHog and ClawScan before public listing\./i),
     ).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),

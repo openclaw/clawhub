@@ -2,10 +2,17 @@ import { expect, type ConsoleMessage, type Page } from "@playwright/test";
 import { isKnownOpenClawMediaUrl } from "./externalMedia";
 
 const EXTERNAL_RESOURCE_DNS_ERROR = "Failed to load resource: net::ERR_NAME_NOT_RESOLVED";
+const TRANSIENT_CHROMIUM_RESOURCE_ERRORS = new Set([
+  "Failed to load resource: net::ERR_NETWORK_CHANGED",
+]);
 
 function isIgnoredExternalResourceDnsError(message: ConsoleMessage) {
   if (message.text() !== EXTERNAL_RESOURCE_DNS_ERROR) return false;
   return isKnownOpenClawMediaUrl(message.location().url);
+}
+
+function isIgnoredTransientResourceError(message: ConsoleMessage) {
+  return TRANSIENT_CHROMIUM_RESOURCE_ERRORS.has(message.text());
 }
 
 export function trackRuntimeErrors(page: Page) {
@@ -18,6 +25,7 @@ export function trackRuntimeErrors(page: Page) {
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     if (isIgnoredExternalResourceDnsError(message)) return;
+    if (isIgnoredTransientResourceError(message)) return;
     errors.push(`console:${message.text()}`);
   });
 

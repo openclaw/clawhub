@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -8,7 +8,14 @@ import {
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
-import { expectOwnerHandleSelected, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
+import {
+  completeMockPrePublicationChecks,
+  expectOwnerHandleSelected,
+  publishedSkillVersionExists,
+  publishSkillVersion,
+  signInAsLocalPublisher,
+  skillMd,
+} from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -168,6 +175,25 @@ async function waitForSkillCardEndpoint(page: Page, slug: string, markdown: stri
   );
 }
 
+async function publicSkillVersionExists(
+  request: APIRequestContext,
+  args: {
+    ownerHandle: string;
+    slug: string;
+    version: string;
+  },
+) {
+  const url = `${convexSiteUrl()}/api/v1/skills/${encodeURIComponent(args.slug)}/versions/${encodeURIComponent(
+    args.version,
+  )}?ownerHandle=${encodeURIComponent(args.ownerHandle)}`;
+  const response = await request.get(url, { timeout: 2_000 }).catch(() => null);
+  if (!response?.ok()) return false;
+  const body = (await response.json().catch(() => null)) as {
+    version?: { version?: unknown };
+  } | null;
+  return body?.version?.version === args.version;
+}
+
 async function completeScanJob(
   client: ConvexHttpClientInstance,
   scanJob: ClaimedScanJob,
@@ -277,6 +303,67 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
 
   expect(await cardResponse.text()).toBe(markdown);
 
+  await expectHealthyPublishPage(page, errors);
+});
+
+test("mocked TruffleHog blocks a secret-positive skill upload until the secret is removed", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-secret-${Date.now().toString(36)}`;
+  const displayName = "Playwright Secret Block Skill";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+  const version = "1.0.0";
+  const secretMarkdown = `${skillMd({
+    slug,
+    displayName,
+    versionLabel: "secret-positive release",
+  })}
+
+## Local secret fixture
+
+This fake token is intentionally redacted by the mocked TruffleHog worker:
+OPENAI_API_KEY=sk-local-e2e-redacted-secret-not-real
+`;
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "secret-positive release",
+    changelog: "Secret-positive release should remain private.",
+    skillMarkdown: secretMarkdown,
+    completeChecks: false,
+  });
+
+  await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    trufflehog: "blocked",
+  });
+
+  await expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+  await expect(await publishedSkillVersionExists(page, { ownerHandle, slug, version })).toBe(false);
+
+  await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "clean retry release",
+    changelog: "Clean retry after removing the secret.",
+    skillMarkdown: skillMd({
+      slug,
+      displayName,
+      versionLabel: "clean retry release",
+    }),
+  });
+
+  await expectCurrentVersion(page, version);
   await expectHealthyPublishPage(page, errors);
 });
 

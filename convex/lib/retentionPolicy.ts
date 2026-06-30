@@ -109,6 +109,16 @@ export const RETENTION_POLICIES = {
   skillSlugAliases: permanent("Historical slug routing aliases."),
   packages: permanent("Canonical package records."),
   packageReleases: permanent("Canonical package release records."),
+  publishAttempts: ephemeral(
+    "Private staged publish workflow state expires unless later retained by moderation policy.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "future publishAttempts cleanup in CLAW-467 staged-publish follow-up",
+      retention:
+        "Pending/finalized attempt TTL; later secret and moderation slices refine blocked retention.",
+    },
+  ),
   catalogClassificationResults: derived(
     "Catalog classification output can be recomputed from package and skill metadata.",
     "skills/packages",

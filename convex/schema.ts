@@ -1079,6 +1079,77 @@ const skillVersions = defineTable({
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
+const publishAttemptStatusValidator = v.union(
+  v.literal("pending_checks"),
+  v.literal("ready_to_finalize"),
+  v.literal("finalizing"),
+  v.literal("finalized"),
+  v.literal("blocked"),
+  v.literal("failed"),
+  v.literal("expired"),
+);
+
+const publishAttemptCheckStateValidator = v.object({
+  status: v.union(
+    v.literal("pending"),
+    v.literal("clean"),
+    v.literal("blocked"),
+    v.literal("failed"),
+  ),
+  checkedAt: v.optional(v.number()),
+  summary: v.optional(v.string()),
+  redactedFindings: v.optional(v.array(v.string())),
+});
+
+const publishAttempts = defineTable({
+  kind: v.union(v.literal("skill"), v.literal("package")),
+  status: publishAttemptStatusValidator,
+  userId: v.id("users"),
+  ownerUserId: v.optional(v.id("users")),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  sourceOwnerPublisherId: v.optional(v.id("publishers")),
+  slug: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  idempotencyKey: v.string(),
+  artifactFingerprint: v.string(),
+  files: packageFilesValidator,
+  checks: v.object({
+    trufflehog: publishAttemptCheckStateValidator,
+    clawscan: publishAttemptCheckStateValidator,
+  }),
+  skillInsertArgs: v.optional(v.any()),
+  packageInsertArgs: v.optional(v.any()),
+  followup: v.optional(
+    v.object({
+      skipWebhook: v.optional(v.boolean()),
+      ownerHandle: v.optional(v.string()),
+    }),
+  ),
+  packageFollowup: v.optional(v.any()),
+  checkClaimId: v.optional(v.string()),
+  checkClaimedAt: v.optional(v.number()),
+  checkClaimExpiresAt: v.optional(v.number()),
+  checkClaimLastError: v.optional(v.string()),
+  finalizationClaimId: v.optional(v.string()),
+  finalizationClaimedAt: v.optional(v.number()),
+  finalizationClaimExpiresAt: v.optional(v.number()),
+  finalizationLastError: v.optional(v.string()),
+  result: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+  finalizedAt: v.optional(v.number()),
+  blockedAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+})
+  .index("by_idempotency_key", ["idempotencyKey"])
+  .index("by_status_and_created", ["status", "createdAt"])
+  .index("by_expires_at", ["expiresAt"])
+  .index("by_kind_status_slug_version_created", ["kind", "status", "slug", "version", "createdAt"])
+  .index("by_user_status_created", ["userId", "status", "createdAt"])
+  .index("by_owner_publisher_status_created", ["ownerPublisherId", "status", "createdAt"]);
+
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
@@ -3132,6 +3203,7 @@ export default defineSchema({
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
+  publishAttempts,
   skillVersionFingerprints,
   skillBadges,
   skillEmbeddings,

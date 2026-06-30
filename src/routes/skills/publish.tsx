@@ -154,7 +154,7 @@ export function Upload() {
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const isSubmitting = status !== null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | PublisherOwnerMembership[]
@@ -591,6 +591,9 @@ export function Upload() {
     return false;
   });
   const hasFilePanelFooter = Boolean(ignoredLocalMetadataNote || visibleFileIssues.length > 0);
+  const hasPublished =
+    status?.startsWith("Published.") || status?.startsWith("Publish received.") || false;
+  const isPublishDisabled = !validation.ready || isSubmitting || hasPublished;
   const publishBlockerSummary =
     !validation.ready && !isSubmitting ? summarizePublishBlockers(validation.issues) : null;
 
@@ -679,6 +682,7 @@ export function Upload() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setHasAttempted(true);
+    if (hasPublished) return;
     if (!validation.ready) {
       const message = validation.issues[0] ?? "Fix validation issues to continue.";
       setError(message);
@@ -715,36 +719,36 @@ export function Upload() {
       toast.error(msg);
       return;
     }
+    setIsSubmitting(true);
     setStatus("Uploading files…");
-
-    const uploaded = [] as Array<{
-      path: string;
-      size: number;
-      storageId: string;
-      sha256: string;
-      contentType?: string;
-    }>;
-
-    for (const file of files) {
-      const uploadUrl = await generateUploadUrl();
-      const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
-      const path =
-        stripRoot && rawPath.startsWith(`${stripRoot}/`)
-          ? rawPath.slice(stripRoot.length + 1)
-          : rawPath;
-      const sha256 = await hashFile(file);
-      const storageId = await uploadFile(uploadUrl, file);
-      uploaded.push({
-        path,
-        size: file.size,
-        storageId,
-        sha256,
-        contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
-      });
-    }
-
-    setStatus("Publishing…");
     try {
+      const uploaded = [] as Array<{
+        path: string;
+        size: number;
+        storageId: string;
+        sha256: string;
+        contentType?: string;
+      }>;
+
+      for (const file of files) {
+        const uploadUrl = await generateUploadUrl();
+        const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
+        const path =
+          stripRoot && rawPath.startsWith(`${stripRoot}/`)
+            ? rawPath.slice(stripRoot.length + 1)
+            : rawPath;
+        const sha256 = await hashFile(file);
+        const storageId = await uploadFile(uploadUrl, file);
+        uploaded.push({
+          path,
+          size: file.size,
+          storageId,
+          sha256,
+          contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
+        });
+      }
+
+      setStatus("Publishing…");
       const result = await publishVersion({
         ownerHandle: ownerHandle || undefined,
         sourceOwnerHandle:
@@ -773,6 +777,11 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
+        if (typeof result === "object" && "status" in result && result.status === "pending") {
+          setStatus("Publish received. Running TruffleHog and ClawScan before public listing.");
+          toast.success("Publish received. Security checks are running.");
+          return;
+        }
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         const didSetPostPublishFlash = setPostPublishFlash(ownerParam, trimmedSlug);
         if (!didSetPostPublishFlash) {
@@ -789,6 +798,8 @@ export function Upload() {
       const message = formatPublishError(publishError);
       setError(message);
       toast.error(message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -1315,7 +1326,7 @@ export function Upload() {
               variant="primary"
               size="lg"
               type="submit"
-              disabled={!validation.ready || isSubmitting}
+              disabled={isPublishDisabled}
               loading={isSubmitting}
             >
               {!validation.ready && !isSubmitting ? (

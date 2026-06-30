@@ -135,9 +135,9 @@ import {
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import {
   fetchText,
-  type PublishResult,
-  publishVersionForUser,
   queueHighlightedWebhook,
+  stageSkillPublishAttemptForUser,
+  type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
@@ -9705,7 +9705,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       }),
     ),
   },
-  handler: async (ctx, args): Promise<PublishResult> => {
+  handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
       throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
     }
@@ -9728,14 +9728,19 @@ export const publishVersion: ReturnType<typeof action> = action({
           })) as { publisherId: Id<"publishers"> })
         : null;
     const { icon: _legacyIcon, ...publishArgs } = args;
-    return publishVersionForUser(ctx, userId, publishArgs, {
+    return stageSkillPublishAttemptForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
+      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
     });
   },
 });
+
+function stagedPrePublicationPublishesEnabled() {
+  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
+}
 
 export const generateChangelogPreview = action({
   args: {
