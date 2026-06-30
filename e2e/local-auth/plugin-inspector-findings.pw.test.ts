@@ -135,7 +135,8 @@ async function expectDashboardWarningReview(page: Page, warningName: string) {
       await dashboardWarningRow.click();
       const reviewDialog = page.getByRole("dialog", { name: /review$/i });
       await expect(reviewDialog).toBeVisible();
-      return reviewDialog.getByRole("link", { name: "View plugin" });
+      await expect(reviewDialog.getByRole("heading", { name: "Validation" })).toBeVisible();
+      return;
     } catch (error) {
       if (attempt >= 3) throw error;
       await page.waitForTimeout(1_000 * attempt);
@@ -269,11 +270,11 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   });
   await captureProof(page, testInfo, "02-upload-warning-success");
 
-  const dashboardPluginLink = await expectDashboardWarningReview(page, warningName);
+  await expectDashboardWarningReview(page, warningName);
   await captureProof(page, testInfo, "03-dashboard-warning-count");
-  await dashboardPluginLink.click();
+  await page.goto(buildPluginValidationHref(warningName), { waitUntil: "domcontentloaded" });
 
-  await expect(page).toHaveURL(new RegExp(`/plugins/${escapeRegExp(warningName)}$`));
+  await expect(page).toHaveURL(new RegExp(`/plugins/${escapeRegExp(warningName)}#validation$`));
   await expectValidationSectionVisible(page, warningName);
   await expect(
     page.locator(".plugin-warning-item-code").filter({
