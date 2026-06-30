@@ -36,6 +36,10 @@ on:
         description: Optional owner handle override for org/shared publishing.
         required: false
         type: string
+      family:
+        description: Optional package family override for legacy package rows.
+        required: false
+        type: string
       version:
         description: Optional package version override.
         required: false
@@ -287,6 +291,7 @@ jobs:
           INPUT_REF: ${{ inputs.ref }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_OWNER: ${{ inputs.owner }}
+          INPUT_FAMILY: ${{ inputs.family }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_TAGS: ${{ inputs.tags }}
           INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
@@ -449,10 +454,18 @@ jobs:
           cmd.append("--json")
 
           owner = os.environ["INPUT_OWNER"].strip()
+          family = os.environ["INPUT_FAMILY"].strip()
           version = os.environ["INPUT_VERSION"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
           if owner:
               cmd += ["--owner", owner]
+          if family:
+              valid_families = {"code-plugin", "bundle-plugin"}
+              if family not in valid_families:
+                  raise SystemExit(
+                      f"Invalid package family override {family!r}; expected one of {sorted(valid_families)}."
+                  )
+              cmd += ["--family", family]
           if version:
               cmd += ["--version", version]
           if tags:
