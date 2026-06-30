@@ -1,6 +1,6 @@
 {
   "name": "clawhub",
-  "version": "0.23.0",
+  "version": "0.23.1",
   "description": "ClawHub CLI \\u2014 install, update, search, and publish skills plus OpenClaw packages.",
   "homepage": "https://clawhub.ai",
   "bugs": {
@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@clack/prompts": "1.6.0",
-    "@openclaw/plugin-inspector": "0.3.15",
+    "@openclaw/plugin-inspector": "0.3.17",
     "arktype": "2.2.1",
     "commander": "15.0.0",
     "fflate": "0.8.3",

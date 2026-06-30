@@ -413,8 +413,8 @@ describe("package commands", () => {
         status: "pass",
         summary: {
           breakageCount: 0,
-          warningCount: 3,
-          issueCount: 3,
+          warningCount: 4,
+          issueCount: 4,
           inspectorGapCount: 1,
         },
         issues: [
@@ -437,6 +437,12 @@ describe("package commands", () => {
             level: "warning",
             message: "package.json is missing openclaw.compat.pluginApi",
           },
+          {
+            code: "sdk-session-store-write",
+            level: "warning",
+            issueClass: "deprecation-warning",
+            message: "deprecated whole-store session write helper is still used",
+          },
         ],
       };
       inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
@@ -451,9 +457,9 @@ describe("package commands", () => {
         status: "pass",
         summary: {
           breakageCount: 0,
-          warningCount: 2,
-          deprecationWarningCount: 0,
-          issueCount: 2,
+          warningCount: 3,
+          deprecationWarningCount: 1,
+          issueCount: 3,
         },
         issues: [
           {
@@ -475,6 +481,18 @@ describe("package commands", () => {
                 "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
             },
           },
+          {
+            code: "sdk-session-store-write",
+            level: "warning",
+            issueClass: "deprecation-warning",
+            message: "deprecated whole-store session write helper is still used",
+            authorRemediation: {
+              summary:
+                "Replace deprecated whole-store session writes with row-scoped session helpers.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#sdk-session-store-write",
+            },
+          },
         ],
       });
       expect(mockWrite.mock.calls.join("\n")).not.toContain("runtime-tool-capture");
@@ -484,6 +502,7 @@ describe("package commands", () => {
         "utf8",
       );
       expect(artifactReport).toContain("package-plugin-api-compat-missing");
+      expect(artifactReport).toContain("sdk-session-store-write");
       expect(artifactReport).not.toContain("runtime-tool-capture");
       expect(artifactReport).not.toContain("inspectorGapCount");
       expect(mockLog).not.toHaveBeenCalled();

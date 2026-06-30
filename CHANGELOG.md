@@ -7,6 +7,12 @@
 - Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.
 - Web/API: make default skill and plugin discovery freshness-aware, add seven-day trending views for both catalogs, and use verified status plus usage as search tie-breakers within direct matches.
 
+## 0.23.1 - 2026-06-29
+
+### Changes
+
+- CLI: update Plugin Inspector to `0.3.17` so `clawhub package validate` reports deprecated session SDK reads, writes, file helpers, and transcript helpers with remediation links.
+
 ## 0.23.0 - 2026-06-23
 
 ### Changes

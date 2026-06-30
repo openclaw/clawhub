@@ -46,6 +46,10 @@ clawhub package validate <path-to-plugin>
 | `legacy-root-sdk-import`                | [Replace root SDK imports](./plugin-validation-fixes.md#legacy-root-sdk-import)                                             |
 | `reserved-sdk-import`                   | [Remove reserved SDK imports](./plugin-validation-fixes.md#reserved-sdk-import)                                             |
 | `sdk-load-session-store`                | [Replace whole-session-store access](./plugin-validation-fixes.md#sdk-load-session-store)                                   |
+| `sdk-session-store-write`               | [Replace whole-session-store writes](./plugin-validation-fixes.md#sdk-session-store-write)                                  |
+| `sdk-session-file-helper`               | [Replace session file-path helpers](./plugin-validation-fixes.md#sdk-session-file-helper)                                   |
+| `sdk-session-transcript-file-target`    | [Replace legacy transcript file targets](./plugin-validation-fixes.md#sdk-session-transcript-file-target)                   |
+| `sdk-session-transcript-low-level`      | [Replace low-level transcript helpers](./plugin-validation-fixes.md#sdk-session-transcript-low-level)                       |
 | `legacy-before-agent-start`             | [Replace before_agent_start](./plugin-validation-fixes.md#legacy-before-agent-start)                                        |
 | `provider-auth-env-vars`                | [Move provider env vars to setup metadata](./plugin-validation-fixes.md#provider-auth-env-vars)                             |
 | `channel-env-vars`                      | [Mirror channel env vars in current metadata](./plugin-validation-fixes.md#channel-env-vars)                                |
@@ -274,6 +278,69 @@ The plugin still uses the deprecated whole-session-store helper
 - Avoid loading, mutating, and saving the whole session store object.
 - Keep `loadSessionStore(...)` only while your declared compatibility range
   still supports older OpenClaw versions that require it.
+- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+  [Plugin SDK subpaths](/plugins/sdk-subpaths).
+- Rerun `clawhub package validate <path-to-plugin>`.
+
+### sdk-session-store-write
+
+The plugin still uses a deprecated whole-session-store write helper such as
+`saveSessionStore` or `updateSessionStore`.
+
+- Use `patchSessionEntry(...)` when updating fields on an existing session
+  entry.
+- Use `upsertSessionEntry(...)` when replacing or creating a session entry.
+- Avoid loading, mutating, and saving the whole session store object.
+- Keep whole-store write helpers only while your declared compatibility range
+  still supports older OpenClaw versions that require them.
+- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+  [Plugin SDK subpaths](/plugins/sdk-subpaths).
+- Rerun `clawhub package validate <path-to-plugin>`.
+
+### sdk-session-file-helper
+
+The plugin still uses deprecated session file-path helpers such as
+`resolveSessionFilePath` or `resolveAndPersistSessionFile`.
+
+- Use `getSessionEntry(...)` to read session metadata by agent and session
+  identity.
+- Use `patchSessionEntry(...)` or `upsertSessionEntry(...)` to persist session
+  metadata.
+- Use transcript identity or target helpers when the code is preparing a
+  transcript operation.
+- Do not persist or depend on legacy transcript file paths.
+- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+  [Plugin SDK subpaths](/plugins/sdk-subpaths).
+- Rerun `clawhub package validate <path-to-plugin>`.
+
+### sdk-session-transcript-file-target
+
+The plugin still uses the deprecated transcript file target helper
+`resolveSessionTranscriptLegacyFileTarget`.
+
+- Use `resolveSessionTranscriptIdentity(...)` when the code only needs public
+  session identity.
+- Use `resolveSessionTranscriptTarget(...)` when the code needs a structured
+  transcript operation target.
+- Avoid reading or constructing legacy transcript file targets directly.
+- Keep the legacy helper only while your declared compatibility range still
+  supports older OpenClaw versions that require it.
+- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
+  [Plugin SDK subpaths](/plugins/sdk-subpaths).
+- Rerun `clawhub package validate <path-to-plugin>`.
+
+### sdk-session-transcript-low-level
+
+The plugin still uses deprecated low-level transcript helpers such as
+`appendSessionTranscriptMessage` or `emitSessionTranscriptUpdate`.
+
+- Use `appendSessionTranscriptMessageByIdentity(...)` for transcript appends.
+- Use `publishSessionTranscriptUpdateByIdentity(...)` for transcript update
+  notifications.
+- Prefer the structured transcript runtime surface so OpenClaw can apply the
+  correct transaction boundaries and identity handling.
+- Keep low-level transcript helpers only while your declared compatibility range
+  still supports older OpenClaw versions that require them.
 - See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
   [Plugin SDK subpaths](/plugins/sdk-subpaths).
 - Rerun `clawhub package validate <path-to-plugin>`.
