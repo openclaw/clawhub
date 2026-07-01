@@ -210,6 +210,7 @@ export const RETENTION_POLICIES = {
   publisherFeedPublications: permanent("Current coherent publisher feed revision."),
   stars: permanent("User star records."),
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
+  publisherFollows: permanent("User publisher follow preference records."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),

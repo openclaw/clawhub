@@ -27,6 +27,11 @@ import {
   promotionsGetRouterV1Handler,
   promotionsPostRouterV1Handler,
 } from "./httpApiV1/promotionsV1";
+import {
+  publisherFollowsDeleteV1Handler,
+  publisherFollowsGetV1Handler,
+  publisherFollowsPostV1Handler,
+} from "./httpApiV1/publisherFollowsV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import {
   exportSkillsV1Handler,
@@ -68,6 +73,9 @@ export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 export const createPublisherV1Http = httpAction(createPublisherV1Handler);
 export const publishersGetRouterV1Http = httpAction(publishersGetRouterV1Handler);
+export const publisherFollowsGetV1Http = httpAction(publisherFollowsGetV1Handler);
+export const publisherFollowsPostV1Http = httpAction(publisherFollowsPostV1Handler);
+export const publisherFollowsDeleteV1Http = httpAction(publisherFollowsDeleteV1Handler);
 export const contentRightsV1Http = httpAction(contentRightsV1Handler);
 export const catalogFeedV1Http = httpAction(catalogFeedV1Handler);
 export const catalogSkillsFeedV1Http = httpAction(catalogSkillsFeedV1Handler);
@@ -118,6 +126,9 @@ export const __handlers = {
   verifyDocsSessionV1Handler,
   createPublisherV1Handler,
   publishersGetRouterV1Handler,
+  publisherFollowsGetV1Handler,
+  publisherFollowsPostV1Handler,
+  publisherFollowsDeleteV1Handler,
   contentRightsV1Handler,
   catalogFeedV1Handler,
   catalogSkillsFeedV1Handler,

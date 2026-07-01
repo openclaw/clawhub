@@ -8608,6 +8608,141 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("publisher follows add succeeds for the authenticated API token user", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
+      followId: "publisherFollows:1",
+      followerUserId: "users:1",
+      publisherId: "publishers:1",
+      following: true,
+      notifications: "none",
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const response = await __handlers.publisherFollowsPostV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/publisher-follows", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ publisherId: "publishers:1", notifications: "none" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      following: true,
+      notifications: "none",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.publisherFollows.followPublisherInternal,
+      expect.objectContaining({
+        followerUserId: "users:1",
+        publisherId: "publishers:1",
+        notifications: "none",
+      }),
+    );
+  });
+
+  it("publisher follows add rejects non-object JSON", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.publisherFollowsPostV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/publisher-follows", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: "null",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("JSON body must be an object");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("publisher follows list only reads the authenticated user's private follows", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runQuery = vi.fn().mockResolvedValue({
+      ok: true,
+      items: [
+        {
+          publisherId: "publishers:1",
+          following: true,
+          notifications: "all",
+          publisher: { handle: "openclaw", displayName: "OpenClaw" },
+        },
+      ],
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.publisherFollowsGetV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/publisher-follows?limit=10", {
+        method: "GET",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      items: [expect.objectContaining({ publisherId: "publishers:1" })],
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.publisherFollows.listFollowedPublishersInternal,
+      {
+        followerUserId: "users:1",
+        limit: 10,
+      },
+    );
+  });
+
+  it("publisher follows delete is idempotent", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
+      ok: true,
+      following: false,
+      unfollowed: false,
+      alreadyUnfollowed: true,
+      publisherId: "publishers:1",
+    });
+
+    const response = await __handlers.publisherFollowsDeleteV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/publisher-follows?publisherId=publishers:1", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      following: false,
+      alreadyUnfollowed: true,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      internal.publisherFollows.unfollowPublisherInternal,
+      expect.objectContaining({
+        followerUserId: "users:1",
+        publisherId: "publishers:1",
+      }),
+    );
+  });
+
   it("packages search ignores retired execution and capability filters", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
