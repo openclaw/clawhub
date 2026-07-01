@@ -136,6 +136,51 @@ const kickProcessedSkillStatEventPruneInternalHandler = (
   }
 )._handler;
 
+function makeSkillDoc(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "skills:1",
+    _creationTime: 1000,
+    slug: "test-skill",
+    displayName: "Test Skill",
+    summary: "A test skill summary",
+    ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
+    canonicalSkillId: undefined,
+    forkOf: undefined,
+    latestVersionId: undefined,
+    installKind: undefined,
+    githubHasSkillCard: undefined,
+    githubCurrentStatus: undefined,
+    githubScanStatus: undefined,
+    latestVersionSummary: undefined,
+    tags: {},
+    categories: undefined,
+    topics: undefined,
+    badges: undefined,
+    statsDownloads: 10,
+    statsStars: 5,
+    statsInstallsCurrent: 2,
+    statsInstallsAllTime: 7,
+    stats: {
+      downloads: 10,
+      stars: 5,
+      installsCurrent: 2,
+      installsAllTime: 7,
+      versions: 1,
+      comments: 0,
+    },
+    softDeletedAt: undefined,
+    moderationStatus: "active",
+    moderationFlags: undefined,
+    moderationVerdict: undefined,
+    moderationReason: undefined,
+    isSuspicious: false,
+    createdAt: 1000,
+    updatedAt: 2000,
+    ...overrides,
+  };
+}
+
 describe("skill stat events", () => {
   it("advances the action cursor for retired comment events without writing stat deltas", async () => {
     const event = {
@@ -411,22 +456,7 @@ describe("skill stat events", () => {
       occurredAt: 1000,
       processedAt: undefined,
     };
-    const skill = {
-      _id: "skills:1",
-      ownerUserId: "users:owner",
-      statsDownloads: 10,
-      statsStars: 5,
-      statsInstallsCurrent: 2,
-      statsInstallsAllTime: 7,
-      stats: {
-        downloads: 10,
-        stars: 5,
-        installsCurrent: 2,
-        installsAllTime: 7,
-        versions: 1,
-        comments: 0,
-      },
-    };
+    const skill = makeSkillDoc();
     const patch = vi.fn();
     const lease = {
       _id: "skillStatDocSyncLeases:1",
@@ -451,6 +481,16 @@ describe("skill stat events", () => {
             return {
               withIndex: () => ({
                 take: async () => [installEvent],
+              }),
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: () => ({
+                unique: async () => ({
+                  _id: "skillSearchDigest:1",
+                  skillId: "skills:1",
+                }),
               }),
             };
           }
@@ -488,6 +528,111 @@ describe("skill stat events", () => {
     expect(patch).toHaveBeenCalledWith(
       "skillStatEvents:install",
       expect.objectContaining({ processedAt: expect.any(Number) }),
+    );
+  });
+
+  it("refreshes the skill search digest when queued downloads update all-time stats", async () => {
+    const downloadEvent = {
+      _id: "skillStatEvents:download",
+      skillId: "skills:1",
+      kind: "download",
+      occurredAt: 1000,
+      processedAt: undefined,
+    };
+    const skill = makeSkillDoc({
+      statsDownloads: 41,
+      stats: {
+        downloads: 41,
+        stars: 5,
+        installsCurrent: 2,
+        installsAllTime: 7,
+        versions: 1,
+        comments: 0,
+      },
+    });
+    const patch = vi.fn();
+    const lease = {
+      _id: "skillStatDocSyncLeases:1",
+      key: "skill_doc_stat_sync",
+      leaseOwner: "test-lease",
+      leaseExpiresAt: Date.now() + 60_000,
+      updatedAt: Date.now(),
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "skills:1" ? skill : null)),
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "skillStatDocSyncLeases") {
+            return {
+              withIndex: () => ({
+                unique: async () => lease,
+              }),
+            };
+          }
+          if (table === "skillStatEvents") {
+            return {
+              withIndex: () => ({
+                take: async () => [downloadEvent],
+              }),
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: () => ({
+                unique: async () => ({
+                  _id: "skillSearchDigest:1",
+                  skillId: "skills:1",
+                  statsDownloads: 41,
+                  stats: {
+                    downloads: 41,
+                    stars: 5,
+                    installsCurrent: 2,
+                    installsAllTime: 7,
+                    versions: 1,
+                    comments: 0,
+                  },
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await expect(
+      processSkillStatEventBatchInternalHandler(ctx, {
+        batchSize: 10,
+        leaseOwner: "test-lease",
+      }),
+    ).resolves.toEqual({
+      hasMore: false,
+      processed: 1,
+      skillsUpdated: 1,
+    });
+
+    expect(patch).toHaveBeenCalledWith("skills:1", {
+      statsDownloads: 42,
+      statsStars: 5,
+      statsInstallsCurrent: 2,
+      statsInstallsAllTime: 7,
+      stats: {
+        downloads: 42,
+        stars: 5,
+        installsCurrent: 2,
+        installsAllTime: 7,
+        versions: 1,
+        comments: 0,
+      },
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "skillSearchDigest:1",
+      expect.objectContaining({
+        statsDownloads: 42,
+        stats: expect.objectContaining({ downloads: 42 }),
+      }),
     );
   });
 
