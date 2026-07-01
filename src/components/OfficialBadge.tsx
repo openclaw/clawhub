@@ -10,7 +10,7 @@ export function OfficialTag({ className }: { className?: string }) {
           ? `official-tag rounded-[var(--oc-radius-control)] ${className}`
           : "official-tag rounded-[var(--oc-radius-control)]"
       }
-      aria-label="Official"
+      aria-label="Official publisher"
     >
       <BadgeCheck size={15} aria-hidden="true" className="official-badge-icon" />
       Official
