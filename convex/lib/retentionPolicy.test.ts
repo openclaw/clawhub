@@ -53,6 +53,12 @@ describe("retention policies", () => {
     });
   });
 
+  it("documents publisher abuse signals as durable review evidence", () => {
+    expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
   it("documents package stat events as processed-event retention", () => {
     expect(getRetentionPolicy("packageStatEvents")).toMatchObject({
       classification: "ephemeral",

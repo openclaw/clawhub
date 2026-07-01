@@ -14181,6 +14181,34 @@ code {
   outline: none;
 }
 
+.pa-signal-status-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+
+.pa-signal-status-tabs button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: calc(var(--r-md) - 3px);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.pa-signal-status-tabs button:hover,
+.pa-signal-status-tabs button.active {
+  background: var(--hover-bg);
+  color: var(--ink);
+}
+
 .pa-table-wrap {
   min-width: 0;
   margin: 0 calc(-1 * var(--space-4));
@@ -14225,12 +14253,47 @@ code {
   background: var(--hover-bg);
 }
 
+.pa-table tbody tr.pa-skeleton-row {
+  cursor: default;
+}
+
+.pa-table tbody tr.pa-skeleton-row:hover {
+  background: transparent;
+}
+
+.pa-table-skeleton-bar {
+  display: block;
+  max-width: 100%;
+  height: 14px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--line) 70%, transparent),
+    color-mix(in srgb, var(--ink-soft) 18%, transparent),
+    color-mix(in srgb, var(--line) 70%, transparent)
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.15s ease-in-out infinite;
+}
+
 .pa-table tbody tr.is-selected {
   background: var(--accent-subtle);
 }
 
 .pa-table tbody tr.is-selected td:first-child {
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.pa-signals-table {
+  min-width: 680px;
+}
+
+.pa-signals-table tbody tr {
+  cursor: pointer;
+}
+
+.pa-signals-table tbody tr:hover {
+  background: var(--hover-bg);
 }
 
 .pa-num {
@@ -14240,6 +14303,46 @@ code {
 
 .pa-muted {
   color: var(--ink-soft);
+}
+
+.pa-signal-repeat,
+.pa-ratio-subtext {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.pa-signal-name {
+  font-weight: 600;
+}
+
+.pa-signal-summary {
+  display: grid;
+  gap: 3px;
+}
+
+.pa-signal-summary span {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.pa-signal-subject {
+  display: grid;
+  gap: 2px;
+}
+
+.pa-signal-subject strong {
+  font-weight: 600;
+}
+
+.pa-signal-subject span {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
 }
 
 .pa-handle {
@@ -14460,10 +14563,16 @@ code {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-2);
+  min-width: 0;
   padding: 3px 0;
 }
 
+.pa-metric > * {
+  min-width: 0;
+}
+
 .pa-metric span {
+  flex-shrink: 0;
   color: var(--ink-soft);
   font-size: var(--fs-sm);
 }
@@ -14472,6 +14581,31 @@ code {
   font-size: var(--fs-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.pa-metric small {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pa-signal-evidence-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.pa-signal-evidence-grid .pa-metric {
+  display: grid;
+  grid-template-columns: minmax(58px, 0.5fr) minmax(56px, auto) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+
+.pa-signal-evidence-grid .pa-metric strong {
+  text-align: right;
 }
 
 .pa-section-label {
@@ -14652,6 +14786,10 @@ code {
 
   .pa-score,
   .pa-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-signal-evidence-grid {
     grid-template-columns: 1fr;
   }
 

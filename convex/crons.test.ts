@@ -159,6 +159,7 @@ describe("crons", () => {
       {
         mode: "current",
         dryRun: true,
+        archiveDryRunSignals: true,
         candidateLimit: 1_000,
         batchSize: 50,
         maxPages: 20,

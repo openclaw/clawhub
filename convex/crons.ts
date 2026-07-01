@@ -111,6 +111,7 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     {
       mode: "current",
       dryRun: true,
+      archiveDryRunSignals: true,
       candidateLimit: 1_000,
       batchSize: 50,
       maxPages: 20,

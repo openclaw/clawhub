@@ -108,6 +108,7 @@ describe("dev-worktree helpers", () => {
       "127.0.0.1",
       "--port",
       "3999",
+      "--strictPort",
     ]);
   });
 

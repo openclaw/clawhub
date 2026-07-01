@@ -67,7 +67,7 @@ export function buildForegroundArgs(argv: string[]) {
 }
 
 export function buildViteArgs(port: string) {
-  return ["--bun", "vite", "dev", "--host", "127.0.0.1", "--port", port];
+  return ["--bun", "vite", "dev", "--host", "127.0.0.1", "--port", port, "--strictPort"];
 }
 
 export function buildDevWorkersArgs(envFile: string) {

@@ -19,6 +19,7 @@ const clearSeedHandler = (
       scores: number;
       nominations: number;
       events: number;
+      signals: number;
       users: number;
       hasMore: boolean;
     }
@@ -199,6 +200,7 @@ describe("publisherAbuseDevSeed.clearSeed", () => {
       scores: 1,
       nominations: 1,
       events: 1,
+      signals: 0,
       users: 1,
       hasMore: false,
     });
@@ -263,13 +265,24 @@ describe("publisherAbuseDevSeed.seed", () => {
       (doc) => doc.label === "review" && doc.status === "pending",
     );
 
-    expect(pendingBan).toHaveLength(16);
-    expect(pendingReview).toHaveLength(124);
+    expect(pendingBan).toHaveLength(15);
+    expect(pendingReview).toHaveLength(125);
     expect(result.inserted).toBe(nominations.length);
     // Every ban candidate links a demo user so the inspector ban action is
     // exercisable; review nominations do not create users.
     expect(tables.users ?? []).toHaveLength(16);
     expect(tables.skills?.some((doc) => doc.slug === "demo-temporal-download-burst")).toBe(true);
+    expect(tables.skills?.some((doc) => doc.slug === "demo-temporal-install-ratio")).toBe(true);
+    expect(tables.publisherAbuseSignals).toEqual([
+      expect.objectContaining({
+        signalType: "sustained_downloads_flat_installs",
+        skillSlug: "demo-temporal-download-burst",
+      }),
+      expect.objectContaining({
+        signalType: "high_install_download_ratio",
+        skillSlug: "demo-temporal-install-ratio",
+      }),
+    ]);
   });
 
   it("clears existing demo rows before inserting repeatable seed data", async () => {
@@ -300,6 +313,26 @@ describe("publisherAbuseDevSeed.seed", () => {
           nominationId: "publisherAbuseReviewNominations:old-demo",
         },
       ],
+      skills: [
+        {
+          _id: "skills:old-temporal",
+          slug: "demo-temporal-download-burst",
+        },
+      ],
+      skillDailyStats: [
+        {
+          _id: "skillDailyStats:old-temporal",
+          skillId: "skills:old-temporal",
+          day: 19_000,
+        },
+      ],
+      publisherAbuseSignals: [
+        {
+          _id: "publisherAbuseSignals:old-temporal",
+          signalType: "sustained_downloads_flat_installs",
+          skillId: "skills:old-temporal",
+        },
+      ],
       users: [{ _id: "users:old-demo", handle: "demo-abuse-pub-01" }],
     });
 
@@ -317,10 +350,18 @@ describe("publisherAbuseDevSeed.seed", () => {
     expect(tables.publisherAbuseReviewEvents.map((doc) => doc._id)).not.toContain(
       "publisherAbuseReviewEvents:old-demo",
     );
+    expect(tables.skills.map((doc) => doc._id)).not.toContain("skills:old-temporal");
+    expect(tables.skillDailyStats.map((doc) => doc._id)).not.toContain(
+      "skillDailyStats:old-temporal",
+    );
+    expect(tables.publisherAbuseSignals.map((doc) => doc._id)).not.toContain(
+      "publisherAbuseSignals:old-temporal",
+    );
     expect(tables.users.map((doc) => doc._id)).not.toContain("users:old-demo");
     expect(tables.users.filter((doc) => doc.handle === "demo-abuse-pub-01")).toHaveLength(1);
     expect(tables.users).toHaveLength(16);
     expect(tables.publisherAbuseReviewNominations).toHaveLength(146);
+    expect(tables.publisherAbuseSignals).toHaveLength(2);
   });
 });
 
