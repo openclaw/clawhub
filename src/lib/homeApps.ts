@@ -8,6 +8,8 @@ export type HomeSkillApp = {
   browseQuery: string;
   /** Brand favicon via Google favicon helper (domain only). */
   iconDomain: string;
+  /** Optional local brand asset when a domain favicon is not product-specific. */
+  iconPath?: string;
 };
 
 export type HomePluginShortcut = {
@@ -119,6 +121,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     description: "Read, send, search, and organize email.",
     browseQuery: "gmail",
     iconDomain: "mail.google.com",
+    iconPath: "/app-icons/google-gmail.svg",
   },
   {
     id: "google-drive",
@@ -126,6 +129,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     description: "Find, create, and manage files and folders.",
     browseQuery: "google drive",
     iconDomain: "drive.google.com",
+    iconPath: "/app-icons/google-drive.svg",
   },
   {
     id: "google-sheets",
@@ -133,6 +137,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     description: "Read, write, and automate spreadsheet data.",
     browseQuery: "google sheets",
     iconDomain: "sheets.google.com",
+    iconPath: "/app-icons/google-sheets.svg",
   },
   {
     id: "google-calendar",
@@ -140,6 +145,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     description: "Create events, check availability, and manage calendars.",
     browseQuery: "google calendar",
     iconDomain: "calendar.google.com",
+    iconPath: "/app-icons/google-calendar.svg",
   },
   {
     id: "jira",
