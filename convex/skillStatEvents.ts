@@ -182,6 +182,8 @@ const DEFAULT_DOC_SYNC_BATCH_SIZE = 100;
 const MAX_DOC_SYNC_BATCH_SIZE = 100;
 const DEFAULT_DOC_SYNC_MAX_BATCHES = 5;
 const MAX_DOC_SYNC_MAX_BATCHES = 5;
+const MAX_DOC_SYNC_FAILURE_RETRIES = 3;
+const DOC_SYNC_FAILURE_RETRY_BASE_MS = 30_000;
 export const PROCESSED_SKILL_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
   "PRUNE_PROCESSED_SKILL_STAT_EVENTS";
 const DEFAULT_PROCESSED_EVENT_RETENTION_DAYS = 7;
@@ -227,8 +229,9 @@ type SkillStatDocSyncActionResult =
       processed: number;
       skillsUpdated: number;
       batches: number;
-      stoppedReason: "empty" | "max_batches" | "lease_lost";
+      stoppedReason: "empty" | "max_batches" | "lease_lost" | "error";
       scheduledContinuation: boolean;
+      error?: string;
     };
 
 type ProcessedSkillStatEventPruneBatchResult = {
@@ -277,15 +280,28 @@ function normalizeDocSyncBatchSize(batchSize: number | undefined) {
 }
 
 function normalizeDocSyncDrainBatchSize(batchSize: number | undefined) {
-  return clampInt(
-    batchSize ?? DEFAULT_DOC_SYNC_BATCH_SIZE,
-    DEFAULT_DOC_SYNC_BATCH_SIZE,
-    MAX_DOC_SYNC_BATCH_SIZE,
-  );
+  return clampInt(batchSize ?? DEFAULT_DOC_SYNC_BATCH_SIZE, 1, MAX_DOC_SYNC_BATCH_SIZE);
 }
 
 function normalizeDocSyncMaxBatches(maxBatches: number | undefined) {
   return clampInt(maxBatches ?? DEFAULT_DOC_SYNC_MAX_BATCHES, 1, MAX_DOC_SYNC_MAX_BATCHES);
+}
+
+function normalizeDocSyncRetryCount(retryCount: number | undefined) {
+  return clampInt(retryCount ?? 0, 0, MAX_DOC_SYNC_FAILURE_RETRIES);
+}
+
+function nextDocSyncRetryBatchSize(batchSize: number) {
+  return Math.max(1, Math.floor(batchSize / 2));
+}
+
+function docSyncRetryDelayMs(retryCount: number) {
+  return DOC_SYNC_FAILURE_RETRY_BASE_MS * 2 ** retryCount;
+}
+
+function formatDocSyncError(error: unknown) {
+  if (error instanceof Error) return `${error.name}: ${error.message}`;
+  return String(error);
 }
 
 function normalizeProcessedEventRetentionDays(retentionDays: number | undefined) {
@@ -373,6 +389,7 @@ export const releaseSkillStatDocSyncLeaseInternal = internalMutation({
   args: {
     leaseOwner: v.string(),
     processed: v.optional(v.number()),
+    error: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -385,11 +402,15 @@ export const releaseSkillStatDocSyncLeaseInternal = internalMutation({
       return { released: false as const };
     }
 
+    const error = args.error?.slice(0, 2_000);
     await ctx.db.patch(lease._id, {
       leaseExpiresAt: now,
       updatedAt: now,
       lastFinishedAt: now,
       lastProcessedCount: args.processed ?? lease.lastProcessedCount,
+      lastError: error,
+      lastErrorAt: error ? now : undefined,
+      lastErrorProcessedCount: error ? (args.processed ?? 0) : undefined,
     });
 
     return { released: true as const };
@@ -530,12 +551,12 @@ export const processSkillStatEventsInternal: ReturnType<typeof internalAction> =
   args: {
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
+    retryCount: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<SkillStatDocSyncActionResult> => {
-    // Older scheduled continuations may carry a tiny batch size. Floor action
-    // drains to the production batch size so stale jobs cannot crawl forever.
     const batchSize = normalizeDocSyncDrainBatchSize(args.batchSize);
     const maxBatches = normalizeDocSyncMaxBatches(args.maxBatches);
+    const retryCount = normalizeDocSyncRetryCount(args.retryCount);
     const claim: ClaimSkillStatDocSyncLeaseResult = await ctx.runMutation(
       internal.skillStatEvents.claimSkillStatDocSyncLeaseInternal,
       {
@@ -558,34 +579,67 @@ export const processSkillStatEventsInternal: ReturnType<typeof internalAction> =
     let skillsUpdated = 0;
     let batches = 0;
     let hasMore = false;
-    let stoppedReason: "empty" | "max_batches" | "lease_lost" = "empty";
+    let stoppedReason: "empty" | "max_batches" | "lease_lost" | "error" = "empty";
 
-    for (let index = 0; index < maxBatches; index += 1) {
-      const batch: SkillStatDocSyncBatchResult = await ctx.runMutation(
-        internal.skillStatEvents.processSkillStatEventBatchInternal,
-        {
-          batchSize,
-          leaseOwner: claim.leaseOwner,
-        },
-      );
+    try {
+      for (let index = 0; index < maxBatches; index += 1) {
+        const batch: SkillStatDocSyncBatchResult = await ctx.runMutation(
+          internal.skillStatEvents.processSkillStatEventBatchInternal,
+          {
+            batchSize,
+            leaseOwner: claim.leaseOwner,
+          },
+        );
 
-      if (batch.skipped === "lease_lost") {
-        stoppedReason = "lease_lost";
-        hasMore = false;
-        break;
+        if (batch.skipped === "lease_lost") {
+          stoppedReason = "lease_lost";
+          hasMore = false;
+          break;
+        }
+
+        batches += 1;
+        processed += batch.processed;
+        skillsUpdated += batch.skillsUpdated;
+        hasMore = batch.hasMore;
+
+        if (!batch.hasMore) {
+          stoppedReason = "empty";
+          break;
+        }
+
+        stoppedReason = "max_batches";
+      }
+    } catch (error) {
+      const errorMessage = formatDocSyncError(error);
+      stoppedReason = "error";
+      await ctx.runMutation(internal.skillStatEvents.releaseSkillStatDocSyncLeaseInternal, {
+        leaseOwner: claim.leaseOwner,
+        processed,
+        error: errorMessage,
+      });
+
+      const shouldRetry = retryCount < MAX_DOC_SYNC_FAILURE_RETRIES;
+      if (shouldRetry) {
+        await ctx.scheduler.runAfter(
+          docSyncRetryDelayMs(retryCount),
+          internal.skillStatEvents.processSkillStatEventsInternal,
+          {
+            batchSize: nextDocSyncRetryBatchSize(batchSize),
+            maxBatches: 1,
+            retryCount: retryCount + 1,
+          },
+        );
       }
 
-      batches += 1;
-      processed += batch.processed;
-      skillsUpdated += batch.skillsUpdated;
-      hasMore = batch.hasMore;
-
-      if (!batch.hasMore) {
-        stoppedReason = "empty";
-        break;
-      }
-
-      stoppedReason = "max_batches";
+      return {
+        acquired: true as const,
+        processed,
+        skillsUpdated,
+        batches,
+        stoppedReason,
+        scheduledContinuation: shouldRetry,
+        error: errorMessage,
+      };
     }
 
     await ctx.runMutation(internal.skillStatEvents.releaseSkillStatDocSyncLeaseInternal, {
@@ -597,6 +651,7 @@ export const processSkillStatEventsInternal: ReturnType<typeof internalAction> =
       await ctx.scheduler.runAfter(0, internal.skillStatEvents.processSkillStatEventsInternal, {
         batchSize,
         maxBatches,
+        retryCount: 0,
       });
     }
 
@@ -656,6 +711,9 @@ export const getSkillStatDocSyncStatusInternal = internalQuery({
             lastFinishedAt: lease.lastFinishedAt,
             lastProcessedAt: lease.lastProcessedAt,
             lastProcessedCount: lease.lastProcessedCount,
+            lastError: lease.lastError,
+            lastErrorAt: lease.lastErrorAt,
+            lastErrorProcessedCount: lease.lastErrorProcessedCount,
           }
         : null,
       now,
