@@ -9,12 +9,16 @@ telemetry writes, delete/undelete mutations, or search queries.
 
 Client IP headers are not trustworthy on direct Convex HTTP endpoints. Treat
 `cf-connecting-ip`, `x-forwarded-for`, `x-real-ip`, and `fly-client-ip` as
-trusted only when the deployment explicitly enables trusted forwarded headers.
-Do not enable that opt-in while the Convex `*.convex.site` HTTP origin remains
-publicly reachable. Without the opt-in, anonymous traffic must use conservative
-missing-IP fallback buckets scoped only by rate-limit kind. Missing-IP buckets
-must not include user-controlled paths, dynamic path segments, query parameters,
-package names, skill slugs, or artifact versions.
+trusted only when the deployment explicitly enables trusted forwarded headers
+and the request carries ClawHub's edge trust secret. The Vercel middleware owns
+that boundary: it strips caller-supplied client IP and edge trust headers before
+adding `x-clawhub-edge-secret`, `x-forwarded-for`, and `x-real-ip` for Convex
+rewrites. Convex prefers the edge-stamped `x-forwarded-for` over connection IP
+headers so Vercel rewrites are limited by the original client IP, not the Vercel
+egress IP. Direct `*.convex.site` callers without the secret must continue to
+use conservative missing-IP fallback buckets scoped only by rate-limit kind.
+Missing-IP buckets must not include user-controlled paths, dynamic path
+segments, query parameters, package names, skill slugs, or artifact versions.
 Artifact-specific download scoping is only safe after the caller has an
 authenticated identity or a trusted client IP.
 
