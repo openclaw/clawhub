@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,10 +7,46 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { TooltipProvider } from "../components/ui/tooltip";
 import { Dashboard } from "./dashboard";
 
+class TestResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+vi.stubGlobal("ResizeObserver", TestResizeObserver);
+
+vi.mock("../components/dashboard/DashboardPublisherSelect", () => ({
+  DashboardPublisherSelect: ({
+    value,
+    onValueChange,
+    publishers,
+  }: {
+    value: string;
+    onValueChange: (value: string) => void;
+    publishers: Array<{ publisher?: { _id: string; handle: string } | null }>;
+  }) => (
+    <select
+      aria-label="Dashboard publisher"
+      value={value}
+      onChange={(event) => onValueChange(event.target.value)}
+    >
+      {publishers
+        .filter((entry) => entry.publisher)
+        .map((entry) => (
+          <option key={entry.publisher!._id} value={entry.publisher!._id}>
+            @{entry.publisher!.handle}
+          </option>
+        ))}
+    </select>
+  ),
+}));
+
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
   useAuthStatus: vi.fn(),
+  dashboardSearch: {} as Record<string, unknown>,
+  rerenderDashboard: null as null | (() => void),
 }));
 
 vi.mock("convex/react", () => ({
@@ -23,7 +59,14 @@ vi.mock("../lib/useAuthStatus", () => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: unknown) => config,
+  createFileRoute: () => (config: Record<string, unknown>) => ({
+    ...config,
+    useSearch: () => mocks.dashboardSearch,
+    useNavigate: () => (options: { search?: Record<string, unknown> }) => {
+      mocks.dashboardSearch = options.search ?? {};
+      mocks.rerenderDashboard?.();
+    },
+  }),
   Link: ({
     children,
     to,
@@ -132,6 +175,10 @@ type TestPackage = {
   summary: string;
   latestVersion: string;
   inspectorWarningCount?: number;
+  topInspectorFinding?: {
+    message: string;
+    remediation?: string;
+  };
   updatedAt: number;
   stats: {
     downloads: number;
@@ -140,7 +187,7 @@ type TestPackage = {
     versions: number;
   };
   verification: null;
-  scanStatus: "clean" | "suspicious" | "malicious";
+  scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "not-run";
   latestRelease: {
     version: string;
     createdAt: number;
@@ -169,9 +216,22 @@ const publishers = [
   },
 ];
 
+const downloadMetrics = {
+  endDay: 30,
+  allTimeDownloads: 42,
+  skills: {
+    allTimeDownloads: 0,
+    points: Array.from({ length: 30 }, (_, index) => ({ day: index + 1, value: 0 })),
+  },
+  plugins: {
+    allTimeDownloads: 42,
+    points: Array.from({ length: 30 }, (_, index) => ({ day: index + 1, value: index % 3 })),
+  },
+};
+
 function createSkill(overrides?: Partial<TestSkill>): TestSkill {
   return {
-    _id: "skills:below-cap" as Id<"skills">,
+    _id: "skillsbelowcap" as Id<"skills">,
     _creationTime: 1,
     slug: "local-flagged-skill",
     displayName: "Local Flagged Skill",
@@ -202,7 +262,7 @@ function createSkill(overrides?: Partial<TestSkill>): TestSkill {
 
 function createPackage(overrides?: Partial<TestPackage>): TestPackage {
   return {
-    _id: "packages:at-cap" as Id<"packages">,
+    _id: "packagesatcap" as Id<"packages">,
     name: "local-flagged-runtime-plugin",
     displayName: "Local Flagged Runtime Plugin",
     family: "code-plugin",
@@ -228,6 +288,37 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
   };
 }
 
+function createCatalogSkill(overrides?: Partial<TestSkill>): TestSkill {
+  return createSkill({
+    moderationVerdict: undefined,
+    isSuspicious: false,
+    moderationFlags: [],
+    latestVersion: {
+      version: "1.0.0",
+      createdAt: 1,
+      vtStatus: "clean",
+      llmStatus: "clean",
+      staticScanStatus: "clean",
+    },
+    ...overrides,
+  });
+}
+
+function createCatalogPackage(overrides?: Partial<TestPackage>): TestPackage {
+  return createPackage({
+    scanStatus: "clean",
+    stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
+    latestRelease: {
+      version: "1.0.0",
+      createdAt: 1,
+      vtStatus: "clean",
+      llmStatus: "clean",
+      staticScanStatus: "clean",
+    },
+    ...overrides,
+  });
+}
+
 function arrangeDashboard({
   skills = [],
   packages = [],
@@ -245,16 +336,26 @@ function arrangeDashboard({
     const name = getFunctionName(query as never);
     if (name === "publishers:listMine") return publishers;
     if (name === "packages:list") return packages;
+    if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
     return packages;
   });
 }
 
-function renderDashboard() {
-  return render(
+function renderDashboard(search: Record<string, unknown> = {}) {
+  mocks.dashboardSearch = search;
+  const view = render(
     <TooltipProvider>
       <Dashboard />
     </TooltipProvider>,
   );
+  mocks.rerenderDashboard = () => {
+    view.rerender(
+      <TooltipProvider>
+        <Dashboard />
+      </TooltipProvider>,
+    );
+  };
+  return view;
 }
 
 describe("Dashboard rows", () => {
@@ -262,6 +363,9 @@ describe("Dashboard rows", () => {
     mocks.useQuery.mockReset();
     mocks.usePaginatedQuery.mockReset();
     mocks.useAuthStatus.mockReset();
+    mocks.dashboardSearch = {};
+    mocks.rerenderDashboard = null;
+    window.localStorage.clear();
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "LoadingFirstPage",
@@ -274,49 +378,106 @@ describe("Dashboard rows", () => {
     });
   });
 
-  it("renders compact clickable artifact cards with status and inventory context", () => {
+  it("filters catalog items by kind", () => {
     arrangeDashboard({
-      skills: [createSkill()],
-      packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
+      skills: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+      packages: [
+        createPackage({
+          scanStatus: "clean",
+          stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
     });
 
     renderDashboard();
 
-    expect(screen.getByRole("link", { name: "Local Flagged Skill" }).getAttribute("href")).toBe(
-      "/local/local-flagged-skill",
-    );
-    expect(
-      screen.getByRole("link", { name: "Local Flagged Runtime Plugin" }).getAttribute("href"),
-    ).toBe("/plugins/local-flagged-runtime-plugin");
-    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Malicious").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Security scan").length).toBe(2);
-    expect(screen.queryByText("Flagged skill fixture.")).toBeNull();
-    expect(screen.queryByText("Flagged plugin fixture.")).toBeNull();
-    expect(screen.queryByText("VT")).toBeNull();
-    expect(screen.queryByText("LLM")).toBeNull();
-    expect(screen.queryByText("Static")).toBeNull();
-    expect(screen.queryByText(/rescans/i)).toBeNull();
-    expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
-    expect(screen.getAllByText("Downloads").length).toBe(2);
-    expect(screen.queryByText("Installs")).toBeNull();
-    expect(screen.getByText("1.2K")).toBeTruthy();
-    expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getAllByText("Current version").length).toBe(2);
-    expect(screen.getAllByText("Last updated").length).toBe(2);
-    expect(
-      screen.getByRole("link", { name: "Open settings for Local Flagged Skill" }),
-    ).toBeTruthy();
-    expect(
-      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
-    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+
+    expect(screen.getAllByText("Local Flagged Skill").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Local Flagged Runtime Plugin")).toBeNull();
   });
 
-  it("links public plugin finding counts to the plugin validation section", () => {
+  it("reorders catalog items when sort changes", () => {
     arrangeDashboard({
+      skills: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          stats: { downloads: 5, installs: 5, stars: 0, versions: 1 },
+          updatedAt: 500,
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
       packages: [
         createPackage({
-          inspectorWarningCount: 2,
+          scanStatus: "clean",
+          stats: { downloads: 99, installs: 99, stars: 0, versions: 1 },
+          updatedAt: 100,
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    const inventory = screen.getByRole("region", { name: "Packages" });
+    fireEvent.click(within(inventory).getByRole("combobox", { name: "Sort" }));
+    fireEvent.click(screen.getByRole("option", { name: "Most downloaded" }));
+
+    expect(screen.getAllByText(/Local Flagged/)[0]?.textContent).toContain("Plugin");
+  });
+
+  it("filters the catalog with the search box", () => {
+    arrangeDashboard({
+      skills: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+      packages: [
+        createPackage({
           scanStatus: "clean",
           latestRelease: {
             version: "1.0.0",
@@ -331,12 +492,182 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    const validationLink = screen.getByRole("link", {
-      name: "View 2 validation findings for Local Flagged Runtime Plugin",
+    fireEvent.change(screen.getAllByLabelText("Search catalog")[1]!, {
+      target: { value: "runtime" },
     });
-    expect(validationLink.getAttribute("href")).toBe(
-      "/plugins/local-flagged-runtime-plugin#validation",
-    );
+
+    expect(screen.getByText("Local Flagged Runtime Plugin")).toBeTruthy();
+    expect(screen.queryByText("Local Flagged Skill")).toBeNull();
+
+    fireEvent.change(screen.getAllByLabelText("Search catalog")[1]!, {
+      target: { value: "nothing-matches" },
+    });
+
+    expect(screen.getByText(/No matches for/i)).toBeTruthy();
+  });
+
+  it("renders catalog rows in list view by default and toggles to grid", () => {
+    arrangeDashboard({
+      skills: [createCatalogSkill()],
+      packages: [createCatalogPackage()],
+    });
+
+    renderDashboard();
+
+    expect(document.querySelector(".browse-list-stack")).toBeTruthy();
+    expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+
+    expect(document.querySelector(".dashboard-catalog-grid")).toBeTruthy();
+  });
+
+  it("shows dashboard header identity without inventory count", () => {
+    arrangeDashboard({
+      skills: [createCatalogSkill()],
+      packages: [createCatalogPackage()],
+    });
+
+    renderDashboard();
+
+    const heading = screen.getByRole("heading", { name: "Dashboard" });
+    expect(heading.classList.contains("browse-title")).toBe(true);
+    expect(heading.closest(".dashboard-scope-bar")).toBeNull();
+    expect(document.querySelector(".dashboard-scope-bar")).toBeNull();
+    expect(document.querySelector(".dashboard-header-count")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Packages" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Add skill or plugin" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /dashboard sidebar/i })).toBeNull();
+    expect(document.querySelector(".dashboard-right-sidebar")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Import from GitHub" })).toBeTruthy();
+    expect(screen.getByText("Import skills directly from your GitHub repositories.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss GitHub import banner" })).toBeTruthy();
+    expect(screen.queryByText("Latest updates")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss GitHub import banner" }));
+    expect(screen.queryByRole("heading", { name: "Import from GitHub" })).toBeNull();
+    expect(window.localStorage.getItem("clawhub.dashboard.importBannerDismissed")).toBe("1");
+  });
+
+  it("renders scannable list rows with status, downloads, summaries, and row menus", () => {
+    arrangeDashboard({
+      skills: [createSkill()],
+      packages: [createPackage({ stats: { downloads: 42, installs: 9, stars: 0, versions: 1 } })],
+    });
+
+    renderDashboard();
+
+    expect(screen.getByLabelText("Needs attention")).toBeTruthy();
+    expect(document.querySelectorAll(".dashboard-attention-row").length).toBe(2);
+    expect(screen.getAllByText("Local Flagged Skill").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Local Flagged Runtime Plugin").length).toBeGreaterThanOrEqual(2);
+    const attention = screen.getByLabelText("Needs attention");
+    const skillAttention = within(attention).getByRole("button", { name: /Local Flagged Skill/ });
+    const pluginAttention = within(attention).getByRole("button", {
+      name: /Local Flagged Runtime Plugin/,
+    });
+    expect(pluginAttention.textContent).toContain("Blocked");
+    expect(skillAttention.getAttribute("aria-label")).toContain("Security: Needs review");
+    expect(pluginAttention.getAttribute("aria-label")).toContain("Security: Blocked");
+    expect(document.querySelectorAll(".dashboard-catalog-row").length).toBe(2);
+    expect(screen.getAllByText("Needs review").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText("Blocked").length).toBeGreaterThanOrEqual(2);
+
+    expect(screen.queryByText("VT")).toBeNull();
+    expect(screen.queryByText("LLM")).toBeNull();
+    expect(screen.queryByText("Static")).toBeNull();
+    expect(screen.queryByText(/rescans/i)).toBeNull();
+    expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
+    const downloads = screen.getAllByRole("region", { name: "Download metrics" })[0];
+    expect(downloads.textContent).toContain("Downloads");
+    expect(downloads.textContent).toContain("Skills");
+  });
+
+  it("groups issues by artifact without merging distinct Convex ids", () => {
+    arrangeDashboard({
+      packages: [
+        createPackage({
+          _id: "packagesfirst" as Id<"packages">,
+          inspectorWarningCount: 1,
+          topInspectorFinding: {
+            message: "deprecated hook",
+            remediation: "Replace the deprecated hook",
+          },
+          scanStatus: "pending",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "suspicious",
+            llmStatus: "suspicious",
+            staticScanStatus: "suspicious",
+          },
+        }),
+        createPackage({
+          _id: "packagessecond" as Id<"packages">,
+          name: "second-runtime-plugin",
+          displayName: "Second Runtime Plugin",
+          scanStatus: "suspicious",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "suspicious",
+            llmStatus: "suspicious",
+            staticScanStatus: "suspicious",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    expect(document.querySelectorAll(".dashboard-attention-row")).toHaveLength(2);
+    const groupedRow = screen.getByRole("button", {
+      name: /Local Flagged Runtime Plugin\. 2 issues/i,
+    });
+    expect(groupedRow.getAttribute("aria-label")).toContain("Validation");
+    expect(groupedRow.getAttribute("aria-label")).toContain("Security");
+    fireEvent.click(groupedRow);
+    expect(
+      screen.getByRole("dialog", { name: "Local Flagged Runtime Plugin review" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "View plugin" })).toBeNull();
+    const securityReview = within(screen.getByLabelText("Security review"));
+    expect(securityReview.getByText("Scan pending")).toBeTruthy();
+    expect(
+      securityReview.getByRole("link", { name: "Security audit" }).getAttribute("href"),
+    ).toContain("/security-audit");
+    expect(screen.getByRole("button", { name: /Second Runtime Plugin\. 1 issue/i })).toBeTruthy();
+  });
+
+  it("links public plugin finding counts to the plugin validation tab", () => {
+    arrangeDashboard({
+      packages: [
+        createPackage({
+          inspectorWarningCount: 2,
+          scanStatus: "clean",
+          stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    const attentionRow = screen.getByRole("button", {
+      name: /Local Flagged Runtime Plugin\. 1 issue/i,
+    });
+    expect(attentionRow.getAttribute("aria-label")).toContain("2 validation warnings");
+    fireEvent.click(attentionRow);
+    expect(
+      screen.getByRole("dialog", { name: "Local Flagged Runtime Plugin review" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Validation" })).toBeTruthy();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {
@@ -360,7 +691,20 @@ describe("Dashboard rows", () => {
     });
 
     mocks.usePaginatedQuery.mockReturnValue({
-      results: [],
+      results: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
       status: "Exhausted",
       loadMore: vi.fn(),
     });
@@ -368,6 +712,7 @@ describe("Dashboard rows", () => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query as never);
       if (name === "publishers:listMine") return orgPublishers;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
       if (
         typeof args === "object" &&
         args !== null &&
@@ -388,7 +733,7 @@ describe("Dashboard rows", () => {
         limit: 100,
       }),
     );
-    expect(screen.getByText("@clawkit · Org")).toBeTruthy();
+    expect(screen.getByText(/@clawkit/)).toBeTruthy();
 
     fireEvent.change(selector, { target: { value: "publishers:clawkit" } });
 
@@ -398,7 +743,9 @@ describe("Dashboard rows", () => {
         limit: 100,
       }),
     );
-    expect(screen.getByText("ClawKit for Lovable")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getAllByText("ClawKit for Lovable").length).toBeGreaterThan(0),
+    );
   });
 
   it("passes the selected publisher into skill publishing links", async () => {
@@ -415,7 +762,20 @@ describe("Dashboard rows", () => {
       },
     ];
     mocks.usePaginatedQuery.mockReturnValue({
-      results: [],
+      results: [
+        createSkill({
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          moderationFlags: [],
+          latestVersion: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
       status: "Exhausted",
       loadMore: vi.fn(),
     });
@@ -423,6 +783,7 @@ describe("Dashboard rows", () => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query as never);
       if (name === "publishers:listMine") return orgPublishers;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
       return [];
     });
 
@@ -433,8 +794,8 @@ describe("Dashboard rows", () => {
     });
 
     expect(
-      (await screen.findByRole("link", { name: "Publish manually" })).getAttribute("href"),
-    ).toBe("/skills/publish?ownerHandle=clawkit");
+      (await screen.findByRole("link", { name: "Add skill or plugin" })).getAttribute("href"),
+    ).toBe("/add?kind=skill&ownerHandle=clawkit");
   });
 
   it("renders a skeleton while auth state is loading", () => {
@@ -465,7 +826,7 @@ describe("Dashboard rows", () => {
 
   it("uses the canonical skill href when publisher selection is stale", () => {
     arrangeDashboard({
-      skills: [createSkill()],
+      skills: [createCatalogSkill()],
     });
     mocks.useAuthStatus.mockReturnValue({
       isAuthenticated: true,
@@ -475,6 +836,7 @@ describe("Dashboard rows", () => {
     mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       const name = getFunctionName(query as never);
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
       if (name === "publishers:listMine")
         return [
           {
@@ -492,20 +854,19 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    expect(screen.getByRole("link", { name: "Local Flagged Skill" }).getAttribute("href")).toBe(
-      "/local/local-flagged-skill",
-    );
+    expect(
+      screen.getAllByRole("link", { name: /Local Flagged Skill/i })[0]?.getAttribute("href"),
+    ).toBe("/local/local-flagged-skill");
   });
 
-  it("does not show plugin settings from the row action", () => {
-    arrangeDashboard({ packages: [createPackage({ scanStatus: "clean" })] });
+  it("exposes row actions inside the overflow menu", () => {
+    arrangeDashboard({ packages: [createCatalogPackage()] });
 
     renderDashboard();
 
     expect(
-      screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
-    ).toBeNull();
-    expect(screen.queryByRole("button", { name: /open actions/i })).toBeNull();
+      screen.getByRole("button", { name: "Open actions for Local Flagged Runtime Plugin" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: /delete plugin/i })).toBeNull();
   });
 

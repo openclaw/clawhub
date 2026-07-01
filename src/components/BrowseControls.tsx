@@ -207,13 +207,13 @@ export function BrowseSortSelect({ options, value, onChange }: BrowseSortSelectP
                     role="option"
                     aria-selected={active}
                     className={`browse-sort-option${active ? " is-selected" : ""}`}
-                    onClick={() => pick(active ? undefined : option.value)}
+                    onClick={() => pick(option.value)}
                   >
-                    <span className="browse-sort-option-mark" aria-hidden="true">
-                      {active ? <Check size={12} strokeWidth={2.5} /> : null}
-                    </span>
                     {option.icon}
                     <span className="browse-sort-option-label">{option.label}</span>
+                    <span className="browse-sort-option-mark" aria-hidden="true">
+                      {active ? <Check size={14} strokeWidth={2.4} /> : null}
+                    </span>
                   </button>
                 </li>
               );
@@ -629,22 +629,24 @@ type BrowseViewToggleProps = {
 
 export function BrowseViewToggle({ view, onToggle }: BrowseViewToggleProps) {
   return (
-    <div className="browse-view-toggle" role="group" aria-label="Layout">
+    <div className="clawhub-segmented browse-view-toggle" role="group" aria-label="Layout">
       <button
-        className={`browse-view-btn${view === "list" ? " is-active" : ""}`}
+        className={`clawhub-segmented-btn home-v2-listing-view-btn browse-view-btn${view === "list" ? " is-active" : ""}`}
         type="button"
         aria-label="List"
+        aria-pressed={view === "list"}
         onClick={view === "grid" ? onToggle : undefined}
       >
-        <List size={17} aria-hidden="true" />
+        <List size={16} aria-hidden="true" />
       </button>
       <button
-        className={`browse-view-btn${view === "grid" ? " is-active" : ""}`}
+        className={`clawhub-segmented-btn home-v2-listing-view-btn browse-view-btn${view === "grid" ? " is-active" : ""}`}
         type="button"
         aria-label="Grid"
+        aria-pressed={view === "grid"}
         onClick={view === "list" ? onToggle : undefined}
       >
-        <LayoutGrid size={17} aria-hidden="true" />
+        <LayoutGrid size={16} aria-hidden="true" />
       </button>
     </div>
   );

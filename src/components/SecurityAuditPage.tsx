@@ -850,6 +850,21 @@ function SecurityAuditScannerSection({
   );
 }
 
+export function SkillSpectorAuditPanel({
+  entity,
+  analysis,
+}: {
+  entity: EntityRef;
+  analysis?: SkillSpectorAnalysis | null;
+}) {
+  return (
+    <SecurityAuditScannerSection
+      kind="skillspector"
+      props={{ entity, skillSpectorAnalysis: analysis ?? null }}
+    />
+  );
+}
+
 function SecurityAuditSidebar(props: SecurityAuditPageProps) {
   const latestCheckedAt = getLatestAuditCheckedAt(props);
   const verdict = aggregateAuditVerdict(props);

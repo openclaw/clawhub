@@ -53,7 +53,7 @@ export function SkillsResults({
               : "No skills have been published yet."}
           </p>
           <Button asChild size="sm" className="mt-4">
-            <Link to="/add" search={{ kind: "skill", ownerHandle: undefined }}>
+            <Link to="/add" search={{ kind: "skill", ownerHandle: undefined, method: undefined }}>
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add a skill
             </Link>
