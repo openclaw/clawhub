@@ -2952,6 +2952,17 @@ const promotions = defineTable({
   .index("by_slug", ["slug"])
   .index("by_status_endsAt", ["status", "endsAt"]);
 
+const publisherFollows = defineTable({
+  followerUserId: v.id("users"),
+  publisherId: v.id("publishers"),
+  notifications: v.union(v.literal("all"), v.literal("none")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_follower", ["followerUserId", "updatedAt"])
+  .index("by_publisher", ["publisherId", "updatedAt"])
+  .index("by_follower_publisher", ["followerUserId", "publisherId"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -4189,6 +4200,7 @@ export default defineSchema({
   publisherFeedPublications,
   stars,
   promotions,
+  publisherFollows,
   auditLogs,
   systemSettings,
   skillsShCatalogControls,
