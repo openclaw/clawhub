@@ -19,6 +19,7 @@ into `docs/` and leave only the design record here.
 
 - `spec.md`: product + implementation spec for the original registry model.
 - `orgs.md`: org, publisher membership, and scoped identity plan.
+- `profile-discovery-surfaces.md`: profile, feed, search, and discovery surfaces for ClawHub account and publisher feeds.
 - `github-import.md`: GitHub import feature spec.
 - `github-backed-skills.md`: source-backed GitHub skills catalog and install invariants.
 - `diffing.md`: skill version diffing UI/API design.
