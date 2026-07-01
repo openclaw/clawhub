@@ -30,14 +30,21 @@ const browseFields = {
 };
 
 describe("publicBrowse", () => {
-  it("treats scanner review flags as pending public review", () => {
+  it("keeps review-only guidance publicly browsable", () => {
     expect(
       isSkillPendingPublicReview({
         moderationStatus: "active",
         moderationReason: "scanner.llm.review",
         moderationFlags: ["flagged.review"],
       }),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      shouldExcludeSkillFromPublicBrowse({
+        ...browseFields,
+        moderationReason: "scanner.llm.review",
+        moderationFlags: ["flagged.review"],
+      }),
+    ).toBe(false);
   });
 
   it("treats active pending.scan skills as pending public review", () => {

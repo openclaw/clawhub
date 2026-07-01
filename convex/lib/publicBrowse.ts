@@ -5,7 +5,7 @@ import {
   isSecurityScanStatusBlockedFromPublic,
   normalizeSecurityScanStatus,
 } from "./securityScanPolicy";
-import { isSkillReviewFlagged, isSkillSuspicious } from "./skillSafety";
+import { isSkillSuspicious } from "./skillSafety";
 
 type SkillPublicBrowseFields = Pick<
   Doc<"skills">,
@@ -49,7 +49,6 @@ function isPendingSkillModerationReason(reason: string | null | undefined) {
 export function isSkillPendingPublicReview(
   skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason" | "moderationFlags">,
 ) {
-  if (isSkillReviewFlagged(skill)) return true;
   return isPendingSkillModerationReason(skill.moderationReason);
 }
 

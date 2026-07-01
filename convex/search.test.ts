@@ -773,6 +773,45 @@ describe("search helpers", () => {
     expect(ctx.db.query).toHaveBeenCalledWith("skillSearchDigest");
   });
 
+  it("includes review-only first-publish skills in exact slug search", async () => {
+    const exactSlugSkill = makeSkillDoc({
+      id: "skills:wechatpay",
+      slug: "wechatpay-payment-integration",
+      displayName: "WeChat Pay Integration",
+      moderationFlags: ["flagged.review"],
+      moderationReason: "scanner.llm.review",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill,
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "wechatpay-payment-integration",
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["wechatpay-payment-integration"]);
+  });
+
+  it("still excludes first-publish pending scan skills from exact slug search", async () => {
+    const exactSlugSkill = makeSkillDoc({
+      id: "skills:pending",
+      slug: "pending-payment-integration",
+      displayName: "Pending Payment Integration",
+      moderationReason: "pending.scan",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill,
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "pending-payment-integration",
+    });
+
+    expect(result).toEqual([]);
+  });
+
   it("returns duplicate exact slug matches without requiring global slug uniqueness", async () => {
     const ctx = makeLexicalCtx({
       exactSlugSkills: [
