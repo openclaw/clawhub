@@ -52,6 +52,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { generatePackageChangelogPreview } from "./lib/changelog";
 import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
@@ -7790,6 +7791,28 @@ export const publishRelease: ReturnType<typeof action> = action({
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
     return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
+  },
+});
+
+export const generateChangelogPreview: ReturnType<typeof action> = action({
+  args: {
+    name: v.string(),
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    version: v.string(),
+    readmeText: v.string(),
+    filePaths: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    await requireUserFromAction(ctx);
+    const name = normalizePackageName(args.name);
+    const version = assertPackageVersion(args.family, args.version);
+    const changelog = await generatePackageChangelogPreview(ctx, {
+      name,
+      version,
+      readmeText: args.readmeText,
+      filePaths: args.filePaths,
+    });
+    return { changelog };
   },
 });
 

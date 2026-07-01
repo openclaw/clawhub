@@ -31,4 +31,16 @@ describe("changelog utils", () => {
     });
     expect(text).toMatch(/Initial release/i);
   });
+
+  it("generates a package-specific fallback update note", () => {
+    const text = __test.generatePackageFallback({
+      name: "demo-plugin",
+      version: "1.2.0",
+      oldReadme: "old",
+      nextReadme: "new",
+      fileDiff: { added: ["src/index.ts"], changed: [], removed: [] },
+    });
+    expect(text).toContain("Updated README and package contents");
+    expect(text).not.toContain("SKILL.md");
+  });
 });
