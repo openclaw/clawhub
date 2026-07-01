@@ -192,7 +192,7 @@ describe("creators route", () => {
     expect(screen.getByRole("heading", { name: "Creators" })).toBeTruthy();
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Verified" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Organizations" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Users" })).toBeTruthy();
     expect(screen.queryByText("Builders")).toBeNull();
