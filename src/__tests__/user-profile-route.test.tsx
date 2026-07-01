@@ -3,9 +3,12 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Id } from "../../convex/_generated/dataModel";
+import type { PublicPublisherListItem } from "../lib/publicUser";
 import {
   buildPublisherCatalogCategoryOptions,
   buildPublisherGroupTabOptions,
+  buildPublisherProfileStateLabels,
   formatRelativeUpdatedAt,
   getCatalogItemShortTypeLabel,
   groupPublisherCatalogItemsByTopic,
@@ -61,13 +64,13 @@ async function loadRoute() {
   };
 }
 
-const publisher = {
-  _id: "publishers:nvidia",
+const publisher: PublicPublisherListItem = {
+  _id: "publishers:nvidia" as Id<"publishers">,
   _creationTime: 1,
   bio: "Official NVIDIA publisher.",
   displayName: "NVIDIA",
   handle: "nvidia",
-  image: null,
+  image: undefined,
   kind: "org" as const,
   official: true,
   publishedItems: [],
@@ -140,6 +143,22 @@ describe("user profile route", () => {
     ).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Sort" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Sort" }).textContent).toMatch(/^Sort$/i);
+  });
+
+  it("renders literal profile state labels without implying missing review states", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const profileState = screen.getByLabelText("Profile state");
+    expect(within(profileState).getByText("Official publisher")).toBeTruthy();
+    expect(within(profileState).getByText("Public profile")).toBeTruthy();
+    expect(within(profileState).getByText("Public catalog")).toBeTruthy();
+    expect(within(profileState).queryByText(/reviewed/i)).toBeNull();
+    expect(within(profileState).queryByText(/scanned/i)).toBeNull();
+    expect(within(profileState).queryByText(/following/i)).toBeNull();
+    expect(within(profileState).queryByText(/locally approved/i)).toBeNull();
   });
 
   it("opens plugins tab when publisher has plugins but no skills", async () => {
@@ -527,6 +546,21 @@ describe("publisher profile helpers", () => {
 
     const now = Date.UTC(2026, 5, 23, 12, 0, 0);
     expect(formatRelativeUpdatedAt(now - 3 * 24 * 60 * 60 * 1000, now)).toBe("3d ago");
+  });
+
+  it("builds profile state labels only from profile facts present on the publisher", () => {
+    expect(buildPublisherProfileStateLabels(publisher).map((label) => label.label)).toEqual([
+      "Official publisher",
+      "Public profile",
+      "Public catalog",
+    ]);
+    expect(
+      buildPublisherProfileStateLabels({
+        ...publisher,
+        official: false,
+        stats: { ...publisher.stats, skills: 0, packages: 0 },
+      }).map((label) => label.label),
+    ).toEqual(["Public profile"]);
   });
 
   it("builds category options from catalog items and matches category slugs", () => {

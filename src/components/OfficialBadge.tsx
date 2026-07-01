@@ -6,10 +6,10 @@ export function OfficialTag({ className }: { className?: string }) {
     <Badge
       variant="official"
       className={className ? `official-tag rounded-full ${className}` : "official-tag rounded-full"}
-      aria-label="Verified"
+      aria-label="Official publisher"
     >
       <BadgeCheck size={15} aria-hidden="true" className="official-badge-icon" />
-      Verified
+      Official
     </Badge>
   );
 }

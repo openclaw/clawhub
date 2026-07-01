@@ -11,9 +11,12 @@ import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowRight,
   ArrowUpRight,
+  BadgeCheck,
   Building2,
   Download,
   Flag,
+  Globe2,
+  Library,
   MoreHorizontal,
   Plus,
   Search,
@@ -265,6 +268,13 @@ type PublisherStatCard = {
   icon: LucideIcon;
 };
 
+type PublisherProfileStateLabel = {
+  key: string;
+  label: string;
+  icon: LucideIcon;
+  tone?: "official";
+};
+
 export function buildPublisherStatCards(publisher: PublicPublisherListItem): PublisherStatCard[] {
   return [
     {
@@ -282,6 +292,34 @@ export function buildPublisherStatCards(publisher: PublicPublisherListItem): Pub
   ];
 }
 
+export function buildPublisherProfileStateLabels(
+  publisher: PublicPublisherListItem,
+): PublisherProfileStateLabel[] {
+  const labels: PublisherProfileStateLabel[] = [
+    {
+      key: "public-profile",
+      label: "Public profile",
+      icon: Globe2,
+    },
+  ];
+  if (publisher.official) {
+    labels.unshift({
+      key: "official",
+      label: "Official publisher",
+      icon: BadgeCheck,
+      tone: "official",
+    });
+  }
+  if (publisher.stats.skills + publisher.stats.packages > 0) {
+    labels.push({
+      key: "public-catalog",
+      label: "Public catalog",
+      icon: Library,
+    });
+  }
+  return labels;
+}
+
 function PublisherProfileStatCards({ cards }: { cards: PublisherStatCard[] }) {
   return (
     <dl className="publisher-profile-stat-cards" aria-label="Publisher stats">
@@ -296,6 +334,26 @@ function PublisherProfileStatCards({ cards }: { cards: PublisherStatCard[] }) {
         );
       })}
     </dl>
+  );
+}
+
+function PublisherProfileStateLabels({ publisher }: { publisher: PublicPublisherListItem }) {
+  const labels = buildPublisherProfileStateLabels(publisher);
+  return (
+    <div className="publisher-profile-state-labels">
+      {labels.map((label) => {
+        const Icon = label.icon;
+        return (
+          <span
+            key={label.key}
+            className={`publisher-profile-state-label${label.tone ? ` is-${label.tone}` : ""}`}
+          >
+            <Icon size={14} aria-hidden="true" />
+            {label.label}
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -752,6 +810,14 @@ export function PublisherProfilePage({
                 </div>
 
                 <div className="publisher-profile-details-inline">
+                  <section
+                    className="publisher-profile-detail-block publisher-profile-detail-block-fit publisher-profile-details-state"
+                    aria-label="Profile state"
+                  >
+                    <h2 className="publisher-profile-detail-label">Status</h2>
+                    <PublisherProfileStateLabels publisher={publisher} />
+                  </section>
+
                   {showMembers ? (
                     <section
                       className="publisher-profile-detail-block publisher-profile-detail-block-fit publisher-profile-details-members"
