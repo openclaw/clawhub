@@ -38,6 +38,7 @@ import {
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
 } from "./lib/publishers";
+import { getPublisherStateFacts } from "./lib/publisherState";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -3195,6 +3196,7 @@ export const listOfficialPublishersInternal = internalQuery({
           displayName: publisher?.displayName ?? null,
           kind: publisher?.kind ?? null,
           active: Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
+          state: await getPublisherStateFacts(ctx, publisher, { official: true }),
           reason: row.reason ?? null,
           createdByUserId: row.createdByUserId ?? null,
           createdByHandle: createdBy?.handle ?? null,
@@ -3259,6 +3261,8 @@ export const addOfficialPublisherInternal = internalMutation({
       metadata: {
         handle: publisher.handle,
         reason,
+        priorOfficialState: "notOfficial",
+        officialState: "official",
       },
       createdAt: now,
     });
@@ -3319,6 +3323,8 @@ export const removeOfficialPublisherInternal = internalMutation({
         handle: publisher.handle,
         reason,
         officialPublisherId: existing._id,
+        priorOfficialState: "official",
+        officialState: "notOfficial",
       },
       createdAt: now,
     });

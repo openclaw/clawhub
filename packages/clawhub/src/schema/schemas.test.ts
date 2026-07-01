@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
 import {
+  ApiV1OfficialPublisherListResponseSchema,
   ApiV1SearchResponseSchema,
   ApiV1SkillRescanResponseSchema,
   ApiV1SkillVerifyResponseSchema,
@@ -106,5 +107,51 @@ describe("packages/clawhub skill metadata schema", () => {
 
     if (!("githubContentHash" in parsed)) throw new Error("expected GitHub rescan response");
     expect(parsed.githubContentHash).toBe("content-hash");
+  });
+
+  it("parses optional official publisher state facts", () => {
+    const parsed = parseArk(
+      ApiV1OfficialPublisherListResponseSchema,
+      {
+        ok: true,
+        items: [
+          {
+            officialPublisherId: "officialPublishers:openclaw",
+            publisherId: "publishers:openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw",
+            kind: "org",
+            active: true,
+            state: {
+              claimState: "claimed",
+              officialState: "official",
+              restrictionState: "active",
+            },
+            reason: "platform-owned publisher",
+            createdByUserId: "users:admin",
+            createdByHandle: "patrick-erichsen-2",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          {
+            officialPublisherId: "officialPublishers:legacy",
+            publisherId: "publishers:legacy",
+            handle: null,
+            displayName: null,
+            kind: null,
+            active: false,
+            reason: null,
+            createdByUserId: null,
+            createdByHandle: null,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      },
+      "Official publishers",
+    );
+
+    expect(parsed.items[0]?.state?.officialState).toBe("official");
+    expect(parsed.items[1]?.state).toBeUndefined();
   });
 });
