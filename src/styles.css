@@ -25669,19 +25669,29 @@ a.search-empty-action {
     box-shadow 0.28s ease;
 }
 
-.home-v2-apps-workflow-tile img {
+.home-v2-apps-workflow-logo {
+  display: block;
   width: 42px;
   height: 42px;
+}
+
+.home-v2-apps-workflow-logo.home-v2-apps-icon-mark--simple {
+  background: var(--home-simple-icon-color);
+  mask: var(--home-simple-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--home-simple-icon-url) center / contain no-repeat;
+}
+
+.home-v2-apps-workflow-logo.home-v2-apps-icon-mark--image {
   object-fit: contain;
 }
 
-.home-v2-apps-workflow-tile.is-openai img,
-.home-v2-apps-workflow-tile.is-slack img {
+.home-v2-apps-workflow-tile.is-openai .home-v2-apps-workflow-logo,
+.home-v2-apps-workflow-tile.is-slack .home-v2-apps-workflow-logo {
   width: 36.75px;
   height: 36.75px;
 }
 
-.home-v2-apps-workflow-tile span {
+.home-v2-apps-workflow-badge {
   position: absolute;
   top: -8px;
   right: -10px;
@@ -26103,10 +26113,22 @@ a.home-v2-apps-see-all:focus-visible svg {
   background: color-mix(in srgb, var(--hv2-bg) 55%, transparent);
 }
 
-.home-v2-apps-tile-icon img {
+.home-v2-apps-tile-logo {
+  display: block;
   width: 21px;
   height: 21px;
-  border-radius: 999px;
+  border-radius: 0;
+}
+
+.home-v2-apps-tile-logo.home-v2-apps-icon-mark--simple {
+  background: var(--home-simple-icon-color);
+  mask: var(--home-simple-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--home-simple-icon-url) center / contain no-repeat;
+}
+
+.home-v2-apps-tile-logo.home-v2-apps-icon-mark--image {
+  width: 24px;
+  height: 24px;
   object-fit: contain;
 }
 
@@ -26648,18 +26670,18 @@ a.home-v2-apps-see-all:focus-visible svg {
     border-radius: 12px;
   }
 
-  .home-v2-apps-workflow-tile img {
+  .home-v2-apps-workflow-logo {
     width: 22px;
     height: 22px;
   }
 
-  .home-v2-apps-workflow-tile.is-openai img,
-  .home-v2-apps-workflow-tile.is-slack img {
+  .home-v2-apps-workflow-tile.is-openai .home-v2-apps-workflow-logo,
+  .home-v2-apps-workflow-tile.is-slack .home-v2-apps-workflow-logo {
     width: 19.25px;
     height: 19.25px;
   }
 
-  .home-v2-apps-workflow-tile span {
+  .home-v2-apps-workflow-badge {
     top: -5px;
     right: -7px;
     min-height: 15px;

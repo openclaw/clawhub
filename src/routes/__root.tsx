@@ -22,6 +22,7 @@ import {
   isBannedAccountAuthError,
   normalizeAuthErrorMessage,
 } from "../lib/authErrorMessage";
+import { HOME_APP_IMAGE_ICON_PRELOADS } from "../lib/homeApps";
 import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
 import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCookie";
 import appCss from "../styles.css?url";
@@ -121,6 +122,12 @@ export const Route = createRootRoute({
           rel: "stylesheet",
           href: appCss,
         },
+        ...HOME_APP_IMAGE_ICON_PRELOADS.map((href) => ({
+          rel: "preload",
+          href,
+          as: "image",
+          type: "image/svg+xml",
+        })),
         {
           rel: "icon",
           href: "/favicon.ico",

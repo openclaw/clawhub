@@ -8,20 +8,57 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  homeAppIconUrl,
-  homePluginShortcutIconUrl,
+  homePluginShortcutIcon,
+  homeSkillAppIcon,
   SKILLS_BROWSE_SEARCH,
+  type HomeAppIcon,
   type HomePluginShortcut,
   type HomeSkillApp,
 } from "../lib/homeApps";
-import { OPENCLAW_LOGO_URL } from "../lib/nav-items";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 
+type HomeAppIconMarkProps = {
+  icon: HomeAppIcon;
+  className?: string;
+};
+
+function HomeAppIconMark({ icon, className }: HomeAppIconMarkProps) {
+  if (icon.kind === "image") {
+    return (
+      <img
+        src={icon.src}
+        className={`${className ?? ""} home-v2-apps-icon-mark--image`.trim()}
+        alt=""
+        width={40}
+        height={40}
+        loading="eager"
+        fetchPriority="high"
+        decoding="async"
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`${className ?? ""} home-v2-apps-icon-mark--simple`.trim()}
+      data-simple-icon-slug={icon.slug}
+      style={
+        {
+          "--home-simple-icon-color": icon.color,
+          "--home-simple-icon-url": `url("${icon.src}")`,
+        } as CSSProperties
+      }
+    />
+  );
+}
+
 function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
+  const icon = homeSkillAppIcon(app);
+
   return (
     <Link
       to="/skills"
@@ -30,14 +67,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <img
-          src={homeAppIconUrl(app.iconDomain)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          decoding="async"
-        />
+        <HomeAppIconMark icon={icon} className={homeAppsTileLogoClassName(app.id)} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{app.name}</span>
@@ -49,6 +79,8 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
 }
 
 function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcut }) {
+  const icon = homePluginShortcutIcon(shortcut);
+
   return (
     <Link
       to={buildPluginDetailHref(shortcut.packageName)}
@@ -56,14 +88,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <img
-          src={homePluginShortcutIconUrl(shortcut)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          decoding="async"
-        />
+        <HomeAppIconMark icon={icon} className={homeAppsTileLogoClassName(shortcut.id)} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{shortcut.name}</span>
@@ -85,6 +110,20 @@ function skill(id: string): HomeAppsItemRef {
 
 function plugin(id: string): HomeAppsItemRef {
   return { kind: "plugin", id };
+}
+
+function homeAppsTileLogoClassName(id: string) {
+  return `home-v2-apps-tile-logo home-v2-apps-tile-logo--${id}`;
+}
+
+function workflowSimpleIcon(id: string) {
+  return homeSkillAppIcon({
+    id,
+    name: id,
+    description: "",
+    browseQuery: id,
+    iconDomain: "",
+  });
 }
 
 const appCategories = [
@@ -187,23 +226,23 @@ const appCategories = [
 
 const workflowHeaderTiles: ReadonlyArray<{
   label: string;
-  src: string;
+  icon: HomeAppIcon;
   className: string;
   badge?: string;
 }> = [
   {
     label: "OpenAI",
-    src: "/openai-favicon.svg",
+    icon: workflowSimpleIcon("openai"),
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: "/slack-favicon.svg",
+    icon: workflowSimpleIcon("slack"),
     className: "is-slack",
   },
   {
     label: "OpenClaw",
-    src: OPENCLAW_LOGO_URL,
+    icon: workflowSimpleIcon("openclaw"),
     className: "is-openclaw",
     badge: "Exfoliate!",
   },
@@ -248,8 +287,10 @@ export function HomeAppsSection() {
           <div className="home-v2-apps-workflow-tiles" aria-hidden="true">
             {workflowHeaderTiles.map((tile) => (
               <span key={tile.label} className={`home-v2-apps-workflow-tile ${tile.className}`}>
-                {tile.badge ? <span>{tile.badge}</span> : null}
-                <img src={tile.src} alt="" width={46} height={46} loading="lazy" decoding="async" />
+                {tile.badge ? (
+                  <span className="home-v2-apps-workflow-badge">{tile.badge}</span>
+                ) : null}
+                <HomeAppIconMark icon={tile.icon} className="home-v2-apps-workflow-logo" />
               </span>
             ))}
           </div>
