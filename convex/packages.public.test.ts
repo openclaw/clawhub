@@ -18,6 +18,7 @@ import {
   list,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
+  generateChangelogPreview,
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
   getManageContext,
@@ -325,6 +326,18 @@ const publishPackageForTrustedPublisherInternalHandler = (
       payload: unknown;
     },
     unknown
+  >
+)._handler;
+const generateChangelogPreviewHandler = (
+  generateChangelogPreview as unknown as WrappedHandler<
+    {
+      name: string;
+      family: "code-plugin" | "bundle-plugin";
+      version: string;
+      readmeText: string;
+      filePaths?: string[];
+    },
+    { changelog: string }
   >
 )._handler;
 
@@ -2377,6 +2390,54 @@ function makeSoftDeletePackageCtx(options?: {
 }
 
 describe("packages public queries", () => {
+  it("generates a package changelog preview from prior release history", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:preview" as never);
+    const previousKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const runQuery = vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "users:preview",
+          role: "user",
+        })
+        .mockResolvedValueOnce({
+          _id: "packages:demo",
+          latestReleaseId: "packageReleases:demo-1",
+          softDeletedAt: undefined,
+        })
+        .mockResolvedValueOnce({
+          _id: "packageReleases:demo-1",
+          files: [{ path: "README.md", storageId: "storage:readme", sha256: "old" }],
+        });
+      const storageGet = vi.fn(async () => new Blob(["# Demo\n\nOld README"]));
+
+      const result = await generateChangelogPreviewHandler(
+        {
+          runQuery,
+          storage: { get: storageGet },
+        } as never,
+        {
+          name: "demo-plugin",
+          family: "code-plugin",
+          version: "1.2.0",
+          readmeText: "# Demo\n\nNew README",
+          filePaths: ["README.md", "src/index.ts"],
+        },
+      );
+
+      expect(result.changelog).toContain("Updated README and package contents");
+      expect(runQuery).toHaveBeenCalledTimes(3);
+      expect(storageGet).toHaveBeenCalledWith("storage:readme");
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousKey;
+      }
+    }
+  });
+
   it("keeps partially consumed plugin export family pages active", async () => {
     const ctx = makePluginExportCtx([
       makePluginExportDigest("newer-code", "code-plugin", 300),
