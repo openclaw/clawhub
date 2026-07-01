@@ -12,6 +12,7 @@ import {
   ShieldOff,
   XCircle,
 } from "lucide-react";
+import { useState } from "react";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -108,6 +109,9 @@ export function AbusePage({
   onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
   onToggleAutoban: () => void;
 }) {
+  const [selectedSignalItem, setSelectedSignalItem] = useState<PublisherAbuseSignalEntry | null>(
+    null,
+  );
   const latestRun = dashboard?.latestRun ?? null;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
@@ -332,11 +336,10 @@ export function AbusePage({
             canLoadMore={signalsCanLoadMore || signalsLoadingMore}
             items={signalItems}
             loaded={signalsLoaded}
+            selectedSignalId={selectedSignalItem?.signal._id ?? null}
             status={signalStatus}
             searchActive={search.trim().length > 0}
-            onDismissSignal={onDismissSignal}
-            onReopenSignal={onReopenSignal}
-            onSnoozeSignal={onSnoozeSignal}
+            onSelectSignal={setSelectedSignalItem}
           />
         ) : (
           <div className="pa-table-wrap">
@@ -643,6 +646,24 @@ export function AbusePage({
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <Sheet
+        open={tab === "signals" && selectedSignalItem !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelectedSignalItem(null);
+        }}
+      >
+        <SheetContent side="right" className="pa-sheet w-[600px] max-w-[92vw]">
+          {selectedSignalItem ? (
+            <PublisherAbuseSignalInspector
+              item={selectedSignalItem}
+              onDismissSignal={onDismissSignal}
+              onReopenSignal={onReopenSignal}
+              onSnoozeSignal={onSnoozeSignal}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
     </section>
   );
 }
@@ -728,20 +749,18 @@ function PublisherAbuseSignalsTable({
   canLoadMore,
   items,
   loaded,
+  selectedSignalId,
   status,
   searchActive,
-  onDismissSignal,
-  onReopenSignal,
-  onSnoozeSignal,
+  onSelectSignal,
 }: {
   canLoadMore: boolean;
   items: PublisherAbuseSignalEntry[];
   loaded: boolean;
+  selectedSignalId: Id<"publisherAbuseSignals"> | null;
   status: PublisherAbuseSignalStatus;
   searchActive: boolean;
-  onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
-  onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
-  onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
+  onSelectSignal: (item: PublisherAbuseSignalEntry) => void;
 }) {
   const emptyState = publisherAbuseSignalEmptyState(searchActive, canLoadMore, status);
   return (
@@ -749,149 +768,286 @@ function PublisherAbuseSignalsTable({
       <table className="pa-table pa-signals-table">
         <thead>
           <tr>
-            <th>Signal</th>
-            <th>Status</th>
             <th>Severity</th>
-            <th>Skill</th>
-            <th>Publisher</th>
-            <th className="pa-num">7d ratio</th>
-            <th className="pa-num">30d ratio</th>
-            <th className="pa-num">All-time ratio</th>
-            <th>First seen</th>
+            <th>Signal</th>
+            <th>Subject</th>
+            <th className="pa-num">Evidence</th>
             <th>Last seen</th>
-            <th>Actions</th>
           </tr>
         </thead>
         <tbody>
           {!loaded ? (
-            <PublisherAbuseTableSkeletonRows columns={11} label="Loading publisher abuse signals" />
+            <PublisherAbuseTableSkeletonRows columns={5} label="Loading publisher abuse signals" />
           ) : items.length === 0 ? (
             <tr className="pa-empty-row">
-              <td colSpan={11}>
+              <td colSpan={5}>
                 <strong>{emptyState.title}</strong>
                 {emptyState.body}
               </td>
             </tr>
           ) : (
-            items.map((item) => (
-              <tr key={item.signal._id}>
-                <td>
-                  <strong className="pa-signal-name">
-                    {formatPublisherAbuseSignalType(item.signal.signalType)}
-                  </strong>
-                  <div className="pa-signal-repeat">
-                    Seen {formatWholeNumber(item.signal.seenCount)}x
-                  </div>
-                </td>
-                <td>
-                  <Badge variant="default" size="sm">
-                    {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
-                  </Badge>
-                  {item.signal.snoozedUntil ? (
-                    <div className="pa-signal-repeat">
-                      until {formatShortTimestamp(item.signal.snoozedUntil)}
+            items.map((item) => {
+              const selected = item.signal._id === selectedSignalId;
+              return (
+                <tr
+                  key={item.signal._id}
+                  className={selected ? "is-selected" : undefined}
+                  onClick={() => onSelectSignal(item)}
+                >
+                  <td>
+                    <Badge
+                      variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)}
+                      size="sm"
+                    >
+                      {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
+                    </Badge>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="pa-signal-summary pa-row-button"
+                      aria-label={`Open details for ${item.signal.skillDisplayName}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelectSignal(item);
+                      }}
+                    >
+                      <strong className="pa-signal-name">
+                        {formatPublisherAbuseSignalType(item.signal.signalType)}
+                      </strong>
+                      <span>
+                        {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
+                        {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
+                      </span>
+                    </button>
+                    {item.signal.snoozedUntil ? (
+                      <div className="pa-signal-repeat">
+                        until {formatShortTimestamp(item.signal.snoozedUntil)}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td>
+                    <div className="pa-signal-subject">
+                      <strong>{item.signal.skillDisplayName}</strong>
+                      <span>
+                        @{item.signal.handleSnapshot} / {item.signal.skillSlug}
+                      </span>
                     </div>
-                  ) : null}
-                </td>
-                <td>
-                  <Badge
-                    variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)}
-                    size="sm"
-                  >
-                    {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
-                  </Badge>
-                </td>
-                <td>
-                  <a
-                    className="pa-handle pa-signal-link"
-                    href={buildSkillDetailHref(signalPublisherHandle(item), item.signal.skillSlug)}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open skill ${item.signal.skillDisplayName}`}
-                  >
-                    <strong>{item.signal.skillDisplayName}</strong>
-                    <span>
-                      {item.signal.skillSlug}
-                      <ExternalLink size={11} aria-hidden="true" />
-                    </span>
-                  </a>
-                </td>
-                <td>
-                  <a
-                    className="pa-handle pa-signal-link"
-                    href={buildPublisherProfileHref(signalPublisherHandle(item))}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open publisher ${item.signal.handleSnapshot}`}
-                  >
-                    <strong>{item.signal.handleSnapshot}</strong>
-                    <span>
-                      {compactIdentifier(item.signal.ownerKey)}
-                      <ExternalLink size={11} aria-hidden="true" />
-                    </span>
-                  </a>
-                </td>
-                <PublisherAbuseSignalRatioCell
-                  downloads={item.signal.recent7Downloads}
-                  installs={item.signal.recent7Installs}
-                  ratio={item.signal.recent7InstallDownloadRatio}
-                />
-                <PublisherAbuseSignalRatioCell
-                  downloads={item.signal.recent30Downloads}
-                  installs={item.signal.recent30Installs}
-                  ratio={item.signal.recent30InstallDownloadRatio}
-                />
-                <PublisherAbuseSignalRatioCell
-                  downloads={item.signal.allTimeDownloads}
-                  installs={item.signal.allTimeInstalls}
-                  ratio={item.signal.allTimeInstallDownloadRatio}
-                />
-                <td className="pa-muted">{formatShortTimestamp(item.signal.firstSeenAt)}</td>
-                <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
-                <td>
-                  <div className="pa-signal-actions">
-                    {signalReviewStatus(item) === "open" ? (
-                      <>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          title="Snooze signal"
-                          onClick={() => onSnoozeSignal(item)}
-                        >
-                          <Clock3 size={13} />
-                          Snooze
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          title="Dismiss signal"
-                          onClick={() => onDismissSignal(item)}
-                        >
-                          <XCircle size={13} />
-                          Dismiss
-                        </Button>
-                      </>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        title="Reopen signal"
-                        onClick={() => onReopenSignal(item)}
-                      >
-                        <RotateCcw size={13} />
-                        Reopen
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))
+                  </td>
+                  <PublisherAbuseSignalRatioCell
+                    downloads={item.signal.recent30Downloads}
+                    installs={item.signal.recent30Installs}
+                    ratio={item.signal.recent30InstallDownloadRatio}
+                  />
+                  <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function PublisherAbuseSignalInspector({
+  item,
+  onDismissSignal,
+  onReopenSignal,
+  onSnoozeSignal,
+}: {
+  item: PublisherAbuseSignalEntry;
+  onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
+  onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
+  onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
+}) {
+  const status = signalReviewStatus(item);
+  const publisherHandle = signalPublisherHandle(item);
+  return (
+    <>
+      <SheetHeader className="pa-sheet-head">
+        <SheetTitle>{item.signal.skillDisplayName}</SheetTitle>
+        <SheetDescription className="sr-only">
+          Publisher abuse signal evidence, linked skill and publisher, and available review actions.
+        </SheetDescription>
+        <div className="pa-pills">
+          <Badge variant="default" size="sm">
+            {formatPublisherAbuseSignalStatus(status)}
+          </Badge>
+          <Badge variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)} size="sm">
+            {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
+          </Badge>
+          <Badge variant="compact">Seen {formatWholeNumber(item.signal.seenCount)}x</Badge>
+        </div>
+        <div className="pa-idline">
+          <a
+            className="pa-profile-link"
+            href={buildSkillDetailHref(publisherHandle, item.signal.skillSlug)}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open skill ${item.signal.skillDisplayName}`}
+          >
+            <ExternalLink size={12} />
+            Skill
+          </a>
+          <a
+            className="pa-profile-link"
+            href={buildPublisherProfileHref(publisherHandle)}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`Open publisher ${item.signal.handleSnapshot}`}
+          >
+            <ExternalLink size={12} />
+            Publisher
+          </a>
+        </div>
+      </SheetHeader>
+
+      <div className="pa-sheet-body">
+        <section className="pa-zone">
+          <div className="pa-section-label">Signal</div>
+          <div className="pa-reason-list">
+            <div className="pa-reason">
+              <strong>{formatPublisherAbuseSignalType(item.signal.signalType)}</strong>
+              <small>{describePublisherAbuseSignalType(item.signal.signalType)}</small>
+            </div>
+          </div>
+        </section>
+
+        <section className="pa-zone">
+          <div className="pa-section-label">Publisher and skill</div>
+          <div className="pa-metrics">
+            <PublisherAbuseSignalMeta label="Publisher" value={item.signal.handleSnapshot} />
+            <PublisherAbuseSignalMeta label="Skill slug" value={item.signal.skillSlug} />
+            <PublisherAbuseSignalMeta
+              label="Owner"
+              value={compactIdentifier(item.signal.ownerKey)}
+            />
+            <PublisherAbuseSignalMeta
+              label="Linked user"
+              value={item.signal.ownerUserId ? compactIdentifier(item.signal.ownerUserId) : "None"}
+            />
+          </div>
+        </section>
+
+        <section className="pa-zone">
+          <div className="pa-section-label">Install / download evidence</div>
+          <div className="pa-metrics pa-signal-evidence-grid">
+            <PublisherAbuseSignalEvidenceMetric
+              label="7 days"
+              downloads={item.signal.recent7Downloads}
+              installs={item.signal.recent7Installs}
+              ratio={item.signal.recent7InstallDownloadRatio}
+            />
+            <PublisherAbuseSignalEvidenceMetric
+              label="30 days"
+              downloads={item.signal.recent30Downloads}
+              installs={item.signal.recent30Installs}
+              ratio={item.signal.recent30InstallDownloadRatio}
+            />
+            <PublisherAbuseSignalEvidenceMetric
+              label="All time"
+              downloads={item.signal.allTimeDownloads}
+              installs={item.signal.allTimeInstalls}
+              ratio={item.signal.allTimeInstallDownloadRatio}
+            />
+          </div>
+        </section>
+
+        <section className="pa-zone">
+          <div className="pa-section-label">Review state</div>
+          <div className="pa-metrics">
+            <PublisherAbuseSignalMeta
+              label="First seen"
+              value={formatShortTimestamp(item.signal.firstSeenAt)}
+            />
+            <PublisherAbuseSignalMeta
+              label="Last seen"
+              value={formatShortTimestamp(item.signal.lastSeenAt)}
+            />
+            <PublisherAbuseSignalMeta
+              label="Snoozed until"
+              value={
+                item.signal.snoozedUntil ? formatShortTimestamp(item.signal.snoozedUntil) : "—"
+              }
+            />
+            <PublisherAbuseSignalMeta
+              label="Last reviewed"
+              value={item.signal.reviewedAt ? formatShortTimestamp(item.signal.reviewedAt) : "—"}
+            />
+          </div>
+          {item.signal.reviewNote ? <p className="pa-hint">{item.signal.reviewNote}</p> : null}
+        </section>
+
+        <section className="pa-zone pa-review">
+          <div className="pa-section-label">Actions</div>
+          <div className="pa-actions">
+            {status === "open" ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSnoozeSignal(item)}
+                >
+                  <Clock3 size={14} />
+                  Snooze 14 days
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onDismissSignal(item)}
+                >
+                  <XCircle size={14} />
+                  Dismiss signal
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onReopenSignal(item)}
+              >
+                <RotateCcw size={14} />
+                Reopen signal
+              </Button>
+            )}
+          </div>
+        </section>
+      </div>
+    </>
+  );
+}
+
+function PublisherAbuseSignalMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="pa-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function PublisherAbuseSignalEvidenceMetric({
+  downloads,
+  installs,
+  label,
+  ratio,
+}: {
+  downloads: number;
+  installs: number;
+  label: string;
+  ratio: number;
+}) {
+  return (
+    <div className="pa-metric">
+      <span>{label}</span>
+      <strong>{formatPercent(ratio)}</strong>
+      <small>
+        {formatWholeNumber(installs)} installs / {formatWholeNumber(downloads)} downloads
+      </small>
     </div>
   );
 }
@@ -1203,6 +1359,16 @@ function formatPublisherAbuseSignalType(signalType: string) {
     return "Sustained downloads, flat installs";
   }
   return signalType.replaceAll("_", " ");
+}
+
+function describePublisherAbuseSignalType(signalType: string) {
+  if (signalType === "high_install_download_ratio") {
+    return "Install counts are unusually high compared with download counts for this skill.";
+  }
+  if (signalType === "sustained_downloads_flat_installs") {
+    return "Downloads stayed high over the review window while installs stayed flat.";
+  }
+  return "Archived publisher abuse signal for manual review.";
 }
 
 function formatPublisherAbuseSignalSeverity(signalType: string) {

@@ -14285,15 +14285,15 @@ code {
 }
 
 .pa-signals-table {
-  min-width: 1120px;
+  min-width: 680px;
 }
 
 .pa-signals-table tbody tr {
-  cursor: default;
+  cursor: pointer;
 }
 
 .pa-signals-table tbody tr:hover {
-  background: transparent;
+  background: var(--hover-bg);
 }
 
 .pa-num {
@@ -14319,15 +14319,30 @@ code {
   font-weight: 600;
 }
 
-.pa-signal-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  min-width: 138px;
+.pa-signal-summary {
+  display: grid;
+  gap: 3px;
 }
 
-.pa-signal-actions [data-slot="button"] {
-  white-space: nowrap;
+.pa-signal-summary span {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.pa-signal-subject {
+  display: grid;
+  gap: 2px;
+}
+
+.pa-signal-subject strong {
+  font-weight: 600;
+}
+
+.pa-signal-subject span {
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
 }
 
 .pa-handle {
@@ -14360,29 +14375,6 @@ code {
   color: var(--ink-soft);
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
-}
-
-.pa-signal-link {
-  border-radius: 6px;
-  color: inherit;
-  margin: -3px -5px;
-  padding: 3px 5px;
-  text-decoration: none;
-}
-
-.pa-signal-link:hover {
-  background: var(--hover-bg);
-}
-
-.pa-signal-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.pa-signal-link span {
-  align-items: center;
-  display: inline-flex;
-  gap: 4px;
 }
 
 .pa-reasons {
@@ -14571,10 +14563,16 @@ code {
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-2);
+  min-width: 0;
   padding: 3px 0;
 }
 
+.pa-metric > * {
+  min-width: 0;
+}
+
 .pa-metric span {
+  flex-shrink: 0;
   color: var(--ink-soft);
   font-size: var(--fs-sm);
 }
@@ -14583,6 +14581,31 @@ code {
   font-size: var(--fs-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.pa-metric small {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pa-signal-evidence-grid {
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.pa-signal-evidence-grid .pa-metric {
+  display: grid;
+  grid-template-columns: minmax(58px, 0.5fr) minmax(56px, auto) minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--space-2);
+}
+
+.pa-signal-evidence-grid .pa-metric strong {
+  text-align: right;
 }
 
 .pa-section-label {
@@ -14763,6 +14786,10 @@ code {
 
   .pa-score,
   .pa-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .pa-signal-evidence-grid {
     grid-template-columns: 1fr;
   }
 
