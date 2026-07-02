@@ -33,16 +33,22 @@ separate product facts:
 The first account-feed contract should support both account-scoped and
 publisher-scoped feeds until product usage proves one is unnecessary.
 
-Draft endpoints:
+First-slice public endpoints:
 
-- `GET /v1/accounts/{accountId}`
-- `GET /v1/accounts/{accountId}/feed`
-- `GET /v1/publishers/{publisherId}`
-- `GET /v1/publishers/{publisherId}/feed`
+- `GET /api/v1/accounts/{accountId}`
+- `GET /api/v1/accounts/{accountId}/feed`
+- `GET /api/v1/publishers/{publisherId}`
+- `GET /api/v1/publishers/{publisherId}/feed`
 
 The account and publisher detail endpoints should expose enough public metadata
 for clients to display identity, profile links, and follow state. The feed
 endpoints should expose ordered public feed entries for discovery.
+
+The initial implementation is an unsigned, bounded, live projection over active
+public accounts, publishers, skills, and packages. It does not add official
+state, registry review state, follow state, scan authority, install authority,
+or feed signing. Signed ClawHub envelopes and publication cache semantics remain
+future trust-stack work.
 
 ## Feed Shape
 
@@ -52,12 +58,14 @@ Draft feed metadata:
 {
   "schemaVersion": 1,
   "feedId": "clawhub.account.<stable-id>",
-  "publisherId": "pub_<stable-id>",
-  "accountId": "acct_<stable-id>",
+  "scope": "publisher",
+  "publisherId": "publishers:<stable-id>",
+  "accountId": "users:<stable-id>",
   "displayName": "Example Publisher",
   "generatedAt": "2026-07-01T00:00:00.000Z",
-  "sequence": 1,
-  "entries": []
+  "sequence": 0,
+  "entries": [],
+  "nextCursor": null
 }
 ```
 
@@ -70,6 +78,7 @@ Required stable fields:
 - `generatedAt`: generation time for this feed body.
 - `sequence`: monotonic feed sequence for cache, replay, and rollback checks.
 - `entries`: ordered public entries.
+- `nextCursor`: reserved for future pagination; `null` in the first API slice.
 
 The feed body should not include credentials, private source URLs, bootstrap
 trust keys, unpublished package metadata, or reviewer-only moderation details.

@@ -80,4 +80,26 @@ describe("OpenAPI contract", () => {
     expect(property(property(handoffSchema, "properties"), "scan")).toBeUndefined();
     expect(property(property(handoffSchema, "properties"), "scanStatus")).toBeUndefined();
   });
+
+  it("documents account feeds without trust or install authority fields", async () => {
+    const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
+    const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));
+    const paths = property(spec, "paths");
+    const schemas = property(property(spec, "components"), "schemas");
+
+    expect(property(paths, "/api/v1/accounts/{accountId}/feed")).toBeTruthy();
+    expect(property(paths, "/api/v1/publishers/{publisherId}/feed")).toBeTruthy();
+
+    const feedSchema = property(schemas, "AccountFeed");
+    const entrySchema = property(schemas, "AccountFeedEntry");
+    const feedProperties = property(feedSchema, "properties");
+    const entryProperties = property(entrySchema, "properties");
+
+    expect(property(feedProperties, "feedId")).toBeTruthy();
+    expect(property(feedProperties, "entries")).toBeTruthy();
+    expect(property(feedProperties, "official")).toBeUndefined();
+    expect(property(feedProperties, "trust")).toBeUndefined();
+    expect(property(entryProperties, "install")).toBeUndefined();
+    expect(property(entryProperties, "publisher")).toBeUndefined();
+  });
 });

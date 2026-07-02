@@ -32,6 +32,8 @@ import {
   packagesPostRouterV1Http,
   pluginsGetRouterV1Http,
   createPublisherV1Http,
+  accountsGetRouterV1Http,
+  publishersGetRouterV1Http,
   publishPackageV1Http,
   publishSkillV1Http,
   resolveSkillVersionV1Http,
@@ -341,6 +343,18 @@ http.route({
   path: ApiRoutes.publishers,
   method: "POST",
   handler: createPublisherV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.accounts}/`,
+  method: "GET",
+  handler: accountsGetRouterV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.publishers}/`,
+  method: "GET",
+  handler: publishersGetRouterV1Http,
 });
 
 http.route({
