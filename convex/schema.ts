@@ -2374,6 +2374,9 @@ const skillStatDocSyncLeases = defineTable({
   lastFinishedAt: v.optional(v.number()),
   lastProcessedAt: v.optional(v.number()),
   lastProcessedCount: v.optional(v.number()),
+  lastError: v.optional(v.string()),
+  lastErrorAt: v.optional(v.number()),
+  lastErrorProcessedCount: v.optional(v.number()),
 }).index("by_key", ["key"]);
 
 const skillReports = defineTable({

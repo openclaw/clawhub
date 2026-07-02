@@ -437,16 +437,36 @@ export default function Header() {
                       </SheetClose>
                     ))}
                     {isAuthenticated && me ? (
-                      <SheetClose asChild>
-                        <Link
-                          to="/add"
-                          search={{ kind: "skill", ownerHandle: undefined }}
-                          className="mobile-nav-link"
-                        >
-                          <Plus size={16} aria-hidden="true" />
-                          Add skill or plugin
-                        </Link>
-                      </SheetClose>
+                      <>
+                        <SheetClose asChild>
+                          <Link to="/dashboard" className="mobile-nav-link">
+                            <LayoutDashboard size={16} aria-hidden="true" />
+                            Dashboard
+                          </Link>
+                        </SheetClose>
+                        <SheetClose asChild>
+                          <Link
+                            to="/add"
+                            search={{ kind: "skill", ownerHandle: undefined, method: undefined }}
+                            className="mobile-nav-link"
+                          >
+                            <Plus size={16} aria-hidden="true" />
+                            Add to ClawHub
+                          </Link>
+                        </SheetClose>
+                        <SheetClose asChild>
+                          <Link to="/stars" className="mobile-nav-link">
+                            <Star size={16} aria-hidden="true" />
+                            Stars
+                          </Link>
+                        </SheetClose>
+                        <SheetClose asChild>
+                          <Link to="/settings" className="mobile-nav-link">
+                            <Settings size={16} aria-hidden="true" />
+                            Settings
+                          </Link>
+                        </SheetClose>
+                      </>
                     ) : null}
                     {SECONDARY_NAV_ITEMS.map((item) => (
                       <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
@@ -651,7 +671,7 @@ export default function Header() {
                   <DropdownMenuItem asChild>
                     <Link
                       to="/add"
-                      search={{ kind: "skill", ownerHandle: undefined }}
+                      search={{ kind: "skill", ownerHandle: undefined, method: undefined }}
                       className="flex items-center gap-2"
                     >
                       <Plus size={14} aria-hidden="true" />

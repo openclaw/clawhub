@@ -1959,6 +1959,7 @@ type DashboardSkillListItem = {
   stats: Doc<"skills">["stats"];
   moderationStatus?: Doc<"skills">["moderationStatus"];
   moderationReason?: string;
+  moderationSummary?: string;
   moderationVerdict?: Doc<"skills">["moderationVerdict"];
   moderationFlags?: string[];
   isSuspicious?: boolean;
@@ -2364,6 +2365,7 @@ async function toDashboardSkillListItem(
     stats,
     moderationStatus: skill.moderationStatus,
     moderationReason: skill.moderationReason,
+    moderationSummary: skill.moderationSummary,
     moderationVerdict: skill.moderationVerdict,
     moderationFlags: skill.moderationFlags,
     isSuspicious: skill.isSuspicious,
@@ -2748,6 +2750,48 @@ export const getBySlug = query({
           }
         : null,
       ambiguous: false as const,
+    };
+  },
+});
+
+export const getSecurityReviewForManager = query({
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { skill } = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    if (!skill) return null;
+
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return null;
+
+    const ownerPublisher = skill.ownerPublisherId ? await ctx.db.get(skill.ownerPublisherId) : null;
+    const canManagePublisher = ownerPublisher
+      ? await canAccessPublisherOwnerScope(ctx, {
+          publisher: ownerPublisher,
+          userId,
+          legacyOwnerUserId: skill.ownerUserId,
+        })
+      : false;
+    if (!isDirectSkillOwner(skill, userId) && !canManagePublisher) return null;
+
+    const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+    if (!latestVersion || latestVersion.skillId !== skill._id || latestVersion.softDeletedAt) {
+      return null;
+    }
+
+    const publicOwner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      }),
+    );
+
+    return {
+      skill: { displayName: skill.displayName },
+      owner: publicOwner,
+      latestVersion: {
+        version: latestVersion.version,
+        skillSpectorAnalysis: latestVersion.skillSpectorAnalysis ?? null,
+      },
     };
   },
 });

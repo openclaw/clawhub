@@ -11,7 +11,7 @@ type DetailSecuritySummaryProps = {
   suppressScanResults?: boolean;
 };
 
-function auditVerdictMeterLevel(status: string) {
+export function auditVerdictMeterLevel(status: string) {
   switch (status.toLowerCase()) {
     case "malicious":
       return 1;

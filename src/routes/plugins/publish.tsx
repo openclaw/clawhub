@@ -51,7 +51,10 @@ export const Route = createFileRoute("/plugins/publish")({
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
     name: typeof search.name === "string" ? search.name : undefined,
     displayName: typeof search.displayName === "string" ? search.displayName : undefined,
-    family: search.family === "code-plugin" ? search.family : undefined,
+    family:
+      search.family === "code-plugin" || search.family === "bundle-plugin"
+        ? search.family
+        : undefined,
     nextVersion: typeof search.nextVersion === "string" ? search.nextVersion : undefined,
     sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
   }),
@@ -208,7 +211,9 @@ export function PublishPluginRoute() {
     readmeText: string;
     filePaths?: string[];
   }) => Promise<{ changelog: string }>;
-  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">("code-plugin");
+  const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">(
+    search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
+  );
   const [name, setName] = useState(search.name ?? "");
   const [displayName, setDisplayName] = useState(search.displayName ?? "");
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");

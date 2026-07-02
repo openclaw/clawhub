@@ -719,7 +719,10 @@ function PluginsIndex() {
               <p className="empty-state-title">No plugins found</p>
               <p className="empty-state-body">Try a different search term or remove filters.</p>
               <Button asChild size="sm" className="mt-4">
-                <Link to="/add" search={{ kind: "plugin", ownerHandle: undefined }}>
+                <Link
+                  to="/add"
+                  search={{ kind: "plugin", ownerHandle: undefined, method: undefined }}
+                >
                   <Plus className="h-4 w-4" aria-hidden="true" />
                   Add a plugin
                 </Link>

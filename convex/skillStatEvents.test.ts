@@ -70,8 +70,13 @@ const processSkillStatEventsInternalHandler = (
   processSkillStatEventsInternal as unknown as {
     _handler: (
       ctx: unknown,
-      args: { batchSize?: number; maxBatches?: number },
-    ) => Promise<{ processed: number; scheduledContinuation: boolean }>;
+      args: { batchSize?: number; maxBatches?: number; retryCount?: number },
+    ) => Promise<{
+      processed: number;
+      scheduledContinuation: boolean;
+      stoppedReason?: "empty" | "max_batches" | "lease_lost" | "error";
+      error?: string;
+    }>;
   }
 )._handler;
 
@@ -255,7 +260,7 @@ describe("skill stat events", () => {
     },
   );
 
-  it("bounds action drain work so stale continuations do not crawl or time out", async () => {
+  it("bounds action drain work and preserves requested small-batch drains", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if ("leaseMs" in args) {
         return {
@@ -289,11 +294,113 @@ describe("skill stat events", () => {
       return args && typeof args === "object" && "leaseOwner" in args && "batchSize" in args;
     });
     expect(batchCalls).toHaveLength(5);
-    expect(batchCalls[0]?.[1]).toMatchObject({ batchSize: 100 });
+    expect(batchCalls[0]?.[1]).toMatchObject({ batchSize: 10 });
     expect(scheduler.runAfter.mock.calls[0]?.[2]).toMatchObject({
-      batchSize: 100,
+      batchSize: 10,
       maxBatches: 5,
+      retryCount: 0,
     });
+  });
+
+  it("releases the doc-sync lease and schedules a smaller retry when a batch throws", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("leaseMs" in args) {
+        return {
+          acquired: true,
+          leaseOwner: "test-lease",
+          leaseExpiresAt: Date.now() + 60_000,
+          now: Date.now(),
+        };
+      }
+      if ("leaseOwner" in args && "batchSize" in args) {
+        throw new Error("transient batch failure");
+      }
+      if ("processed" in args) {
+        return { released: true };
+      }
+      throw new Error(`unexpected mutation args ${JSON.stringify(args)}`);
+    });
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      processSkillStatEventsInternalHandler(
+        { runMutation, scheduler },
+        { batchSize: 100, maxBatches: 5 },
+      ),
+    ).resolves.toMatchObject({
+      processed: 0,
+      scheduledContinuation: true,
+      stoppedReason: "error",
+      error: "Error: transient batch failure",
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(
+      apiRefs.releaseSkillStatDocSyncLeaseInternal,
+      expect.objectContaining({
+        leaseOwner: "test-lease",
+        processed: 0,
+        error: "Error: transient batch failure",
+      }),
+    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      30_000,
+      apiRefs.processSkillStatEventsInternal,
+      {
+        batchSize: 50,
+        maxBatches: 1,
+        retryCount: 1,
+      },
+    );
+  });
+
+  it("records release errors on the doc-sync lease", async () => {
+    const now = 1_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(now);
+    const patch = vi.fn();
+    const lease = {
+      _id: "skillStatDocSyncLeases:1",
+      key: "skill_doc_stat_sync",
+      leaseOwner: "test-lease",
+      leaseExpiresAt: now + 60_000,
+      updatedAt: now,
+      lastProcessedCount: 50,
+    };
+    const { releaseSkillStatDocSyncLeaseInternal } = await import("./skillStatEvents");
+    const releaseHandler = (
+      releaseSkillStatDocSyncLeaseInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { leaseOwner: string; processed?: number; error?: string },
+        ) => Promise<{ released: boolean }>;
+      }
+    )._handler;
+
+    await expect(
+      releaseHandler(
+        {
+          db: {
+            patch,
+            query: vi.fn(() => ({
+              withIndex: () => ({
+                unique: async () => lease,
+              }),
+            })),
+          },
+        },
+        { leaseOwner: "test-lease", processed: 12, error: "boom" },
+      ),
+    ).resolves.toEqual({ released: true });
+
+    expect(patch).toHaveBeenCalledWith("skillStatDocSyncLeases:1", {
+      leaseExpiresAt: now,
+      updatedAt: now,
+      lastFinishedAt: now,
+      lastProcessedCount: 12,
+      lastError: "boom",
+      lastErrorAt: now,
+      lastErrorProcessedCount: 12,
+    });
+    nowSpy.mockRestore();
   });
 
   it("applies install deltas to skill ranking fields", async () => {

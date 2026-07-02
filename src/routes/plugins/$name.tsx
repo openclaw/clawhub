@@ -96,6 +96,7 @@ import {
   displayPluginPackageName,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
+import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -740,13 +741,6 @@ function ValidationSummaryHint({
       version.
     </>
   );
-}
-
-function formatValidationFindingMessage(message: string) {
-  const trimmed = message.trim();
-  if (!trimmed) return trimmed;
-  const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  return normalized.endsWith(".") ? normalized : `${normalized}.`;
 }
 
 function buildValidationAgentFixPrompt(args: {
