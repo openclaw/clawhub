@@ -20502,6 +20502,8 @@ a.search-empty-action {
   --hv2-green-border: rgba(61, 171, 94, 0.25);
   --hv2-green-border-hover: rgba(61, 171, 94, 0.4);
   --hv2-green-fill-hover: rgba(61, 171, 94, 0.14);
+  --home-v2-apps-icon-color: #fff;
+  --home-v2-apps-icon-image-filter: brightness(0) invert(1);
   --hv2-radius-sm: 8px;
   --hv2-radius-md: 12px;
   --hv2-radius-lg: 16px;
@@ -20519,6 +20521,18 @@ a.search-empty-action {
   min-width: 0;
   overflow-x: visible;
   background: var(--hv2-bg);
+}
+
+[data-theme-resolved="light"] .app-shell:has(.home-v2-main) {
+  --home-v2-apps-icon-color: #000;
+  --home-v2-apps-icon-image-filter: brightness(0);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme-family="claw"][data-theme-mode="system"] .app-shell:has(.home-v2-main) {
+    --home-v2-apps-icon-color: #000;
+    --home-v2-apps-icon-image-filter: brightness(0);
+  }
 }
 
 /* Ambient glow spans hero + listing so the page base color stays even */
@@ -26300,10 +26314,21 @@ a.home-v2-apps-see-all:focus-visible svg {
   background: color-mix(in srgb, var(--hv2-bg) 55%, transparent);
 }
 
-.home-v2-apps-tile-icon img {
+.home-v2-apps-tile-logo {
   width: 21px;
   height: 21px;
-  border-radius: 999px;
+}
+
+.home-v2-apps-tile-logo--simple {
+  display: block;
+  background: var(--home-v2-apps-icon-color);
+  mask: var(--home-v2-apps-icon-url) center / contain no-repeat;
+  -webkit-mask: var(--home-v2-apps-icon-url) center / contain no-repeat;
+}
+
+.home-v2-apps-tile-logo--image {
+  display: block;
+  filter: var(--home-v2-apps-icon-image-filter);
   object-fit: contain;
 }
 

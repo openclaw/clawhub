@@ -8,18 +8,52 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type CSSProperties } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  homeAppIconUrl,
-  homePluginShortcutIconUrl,
+  homePluginShortcutIcon,
+  homeSkillAppIcon,
   SKILLS_BROWSE_SEARCH,
+  simpleIconUrl,
+  type HomeAppIcon,
   type HomePluginShortcut,
   type HomeSkillApp,
 } from "../lib/homeApps";
 import { OPENCLAW_LOGO_URL } from "../lib/nav-items";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
+
+function homeAppsTileLogoClassName(id: string) {
+  return `home-v2-apps-tile-logo home-v2-apps-tile-logo--${id}`;
+}
+
+function HomeAppsIconMark({ icon, id }: { icon: HomeAppIcon; id: string }) {
+  if (icon.kind === "simple") {
+    return (
+      <span
+        className={`${homeAppsTileLogoClassName(id)} home-v2-apps-tile-logo--simple`}
+        data-simple-icon-slug={icon.slug}
+        style={
+          {
+            "--home-v2-apps-icon-url": `url("${simpleIconUrl(icon.slug)}")`,
+          } as CSSProperties
+        }
+      />
+    );
+  }
+
+  return (
+    <img
+      className={`${homeAppsTileLogoClassName(id)} home-v2-apps-tile-logo--image`}
+      src={icon.src}
+      alt=""
+      width={40}
+      height={40}
+      loading="lazy"
+      decoding="async"
+    />
+  );
+}
 
 function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
   return (
@@ -30,14 +64,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <img
-          src={homeAppIconUrl(app.iconDomain)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          decoding="async"
-        />
+        <HomeAppsIconMark icon={homeSkillAppIcon(app)} id={app.id} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{app.name}</span>
@@ -56,14 +83,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <img
-          src={homePluginShortcutIconUrl(shortcut)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          decoding="async"
-        />
+        <HomeAppsIconMark icon={homePluginShortcutIcon(shortcut)} id={shortcut.id} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{shortcut.name}</span>

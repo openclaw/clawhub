@@ -20,6 +20,76 @@ export type HomePluginShortcut = {
   iconDomain: string;
 };
 
+export type HomeAppIcon =
+  | {
+      kind: "simple";
+      /** Simple Icons slug from https://simpleicons.org/. */
+      slug: string;
+    }
+  | {
+      kind: "image";
+      /** Local SVG fallback for brands that are not available in Simple Icons. */
+      src: string;
+    };
+
+const SIMPLE_ICON_BASE_URL = "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons";
+const LOCAL_APP_ICON_BASE = "/app-icons";
+
+const HOME_APP_SIMPLE_ICONS = {
+  "amazon-bedrock": "amazonwebservices",
+  "apple-pim": "apple",
+  airtable: "airtable",
+  aws: "amazonwebservices",
+  brave: "brave",
+  chrome: "googlechrome",
+  "cloudflare-gateway": "cloudflare",
+  discord: "discord",
+  docker: "docker",
+  dropbox: "dropbox",
+  figma: "figma",
+  github: "github",
+  gitlab: "gitlab",
+  gmail: "gmail",
+  googlechat: "googlechat",
+  "google-calendar": "googlecalendar",
+  "google-drive": "googledrive",
+  "google-meet": "googlemeet",
+  "google-sheets": "googlesheets",
+  jira: "jira",
+  kubernetes: "kubernetes",
+  line: "line",
+  linear: "linear",
+  matrix: "matrix",
+  msteams: "microsoftteams",
+  nextcloud: "nextcloud",
+  "nextcloud-talk": "nextcloud",
+  notion: "notion",
+  obsidian: "obsidian",
+  perplexity: "perplexity",
+  "diagnostics-prometheus": "prometheus",
+  prometheus: "prometheus",
+  qqbot: "qq",
+  qwen: "qwen",
+  slack: "slack",
+  trello: "trello",
+  twitch: "twitch",
+  "voice-call": "twilio",
+  vscode: "visualstudiocode",
+  whatsapp: "whatsapp",
+} as const;
+
+const HOME_APP_IMAGE_ICONS = {
+  cerebras: `${LOCAL_APP_ICON_BASE}/cerebras.svg`,
+  deepinfra: `${LOCAL_APP_ICON_BASE}/deepinfra.svg`,
+  exa: `${LOCAL_APP_ICON_BASE}/exa.svg`,
+  feishu: `${LOCAL_APP_ICON_BASE}/feishu.svg`,
+  firecrawl: `${LOCAL_APP_ICON_BASE}/firecrawl.svg`,
+  groq: `${LOCAL_APP_ICON_BASE}/groq.svg`,
+  "llama-cpp": `${LOCAL_APP_ICON_BASE}/llama-cpp.svg`,
+  parallel: `${LOCAL_APP_ICON_BASE}/parallel.svg`,
+  scraperapi: `${LOCAL_APP_ICON_BASE}/scraperapi.svg`,
+} as const;
+
 /** Left orbit — skills for everyday tools. */
 export const HOME_SKILL_APPS: HomeSkillApp[] = [
   {
@@ -450,12 +520,41 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
   },
 ];
 
-export function homeAppIconUrl(iconDomain: string) {
+function homeAppIconUrl(iconDomain: string) {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(iconDomain)}&sz=128`;
 }
 
-export function homePluginShortcutIconUrl(shortcut: HomePluginShortcut) {
-  return homeAppIconUrl(shortcut.iconDomain);
+export function simpleIconUrl(slug: string) {
+  return `${SIMPLE_ICON_BASE_URL}/${slug}.svg`;
+}
+
+function homeAppIcon({ id, iconDomain }: { id: string; iconDomain?: string }): HomeAppIcon {
+  if (id in HOME_APP_IMAGE_ICONS) {
+    return {
+      kind: "image",
+      src: HOME_APP_IMAGE_ICONS[id as keyof typeof HOME_APP_IMAGE_ICONS],
+    };
+  }
+
+  if (id in HOME_APP_SIMPLE_ICONS) {
+    return {
+      kind: "simple",
+      slug: HOME_APP_SIMPLE_ICONS[id as keyof typeof HOME_APP_SIMPLE_ICONS],
+    };
+  }
+
+  return {
+    kind: "image",
+    src: homeAppIconUrl(iconDomain ?? id),
+  };
+}
+
+export function homeSkillAppIcon(app: HomeSkillApp) {
+  return homeAppIcon(app);
+}
+
+export function homePluginShortcutIcon(shortcut: HomePluginShortcut) {
+  return homeAppIcon(shortcut);
 }
 
 export const SKILLS_BROWSE_SEARCH = {
