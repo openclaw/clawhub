@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { BadgeCheck } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
+import { BadgeCheck, UserCheck } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import {
   BrowseActions,
@@ -13,11 +14,14 @@ import {
   BrowseViewToggle,
   useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
+import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { PublisherListItem } from "../../components/PublisherListItem";
 import { Button } from "../../components/ui/button";
 import { convexHttp } from "../../convex/client";
+import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import type { PublicPublisherListItem } from "../../lib/publicUser";
 import { getClawHubSiteUrl, SITE_NAME } from "../../lib/site";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PublisherKindSearch = "orgs" | "people";
 type PublisherViewSearch = "list" | "grid";
@@ -25,6 +29,7 @@ type PublisherViewSearch = "list" | "grid";
 type PublishersSearchState = {
   kind?: PublisherKindSearch;
   official?: boolean;
+  following?: boolean;
   q?: string;
   view?: PublisherViewSearch;
 };
@@ -46,6 +51,7 @@ type PublishersLoaderResult = {
 };
 
 const PUBLISHER_PAGE_SIZE = 25;
+const FOLLOWED_PUBLISHER_PAGE_SIZE = 25;
 const PUBLISHER_KIND_OPTIONS = [
   { value: undefined, label: "All" },
   {
@@ -53,9 +59,35 @@ const PUBLISHER_KIND_OPTIONS = [
     label: "Verified",
     icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
   },
+  {
+    value: "following",
+    label: "Following",
+    icon: <UserCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
+  },
   { value: "orgs", label: "Organizations", mobileLabel: "Orgs" },
   { value: "people", label: "Users" },
 ];
+
+type FollowedPublisherItem = {
+  publisher: {
+    _id: string;
+    handle: string;
+    displayName: string;
+    kind: "org" | "user";
+    image?: string | null;
+  };
+};
+
+type FollowedPublishersResult = {
+  items: FollowedPublisherItem[];
+  continueCursor: string;
+  isDone: boolean;
+};
+
+type FollowedPublisherPage = {
+  cursorKey: string;
+  items: FollowedPublisherItem[];
+};
 
 function normalizePublisherKind(value: unknown): PublisherKindSearch | undefined {
   if (value === "orgs") return "orgs";
@@ -91,6 +123,10 @@ export const Route = createFileRoute("/creators/")({
     kind: normalizePublisherKind(search.kind),
     official:
       search.official === true || search.official === "true" || search.official === "1"
+        ? true
+        : undefined,
+    following:
+      search.following === true || search.following === "true" || search.following === "1"
         ? true
         : undefined,
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
@@ -140,22 +176,42 @@ function PublishersIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const result = Route.useLoaderData() as PublishersLoaderResult;
+  const { isAuthenticated } = useAuthStatus();
   const [query, setQuery] = useState(search.q ?? "");
   const [publishers, setPublishers] = useState(result.page);
   const [nextCursor, setNextCursor] = useState<string | null>(
     result.isDone ? null : result.continueCursor,
   );
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [followedCursorRequest, setFollowedCursorRequest] = useState<string | null>(null);
+  const [followedPages, setFollowedPages] = useState<FollowedPublisherPage[]>([]);
+  const [followedNextCursor, setFollowedNextCursor] = useState<string | null>(null);
+  const [isLoadingMoreFollowed, setIsLoadingMoreFollowed] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchNavigateTimer = useRef<number>(0);
   const activeKind = search.kind;
   const officialOnly = search.official === true;
+  const followingOnly = search.following === true;
   const activeView = search.view ?? "list";
-  const canLoadMore = Boolean(nextCursor);
+  const followedPublishersResult = useQuery(
+    api.publisherFollows.listFollowedPublishers,
+    isAuthenticated && followingOnly
+      ? {
+          limit: FOLLOWED_PUBLISHER_PAGE_SIZE,
+          ...(followedCursorRequest ? { cursor: followedCursorRequest } : {}),
+          ...(search.q ? { query: search.q } : {}),
+        }
+      : "skip",
+  ) as FollowedPublishersResult | undefined;
+  const followedPublishers = useMemo(
+    () => followedPages.flatMap((page) => page.items),
+    [followedPages],
+  );
+  const canLoadMore = followingOnly ? Boolean(followedNextCursor) : Boolean(nextCursor);
   const hasQuery = Boolean(search.q?.trim());
-  const showHighlights = !hasQuery && !activeKind && !officialOnly;
+  const showHighlights = !hasQuery && !activeKind && !officialOnly && !followingOnly;
   const highlightedPublishers = showHighlights ? publishers.slice(0, 3) : [];
   const directoryPublishers = showHighlights ? publishers.slice(3) : publishers;
 
@@ -167,6 +223,39 @@ function PublishersIndex() {
     setIsLoadingMore(false);
     loadMoreInFlightRef.current = false;
   }, [result, search.q]);
+
+  useEffect(() => {
+    if (followingOnly && isAuthenticated) {
+      setFollowedCursorRequest(null);
+      setFollowedPages([]);
+      setFollowedNextCursor(null);
+      setIsLoadingMoreFollowed(false);
+      return;
+    }
+
+    setFollowedCursorRequest(null);
+    setFollowedPages([]);
+    setFollowedNextCursor(null);
+    setIsLoadingMoreFollowed(false);
+  }, [followingOnly, isAuthenticated, search.q]);
+
+  useEffect(() => {
+    if (!followingOnly || !followedPublishersResult) return;
+
+    const cursorKey = followedCursorRequest ?? "";
+    setFollowedPages((previous) => {
+      const nextPage = { cursorKey, items: followedPublishersResult.items };
+      const existingIndex = previous.findIndex((page) => page.cursorKey === cursorKey);
+      if (existingIndex >= 0) {
+        return previous.map((page, index) => (index === existingIndex ? nextPage : page));
+      }
+      return followedCursorRequest ? [...previous, nextPage] : [nextPage];
+    });
+    setFollowedNextCursor(
+      followedPublishersResult.isDone ? null : followedPublishersResult.continueCursor,
+    );
+    setIsLoadingMoreFollowed(false);
+  }, [followedCursorRequest, followedPublishersResult, followingOnly]);
 
   useEffect(() => {
     return () => window.clearTimeout(searchNavigateTimer.current);
@@ -227,6 +316,7 @@ function PublishersIndex() {
           ...prev,
           kind: normalizePublisherKind(kind),
           official: undefined,
+          following: undefined,
         }),
         replace: true,
       });
@@ -240,6 +330,19 @@ function PublishersIndex() {
         ...prev,
         kind: undefined,
         official: true,
+        following: undefined,
+      }),
+      replace: true,
+    });
+  }, [navigate]);
+
+  const handleFollowingChange = useCallback(() => {
+    void navigate({
+      search: (prev: PublishersSearchState) => ({
+        ...prev,
+        kind: undefined,
+        official: undefined,
+        following: true,
       }),
       replace: true,
     });
@@ -251,10 +354,14 @@ function PublishersIndex() {
         handleOfficialChange();
         return;
       }
+      if (value === "following") {
+        handleFollowingChange();
+        return;
+      }
 
       handleKindChange(value);
     },
-    [handleKindChange, handleOfficialChange],
+    [handleKindChange, handleOfficialChange, handleFollowingChange],
   );
 
   const handleToggleView = useCallback(() => {
@@ -268,6 +375,13 @@ function PublishersIndex() {
   }, [navigate]);
 
   const loadMore = useCallback(async () => {
+    if (followingOnly) {
+      if (!followedNextCursor || isLoadingMoreFollowed) return;
+      setIsLoadingMoreFollowed(true);
+      setFollowedCursorRequest(followedNextCursor);
+      return;
+    }
+
     if (!nextCursor || loadMoreInFlightRef.current) return;
     loadMoreInFlightRef.current = true;
     setIsLoadingMore(true);
@@ -284,7 +398,15 @@ function PublishersIndex() {
       setIsLoadingMore(false);
       loadMoreInFlightRef.current = false;
     }
-  }, [activeKind, nextCursor, officialOnly, search.q]);
+  }, [
+    activeKind,
+    followedNextCursor,
+    followingOnly,
+    isLoadingMoreFollowed,
+    nextCursor,
+    officialOnly,
+    search.q,
+  ]);
 
   useEffect(() => {
     if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
@@ -313,7 +435,7 @@ function PublishersIndex() {
           <BrowseTabs
             ariaLabel="Publisher type"
             options={PUBLISHER_KIND_OPTIONS}
-            value={officialOnly ? "official" : activeKind}
+            value={followingOnly ? "following" : officialOnly ? "official" : activeKind}
             onChange={handlePublisherTabChange}
           />
           <BrowseActions>
@@ -341,7 +463,18 @@ function PublishersIndex() {
 
       <div className="browse-layout">
         <div className="browse-results">
-          {highlightedPublishers.length > 0 ? (
+          {followingOnly ? (
+            <FollowedPublisherDiscovery
+              authenticated={isAuthenticated}
+              loading={
+                isAuthenticated &&
+                followedPublishers.length === 0 &&
+                followedPublishersResult === undefined
+              }
+              publishers={followedPublishers}
+              query={search.q}
+            />
+          ) : highlightedPublishers.length > 0 ? (
             <section className="publisher-highlights" aria-labelledby="publisher-highlights-title">
               <div className="publisher-section-heading">
                 <h2 id="publisher-highlights-title">Popular publishers</h2>
@@ -358,7 +491,7 @@ function PublishersIndex() {
             </section>
           ) : null}
 
-          {publishers.length === 0 ? (
+          {followingOnly ? null : publishers.length === 0 ? (
             <div className="empty-state">
               <p className="empty-state-title">No publishers found</p>
             </div>
@@ -383,13 +516,97 @@ function PublishersIndex() {
           )}
           {canLoadMore || isLoadingMore ? (
             <div ref={loadMoreRef} className="card mt-4 flex justify-center">
-              <Button type="button" onClick={loadMore} disabled={isLoadingMore}>
-                {isLoadingMore ? "Loading..." : "Load more"}
+              <Button
+                type="button"
+                onClick={loadMore}
+                disabled={followingOnly ? isLoadingMoreFollowed : isLoadingMore}
+              >
+                {(followingOnly ? isLoadingMoreFollowed : isLoadingMore)
+                  ? "Loading..."
+                  : "Load more"}
               </Button>
             </div>
           ) : null}
         </div>
       </div>
     </main>
+  );
+}
+
+function FollowedPublisherDiscovery({
+  authenticated,
+  loading,
+  publishers,
+  query,
+}: {
+  authenticated: boolean;
+  loading: boolean;
+  publishers: FollowedPublisherItem[];
+  query?: string;
+}) {
+  if (!authenticated) {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">Sign in to see publishers you follow</p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">Loading followed publishers...</p>
+      </div>
+    );
+  }
+
+  if (publishers.length === 0) {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">
+          {query?.trim() ? "No followed publishers match" : "No followed publishers yet"}
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="browse-list-stack">
+      <div className="browse-list-head browse-list-head-publishers" aria-hidden="true">
+        <span className="browse-list-head-label">Creator</span>
+        <span className="browse-list-head-label browse-list-head-stat">Why shown</span>
+      </div>
+      <div className="publisher-directory-list">
+        {publishers.map(({ publisher }) => (
+          <Link
+            key={publisher._id}
+            to={buildPublisherProfileHref(publisher.handle)}
+            className="publisher-card publisher-card-list followed-publisher-card"
+            aria-label={`Followed publisher: ${publisher.displayName}`}
+          >
+            <div className="publisher-card-main">
+              <MarketplaceIcon
+                kind={publisher.kind === "org" ? "org" : "user"}
+                label={publisher.displayName}
+                imageUrl={publisher.image}
+                size="sm"
+              />
+              <div className="publisher-card-copy">
+                <span className="publisher-card-identity">
+                  <span className="publisher-card-title-row">
+                    <span className="publisher-card-name">{publisher.displayName}</span>
+                    {publisher.kind === "org" ? (
+                      <span className="publisher-card-kind">Org</span>
+                    ) : null}
+                  </span>
+                  <span className="publisher-card-handle">@{publisher.handle}</span>
+                </span>
+              </div>
+            </div>
+            <span className="followed-publisher-reason">Followed publisher</span>
+          </Link>
+        ))}
+      </div>
+    </div>
   );
 }

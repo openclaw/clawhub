@@ -17222,6 +17222,18 @@ a.agentic-risk-finding-title:focus-visible {
   transform: translateY(-1px);
 }
 
+.followed-publisher-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.followed-publisher-reason {
+  justify-self: end;
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
 .publisher-card-highlight {
   display: flex;
   flex-direction: column;
@@ -17663,6 +17675,14 @@ a.agentic-risk-finding-title:focus-visible {
 
   .publisher-card-list .publisher-card-main {
     align-items: start;
+  }
+
+  .followed-publisher-card {
+    gap: 10px;
+  }
+
+  .followed-publisher-reason {
+    justify-self: start;
   }
 
   .publisher-card-summary,
