@@ -41,6 +41,10 @@ const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM = "repair-legacy-plugin-skillspector";
 const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+const PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY =
+  "smoke:publisher-abuse-hermit-digest:2026-07-03" as const;
+const PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM =
+  "create-publisher-abuse-hermit-digest-smoke-2026-07-03" as const;
 const legacyPluginSkillSpectorRepairFamilyValidator = v.union(
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
@@ -165,6 +169,15 @@ type LegacyPluginSkillSpectorRepairActionResult = {
     bundledSkillCount: number;
     action: "clear" | "rescan";
   }>;
+};
+
+type PublisherAbuseSignalSmokeTarget = {
+  skillId: Id<"skills">;
+  skillSlug: string;
+  skillDisplayName: string;
+  sourcePublisherId: Id<"publishers"> | null;
+  sourceUserId: Id<"users"> | null;
+  sourcePublisherHandle: string | null;
 };
 
 export const getSkillBackfillPageInternal = internalQuery({
@@ -2108,6 +2121,146 @@ export const cleanupEmptySkills: ReturnType<typeof action> = action({
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
     return ctx.runAction(internal.maintenance.cleanupEmptySkillsInternal, args);
+  },
+});
+
+export const getPublisherAbuseSignalSmokeTargetInternal = internalQuery({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args): Promise<PublisherAbuseSignalSmokeTarget> => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.softDeletedAt) {
+      throw new ConvexError("Smoke target skill not found or inactive.");
+    }
+    const publisher = skill.ownerPublisherId ? await ctx.db.get(skill.ownerPublisherId) : null;
+    return {
+      skillId: skill._id,
+      skillSlug: skill.slug,
+      skillDisplayName: skill.displayName,
+      sourcePublisherId: skill.ownerPublisherId ?? null,
+      sourceUserId: publisher?.linkedUserId ?? null,
+      sourcePublisherHandle: publisher?.handle ?? null,
+    };
+  },
+});
+
+export const cleanupPublisherAbuseSignalSmokeInternal = internalMutation({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const signal = await ctx.db
+      .query("publisherAbuseSignals")
+      .withIndex("by_skill_signal_type_and_owner_key", (q) =>
+        q
+          .eq("skillId", args.skillId)
+          .eq("signalType", "high_install_download_ratio")
+          .eq("ownerKey", PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY),
+      )
+      .first();
+    if (!signal) return { ok: true as const, deletedSignals: 0, deletedEvents: 0 };
+
+    let deletedEvents = 0;
+    const events = await ctx.db
+      .query("publisherAbuseSignalReviewEvents")
+      .withIndex("by_signal_and_created_at", (q) => q.eq("signalId", signal._id))
+      .take(100);
+    for (const event of events) {
+      await ctx.db.delete(event._id);
+      deletedEvents += 1;
+    }
+    await ctx.db.delete(signal._id);
+    return { ok: true as const, deletedSignals: 1, deletedEvents };
+  },
+});
+
+export const publisherAbuseSignalSmoke: ReturnType<typeof action> = action({
+  args: {
+    mode: v.union(v.literal("dryRun"), v.literal("create"), v.literal("cleanup")),
+    skillId: v.id("skills"),
+    confirm: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const target = (await ctx.runQuery(
+      internal.maintenance.getPublisherAbuseSignalSmokeTargetInternal,
+      { skillId: args.skillId },
+    )) as PublisherAbuseSignalSmokeTarget;
+
+    if (args.mode === "dryRun") {
+      return {
+        ok: true as const,
+        mode: args.mode,
+        confirmRequired: PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM,
+        ownerKey: PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY,
+        signalType: "high_install_download_ratio" as const,
+        target,
+      };
+    }
+
+    if (args.confirm !== PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM}" to ${args.mode}.`,
+      );
+    }
+
+    if (args.mode === "cleanup") {
+      return await ctx.runMutation(internal.maintenance.cleanupPublisherAbuseSignalSmokeInternal, {
+        skillId: args.skillId,
+      });
+    }
+
+    const now = Date.now();
+    const result = await ctx.runAction(
+      internal.publisherAbuse.archiveTemporalPublisherAbuseSignalsInternal,
+      {
+        candidates: [
+          {
+            ownerKey: PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY,
+            ...(target.sourcePublisherId ? { ownerPublisherId: target.sourcePublisherId } : {}),
+            ...(target.sourceUserId ? { ownerUserId: target.sourceUserId } : {}),
+            handleSnapshot: "__hermit_digest_smoke__",
+            skillId: target.skillId,
+            slug: target.skillSlug,
+            displayName: `[SMOKE] ${target.skillDisplayName}`,
+            totalDownloads: 1000,
+            totalInstalls: 900,
+            temporalScore: {
+              spike: false,
+              sustained: false,
+              nearConversion: true,
+              pressure: 1,
+              recent7Downloads: 100,
+              recent7Installs: 90,
+              previous30Downloads: 100,
+              baseline7Downloads: 100,
+              spikeMultiplier: 1,
+              recent30Downloads: 1000,
+              recent30Installs: 900,
+              downloadInstallRatio30: 0.9,
+              installDownloadRatio7: 0.9,
+              installDownloadRatio30: 0.9,
+              installDownloadExcessZScore7: 99,
+              installDownloadExcessZScore30: 99,
+              reasonCodes: ["prod_hermit_digest_smoke"],
+            },
+          },
+        ],
+        now,
+        batchSize: 1,
+        maxPages: 1,
+        notifyHermit: true,
+      },
+    );
+
+    return {
+      ok: true as const,
+      mode: args.mode,
+      ownerKey: PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY,
+      signalType: "high_install_download_ratio" as const,
+      target,
+      result,
+    };
   },
 });
 
