@@ -7932,6 +7932,50 @@ describe("publisher abuse dry-run persistence", () => {
     });
   });
 
+  it("does not retry transient score run failures when telemetry finds an inactive run", async () => {
+    const transientError = new Error("Your request couldn't be completed. Try again later.");
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const runMutation = vi.fn(async (target: symbol, _args?: unknown) => {
+      const targetName = String(target);
+      if (targetName.includes("collectPublisherAbuseScoresPageInternal")) {
+        throw transientError;
+      }
+      if (targetName.includes("recordPublisherAbuseScoreRunTransientErrorInternal")) {
+        return { ok: true, recorded: false };
+      }
+      if (targetName.includes("markPublisherAbuseScoreRunFailedInternal")) {
+        throw new Error("inactive transient retry should not mark the run failed");
+      }
+      throw new Error(`unexpected mutation ${targetName}`);
+    });
+    const ctx = {
+      scheduler,
+      runQuery: vi.fn(async () => ({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "collecting",
+        status: "running",
+      })),
+      runMutation,
+    };
+
+    await expect(
+      runHandler(ctx, { runId: "publisherAbuseScoreRuns:run", batchSize: 100, maxPages: 1 }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:run",
+      pages: 0,
+      isDone: true,
+    });
+
+    expect(String(runMutation.mock.calls[0]?.[0])).toContain(
+      "collectPublisherAbuseScoresPageInternal",
+    );
+    expect(String(runMutation.mock.calls[1]?.[0])).toContain(
+      "recordPublisherAbuseScoreRunTransientErrorInternal",
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
   it("marks transient score run failures failed after the retry budget is exhausted", async () => {
     const transientError = new Error("changed while this mutation was being run");
     const scheduler = { runAfter: vi.fn(async () => null) };

@@ -1437,7 +1437,7 @@ export const recordPublisherAbuseScoreRunTransientErrorInternal = internalMutati
       transientErrorCount: (run.transientErrorCount ?? 0) + 1,
       lastTransientError: args.errorMessage,
       lastTransientErrorAt: now,
-      lastTransientRetryAt: now + args.retryDelayMs,
+      nextTransientRetryAt: now + args.retryDelayMs,
       updatedAt: now,
     });
     console.warn("[publisher-abuse] transient score run failure; retrying", {
@@ -2021,8 +2021,9 @@ export async function runPublisherAbuseScoreRunInternalHandler(
     if (isRetryablePublisherAbuseScoreRunError(errorMessage)) {
       if (retryAttempt < MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES) {
         const retryDelayMs = publisherAbuseScoreRunRetryDelayMs(retryAttempt);
+        let shouldScheduleRetry = true;
         try {
-          await ctx.runMutation(
+          const retryRecord: { ok: true; recorded: boolean } = await ctx.runMutation(
             internal.publisherAbuse.recordPublisherAbuseScoreRunTransientErrorInternal,
             {
               runId: state.runId,
@@ -2031,12 +2032,21 @@ export async function runPublisherAbuseScoreRunInternalHandler(
               retryDelayMs,
             },
           );
+          shouldScheduleRetry = retryRecord.recorded;
         } catch (recordError) {
           console.warn("[publisher-abuse] failed to record transient retry telemetry", {
             runId: state.runId,
             retryAttempt: retryAttempt + 1,
             errorMessage: errorMessageFromUnknown(recordError),
           });
+        }
+        if (!shouldScheduleRetry) {
+          console.warn("[publisher-abuse] skipped transient retry for inactive score run", {
+            runId: state.runId,
+            retryAttempt: retryAttempt + 1,
+            errorMessage,
+          });
+          return { ok: true, runId: state.runId, pages, isDone: true };
         }
         await ctx.scheduler.runAfter(
           retryDelayMs,
