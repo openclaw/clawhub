@@ -7932,6 +7932,56 @@ describe("publisher abuse dry-run persistence", () => {
     });
   });
 
+  it("records and retries transient score run state-load failures", async () => {
+    const transientError = new Error("Your request couldn't be completed. Try again later.");
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const runMutation = vi.fn(async (target: symbol, _args?: unknown) => {
+      const targetName = String(target);
+      if (targetName.includes("recordPublisherAbuseScoreRunTransientErrorInternal")) {
+        return { ok: true, recorded: true };
+      }
+      if (targetName.includes("markPublisherAbuseScoreRunFailedInternal")) {
+        throw new Error("transient state-load failure should not mark the run failed");
+      }
+      throw new Error(`unexpected mutation ${targetName}`);
+    });
+    const ctx = {
+      scheduler,
+      runQuery: vi.fn(async () => {
+        throw transientError;
+      }),
+      runMutation,
+    };
+
+    await expect(
+      runHandler(ctx, { runId: "publisherAbuseScoreRuns:run", batchSize: 100, maxPages: 1 }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:run",
+      pages: 0,
+      isDone: false,
+    });
+
+    const runQueryCalls = ctx.runQuery.mock.calls as unknown[][];
+    expect(String(runQueryCalls[0]?.[0])).toContain("getPublisherAbuseScoreRunStateInternal");
+    expect(String(runMutation.mock.calls[0]?.[0])).toContain(
+      "recordPublisherAbuseScoreRunTransientErrorInternal",
+    );
+    expect(runMutation.mock.calls[0]?.[1]).toEqual({
+      runId: "publisherAbuseScoreRuns:run",
+      errorMessage: "Your request couldn't be completed. Try again later.",
+      retryAttempt: 1,
+      retryDelayMs: 30_000,
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(30_000, expect.any(Symbol), {
+      runId: "publisherAbuseScoreRuns:run",
+      batchSize: 100,
+      maxPages: 1,
+      trigger: "cron",
+      retryAttempt: 1,
+    });
+  });
+
   it("does not retry transient score run failures when telemetry finds an inactive run", async () => {
     const transientError = new Error("Your request couldn't be completed. Try again later.");
     const scheduler = { runAfter: vi.fn(async () => null) };

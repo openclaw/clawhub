@@ -1957,16 +1957,42 @@ export async function runPublisherAbuseScoreRunInternalHandler(
     0,
     MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES,
   );
-  let state: RunState = args.runId
-    ? await ctx.runQuery(internal.publisherAbuse.getPublisherAbuseScoreRunStateInternal, {
-        runId: args.runId,
-      })
-    : await ctx.runMutation(internal.publisherAbuse.getOrStartPublisherAbuseScoreRunInternal, {
-        trigger: args.trigger ?? "cron",
-        actorUserId: args.actorUserId,
-        forceNew: args.forceNew,
-      });
   let pages = 0;
+  let state: RunState;
+  try {
+    state = args.runId
+      ? await ctx.runQuery(internal.publisherAbuse.getPublisherAbuseScoreRunStateInternal, {
+          runId: args.runId,
+        })
+      : await ctx.runMutation(internal.publisherAbuse.getOrStartPublisherAbuseScoreRunInternal, {
+          trigger: args.trigger ?? "cron",
+          actorUserId: args.actorUserId,
+          forceNew: args.forceNew,
+        });
+  } catch (error) {
+    const errorMessage = errorMessageFromUnknown(error);
+    if (args.runId && isRetryablePublisherAbuseScoreRunError(errorMessage)) {
+      const retryResult = await schedulePublisherAbuseScoreRunTransientRetry(ctx, {
+        runId: args.runId,
+        batchSize,
+        maxPages,
+        trigger: args.trigger ?? "cron",
+        retryAttempt,
+        errorMessage,
+      });
+      if (retryResult === "scheduled") {
+        return { ok: true, runId: args.runId, pages, isDone: false };
+      }
+      if (retryResult === "inactive") {
+        return { ok: true, runId: args.runId, pages, isDone: true };
+      }
+      await ctx.runMutation(internal.publisherAbuse.markPublisherAbuseScoreRunFailedInternal, {
+        runId: args.runId,
+        errorMessage,
+      });
+    }
+    throw error;
+  }
 
   if (state.status !== "running") {
     if (state.status === "completed") {
@@ -2019,53 +2045,20 @@ export async function runPublisherAbuseScoreRunInternalHandler(
   } catch (error) {
     const errorMessage = errorMessageFromUnknown(error);
     if (isRetryablePublisherAbuseScoreRunError(errorMessage)) {
-      if (retryAttempt < MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES) {
-        const retryDelayMs = publisherAbuseScoreRunRetryDelayMs(retryAttempt);
-        let shouldScheduleRetry = true;
-        try {
-          const retryRecord: { ok: true; recorded: boolean } = await ctx.runMutation(
-            internal.publisherAbuse.recordPublisherAbuseScoreRunTransientErrorInternal,
-            {
-              runId: state.runId,
-              errorMessage,
-              retryAttempt: retryAttempt + 1,
-              retryDelayMs,
-            },
-          );
-          shouldScheduleRetry = retryRecord.recorded;
-        } catch (recordError) {
-          console.warn("[publisher-abuse] failed to record transient retry telemetry", {
-            runId: state.runId,
-            retryAttempt: retryAttempt + 1,
-            errorMessage: errorMessageFromUnknown(recordError),
-          });
-        }
-        if (!shouldScheduleRetry) {
-          console.warn("[publisher-abuse] skipped transient retry for inactive score run", {
-            runId: state.runId,
-            retryAttempt: retryAttempt + 1,
-            errorMessage,
-          });
-          return { ok: true, runId: state.runId, pages, isDone: true };
-        }
-        await ctx.scheduler.runAfter(
-          retryDelayMs,
-          internal.publisherAbuse.runPublisherAbuseScoreRunInternal,
-          {
-            runId: state.runId,
-            batchSize,
-            maxPages,
-            trigger: args.trigger ?? "cron",
-            retryAttempt: retryAttempt + 1,
-          },
-        );
-        return { ok: true, runId: state.runId, pages, isDone: false };
-      }
-      console.error("[publisher-abuse] score run exceeded transient retry budget", {
+      const retryResult = await schedulePublisherAbuseScoreRunTransientRetry(ctx, {
         runId: state.runId,
+        batchSize,
+        maxPages,
+        trigger: args.trigger ?? "cron",
         retryAttempt,
         errorMessage,
       });
+      if (retryResult === "scheduled") {
+        return { ok: true, runId: state.runId, pages, isDone: false };
+      }
+      if (retryResult === "inactive") {
+        return { ok: true, runId: state.runId, pages, isDone: true };
+      }
     }
     await ctx.runMutation(internal.publisherAbuse.markPublisherAbuseScoreRunFailedInternal, {
       runId: state.runId,
@@ -2093,6 +2086,71 @@ export async function runPublisherAbuseScoreRunInternalHandler(
     await processPublisherAbuseAutobanPages(ctx, {});
   }
   return { ok: true, runId: state.runId, pages, isDone: false };
+}
+
+async function schedulePublisherAbuseScoreRunTransientRetry(
+  ctx: Pick<ActionCtx, "runMutation" | "scheduler">,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    batchSize: number;
+    maxPages: number;
+    trigger: "cron" | "manual";
+    retryAttempt: number;
+    errorMessage: string;
+  },
+): Promise<"scheduled" | "inactive" | "exhausted"> {
+  if (args.retryAttempt >= MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES) {
+    console.error("[publisher-abuse] score run exceeded transient retry budget", {
+      runId: args.runId,
+      retryAttempt: args.retryAttempt,
+      errorMessage: args.errorMessage,
+    });
+    return "exhausted";
+  }
+
+  const nextRetryAttempt = args.retryAttempt + 1;
+  const retryDelayMs = publisherAbuseScoreRunRetryDelayMs(args.retryAttempt);
+  let shouldScheduleRetry = true;
+  try {
+    const retryRecord: { ok: true; recorded: boolean } = await ctx.runMutation(
+      internal.publisherAbuse.recordPublisherAbuseScoreRunTransientErrorInternal,
+      {
+        runId: args.runId,
+        errorMessage: args.errorMessage,
+        retryAttempt: nextRetryAttempt,
+        retryDelayMs,
+      },
+    );
+    shouldScheduleRetry = retryRecord.recorded;
+  } catch (recordError) {
+    console.warn("[publisher-abuse] failed to record transient retry telemetry", {
+      runId: args.runId,
+      retryAttempt: nextRetryAttempt,
+      errorMessage: errorMessageFromUnknown(recordError),
+    });
+  }
+
+  if (!shouldScheduleRetry) {
+    console.warn("[publisher-abuse] skipped transient retry for inactive score run", {
+      runId: args.runId,
+      retryAttempt: nextRetryAttempt,
+      errorMessage: args.errorMessage,
+    });
+    return "inactive";
+  }
+
+  await ctx.scheduler.runAfter(
+    retryDelayMs,
+    internal.publisherAbuse.runPublisherAbuseScoreRunInternal,
+    {
+      runId: args.runId,
+      batchSize: args.batchSize,
+      maxPages: args.maxPages,
+      trigger: args.trigger,
+      retryAttempt: nextRetryAttempt,
+    },
+  );
+  return "scheduled";
 }
 
 function isRetryablePublisherAbuseScoreRunError(errorMessage: string) {
