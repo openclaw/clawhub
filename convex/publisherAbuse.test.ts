@@ -61,6 +61,9 @@ vi.mock("./_generated/api", () => ({
       ),
       getPublisherAbuseAutobanEnabledInternal: Symbol("getPublisherAbuseAutobanEnabledInternal"),
       processPublisherAbuseAutobansInternal: Symbol("processPublisherAbuseAutobansInternal"),
+      recordPublisherAbuseScoreRunTransientErrorInternal: Symbol(
+        "recordPublisherAbuseScoreRunTransientErrorInternal",
+      ),
       recordPublisherAbuseWarningSentInternal: Symbol("recordPublisherAbuseWarningSentInternal"),
       runPublisherAbuseScoreRunInternal: Symbol("runPublisherAbuseScoreRunInternal"),
       runTemporalPublisherAbuseScanInternal: Symbol("runTemporalPublisherAbuseScanInternal"),
@@ -123,6 +126,7 @@ const runHandler = (
       maxPages?: number;
       trigger?: "cron" | "manual";
       actorUserId?: string;
+      retryAttempt?: number;
     },
     { ok: true; runId: string; pages: number; isDone: boolean }
   >
@@ -7618,7 +7622,7 @@ describe("publisher abuse dry-run persistence", () => {
     });
 
     expect(scheduler.runAfter).toHaveBeenCalledWith(
-      60_000,
+      5_000,
       expect.anything(),
       expect.objectContaining({ runId: "publisherAbuseScoreRuns:run" }),
     );
@@ -7745,7 +7749,7 @@ describe("publisher abuse dry-run persistence", () => {
 
   it("resumes a finalizing run without restarting collection", async () => {
     const scheduler = { runAfter: vi.fn(async () => null) };
-    const runMutation = vi.fn(async (target: symbol) => {
+    const runMutation = vi.fn(async (target: symbol, _args?: unknown) => {
       if (String(target).includes("finalizePublisherAbuseScoresPageInternal")) {
         return {
           runId: "publisherAbuseScoreRuns:run",
@@ -7800,7 +7804,7 @@ describe("publisher abuse dry-run persistence", () => {
 
   it("does not mark a completed score run failed when the autoban sweep fails", async () => {
     const autobanError = new Error("autoban failed");
-    const runMutation = vi.fn(async (target: symbol) => {
+    const runMutation = vi.fn(async (target: symbol, _args?: unknown) => {
       if (String(target).includes("finalizePublisherAbuseScoresPageInternal")) {
         return {
           runId: "publisherAbuseScoreRuns:run",
@@ -7871,6 +7875,110 @@ describe("publisher abuse dry-run persistence", () => {
       runId: "publisherAbuseScoreRuns:run",
       errorMessage: "page failed",
     });
+  });
+
+  it("records and retries transient score run page failures without failing the run", async () => {
+    const transientError = new Error("Your request couldn't be completed. Try again later.");
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const runMutation = vi.fn(async (target: symbol, _args?: unknown) => {
+      const targetName = String(target);
+      if (targetName.includes("collectPublisherAbuseScoresPageInternal")) {
+        throw transientError;
+      }
+      if (targetName.includes("recordPublisherAbuseScoreRunTransientErrorInternal")) {
+        return { ok: true, recorded: true };
+      }
+      if (targetName.includes("markPublisherAbuseScoreRunFailedInternal")) {
+        throw new Error("transient failure should not mark the run failed");
+      }
+      throw new Error(`unexpected mutation ${targetName}`);
+    });
+    const ctx = {
+      scheduler,
+      runQuery: vi.fn(async () => ({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "collecting",
+        status: "running",
+      })),
+      runMutation,
+    };
+
+    await expect(
+      runHandler(ctx, { runId: "publisherAbuseScoreRuns:run", batchSize: 100, maxPages: 1 }),
+    ).resolves.toEqual({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:run",
+      pages: 0,
+      isDone: false,
+    });
+
+    const runMutationCalls = runMutation.mock.calls as unknown[][];
+    expect(String(runMutationCalls[0]?.[0])).toContain("collectPublisherAbuseScoresPageInternal");
+    expect(String(runMutationCalls[1]?.[0])).toContain(
+      "recordPublisherAbuseScoreRunTransientErrorInternal",
+    );
+    expect(runMutationCalls[1]?.[1]).toEqual({
+      runId: "publisherAbuseScoreRuns:run",
+      errorMessage: "Your request couldn't be completed. Try again later.",
+      retryAttempt: 1,
+      retryDelayMs: 30_000,
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(30_000, expect.any(Symbol), {
+      runId: "publisherAbuseScoreRuns:run",
+      batchSize: 100,
+      maxPages: 1,
+      trigger: "cron",
+      retryAttempt: 1,
+    });
+  });
+
+  it("marks transient score run failures failed after the retry budget is exhausted", async () => {
+    const transientError = new Error("changed while this mutation was being run");
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const runMutation = vi.fn(async (target: symbol, _args?: unknown) => {
+      const targetName = String(target);
+      if (targetName.includes("collectPublisherAbuseScoresPageInternal")) {
+        throw transientError;
+      }
+      if (targetName.includes("markPublisherAbuseScoreRunFailedInternal")) {
+        return {
+          runId: "publisherAbuseScoreRuns:run",
+          phase: "collecting",
+          status: "failed",
+        };
+      }
+      if (targetName.includes("recordPublisherAbuseScoreRunTransientErrorInternal")) {
+        throw new Error("exhausted transient retry should not be recorded for retry");
+      }
+      throw new Error(`unexpected mutation ${targetName}`);
+    });
+    const ctx = {
+      scheduler,
+      runQuery: vi.fn(async () => ({
+        runId: "publisherAbuseScoreRuns:run",
+        phase: "collecting",
+        status: "running",
+      })),
+      runMutation,
+    };
+
+    await expect(
+      runHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:run",
+        batchSize: 100,
+        maxPages: 1,
+        retryAttempt: 5,
+      }),
+    ).rejects.toThrow("changed while this mutation was being run");
+
+    const runMutationCalls = runMutation.mock.calls as unknown[][];
+    expect(String(runMutationCalls[0]?.[0])).toContain("collectPublisherAbuseScoresPageInternal");
+    expect(String(runMutationCalls[1]?.[0])).toContain("markPublisherAbuseScoreRunFailedInternal");
+    expect(runMutationCalls[1]?.[1]).toEqual({
+      runId: "publisherAbuseScoreRuns:run",
+      errorMessage: "changed while this mutation was being run",
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("does not continue page processing for a failed score run", async () => {

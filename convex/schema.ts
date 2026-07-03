@@ -2603,6 +2603,10 @@ const publisherAbuseScoreRuns = defineTable({
     }),
   ),
   errorMessage: v.optional(v.string()),
+  transientErrorCount: v.optional(v.number()),
+  lastTransientError: v.optional(v.string()),
+  lastTransientErrorAt: v.optional(v.number()),
+  lastTransientRetryAt: v.optional(v.number()),
 })
   .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_model_version_and_started_at", ["modelVersion", "startedAt"])

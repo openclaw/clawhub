@@ -148,7 +148,7 @@ describe("crons", () => {
       mocks.publisherAbuseScoreRefreshRef,
       {
         batchSize: 250,
-        maxPages: 5,
+        maxPages: 20,
         trigger: "cron",
       },
     );

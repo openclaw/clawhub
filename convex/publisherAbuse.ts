@@ -37,9 +37,13 @@ import { readCanonicalStat } from "./lib/skillStats";
 
 const DEFAULT_BATCH_SIZE = 250;
 const MAX_BATCH_SIZE = 1000;
-const DEFAULT_MAX_PAGES = 5;
+const DEFAULT_MAX_PAGES = 20;
 const MAX_MAX_PAGES = 50;
 const ACTION_CONTINUATION_DELAY_MS = 60_000;
+const PUBLISHER_ABUSE_SCORE_RUN_CONTINUATION_DELAY_MS = 5_000;
+const PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRY_BASE_DELAY_MS = 30_000;
+const PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRY_MAX_DELAY_MS = 5 * 60_000;
+const MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES = 5;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
@@ -1416,6 +1420,37 @@ export const markPublisherAbuseScoreRunFailedInternal = internalMutation({
   handler: markPublisherAbuseScoreRunFailedInternalHandler,
 });
 
+export const recordPublisherAbuseScoreRunTransientErrorInternal = internalMutation({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    errorMessage: v.string(),
+    retryAttempt: v.number(),
+    retryDelayMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run || run.status !== "running") {
+      return { ok: true as const, recorded: false as const };
+    }
+    const now = Date.now();
+    await ctx.db.patch(run._id, {
+      transientErrorCount: (run.transientErrorCount ?? 0) + 1,
+      lastTransientError: args.errorMessage,
+      lastTransientErrorAt: now,
+      lastTransientRetryAt: now + args.retryDelayMs,
+      updatedAt: now,
+    });
+    console.warn("[publisher-abuse] transient score run failure; retrying", {
+      runId: args.runId,
+      phase: run.phase,
+      retryAttempt: args.retryAttempt,
+      retryDelayMs: args.retryDelayMs,
+      errorMessage: args.errorMessage,
+    });
+    return { ok: true as const, recorded: true as const };
+  },
+});
+
 export const runPublisherAbuseScoreRunInternal = internalAction({
   args: {
     runId: v.optional(v.id("publisherAbuseScoreRuns")),
@@ -1424,6 +1459,7 @@ export const runPublisherAbuseScoreRunInternal = internalAction({
     forceNew: v.optional(v.boolean()),
     trigger: v.optional(v.union(v.literal("cron"), v.literal("manual"))),
     actorUserId: v.optional(v.id("users")),
+    retryAttempt: v.optional(v.number()),
   },
   handler: runPublisherAbuseScoreRunInternalHandler,
 });
@@ -1911,10 +1947,16 @@ export async function runPublisherAbuseScoreRunInternalHandler(
     forceNew?: boolean;
     trigger?: "cron" | "manual";
     actorUserId?: Id<"users">;
+    retryAttempt?: number;
   },
 ): Promise<{ ok: true; runId: Id<"publisherAbuseScoreRuns">; pages: number; isDone: boolean }> {
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const maxPages = clampInt(args.maxPages ?? DEFAULT_MAX_PAGES, 1, MAX_MAX_PAGES);
+  const retryAttempt = clampInt(
+    args.retryAttempt ?? 0,
+    0,
+    MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES,
+  );
   let state: RunState = args.runId
     ? await ctx.runQuery(internal.publisherAbuse.getPublisherAbuseScoreRunStateInternal, {
         runId: args.runId,
@@ -1975,9 +2017,49 @@ export async function runPublisherAbuseScoreRunInternalHandler(
       }
     }
   } catch (error) {
+    const errorMessage = errorMessageFromUnknown(error);
+    if (isRetryablePublisherAbuseScoreRunError(errorMessage)) {
+      if (retryAttempt < MAX_PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRIES) {
+        const retryDelayMs = publisherAbuseScoreRunRetryDelayMs(retryAttempt);
+        try {
+          await ctx.runMutation(
+            internal.publisherAbuse.recordPublisherAbuseScoreRunTransientErrorInternal,
+            {
+              runId: state.runId,
+              errorMessage,
+              retryAttempt: retryAttempt + 1,
+              retryDelayMs,
+            },
+          );
+        } catch (recordError) {
+          console.warn("[publisher-abuse] failed to record transient retry telemetry", {
+            runId: state.runId,
+            retryAttempt: retryAttempt + 1,
+            errorMessage: errorMessageFromUnknown(recordError),
+          });
+        }
+        await ctx.scheduler.runAfter(
+          retryDelayMs,
+          internal.publisherAbuse.runPublisherAbuseScoreRunInternal,
+          {
+            runId: state.runId,
+            batchSize,
+            maxPages,
+            trigger: args.trigger ?? "cron",
+            retryAttempt: retryAttempt + 1,
+          },
+        );
+        return { ok: true, runId: state.runId, pages, isDone: false };
+      }
+      console.error("[publisher-abuse] score run exceeded transient retry budget", {
+        runId: state.runId,
+        retryAttempt,
+        errorMessage,
+      });
+    }
     await ctx.runMutation(internal.publisherAbuse.markPublisherAbuseScoreRunFailedInternal, {
       runId: state.runId,
-      errorMessage: errorMessageFromUnknown(error),
+      errorMessage,
     });
     throw error;
   }
@@ -1988,7 +2070,7 @@ export async function runPublisherAbuseScoreRunInternalHandler(
   }
 
   await ctx.scheduler.runAfter(
-    ACTION_CONTINUATION_DELAY_MS,
+    PUBLISHER_ABUSE_SCORE_RUN_CONTINUATION_DELAY_MS,
     internal.publisherAbuse.runPublisherAbuseScoreRunInternal,
     {
       runId: state.runId,
@@ -2001,6 +2083,20 @@ export async function runPublisherAbuseScoreRunInternalHandler(
     await processPublisherAbuseAutobanPages(ctx, {});
   }
   return { ok: true, runId: state.runId, pages, isDone: false };
+}
+
+function isRetryablePublisherAbuseScoreRunError(errorMessage: string) {
+  return (
+    errorMessage.includes("Your request couldn't be completed. Try again later.") ||
+    errorMessage.includes("changed while this mutation was being run")
+  );
+}
+
+function publisherAbuseScoreRunRetryDelayMs(retryAttempt: number) {
+  return Math.min(
+    PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRY_BASE_DELAY_MS * 2 ** retryAttempt,
+    PUBLISHER_ABUSE_SCORE_RUN_TRANSIENT_RETRY_MAX_DELAY_MS,
+  );
 }
 
 async function processPublisherAbuseAutobanPages(
