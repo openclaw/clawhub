@@ -2582,7 +2582,7 @@ const promotions = defineTable({
   updatedAt: v.number(),
 })
   .index("by_slug", ["slug"])
-  .index("by_status", ["status"]);
+  .index("by_status_endsAt", ["status", "endsAt"]);
 
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),

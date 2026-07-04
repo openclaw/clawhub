@@ -2,7 +2,7 @@ import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
-import { assertAdmin, assertModerator, requireUser } from "./lib/access";
+import { assertAdmin, requireUser } from "./lib/access";
 
 export type PromotionStatus = "draft" | "active" | "ended";
 
@@ -377,13 +377,15 @@ export const setStatusInternal = internalMutation({
 export const listActiveInternal = internalQuery({
   args: { now: v.number() },
   handler: async (ctx, args) => {
+    // The index bound excludes expired-but-never-ended rows so they cannot
+    // crowd live promotions out of the take() window; rows arrive sorted by
+    // endsAt. The JS filter only removes not-yet-started promotions.
     const active = await ctx.db
       .query("promotions")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", args.now))
       .take(ACTIVE_LIST_LIMIT);
     return active
       .filter((promotion) => isPromotionActive(promotion, args.now))
-      .sort((a, b) => a.endsAt - b.endsAt)
       .map((promotion) => toPublicPromotion(promotion, args.now));
   },
 });
@@ -412,7 +414,9 @@ export const listForStaff = query({
   args: {},
   handler: async (ctx) => {
     const { user } = await requireUser(ctx);
-    assertModerator(user);
+    // Admin-only like every other promotions surface: drafts carry unreleased
+    // launch windows and sponsor details.
+    assertAdmin(user);
     return await ctx.db.query("promotions").order("desc").take(STAFF_LIST_LIMIT);
   },
 });

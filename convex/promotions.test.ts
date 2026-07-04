@@ -14,8 +14,14 @@ vi.mock("./lib/access", async () => {
 });
 
 const { requireUser } = await import("./lib/access");
-const { create, setStatus, listActiveInternal, getBySlugPublicInternal, normalizePromotionInput } =
-  await import("./promotions");
+const {
+  create,
+  setStatus,
+  listActiveInternal,
+  listForStaff,
+  getBySlugPublicInternal,
+  normalizePromotionInput,
+} = await import("./promotions");
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -200,6 +206,19 @@ describe("promotions.setStatus", () => {
     expect(result.status).toBe("draft");
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
+  });
+});
+
+describe("promotions.listForStaff", () => {
+  it("rejects moderators — drafts are admin-only", async () => {
+    const listForStaffHandler = (listForStaff as unknown as WrappedHandler<Record<string, never>>)
+      ._handler;
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+
+    await expect(listForStaffHandler({ db: {} } as never, {})).rejects.toThrow("Forbidden");
   });
 });
 
