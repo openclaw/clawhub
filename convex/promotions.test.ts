@@ -17,6 +17,7 @@ const { requireUser } = await import("./lib/access");
 const {
   create,
   setStatus,
+  listActive,
   listActiveInternal,
   listForStaff,
   getBySlugPublicInternal,
@@ -275,6 +276,29 @@ describe("promotions.listActiveInternal", () => {
     expect(result[0]?.active).toBe(true);
     expect(result[0]).not.toHaveProperty("createdByUserId");
     expect(result[0]).not.toHaveProperty("_id");
+  });
+
+  it("serves the public listActive query without authentication", async () => {
+    const listActivePublicHandler = (listActive as unknown as WrappedHandler<Record<string, never>>)
+      ._handler;
+    const now = Date.now();
+    const rows = [
+      {
+        ...base,
+        _id: "promotions:1",
+        slug: "live",
+        status: "active",
+        startsAt: now - 1_000,
+        endsAt: now + 1_000,
+      },
+    ];
+
+    const result = (await listActivePublicHandler(makeListCtx(rows), {})) as Array<
+      Record<string, unknown>
+    >;
+
+    expect(vi.mocked(requireUser)).not.toHaveBeenCalled();
+    expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
   });
 
   it("does not let many scheduled future promotions crowd out a live one", async () => {

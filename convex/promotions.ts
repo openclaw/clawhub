@@ -374,24 +374,32 @@ export const setStatusInternal = internalMutation({
   },
 });
 
+// The index bound excludes expired-but-never-ended rows; iterating (rather
+// than take-then-filter) keeps pre-activated future promotions from crowding
+// live ones out of the limit. Every scanned row is either live or scheduled,
+// so the scan is bounded by the curated active set.
+async function collectActivePromotions(ctx: QueryCtx, now: number) {
+  const results: Array<ReturnType<typeof toPublicPromotion>> = [];
+  const active = ctx.db
+    .query("promotions")
+    .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", now));
+  for await (const promotion of active) {
+    if (!isPromotionActive(promotion, now)) continue;
+    results.push(toPublicPromotion(promotion, now));
+    if (results.length >= ACTIVE_LIST_LIMIT) break;
+  }
+  return results;
+}
+
 export const listActiveInternal = internalQuery({
   args: { now: v.number() },
-  handler: async (ctx, args) => {
-    // The index bound excludes expired-but-never-ended rows; iterating (rather
-    // than take-then-filter) keeps pre-activated future promotions from
-    // crowding live ones out of the limit. Every scanned row is either live or
-    // scheduled, so the scan is bounded by the curated active set.
-    const results: Array<ReturnType<typeof toPublicPromotion>> = [];
-    const active = ctx.db
-      .query("promotions")
-      .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", args.now));
-    for await (const promotion of active) {
-      if (!isPromotionActive(promotion, args.now)) continue;
-      results.push(toPublicPromotion(promotion, args.now));
-      if (results.length >= ACTIVE_LIST_LIMIT) break;
-    }
-    return results;
-  },
+  handler: async (ctx, args) => collectActivePromotions(ctx, args.now),
+});
+
+// Public one-shot query for the site (homepage banner, launch pages).
+export const listActive = query({
+  args: {},
+  handler: async (ctx) => collectActivePromotions(ctx, Date.now()),
 });
 
 export const getBySlugPublicInternal = internalQuery({

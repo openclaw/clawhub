@@ -25470,6 +25470,107 @@ a.search-empty-action {
     0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
+/* ═══ HOME PROMOTIONS ═══ */
+.home-v2-promotions {
+  width: 100%;
+  max-width: 1296px;
+  margin: 0 auto;
+  padding: 0 48px 8px;
+}
+
+.home-v2-promotions-track {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.home-v2-promotion-card {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border: 1px solid var(--hv2-accent-border);
+  border-radius: var(--hv2-radius-lg);
+  background: linear-gradient(135deg, var(--hv2-accent-fill), var(--hv2-surface));
+}
+
+.home-v2-promotion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.home-v2-promotion-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--hv2-accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.home-v2-promotion-ends {
+  color: var(--hv2-text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.home-v2-promotion-title {
+  margin: 0;
+  color: var(--hv2-text);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.home-v2-promotion-blurb {
+  margin: 0;
+  color: var(--hv2-text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.home-v2-promotion-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.home-v2-promotion-cli {
+  padding: 4px 8px;
+  border: 1px solid var(--hv2-border);
+  border-radius: var(--hv2-radius-sm);
+  background: var(--hv2-bg);
+  color: var(--hv2-text-secondary);
+  font-size: 12px;
+}
+
+.home-v2-promotion-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--hv2-accent);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.home-v2-promotion-link:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 720px) {
+  .home-v2-promotions {
+    padding: 0 20px 8px;
+  }
+}
+
 /* ═══ HOME POPULAR PUBLISHERS ═══ */
 .home-v2-popular-publishers {
   display: grid;
