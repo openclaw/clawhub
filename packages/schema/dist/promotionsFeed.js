@@ -42,6 +42,9 @@ export const PROMOTIONS_FEED_ID = "clawhub-promotions";
 export const PROMOTIONS_FEED_DESCRIPTION = "Active promotional offers surfaced to OpenClaw clients at runtime.";
 export function parsePromotionsFeed(value) {
     const feed = PromotionsFeedSchema.assert(value);
+    if (feed.id !== PROMOTIONS_FEED_ID) {
+        throw new Error(`Unsupported promotions feed id: ${feed.id}`);
+    }
     if (feed.schemaVersion !== PROMOTIONS_FEED_SCHEMA_VERSION) {
         throw new Error(`Unsupported promotions feed schema version: ${feed.schemaVersion}`);
     }

@@ -88,12 +88,13 @@ envelopes require a separate production key-management decision and must not be
 advertised to OpenClaw clients until the signing key and trust root are deployed.
 
 `convex/promotionsFeed.ts` builds the promotions snapshot from the bounded active
-set and stores it in the same publication table. Promotion updates and status
-changes schedule an immediate refresh. Active promotions also schedule refreshes
-at `startsAt` and at `endsAt + 1ms`: both window endpoints are inclusive, so the
-expiry refresh must run after the final active millisecond. A six-hour cron is
-the backstop for long-running or empty feeds, keeping every snapshot inside its
-24-hour `expiresAt` horizon.
+set and stores it in the same publication table. Production backend deploys
+publish an initial snapshot before contract verification. Promotion updates and
+status changes schedule an immediate refresh. Active promotions also schedule
+refreshes at `startsAt` and at `endsAt + 1ms`: both window endpoints are
+inclusive, so the expiry refresh must run after the final active millisecond. A
+six-hour cron is the backstop for long-running or empty feeds, keeping every
+snapshot inside its 24-hour `expiresAt` horizon.
 
 ## Edge delivery
 

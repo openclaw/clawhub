@@ -189,12 +189,11 @@ validators. The unversioned `/feeds/plugins` and `/feeds/skills` paths redirect
 to their versioned routes. Attach `registry.openclaw.ai` to the same Vercel
 project before configuring OpenClaw's default feed URLs.
 
-The promotions feed is published separately through promotion mutations rather
-than this workflow. Active promotion changes refresh the stored snapshot
-immediately, schedule refreshes at launch and expiry boundaries, and use a
-six-hour cron as an expiry backstop. It is served through
-`/v1/feeds/promotions`, with `/feeds/promotions` redirecting to the versioned
-route.
+Production backend deploys publish an initial promotions snapshot after Convex
+deploys. Active promotion changes then refresh the stored snapshot immediately,
+schedule refreshes at launch and expiry boundaries, and use a six-hour cron as
+an expiry backstop. The feed is served through `/v1/feeds/promotions`, with
+`/feeds/promotions` redirecting to the versioned route.
 
 ## 5) Post-deploy checks
 

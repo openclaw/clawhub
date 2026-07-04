@@ -51,6 +51,9 @@ export const PROMOTIONS_FEED_DESCRIPTION =
 
 export function parsePromotionsFeed(value: unknown): PromotionsFeed {
   const feed = PromotionsFeedSchema.assert(value);
+  if (feed.id !== PROMOTIONS_FEED_ID) {
+    throw new Error(`Unsupported promotions feed id: ${feed.id}`);
+  }
   if (feed.schemaVersion !== PROMOTIONS_FEED_SCHEMA_VERSION) {
     throw new Error(`Unsupported promotions feed schema version: ${feed.schemaVersion}`);
   }

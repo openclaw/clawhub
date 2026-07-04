@@ -6,6 +6,8 @@ describe("production deploy workflow", () => {
   type WorkflowStep = {
     name?: string;
     env?: Record<string, string>;
+    if?: string;
+    run?: string;
   };
 
   type WorkflowJob = {
@@ -52,10 +54,30 @@ describe("production deploy workflow", () => {
       "Stamp Convex build SHA",
       "Stamp Convex deploy time",
       "Deploy Convex",
+      "Publish promotions feed snapshot",
       "Verify Convex contract",
     ]);
     expect(authSecretSteps).toEqual(["Write authenticated storage state"]);
     expect(tagJob?.permissions).toEqual({ contents: "write" });
     expect(tagJob?.needs).toEqual(["validate-deploy-request", "deploy-production"]);
+  });
+
+  it("publishes the initial promotions snapshot after backend deploy", async () => {
+    const workflow = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
+      jobs?: Record<string, WorkflowJob>;
+    };
+    const steps = workflow.jobs?.["deploy-production"]?.steps ?? [];
+    const deployIndex = steps.findIndex((step) => step.name === "Deploy Convex");
+    const publishIndex = steps.findIndex(
+      (step) => step.name === "Publish promotions feed snapshot",
+    );
+    const verifyIndex = steps.findIndex((step) => step.name === "Verify Convex contract");
+    const publishStep = steps[publishIndex];
+
+    expect(deployIndex).toBeGreaterThanOrEqual(0);
+    expect(publishIndex).toBeGreaterThan(deployIndex);
+    expect(verifyIndex).toBeGreaterThan(publishIndex);
+    expect(publishStep?.if).toBe("needs.validate-deploy-request.outputs.deploy_backend == 'true'");
+    expect(publishStep?.run).toBe("bunx convex run internal.promotionsFeed.publishInternal --prod");
   });
 });

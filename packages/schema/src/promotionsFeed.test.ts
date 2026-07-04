@@ -63,6 +63,10 @@ describe("promotions feed schema", () => {
     expect(() => parsePromotionsFeed(makeFeed({ schemaVersion: 2 }))).toThrow(/schema version/);
   });
 
+  it("rejects a payload for a different feed id", () => {
+    expect(() => parsePromotionsFeed(makeFeed({ id: "wrong-feed" }))).toThrow(/feed id/);
+  });
+
   it("rejects inverted feed and entry windows", () => {
     expect(() => parsePromotionsFeed(makeFeed({ expiresAt: "2026-06-30T00:00:00.000Z" }))).toThrow(
       /expiresAt/,
