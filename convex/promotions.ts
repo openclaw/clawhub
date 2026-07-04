@@ -16,8 +16,7 @@ const MAX_URL_LENGTH = 500;
 const MAX_MODELS = 20;
 const MAX_PLUGIN_NAMES = 10;
 const STAFF_LIST_PAGE_SIZE = 100;
-const ACTIVE_LIST_LIMIT = 50;
-const ACTIVE_SET_LIMIT = 100;
+const ACTIVE_SET_LIMIT = 50;
 
 const promotionModelArgValidator = v.object({
   modelRef: v.string(),
@@ -422,9 +421,7 @@ async function collectActivePromotions(ctx: QueryCtx, now: number) {
       continue;
     }
     if (!isPromotionActive(promotion, now)) continue;
-    if (promotions.length < ACTIVE_LIST_LIMIT) {
-      promotions.push(toPublicPromotion(promotion, now));
-    }
+    promotions.push(toPublicPromotion(promotion, now));
   }
   return { promotions, nextStartsAt };
 }

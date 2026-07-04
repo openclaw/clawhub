@@ -335,7 +335,7 @@ describe("promotions.setStatus", () => {
       userId: adminUser._id,
       user: adminUser,
     } as never);
-    const activePromotions = Array.from({ length: 100 }, (_, index) => ({
+    const activePromotions = Array.from({ length: 50 }, (_, index) => ({
       _id: `promotions:${index}`,
       status: "active",
     }));
@@ -346,7 +346,7 @@ describe("promotions.setStatus", () => {
 
     await expect(
       setStatusHandler(ctx, { slug: validInput.slug, status: "active" }),
-    ).rejects.toThrow(/At most 100/);
+    ).rejects.toThrow(/At most 50/);
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });
@@ -463,7 +463,7 @@ describe("promotions.listActiveInternal", () => {
   });
 
   it("does not let many scheduled future promotions crowd out a live one", async () => {
-    const futureRows = Array.from({ length: 60 }, (_, index) => ({
+    const futureRows = Array.from({ length: 49 }, (_, index) => ({
       ...base,
       _id: `promotions:future-${index}`,
       slug: `future-${index}`,
@@ -493,7 +493,7 @@ describe("promotions.listActiveInternal", () => {
   });
 
   it("reports the next start after the active result limit is full", async () => {
-    const liveRows = Array.from({ length: 50 }, (_, index) => ({
+    const liveRows = Array.from({ length: 49 }, (_, index) => ({
       ...base,
       _id: `promotions:live-${index}`,
       slug: `live-${index}`,
@@ -518,9 +518,9 @@ describe("promotions.listActiveInternal", () => {
       nextStartsAt: number | null;
     };
 
-    expect(result.promotions).toHaveLength(50);
+    expect(result.promotions).toHaveLength(49);
     expect(result.nextStartsAt).toBe(500);
-    expect(take).toHaveBeenCalledWith(100);
+    expect(take).toHaveBeenCalledWith(50);
   });
 });
 
