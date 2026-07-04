@@ -50,7 +50,7 @@ export type ManagementView =
   | "system"
   | "settings";
 
-export type PromotionEntry = FunctionReturnType<typeof api.promotions.listForStaff>[number];
+export type PromotionEntry = FunctionReturnType<typeof api.promotions.listForStaff>["page"][number];
 export type PromotionStatus = PromotionEntry["status"];
 export type PromotionInput = Omit<
   PromotionEntry,

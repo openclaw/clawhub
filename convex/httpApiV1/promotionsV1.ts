@@ -10,6 +10,7 @@ import {
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   text,
+  toOptionalNumber,
 } from "./shared";
 
 const PROMOTIONS_CACHE_SECONDS = 300;
@@ -155,8 +156,24 @@ export async function listPromotionsV1Handler(ctx: ActionCtx, request: Request) 
     if (!auth.ok) return auth.response;
     const admin = requireAdminOrResponse(auth.user, rate.headers);
     if (!admin.ok) return admin.response;
-    const promotions = await ctx.runQuery(internal.promotions.listAllInternal, {});
-    return json({ promotions }, 200, rate.headers);
+    const limit = Math.max(
+      1,
+      Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 100, 100),
+    );
+    const result = await ctx.runQuery(internal.promotions.listAllInternal, {
+      paginationOpts: {
+        cursor: url.searchParams.get("cursor")?.trim() || null,
+        numItems: limit,
+      },
+    });
+    return json(
+      {
+        promotions: result.page,
+        nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
   }
 
   const now = Date.now();

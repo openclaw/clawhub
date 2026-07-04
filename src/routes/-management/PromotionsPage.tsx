@@ -27,6 +27,8 @@ type PromotionFormState = {
   launchPageUrl: string;
 };
 
+type PromotionPageStatus = "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted";
+
 const EMPTY_FORM: PromotionFormState = {
   slug: "",
   title: "",
@@ -168,12 +170,16 @@ function statusBadgeLabel(promotion: PromotionEntry, now: number) {
 
 export function PromotionsPage({
   promotions,
+  pageStatus = promotions === undefined ? "LoadingFirstPage" : "Exhausted",
   onCreate,
+  onLoadMore,
   onUpdate,
   onSetStatus,
 }: {
   promotions: PromotionEntry[] | undefined;
+  pageStatus?: PromotionPageStatus;
   onCreate: (input: PromotionInput) => Promise<boolean>;
+  onLoadMore?: () => void;
   onUpdate: (targetSlug: string, input: PromotionInput) => Promise<boolean>;
   onSetStatus: (slug: string, status: PromotionStatus) => void;
 }) {
@@ -278,6 +284,18 @@ export function PromotionsPage({
           ))
         )}
       </div>
+      {onLoadMore && (pageStatus === "CanLoadMore" || pageStatus === "LoadingMore") ? (
+        <div className="mt-3 flex justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={pageStatus === "LoadingMore"}
+            onClick={onLoadMore}
+          >
+            {pageStatus === "LoadingMore" ? "Loading..." : "Load more"}
+          </Button>
+        </div>
+      ) : null}
 
       <h3 className="section-title text-[1.05rem] m-0 mt-6">
         {editingSlug ? `Edit "${editingSlug}"` : "Create promotion"}

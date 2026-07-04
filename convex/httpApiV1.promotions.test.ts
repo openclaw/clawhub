@@ -127,6 +127,33 @@ describe("listPromotionsV1Handler", () => {
     const response = await listPromotionsV1Handler(ctx, new Request(`${BASE_URL}?status=all`));
     expect(response.status).toBe(403);
   });
+
+  it("paginates status=all for admin callers", async () => {
+    const { ctx, runQuery } = makeCtx();
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    runQuery.mockResolvedValue({
+      page: [{ ...publicPromotion, slug: "older-promotion" }],
+      isDone: false,
+      continueCursor: "next-page",
+    });
+
+    const response = await listPromotionsV1Handler(
+      ctx,
+      new Request(`${BASE_URL}?status=all&limit=25&cursor=current-page`),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery.mock.calls[0]?.[1]).toEqual({
+      paginationOpts: { cursor: "current-page", numItems: 25 },
+    });
+    expect(await response.json()).toEqual({
+      promotions: [{ ...publicPromotion, slug: "older-promotion" }],
+      nextCursor: "next-page",
+    });
+  });
 });
 
 describe("promotionsGetRouterV1Handler", () => {

@@ -53,6 +53,7 @@ import {
   type PublisherAbuseReviewItem,
   type PublisherAbuseSignalStatus,
   type PublisherAbuseTab,
+  type PromotionEntry,
   type PromotionInput,
   type PromotionStatus,
   type RecentVersionEntry,
@@ -248,7 +249,17 @@ export function Management() {
     staff && abuseViewActive ? {} : "skip",
   );
 
-  const promotions = useQuery(api.promotions.listForStaff, admin ? {} : "skip");
+  const {
+    results: promotionResults,
+    status: promotionPageStatus,
+    loadMore: loadMorePromotions,
+  } = usePaginatedQuery(
+    api.promotions.listForStaff,
+    admin && activeView === "promotions" ? {} : "skip",
+    { initialNumItems: 25 },
+  );
+  const promotions =
+    promotionPageStatus === "LoadingFirstPage" ? undefined : (promotionResults as PromotionEntry[]);
   const createPromotion = useMutation(api.promotions.create);
   const updatePromotion = useMutation(api.promotions.update);
   const setPromotionStatus = useMutation(api.promotions.setStatus);
@@ -961,7 +972,9 @@ export function Management() {
         {admin && activeView === "promotions" ? (
           <PromotionsPage
             promotions={promotions}
+            pageStatus={promotionPageStatus}
             onCreate={handleCreatePromotion}
+            onLoadMore={() => loadMorePromotions(25)}
             onUpdate={handleUpdatePromotion}
             onSetStatus={handleSetPromotionStatus}
           />

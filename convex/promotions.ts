@@ -1,3 +1,4 @@
+import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -14,7 +15,7 @@ const MAX_SHORT_FIELD_LENGTH = 128;
 const MAX_URL_LENGTH = 500;
 const MAX_MODELS = 20;
 const MAX_PLUGIN_NAMES = 10;
-const STAFF_LIST_LIMIT = 100;
+const STAFF_LIST_PAGE_SIZE = 100;
 const ACTIVE_LIST_LIMIT = 50;
 
 const promotionModelArgValidator = v.object({
@@ -422,10 +423,7 @@ export const listActiveInternal = internalQuery({
 // Public one-shot query for the site (homepage banner, launch pages).
 export const listActive = query({
   args: { now: v.number() },
-  handler: async (ctx, args) => {
-    const now = Math.min(args.now, Date.now());
-    return (await collectActivePromotions(ctx, now)).promotions;
-  },
+  handler: async (ctx) => (await collectActivePromotions(ctx, Date.now())).promotions,
 });
 
 export const getBySlugPublicInternal = internalQuery({
@@ -442,21 +440,30 @@ export const getBySlugPublicInternal = internalQuery({
 });
 
 export const listAllInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const promotions = await ctx.db.query("promotions").order("desc").take(STAFF_LIST_LIMIT);
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query("promotions").order("desc").paginate(args.paginationOpts);
     const now = Date.now();
-    return promotions.map((promotion) => toPublicPromotion(promotion, now));
+    return {
+      ...result,
+      page: result.page.map((promotion) => toPublicPromotion(promotion, now)),
+    };
   },
 });
 
 export const listForStaff = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     // Admin-only like every other promotions surface: drafts carry unreleased
     // launch windows and sponsor details.
     assertAdmin(user);
-    return await ctx.db.query("promotions").order("desc").take(STAFF_LIST_LIMIT);
+    return await ctx.db
+      .query("promotions")
+      .order("desc")
+      .paginate({
+        ...args.paginationOpts,
+        numItems: Math.min(args.paginationOpts.numItems, STAFF_LIST_PAGE_SIZE),
+      });
   },
 });

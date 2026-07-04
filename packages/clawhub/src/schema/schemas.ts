@@ -976,6 +976,7 @@ export type ApiV1Promotion = (typeof ApiV1PromotionSchema)[inferred];
 
 export const ApiV1PromotionsListResponseSchema = type({
   promotions: ApiV1PromotionSchema.array(),
+  "nextCursor?": "string|null",
 });
 
 export const ApiV1PromotionWriteResponseSchema = type({

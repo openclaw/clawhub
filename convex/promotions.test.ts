@@ -311,14 +311,53 @@ describe("promotions.setStatus", () => {
 
 describe("promotions.listForStaff", () => {
   it("rejects moderators — drafts are admin-only", async () => {
-    const listForStaffHandler = (listForStaff as unknown as WrappedHandler<Record<string, never>>)
-      ._handler;
+    const listForStaffHandler = (
+      listForStaff as unknown as WrappedHandler<{
+        paginationOpts: { cursor: string | null; numItems: number };
+      }>
+    )._handler;
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
     } as never);
 
-    await expect(listForStaffHandler({ db: {} } as never, {})).rejects.toThrow("Forbidden");
+    await expect(
+      listForStaffHandler({ db: {} } as never, {
+        paginationOpts: { cursor: null, numItems: 25 },
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("paginates the permanent promotion history for admins", async () => {
+    const listForStaffHandler = (
+      listForStaff as unknown as WrappedHandler<{
+        paginationOpts: { cursor: string | null; numItems: number };
+      }>
+    )._handler;
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const paginate = vi.fn().mockResolvedValue({
+      page: [{ _id: "promotions:1", slug: "newest" }],
+      isDone: false,
+      continueCursor: "next-page",
+    });
+    const order = vi.fn(() => ({ paginate }));
+    const query = vi.fn(() => ({ order }));
+
+    const result = await listForStaffHandler({ db: { query } } as never, {
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(query).toHaveBeenCalledWith("promotions");
+    expect(order).toHaveBeenCalledWith("desc");
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 25 });
+    expect(result).toEqual({
+      page: [{ _id: "promotions:1", slug: "newest" }],
+      isDone: false,
+      continueCursor: "next-page",
+    });
   });
 });
 
@@ -419,6 +458,28 @@ describe("promotions.listActiveInternal", () => {
 
     const result = (await listActivePublicHandler(makeListCtx(rows), {
       now: serverNow + 15_000,
+    })) as Array<Record<string, unknown>>;
+
+    expect(result).toEqual([]);
+  });
+
+  it("does not expose expired promotions for caller-supplied past times", async () => {
+    const listActivePublicHandler = (listActive as unknown as WrappedHandler<{ now: number }>)
+      ._handler;
+    const serverNow = Date.now();
+    const rows = [
+      {
+        ...base,
+        _id: "promotions:expired",
+        slug: "expired",
+        status: "active",
+        startsAt: serverNow - 20_000,
+        endsAt: serverNow - 10_000,
+      },
+    ];
+
+    const result = (await listActivePublicHandler(makeListCtx(rows), {
+      now: serverNow - 15_000,
     })) as Array<Record<string, unknown>>;
 
     expect(result).toEqual([]);

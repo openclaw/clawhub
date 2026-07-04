@@ -52,14 +52,32 @@ export async function cmdListPromotions(
 ) {
   const registry = await getRegistry(opts, { cache: true });
   const token = options.all ? await requireAuthToken() : undefined;
-  const path = options.all ? `${ApiRoutes.promotions}?status=all` : ApiRoutes.promotions;
+  const promotions: ApiV1Promotion[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
 
-  const result = await apiRequest(
-    registry,
-    { method: "GET", path, ...(token ? { token } : {}) },
-    ApiV1PromotionsListResponseSchema,
-  );
-  const parsed = parseArk(ApiV1PromotionsListResponseSchema, result, "Promotions response");
+  do {
+    const requestPath: string = options.all
+      ? `${ApiRoutes.promotions}?status=all&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      : ApiRoutes.promotions;
+    const result: unknown = await apiRequest(
+      registry,
+      { method: "GET", path: requestPath, ...(token ? { token } : {}) },
+      ApiV1PromotionsListResponseSchema,
+    );
+    const page: {
+      promotions: ApiV1Promotion[];
+      nextCursor?: string | null;
+    } = parseArk(ApiV1PromotionsListResponseSchema, result, "Promotions response");
+    promotions.push(...page.promotions);
+    cursor = options.all ? (page.nextCursor ?? null) : null;
+    if (cursor && seenCursors.has(cursor)) {
+      fail("Promotions response repeated a pagination cursor");
+    }
+    if (cursor) seenCursors.add(cursor);
+  } while (cursor);
+
+  const parsed = { promotions };
   if (options.json) {
     process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
     return parsed;

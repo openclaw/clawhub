@@ -81,4 +81,21 @@ describe("PromotionsPage", () => {
       ),
     );
   });
+
+  it("loads additional permanent history pages", () => {
+    const onLoadMore = vi.fn();
+    render(
+      <PromotionsPage
+        promotions={[makePromotion()]}
+        pageStatus="CanLoadMore"
+        onCreate={vi.fn()}
+        onLoadMore={onLoadMore}
+        onUpdate={vi.fn()}
+        onSetStatus={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(onLoadMore).toHaveBeenCalledOnce();
+  });
 });
