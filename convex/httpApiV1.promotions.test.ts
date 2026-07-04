@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -60,6 +60,10 @@ beforeEach(() => {
   vi.mocked(requireApiTokenUser).mockReset();
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("listPromotionsV1Handler", () => {
   it("returns active promotions publicly with cache headers", async () => {
     const { ctx, runQuery } = makeCtx();
@@ -71,6 +75,22 @@ describe("listPromotionsV1Handler", () => {
     expect(response.headers.get("cache-control")).toContain("public");
     const body = (await response.json()) as { promotions: Array<{ slug: string }> };
     expect(body.promotions[0]?.slug).toBe(publicPromotion.slug);
+  });
+
+  it("does not cache active promotions beyond the nearest expiry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const { ctx, runQuery } = makeCtx();
+    runQuery.mockResolvedValue([
+      { ...publicPromotion, endsAt: 190_500 },
+      { ...publicPromotion, slug: "later-promotion", endsAt: 400_000 },
+    ]);
+
+    const response = await listPromotionsV1Handler(ctx, new Request(BASE_URL));
+
+    expect(response.headers.get("cache-control")).toBe(
+      "public, max-age=90, s-maxage=90, must-revalidate",
+    );
   });
 
   it("requires an admin token for status=all", async () => {

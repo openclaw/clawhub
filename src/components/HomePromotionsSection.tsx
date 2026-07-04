@@ -6,6 +6,16 @@ import { convexHttp } from "../convex/client";
 
 type PublicPromotion = FunctionReturnType<typeof api.promotions.listActive>[number];
 
+const PROMOTIONS_POLL_INTERVAL_MS = 60_000;
+
+function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) {
+  return promotions.reduce(
+    (delay, promotion) =>
+      promotion.endsAt >= now ? Math.min(delay, promotion.endsAt - now + 1) : delay,
+    PROMOTIONS_POLL_INTERVAL_MS,
+  );
+}
+
 function formatEndsAt(endsAt: number) {
   const days = Math.max(0, Math.ceil((endsAt - Date.now()) / (24 * 60 * 60 * 1000)));
   if (days === 0) return "Ends today";
@@ -53,19 +63,34 @@ export function HomePromotionsSection() {
 
   useEffect(() => {
     let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-    const loadPromotions = async () => {
+    function scheduleRefresh(active: PublicPromotion[]) {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      const delay = nextPromotionsRefreshDelay(active, Date.now());
+      refreshTimer = setTimeout(() => {
+        if (cancelled) return;
+        setPromotions((current) => current.filter((promotion) => promotion.endsAt >= Date.now()));
+        void loadPromotions();
+      }, delay);
+    }
+
+    async function loadPromotions() {
       try {
         const active = await convexHttp.query(api.promotions.listActive, {});
-        if (!cancelled && active.length > 0) setPromotions(active);
+        if (cancelled) return;
+        setPromotions(active);
+        scheduleRefresh(active);
       } catch {
         // Promotions are decorative on the homepage; render nothing on failure.
+        if (!cancelled) scheduleRefresh([]);
       }
-    };
+    }
 
     void loadPromotions();
     return () => {
       cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
     };
   }, []);
 

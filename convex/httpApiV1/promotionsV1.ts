@@ -12,11 +12,25 @@ import {
   text,
 } from "./shared";
 
-// Active promotions change rarely and get hit by every CLI at runtime; let
-// CDNs and clients cache briefly so launch spikes don't reach Convex.
-const PROMOTIONS_CACHE_HEADERS = {
-  "Cache-Control": "public, max-age=300, s-maxage=300, stale-while-revalidate=3600",
-} as const;
+const PROMOTIONS_CACHE_SECONDS = 300;
+
+function promotionsCacheHeaders(
+  promotions: ReadonlyArray<{ active: boolean; endsAt: number }>,
+  now: number,
+) {
+  const nearestExpiry = promotions.reduce(
+    (nearest, promotion) =>
+      promotion.active && promotion.endsAt >= now ? Math.min(nearest, promotion.endsAt) : nearest,
+    Number.POSITIVE_INFINITY,
+  );
+  const secondsUntilExpiry = Number.isFinite(nearestExpiry)
+    ? Math.max(0, Math.floor((nearestExpiry - now) / 1000))
+    : PROMOTIONS_CACHE_SECONDS;
+  const maxAge = Math.min(PROMOTIONS_CACHE_SECONDS, secondsUntilExpiry);
+  return {
+    "Cache-Control": `public, max-age=${maxAge}, s-maxage=${maxAge}, must-revalidate`,
+  };
+}
 
 type PromotionModelPayload = {
   modelRef: string;
@@ -140,10 +154,13 @@ export async function listPromotionsV1Handler(ctx: ActionCtx, request: Request) 
     return json({ promotions }, 200, rate.headers);
   }
 
-  const promotions = await ctx.runQuery(internal.promotions.listActiveInternal, {
-    now: Date.now(),
-  });
-  return json({ promotions }, 200, mergeHeaders(rate.headers, PROMOTIONS_CACHE_HEADERS));
+  const now = Date.now();
+  const promotions = await ctx.runQuery(internal.promotions.listActiveInternal, { now });
+  return json(
+    { promotions },
+    200,
+    mergeHeaders(rate.headers, promotionsCacheHeaders(promotions, now)),
+  );
 }
 
 export async function promotionsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
@@ -155,12 +172,10 @@ export async function promotionsGetRouterV1Handler(ctx: ActionCtx, request: Requ
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   if (!slug) return text("Not found", 404, rate.headers);
 
-  const promotion = await ctx.runQuery(internal.promotions.getBySlugPublicInternal, {
-    slug,
-    now: Date.now(),
-  });
+  const now = Date.now();
+  const promotion = await ctx.runQuery(internal.promotions.getBySlugPublicInternal, { slug, now });
   if (!promotion) return text("Promotion not found", 404, rate.headers);
-  return json(promotion, 200, mergeHeaders(rate.headers, PROMOTIONS_CACHE_HEADERS));
+  return json(promotion, 200, mergeHeaders(rate.headers, promotionsCacheHeaders([promotion], now)));
 }
 
 export async function createPromotionV1Handler(ctx: ActionCtx, request: Request) {
