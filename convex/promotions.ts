@@ -232,7 +232,7 @@ async function schedulePromotionsFeedRepublication(
   await ctx.scheduler.runAfter(0, internal.promotionsFeed.publishInternal, {});
   if (promotion.status !== "active") return;
   const now = Date.now();
-  for (const edge of [promotion.startsAt, promotion.endsAt]) {
+  for (const edge of [promotion.startsAt, promotion.endsAt + 1]) {
     if (edge > now) {
       await ctx.scheduler.runAt(edge, internal.promotionsFeed.publishInternal, {});
     }

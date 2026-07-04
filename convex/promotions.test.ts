@@ -283,7 +283,7 @@ describe("promotions.setStatus", () => {
     expect(scheduler.runAt).toHaveBeenCalledTimes(2);
     expect(scheduler.runAt.mock.calls.map((call) => call[0])).toEqual([
       futureStartsAt,
-      futureEndsAt,
+      futureEndsAt + 1,
     ]);
   });
 
