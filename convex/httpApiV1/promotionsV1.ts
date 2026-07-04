@@ -17,16 +17,21 @@ const PROMOTIONS_CACHE_SECONDS = 300;
 function promotionsCacheHeaders(
   promotions: ReadonlyArray<{ active: boolean; endsAt: number }>,
   now: number,
+  nextStartsAt?: number | null,
 ) {
   const nearestExpiry = promotions.reduce(
     (nearest, promotion) =>
       promotion.active && promotion.endsAt >= now ? Math.min(nearest, promotion.endsAt) : nearest,
     Number.POSITIVE_INFINITY,
   );
-  const secondsUntilExpiry = Number.isFinite(nearestExpiry)
-    ? Math.max(0, Math.floor((nearestExpiry - now) / 1000))
+  const nearestBoundary =
+    nextStartsAt !== undefined && nextStartsAt !== null && nextStartsAt >= now
+      ? Math.min(nearestExpiry, nextStartsAt)
+      : nearestExpiry;
+  const secondsUntilBoundary = Number.isFinite(nearestBoundary)
+    ? Math.max(0, Math.floor((nearestBoundary - now) / 1000))
     : PROMOTIONS_CACHE_SECONDS;
-  const maxAge = Math.min(PROMOTIONS_CACHE_SECONDS, secondsUntilExpiry);
+  const maxAge = Math.min(PROMOTIONS_CACHE_SECONDS, secondsUntilBoundary);
   return {
     "Cache-Control": `public, max-age=${maxAge}, s-maxage=${maxAge}, must-revalidate`,
   };
@@ -155,11 +160,13 @@ export async function listPromotionsV1Handler(ctx: ActionCtx, request: Request) 
   }
 
   const now = Date.now();
-  const promotions = await ctx.runQuery(internal.promotions.listActiveInternal, { now });
+  const { promotions, nextStartsAt } = await ctx.runQuery(internal.promotions.listActiveInternal, {
+    now,
+  });
   return json(
     { promotions },
     200,
-    mergeHeaders(rate.headers, promotionsCacheHeaders(promotions, now)),
+    mergeHeaders(rate.headers, promotionsCacheHeaders(promotions, now, nextStartsAt)),
   );
 }
 

@@ -67,7 +67,7 @@ afterEach(() => {
 describe("listPromotionsV1Handler", () => {
   it("returns active promotions publicly with cache headers", async () => {
     const { ctx, runQuery } = makeCtx();
-    runQuery.mockResolvedValue([publicPromotion]);
+    runQuery.mockResolvedValue({ promotions: [publicPromotion], nextStartsAt: null });
 
     const response = await listPromotionsV1Handler(ctx, new Request(BASE_URL));
 
@@ -81,15 +81,31 @@ describe("listPromotionsV1Handler", () => {
     vi.useFakeTimers();
     vi.setSystemTime(100_000);
     const { ctx, runQuery } = makeCtx();
-    runQuery.mockResolvedValue([
-      { ...publicPromotion, endsAt: 190_500 },
-      { ...publicPromotion, slug: "later-promotion", endsAt: 400_000 },
-    ]);
+    runQuery.mockResolvedValue({
+      promotions: [
+        { ...publicPromotion, endsAt: 190_500 },
+        { ...publicPromotion, slug: "later-promotion", endsAt: 400_000 },
+      ],
+      nextStartsAt: null,
+    });
 
     const response = await listPromotionsV1Handler(ctx, new Request(BASE_URL));
 
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=90, s-maxage=90, must-revalidate",
+    );
+  });
+
+  it("does not cache past the next scheduled promotion start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    const { ctx, runQuery } = makeCtx();
+    runQuery.mockResolvedValue({ promotions: [], nextStartsAt: 150_500 });
+
+    const response = await listPromotionsV1Handler(ctx, new Request(BASE_URL));
+
+    expect(response.headers.get("cache-control")).toBe(
+      "public, max-age=50, s-maxage=50, must-revalidate",
     );
   });
 

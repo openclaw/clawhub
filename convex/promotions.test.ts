@@ -284,6 +284,20 @@ describe("promotions.setStatus", () => {
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });
+
+  it("rejects ending a promotion before it has been activated", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, inserts, patches } = makeMutationCtx({ existing: storedPromotion });
+
+    await expect(setStatusHandler(ctx, { slug: validInput.slug, status: "ended" })).rejects.toThrow(
+      /activated/,
+    );
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
 });
 
 describe("promotions.listForStaff", () => {
@@ -344,14 +358,16 @@ describe("promotions.listActiveInternal", () => {
       },
     ];
 
-    const result = (await listActiveHandler(makeListCtx(rows), { now: 200 })) as Array<
-      Record<string, unknown>
-    >;
+    const result = (await listActiveHandler(makeListCtx(rows), { now: 200 })) as {
+      promotions: Array<Record<string, unknown>>;
+      nextStartsAt: number | null;
+    };
 
-    expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
-    expect(result[0]?.active).toBe(true);
-    expect(result[0]).not.toHaveProperty("createdByUserId");
-    expect(result[0]).not.toHaveProperty("_id");
+    expect(result.promotions.map((promotion) => promotion.slug)).toEqual(["live"]);
+    expect(result.promotions[0]?.active).toBe(true);
+    expect(result.promotions[0]).not.toHaveProperty("createdByUserId");
+    expect(result.promotions[0]).not.toHaveProperty("_id");
+    expect(result.nextStartsAt).toBe(250);
   });
 
   it("serves the public listActive query without authentication", async () => {
@@ -397,9 +413,42 @@ describe("promotions.listActiveInternal", () => {
 
     const result = (await listActiveHandler(makeListCtx([...futureRows, liveRow]), {
       now: 200,
-    })) as Array<Record<string, unknown>>;
+    })) as {
+      promotions: Array<Record<string, unknown>>;
+      nextStartsAt: number | null;
+    };
 
-    expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
+    expect(result.promotions.map((promotion) => promotion.slug)).toEqual(["live"]);
+    expect(result.nextStartsAt).toBe(500);
+  });
+
+  it("reports the next start after the active result limit is full", async () => {
+    const liveRows = Array.from({ length: 50 }, (_, index) => ({
+      ...base,
+      _id: `promotions:live-${index}`,
+      slug: `live-${index}`,
+      status: "active",
+      startsAt: 100,
+      endsAt: 1_000 + index,
+    }));
+    const scheduledRow = {
+      ...base,
+      _id: "promotions:scheduled",
+      slug: "scheduled",
+      status: "active",
+      startsAt: 500,
+      endsAt: 2_000,
+    };
+
+    const result = (await listActiveHandler(makeListCtx([...liveRows, scheduledRow]), {
+      now: 200,
+    })) as {
+      promotions: Array<Record<string, unknown>>;
+      nextStartsAt: number | null;
+    };
+
+    expect(result.promotions).toHaveLength(50);
+    expect(result.nextStartsAt).toBe(500);
   });
 });
 
@@ -447,5 +496,10 @@ describe("promotions.getBySlugPublicInternal", () => {
     };
     expect(result.status).toBe("ended");
     expect(result.active).toBe(false);
+  });
+
+  it("hides ended promotions before their launch window", async () => {
+    const ctx = makeQueryCtx({ ...base, status: "ended" });
+    expect(await getBySlugHandler(ctx, { slug: base.slug, now: 50 })).toBeNull();
   });
 });

@@ -302,6 +302,9 @@ async function setPromotionStatusForActor(
   if (status === "draft" && existing.status !== "draft") {
     throw new ConvexError("Published promotions cannot return to draft");
   }
+  if (existing.status === "draft" && status === "ended") {
+    throw new ConvexError("Draft promotions must be activated before they can end");
+  }
   if (existing.status === status) {
     return { ok: true as const, slug: existing.slug, status };
   }
@@ -387,16 +390,23 @@ export const setStatusInternal = internalMutation({
 // live ones out of the limit. Every scanned row is either live or scheduled,
 // so the scan is bounded by the curated active set.
 async function collectActivePromotions(ctx: QueryCtx, now: number) {
-  const results: Array<ReturnType<typeof toPublicPromotion>> = [];
+  const promotions: Array<ReturnType<typeof toPublicPromotion>> = [];
+  let nextStartsAt: number | null = null;
   const active = ctx.db
     .query("promotions")
     .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", now));
   for await (const promotion of active) {
+    if (promotion.startsAt > now) {
+      nextStartsAt =
+        nextStartsAt === null ? promotion.startsAt : Math.min(nextStartsAt, promotion.startsAt);
+      continue;
+    }
     if (!isPromotionActive(promotion, now)) continue;
-    results.push(toPublicPromotion(promotion, now));
-    if (results.length >= ACTIVE_LIST_LIMIT) break;
+    if (promotions.length < ACTIVE_LIST_LIMIT) {
+      promotions.push(toPublicPromotion(promotion, now));
+    }
   }
-  return results;
+  return { promotions, nextStartsAt };
 }
 
 export const listActiveInternal = internalQuery({
@@ -407,18 +417,18 @@ export const listActiveInternal = internalQuery({
 // Public one-shot query for the site (homepage banner, launch pages).
 export const listActive = query({
   args: {},
-  handler: async (ctx) => collectActivePromotions(ctx, Date.now()),
+  handler: async (ctx) => (await collectActivePromotions(ctx, Date.now())).promotions,
 });
 
 export const getBySlugPublicInternal = internalQuery({
   args: { slug: v.string(), now: v.number() },
   handler: async (ctx, args) => {
     const promotion = await getPromotionBySlug(ctx, normalizePromotionSlug(args.slug));
-    // Drafts and pre-launch activations stay hidden so unreleased launch
-    // details cannot be read by guessing the slug; ended promotions remain
-    // visible so launch pages and stale CLI links can render an "ended" state.
+    // Drafts and every pre-launch state stay hidden so unreleased launch
+    // details cannot be read by guessing the slug. Ended promotions remain
+    // visible after launch so stale links can render an "ended" state.
     if (!promotion || promotion.status === "draft") return null;
-    if (promotion.status === "active" && args.now < promotion.startsAt) return null;
+    if (args.now < promotion.startsAt) return null;
     return toPublicPromotion(promotion, args.now);
   },
 });
