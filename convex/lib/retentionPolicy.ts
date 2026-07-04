@@ -197,6 +197,7 @@ export const RETENTION_POLICIES = {
   officialPluginMigrations: permanent("Official plugin migration state."),
   catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
   stars: permanent("User star records."),
+  promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),

@@ -46,6 +46,10 @@ import {
   starsPostRouterV1Http,
   transfersGetRouterV1Http,
   banAppealContextV1Http,
+  createPromotionV1Http,
+  listPromotionsV1Http,
+  promotionsGetRouterV1Http,
+  promotionsPostRouterV1Http,
   catalogFeedV1Http,
   catalogSkillsFeedV1Http,
   usersGetRouterV1Http,
@@ -131,6 +135,30 @@ http.route({
   path: ApiRoutes.bundlePlugins,
   method: "GET",
   handler: listBundlePluginsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.promotions,
+  method: "GET",
+  handler: listPromotionsV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.promotions}/`,
+  method: "GET",
+  handler: promotionsGetRouterV1Http,
+});
+
+http.route({
+  path: ApiRoutes.promotions,
+  method: "POST",
+  handler: createPromotionV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.promotions}/`,
+  method: "POST",
+  handler: promotionsPostRouterV1Http,
 });
 
 http.route({
