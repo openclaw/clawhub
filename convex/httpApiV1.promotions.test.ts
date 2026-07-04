@@ -24,6 +24,7 @@ const {
   promotionsGetRouterV1Handler,
   promotionsPostRouterV1Handler,
 } = await import("./httpApiV1/promotionsV1");
+const { promotionsFeedV1Handler } = await import("./httpApiV1/catalogFeedV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
@@ -153,6 +154,53 @@ describe("listPromotionsV1Handler", () => {
       promotions: [{ ...publicPromotion, slug: "older-promotion" }],
       nextCursor: "next-page",
     });
+  });
+});
+
+describe("promotionsFeedV1Handler", () => {
+  const FEED_URL = "https://clawhub.test/api/v1/feeds/promotions";
+
+  it("returns 503 when the feed has never been published", async () => {
+    const { ctx, runQuery } = makeCtx();
+    runQuery.mockResolvedValue(null);
+
+    const response = await promotionsFeedV1Handler(ctx, new Request(FEED_URL));
+    expect(response.status).toBe(503);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      feedId: "clawhub-promotions",
+    });
+  });
+
+  it("serves the stored publication with ETag and cache headers", async () => {
+    const { ctx, runQuery } = makeCtx();
+    runQuery.mockResolvedValue({
+      payload: '{"id":"clawhub-promotions"}',
+      payloadSha256: "abc123",
+      publishedAt: 1_700_000_000_000,
+      sequence: 3,
+    });
+
+    const response = await promotionsFeedV1Handler(ctx, new Request(FEED_URL));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("etag")).toBe('"sha256:abc123"');
+    expect(response.headers.get("cache-control")).toContain("public");
+    expect(await response.text()).toBe('{"id":"clawhub-promotions"}');
+  });
+
+  it("returns 304 for a matching If-None-Match", async () => {
+    const { ctx, runQuery } = makeCtx();
+    runQuery.mockResolvedValue({
+      payload: "{}",
+      payloadSha256: "abc123",
+      publishedAt: 1_700_000_000_000,
+      sequence: 3,
+    });
+
+    const response = await promotionsFeedV1Handler(
+      ctx,
+      new Request(FEED_URL, { headers: { "if-none-match": '"sha256:abc123"' } }),
+    );
+    expect(response.status).toBe(304);
   });
 });
 

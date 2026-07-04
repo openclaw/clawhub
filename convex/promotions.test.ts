@@ -53,6 +53,13 @@ const validInput = {
   signupUrl: "https://signup.example.com",
 };
 
+function makeScheduler() {
+  return {
+    runAfter: vi.fn(async (..._args: unknown[]) => "job:1"),
+    runAt: vi.fn(async (..._args: unknown[]) => "job:2"),
+  };
+}
+
 function makeMutationCtx({
   existing = null,
   activePromotions = [],
@@ -82,7 +89,8 @@ function makeMutationCtx({
     replace: vi.fn(),
     delete: vi.fn(),
   };
-  return { ctx: { db } as never, db, inserts, patches };
+  const scheduler = makeScheduler();
+  return { ctx: { db, scheduler } as never, db, scheduler, inserts, patches };
 }
 
 afterEach(() => {
@@ -201,7 +209,8 @@ describe("promotions.update", () => {
       replace,
       delete: vi.fn(),
     };
-    return { ctx: { db } as never, replace, insert };
+    const scheduler = makeScheduler();
+    return { ctx: { db, scheduler } as never, replace, insert, scheduler };
   }
 
   it("rejects slug changes once the promotion is no longer a draft", async () => {
@@ -241,18 +250,22 @@ describe("promotions.update", () => {
 });
 
 describe("promotions.setStatus", () => {
+  const futureStartsAt = Date.now() + 60_000;
+  const futureEndsAt = Date.now() + 120_000;
   const storedPromotion = {
     _id: "promotions:1",
     slug: validInput.slug,
     status: "draft",
+    startsAt: futureStartsAt,
+    endsAt: futureEndsAt,
   };
 
-  it("updates status and writes an audit log", async () => {
+  it("updates status, writes an audit log, and schedules feed republication", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: adminUser._id,
       user: adminUser,
     } as never);
-    const { ctx, inserts, patches } = makeMutationCtx({ existing: storedPromotion });
+    const { ctx, inserts, patches, scheduler } = makeMutationCtx({ existing: storedPromotion });
 
     const result = (await setStatusHandler(ctx, {
       slug: validInput.slug,
@@ -265,6 +278,28 @@ describe("promotions.setStatus", () => {
     const auditInsert = inserts.find((entry) => entry.table === "auditLogs");
     expect(auditInsert?.doc.action).toBe("promotion.set_status");
     expect(auditInsert?.doc.metadata).toMatchObject({ from: "draft", to: "active" });
+    // Immediate republish plus one scheduled republish per future window edge.
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAt).toHaveBeenCalledTimes(2);
+    expect(scheduler.runAt.mock.calls.map((call) => call[0])).toEqual([
+      futureStartsAt,
+      futureEndsAt,
+    ]);
+  });
+
+  it("republishes the feed immediately when ending a promotion, without edge jobs", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, scheduler } = makeMutationCtx({
+      existing: { ...storedPromotion, status: "active" },
+    });
+
+    await setStatusHandler(ctx, { slug: validInput.slug, status: "ended" });
+
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAt).not.toHaveBeenCalled();
   });
 
   it("is a no-op when the status is unchanged", async () => {
@@ -272,7 +307,7 @@ describe("promotions.setStatus", () => {
       userId: adminUser._id,
       user: adminUser,
     } as never);
-    const { ctx, inserts, patches } = makeMutationCtx({ existing: storedPromotion });
+    const { ctx, inserts, patches, scheduler } = makeMutationCtx({ existing: storedPromotion });
 
     const result = (await setStatusHandler(ctx, {
       slug: validInput.slug,
@@ -282,6 +317,7 @@ describe("promotions.setStatus", () => {
     expect(result.status).toBe("draft");
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it.each(["active", "ended"])("rejects returning a %s promotion to draft", async (status) => {

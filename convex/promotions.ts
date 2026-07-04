@@ -1,5 +1,6 @@
 import { paginationOptsValidator } from "convex/server";
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
@@ -220,6 +221,24 @@ async function getPromotionBySlug(ctx: QueryCtx | MutationCtx, slug: string) {
     .unique();
 }
 
+// Feed snapshots are immutable, so visibility changes must republish the
+// promotions feed: immediately for the mutation itself, and at future window
+// edges so launches and expiries land on time without waiting for the
+// periodic backstop publish.
+async function schedulePromotionsFeedRepublication(
+  ctx: MutationCtx,
+  promotion: Pick<Doc<"promotions">, "status" | "startsAt" | "endsAt">,
+) {
+  await ctx.scheduler.runAfter(0, internal.promotionsFeed.publishInternal, {});
+  if (promotion.status !== "active") return;
+  const now = Date.now();
+  for (const edge of [promotion.startsAt, promotion.endsAt]) {
+    if (edge > now) {
+      await ctx.scheduler.runAt(edge, internal.promotionsFeed.publishInternal, {});
+    }
+  }
+}
+
 async function requireActorFromId(ctx: MutationCtx, actorUserId: Id<"users">) {
   const actor = await ctx.db.get(actorUserId);
   if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
@@ -293,6 +312,11 @@ async function updatePromotionForActor(
     metadata: { promotionId: existing._id, previousSlug: existing.slug },
     createdAt: now,
   });
+  await schedulePromotionsFeedRepublication(ctx, {
+    status: existing.status,
+    startsAt: normalized.startsAt,
+    endsAt: normalized.endsAt,
+  });
   return { ok: true as const, slug: normalized.slug, status: existing.status };
 }
 
@@ -342,6 +366,11 @@ async function setPromotionStatusForActor(
     targetId: existing.slug,
     metadata: { promotionId: existing._id, from: existing.status, to: status },
     createdAt: now,
+  });
+  await schedulePromotionsFeedRepublication(ctx, {
+    status,
+    startsAt: existing.startsAt,
+    endsAt: existing.endsAt,
   });
   return { ok: true as const, slug: existing.slug, status };
 }

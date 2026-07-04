@@ -26,6 +26,7 @@ export const ApiRoutes = {
   promotions: "/api/v1/promotions",
   catalogFeed: "/api/v1/feeds/plugins",
   catalogSkillsFeed: "/api/v1/feeds/skills",
+  promotionsFeed: "/api/v1/feeds/promotions",
   stars: "/api/v1/stars",
   transfers: "/api/v1/transfers",
   publishers: "/api/v1/publishers",

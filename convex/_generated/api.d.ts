@@ -139,6 +139,7 @@ import type * as packageLeaderboards from "../packageLeaderboards.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
 import type * as promotions from "../promotions.js";
+import type * as promotionsFeed from "../promotionsFeed.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
 import type * as publisherAbuseDevSeed from "../publisherAbuseDevSeed.js";
 import type * as publishers from "../publishers.js";
@@ -299,6 +300,7 @@ declare const fullApi: ApiFromModules<{
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
   promotions: typeof promotions;
+  promotionsFeed: typeof promotionsFeed;
   publisherAbuse: typeof publisherAbuse;
   publisherAbuseDevSeed: typeof publisherAbuseDevSeed;
   publishers: typeof publishers;
