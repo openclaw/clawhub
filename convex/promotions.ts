@@ -398,9 +398,11 @@ export const getBySlugPublicInternal = internalQuery({
   args: { slug: v.string(), now: v.number() },
   handler: async (ctx, args) => {
     const promotion = await getPromotionBySlug(ctx, normalizePromotionSlug(args.slug));
-    // Drafts stay hidden until launch; ended promotions remain visible so
-    // launch pages and stale CLI links can render a clear "ended" state.
+    // Drafts and pre-launch activations stay hidden so unreleased launch
+    // details cannot be read by guessing the slug; ended promotions remain
+    // visible so launch pages and stale CLI links can render an "ended" state.
     if (!promotion || promotion.status === "draft") return null;
+    if (promotion.status === "active" && args.now < promotion.startsAt) return null;
     return toPublicPromotion(promotion, args.now);
   },
 });

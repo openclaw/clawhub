@@ -334,6 +334,11 @@ describe("promotions.getBySlugPublicInternal", () => {
     expect(await getBySlugHandler(ctx, { slug: base.slug, now: 150 })).toBeNull();
   });
 
+  it("hides active promotions before their launch window", async () => {
+    const ctx = makeQueryCtx({ ...base, status: "active" });
+    expect(await getBySlugHandler(ctx, { slug: base.slug, now: 50 })).toBeNull();
+  });
+
   it("returns ended promotions with active=false", async () => {
     const ctx = makeQueryCtx({ ...base, status: "ended" });
     const result = (await getBySlugHandler(ctx, { slug: base.slug, now: 150 })) as {
