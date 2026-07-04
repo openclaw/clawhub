@@ -15023,6 +15023,38 @@ code {
   margin-top: 12px;
 }
 
+/* Management promotions form */
+.promotion-form-grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 900px) {
+  .promotion-form-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.promotion-form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  align-self: start;
+}
+
+.promotion-form-field-wide {
+  grid-column: 1 / -1;
+}
+
+.promotion-form-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
 .management-control {
   display: flex;
   flex-wrap: wrap;

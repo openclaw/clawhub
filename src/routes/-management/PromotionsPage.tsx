@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Label } from "../../components/ui/label";
+import { Textarea } from "../../components/ui/textarea";
 import {
   formatTimestamp,
   type PromotionEntry,
@@ -249,105 +252,139 @@ export function PromotionsPage({
         )}
       </div>
 
-      <h3 className="section-title text-[1.05rem] m-0 mt-4">
+      <h3 className="section-title text-[1.05rem] m-0 mt-6">
         {editingSlug ? `Edit "${editingSlug}"` : "Create promotion"}
       </h3>
-      <div className="management-controls" style={{ flexWrap: "wrap", gap: "0.5rem" }}>
+      <div className="promotion-form-grid">
+        <PromotionField id="promotion-slug" label="Slug *">
+          <Input
+            id="promotion-slug"
+            value={form.slug}
+            placeholder="spring-models-launch"
+            onChange={(event) => setField("slug")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-title" label="Title *">
+          <Input
+            id="promotion-title"
+            value={form.title}
+            placeholder="Free models from Acme"
+            onChange={(event) => setField("title")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-sponsor" label="Sponsor">
+          <Input
+            id="promotion-sponsor"
+            value={form.sponsor}
+            placeholder="Acme"
+            onChange={(event) => setField("sponsor")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-blurb" label="Blurb *" className="promotion-form-field-wide">
+          <Textarea
+            id="promotion-blurb"
+            rows={2}
+            className="min-h-[64px]"
+            value={form.blurb}
+            placeholder="A limited-time free model offer."
+            onChange={(event) => setField("blurb")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-starts" label="Starts *">
+          <Input
+            id="promotion-starts"
+            type="datetime-local"
+            value={form.startsAt}
+            onChange={(event) => setField("startsAt")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-ends" label="Ends *">
+          <Input
+            id="promotion-ends"
+            type="datetime-local"
+            value={form.endsAt}
+            onChange={(event) => setField("endsAt")(event.target.value)}
+          />
+        </PromotionField>
         <PromotionField
-          label="Slug"
-          value={form.slug}
-          onChange={setField("slug")}
-          placeholder="spring-models-launch"
-        />
+          id="promotion-models"
+          label="Models *"
+          hint="One per line: modelRef | alias | default"
+          className="promotion-form-field-wide"
+        >
+          <Textarea
+            id="promotion-models"
+            rows={3}
+            className="mono min-h-[84px]"
+            value={form.models}
+            placeholder="provider/org/model-name | Model Alias | default"
+            onChange={(event) => setField("models")(event.target.value)}
+          />
+        </PromotionField>
         <PromotionField
-          label="Title"
-          value={form.title}
-          onChange={setField("title")}
-          placeholder="Free models from Acme"
-        />
-        <PromotionField
-          label="Sponsor"
-          value={form.sponsor}
-          onChange={setField("sponsor")}
-          placeholder="Acme"
-        />
-        <PromotionField
+          id="promotion-provider"
           label="Provider"
-          value={form.provider}
-          onChange={setField("provider")}
-          placeholder="provider-id"
-        />
+          hint="Provider id the CLI resolves locally"
+        >
+          <Input
+            id="promotion-provider"
+            value={form.provider}
+            placeholder="provider-id"
+            onChange={(event) => setField("provider")(event.target.value)}
+          />
+        </PromotionField>
         <PromotionField
+          id="promotion-auth-choice"
           label="Auth choice"
-          value={form.authChoiceId}
-          onChange={setField("authChoiceId")}
-          placeholder="provider-api-key"
-        />
-        <PromotionField
-          label="Starts"
-          type="datetime-local"
-          value={form.startsAt}
-          onChange={setField("startsAt")}
-        />
-        <PromotionField
-          label="Ends"
-          type="datetime-local"
-          value={form.endsAt}
-          onChange={setField("endsAt")}
-        />
-        <PromotionField
-          label="Signup URL"
-          value={form.signupUrl}
-          onChange={setField("signupUrl")}
-          placeholder="https://…"
-        />
-        <PromotionField
-          label="Docs URL"
-          value={form.docsUrl}
-          onChange={setField("docsUrl")}
-          placeholder="https://…"
-        />
-        <PromotionField
-          label="Launch page URL"
-          value={form.launchPageUrl}
-          onChange={setField("launchPageUrl")}
-          placeholder="https://…"
-        />
-        <PromotionField
-          label="Plugins (comma-sep)"
-          value={form.pluginNames}
-          onChange={setField("pluginNames")}
-          placeholder="provider-id"
-        />
+          hint="Onboarding auth choice id"
+        >
+          <Input
+            id="promotion-auth-choice"
+            value={form.authChoiceId}
+            placeholder="provider-api-key"
+            onChange={(event) => setField("authChoiceId")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-plugins" label="Plugins" hint="Comma-separated package names">
+          <Input
+            id="promotion-plugins"
+            value={form.pluginNames}
+            placeholder="plugin-name, another-plugin"
+            onChange={(event) => setField("pluginNames")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-signup-url" label="Signup URL">
+          <Input
+            id="promotion-signup-url"
+            value={form.signupUrl}
+            placeholder="https://…"
+            onChange={(event) => setField("signupUrl")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-docs-url" label="Docs URL">
+          <Input
+            id="promotion-docs-url"
+            value={form.docsUrl}
+            placeholder="https://…"
+            onChange={(event) => setField("docsUrl")(event.target.value)}
+          />
+        </PromotionField>
+        <PromotionField id="promotion-launch-url" label="Launch page URL">
+          <Input
+            id="promotion-launch-url"
+            value={form.launchPageUrl}
+            placeholder="https://…"
+            onChange={(event) => setField("launchPageUrl")(event.target.value)}
+          />
+        </PromotionField>
       </div>
-      <label className="section-subtitle m-0 mt-2" htmlFor="promotion-blurb">
-        Blurb
-      </label>
-      <textarea
-        id="promotion-blurb"
-        rows={2}
-        value={form.blurb}
-        onChange={(event) => setField("blurb")(event.target.value)}
-        placeholder="A limited-time free model offer."
-      />
-      <label className="section-subtitle m-0 mt-2" htmlFor="promotion-models">
-        Models — one per line: modelRef | alias | default
-      </label>
-      <textarea
-        id="promotion-models"
-        rows={3}
-        className="mono"
-        value={form.models}
-        onChange={(event) => setField("models")(event.target.value)}
-        placeholder="provider/org/model-name | Model Alias | default"
-      />
-      {formError ? <p className="section-subtitle m-0 mt-2 text-red-500">{formError}</p> : null}
-      <div className="management-controls mt-2">
+      {formError ? <p className="section-subtitle m-0 mt-3 text-red-500">{formError}</p> : null}
+      <div className="mt-4 flex items-center gap-2">
         <Button type="button" onClick={submit} disabled={submitting}>
           {editingSlug ? "Save changes" : "Create draft"}
         </Button>
         {editingSlug ? (
-          <Button type="button" onClick={resetForm} disabled={submitting}>
+          <Button type="button" variant="outline" onClick={resetForm} disabled={submitting}>
             Cancel edit
           </Button>
         ) : null}
@@ -357,27 +394,23 @@ export function PromotionsPage({
 }
 
 function PromotionField({
+  id,
   label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
+  hint,
+  className,
+  children,
 }: {
+  id: string;
   label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder?: string;
-  type?: string;
+  hint?: string;
+  className?: string;
+  children: ReactNode;
 }) {
   return (
-    <div className="management-control">
-      <span className="mono">{label}</span>
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-      />
+    <div className={className ? `promotion-form-field ${className}` : "promotion-form-field"}>
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+      {hint ? <p className="promotion-form-hint">{hint}</p> : null}
     </div>
   );
 }
