@@ -237,15 +237,6 @@ export function PromotionsPage({
                     End
                   </Button>
                 ) : null}
-                {promotion.status === "ended" ? (
-                  <Button
-                    className="management-action-btn"
-                    type="button"
-                    onClick={() => onSetStatus(promotion.slug, "draft")}
-                  >
-                    Back to draft
-                  </Button>
-                ) : null}
               </div>
             </div>
           ))

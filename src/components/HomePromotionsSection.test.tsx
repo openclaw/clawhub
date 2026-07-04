@@ -66,6 +66,7 @@ describe("HomePromotionsSection", () => {
     render(<HomePromotionsSection />);
     await flushPromises();
     expect(screen.getByText(promotion.title)).toBeTruthy();
+    expect(screen.getByText("Ends today")).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(501);

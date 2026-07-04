@@ -17,7 +17,11 @@ function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) 
 }
 
 function formatEndsAt(endsAt: number) {
-  const days = Math.max(0, Math.ceil((endsAt - Date.now()) / (24 * 60 * 60 * 1000)));
+  const now = new Date();
+  const end = new Date(endsAt);
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  const days = Math.max(0, Math.round((endDay - today) / (24 * 60 * 60 * 1000)));
   if (days === 0) return "Ends today";
   if (days === 1) return "Ends tomorrow";
   return `${days} days left`;

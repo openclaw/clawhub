@@ -299,6 +299,9 @@ async function setPromotionStatusForActor(
   assertAdmin(actor);
   const existing = await getPromotionBySlug(ctx, normalizePromotionSlug(slug));
   if (!existing) throw new ConvexError("Promotion not found");
+  if (status === "draft" && existing.status !== "draft") {
+    throw new ConvexError("Published promotions cannot return to draft");
+  }
   if (existing.status === status) {
     return { ok: true as const, slug: existing.slug, status };
   }

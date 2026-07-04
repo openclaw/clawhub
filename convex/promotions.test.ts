@@ -268,6 +268,22 @@ describe("promotions.setStatus", () => {
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });
+
+  it.each(["active", "ended"])("rejects returning a %s promotion to draft", async (status) => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, inserts, patches } = makeMutationCtx({
+      existing: { ...storedPromotion, status },
+    });
+
+    await expect(setStatusHandler(ctx, { slug: validInput.slug, status: "draft" })).rejects.toThrow(
+      /draft/,
+    );
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
 });
 
 describe("promotions.listForStaff", () => {
