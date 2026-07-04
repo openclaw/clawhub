@@ -52,6 +52,32 @@ function toDatetimeLocal(value: number) {
   )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${milliseconds}`;
 }
 
+function escapeModelField(value: string) {
+  return value.replaceAll("\\", "\\\\").replaceAll("|", "\\|");
+}
+
+function parseModelLine(line: string) {
+  const fields = [""];
+  let escaped = false;
+
+  for (const character of line) {
+    const fieldIndex = fields.length - 1;
+    if (escaped) {
+      fields[fieldIndex] += character === "\\" || character === "|" ? character : `\\${character}`;
+      escaped = false;
+    } else if (character === "\\") {
+      escaped = true;
+    } else if (character === "|") {
+      fields.push("");
+    } else {
+      fields[fieldIndex] += character;
+    }
+  }
+  if (escaped) fields[fields.length - 1] += "\\";
+
+  return fields.map((field) => field.trim());
+}
+
 function promotionToForm(promotion: PromotionEntry): PromotionFormState {
   return {
     slug: promotion.slug,
@@ -65,10 +91,12 @@ function promotionToForm(promotion: PromotionEntry): PromotionFormState {
     pluginNames: (promotion.pluginNames ?? []).join(", "),
     models: promotion.models
       .map((model) => {
+        const modelRef = escapeModelField(model.modelRef);
+        const alias = model.alias ? escapeModelField(model.alias) : "";
         if (model.suggestedDefault) {
-          return `${model.modelRef} | ${model.alias ?? ""} | default`;
+          return `${modelRef} | ${alias} | default`;
         }
-        return model.alias ? `${model.modelRef} | ${model.alias}` : model.modelRef;
+        return alias ? `${modelRef} | ${alias}` : modelRef;
       })
       .join("\n"),
     signupUrl: promotion.signupUrl ?? "",
@@ -88,8 +116,15 @@ function parseForm(form: PromotionFormState): { input: PromotionInput } | { erro
   for (const line of form.models.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    const [modelRef = "", alias = "", flag = ""] = trimmed.split("|").map((part) => part.trim());
+    const fields = parseModelLine(trimmed);
+    if (fields.length > 3) {
+      return { error: "Model lines may contain at most three fields." };
+    }
+    const [modelRef = "", alias = "", flag = ""] = fields;
     if (!modelRef) continue;
+    if (flag && flag.toLowerCase() !== "default") {
+      return { error: 'The third model field must be "default" when provided.' };
+    }
     models.push({
       modelRef,
       ...(alias ? { alias } : {}),

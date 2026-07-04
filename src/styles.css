@@ -25513,7 +25513,7 @@ a.search-empty-action {
 .home-v2-promotions-track {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
 .home-v2-promotion-card {

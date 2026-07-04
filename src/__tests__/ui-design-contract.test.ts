@@ -289,6 +289,12 @@ describe("restored UI design contract", () => {
     );
   });
 
+  it("keeps promotion cards within narrow mobile viewports", () => {
+    expect(cssRule(styles(), ".home-v2-promotions-track")).toContain(
+      "grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
+    );
+  });
+
   it("keeps typeahead creator avatars round for users and square for orgs", () => {
     const css = styles();
 
