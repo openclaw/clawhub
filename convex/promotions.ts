@@ -377,16 +377,20 @@ export const setStatusInternal = internalMutation({
 export const listActiveInternal = internalQuery({
   args: { now: v.number() },
   handler: async (ctx, args) => {
-    // The index bound excludes expired-but-never-ended rows so they cannot
-    // crowd live promotions out of the take() window; rows arrive sorted by
-    // endsAt. The JS filter only removes not-yet-started promotions.
-    const active = await ctx.db
+    // The index bound excludes expired-but-never-ended rows; iterating (rather
+    // than take-then-filter) keeps pre-activated future promotions from
+    // crowding live ones out of the limit. Every scanned row is either live or
+    // scheduled, so the scan is bounded by the curated active set.
+    const results: Array<ReturnType<typeof toPublicPromotion>> = [];
+    const active = ctx.db
       .query("promotions")
-      .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", args.now))
-      .take(ACTIVE_LIST_LIMIT);
-    return active
-      .filter((promotion) => isPromotionActive(promotion, args.now))
-      .map((promotion) => toPublicPromotion(promotion, args.now));
+      .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", args.now));
+    for await (const promotion of active) {
+      if (!isPromotionActive(promotion, args.now)) continue;
+      results.push(toPublicPromotion(promotion, args.now));
+      if (results.length >= ACTIVE_LIST_LIMIT) break;
+    }
+    return results;
   },
 });
 

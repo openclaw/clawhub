@@ -223,15 +223,30 @@ describe("promotions.listForStaff", () => {
 });
 
 describe("promotions.listActiveInternal", () => {
+  const base = {
+    title: "Promo",
+    blurb: "Blurb",
+    models: [{ modelRef: "openrouter/tencent/hunyuan-a13b" }],
+    createdByUserId: "users:admin",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  function makeListCtx(rows: Array<Record<string, unknown>>) {
+    return {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            async *[Symbol.asyncIterator]() {
+              yield* rows;
+            },
+          })),
+        })),
+      },
+    } as never;
+  }
+
   it("returns only in-window active promotions as public payloads", async () => {
-    const base = {
-      title: "Promo",
-      blurb: "Blurb",
-      models: [{ modelRef: "openrouter/tencent/hunyuan-a13b" }],
-      createdByUserId: "users:admin",
-      createdAt: 1,
-      updatedAt: 1,
-    };
     const rows = [
       { ...base, _id: "promotions:1", slug: "live", status: "active", startsAt: 100, endsAt: 300 },
       {
@@ -251,22 +266,40 @@ describe("promotions.listActiveInternal", () => {
         endsAt: 100,
       },
     ];
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            take: vi.fn(async () => rows),
-          })),
-        })),
-      },
-    } as never;
 
-    const result = (await listActiveHandler(ctx, { now: 200 })) as Array<Record<string, unknown>>;
+    const result = (await listActiveHandler(makeListCtx(rows), { now: 200 })) as Array<
+      Record<string, unknown>
+    >;
 
     expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
     expect(result[0]?.active).toBe(true);
     expect(result[0]).not.toHaveProperty("createdByUserId");
     expect(result[0]).not.toHaveProperty("_id");
+  });
+
+  it("does not let many scheduled future promotions crowd out a live one", async () => {
+    const futureRows = Array.from({ length: 60 }, (_, index) => ({
+      ...base,
+      _id: `promotions:future-${index}`,
+      slug: `future-${index}`,
+      status: "active",
+      startsAt: 500 + index,
+      endsAt: 1_000 + index,
+    }));
+    const liveRow = {
+      ...base,
+      _id: "promotions:live",
+      slug: "live",
+      status: "active",
+      startsAt: 100,
+      endsAt: 2_000,
+    };
+
+    const result = (await listActiveHandler(makeListCtx([...futureRows, liveRow]), {
+      now: 200,
+    })) as Array<Record<string, unknown>>;
+
+    expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
   });
 });
 
