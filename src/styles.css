@@ -25536,19 +25536,9 @@ a.search-empty-action {
 .home-v2-promotion-foot {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  flex-wrap: wrap;
   margin-top: 4px;
-}
-
-.home-v2-promotion-cli {
-  padding: 4px 8px;
-  border: 1px solid var(--hv2-border);
-  border-radius: var(--hv2-radius-sm);
-  background: var(--hv2-bg);
-  color: var(--hv2-text-secondary);
-  font-size: 12px;
 }
 
 .home-v2-promotion-link {

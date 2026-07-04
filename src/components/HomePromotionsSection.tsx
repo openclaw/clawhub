@@ -30,9 +30,10 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
       </div>
       <h3 className="home-v2-promotion-title">{promotion.title}</h3>
       <p className="home-v2-promotion-blurb">{promotion.blurb}</p>
-      <div className="home-v2-promotion-foot">
-        <code className="home-v2-promotion-cli">openclaw promos claim {promotion.slug}</code>
-        {ctaUrl ? (
+      {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
+          separately; advertise it here once that CLI flow exists. */}
+      {ctaUrl ? (
+        <div className="home-v2-promotion-foot">
           <a
             className="home-v2-promotion-link"
             href={ctaUrl}
@@ -41,8 +42,8 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
           >
             Learn more <ArrowRight size={13} aria-hidden="true" />
           </a>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </article>
   );
 }
