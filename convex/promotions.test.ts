@@ -18,7 +18,6 @@ const {
   create,
   update,
   setStatus,
-  listActive,
   listActiveInternal,
   listForStaff,
   getBySlugPublicInternal,
@@ -432,73 +431,6 @@ describe("promotions.listActiveInternal", () => {
     expect(result.promotions[0]).not.toHaveProperty("createdByUserId");
     expect(result.promotions[0]).not.toHaveProperty("_id");
     expect(result.nextStartsAt).toBe(250);
-  });
-
-  it("serves the public listActive query without authentication", async () => {
-    const listActivePublicHandler = (listActive as unknown as WrappedHandler<{ now: number }>)
-      ._handler;
-    const now = Date.now();
-    const rows = [
-      {
-        ...base,
-        _id: "promotions:1",
-        slug: "live",
-        status: "active",
-        startsAt: now - 1_000,
-        endsAt: now + 1_000,
-      },
-    ];
-
-    const result = (await listActivePublicHandler(makeListCtx(rows), { now })) as Array<
-      Record<string, unknown>
-    >;
-
-    expect(vi.mocked(requireUser)).not.toHaveBeenCalled();
-    expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
-  });
-
-  it("does not expose scheduled promotions for caller-supplied future times", async () => {
-    const listActivePublicHandler = (listActive as unknown as WrappedHandler<{ now: number }>)
-      ._handler;
-    const serverNow = Date.now();
-    const rows = [
-      {
-        ...base,
-        _id: "promotions:future",
-        slug: "future",
-        status: "active",
-        startsAt: serverNow + 10_000,
-        endsAt: serverNow + 20_000,
-      },
-    ];
-
-    const result = (await listActivePublicHandler(makeListCtx(rows), {
-      now: serverNow + 15_000,
-    })) as Array<Record<string, unknown>>;
-
-    expect(result).toEqual([]);
-  });
-
-  it("does not expose expired promotions for caller-supplied past times", async () => {
-    const listActivePublicHandler = (listActive as unknown as WrappedHandler<{ now: number }>)
-      ._handler;
-    const serverNow = Date.now();
-    const rows = [
-      {
-        ...base,
-        _id: "promotions:expired",
-        slug: "expired",
-        status: "active",
-        startsAt: serverNow - 20_000,
-        endsAt: serverNow - 10_000,
-      },
-    ];
-
-    const result = (await listActivePublicHandler(makeListCtx(rows), {
-      now: serverNow - 15_000,
-    })) as Array<Record<string, unknown>>;
-
-    expect(result).toEqual([]);
   });
 
   it("does not let many scheduled future promotions crowd out a live one", async () => {

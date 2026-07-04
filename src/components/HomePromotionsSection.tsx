@@ -1,10 +1,18 @@
-import type { FunctionReturnType } from "convex/server";
+import { ApiRoutes } from "clawhub-schema/routes";
 import { ArrowRight, Gift } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api } from "../../convex/_generated/api";
-import { convexHttp } from "../convex/client";
+import { publicApiUrl } from "../lib/publicApiUrl";
 
-type PublicPromotion = FunctionReturnType<typeof api.promotions.listActive>[number];
+type PublicPromotion = {
+  slug: string;
+  title: string;
+  blurb: string;
+  sponsor?: string;
+  endsAt: number;
+  signupUrl?: string;
+  docsUrl?: string;
+  launchPageUrl?: string;
+};
 
 const PROMOTIONS_POLL_INTERVAL_MS = 60_000;
 
@@ -81,7 +89,13 @@ export function HomePromotionsSection() {
 
     async function loadPromotions() {
       try {
-        const active = await convexHttp.query(api.promotions.listActive, { now: Date.now() });
+        const response = await fetch(publicApiUrl(ApiRoutes.promotions).toString(), {
+          headers: { Accept: "application/json" },
+        });
+        if (!response.ok) throw new Error(`Promotions request failed: ${response.status}`);
+        const payload = (await response.json()) as { promotions?: PublicPromotion[] };
+        if (!Array.isArray(payload.promotions)) throw new Error("Invalid promotions response");
+        const active = payload.promotions;
         if (cancelled) return;
         setPromotions(active);
         scheduleRefresh(active);
