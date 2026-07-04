@@ -43,11 +43,25 @@ export type ManagementView =
   | "publishers"
   | "skills"
   | "plugins"
+  | "promotions"
   | "duplicates"
   | "recent"
   | "audit"
   | "system"
   | "settings";
+
+export type PromotionEntry = FunctionReturnType<typeof api.promotions.listForStaff>[number];
+export type PromotionStatus = PromotionEntry["status"];
+export type PromotionInput = Omit<
+  PromotionEntry,
+  | "_id"
+  | "_creationTime"
+  | "status"
+  | "createdByUserId"
+  | "updatedByUserId"
+  | "createdAt"
+  | "updatedAt"
+>;
 
 export type ManagementOwnerOption = {
   userId: Id<"users">;

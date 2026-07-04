@@ -2546,6 +2546,44 @@ const stars = defineTable({
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
 
+const promotionStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("active"),
+  v.literal("ended"),
+);
+
+// Declarative activation payload consumed by the OpenClaw CLI. The CLI
+// validates authChoiceId/pluginNames against its local provider catalog and
+// never executes anything from these records.
+const promotionModelValidator = v.object({
+  modelRef: v.string(),
+  alias: v.optional(v.string()),
+  suggestedDefault: v.optional(v.boolean()),
+});
+
+const promotions = defineTable({
+  slug: v.string(),
+  title: v.string(),
+  blurb: v.string(),
+  sponsor: v.optional(v.string()),
+  status: promotionStatusValidator,
+  startsAt: v.number(),
+  endsAt: v.number(),
+  provider: v.optional(v.string()),
+  authChoiceId: v.optional(v.string()),
+  pluginNames: v.optional(v.array(v.string())),
+  models: v.array(promotionModelValidator),
+  signupUrl: v.optional(v.string()),
+  docsUrl: v.optional(v.string()),
+  launchPageUrl: v.optional(v.string()),
+  createdByUserId: v.id("users"),
+  updatedByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_slug", ["slug"])
+  .index("by_status", ["status"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -3116,6 +3154,7 @@ export default defineSchema({
   officialPluginMigrations,
   catalogFeedPublications,
   stars,
+  promotions,
   auditLogs,
   systemSettings,
   publisherAbuseScoreRuns,

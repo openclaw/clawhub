@@ -16,6 +16,12 @@ import {
   pluginsGetRouterV1Handler,
   publishPackageV1Handler,
 } from "./httpApiV1/packagesV1";
+import {
+  createPromotionV1Handler,
+  listPromotionsV1Handler,
+  promotionsGetRouterV1Handler,
+  promotionsPostRouterV1Handler,
+} from "./httpApiV1/promotionsV1";
 import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import {
   exportSkillsV1Handler,
@@ -78,6 +84,11 @@ export const starsPostRouterV1Http = httpAction(starsPostRouterV1Handler);
 export const starsDeleteRouterV1Http = httpAction(starsDeleteRouterV1Handler);
 export const transfersGetRouterV1Http = httpAction(transfersGetRouterV1Handler);
 
+export const listPromotionsV1Http = httpAction(listPromotionsV1Handler);
+export const promotionsGetRouterV1Http = httpAction(promotionsGetRouterV1Handler);
+export const createPromotionV1Http = httpAction(createPromotionV1Handler);
+export const promotionsPostRouterV1Http = httpAction(promotionsPostRouterV1Handler);
+
 export const whoamiV1Http = httpAction(whoamiV1Handler);
 export const usersGetRouterV1Http = httpAction(usersGetRouterV1Handler);
 export const usersPostRouterV1Http = httpAction(usersPostRouterV1Handler);
@@ -123,4 +134,8 @@ export const __handlers = {
   usersPostRouterV1Handler,
   usersListV1Handler,
   banAppealContextV1Handler,
+  listPromotionsV1Handler,
+  promotionsGetRouterV1Handler,
+  createPromotionV1Handler,
+  promotionsPostRouterV1Handler,
 };
