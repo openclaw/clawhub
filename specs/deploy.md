@@ -191,9 +191,10 @@ project before configuring OpenClaw's default feed URLs.
 
 The promotions feed is published separately through promotion mutations rather
 than this workflow. Active promotion changes refresh the stored snapshot
-immediately and schedule refreshes at launch and expiry boundaries. It is served
-through `/v1/feeds/promotions`, with `/feeds/promotions` redirecting to the
-versioned route.
+immediately, schedule refreshes at launch and expiry boundaries, and use a
+six-hour cron as an expiry backstop. It is served through
+`/v1/feeds/promotions`, with `/feeds/promotions` redirecting to the versioned
+route.
 
 ## 5) Post-deploy checks
 

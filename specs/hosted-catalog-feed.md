@@ -91,8 +91,9 @@ advertised to OpenClaw clients until the signing key and trust root are deployed
 set and stores it in the same publication table. Promotion updates and status
 changes schedule an immediate refresh. Active promotions also schedule refreshes
 at `startsAt` and at `endsAt + 1ms`: both window endpoints are inclusive, so the
-expiry refresh must run after the final active millisecond. The feed's 24-hour
-`expiresAt` is a client staleness horizon, not the publication cadence.
+expiry refresh must run after the final active millisecond. A six-hour cron is
+the backstop for long-running or empty feeds, keeping every snapshot inside its
+24-hour `expiresAt` horizon.
 
 ## Edge delivery
 

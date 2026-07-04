@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
+  const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
   return {
     interval,
     githubSkillSyncRef,
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => {
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
+    promotionsFeedPublishRef,
   };
 });
 
@@ -62,6 +64,9 @@ vi.mock("./_generated/api", () => ({
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
       runTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
+    },
+    promotionsFeed: {
+      publishInternal: mocks.promotionsFeedPublishRef,
     },
     vt: {
       pollPendingScans: Symbol("vt-pending-scans"),
@@ -113,6 +118,17 @@ describe("crons", () => {
       "github-skill-source-sync",
       { minutes: 15 },
       mocks.githubSkillSyncRef,
+      {},
+    );
+  });
+
+  it("refreshes the promotions feed before its publication expires", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "promotions-feed-refresh",
+      { hours: 6 },
+      mocks.promotionsFeedPublishRef,
       {},
     );
   });
