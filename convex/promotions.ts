@@ -311,6 +311,9 @@ async function setPromotionStatusForActor(
   if (existing.status === "draft" && status === "ended") {
     throw new ConvexError("Draft promotions must be activated before they can end");
   }
+  if (existing.status === "ended" && status === "active") {
+    throw new ConvexError("Ended promotions cannot be reactivated");
+  }
   if (existing.status === status) {
     return { ok: true as const, slug: existing.slug, status };
   }

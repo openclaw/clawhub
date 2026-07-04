@@ -98,4 +98,17 @@ describe("PromotionsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
+
+  it("does not offer to reactivate ended promotions", () => {
+    render(
+      <PromotionsPage
+        promotions={[makePromotion({ status: "ended" })]}
+        onCreate={vi.fn()}
+        onUpdate={vi.fn()}
+        onSetStatus={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Activate" })).toBeNull();
+  });
 });

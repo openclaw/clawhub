@@ -307,6 +307,22 @@ describe("promotions.setStatus", () => {
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });
+
+  it("rejects reactivating an ended promotion", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, inserts, patches } = makeMutationCtx({
+      existing: { ...storedPromotion, status: "ended" },
+    });
+
+    await expect(
+      setStatusHandler(ctx, { slug: validInput.slug, status: "active" }),
+    ).rejects.toThrow(/reactivated/);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
 });
 
 describe("promotions.listForStaff", () => {

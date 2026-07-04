@@ -261,7 +261,7 @@ export function PromotionsPage({
                 >
                   Edit
                 </Button>
-                {promotion.status !== "active" ? (
+                {promotion.status === "draft" ? (
                   <Button
                     className="management-action-btn"
                     type="button"
