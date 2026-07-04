@@ -78,6 +78,6 @@ describe("production deploy workflow", () => {
     expect(publishIndex).toBeGreaterThan(deployIndex);
     expect(verifyIndex).toBeGreaterThan(publishIndex);
     expect(publishStep?.if).toBe("needs.validate-deploy-request.outputs.deploy_backend == 'true'");
-    expect(publishStep?.run).toBe("bunx convex run internal.promotionsFeed.publishInternal --prod");
+    expect(publishStep?.run).toBe("bunx convex run promotionsFeed:publishInternal --prod");
   });
 });
