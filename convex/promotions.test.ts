@@ -380,7 +380,7 @@ describe("promotions.listActiveInternal", () => {
   });
 
   it("serves the public listActive query without authentication", async () => {
-    const listActivePublicHandler = (listActive as unknown as WrappedHandler<Record<string, never>>)
+    const listActivePublicHandler = (listActive as unknown as WrappedHandler<{ now: number }>)
       ._handler;
     const now = Date.now();
     const rows = [
@@ -394,12 +394,34 @@ describe("promotions.listActiveInternal", () => {
       },
     ];
 
-    const result = (await listActivePublicHandler(makeListCtx(rows), {})) as Array<
+    const result = (await listActivePublicHandler(makeListCtx(rows), { now })) as Array<
       Record<string, unknown>
     >;
 
     expect(vi.mocked(requireUser)).not.toHaveBeenCalled();
     expect(result.map((promotion) => promotion.slug)).toEqual(["live"]);
+  });
+
+  it("does not expose scheduled promotions for caller-supplied future times", async () => {
+    const listActivePublicHandler = (listActive as unknown as WrappedHandler<{ now: number }>)
+      ._handler;
+    const serverNow = Date.now();
+    const rows = [
+      {
+        ...base,
+        _id: "promotions:future",
+        slug: "future",
+        status: "active",
+        startsAt: serverNow + 10_000,
+        endsAt: serverNow + 20_000,
+      },
+    ];
+
+    const result = (await listActivePublicHandler(makeListCtx(rows), {
+      now: serverNow + 15_000,
+    })) as Array<Record<string, unknown>>;
+
+    expect(result).toEqual([]);
   });
 
   it("does not let many scheduled future promotions crowd out a live one", async () => {

@@ -49,12 +49,14 @@ describe("HomePromotionsSection", () => {
     render(<HomePromotionsSection />);
     await flushPromises();
     expect(screen.queryByText(promotion.title)).toBeNull();
+    expect(queryMock.mock.calls[0]?.[1]).toEqual({ now: 100_000 });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
 
     expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(queryMock.mock.calls[1]?.[1]).toEqual({ now: 160_000 });
     expect(screen.getByText(promotion.title)).toBeTruthy();
   });
 
@@ -67,12 +69,14 @@ describe("HomePromotionsSection", () => {
     await flushPromises();
     expect(screen.getByText(promotion.title)).toBeTruthy();
     expect(screen.getByText("Ends today")).toBeTruthy();
+    expect(queryMock.mock.calls[0]?.[1]).toEqual({ now: 100_000 });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(501);
     });
 
     expect(queryMock).toHaveBeenCalledTimes(2);
+    expect(queryMock.mock.calls[1]?.[1]).toEqual({ now: 100_501 });
     expect(screen.queryByText(promotion.title)).toBeNull();
   });
 });

@@ -81,7 +81,7 @@ export function HomePromotionsSection() {
 
     async function loadPromotions() {
       try {
-        const active = await convexHttp.query(api.promotions.listActive, {});
+        const active = await convexHttp.query(api.promotions.listActive, { now: Date.now() });
         if (cancelled) return;
         setPromotions(active);
         scheduleRefresh(active);

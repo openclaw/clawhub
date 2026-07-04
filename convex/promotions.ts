@@ -421,8 +421,11 @@ export const listActiveInternal = internalQuery({
 
 // Public one-shot query for the site (homepage banner, launch pages).
 export const listActive = query({
-  args: {},
-  handler: async (ctx) => (await collectActivePromotions(ctx, Date.now())).promotions,
+  args: { now: v.number() },
+  handler: async (ctx, args) => {
+    const now = Math.min(args.now, Date.now());
+    return (await collectActivePromotions(ctx, now)).promotions;
+  },
 });
 
 export const getBySlugPublicInternal = internalQuery({
