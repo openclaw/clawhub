@@ -16,6 +16,7 @@ vi.mock("./lib/access", async () => {
 const { requireUser } = await import("./lib/access");
 const {
   create,
+  update,
   setStatus,
   listActive,
   listActiveInternal,
@@ -162,6 +163,65 @@ describe("promotions.create", () => {
 
     await expect(createHandler(ctx, validInput)).rejects.toThrow(/already exists/);
     expect(inserts).toHaveLength(0);
+  });
+});
+
+describe("promotions.update", () => {
+  const updateHandler = (update as unknown as WrappedHandler<Record<string, unknown>>)._handler;
+
+  function makeUpdateCtx(lookupResults: unknown[]) {
+    const uniqueMock = vi.fn();
+    for (const result of lookupResults) uniqueMock.mockResolvedValueOnce(result);
+    const replace = vi.fn();
+    const insert = vi.fn(async () => "auditLogs:1");
+    const db = {
+      normalizeId: vi.fn(),
+      system: {},
+      get: vi.fn(),
+      query: vi.fn(() => ({
+        withIndex: vi.fn(() => ({ unique: uniqueMock })),
+      })),
+      insert,
+      patch: vi.fn(),
+      replace,
+      delete: vi.fn(),
+    };
+    return { ctx: { db } as never, replace, insert };
+  }
+
+  it("rejects slug changes once the promotion is no longer a draft", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, replace } = makeUpdateCtx([
+      { _id: "promotions:1", slug: validInput.slug, status: "active", createdAt: 1 },
+    ]);
+
+    await expect(
+      updateHandler(ctx, { targetSlug: validInput.slug, ...validInput, slug: "renamed-launch" }),
+    ).rejects.toThrow(/draft/);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("allows slug changes while still a draft", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, replace } = makeUpdateCtx([
+      { _id: "promotions:1", slug: validInput.slug, status: "draft", createdAt: 1 },
+      null,
+    ]);
+
+    const result = (await updateHandler(ctx, {
+      targetSlug: validInput.slug,
+      ...validInput,
+      slug: "renamed-launch",
+    })) as { ok: boolean; slug: string };
+
+    expect(result.slug).toBe("renamed-launch");
+    expect(replace).toHaveBeenCalledTimes(1);
   });
 });
 

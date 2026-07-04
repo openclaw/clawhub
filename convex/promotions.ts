@@ -261,6 +261,11 @@ async function updatePromotionForActor(
 
   const normalized = normalizePromotionInput(input);
   if (normalized.slug !== existing.slug) {
+    // Slugs are referenced by external links and CLI claim provenance once a
+    // promotion has been activated; only drafts may be renamed.
+    if (existing.status !== "draft") {
+      throw new ConvexError("Slug can only be changed while the promotion is a draft");
+    }
     const collision = await getPromotionBySlug(ctx, normalized.slug);
     if (collision) throw new ConvexError(`Promotion already exists: ${normalized.slug}`);
   }
