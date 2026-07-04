@@ -53,7 +53,13 @@ const validInput = {
   signupUrl: "https://signup.example.com",
 };
 
-function makeMutationCtx({ existing = null }: { existing?: unknown } = {}) {
+function makeMutationCtx({
+  existing = null,
+  activePromotions = [],
+}: {
+  existing?: unknown;
+  activePromotions?: unknown[];
+} = {}) {
   const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const db = {
@@ -63,6 +69,7 @@ function makeMutationCtx({ existing = null }: { existing?: unknown } = {}) {
     query: vi.fn(() => ({
       withIndex: vi.fn(() => ({
         unique: vi.fn(async () => existing),
+        take: vi.fn(async (limit: number) => activePromotions.slice(0, limit)),
       })),
     })),
     insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
@@ -322,6 +329,27 @@ describe("promotions.setStatus", () => {
     expect(patches).toHaveLength(0);
     expect(inserts).toHaveLength(0);
   });
+
+  it("rejects activation when the curated active set is full", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const activePromotions = Array.from({ length: 100 }, (_, index) => ({
+      _id: `promotions:${index}`,
+      status: "active",
+    }));
+    const { ctx, inserts, patches } = makeMutationCtx({
+      existing: storedPromotion,
+      activePromotions,
+    });
+
+    await expect(
+      setStatusHandler(ctx, { slug: validInput.slug, status: "active" }),
+    ).rejects.toThrow(/At most 100/);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
 });
 
 describe("promotions.listForStaff", () => {
@@ -387,17 +415,17 @@ describe("promotions.listActiveInternal", () => {
   };
 
   function makeListCtx(rows: Array<Record<string, unknown>>) {
+    const take = vi.fn(async (limit: number) => rows.slice(0, limit));
     return {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            async *[Symbol.asyncIterator]() {
-              yield* rows;
-            },
+      ctx: {
+        db: {
+          query: vi.fn(() => ({
+            withIndex: vi.fn(() => ({ take })),
           })),
-        })),
-      },
-    } as never;
+        },
+      } as never,
+      take,
+    };
   }
 
   it("returns only in-window active promotions as public payloads", async () => {
@@ -421,7 +449,8 @@ describe("promotions.listActiveInternal", () => {
       },
     ];
 
-    const result = (await listActiveHandler(makeListCtx(rows), { now: 200 })) as {
+    const { ctx } = makeListCtx(rows);
+    const result = (await listActiveHandler(ctx, { now: 200 })) as {
       promotions: Array<Record<string, unknown>>;
       nextStartsAt: number | null;
     };
@@ -451,7 +480,8 @@ describe("promotions.listActiveInternal", () => {
       endsAt: 2_000,
     };
 
-    const result = (await listActiveHandler(makeListCtx([...futureRows, liveRow]), {
+    const { ctx } = makeListCtx([...futureRows, liveRow]);
+    const result = (await listActiveHandler(ctx, {
       now: 200,
     })) as {
       promotions: Array<Record<string, unknown>>;
@@ -480,7 +510,8 @@ describe("promotions.listActiveInternal", () => {
       endsAt: 2_000,
     };
 
-    const result = (await listActiveHandler(makeListCtx([...liveRows, scheduledRow]), {
+    const { ctx, take } = makeListCtx([...liveRows, scheduledRow]);
+    const result = (await listActiveHandler(ctx, {
       now: 200,
     })) as {
       promotions: Array<Record<string, unknown>>;
@@ -489,6 +520,7 @@ describe("promotions.listActiveInternal", () => {
 
     expect(result.promotions).toHaveLength(50);
     expect(result.nextStartsAt).toBe(500);
+    expect(take).toHaveBeenCalledWith(100);
   });
 });
 

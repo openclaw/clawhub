@@ -17,6 +17,7 @@ const MAX_MODELS = 20;
 const MAX_PLUGIN_NAMES = 10;
 const STAFF_LIST_PAGE_SIZE = 100;
 const ACTIVE_LIST_LIMIT = 50;
+const ACTIVE_SET_LIMIT = 100;
 
 const promotionModelArgValidator = v.object({
   modelRef: v.string(),
@@ -317,6 +318,17 @@ async function setPromotionStatusForActor(
   if (existing.status === status) {
     return { ok: true as const, slug: existing.slug, status };
   }
+  if (status === "active") {
+    const activePromotions = await ctx.db
+      .query("promotions")
+      .withIndex("by_status_endsAt", (q) => q.eq("status", "active"))
+      .take(ACTIVE_SET_LIMIT);
+    if (activePromotions.length >= ACTIVE_SET_LIMIT) {
+      throw new ConvexError(
+        `At most ${ACTIVE_SET_LIMIT} promotions can be active; end an existing promotion first`,
+      );
+    }
+  }
 
   const now = Date.now();
   await ctx.db.patch(existing._id, {
@@ -394,17 +406,16 @@ export const setStatusInternal = internalMutation({
   },
 });
 
-// The index bound excludes expired-but-never-ended rows; iterating (rather
-// than take-then-filter) keeps pre-activated future promotions from crowding
-// live ones out of the limit. Every scanned row is either live or scheduled,
-// so the scan is bounded by the curated active set.
+// Activation enforces ACTIVE_SET_LIMIT, so this read remains bounded while
+// still considering every curated active or scheduled promotion.
 async function collectActivePromotions(ctx: QueryCtx, now: number) {
   const promotions: Array<ReturnType<typeof toPublicPromotion>> = [];
   let nextStartsAt: number | null = null;
-  const active = ctx.db
+  const active = await ctx.db
     .query("promotions")
-    .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", now));
-  for await (const promotion of active) {
+    .withIndex("by_status_endsAt", (q) => q.eq("status", "active").gte("endsAt", now))
+    .take(ACTIVE_SET_LIMIT);
+  for (const promotion of active) {
     if (promotion.startsAt > now) {
       nextStartsAt =
         nextStartsAt === null ? promotion.startsAt : Math.min(nextStartsAt, promotion.startsAt);
