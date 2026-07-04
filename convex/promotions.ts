@@ -121,8 +121,13 @@ export function normalizePromotionInput(input: PromotionInput): PromotionInput {
     throw new ConvexError(`Blurb too long (max ${MAX_BLURB_LENGTH} chars)`);
   }
 
-  if (!Number.isFinite(input.startsAt) || !Number.isFinite(input.endsAt)) {
-    throw new ConvexError("startsAt and endsAt must be timestamps (ms)");
+  if (
+    !Number.isFinite(input.startsAt) ||
+    !Number.isFinite(input.endsAt) ||
+    Number.isNaN(new Date(input.startsAt).getTime()) ||
+    Number.isNaN(new Date(input.endsAt).getTime())
+  ) {
+    throw new ConvexError("startsAt and endsAt must be valid timestamps (ms)");
   }
   if (input.endsAt <= input.startsAt) {
     throw new ConvexError("endsAt must be after startsAt");

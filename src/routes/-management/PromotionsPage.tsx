@@ -46,9 +46,10 @@ const EMPTY_FORM: PromotionFormState = {
 function toDatetimeLocal(value: number) {
   const date = new Date(value);
   const pad = (part: number) => String(part).padStart(2, "0");
+  const milliseconds = String(date.getMilliseconds()).padStart(3, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
     date.getHours(),
-  )}:${pad(date.getMinutes())}`;
+  )}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${milliseconds}`;
 }
 
 function promotionToForm(promotion: PromotionEntry): PromotionFormState {
@@ -285,6 +286,7 @@ export function PromotionsPage({
           <Input
             id="promotion-starts"
             type="datetime-local"
+            step="0.001"
             value={form.startsAt}
             onChange={(event) => setField("startsAt")(event.target.value)}
           />
@@ -293,6 +295,7 @@ export function PromotionsPage({
           <Input
             id="promotion-ends"
             type="datetime-local"
+            step="0.001"
             value={form.endsAt}
             onChange={(event) => setField("endsAt")(event.target.value)}
           />

@@ -114,6 +114,15 @@ describe("normalizePromotionInput", () => {
     ).toThrow(/endsAt/);
     expect(() => normalizePromotionInput({ ...validInput, models: [] })).toThrow(/model/);
   });
+
+  it("rejects timestamps outside the JavaScript Date range", () => {
+    expect(() => normalizePromotionInput({ ...validInput, startsAt: -Number.MAX_VALUE })).toThrow(
+      /valid timestamp/,
+    );
+    expect(() => normalizePromotionInput({ ...validInput, endsAt: Number.MAX_VALUE })).toThrow(
+      /valid timestamp/,
+    );
+  });
 });
 
 describe("promotions.create", () => {
