@@ -2,6 +2,7 @@ import {
   normalizeCatalogTopics,
   normalizeSkillCategories,
   normalizeTextContentType,
+  MAX_SKILL_DISPLAY_NAME_LENGTH,
   resolveSkillCategories,
 } from "clawhub-schema";
 import { ConvexError } from "convex/values";
@@ -146,6 +147,11 @@ export async function publishVersionForUser(
     migrateOwner: options.migrateOwner,
   })) as Doc<"skills"> | null;
   const isNewSkill = !existingSkill;
+  if (shouldEnforceDisplayNameLimit(displayName, existingSkill)) {
+    throw new ConvexError(
+      `Display name must be ${MAX_SKILL_DISPLAY_NAME_LENGTH} characters or less`,
+    );
+  }
 
   // For new skills, enforce the full write-path rules (length, pattern,
   // reserved-word blocklist). For existing skills the slug is already
@@ -459,6 +465,11 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined;
 }
 
+function shouldEnforceDisplayNameLimit(displayName: string, existingSkill: Doc<"skills"> | null) {
+  if (displayName.length <= MAX_SKILL_DISPLAY_NAME_LENGTH) return false;
+  return !existingSkill || existingSkill.displayName !== displayName;
+}
+
 async function buildPublishSourceFingerprint(files: FingerprintFile[]) {
   return await hashSkillFiles(files.filter((file) => !isSkillCardPath(file.path)));
 }
@@ -466,6 +477,7 @@ async function buildPublishSourceFingerprint(files: FingerprintFile[]) {
 export const __test = {
   buildPublishSourceFingerprint,
   mergeSourceIntoMetadata,
+  shouldEnforceDisplayNameLimit,
   computeQualitySignals,
   evaluateQuality,
   toStructuralFingerprint,

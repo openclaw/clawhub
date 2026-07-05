@@ -1,3 +1,4 @@
+import { MAX_SKILL_DISPLAY_NAME_LENGTH } from "clawhub-schema";
 import { describe, expect, it } from "vitest";
 import {
   buildGitHubSkillSourceSnapshot,
@@ -180,6 +181,21 @@ describe("buildGitHubSkillSourceSnapshot", () => {
 
     expect(snapshot.skills.map((skill) => skill.path)).toEqual(["skills/aiq-deploy"]);
     expect(snapshot.skills[0]?.displayName).toBe("AIQ Deploy");
+  });
+
+  it("caps GitHub-backed display names before they can enter catalog writes", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "1".repeat(40),
+      entries: repoEntries({
+        "skills/this-slug-is-also-longer-than-forty-characters/SKILL.md":
+          "---\nname: This display name is intentionally much longer than forty characters\n---\n# Long\n",
+      }),
+    });
+
+    expect(snapshot.skills[0]?.displayName).toMatch(/^This Slug Is Also Longer Than Forty/);
+    expect(snapshot.skills[0]?.displayName).toHaveLength(MAX_SKILL_DISPLAY_NAME_LENGTH);
   });
 
   it("rejects oversized cached markdown before writing Convex content docs", async () => {

@@ -9,5 +9,6 @@ export * from "./packages.js";
 export * from "./pluginCategories.js";
 export { ApiRoutes, LegacyApiRoutes } from "./routes.js";
 export * from "./schemas.js";
+export * from "./skillLimits.js";
 export * from "./textFiles.js";
 //# sourceMappingURL=index.js.map

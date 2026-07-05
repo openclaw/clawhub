@@ -7,6 +7,68 @@ vi.mock("./embeddings", () => ({
 }));
 
 describe("skillPublish", () => {
+  it("rejects new skills with display names over the publish limit", async () => {
+    const ctx = {
+      runQuery: vi.fn(async () => null),
+      storage: {
+        get: vi.fn(async () => {
+          throw new Error("storage should not be read");
+        }),
+      },
+    };
+
+    await expect(
+      publishVersionForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          slug: "long-name",
+          displayName: "A".repeat(41),
+          version: "1.0.0",
+          changelog: "Initial release",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 6,
+              storageId: "_storage:skill" as never,
+              sha256: "a".repeat(64),
+              contentType: "text/markdown",
+            },
+          ],
+        },
+        {
+          bypassGitHubAccountAge: true,
+          bypassQualityGate: true,
+        },
+      ),
+    ).rejects.toThrow(/Display name must be 40 characters or less/i);
+    expect(ctx.storage.get).not.toHaveBeenCalled();
+  });
+
+  it("grandfathers existing skills that already have over-limit display names", () => {
+    const legacyName = "B".repeat(41);
+    expect(
+      __test.shouldEnforceDisplayNameLimit(legacyName, {
+        displayName: legacyName,
+      } as never),
+    ).toBe(false);
+    expect(
+      __test.shouldEnforceDisplayNameLimit("Shorter legacy name", {
+        displayName: legacyName,
+      } as never),
+    ).toBe(false);
+    expect(
+      __test.shouldEnforceDisplayNameLimit("A".repeat(41), {
+        displayName: legacyName,
+      } as never),
+    ).toBe(true);
+    expect(
+      __test.shouldEnforceDisplayNameLimit("A".repeat(41), {
+        displayName: "Existing short name",
+      } as never),
+    ).toBe(true);
+  });
+
   it("ignores taxonomy declarations from metadata.openclaw.json", async () => {
     const storedFiles = new Map([
       [

@@ -1,3 +1,4 @@
+import { MAX_SKILL_DISPLAY_NAME_LENGTH } from "clawhub-schema";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
   type SourceBackedSkillScanStatus,
@@ -210,7 +211,7 @@ export async function buildGitHubSkillSourceSnapshot({
 
     skills.push({
       slug,
-      displayName: frontmatterName || heading || titleizeSlug(slug),
+      displayName: normalizeGitHubSkillDisplayName(frontmatterName || heading, slug),
       ...(frontmatterDescription ? { summary: frontmatterDescription } : {}),
       ...(frontmatterVersion ? { upstreamVersion: frontmatterVersion } : {}),
       path,
@@ -431,6 +432,14 @@ function githubScanStatusForUnchangedContent(
 ): GitHubSkillScanStatus {
   if (shouldPreserveSecurityScanStateForUnchangedContent(status)) return status;
   return "pending";
+}
+
+function normalizeGitHubSkillDisplayName(name: string | undefined, slug: string) {
+  const preferred = name?.trim() || titleizeSlug(slug);
+  if (preferred.length <= MAX_SKILL_DISPLAY_NAME_LENGTH) return preferred;
+  const fallback = titleizeSlug(slug);
+  if (fallback.length <= MAX_SKILL_DISPLAY_NAME_LENGTH) return fallback;
+  return fallback.slice(0, MAX_SKILL_DISPLAY_NAME_LENGTH).trimEnd();
 }
 
 export function githubBackedSkillModeration(
