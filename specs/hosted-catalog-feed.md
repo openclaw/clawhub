@@ -75,6 +75,8 @@ set is capped at 50 records by the promotions write path, which also bounds each
 snapshot. Public slug lookups keep ended promotions readable only when they
 actually crossed their launch boundary; promotions canceled before launch stay
 private permanently, even if their scheduled window or other fields are edited.
+Expired drafts cannot be activated, and unlaunched active promotions cannot be
+rescheduled wholly into an expired window.
 
 ## Publication
 

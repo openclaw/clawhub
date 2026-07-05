@@ -308,6 +308,11 @@ async function updatePromotionForActor(
   }
 
   const now = Date.now();
+  const hasLaunched =
+    existing.launchedAt !== undefined || (existing.status === "active" && existing.startsAt <= now);
+  if (existing.status === "active" && !hasLaunched && normalized.endsAt < now) {
+    throw new ConvexError("Unlaunched promotions cannot be moved to an expired window");
+  }
   const launchedAt = resolvePromotionLaunchedAt(
     existing,
     existing.status,
@@ -360,7 +365,11 @@ async function setPromotionStatusForActor(
   if (existing.status === status) {
     return { ok: true as const, slug: existing.slug, status };
   }
+  const now = Date.now();
   if (status === "active") {
+    if (existing.endsAt < now) {
+      throw new ConvexError("Expired promotions cannot be activated");
+    }
     const activePromotions = await ctx.db
       .query("promotions")
       .withIndex("by_status_endsAt", (q) => q.eq("status", "active"))
@@ -372,7 +381,6 @@ async function setPromotionStatusForActor(
     }
   }
 
-  const now = Date.now();
   const launchedAt = resolvePromotionLaunchedAt(existing, status, existing.startsAt, now);
   await ctx.db.patch(existing._id, {
     status,

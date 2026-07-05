@@ -291,6 +291,33 @@ describe("promotions.update", () => {
 
     expect(replace.mock.calls[0]?.[1]).not.toHaveProperty("launchedAt");
   });
+
+  it("rejects moving an unlaunched active promotion into an expired window", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, replace } = makeUpdateCtx([
+      {
+        _id: "promotions:1",
+        slug: validInput.slug,
+        status: "active",
+        startsAt: Date.now() + 60_000,
+        createdByUserId: adminUser._id,
+        createdAt: 1,
+      },
+    ]);
+
+    await expect(
+      updateHandler(ctx, {
+        targetSlug: validInput.slug,
+        ...validInput,
+        startsAt: 1,
+        endsAt: 2,
+      }),
+    ).rejects.toThrow(/expired/);
+    expect(replace).not.toHaveBeenCalled();
+  });
 });
 
 describe("promotions.setStatus", () => {
@@ -343,6 +370,21 @@ describe("promotions.setStatus", () => {
     await setStatusHandler(ctx, { slug: validInput.slug, status: "active" });
 
     expect(patches[0]?.patch.launchedAt).toEqual(expect.any(Number));
+  });
+
+  it("rejects activating a promotion after its window expired", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, patches } = makeMutationCtx({
+      existing: { ...storedPromotion, startsAt: 1, endsAt: 2 },
+    });
+
+    await expect(
+      setStatusHandler(ctx, { slug: validInput.slug, status: "active" }),
+    ).rejects.toThrow(/expired/i);
+    expect(patches).toHaveLength(0);
   });
 
   it("republishes the feed immediately when ending a promotion, without edge jobs", async () => {
