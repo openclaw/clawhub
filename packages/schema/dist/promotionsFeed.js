@@ -1,4 +1,5 @@
 import { type } from "arktype";
+const HttpsUrlSchema = type("string.url").narrow((value, ctx) => new URL(value).protocol === "https:" || ctx.mustBe("an HTTPS URL"));
 export const PromotionsFeedModelSchema = type({
     "+": "reject",
     modelRef: "string",
@@ -18,9 +19,9 @@ export const PromotionsFeedEntrySchema = type({
     "authChoiceId?": "string",
     "pluginNames?": "string[]",
     models: PromotionsFeedModelSchema.array(),
-    "signupUrl?": "string",
-    "docsUrl?": "string",
-    "launchPageUrl?": "string",
+    "signupUrl?": HttpsUrlSchema,
+    "docsUrl?": HttpsUrlSchema,
+    "launchPageUrl?": HttpsUrlSchema,
 });
 export const PromotionsFeedSchema = type({
     "+": "reject",

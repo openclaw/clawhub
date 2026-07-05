@@ -76,7 +76,8 @@ snapshot. Public slug lookups keep ended promotions readable only when they
 actually crossed their launch boundary; promotions canceled before launch stay
 private permanently, even if their scheduled window or other fields are edited.
 Expired drafts cannot be activated, and unlaunched active promotions cannot be
-rescheduled wholly into an expired window.
+rescheduled wholly into an expired window. Model references and aliases are
+single-line fields so management form serialization remains lossless.
 
 ## Publication
 

@@ -83,4 +83,15 @@ describe("promotions feed schema", () => {
     feed.extra = "nope";
     expect(() => parsePromotionsFeed(feed)).toThrow();
   });
+
+  it.each(["signupUrl", "docsUrl", "launchPageUrl"] as const)(
+    "rejects non-HTTPS %s values",
+    (field) => {
+      const feed = makeFeed();
+      const entry = feed.entries[0];
+      if (!entry) throw new Error("fixture missing entry");
+      entry[field] = "http://insecure.example.com";
+      expect(() => parsePromotionsFeed(feed)).toThrow(/HTTPS URL/);
+    },
+  );
 });

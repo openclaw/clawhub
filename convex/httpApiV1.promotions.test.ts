@@ -282,6 +282,34 @@ describe("createPromotionV1Handler", () => {
     expect(response.status).toBe(400);
     expect(runMutation).not.toHaveBeenCalled();
   });
+
+  it("returns 400 for mutation validation errors", async () => {
+    const { ctx, runMutation } = makeCtx();
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    runMutation.mockRejectedValue(new Error("ConvexError: Title too long (max 120 chars)"));
+
+    const response = await createPromotionV1Handler(ctx, makeCreateRequest(validCreatePayload));
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Title too long (max 120 chars)");
+  });
+
+  it("returns 500 without exposing unexpected mutation failures", async () => {
+    const { ctx, runMutation } = makeCtx();
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    runMutation.mockRejectedValue(new Error("scheduler unavailable: internal details"));
+
+    const response = await createPromotionV1Handler(ctx, makeCreateRequest(validCreatePayload));
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Internal Server Error");
+  });
 });
 
 describe("promotionsPostRouterV1Handler", () => {

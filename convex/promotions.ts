@@ -83,6 +83,14 @@ function requireShortField(label: string, value: string | undefined, maxLength: 
   return trimmed;
 }
 
+function requireSingleLineField(label: string, value: string | undefined, maxLength: number) {
+  const parsed = requireShortField(label, value, maxLength);
+  if (parsed && /[\r\n]/.test(parsed)) {
+    throw new ConvexError(`${label} must be a single line`);
+  }
+  return parsed;
+}
+
 function requireHttpsUrl(label: string, value: string | undefined) {
   if (value === undefined) return undefined;
   const trimmed = value.trim();
@@ -140,9 +148,9 @@ export function normalizePromotionInput(input: PromotionInput): PromotionInput {
     throw new ConvexError(`Too many models (max ${MAX_MODELS})`);
   }
   const models = input.models.map((model) => {
-    const modelRef = requireShortField("modelRef", model.modelRef, MAX_SHORT_FIELD_LENGTH * 2);
+    const modelRef = requireSingleLineField("modelRef", model.modelRef, MAX_SHORT_FIELD_LENGTH * 2);
     if (!modelRef) throw new ConvexError("modelRef required for every model");
-    const alias = requireShortField("Model alias", model.alias, MAX_SHORT_FIELD_LENGTH);
+    const alias = requireSingleLineField("Model alias", model.alias, MAX_SHORT_FIELD_LENGTH);
     return {
       modelRef,
       ...(alias ? { alias } : {}),

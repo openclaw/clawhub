@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { mergeHeaders } from "../lib/httpHeaders";
@@ -136,7 +137,16 @@ function parsePromotionInputPayload(payload: Record<string, unknown>): Promotion
   };
 }
 
-function writeErrorToResponse(error: unknown, headers: HeadersInit) {
+function promotionInputErrorToResponse(error: unknown, headers: HeadersInit) {
+  return text(formatUserFacingErrorMessage(error, "Invalid promotion input"), 400, headers);
+}
+
+function promotionMutationErrorToResponse(error: unknown, headers: HeadersInit) {
+  const rawMessage = error instanceof Error ? error.message : "";
+  const isUserFacing =
+    error instanceof ConvexError || /(?:Uncaught\s+)?ConvexError:/i.test(rawMessage);
+  if (!isUserFacing) return text("Internal Server Error", 500, headers);
+
   const message = formatUserFacingErrorMessage(error, "Promotion request failed");
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized")) return text("Unauthorized", 401, headers);
@@ -214,15 +224,21 @@ export async function createPromotionV1Handler(ctx: ActionCtx, request: Request)
   const payloadResult = await parseJsonPayload(request, rate.headers);
   if (!payloadResult.ok) return payloadResult.response;
 
+  let input: PromotionInputPayload;
   try {
-    const input = parsePromotionInputPayload(payloadResult.payload);
+    input = parsePromotionInputPayload(payloadResult.payload);
+  } catch (error) {
+    return promotionInputErrorToResponse(error, rate.headers);
+  }
+
+  try {
     const result = await ctx.runMutation(internal.promotions.createInternal, {
       actorUserId: auth.userId,
       input,
     });
     return json(result, 200, rate.headers);
   } catch (error) {
-    return writeErrorToResponse(error, rate.headers);
+    return promotionMutationErrorToResponse(error, rate.headers);
   }
 }
 
@@ -247,21 +263,31 @@ export async function promotionsPostRouterV1Handler(ctx: ActionCtx, request: Req
   if (!payloadResult.ok) return payloadResult.response;
   const payload = payloadResult.payload;
 
-  try {
-    if (action === "status") {
-      const status = typeof payload.status === "string" ? payload.status.trim() : "";
-      if (status !== "draft" && status !== "active" && status !== "ended") {
-        return text("status must be one of draft|active|ended", 400, rate.headers);
-      }
+  if (action === "status") {
+    const status = typeof payload.status === "string" ? payload.status.trim() : "";
+    if (status !== "draft" && status !== "active" && status !== "ended") {
+      return text("status must be one of draft|active|ended", 400, rate.headers);
+    }
+    try {
       const result = await ctx.runMutation(internal.promotions.setStatusInternal, {
         actorUserId: auth.userId,
         slug,
         status,
       });
       return json(result, 200, rate.headers);
+    } catch (error) {
+      return promotionMutationErrorToResponse(error, rate.headers);
     }
+  }
 
-    const input = parsePromotionInputPayload(payload);
+  let input: PromotionInputPayload;
+  try {
+    input = parsePromotionInputPayload(payload);
+  } catch (error) {
+    return promotionInputErrorToResponse(error, rate.headers);
+  }
+
+  try {
     const result = await ctx.runMutation(internal.promotions.updateInternal, {
       actorUserId: auth.userId,
       targetSlug: slug,
@@ -269,6 +295,6 @@ export async function promotionsPostRouterV1Handler(ctx: ActionCtx, request: Req
     });
     return json(result, 200, rate.headers);
   } catch (error) {
-    return writeErrorToResponse(error, rate.headers);
+    return promotionMutationErrorToResponse(error, rate.headers);
   }
 }

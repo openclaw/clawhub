@@ -137,6 +137,13 @@ describe("normalizePromotionInput", () => {
       /valid timestamp/,
     );
   });
+
+  it.each([
+    ["modelRef", { modelRef: "provider/model\ninjected" }],
+    ["Model alias", { modelRef: "provider/model", alias: "Alias\r\ninjected" }],
+  ])("rejects line breaks in %s", (label, model) => {
+    expect(() => normalizePromotionInput({ ...validInput, models: [model] })).toThrow(label);
+  });
 });
 
 describe("promotions.create", () => {
