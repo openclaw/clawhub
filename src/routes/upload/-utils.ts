@@ -1,7 +1,7 @@
 import {
+  guessTextContentType,
   isTextContentType,
   normalizeTextContentType,
-  TEXT_FILE_EXTENSION_SET,
 } from "clawhub-schema/textFiles";
 import { getUserFacingConvexError } from "../../lib/convexError";
 
@@ -52,10 +52,8 @@ export function formatPublishError(error: unknown) {
 export function isTextFile(file: File) {
   const path = (file.webkitRelativePath || file.name).trim().toLowerCase();
   if (!path) return false;
-  const parts = path.split(".");
-  const extension = parts.length > 1 ? (parts.at(-1) ?? "") : "";
   if (file.type && isTextContentType(file.type)) return true;
-  if (extension && TEXT_FILE_EXTENSION_SET.has(extension)) return true;
+  if (guessTextContentType(path)) return true;
   return false;
 }
 

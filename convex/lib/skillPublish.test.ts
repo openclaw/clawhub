@@ -7,6 +7,159 @@ vi.mock("./embeddings", () => ({
 }));
 
 describe("skillPublish", () => {
+  it("detects a root extensionless MIT license file", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:license",
+        `MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy.
+The above copyright notice and this permission notice shall be included.
+`,
+      ],
+    ]);
+    const ctx = {
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await expect(
+      __test.detectPublishedSkillLicense(
+        ctx as never,
+        [
+          { path: "SKILL.md", storageId: "_storage:skill" },
+          { path: "LICENSE", storageId: "_storage:license" },
+        ] as never,
+      ),
+    ).resolves.toBe("MIT");
+  });
+
+  it("ignores nested package and license metadata when detecting the skill license", async () => {
+    const storedFiles = new Map([
+      ["_storage:package", JSON.stringify({ license: "MIT" })],
+      [
+        "_storage:license",
+        `MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy.
+The above copyright notice and this permission notice shall be included.
+`,
+      ],
+    ]);
+    const ctx = {
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await expect(
+      __test.detectPublishedSkillLicense(
+        ctx as never,
+        [
+          { path: "SKILL.md", storageId: "_storage:skill" },
+          { path: "examples/package.json", storageId: "_storage:package" },
+          { path: "vendor/LICENSE", storageId: "_storage:license" },
+        ] as never,
+      ),
+    ).resolves.toBe("MIT-0");
+  });
+
+  it("stores a standard MIT license declared in package.json", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Workspace sync helper.
+---
+# Workspace Sync
+`,
+      ],
+      ["_storage:package", JSON.stringify({ name: "openclaw-workspace-sync", license: "MIT" })],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "workspace-sync",
+        displayName: "Workspace Sync",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 80,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+          {
+            path: "package.json",
+            size: 60,
+            storageId: "_storage:package" as never,
+            sha256: "b".repeat(64),
+            contentType: "application/json",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        parsed: expect.objectContaining({ license: "MIT" }),
+      }),
+    );
+  });
+
+  it("detects standard MIT license text", () => {
+    expect(
+      __test.detectLicenseFromText(`
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+`),
+    ).toBe("MIT");
+  });
+
   it("ignores taxonomy declarations from metadata.openclaw.json", async () => {
     const storedFiles = new Map([
       [

@@ -188,10 +188,10 @@ Limits (server-side):
 
 ## License
 
-- All skills published on ClawHub are licensed under `MIT-0`.
-- Anyone may use, modify, and redistribute published skills, including commercially.
-- Attribution is not required.
-- Do not add conflicting license terms in `SKILL.md`; ClawHub does not support per-skill license overrides.
+- ClawHub records `MIT` when a skill package declares standard MIT in a root `package.json` or standard MIT `LICENSE` file.
+- If no supported license is declared, ClawHub records the default skill license, `MIT-0`.
+- Anyone may use, modify, and redistribute published skills according to the license shown for that version.
+- Do not add conflicting license terms in `SKILL.md`; use `package.json` or `LICENSE` for supported license metadata.
 
 ## Paid skills
 

@@ -224,7 +224,7 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
     const { userId } = await requireApiTokenUser(ctx, request);
     const args = parsePublishBody(body);
     if (!hasAcceptedLegacyLicenseTerms(args.acceptLicenseTerms)) {
-      return text("MIT-0 license terms must be accepted to publish skills", 400);
+      return text("Skill license terms must be accepted to publish skills", 400);
     }
     const { ownerHandle, sourceOwnerHandle, migrateOwner, ...publishPayload } = args;
     const target = ownerHandle

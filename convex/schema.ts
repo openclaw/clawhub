@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const skillLicenseValidator = v.union(v.literal(PLATFORM_SKILL_LICENSE), v.literal("MIT"));
 
 const manualModerationOverride = v.object({
   verdict: v.literal("clean"),
@@ -1009,7 +1010,7 @@ const skillVersions = defineTable({
     metadata: v.optional(v.any()),
     clawdis: v.optional(v.any()),
     moltbot: v.optional(v.any()),
-    license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+    license: v.optional(skillLicenseValidator),
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
@@ -1781,7 +1782,7 @@ const skillScanRequests = defineTable({
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
       moltbot: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+      license: v.optional(skillLicenseValidator),
     }),
   ),
   sha256hash: v.optional(v.string()),

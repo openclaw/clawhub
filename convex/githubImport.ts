@@ -267,7 +267,7 @@ async function importGitHubSkillForUser(
   fetcher: typeof fetch,
 ) {
   if (!args.acceptLicenseTerms) {
-    throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
+    throw new ConvexError("Skill license terms must be accepted to publish skills");
   }
 
   const parsed = parseGitHubImportUrl(args.url);

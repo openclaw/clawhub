@@ -91,6 +91,29 @@ describe("cmdInspect", () => {
     expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
   });
 
+  it("prints the matching summary for standard MIT skill licenses", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: { latest: "1.2.3" },
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: { version: "1.2.3", createdAt: 3, changelog: "init", license: "MIT" },
+      owner: null,
+    });
+
+    await cmdInspect(makeGlobalOpts(), "demo");
+
+    const output = loggedOutput();
+    expect(output).toMatch(
+      /License\s+MIT \(Free to use, modify, and redistribute\. Attribution required\.\)/,
+    );
+  });
+
   it("uses tag param when fetching a file", async () => {
     httpMocks.apiRequest
       .mockResolvedValueOnce({

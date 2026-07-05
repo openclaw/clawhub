@@ -80,6 +80,10 @@ function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
   return description?.trim() || null;
 }
 
+function getLatestVersionLicense(latestVersion: SkillHeaderLatestVersion) {
+  return latestVersion?.parsed?.license ?? PLATFORM_SKILL_LICENSE;
+}
+
 function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
   const repo = "githubSourceRepo" in skill ? skill.githubSourceRepo : undefined;
   if (skill.installKind !== "github" || !repo) return null;
@@ -720,7 +724,7 @@ function SkillSidebarDeferredStats({
                   },
                 ],
               },
-              { label: "License", value: PLATFORM_SKILL_LICENSE },
+              { label: "License", value: getLatestVersionLicense(latestVersion) },
             ]
           : [
               {

@@ -3,6 +3,7 @@ import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
+  PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema/licenseConstants";
 import { useAction, useQueries } from "convex/react";
 import {
@@ -911,8 +912,9 @@ export function ImportGitHub() {
                   </div>
                   <div className="space-y-1 text-sm text-[color:var(--ink-soft)]">
                     <p>
-                      All skills published on ClawHub are licensed under MIT-0. Free to use, modify,
-                      and redistribute. No attribution required.
+                      ClawHub records a supported license from package.json or LICENSE when present;
+                      otherwise skills default to {PLATFORM_SKILL_LICENSE}.{" "}
+                      {PLATFORM_SKILL_LICENSE_SUMMARY}
                     </p>
                     <p>
                       ClawHub does not support paid skills, per-skill pricing, or paywalled
@@ -929,8 +931,8 @@ export function ImportGitHub() {
                     />
                     <span>
                       I have the rights to publish{" "}
-                      {orderedDrafts.length === 1 ? "this skill" : "these skills"} under{" "}
-                      {PLATFORM_SKILL_LICENSE}.
+                      {orderedDrafts.length === 1 ? "this skill" : "these skills"} under the
+                      declared or default ClawHub license.
                     </span>
                   </label>
                 </CardContent>
@@ -1474,7 +1476,7 @@ function getPublishStatus({
   if (firstIssue) return { message: firstIssue, tone: "error" as const };
   if (!acceptedLicenseTerms) {
     return {
-      message: "Accept the MIT-0 license confirmation before publishing.",
+      message: "Accept the skill license confirmation before publishing.",
       tone: "error" as const,
     };
   }

@@ -575,6 +575,7 @@ describe("maintenance backfill", () => {
           skillSummary: ">",
           versionParsed: { frontmatter: { description: ">" } },
           readmeStorageId: "storage:1",
+          versionFiles: [{ path: "SKILL.md", storageId: "storage:1" }],
         },
       ],
       cursor: null,
@@ -609,6 +610,63 @@ describe("maintenance backfill", () => {
     });
   });
 
+  it("repairs stored license for existing MIT-declared latest versions", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [
+        {
+          kind: "ok",
+          skillId: "skills:1",
+          skillSlug: "skill-1",
+          skillDisplayName: "Skill 1",
+          versionId: "skillVersions:1",
+          skillSummary: "Hello",
+          versionParsed: {
+            frontmatter: { description: "Hello" },
+            metadata: undefined,
+            clawdis: undefined,
+            license: "MIT-0",
+          },
+          readmeStorageId: "storage:readme",
+          versionFiles: [
+            { path: "SKILL.md", storageId: "storage:readme" },
+            { path: "package.json", storageId: "storage:package" },
+          ],
+        },
+      ],
+      cursor: null,
+      isDone: true,
+    });
+
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+    const storageGet = vi.fn(async (storageId: string) =>
+      makeBlob(
+        storageId === "storage:package"
+          ? JSON.stringify({ license: "MIT" })
+          : "---\ndescription: Hello\n---\nBody",
+      ),
+    );
+
+    const result = await backfillSkillSummariesInternalHandler(
+      { runQuery, runMutation, storage: { get: storageGet } } as never,
+      { dryRun: false, batchSize: 10, maxBatches: 1 },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.stats.skillsPatched).toBe(0);
+    expect(result.stats.versionsPatched).toBe(1);
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      summary: undefined,
+      parsed: {
+        frontmatter: { description: "Hello" },
+        metadata: undefined,
+        clawdis: undefined,
+        license: "MIT",
+      },
+    });
+  });
+
   it("dryRun does not patch", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
@@ -621,6 +679,7 @@ describe("maintenance backfill", () => {
           skillSummary: ">",
           versionParsed: { frontmatter: { description: ">" } },
           readmeStorageId: "storage:1",
+          versionFiles: [{ path: "SKILL.md", storageId: "storage:1" }],
         },
       ],
       cursor: null,
@@ -652,6 +711,7 @@ describe("maintenance backfill", () => {
           skillSummary: null,
           versionParsed: { frontmatter: {} },
           readmeStorageId: "storage:missing",
+          versionFiles: [{ path: "SKILL.md", storageId: "storage:missing" }],
         },
       ],
       cursor: null,
@@ -684,6 +744,7 @@ describe("maintenance backfill", () => {
           skillSummary: null,
           versionParsed: { frontmatter: {} },
           readmeStorageId: "storage:1",
+          versionFiles: [{ path: "SKILL.md", storageId: "storage:1" }],
         },
       ],
       cursor: null,

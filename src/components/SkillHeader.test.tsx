@@ -423,6 +423,27 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("MIT-0")).toBeNull();
   });
 
+  it("shows the stored latest-version license in archive metadata", () => {
+    const { container } = renderHeader({
+      latestVersion: {
+        _id: "skillVersions:demo" as Id<"skillVersions">,
+        _creationTime: 1,
+        skillId: skill._id,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [],
+        parsed: { license: "MIT", frontmatter: {} },
+        createdBy: "users:owner" as Id<"users">,
+        createdAt: 1,
+      },
+    });
+
+    const sidebar = within(sidebarStatsRoot(container));
+    expect(sidebar.getByText("License")).toBeTruthy();
+    expect(sidebar.getByText("MIT")).toBeTruthy();
+    expect(sidebar.queryByText("MIT-0")).toBeNull();
+  });
+
   it("shows the source repository for GitHub-backed skills", () => {
     const { container } = renderHeader({
       skill: {

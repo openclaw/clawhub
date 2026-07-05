@@ -2,7 +2,7 @@ import { apiRequest, fetchText, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
-  PLATFORM_SKILL_LICENSE_SUMMARY,
+  getSkillLicenseSummary,
   ApiV1SkillModerationResponseSchema,
   ApiV1SkillResponseSchema,
   ApiV1SkillVerifyResponseSchema,
@@ -413,10 +413,9 @@ function printSkillSummary(result: {
   if (result.latestVersion?.version) {
     printInspectRow("Latest", result.latestVersion.version);
   }
-  printInspectRow(
-    "License",
-    `${result.versionLicense ?? result.latestVersion?.license ?? PLATFORM_SKILL_LICENSE} (${PLATFORM_SKILL_LICENSE_SUMMARY})`,
-  );
+  const license = result.versionLicense ?? result.latestVersion?.license ?? PLATFORM_SKILL_LICENSE;
+  const supportedLicense = license === "MIT" ? "MIT" : PLATFORM_SKILL_LICENSE;
+  printInspectRow("License", `${license} (${getSkillLicenseSummary(supportedLicense)})`);
   printInspectRow("Updated", formatTimestamp(skill.updatedAt));
   printInspectRow("Created", formatTimestamp(skill.createdAt));
   if (tagEntries.length > 0) {

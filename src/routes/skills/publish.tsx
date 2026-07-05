@@ -67,6 +67,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
 const REQUIRED_FILE_LABEL = "SKILL.md";
 const REQUIRED_FILE_ISSUE = `${REQUIRED_FILE_LABEL} is required.`;
+const LICENSE_TERMS_ISSUE = "Accept the skill license terms to publish this skill.";
 // Ordered by sort priority: the canonical name first, the legacy alias second.
 const REQUIRED_SKILL_FILE_NAMES = ["skill.md", "skills.md"];
 
@@ -486,7 +487,7 @@ export function Upload() {
       issues.push("At least one tag is required.");
     }
     if (!acceptedLicenseTerms) {
-      issues.push("Accept the MIT-0 license terms to publish this skill.");
+      issues.push(LICENSE_TERMS_ISSUE);
     }
     if (files.length === 0) {
       issues.push("Add at least one file.");
@@ -691,7 +692,7 @@ export function Upload() {
       return;
     }
     if (!acceptedLicenseTerms) {
-      const msg = "Accept the MIT-0 license terms to publish this skill.";
+      const msg = LICENSE_TERMS_ISSUE;
       setError(msg);
       toast.error(msg);
       return;
@@ -1231,7 +1232,8 @@ export function Upload() {
               </div>
               <div className="flex flex-col gap-1 text-sm text-[color:var(--ink-soft)]">
                 <p>
-                  All skills published on ClawHub are licensed under {PLATFORM_SKILL_LICENSE}.{" "}
+                  ClawHub records a supported license from package.json or LICENSE when present;
+                  otherwise skills default to {PLATFORM_SKILL_LICENSE}.{" "}
                   {PLATFORM_SKILL_LICENSE_SUMMARY}
                 </p>
                 <p>
@@ -1249,7 +1251,8 @@ export function Upload() {
                     }}
                   />
                   <span>
-                    I have the rights to publish this skill under {PLATFORM_SKILL_LICENSE}.
+                    I have the rights to publish this skill under its declared or default ClawHub
+                    license.
                   </span>
                 </label>
               </div>
@@ -1358,8 +1361,8 @@ function missingPublishLabel(issue: string) {
   if (issue === "Slug is required.") return ["slug"];
   if (issue === "Display name is required.") return ["display name"];
   if (issue === "At least one tag is required.") return ["release tags"];
-  if (issue === "Accept the MIT-0 license terms to publish this skill.") {
-    return ["MIT-0 acceptance"];
+  if (issue === LICENSE_TERMS_ISSUE) {
+    return ["license acceptance"];
   }
   if (issue === "Add at least one file.") return ["files"];
   if (issue === REQUIRED_FILE_ISSUE) return [REQUIRED_FILE_LABEL];

@@ -348,7 +348,7 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
@@ -435,7 +435,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
@@ -471,7 +471,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [zipFile] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
@@ -506,7 +506,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
@@ -577,6 +577,18 @@ describe("Upload route", () => {
     expect(screen.getAllByText("SKILL.md").length).toBeGreaterThan(0);
   });
 
+  it("allows extensionless root license files in browser uploads", async () => {
+    render(<Upload />);
+
+    const skill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    const license = new File(["MIT License"], "LICENSE", { type: "" });
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [skill, license] } });
+
+    expect(await screen.findByText("LICENSE")).toBeTruthy();
+    expect(screen.queryByText(/Remove unsupported files: LICENSE/i)).toBeNull();
+  });
+
   it("shows a validation error when a skill file exceeds 10MB", async () => {
     render(<Upload />);
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {
@@ -631,7 +643,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [skill, junk] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
@@ -686,7 +698,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
     const publishButton = screen.getByRole("button", { name: /publish/i }) as HTMLButtonElement;
@@ -943,7 +955,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
@@ -1011,7 +1023,7 @@ describe("Upload route", () => {
     fireEvent.change(input, { target: { files: [file] } });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 

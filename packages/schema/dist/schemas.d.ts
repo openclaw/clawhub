@@ -272,7 +272,7 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
             version: string;
             createdAt: number;
             changelog: string;
-            license?: "MIT-0" | null | undefined;
+            license?: "MIT-0" | "MIT" | null | undefined;
         } | undefined;
         metadata?: {
             setup: {
@@ -301,7 +301,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         version: string;
         createdAt: number;
         changelog: string;
-        license?: "MIT-0" | null | undefined;
+        license?: "MIT-0" | "MIT" | null | undefined;
     } | null;
     owner: {
         handle: string | null;
@@ -683,7 +683,7 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         createdAt: number;
         changelog: string;
         changelogSource?: "user" | "auto" | null | undefined;
-        license?: "MIT-0" | null | undefined;
+        license?: "MIT-0" | "MIT" | null | undefined;
         files?: unknown;
         security?: {
             status: "clean" | "suspicious" | "malicious" | "pending" | "error";
