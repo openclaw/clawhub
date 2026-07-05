@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -127,6 +127,26 @@ describe("cmdPublish", () => {
         version: "1.0.0",
       });
       expect(publishPayload()).toMatchObject({ version: "1.0.0" });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects case-colliding skill package files before publishing", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "case-collision");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      await writeFile(join(folder, "skill.md"), "# Duplicate\n", "utf8");
+      const names = await readdir(folder);
+      if (!names.includes("SKILL.md") || !names.includes("skill.md")) return;
+
+      await expect(cmdPublish(makeOpts(workdir), "case-collision", {})).rejects.toThrow(
+        /Remove case-colliding SKILL\.md files/i,
+      );
+
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

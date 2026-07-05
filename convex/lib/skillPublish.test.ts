@@ -7,6 +7,51 @@ vi.mock("./embeddings", () => ({
 }));
 
 describe("skillPublish", () => {
+  it("rejects case-colliding skill package files before reading storage", async () => {
+    const ctx = {
+      runQuery: vi.fn(async () => null),
+      storage: {
+        get: vi.fn(async () => {
+          throw new Error("storage should not be read");
+        }),
+      },
+    };
+
+    await expect(
+      publishVersionForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          slug: "case-collision",
+          displayName: "Case Collision",
+          version: "1.0.0",
+          changelog: "Initial release",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 6,
+              storageId: "_storage:skill" as never,
+              sha256: "a".repeat(64),
+              contentType: "text/markdown",
+            },
+            {
+              path: "skill.md",
+              size: 6,
+              storageId: "_storage:skill-lower" as never,
+              sha256: "b".repeat(64),
+              contentType: "text/markdown",
+            },
+          ],
+        },
+        {
+          bypassGitHubAccountAge: true,
+          bypassQualityGate: true,
+        },
+      ),
+    ).rejects.toThrow(/Remove case-colliding SKILL\.md files/i);
+    expect(ctx.storage.get).not.toHaveBeenCalled();
+  });
+
   it("ignores taxonomy declarations from metadata.openclaw.json", async () => {
     const storedFiles = new Map([
       [

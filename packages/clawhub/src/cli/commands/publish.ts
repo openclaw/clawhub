@@ -7,6 +7,8 @@ import {
   ApiV1PublishResponseSchema,
   ApiV1SkillResolveResponseSchema,
   ApiV1WhoamiResponseSchema,
+  findSkillPackageFileCaseCollisions,
+  formatSkillPackageFileCaseCollisionError,
 } from "../../schema/index.js";
 import { hashSkillFiles, listTextFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
@@ -277,9 +279,10 @@ function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPub
 }
 
 export async function prepareSkillFilesForPublish(folder: string) {
-  return stripGeneratedSkillCards(
-    await ensureRootManifestFile(folder, await listTextFiles(folder)),
-  );
+  const files = await ensureRootManifestFile(folder, await listTextFiles(folder));
+  const collisions = findSkillPackageFileCaseCollisions(files.map((file) => file.relPath));
+  if (collisions.length > 0) fail(formatSkillPackageFileCaseCollisionError(collisions));
+  return stripGeneratedSkillCards(files);
 }
 
 function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {

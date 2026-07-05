@@ -1,4 +1,8 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
+import {
+  findSkillPackageFileCaseCollisions,
+  type SkillPackageFileCaseCollision,
+  TEXT_FILE_EXTENSION_SET,
+} from "clawhub-schema";
 import { zipSync } from "fflate";
 import semver from "semver";
 import { parseFrontmatter } from "./skills";
@@ -241,10 +245,12 @@ export function stripGitHubZipRoot(entries: ZipEntryMap): ZipEntryMap {
 
 export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImportCandidate[] {
   const candidates: GitHubImportCandidate[] = [];
+  const fileCaseCollisions = findSkillPackageFileCaseCollisions(Object.keys(entries));
   for (const path of Object.keys(entries)) {
     const normalized = normalizeRepoPath(path);
     if (!isGitHubSkillFilePath(normalized)) continue;
     const dir = normalized.split("/").slice(0, -1).join("/");
+    if (hasCaseCollisionUnderRoot(fileCaseCollisions, normalizeCandidateRoot(dir))) continue;
     const readmePath = normalized;
     const raw = new TextDecoder().decode(entries[path] ?? new Uint8Array());
     const frontmatter = parseFrontmatter(raw);
@@ -259,6 +265,15 @@ export function detectGitHubImportCandidates(entries: ZipEntryMap): GitHubImport
     });
   }
   return uniqCandidates(candidates);
+}
+
+function hasCaseCollisionUnderRoot(
+  collisions: readonly SkillPackageFileCaseCollision[],
+  root: string,
+) {
+  return collisions.some((collision) =>
+    collision.paths.some((path) => isUnderRoot(normalizeRepoPath(path), root)),
+  );
 }
 
 export function isGitHubSkillFilePath(path: string) {

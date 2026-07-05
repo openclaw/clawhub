@@ -1,5 +1,11 @@
 import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { inferSkillCategories, isSkillCategorySlug, resolveSkillCategories } from "clawhub-schema";
+import {
+  findSkillPackageFileCaseCollisions,
+  formatSkillPackageFileCaseCollisionError,
+  inferSkillCategories,
+  isSkillCategorySlug,
+  resolveSkillCategories,
+} from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -234,6 +240,10 @@ export function Upload() {
   );
   const hasRequiredFile = useMemo(
     () => normalizedPaths.some((path) => isRequiredSkillFile(path)),
+    [normalizedPaths],
+  );
+  const fileCaseCollisions = useMemo(
+    () => findSkillPackageFileCaseCollisions(normalizedPaths),
     [normalizedPaths],
   );
   const sizeLabel = totalBytes ? formatBytes(totalBytes) : "0 B";
@@ -494,6 +504,9 @@ export function Upload() {
     if (!hasRequiredFile) {
       issues.push(REQUIRED_FILE_ISSUE);
     }
+    if (fileCaseCollisions.length > 0) {
+      issues.push(formatSkillPackageFileCaseCollisionError(fileCaseCollisions));
+    }
     if (isOwnerMigration && !confirmMigrateOwner) {
       issues.push(
         `Confirm the ownership move from @${existingOwnerHandle} to @${ownerHandle} to publish.`,
@@ -532,6 +545,7 @@ export function Upload() {
     files,
     unsupportedFileEntries,
     hasRequiredFile,
+    fileCaseCollisions,
     totalBytes,
     oversizedFiles.length,
     oversizedFileNames,
@@ -585,6 +599,7 @@ export function Upload() {
   const visibleFileIssues = validation.issues.filter((issue) => {
     if (issue.startsWith("Add at least one file")) return hasAttempted;
     if (issue === REQUIRED_FILE_ISSUE) return false;
+    if (issue.startsWith("Remove case-colliding")) return shouldShowFileIssues;
     if (issue.startsWith("Remove unsupported files")) return shouldShowFileIssues;
     if (issue.startsWith("Each file")) return shouldShowFileIssues;
     if (issue.startsWith("Total file size")) return shouldShowFileIssues;

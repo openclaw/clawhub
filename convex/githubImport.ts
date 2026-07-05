@@ -1,3 +1,7 @@
+import {
+  findSkillPackageFileCaseCollisions,
+  type SkillPackageFileCaseCollision,
+} from "clawhub-schema";
 import { ConvexError, v } from "convex/values";
 import { unzipSync } from "fflate";
 import semver from "semver";
@@ -612,9 +616,15 @@ async function listSkillCandidatesForRepo(repo: OwnedPublicRepoListItem, fetcher
   if (!tree) return [];
   if (tree.truncated) return listSkillCandidatesFromArchive(repo, fetcher);
 
+  const fileCaseCollisions = findSkillPackageFileCaseCollisions(
+    tree.entries.flatMap((entry) =>
+      entry.type === "blob" && typeof entry.path === "string" ? [entry.path] : [],
+    ),
+  );
   const skillPaths = tree.entries
     .map((entry) => normalizeSkillTreePath(entry))
-    .filter((path): path is string => Boolean(path));
+    .filter((path): path is string => Boolean(path))
+    .filter((skillPath) => !hasCaseCollisionForSkillPath(fileCaseCollisions, skillPath));
 
   return skillPaths.map((skillPath) => toOwnedPublicSkillCandidate(repo, skillPath));
 }
@@ -648,10 +658,19 @@ async function listOwnedPublicSkillCandidatesWithCodeSearch(
       .map((item) => toOwnedPublicSkillCandidateFromSearchItem(item, identity))
       .filter((candidate): candidate is OwnedPublicRepoListItem => Boolean(candidate)),
   );
+  const treeCache = new Map<
+    string,
+    Promise<{ entries: GitHubTreeEntryPayload[]; truncated: boolean } | null>
+  >();
+  const filteredCandidates: OwnedPublicRepoListItem[] = [];
+  for (const candidate of candidates) {
+    if (await ownedPublicSkillCandidateHasCaseCollision(candidate, fetcher, treeCache)) continue;
+    filteredCandidates.push(candidate);
+  }
 
   return {
     hasMore: results.some((result) => result.hasMore),
-    repos: candidates,
+    repos: filteredCandidates,
   };
 }
 
@@ -799,6 +818,55 @@ function normalizeSkillTreePath(entry: GitHubTreeEntryPayload) {
   if (!path) return null;
   if (path.split("/").some((segment) => segment.startsWith("."))) return null;
   return isGitHubSkillFilePath(path) ? path : null;
+}
+
+async function ownedPublicSkillCandidateHasCaseCollision(
+  candidate: OwnedPublicRepoListItem,
+  fetcher: typeof fetch,
+  treeCache: Map<string, Promise<{ entries: GitHubTreeEntryPayload[]; truncated: boolean } | null>>,
+) {
+  if (!candidate.defaultBranch) return false;
+  const cacheKey = `${candidate.owner}/${candidate.repoName}@${candidate.defaultBranch}`;
+  let treePromise = treeCache.get(cacheKey);
+  if (!treePromise) {
+    treePromise = fetchGitHubRepoTreeResult(
+      candidate.owner,
+      candidate.repoName,
+      candidate.defaultBranch,
+      fetcher,
+    );
+    treeCache.set(cacheKey, treePromise);
+  }
+  const tree = await treePromise;
+  if (!tree || tree.truncated) return false;
+  const fileCaseCollisions = findSkillPackageFileCaseCollisions(
+    tree.entries.flatMap((entry) =>
+      entry.type === "blob" && typeof entry.path === "string" ? [entry.path] : [],
+    ),
+  );
+  return hasCaseCollisionForSkillPath(fileCaseCollisions, candidate.skillPath);
+}
+
+function hasCaseCollisionForSkillPath(
+  collisions: readonly SkillPackageFileCaseCollision[],
+  skillPath: string,
+) {
+  if (collisions.length === 0) return false;
+  const candidatePath = skillPath.split("/").slice(0, -1).join("/");
+  const root = normalizeCandidateRoot(candidatePath);
+  return collisions.some((collision) =>
+    collision.paths.some((path) => isUnderCandidateRoot(normalizeRepoPath(path), root)),
+  );
+}
+
+function normalizeCandidateRoot(candidatePath: string) {
+  const normalized = normalizeRepoPath(candidatePath);
+  return normalized ? `${normalized}/` : "";
+}
+
+function isUnderCandidateRoot(path: string, rootWithSlash: string) {
+  if (!rootWithSlash) return true;
+  return path === rootWithSlash.slice(0, -1) || path.startsWith(rootWithSlash);
 }
 
 function dedupeOwnedPublicSkillCandidates(candidates: OwnedPublicRepoListItem[]) {

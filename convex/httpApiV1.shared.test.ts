@@ -5,6 +5,7 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import {
   formatUserFacingErrorMessage,
+  parseMultipartPublish,
   parseMultipartSkillScan,
   resolveTagsBatch,
   softDeleteErrorToResponse,
@@ -136,6 +137,60 @@ describe("http API v1 shared helpers", () => {
     );
 
     expect(result).toEqual([{ stable: "1.5.0" }]);
+  });
+
+  it("rejects multipart publish case collisions before storing blobs", async () => {
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        slug: "demo",
+        displayName: "Demo",
+        version: "1.0.0",
+        acceptLicenseTerms: true,
+      }),
+    );
+    form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
+    form.append("files", new Blob(["# Demo duplicate"], { type: "text/markdown" }), "skill.md");
+    const storage = {
+      store: vi.fn(async () => "storage:1"),
+      delete: vi.fn(),
+    };
+
+    await expect(
+      parseMultipartPublish(
+        { storage } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/skills", { method: "POST", body: form }),
+      ),
+    ).rejects.toThrow(/case-colliding SKILL\.md files/i);
+    expect(storage.store).not.toHaveBeenCalled();
+    expect(storage.delete).not.toHaveBeenCalled();
+  });
+
+  it("cleans up stored multipart publish blobs when parsing later rejects", async () => {
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        slug: "demo",
+        version: "1.0.0",
+        acceptLicenseTerms: true,
+      }),
+    );
+    form.append("files", new Blob(["# Demo"], { type: "text/markdown" }), "SKILL.md");
+    const storage = {
+      store: vi.fn(async () => "storage:1"),
+      delete: vi.fn(),
+    };
+
+    await expect(
+      parseMultipartPublish(
+        { storage } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/skills", { method: "POST", body: form }),
+      ),
+    ).rejects.toThrow(/Publish payload/i);
+    expect(storage.store).toHaveBeenCalledTimes(1);
+    expect(storage.delete).toHaveBeenCalledWith("storage:1");
   });
 
   it("validates skill scan multipart payloads before storing uploaded files", async () => {

@@ -375,6 +375,8 @@ describe("githubImport", () => {
           tree: [
             { path: "README.md", type: "blob" },
             { path: "guides/usage.md", type: "blob" },
+            { path: "tools/case-collision/SKILL.md", type: "blob" },
+            { path: "tools/case-collision/skill.md", type: "blob" },
           ],
         }),
       });
@@ -459,6 +461,12 @@ describe("githubImport", () => {
       visibility: "public",
       owner: { id: 123, login: "vyctorbrzezowski" },
     };
+    const collidingRepo = {
+      ...ownedRepo,
+      name: "colliding-skills",
+      full_name: "vyctorbrzezowski/colliding-skills",
+      html_url: "https://github.com/vyctorbrzezowski/colliding-skills",
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -475,6 +483,7 @@ describe("githubImport", () => {
           items: [
             { path: "SKILL.md", repository: ownedRepo },
             { path: "tools/review/SKILL.md", repository: ownedRepo },
+            { path: "skills/broken/SKILL.md", repository: collidingRepo },
             { path: ".agents/skills/internal/SKILL.md", repository: ownedRepo },
             {
               path: "SKILL.md",
@@ -493,6 +502,27 @@ describe("githubImport", () => {
         ok: true,
         json: async () => ({
           items: [{ path: "legacy/skills.md", repository: ownedRepo }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: false,
+          tree: [
+            { path: "SKILL.md", type: "blob" },
+            { path: "tools/review/SKILL.md", type: "blob" },
+            { path: "legacy/skills.md", type: "blob" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: false,
+          tree: [
+            { path: "skills/broken/SKILL.md", type: "blob" },
+            { path: "skills/broken/skill.md", type: "blob" },
+          ],
         }),
       });
 
@@ -523,7 +553,7 @@ describe("githubImport", () => {
         skillPath: "legacy/skills.md",
       }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     const searchUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
     expect(searchUrl.pathname).toBe("/search/code");
     expect(searchUrl.searchParams.get("q")).toBe("filename:SKILL.md user:vyctorbrzezowski");

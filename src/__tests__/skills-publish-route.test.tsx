@@ -577,6 +577,22 @@ describe("Upload route", () => {
     expect(screen.getAllByText("SKILL.md").length).toBeGreaterThan(0);
   });
 
+  it("surfaces case-colliding skill package files next to the upload input", async () => {
+    render(<Upload />);
+
+    const upperSkill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    const lowerSkill = new File(["duplicate"], "skill.md", { type: "text/markdown" });
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [upperSkill, lowerSkill] } });
+
+    expect(
+      (await screen.findAllByText(/Remove case-colliding SKILL\.md files/i)).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: /publish skill/i }).getAttribute("disabled"),
+    ).not.toBeNull();
+  });
+
   it("shows a validation error when a skill file exceeds 10MB", async () => {
     render(<Upload />);
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {

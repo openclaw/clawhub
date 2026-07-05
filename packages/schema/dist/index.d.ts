@@ -10,4 +10,5 @@ export * from "./packages.js";
 export * from "./pluginCategories.js";
 export { ApiRoutes, LegacyApiRoutes } from "./routes.js";
 export * from "./schemas.js";
+export * from "./skillPackageFiles.js";
 export * from "./textFiles.js";

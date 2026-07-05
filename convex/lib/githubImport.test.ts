@@ -135,6 +135,21 @@ describe("github import", () => {
     expect(candidates.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
   });
 
+  it("skips GitHub import candidates with case-colliding package files", () => {
+    const zip = buildGitHubZipForTests({
+      "repo-1/alpha/SKILL.md": `---\nname: Alpha\n---\nBody`,
+      "repo-1/beta/SKILL.md": `---\nname: Beta\n---\nBody`,
+      "repo-1/beta/skill.md": `---\nname: Duplicate Beta\n---\nBody`,
+      "repo-1/gamma/SKILL.md": `---\nname: Gamma\n---\nBody`,
+      "repo-1/gamma/docs/PROTOCOL.md": "Upper",
+      "repo-1/gamma/docs/protocol.md": "Lower",
+    });
+    const stripped = stripGitHubZipRoot(unzipSync(zip));
+    const candidates = detectGitHubImportCandidates(stripped);
+
+    expect(candidates.map((c) => c.path)).toEqual(["alpha"]);
+  });
+
   it("computes default selection via markdown references", () => {
     const entries = {
       "skill/SKILL.md": `---\nname: demo\n---\nSee [usage](docs/usage.md) and ![logo](img/logo.svg).\nIgnore [web](https://example.com).`,
