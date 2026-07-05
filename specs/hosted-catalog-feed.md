@@ -72,7 +72,9 @@ commands or executable content. They may identify providers, auth choices,
 plugins, models, and HTTPS signup/docs/launch URLs. Only promotions with
 `status: "active"` whose launch window has started are published. The active
 set is capped at 50 records by the promotions write path, which also bounds each
-snapshot.
+snapshot. Public slug lookups keep ended promotions readable only when they
+actually crossed their launch boundary; promotions canceled before launch stay
+private permanently, even if their scheduled window or other fields are edited.
 
 ## Publication
 

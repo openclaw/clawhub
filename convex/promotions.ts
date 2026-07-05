@@ -192,6 +192,18 @@ export function isPromotionActive(promotion: Doc<"promotions">, now: number) {
   return promotion.status === "active" && promotion.startsAt <= now && now <= promotion.endsAt;
 }
 
+function resolvePromotionLaunchedAt(
+  promotion: Pick<Doc<"promotions">, "status" | "startsAt" | "launchedAt">,
+  nextStatus: PromotionStatus,
+  nextStartsAt: number,
+  now: number,
+) {
+  if (promotion.launchedAt !== undefined) return promotion.launchedAt;
+  if (promotion.status === "active" && promotion.startsAt <= now) return promotion.startsAt;
+  if (nextStatus === "active" && nextStartsAt <= now) return now;
+  return undefined;
+}
+
 export function toPublicPromotion(promotion: Doc<"promotions">, now: number) {
   return {
     slug: promotion.slug,
@@ -296,9 +308,16 @@ async function updatePromotionForActor(
   }
 
   const now = Date.now();
+  const launchedAt = resolvePromotionLaunchedAt(
+    existing,
+    existing.status,
+    normalized.startsAt,
+    now,
+  );
   await ctx.db.replace(existing._id, {
     ...normalized,
     status: existing.status,
+    ...(launchedAt !== undefined ? { launchedAt } : {}),
     createdByUserId: existing.createdByUserId,
     createdAt: existing.createdAt,
     updatedByUserId: actor._id,
@@ -354,8 +373,10 @@ async function setPromotionStatusForActor(
   }
 
   const now = Date.now();
+  const launchedAt = resolvePromotionLaunchedAt(existing, status, existing.startsAt, now);
   await ctx.db.patch(existing._id, {
     status,
+    ...(launchedAt !== undefined ? { launchedAt } : {}),
     updatedByUserId: actor._id,
     updatedAt: now,
   });
@@ -468,6 +489,9 @@ export const getBySlugPublicInternal = internalQuery({
     // details cannot be read by guessing the slug. Ended promotions remain
     // visible after launch so stale links can render an "ended" state.
     if (!promotion || promotion.status === "draft") return null;
+    if (promotion.status === "ended") {
+      return promotion.launchedAt === undefined ? null : toPublicPromotion(promotion, args.now);
+    }
     if (args.now < promotion.startsAt) return null;
     return toPublicPromotion(promotion, args.now);
   },

@@ -247,6 +247,50 @@ describe("promotions.update", () => {
     expect(result.slug).toBe("renamed-launch");
     expect(replace).toHaveBeenCalledTimes(1);
   });
+
+  it("preserves launch history when editing an ended promotion", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, replace } = makeUpdateCtx([
+      {
+        _id: "promotions:1",
+        slug: validInput.slug,
+        status: "ended",
+        launchedAt: validInput.startsAt,
+        createdByUserId: adminUser._id,
+        createdAt: 1,
+      },
+    ]);
+
+    await updateHandler(ctx, { targetSlug: validInput.slug, ...validInput });
+
+    expect(replace).toHaveBeenCalledWith(
+      "promotions:1",
+      expect.objectContaining({ launchedAt: validInput.startsAt }),
+    );
+  });
+
+  it("does not mark a canceled promotion as launched when editing it later", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, replace } = makeUpdateCtx([
+      {
+        _id: "promotions:1",
+        slug: validInput.slug,
+        status: "ended",
+        createdByUserId: adminUser._id,
+        createdAt: 1,
+      },
+    ]);
+
+    await updateHandler(ctx, { targetSlug: validInput.slug, ...validInput });
+
+    expect(replace.mock.calls[0]?.[1]).not.toHaveProperty("launchedAt");
+  });
 });
 
 describe("promotions.setStatus", () => {
@@ -287,19 +331,48 @@ describe("promotions.setStatus", () => {
     ]);
   });
 
+  it("records launch when activating a promotion after its window starts", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, patches } = makeMutationCtx({
+      existing: { ...storedPromotion, startsAt: 1 },
+    });
+
+    await setStatusHandler(ctx, { slug: validInput.slug, status: "active" });
+
+    expect(patches[0]?.patch.launchedAt).toEqual(expect.any(Number));
+  });
+
   it("republishes the feed immediately when ending a promotion, without edge jobs", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: adminUser._id,
       user: adminUser,
     } as never);
-    const { ctx, scheduler } = makeMutationCtx({
+    const { ctx, patches, scheduler } = makeMutationCtx({
       existing: { ...storedPromotion, status: "active" },
     });
 
     await setStatusHandler(ctx, { slug: validInput.slug, status: "ended" });
 
+    expect(patches[0]?.patch).not.toHaveProperty("launchedAt");
     expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
     expect(scheduler.runAt).not.toHaveBeenCalled();
+  });
+
+  it("records that a promotion launched when ending it after its start", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: adminUser._id,
+      user: adminUser,
+    } as never);
+    const { ctx, patches } = makeMutationCtx({
+      existing: { ...storedPromotion, status: "active", startsAt: 1 },
+    });
+
+    await setStatusHandler(ctx, { slug: validInput.slug, status: "ended" });
+
+    expect(patches[0]?.patch.launchedAt).toBe(1);
   });
 
   it("is a no-op when the status is unchanged", async () => {
@@ -602,13 +675,18 @@ describe("promotions.getBySlugPublicInternal", () => {
   });
 
   it("returns ended promotions with active=false", async () => {
-    const ctx = makeQueryCtx({ ...base, status: "ended" });
+    const ctx = makeQueryCtx({ ...base, status: "ended", launchedAt: 100 });
     const result = (await getBySlugHandler(ctx, { slug: base.slug, now: 150 })) as {
       active: boolean;
       status: string;
     };
     expect(result.status).toBe("ended");
     expect(result.active).toBe(false);
+  });
+
+  it("hides promotions ended before launch after their scheduled start", async () => {
+    const ctx = makeQueryCtx({ ...base, status: "ended" });
+    expect(await getBySlugHandler(ctx, { slug: base.slug, now: 150 })).toBeNull();
   });
 
   it("hides ended promotions before their launch window", async () => {

@@ -2576,6 +2576,7 @@ const promotions = defineTable({
   signupUrl: v.optional(v.string()),
   docsUrl: v.optional(v.string()),
   launchPageUrl: v.optional(v.string()),
+  launchedAt: v.optional(v.number()),
   createdByUserId: v.id("users"),
   updatedByUserId: v.optional(v.id("users")),
   createdAt: v.number(),
