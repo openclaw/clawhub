@@ -27,7 +27,6 @@ import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCo
 import appCss from "../styles.css?url";
 
 const OG_IMAGE_VERSION = "20260624-1";
-
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     if (location.pathname === BANNED_ACCOUNT_PATH) return;

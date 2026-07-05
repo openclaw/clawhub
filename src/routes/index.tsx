@@ -7,7 +7,48 @@ import { HomePopularPublishersSection } from "../components/HomePopularPublisher
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
+const HOME_APP_ICON_PRELOADS = [
+  ...[
+    "github",
+    "visualstudiocode",
+    "notion",
+    "slack",
+    "gmail",
+    "googledrive",
+    "googlesheets",
+    "googlecalendar",
+    "linear",
+    "figma",
+    "trello",
+    "whatsapp",
+  ].map((slug) => `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${slug}.svg`),
+  ...[
+    "cerebras",
+    "deepinfra",
+    "exa",
+    "feishu",
+    "firecrawl",
+    "groq",
+    "llama-cpp",
+    "parallel",
+    "scraperapi",
+  ].map((slug) => `/app-icons/${slug}.svg`),
+];
+
 export const Route = createFileRoute("/")({
+  head: () => ({
+    links: [
+      {
+        rel: "preconnect",
+        href: "https://cdn.jsdelivr.net",
+      },
+      ...HOME_APP_ICON_PRELOADS.map((href) => ({
+        rel: "preload",
+        as: "image",
+        href,
+      })),
+    ],
+  }),
   loader: loadInitialHomeListing,
   component: SkillsHome,
 });
