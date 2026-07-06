@@ -18,6 +18,7 @@ import {
   HardDrive,
   Info,
   Package,
+  Pencil,
   Plus,
   Server,
   Sparkles,
@@ -1634,6 +1635,22 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                           </a>
                         ))}
                       </div>
+                    ) : null}
+                    {manageContext ? (
+                      <>
+                        <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="xs"
+                          className="plugin-catalog-empty-alert-cta"
+                          aria-label="Edit categories and topics"
+                          onClick={() => setIsCatalogMetadataDialogOpen(true)}
+                        >
+                          <Pencil size={13} aria-hidden="true" />
+                          Edit
+                        </Button>
+                      </>
                     ) : null}
                   </div>
                 ) : null}
