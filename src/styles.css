@@ -25507,7 +25507,7 @@ a.search-empty-action {
   width: 100%;
   max-width: 1296px;
   margin: 0 auto;
-  padding: 0 48px 8px;
+  padding: 0 48px 84px;
 }
 
 .home-v2-promotions-track {
@@ -25589,7 +25589,7 @@ a.search-empty-action {
 
 @media (max-width: 720px) {
   .home-v2-promotions {
-    padding: 0 20px 8px;
+    padding: 0 20px 72px;
   }
 }
 
