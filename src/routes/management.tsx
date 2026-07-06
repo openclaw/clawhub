@@ -257,6 +257,9 @@ export function Management() {
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
   const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
+  const markPublisherAbuseNominationReviewed = useMutation(
+    api.publisherAbuse.markPublisherAbuseNominationReviewed,
+  );
   const setPublisherAbuseAutobanEnabled = useMutation(
     api.publisherAbuse.setPublisherAbuseAutobanEnabled,
   );
@@ -656,6 +659,30 @@ export function Management() {
     });
   };
 
+  const requestMarkPublisherAbuseNominationReviewed = (item: PublisherAbuseReviewItem) => {
+    const label = item.nomination.handleSnapshot;
+    const note = publisherAbuseNotes.trim() || undefined;
+    setConfirmRequest({
+      title: `Mark ${label} reviewed?`,
+      body: "Removes this nomination from the active abuse queue without banning the user. The score and review note stay in the resolved history.",
+      confirmLabel: "Mark reviewed",
+      onConfirm: () => {
+        void markPublisherAbuseNominationReviewed({
+          nominationId: item.nomination._id,
+          expectedLatestScoreId: item.nomination.latestScoreId,
+          expectedUpdatedAt: item.nomination.updatedAt,
+          note,
+        })
+          .then(() => {
+            toast.success("Nomination marked reviewed.");
+            setPublisherAbuseNotes("");
+            setSelectedPublisherAbuseNominationId(null);
+          })
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
   const requestDismissPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Dismiss ${item.signal.skillDisplayName}?`,
@@ -773,6 +800,7 @@ export function Management() {
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
             onDismissSignal={requestDismissPublisherAbuseSignal}
+            onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {
                 loadMorePublisherAbuseSignals(25);

@@ -121,7 +121,7 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
 
   crons.interval(
     "publisher-abuse-signal-notifications",
-    { minutes: 15 },
+    { hours: 1 },
     internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
     {},
   );

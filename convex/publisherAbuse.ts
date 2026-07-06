@@ -249,7 +249,7 @@ type PublisherAbuseAutobanRunResult = PublisherAbuseAutobanPageResult & {
 type PublisherAbuseAutobanEligibility =
   | { kind: "ready" }
   | { kind: "pending_run" }
-  | { kind: "defer"; status: TriageStatus; notes: string };
+  | { kind: "defer"; status: TriageStatus; notes: string; preserveWarningState?: boolean };
 
 type PublisherAbuseAutobanSettingDoc = Doc<"systemSettings">;
 
@@ -332,8 +332,9 @@ export const listReviewDashboard = query({
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return emptyPublisherAbuseReviewDashboard();
 
-    const [latestRun, signalCountSummary] = await Promise.all([
+    const [latestRun, nominationCountSummary, signalCountSummary] = await Promise.all([
       getLatestPublisherAbuseScoreRun(ctx),
+      getPublisherAbuseReviewNominationCountSummary(ctx),
       getPublisherAbuseSignalCountSummary(ctx),
     ]);
 
@@ -343,6 +344,7 @@ export const listReviewDashboard = query({
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
       recentResolvedItems: [],
+      ...nominationCountSummary,
       ...signalCountSummary,
     };
   },
@@ -528,6 +530,14 @@ function emptyPublisherAbuseReviewDashboard() {
     pendingPotentialBanCandidateItems: [],
     pendingReviewItems: [],
     recentResolvedItems: [],
+    pendingPotentialBanCandidateCount: 0,
+    pendingReviewCount: 0,
+    pendingCount: 0,
+    recentResolvedCount: 0,
+    pendingPotentialBanCandidateCountHasMore: false,
+    pendingReviewCountHasMore: false,
+    pendingCountHasMore: false,
+    recentResolvedCountHasMore: false,
     signalCount: 0,
     signalCountHasMore: false,
   };
@@ -706,6 +716,44 @@ export const banPublisherAbuseOwner = mutation({
   },
 });
 
+export const markPublisherAbuseNominationReviewed = mutation({
+  args: {
+    nominationId: v.id("publisherAbuseReviewNominations"),
+    expectedLatestScoreId: v.id("publisherAbuseScores"),
+    expectedUpdatedAt: v.number(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const nomination = await ctx.db.get(args.nominationId);
+    if (!nomination) throw new Error("Publisher abuse nomination not found");
+    requireFreshPublisherAbuseReviewNomination(nomination, args);
+    if (nomination.label !== "potential_ban_candidate") {
+      throw new Error(
+        "Only potential ban publisher abuse nominations can be marked reviewed; review nominations are calibration signals.",
+      );
+    }
+    if (nomination.status !== "pending") {
+      throw new Error("Only pending publisher abuse nominations can be marked reviewed.");
+    }
+    await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
+
+    const now = Date.now();
+    const notes = normalizePublisherAbuseReviewNote(args.note);
+    await setPublisherAbuseReviewStatusWithActor(ctx, {
+      nomination,
+      status: "reviewed_no_action",
+      notes,
+      actorUserId: user._id,
+      now,
+    });
+
+    return { ok: true, status: "reviewed_no_action" as const };
+  },
+});
+
 export const autoBanPublisherAbuseCandidatesPageInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),
@@ -722,13 +770,22 @@ async function setPublisherAbuseReviewStatusWithActor(
     notes: string | undefined;
     actorUserId?: Id<"users">;
     now: number;
+    preserveWarningState?: boolean;
   },
 ) {
+  const keepWarningState = args.status === "pending" || args.preserveWarningState === true;
   await ctx.db.patch(args.nomination._id, {
     status: args.status,
     reviewedByUserId: args.status === "pending" ? undefined : args.actorUserId,
     reviewedAt: args.status === "pending" ? undefined : args.now,
     notes: args.notes,
+    warningSentAt: keepWarningState ? args.nomination.warningSentAt : undefined,
+    warningExpiresAt: keepWarningState ? args.nomination.warningExpiresAt : undefined,
+    warningScoreId: keepWarningState ? args.nomination.warningScoreId : undefined,
+    warningRunId: keepWarningState ? args.nomination.warningRunId : undefined,
+    warningPendingAt: keepWarningState ? args.nomination.warningPendingAt : undefined,
+    warningPendingScoreId: keepWarningState ? args.nomination.warningPendingScoreId : undefined,
+    warningPendingRunId: keepWarningState ? args.nomination.warningPendingRunId : undefined,
     updatedAt: args.now,
   });
   await ctx.db.insert("publisherAbuseReviewEvents", {
@@ -797,6 +854,17 @@ function normalizePublisherAbuseSignalReviewNote(note: string | undefined) {
   return trimmed;
 }
 
+function normalizePublisherAbuseReviewNote(note: string | undefined) {
+  const trimmed = note?.trim();
+  if (!trimmed) return undefined;
+  if (trimmed.length > MAX_BAN_REASON_LENGTH) {
+    throw new Error(
+      `Publisher abuse review note must be ${MAX_BAN_REASON_LENGTH} characters or fewer.`,
+    );
+  }
+  return trimmed;
+}
+
 async function getPublisherAbuseAutobanEligibility(
   ctx: Pick<MutationCtx, "db">,
   nomination: Doc<"publisherAbuseReviewNominations">,
@@ -815,6 +883,7 @@ async function getPublisherAbuseAutobanEligibility(
       kind: "defer",
       status: "candidate_for_future_action",
       notes: FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE,
+      preserveWarningState: true,
     };
   }
   if (scoredByRun.modelVersion !== PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION) {
@@ -1099,6 +1168,7 @@ export async function autoBanPublisherAbuseCandidatesPageInternalHandler(
         nomination,
         status: eligibility.status,
         notes: eligibility.notes,
+        preserveWarningState: eligibility.preserveWarningState,
         now,
       });
       skipped += 1;
@@ -4099,6 +4169,132 @@ async function summarizeVisiblePublisherAbuseSignals(
     });
   }
   return items;
+}
+
+async function getPublisherAbuseReviewNominationCountSummary(ctx: QueryCtx) {
+  const [potentialBanSummary, reviewSummary, resolvedSummary] = await Promise.all([
+    getVisiblePublisherAbuseNominationCount(ctx, {
+      status: "pending",
+      label: "potential_ban_candidate",
+      staffManagerExclusionBudget: createStaffPublisherManagerExclusionBudget(),
+    }),
+    getVisiblePublisherAbuseNominationCount(ctx, {
+      status: "pending",
+      label: "review",
+      staffManagerExclusionBudget: createStaffPublisherManagerExclusionBudget(),
+    }),
+    getResolvedPublisherAbuseNominationCount(ctx, {
+      staffManagerExclusionBudget: createStaffPublisherManagerExclusionBudget(),
+    }),
+  ]);
+  return {
+    pendingPotentialBanCandidateCount: potentialBanSummary.count,
+    pendingReviewCount: reviewSummary.count,
+    pendingCount: potentialBanSummary.count + reviewSummary.count,
+    recentResolvedCount: resolvedSummary.count,
+    pendingPotentialBanCandidateCountHasMore: potentialBanSummary.hasMore,
+    pendingReviewCountHasMore: reviewSummary.hasMore,
+    pendingCountHasMore: potentialBanSummary.hasMore || reviewSummary.hasMore,
+    recentResolvedCountHasMore: resolvedSummary.hasMore,
+  };
+}
+
+async function getVisiblePublisherAbuseNominationCount(
+  ctx: QueryCtx,
+  args: {
+    status: TriageStatus;
+    label: PendingPublisherAbuseReviewLabel;
+    staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
+  },
+) {
+  const nominations = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_status_and_label_and_last_scored_at", (q) =>
+      q.eq("status", args.status).eq("label", args.label),
+    )
+    .order("desc")
+    .take(DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT + 1);
+  return await countVisiblePublisherAbuseNominations(ctx, nominations, {
+    staffManagerExclusionBudget: args.staffManagerExclusionBudget,
+  });
+}
+
+async function getResolvedPublisherAbuseNominationCount(
+  ctx: QueryCtx,
+  args: { staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget },
+) {
+  const resolvedStatuses: TriageStatus[] = [
+    "banned",
+    "reviewed_no_action",
+    "false_positive",
+    "needs_policy_discussion",
+    "candidate_for_future_action",
+  ];
+  let count = 0;
+  let hasMore = false;
+  for (const status of resolvedStatuses) {
+    const nominations = await ctx.db
+      .query("publisherAbuseReviewNominations")
+      .withIndex("by_status_and_reviewed_at", (q) => q.eq("status", status))
+      .order("desc")
+      .take(DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT + 1);
+    const summary = await countVisiblePublisherAbuseNominations(ctx, nominations, {
+      staffManagerExclusionBudget: args.staffManagerExclusionBudget,
+      includeInactiveTargets: true,
+    });
+    count += summary.count;
+    hasMore = hasMore || summary.hasMore;
+    if (count > DASHBOARD_SIGNAL_COUNT_LIMIT) {
+      hasMore = true;
+      count = DASHBOARD_SIGNAL_COUNT_LIMIT;
+      break;
+    }
+  }
+  return { count, hasMore };
+}
+
+async function countVisiblePublisherAbuseNominations(
+  ctx: QueryCtx,
+  nominations: Doc<"publisherAbuseReviewNominations">[],
+  visibilityOptions: PublisherAbuseReviewVisibilityOptions,
+) {
+  const scannedNominations = nominations.slice(0, DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT);
+  let visibleCount = 0;
+  for (const nomination of scannedNominations) {
+    if (await isVisiblePublisherAbuseNominationCountTarget(ctx, nomination, visibilityOptions)) {
+      visibleCount += 1;
+      if (visibleCount > DASHBOARD_SIGNAL_COUNT_LIMIT) break;
+    }
+  }
+  return {
+    count: Math.min(visibleCount, DASHBOARD_SIGNAL_COUNT_LIMIT),
+    hasMore:
+      visibleCount > DASHBOARD_SIGNAL_COUNT_LIMIT ||
+      nominations.length > DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT,
+  };
+}
+
+async function isVisiblePublisherAbuseNominationCountTarget(
+  ctx: QueryCtx,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+  options: PublisherAbuseReviewVisibilityOptions,
+) {
+  if (nomination.label === "pass") return false;
+  const [publisher, ownerUser] = await Promise.all([
+    nomination.ownerPublisherId ? ctx.db.get(nomination.ownerPublisherId) : null,
+    nomination.ownerUserId ? ctx.db.get(nomination.ownerUserId) : null,
+  ]);
+  const targetIsInactive =
+    ownerUser?.deletedAt ||
+    ownerUser?.deactivatedAt ||
+    publisher?.deletedAt ||
+    publisher?.deactivatedAt;
+  if (!options.includeInactiveTargets && targetIsInactive) return false;
+  return !(await isPublisherExcludedFromPublisherAbuse(
+    ctx,
+    publisher,
+    options.staffManagerExclusionBudget,
+  ));
 }
 
 async function getPublisherAbuseSignalCountSummary(ctx: QueryCtx) {

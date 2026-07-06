@@ -180,7 +180,7 @@ describe("crons", () => {
     );
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-abuse-signal-notifications",
-      { minutes: 15 },
+      { hours: 1 },
       mocks.publisherAbuseSignalNotificationsRef,
       {},
     );
