@@ -5,49 +5,39 @@ import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
+import { HOME_APP_ICON_PRELOAD_HREFS } from "../lib/homeApps";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
-const HOME_APP_ICON_PRELOADS = [
-  ...[
-    "github",
-    "visualstudiocode",
-    "notion",
-    "slack",
-    "gmail",
-    "googledrive",
-    "googlesheets",
-    "googlecalendar",
-    "linear",
-    "figma",
-    "trello",
-    "whatsapp",
-  ].map((slug) => `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${slug}.svg`),
-  ...[
-    "cerebras",
-    "deepinfra",
-    "exa",
-    "feishu",
-    "firecrawl",
-    "groq",
-    "llama-cpp",
-    "parallel",
-    "scraperapi",
-  ].map((slug) => `/app-icons/${slug}.svg`),
-];
+type HomeRouteHeadLink =
+  | {
+      rel: "preconnect";
+      href: string;
+    }
+  | {
+      rel: "preload";
+      as: "image";
+      href: string;
+    };
+
+function imagePreloadLink(href: string): HomeRouteHeadLink {
+  return {
+    rel: "preload",
+    as: "image",
+    href,
+  };
+}
+
+const HOME_ROUTE_HEAD_LINKS = [
+  {
+    rel: "preconnect",
+    href: "https://cdn.jsdelivr.net",
+  },
+  ...HOME_APP_ICON_PRELOAD_HREFS.map(imagePreloadLink),
+] satisfies HomeRouteHeadLink[];
 
 export const Route = createFileRoute("/")({
   head: () => ({
-    links: [
-      {
-        rel: "preconnect",
-        href: "https://cdn.jsdelivr.net",
-      },
-      ...HOME_APP_ICON_PRELOADS.map((href) => ({
-        rel: "preload",
-        as: "image",
-        href,
-      })),
-    ],
+    links: HOME_ROUTE_HEAD_LINKS,
   }),
   loader: loadInitialHomeListing,
   component: SkillsHome,
