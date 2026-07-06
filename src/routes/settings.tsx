@@ -975,7 +975,7 @@ export function Settings() {
                           <DialogHeader>
                             <DialogTitle>Create organization</DialogTitle>
                             <DialogDescription>
-                              Create a publisher profile for a team or project.
+                              Create an organization for your team
                             </DialogDescription>
                           </DialogHeader>
                           <div className="grid gap-4">
@@ -987,7 +987,7 @@ export function Settings() {
                                   setOrgHandle(event.target.value);
                                   setCreateOrgError(null);
                                 }}
-                                placeholder="example.tools"
+                                placeholder="@openclaw"
                               />
                             </Field>
                             <Field label="Display name" htmlFor="settings-org-display-name">
@@ -1020,8 +1020,7 @@ export function Settings() {
                               disabled={!orgHandle.trim() || isCreatingOrg}
                               onClick={() => void onCreateOrg()}
                             >
-                              <Building2 size={16} />
-                              {isCreatingOrg ? "Creating..." : "Create org"}
+                              {isCreatingOrg ? "Creating..." : "Create"}
                             </Button>
                           </DialogFooter>
                         </DialogContent>
@@ -1387,7 +1386,7 @@ export function Settings() {
                             Create organization
                           </h3>
                           <p className="text-sm text-[color:var(--ink-soft)]">
-                            Add a publisher profile for a team or project.
+                            Create an organization for your team
                           </p>
                         </div>
                       </div>
@@ -1408,7 +1407,7 @@ export function Settings() {
                           <DialogHeader>
                             <DialogTitle>Create organization</DialogTitle>
                             <DialogDescription>
-                              Create a publisher profile for a team or project.
+                              Create an organization for your team
                             </DialogDescription>
                           </DialogHeader>
                           <div className="grid gap-4">
@@ -1420,7 +1419,7 @@ export function Settings() {
                                   setOrgHandle(event.target.value);
                                   setCreateOrgError(null);
                                 }}
-                                placeholder="example.tools"
+                                placeholder="@openclaw"
                               />
                             </Field>
                             <Field label="Display name" htmlFor="settings-org-display-name-empty">
@@ -1453,8 +1452,7 @@ export function Settings() {
                               disabled={!orgHandle.trim() || isCreatingOrg}
                               onClick={() => void onCreateOrg()}
                             >
-                              <Building2 size={16} />
-                              {isCreatingOrg ? "Creating..." : "Create org"}
+                              {isCreatingOrg ? "Creating..." : "Create"}
                             </Button>
                           </DialogFooter>
                         </DialogContent>
