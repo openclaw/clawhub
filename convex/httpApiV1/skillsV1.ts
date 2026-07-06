@@ -1353,17 +1353,22 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const query = url.searchParams.get("q")?.trim() ?? "";
   const limit = toOptionalNumber(url.searchParams.get("limit"));
+  const rawMode = url.searchParams.get("mode")?.trim().toLowerCase();
   const highlightedOnly = parseBooleanQueryParam(url.searchParams.get("highlightedOnly"));
   const nonSuspiciousOnly = resolveBooleanQueryParam(
     url.searchParams.get("nonSuspiciousOnly"),
     url.searchParams.get("nonSuspicious"),
   );
 
+  if (rawMode && rawMode !== "prefix" && rawMode !== "exact") {
+    return text("Invalid search mode", 400, rate.headers);
+  }
   if (!query) return json({ results: [] }, 200, rate.headers);
 
   const results = (await ctx.runAction(api.search.searchSkills, {
     query,
     limit,
+    ...(rawMode ? { mode: rawMode as "prefix" | "exact" } : {}),
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
   })) as SearchSkillEntry[];

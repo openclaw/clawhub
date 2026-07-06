@@ -279,13 +279,19 @@ registerCommand(auth, ["auth", "whoami"])
   });
 
 registerCommand(program, ["search"])
-  .description("Vector search skills")
+  .description("Search skills")
   .argument("<query...>", "Query string")
   .option("--limit <n>", "Max results", (value) => Number.parseInt(value, 10))
+  .option("--prefix", "Treat the query as a skill slug prefix")
+  .option("--exact", "Treat the query as an exact skill slug")
   .action(async (queryParts, options) => {
     const opts = await resolveGlobalOpts();
     const query = queryParts.join(" ").trim();
-    await cmdSearch(opts, query, options.limit);
+    await cmdSearch(opts, query, {
+      limit: options.limit,
+      prefix: Boolean(options.prefix),
+      exact: Boolean(options.exact),
+    });
   });
 
 registerCommand(program, ["install"])

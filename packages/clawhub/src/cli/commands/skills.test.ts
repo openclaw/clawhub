@@ -315,6 +315,39 @@ describe("cmdSearch", () => {
     expect(url.searchParams.get("limit")).toBe("5");
   });
 
+  it("sets prefix search mode", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({ results: [] });
+
+    await cmdSearch(makeOpts(), "aigroup-", { prefix: true, limit: 10 });
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("q")).toBe("aigroup-");
+    expect(url.searchParams.get("limit")).toBe("10");
+    expect(url.searchParams.get("mode")).toBe("prefix");
+  });
+
+  it("sets exact search mode", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({ results: [] });
+
+    await cmdSearch(makeOpts(), "aigroup-alpha", { exact: true });
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    const url = new URL(String(requestArgs?.url));
+    expect(url.searchParams.get("q")).toBe("aigroup-alpha");
+    expect(url.searchParams.get("limit")).toBe("25");
+    expect(url.searchParams.get("mode")).toBe("exact");
+  });
+
+  it("rejects conflicting search modes", async () => {
+    await expect(cmdSearch(makeOpts(), "aigroup-", { prefix: true, exact: true })).rejects.toThrow(
+      "Choose either --prefix or --exact, not both",
+    );
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
   it("prints skill owners in search results", async () => {
     mockGetOptionalAuthToken.mockResolvedValue(undefined);
     mockApiRequest.mockResolvedValue({

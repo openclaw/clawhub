@@ -1968,6 +1968,38 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("search forwards prefix mode", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/search?q=aigroup-&mode=prefix&limit=10"),
+    );
+    if (response.status !== 200) {
+      throw new Error(await response.text());
+    }
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      query: "aigroup-",
+      limit: 10,
+      mode: "prefix",
+      highlightedOnly: undefined,
+      nonSuspiciousOnly: undefined,
+    });
+  });
+
+  it("search rejects invalid mode", async () => {
+    const runAction = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction, runMutation }),
+      new Request("https://example.com/api/v1/search?q=demo&mode=random"),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid search mode");
+    expect(runAction).not.toHaveBeenCalled();
+  });
+
   it("search forwards legacy nonSuspicious alias", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
