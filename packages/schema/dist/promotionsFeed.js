@@ -1,5 +1,12 @@
 import { type } from "arktype";
-const HttpsUrlSchema = type("string.url").narrow((value, ctx) => new URL(value).protocol === "https:" || ctx.mustBe("an HTTPS URL"));
+const HttpsUrlSchema = type("string").narrow((value, ctx) => {
+    try {
+        return new URL(value).protocol === "https:" || ctx.mustBe("an HTTPS URL");
+    }
+    catch {
+        return ctx.mustBe("an HTTPS URL");
+    }
+});
 export const PromotionsFeedModelSchema = type({
     "+": "reject",
     modelRef: "string",

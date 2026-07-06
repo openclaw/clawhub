@@ -50,6 +50,25 @@ describe("promotions feed schema", () => {
     expect(parsed.entries).toHaveLength(2);
   });
 
+  it("supports runtimes without URL.canParse", () => {
+    const canParseDescriptor = Object.getOwnPropertyDescriptor(URL, "canParse");
+    Object.defineProperty(URL, "canParse", {
+      configurable: true,
+      value: undefined,
+    });
+
+    try {
+      expect(Object.getOwnPropertyDescriptor(URL, "canParse")?.value).toBeUndefined();
+      expect(() => serializePromotionsFeed(makeFeed())).not.toThrow();
+    } finally {
+      if (canParseDescriptor) {
+        Object.defineProperty(URL, "canParse", canParseDescriptor);
+      } else {
+        Reflect.deleteProperty(URL, "canParse");
+      }
+    }
+  });
+
   it("serializes deterministically: entries by slug, models by modelRef", () => {
     const payload = JSON.parse(serializePromotionsFeed(makeFeed())) as PromotionsFeed;
     expect(payload.entries.map((entry) => entry.slug)).toEqual(["alpha-launch", "zeta-launch"]);
@@ -94,4 +113,12 @@ describe("promotions feed schema", () => {
       expect(() => parsePromotionsFeed(feed)).toThrow(/HTTPS URL/);
     },
   );
+
+  it("rejects malformed URL values", () => {
+    const feed = makeFeed();
+    const entry = feed.entries[0];
+    if (!entry) throw new Error("fixture missing entry");
+    entry.signupUrl = "not-a-url";
+    expect(() => parsePromotionsFeed(feed)).toThrow(/HTTPS URL/);
+  });
 });
