@@ -48,7 +48,8 @@ on:
         required: false
         default: ""
   schedule:
-    - cron: "17 9 * * *"
+    # Sunday night Pacific time: 10:17 PM PDT / 9:17 PM PST.
+    - cron: "17 5 * * 1"
 
 permissions:
   actions: read
