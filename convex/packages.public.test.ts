@@ -40,6 +40,7 @@ import {
   getVersionByName,
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
+  findPackagePublishResultInternal,
   listPackageModerationQueueInternal,
   listPluginExportPageInternal,
   reservePackageNameInternal,
@@ -257,6 +258,18 @@ const insertReleaseInternalHandler = (
       source?: unknown;
     },
     unknown
+  >
+)._handler;
+const findPackagePublishResultInternalHandler = (
+  findPackagePublishResultInternal as unknown as WrappedHandler<
+    {
+      name: string;
+      version: string;
+      integritySha256: string;
+      ownerUserId: string;
+      ownerPublisherId?: string;
+    },
+    { ok: true; packageId: string; releaseId: string } | null
   >
 )._handler;
 const reservePackageNameInternalHandler = (
@@ -6881,6 +6894,85 @@ describe("packages public queries", () => {
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       }),
     );
+  });
+
+  it("recovers idempotent package publish results for the same owner", async () => {
+    const release = makeReleaseDoc({ integritySha256: "abc123" });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(
+                  makePackageDoc({
+                    ownerUserId: "users:owner",
+                    ownerPublisherId: "publishers:owner",
+                  }),
+                ),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(release),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      findPackagePublishResultInternalHandler(ctx as never, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        integritySha256: "abc123",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+    });
+  });
+
+  it("does not recover idempotent package publish results for another owner", async () => {
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(
+                  makePackageDoc({
+                    ownerUserId: "users:other",
+                    ownerPublisherId: "publishers:other",
+                  }),
+                ),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            throw new Error("release query should be skipped for owner mismatch");
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      findPackagePublishResultInternalHandler(ctx as never, {
+        name: "demo-plugin",
+        version: "1.0.0",
+        integritySha256: "abc123",
+        ownerUserId: "users:owner",
+        ownerPublisherId: "publishers:owner",
+      }),
+    ).resolves.toBeNull();
   });
 
   it("clears inferred catalog state when a publisher promotes a latest package release", async () => {

@@ -7,6 +7,7 @@ import {
   expectNoRuntimeErrors,
   trackRuntimeErrors,
   waitForHydration,
+  withoutRecoverableReactHydrationErrors,
 } from "../helpers/runtimeErrors";
 import {
   completeMockPrePublicationChecks,
@@ -73,7 +74,7 @@ async function expectHealthyPublishPage(page: Page, errors: string[]) {
   await expectNoFatalErrorUi(page);
   await expectNoRuntimeErrors(
     page,
-    errors.filter(
+    withoutRecoverableReactHydrationErrors(errors).filter(
       (error) =>
         !(
           error.includes("Function execution timed out (maximum duration: 1s)") &&

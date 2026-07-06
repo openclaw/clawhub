@@ -166,6 +166,22 @@ export const createPackagePublishAttemptInternal = internalMutation({
   },
 });
 
+function getSecretBlockedStorageIds(attempt: {
+  files: Array<{ storageId: Id<"_storage"> }>;
+  packageInsertArgs?: unknown;
+}) {
+  const storageIds = new Set<Id<"_storage">>(attempt.files.map((file) => file.storageId));
+  const packageInsertArgs = attempt.packageInsertArgs;
+  if (packageInsertArgs && typeof packageInsertArgs === "object") {
+    const clawpackStorageId = (packageInsertArgs as { clawpackStorageId?: unknown })
+      .clawpackStorageId;
+    if (typeof clawpackStorageId === "string") {
+      storageIds.add(clawpackStorageId as Id<"_storage">);
+    }
+  }
+  return [...storageIds];
+}
+
 export const recordSkillPublishAttemptChecksPassedInternal = internalMutation({
   args: {
     attemptId: v.id("publishAttempts"),
@@ -247,10 +263,17 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     };
 
     if (args.trufflehog.status === "blocked") {
-      await Promise.allSettled(attempt.files.map((file) => ctx.storage.delete(file.storageId)));
+      await Promise.all(
+        getSecretBlockedStorageIds(attempt).map((storageId) => ctx.storage.delete(storageId)),
+      );
       await ctx.db.patch(attempt._id, {
         status: "blocked",
         checks,
+        files: [],
+        skillInsertArgs: undefined,
+        packageInsertArgs: undefined,
+        followup: undefined,
+        packageFollowup: undefined,
         checkClaimId: undefined,
         checkClaimedAt: undefined,
         checkClaimExpiresAt: undefined,
@@ -258,6 +281,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
         blockedAt: now,
         updatedAt: now,
       });
+      await scheduleSecretPublishBlockedEmail(ctx, attempt);
       return { attemptId: attempt._id, kind: attempt.kind, status: "blocked" as const };
     }
 
@@ -744,6 +768,35 @@ function buildCheckClaimId() {
   return typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `${Date.now()}:${Math.random().toString(16).slice(2)}`;
+}
+
+async function scheduleSecretPublishBlockedEmail(
+  ctx: MutationCtx,
+  attempt: {
+    _id: Id<"publishAttempts">;
+    userId: Id<"users">;
+    kind: "skill" | "package";
+    slug: string;
+    version: string;
+  },
+) {
+  const user = await ctx.db.get(attempt.userId);
+  if (!user?.email) return;
+  await ctx.scheduler.runAfter(
+    0,
+    internal.emailsNode.sendSecretPublishBlockedNotificationInternal,
+    {
+      attemptId: attempt._id,
+      userId: attempt.userId,
+      to: user.email,
+      handle: user.handle,
+      artifact: {
+        kind: attempt.kind === "skill" ? "skill" : "plugin",
+        name: attempt.slug,
+      },
+      version: attempt.version,
+    },
+  );
 }
 
 async function requireSkillPublishAttempt(

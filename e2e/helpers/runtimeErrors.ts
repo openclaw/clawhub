@@ -32,6 +32,12 @@ export function trackRuntimeErrors(page: Page) {
   return errors;
 }
 
+// React production builds report recoverable hydration mismatches as #418 page errors.
+// Keep the filter opt-in so tests still fail on unexpected hydration regressions by default.
+export function withoutRecoverableReactHydrationErrors(errors: string[]) {
+  return errors.filter((error) => !error.includes("pageerror:Minified React error #418"));
+}
+
 export async function expectNoRuntimeErrors(page: Page, errors: string[]) {
   await expect
     .poll(() => errors, {

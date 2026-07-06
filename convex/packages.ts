@@ -4317,10 +4317,13 @@ export const findPackagePublishResultInternal = internalQuery({
     name: v.string(),
     version: v.string(),
     integritySha256: v.string(),
+    ownerUserId: v.id("users"),
+    ownerPublisherId: v.optional(v.id("publishers")),
   },
   handler: async (ctx, args) => {
     const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
     if (!pkg) return null;
+    if (getPackageOwnerKey(pkg) !== getRequestedPackageOwnerKey(args)) return null;
     const release = await ctx.db
       .query("packageReleases")
       .withIndex("by_package_version", (q) =>
@@ -7947,8 +7950,9 @@ export const publishRelease: ReturnType<typeof action> = action({
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
+    const stagePrePublicationChecks = stagedPrePublicationPublishesEnabled();
     return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload, {
-      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+      stagePrePublicationChecks,
     });
   },
 });
@@ -7994,9 +7998,14 @@ export const finalizePackagePublishAttemptInternal = internalAction({
         name?: string;
         version?: string;
         integritySha256?: string;
+        ownerUserId?: Id<"users">;
+        ownerPublisherId?: Id<"publishers">;
       };
       const existingResult =
-        insertArgs.name && insertArgs.version && insertArgs.integritySha256
+        insertArgs.name &&
+        insertArgs.version &&
+        insertArgs.integritySha256 &&
+        insertArgs.ownerUserId
           ? await runQueryRef<{
               ok: true;
               packageId: Id<"packages">;
@@ -8005,6 +8014,8 @@ export const finalizePackagePublishAttemptInternal = internalAction({
               name: insertArgs.name,
               version: insertArgs.version,
               integritySha256: insertArgs.integritySha256,
+              ownerUserId: insertArgs.ownerUserId,
+              ownerPublisherId: insertArgs.ownerPublisherId,
             })
           : null;
       if (!existingResult) {
