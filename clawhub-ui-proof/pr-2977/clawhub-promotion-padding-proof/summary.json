@@ -1,0 +1,23 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Desktop 1440x900",
+          "slug": "desktop",
+          "status": "passed",
+          "screenshot": "desktop.png"
+        },
+        {
+          "name": "Mobile 390x844",
+          "slug": "mobile",
+          "status": "passed",
+          "screenshot": "mobile.png"
+        }
+      ]
+    }
+  ]
+}
