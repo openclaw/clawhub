@@ -356,7 +356,7 @@ export function PromotionsPage({
         <PromotionField
           id="promotion-models"
           label="Models *"
-          hint="One per line: modelRef | alias | default"
+          hint="One per line: modelRef | alias | default — alias is a typed identifier (letters, digits, . _ : - only, no spaces)"
           className="promotion-form-field-wide"
         >
           <Textarea
@@ -364,7 +364,7 @@ export function PromotionsPage({
             rows={3}
             className="mono min-h-[84px]"
             value={form.models}
-            placeholder="provider/org/model-name | Model Alias | default"
+            placeholder="provider/org/model-name | model-alias | default"
             onChange={(event) => setField("models")(event.target.value)}
           />
         </PromotionField>

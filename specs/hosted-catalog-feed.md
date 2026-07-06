@@ -79,6 +79,17 @@ Expired drafts cannot be activated, and unlaunched active promotions cannot be
 rescheduled wholly into an expired window. Model references and aliases are
 single-line fields so management form serialization remains lossless.
 
+The write path also enforces the OpenClaw consumer's authoring grammars so a
+promotion can never publish in a shape clients reject or silently degrade on:
+model refs, provider, and auth choice id are restricted to shell-safe
+identifier characters because the CLI echoes them into copy-paste commands
+and refuses anything else; aliases must be typed identifiers (letters,
+digits, `._:-`, no spaces) because the CLI skips aliases it cannot register;
+plugin names use the package registry's canonical npm-safe grammar (scoped
+`@scope/name` allowed); and when a provider is declared, every model ref must
+start with `<provider>/`, matching the CLI's refusal to configure models
+outside the promotion's declared provider.
+
 ## Publication
 
 `convex/catalogFeed.ts` builds both feeds from indexed package/skill queries and

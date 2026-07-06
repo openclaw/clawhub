@@ -49,7 +49,7 @@ const validInput = {
   endsAt: 2_000,
   provider: "example-provider",
   authChoiceId: "example-provider-api-key",
-  models: [{ modelRef: "example-provider/example/model-alpha", alias: "Model Alpha" }],
+  models: [{ modelRef: "example-provider/example/model-alpha", alias: "model-alpha" }],
   signupUrl: "https://signup.example.com",
 };
 
@@ -143,6 +143,88 @@ describe("normalizePromotionInput", () => {
     ["Model alias", { modelRef: "provider/model", alias: "Alias\r\ninjected" }],
   ])("rejects line breaks in %s", (label, model) => {
     expect(() => normalizePromotionInput({ ...validInput, models: [model] })).toThrow(label);
+  });
+
+  // CLI authoring contracts: the OpenClaw consumer rejects promotions whose
+  // identifiers violate these grammars and skips aliases it cannot register.
+  it("rejects aliases that are not typed identifiers", () => {
+    expect(() =>
+      normalizePromotionInput({
+        ...validInput,
+        models: [{ modelRef: "example-provider/example/model-alpha", alias: "Model Alpha" }],
+      }),
+    ).toThrow(/alias/);
+    expect(() =>
+      normalizePromotionInput({
+        ...validInput,
+        models: [{ modelRef: "example-provider/example/model-alpha", alias: "alias$(rm)" }],
+      }),
+    ).toThrow(/alias/);
+  });
+
+  it("accepts typed-identifier aliases", () => {
+    const normalized = normalizePromotionInput({
+      ...validInput,
+      models: [{ modelRef: "example-provider/example/model-alpha", alias: "model-alpha_v1.2:x" }],
+    });
+    expect(normalized.models[0]?.alias).toBe("model-alpha_v1.2:x");
+  });
+
+  it("rejects modelRefs with shell-unsafe characters", () => {
+    for (const modelRef of [
+      "example-provider/model alpha",
+      "example-provider/model;rm",
+      "example-provider/`model`",
+      "-leading-dash/model",
+    ]) {
+      expect(() => normalizePromotionInput({ ...validInput, models: [{ modelRef }] })).toThrow(
+        /modelRef/,
+      );
+    }
+  });
+
+  it("rejects modelRefs outside the declared provider prefix", () => {
+    expect(() =>
+      normalizePromotionInput({
+        ...validInput,
+        models: [{ modelRef: "other-provider/example/model-alpha" }],
+      }),
+    ).toThrow(/provider prefix/);
+    expect(() =>
+      normalizePromotionInput({
+        ...validInput,
+        models: [{ modelRef: "example-provider/" }],
+      }),
+    ).toThrow(/provider prefix/);
+  });
+
+  it("skips the provider-prefix requirement when no provider is declared", () => {
+    const { provider: _provider, authChoiceId: _authChoiceId, ...rest } = validInput;
+    const normalized = normalizePromotionInput({
+      ...rest,
+      models: [{ modelRef: "any-provider/example/model-alpha" }],
+    });
+    expect(normalized.models[0]?.modelRef).toBe("any-provider/example/model-alpha");
+  });
+
+  it("rejects provider, authChoiceId, and plugin names outside the identifier grammar", () => {
+    expect(() => normalizePromotionInput({ ...validInput, provider: "bad provider" })).toThrow(
+      /Provider/,
+    );
+    expect(() =>
+      normalizePromotionInput({ ...validInput, authChoiceId: "choice id!" }),
+    ).toThrow(/authChoiceId/);
+    expect(() =>
+      normalizePromotionInput({ ...validInput, pluginNames: ["good-plugin", "bad name"] }),
+    ).toThrow(/Plugin name/);
+  });
+
+  it("accepts scoped npm plugin names and lowercases them", () => {
+    const normalized = normalizePromotionInput({
+      ...validInput,
+      pluginNames: ["@openclaw/Example-Plugin", "plain-plugin"],
+    });
+    expect(normalized.pluginNames).toEqual(["@openclaw/example-plugin", "plain-plugin"]);
   });
 });
 

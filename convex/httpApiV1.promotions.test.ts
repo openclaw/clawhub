@@ -47,7 +47,7 @@ const validCreatePayload = {
   blurb: "A limited-time free model offer from Example.",
   startsAt: 100,
   endsAt: 200,
-  models: [{ modelRef: "example-provider/example/model-alpha", alias: "Model Alpha" }],
+  models: [{ modelRef: "example-provider/example/model-alpha", alias: "model-alpha" }],
   signupUrl: "https://signup.example.com",
 };
 
@@ -251,7 +251,7 @@ describe("createPromotionV1Handler", () => {
       actorUserId: "users:admin",
       input: expect.objectContaining({
         slug: validCreatePayload.slug,
-        models: [{ modelRef: "example-provider/example/model-alpha", alias: "Model Alpha" }],
+        models: [{ modelRef: "example-provider/example/model-alpha", alias: "model-alpha" }],
       }),
     });
   });

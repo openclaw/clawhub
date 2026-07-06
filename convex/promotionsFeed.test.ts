@@ -18,7 +18,7 @@ const publishHandler = (publishInternal as unknown as WrappedHandler<Record<stri
 const basePromotion = {
   title: "Free Example models",
   blurb: "A limited-time free model offer from Example.",
-  models: [{ modelRef: "example-provider/example/model-alpha", alias: "Model Alpha" }],
+  models: [{ modelRef: "example-provider/example/model-alpha", alias: "model-alpha" }],
   createdByUserId: "users:admin",
   createdAt: 1,
   updatedAt: 1,
