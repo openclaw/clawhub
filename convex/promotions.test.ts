@@ -211,9 +211,9 @@ describe("normalizePromotionInput", () => {
     expect(() => normalizePromotionInput({ ...validInput, provider: "bad provider" })).toThrow(
       /Provider/,
     );
-    expect(() =>
-      normalizePromotionInput({ ...validInput, authChoiceId: "choice id!" }),
-    ).toThrow(/authChoiceId/);
+    expect(() => normalizePromotionInput({ ...validInput, authChoiceId: "choice id!" })).toThrow(
+      /authChoiceId/,
+    );
     expect(() =>
       normalizePromotionInput({ ...validInput, pluginNames: ["good-plugin", "bad name"] }),
     ).toThrow(/Plugin name/);
