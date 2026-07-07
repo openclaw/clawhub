@@ -29,19 +29,39 @@ describe("pre-publication publish worker workflow", () => {
           concurrency?: unknown;
           env?: Record<string, unknown>;
           environment?: string;
+          "runs-on"?: string;
           steps: WorkflowStep[];
           strategy?: { matrix?: { shard?: number[] }; "max-parallel"?: number };
           "timeout-minutes"?: number;
         };
       };
-      on?: { schedule?: Array<{ cron?: string }>; workflow_dispatch?: unknown };
+      on?: {
+        schedule?: Array<{ cron?: string }>;
+        workflow_dispatch?: {
+          inputs?: {
+            runner?: {
+              default?: string;
+              options?: string[];
+              type?: string;
+            };
+          };
+        };
+      };
     };
 
     const job = workflow.jobs["prepublication-publish-checks"];
     const steps = job.steps;
     expect(workflow.on?.schedule?.[0]?.cron).toBe("*/5 * * * *");
     expect(workflow.on?.workflow_dispatch).toBeDefined();
+    expect(workflow.on?.workflow_dispatch?.inputs?.runner).toEqual({
+      description: "Runner label for manual recovery dispatches",
+      required: true,
+      default: "blacksmith-8vcpu-ubuntu-2404",
+      type: "choice",
+      options: ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-latest"],
+    });
     expect(job.environment).toBe("Production");
+    expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(20);
     expect(job.strategy?.matrix?.shard).toEqual([0, 1]);
     expect(job.strategy?.["max-parallel"]).toBe(2);

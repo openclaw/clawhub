@@ -15,6 +15,14 @@ on:
         description: "Stop claiming new attempts after this many minutes"
         required: true
         default: "8"
+      runner:
+        description: "Runner label for manual recovery dispatches"
+        required: true
+        default: "blacksmith-8vcpu-ubuntu-2404"
+        type: choice
+        options:
+          - "blacksmith-8vcpu-ubuntu-2404"
+          - "ubuntu-latest"
   schedule:
     - cron: "*/5 * * * *"
 
@@ -28,7 +36,7 @@ concurrency:
 jobs:
   prepublication-publish-checks:
     name: Pre-publication publish checks shard ${{ matrix.shard }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     environment: Production
     strategy:
