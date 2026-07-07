@@ -273,7 +273,8 @@ export function PublishPluginRoute() {
   }, [family, isMetadataLocked, name, sourceCommit, sourceRepo, version]);
   const hasPackageBlocker =
     Boolean(validationError) || Boolean(ownerScopeError) || codePluginFieldIssues.length > 0;
-  const hasPublished = status?.startsWith("Published.") ?? false;
+  const hasPublished =
+    status?.startsWith("Published.") || status?.startsWith("Publish received.") || false;
   const isPublishDisabled =
     !isAuthenticated ||
     isMetadataLocked ||
@@ -809,7 +810,7 @@ export function PublishPluginRoute() {
                         uploadFile,
                       });
                       setStatus("Publishing release...");
-                      await publishRelease({
+                      const result = await publishRelease({
                         payload: {
                           name: name.trim(),
                           displayName: displayName.trim() || undefined,
@@ -852,9 +853,20 @@ export function PublishPluginRoute() {
                           files: uploaded,
                         },
                       });
-                      setStatus(
-                        "Published. Pending security checks and verification before public listing.",
-                      );
+                      if (
+                        result &&
+                        typeof result === "object" &&
+                        "status" in result &&
+                        result.status === "pending"
+                      ) {
+                        setStatus(
+                          "Publish received. Running TruffleHog and ClawScan before public listing.",
+                        );
+                      } else {
+                        setStatus(
+                          "Published. Pending security checks and verification before public listing.",
+                        );
+                      }
                     } catch (publishError) {
                       const message = formatPublishError(publishError);
                       setError(message);

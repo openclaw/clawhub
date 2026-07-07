@@ -4,7 +4,12 @@ import { expect, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
+import {
+  expectHealthyPage,
+  trackRuntimeErrors,
+  waitForHydration,
+  withoutRecoverableReactHydrationErrors,
+} from "../helpers/runtimeErrors";
 import { buildSkillDetailHref, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
 
 test.skip(
@@ -233,7 +238,7 @@ function withoutExpectedBannedSessionTeardownErrors(errors: string[]) {
     "CONVEX Q(publishers:getMyProfileHandle)",
     "CONVEX M(packages:applyBanToOwnedPackagesBatchInternal)",
   ];
-  return errors.filter(
+  return withoutRecoverableReactHydrationErrors(errors).filter(
     (error) =>
       error !==
         "console:Failed to load resource: the server responded with a status of 503 (Service Unavailable)" &&

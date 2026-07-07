@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
+  const publisherAbuseSignalNotificationsRef = Symbol("publisher-abuse-signal-notifications");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
   const httpRateLimitKeysPruneRef = Symbol("http-rate-limit-keys-prune");
@@ -14,11 +15,13 @@ const mocks = vi.hoisted(() => {
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
+  const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
   return {
     interval,
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
+    publisherAbuseSignalNotificationsRef,
     publisherAbuseScoreRefreshRef,
     publisherTemporalAbuseScanRef,
     httpRateLimitKeysPruneRef,
@@ -27,6 +30,7 @@ const mocks = vi.hoisted(() => {
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
+    promotionsFeedPublishRef,
   };
 });
 
@@ -61,7 +65,11 @@ vi.mock("./_generated/api", () => ({
     publisherAbuse: {
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
       runTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
+      notifyPublisherAbuseSignalChangesInternal: mocks.publisherAbuseSignalNotificationsRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
+    },
+    promotionsFeed: {
+      publishInternal: mocks.promotionsFeedPublishRef,
     },
     vt: {
       pollPendingScans: Symbol("vt-pending-scans"),
@@ -113,6 +121,17 @@ describe("crons", () => {
       "github-skill-source-sync",
       { minutes: 15 },
       mocks.githubSkillSyncRef,
+      {},
+    );
+  });
+
+  it("refreshes the promotions feed before its publication expires", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "promotions-feed-refresh",
+      { hours: 6 },
+      mocks.promotionsFeedPublishRef,
       {},
     );
   });
@@ -174,6 +193,12 @@ describe("crons", () => {
         batchSize: 1,
         maxPages: 50,
       },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-abuse-signal-notifications",
+      { hours: 1 },
+      mocks.publisherAbuseSignalNotificationsRef,
+      {},
     );
   });
 

@@ -135,9 +135,9 @@ import {
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import {
   fetchText,
-  type PublishResult,
-  publishVersionForUser,
   queueHighlightedWebhook,
+  stageSkillPublishAttemptForUser,
+  type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
@@ -9706,7 +9706,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       }),
     ),
   },
-  handler: async (ctx, args): Promise<PublishResult> => {
+  handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
       throw new ConvexError("Skill license terms must be accepted to publish skills");
     }
@@ -9729,14 +9729,19 @@ export const publishVersion: ReturnType<typeof action> = action({
           })) as { publisherId: Id<"publishers"> })
         : null;
     const { icon: _legacyIcon, ...publishArgs } = args;
-    return publishVersionForUser(ctx, userId, publishArgs, {
+    return stageSkillPublishAttemptForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
+      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
     });
   },
 });
+
+function stagedPrePublicationPublishesEnabled() {
+  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
+}
 
 export const generateChangelogPreview = action({
   args: {
@@ -11740,6 +11745,7 @@ export const insertVersion = internalMutation({
       engineVersion: v.string(),
       checkedAt: v.number(),
     }),
+    llmAnalysis: v.optional(v.any()),
     embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
@@ -12239,6 +12245,7 @@ export const insertVersion = internalMutation({
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
+      llmAnalysis: args.llmAnalysis,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -12302,6 +12309,19 @@ export const insertVersion = internalMutation({
     const nextFlags = Array.from(
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
+    const scannerModerationPatch =
+      args.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+        ? buildScannerModerationPatchFromVersion({
+            owner: null,
+            version: {
+              _id: versionId,
+              staticScan: args.staticScan,
+              vtAnalysis: undefined,
+              llmAnalysis: args.llmAnalysis,
+            },
+            now,
+          })
+        : {};
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
@@ -12361,6 +12381,7 @@ export const insertVersion = internalMutation({
       unpublishedSlugReleasedAt: undefined,
       unpublishedOriginalSlug: undefined,
       updatedAt: now,
+      ...scannerModerationPatch,
     };
     const patch = applySkillManualOverrideToSkillPatch({
       skill,

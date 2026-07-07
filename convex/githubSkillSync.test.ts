@@ -1,4 +1,5 @@
 import { getFunctionName } from "convex/server";
+import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -378,6 +379,135 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
         }),
       }),
     );
+  });
+
+  it("prefers nested catalog skill paths over duplicate plugin package copies", async () => {
+    const zip = zipSync({
+      "repo-main/plugins/aws-core/skills/amazon-bedrock/SKILL.md": new TextEncoder().encode(
+        "# Amazon Bedrock Plugin Copy\n",
+      ),
+      "repo-main/skills/core-skills/amazon-bedrock/SKILL.md": new TextEncoder().encode(
+        "# Amazon Bedrock\n",
+      ),
+    });
+    const runQuery = vi.fn(async () => ({
+      ownerUserId: "users:publisher-owner",
+      existingSource: null,
+      official: true,
+    }));
+    const runMutation = vi.fn(async () => ({ ok: true, stats: { discovered: 1 } }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          full_name: "aws/agent-toolkit-for-aws",
+          private: false,
+          visibility: "public",
+          default_branch: "main",
+          disabled: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ sha: "1".repeat(40) }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-length": String(zip.byteLength) }),
+        body: null,
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      });
+
+    await expect(
+      configurePublicGitHubSkillSourceHandler(
+        { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+        {
+          ownerPublisherId: "publishers:local" as never,
+          repo: "aws/agent-toolkit-for-aws",
+        },
+        fetchMock as never,
+        {
+          userId: "users:actor" as never,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, stats: { discovered: 1 } });
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        snapshot: expect.objectContaining({
+          skills: [
+            expect.objectContaining({
+              slug: "amazon-bedrock",
+              path: "skills/core-skills/amazon-bedrock",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("rejects ambiguous catalog duplicate slugs with a client-visible error", async () => {
+    const zip = zipSync({
+      "repo-main/skills/core-skills/amazon-bedrock/SKILL.md": new TextEncoder().encode(
+        "# Amazon Bedrock\n",
+      ),
+      "repo-main/skills/other-skills/amazon-bedrock/SKILL.md": new TextEncoder().encode(
+        "# Amazon Bedrock Duplicate\n",
+      ),
+    });
+    const runQuery = vi.fn(async () => ({
+      ownerUserId: "users:publisher-owner",
+      existingSource: null,
+      official: true,
+    }));
+    const runMutation = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          full_name: "aws/agent-toolkit-for-aws",
+          private: false,
+          visibility: "public",
+          default_branch: "main",
+          disabled: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ sha: "1".repeat(40) }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-length": String(zip.byteLength) }),
+        body: null,
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      });
+
+    let caught: unknown;
+    try {
+      await configurePublicGitHubSkillSourceHandler(
+        { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+        {
+          ownerPublisherId: "publishers:local" as never,
+          repo: "aws/agent-toolkit-for-aws",
+        },
+        fetchMock as never,
+        {
+          userId: "users:actor" as never,
+        },
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ConvexError);
+    expect((caught as { data?: unknown }).data).toMatch(
+      /duplicate normalized slug "amazon-bedrock"/i,
+    );
+    expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("rejects non-official publishers before fetching skill contents", async () => {
