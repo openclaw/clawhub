@@ -6,7 +6,7 @@ import { action, internalAction, internalMutation, internalQuery } from "./funct
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
-const CHECK_CLAIM_LEASE_MS = 10 * 60 * 1000;
+const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
 
 const publishResultValidator = v.object({
@@ -26,6 +26,18 @@ const workerCheckResultValidator = v.object({
   summary: v.optional(v.string()),
   redactedFindings: v.optional(v.array(v.string())),
 });
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function withoutUndefined<T extends Record<string, unknown>>(value: T) {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
+  ) as Partial<T>;
+}
 
 export const createSkillPublishAttemptInternal = internalMutation({
   args: {
@@ -180,6 +192,46 @@ function getSecretBlockedStorageIds(attempt: {
     }
   }
   return [...storageIds];
+}
+
+function buildSkillAttemptScanContext(attempt: { skillInsertArgs?: unknown }) {
+  const skillInsertArgs = asRecord(attempt.skillInsertArgs);
+  const parsed = asRecord(skillInsertArgs.parsed);
+  return withoutUndefined({
+    version: withoutUndefined({
+      staticScan: skillInsertArgs.staticScan,
+      parsed: withoutUndefined({
+        metadata: parsed.metadata,
+        clawdis: parsed.clawdis,
+        license: parsed.license,
+      }),
+      qualityAssessment: skillInsertArgs.qualityAssessment,
+      sourceProvenance: skillInsertArgs.sourceProvenance,
+    }),
+  });
+}
+
+function buildPackageAttemptScanContext(attempt: { packageInsertArgs?: unknown }) {
+  const packageInsertArgs = asRecord(attempt.packageInsertArgs);
+  const verification = asRecord(packageInsertArgs.verification);
+  return withoutUndefined({
+    trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
+    release: withoutUndefined({
+      staticScan: packageInsertArgs.staticScan,
+      pluginManifestSummary: packageInsertArgs.pluginManifestSummary,
+      verification: packageInsertArgs.verification,
+      artifactKind: packageInsertArgs.artifactKind,
+      npmIntegrity: packageInsertArgs.npmIntegrity,
+      npmShasum: packageInsertArgs.npmShasum,
+      npmTarballName: packageInsertArgs.npmTarballName,
+      source: packageInsertArgs.source,
+    }),
+  });
+}
+
+function publishAttemptClawpackStorageId(attempt: { packageInsertArgs?: unknown }) {
+  const clawpackStorageId = asRecord(attempt.packageInsertArgs).clawpackStorageId;
+  return typeof clawpackStorageId === "string" ? (clawpackStorageId as Id<"_storage">) : undefined;
 }
 
 export const recordSkillPublishAttemptChecksPassedInternal = internalMutation({
@@ -380,6 +432,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
 
     return {
       attemptId: attempt._id,
+      status: attempt.status,
       claimId: args.claimId,
       kind: attempt.kind,
       userId: attempt.userId,
@@ -391,7 +444,76 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       version: attempt.version,
       artifactFingerprint: attempt.artifactFingerprint,
       files: attempt.files,
+      ...(attempt.kind === "skill"
+        ? {
+            scanContext: buildSkillAttemptScanContext(attempt),
+          }
+        : {
+            clawpackStorageId: publishAttemptClawpackStorageId(attempt),
+            scanContext: buildPackageAttemptScanContext(attempt),
+          }),
       checkClaimExpiresAt,
+      createdAt: attempt.createdAt,
+    };
+  },
+});
+
+export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutation({
+  args: {
+    claimId: v.string(),
+    attemptId: v.optional(v.id("publishAttempts")),
+    kind: v.optional(v.union(v.literal("skill"), v.literal("package"))),
+    slug: v.optional(v.string()),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const attempt = args.attemptId
+      ? await ctx.db.get(args.attemptId)
+      : (
+          await ctx.db
+            .query("publishAttempts")
+            .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
+            .order("asc")
+            .take(25)
+        ).find((candidate) => {
+          if (args.kind && candidate.kind !== args.kind) return false;
+          if (args.slug && candidate.slug !== args.slug) return false;
+          if (args.version && candidate.version !== args.version) return false;
+          return true;
+        });
+
+    if (!attempt) return null;
+    if (attempt.status !== "ready_to_finalize") {
+      if (args.attemptId) {
+        throw new ConvexError(`Publish attempt is ${attempt.status}, not ready to finalize.`);
+      }
+      return null;
+    }
+
+    await ctx.db.patch(attempt._id, {
+      checkClaimId: args.claimId,
+      checkClaimedAt: now,
+      checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
+      checkClaimLastError: undefined,
+      updatedAt: now,
+    });
+
+    return {
+      attemptId: attempt._id,
+      status: attempt.status,
+      claimId: args.claimId,
+      kind: attempt.kind,
+      userId: attempt.userId,
+      ownerUserId: attempt.ownerUserId,
+      ownerPublisherId: attempt.ownerPublisherId,
+      sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
+      slug: attempt.slug,
+      displayName: attempt.displayName,
+      version: attempt.version,
+      artifactFingerprint: attempt.artifactFingerprint,
+      files: [],
+      checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
       createdAt: attempt.createdAt,
     };
   },
@@ -674,17 +796,23 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
   handler: async (ctx, args): Promise<unknown> => {
     assertWorkerToken(args.token);
     const claimId = buildCheckClaimId();
-    const claimed = (await ctx.runMutation(
+    const claimArgs = {
+      claimId,
+      attemptId: args.attemptId,
+      kind: args.kind,
+      slug: args.slug,
+      version: args.version,
+    };
+    const claimed = ((await ctx.runMutation(
       internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
-      {
-        claimId,
-        attemptId: args.attemptId,
-        kind: args.kind,
-        slug: args.slug,
-        version: args.version,
-      },
-    )) as null | {
+      claimArgs,
+    )) ??
+      (await ctx.runMutation(
+        internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
+        claimArgs,
+      ))) as null | {
       attemptId: Id<"publishAttempts">;
+      status: "pending_checks" | "ready_to_finalize";
       claimId: string;
       kind: "skill" | "package";
       userId: Id<"users">;
@@ -702,6 +830,8 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
         sha256: string;
         contentType?: string;
       }>;
+      clawpackStorageId?: Id<"_storage">;
+      scanContext?: Record<string, unknown>;
       checkClaimExpiresAt: number;
       createdAt: number;
     };
@@ -713,7 +843,15 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
         url: await ctx.storage.getUrl(file.storageId),
       })),
     );
-    return { ...claimed, files };
+    const clawpackUrl = claimed.clawpackStorageId
+      ? await ctx.storage.getUrl(claimed.clawpackStorageId)
+      : undefined;
+    return withoutUndefined({
+      ...claimed,
+      files,
+      clawpackStorageId: undefined,
+      clawpackUrl,
+    });
   },
 });
 

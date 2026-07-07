@@ -52,6 +52,7 @@
     "preview": "bun --bun vite preview",
     "proof:publish": "node scripts/ui-proof-publish.mjs",
     "proof:ui": "node scripts/ui-proof.mjs",
+    "publish:prepublication-worker": "bun scripts/security/run-prepublication-worker.ts",
     "release:clawhub:cli:changelog": "node scripts/extract-changelog-release.mjs",
     "release:clawhub:cli:npm:check": "node scripts/clawhub-cli-npm-release-check.mjs",
     "security:codex-worker": "bun scripts/security/run-codex-scan-worker.ts",

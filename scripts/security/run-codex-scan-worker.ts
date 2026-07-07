@@ -23,7 +23,7 @@ import {
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
 
-type ClaimedJob = {
+export type ClaimedJob = {
   job: {
     _id: string;
     leaseToken: string;
@@ -45,7 +45,7 @@ type ClaimedJob = {
   };
 };
 
-type StoredLlmAnalysis = {
+export type StoredLlmAnalysis = {
   status: string;
   verdict?: string;
   confidence?: string;
@@ -72,7 +72,7 @@ type SkillSpectorIssue = {
   codeSnippet?: string;
 };
 
-type SkillSpectorAnalysis = {
+export type SkillSpectorAnalysis = {
   status: string;
   score?: number;
   severity?: string;
@@ -731,7 +731,7 @@ function aggregateSkillSpectorAnalyses(analyses: SkillSpectorAnalysis[]) {
   } satisfies SkillSpectorAnalysis;
 }
 
-async function runSkillSpector(
+export async function runSkillSpector(
   workspace: string,
   scanInputs: string[],
   onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
@@ -1219,7 +1219,7 @@ export function shouldClaimSecurityScanBatch(
   return totalClaimed === 0 || remainingRuntimeMs >= minClaimWindowMs;
 }
 
-async function runCodex(
+export async function runCodex(
   job: ClaimedJob,
   workspace: string,
   skillSpectorAnalysis: SkillSpectorAnalysis | undefined,

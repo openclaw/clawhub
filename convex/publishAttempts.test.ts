@@ -1,13 +1,195 @@
 import { describe, expect, it, vi } from "vitest";
-import { completePendingPublishAttemptChecksInternal } from "./publishAttempts";
+import {
+  claimPendingPublishAttemptChecksInternal,
+  claimPrePublicationChecks,
+  completePendingPublishAttemptChecksInternal,
+} from "./publishAttempts";
 
+const claimPendingChecksHandler = (
+  claimPendingPublishAttemptChecksInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
 const completePendingChecksHandler = (
   completePendingPublishAttemptChecksInternal as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
+const claimPrePublicationChecksHandler = (
+  claimPrePublicationChecks as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
 
 describe("publishAttempts", () => {
+  it("leases staged publish check claims long enough for scanner timeouts", async () => {
+    const attempt = {
+      _id: "publishAttempts:demo",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      version: "1.0.0",
+      artifactFingerprint: "fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:skill", size: 10, sha256: "sha" }],
+      skillInsertArgs: {
+        staticScan: { status: "clean" },
+      },
+      createdAt: Date.now(),
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [attempt]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, { claimId: "checks:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:demo",
+      claimId: "checks:claim",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        checkClaimId: "checks:claim",
+        checkClaimedAt: expect.any(Number),
+        checkClaimExpiresAt: expect.any(Number),
+      }),
+    );
+    const patch = ctx.db.patch.mock.calls[0]?.[1] as {
+      checkClaimedAt: number;
+      checkClaimExpiresAt: number;
+    };
+    expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
+  });
+
+  it("hydrates staged package attempts with ClawPack URL and review context", async () => {
+    const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
+    const ctx = {
+      runMutation: vi.fn(async () => ({
+        attemptId: "publishAttempts:demo-package",
+        claimId: "claim-1",
+        kind: "package",
+        userId: "users:publisher",
+        ownerUserId: "users:publisher",
+        slug: "@demo/plugin",
+        displayName: "Demo Plugin",
+        version: "1.0.0",
+        artifactFingerprint: "fingerprint",
+        files: [
+          {
+            path: "package.json",
+            size: 10,
+            storageId: "_storage:manifest",
+            sha256: "manifest-sha",
+          },
+        ],
+        clawpackStorageId: "_storage:clawpack",
+        scanContext: {
+          trustedOpenClawPlugin: true,
+          release: {
+            artifactKind: "npm-pack",
+            pluginManifestSummary: { bundledSkills: [{ rootPath: "skills/demo" }] },
+            staticScan: { status: "clean" },
+          },
+        },
+        checkClaimExpiresAt: Date.now() + 60_000,
+        createdAt: Date.now(),
+      })),
+      storage: {
+        getUrl: vi.fn(async (storageId: string) => `https://signed.example.invalid/${storageId}`),
+      },
+    };
+
+    try {
+      await expect(
+        claimPrePublicationChecksHandler(ctx, { token: "worker-token" }),
+      ).resolves.toMatchObject({
+        attemptId: "publishAttempts:demo-package",
+        files: [
+          expect.objectContaining({
+            path: "package.json",
+            url: "https://signed.example.invalid/_storage:manifest",
+          }),
+        ],
+        clawpackUrl: "https://signed.example.invalid/_storage:clawpack",
+        scanContext: {
+          trustedOpenClawPlugin: true,
+          release: {
+            artifactKind: "npm-pack",
+            pluginManifestSummary: { bundledSkills: [{ rootPath: "skills/demo" }] },
+          },
+        },
+      });
+    } finally {
+      if (previousToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousToken;
+    }
+
+    expect(ctx.storage.getUrl).toHaveBeenCalledWith("_storage:manifest");
+    expect(ctx.storage.getUrl).toHaveBeenCalledWith("_storage:clawpack");
+  });
+
+  it("claims ready-to-finalize attempts for idempotent finalization retry", async () => {
+    const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
+    const ctx = {
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          attemptId: "publishAttempts:ready",
+          status: "ready_to_finalize",
+          claimId: "claim-1",
+          kind: "skill",
+          userId: "users:publisher",
+          slug: "demo-skill",
+          displayName: "Demo Skill",
+          version: "1.0.0",
+          artifactFingerprint: "fingerprint",
+          files: [],
+          checkClaimExpiresAt: Date.now() + 60_000,
+          createdAt: Date.now(),
+        }),
+      storage: {
+        getUrl: vi.fn(),
+      },
+    };
+
+    try {
+      await expect(
+        claimPrePublicationChecksHandler(ctx, { token: "worker-token" }),
+      ).resolves.toMatchObject({
+        attemptId: "publishAttempts:ready",
+        status: "ready_to_finalize",
+        files: [],
+      });
+    } finally {
+      if (previousToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousToken;
+    }
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(2);
+    expect(ctx.storage.getUrl).not.toHaveBeenCalled();
+  });
+
   it("lets worker completion retries reclaim expired finalization leases", async () => {
     const now = Date.now();
     const ctx = {
