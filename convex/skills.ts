@@ -3893,40 +3893,26 @@ export const listDashboardPaginated = query({
           ? (ownerPublisher.linkedUserId ?? (isOwnDashboard ? userId : undefined))
           : undefined;
       const shouldIncludeLegacyPersonalSkills = Boolean(legacyPersonalOwnerUserId);
-      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
-        shouldIncludeLegacyPersonalSkills
-          ? await ctx.db
-              .query("skills")
-              .withIndex("by_owner_active_updated", (q) =>
-                q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
-              )
-              .order("desc")
-              .paginate(paginationOpts)
-          : await ctx.db
-              .query("skills")
-              .withIndex("by_owner_publisher_active_updated", (q) =>
-                q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
-              )
-              .order("desc")
-              .paginate(paginationOpts);
-      let result = await paginateOwnerSkills(args.paginationOpts);
-      const scopePersonalDashboardPage = (page: Doc<"skills">[]) =>
-        shouldIncludeLegacyPersonalSkills
-          ? page.filter(
-              (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+      const result = shouldIncludeLegacyPersonalSkills
+        ? await ctx.db
+            .query("skills")
+            .withIndex("by_owner_active_updated", (q) =>
+              q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
             )
-          : page;
-      const scopedPage = scopePersonalDashboardPage(result.page);
-      if (shouldIncludeLegacyPersonalSkills) {
-        while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
-          result = await paginateOwnerSkills({
-            ...args.paginationOpts,
-            cursor: result.continueCursor,
-            numItems: args.paginationOpts.numItems - scopedPage.length,
-          });
-          scopedPage.push(...scopePersonalDashboardPage(result.page));
-        }
-      }
+            .order("desc")
+            .paginate(args.paginationOpts)
+        : await ctx.db
+            .query("skills")
+            .withIndex("by_owner_publisher_active_updated", (q) =>
+              q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+            )
+            .order("desc")
+            .paginate(args.paginationOpts);
+      const scopedPage = shouldIncludeLegacyPersonalSkills
+        ? result.page.filter(
+            (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+          )
+        : result.page;
       const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
@@ -3935,26 +3921,14 @@ export const listDashboardPaginated = query({
     if (ownerUserId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const isOwnDashboard = Boolean(userId && userId === ownerUserId);
-      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
-        await ctx.db
-          .query("skills")
-          .withIndex("by_owner_active_updated", (q) =>
-            q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
-          )
-          .order("desc")
-          .paginate(paginationOpts);
-      let result = await paginateOwnerSkills(args.paginationOpts);
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_active_updated", (q) =>
+          q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
       const scopedPage = await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId);
-      while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
-        result = await paginateOwnerSkills({
-          ...args.paginationOpts,
-          cursor: result.continueCursor,
-          numItems: args.paginationOpts.numItems - scopedPage.length,
-        });
-        scopedPage.push(
-          ...(await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId)),
-        );
-      }
       const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
