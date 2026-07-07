@@ -947,6 +947,105 @@ echo "targets: 1"
     else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
   });
 
+  it("runs OSS ClawScan shadow mode for skill scan request jobs", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Pending publish\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+target="$1"
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ "$target" != "./artifact" ]]; then
+  echo "unexpected target: $target" >&2
+  exit 9
+fi
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"suspicious","confidence":"medium"}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
+
+    const shadow = await runClawScanShadow(
+      {
+        job: {
+          _id: "securityScanJobs:shadow-scan-request",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillScanRequest",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      workspace,
+      {
+        checkedAt: 123,
+        confidence: "medium",
+        status: "suspicious",
+        verdict: "suspicious",
+      },
+    );
+
+    expect(shadow).toMatchObject({
+      prod: { confidence: "medium", status: "suspicious", verdict: "suspicious" },
+      shadow: {
+        confidence: "medium",
+        judgeStatus: "completed",
+        profile: "clawhub",
+        scannerStatuses: {
+          "clawscan-static": "completed",
+          skillspector: "completed",
+          virustotal: "completed",
+        },
+        status: "suspicious",
+        verdict: "suspicious",
+      },
+      status: "completed",
+    });
+    expect(shadow.command).toEqual(
+      expect.arrayContaining([
+        fakeClawScan,
+        "./artifact",
+        "--profile",
+        "clawhub",
+        "--scanner-result",
+        expect.stringMatching(/^virustotal=/),
+      ]),
+    );
+    expect(JSON.parse(await readFile(String(shadow.vtFixturePath), "utf8"))).toBeNull();
+
+    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
+    if (previousCommand === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
+    if (previousSandbox === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
+  });
+
   it("marks OSS ClawScan shadow mode failed when the judge fails", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });
@@ -1134,7 +1233,8 @@ JSON
     );
 
     expect(shadow).toMatchObject({
-      error: "ClawScan shadow parity is only enabled for skillVersion jobs, got packageRelease",
+      error:
+        "ClawScan shadow parity is only enabled for skillVersion or skillScanRequest jobs, got packageRelease",
       status: "skipped",
     });
 

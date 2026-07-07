@@ -1302,8 +1302,8 @@ async function resolveClawScanShadowTarget(workspace: string, job: ClaimedJob) {
 }
 
 function clawScanShadowUnsupportedContext(job: ClaimedJob) {
-  if (job.job.targetKind !== "skillVersion") {
-    return `ClawScan shadow parity is only enabled for skillVersion jobs, got ${job.job.targetKind}`;
+  if (job.job.targetKind !== "skillVersion" && job.job.targetKind !== "skillScanRequest") {
+    return `ClawScan shadow parity is only enabled for skillVersion or skillScanRequest jobs, got ${job.job.targetKind}`;
   }
   if (job.job.source !== "publish" && job.job.source !== "vt-update") {
     return `ClawScan shadow parity is only enabled for publish or vt-update jobs, got ${job.job.source}`;
