@@ -2614,6 +2614,9 @@ async function publishSkillPayloadForApiUser(
     ...(target ? { ownerPublisherId: target.publisherId } : {}),
     ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
     ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+    ...(publishPayload.stagePrePublicationChecks === false
+      ? { stagePrePublicationChecks: false as const }
+      : {}),
   });
 }
 

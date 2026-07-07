@@ -95,6 +95,7 @@ export const CliPublishRequestSchema = type({
   tags: "string[]?",
   categories: "string[]?",
   topics: "string[]?",
+  stagePrePublicationChecks: "boolean?",
   source: PublishSourceSchema.optional(),
   forkOf: type({
     slug: "string",

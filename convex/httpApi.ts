@@ -226,7 +226,7 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
     if (!hasAcceptedLegacyLicenseTerms(args.acceptLicenseTerms)) {
       return text("MIT-0 license terms must be accepted to publish skills", 400);
     }
-    const { ownerHandle, sourceOwnerHandle, migrateOwner, ...publishPayload } = args;
+    const { ownerHandle, sourceOwnerHandle, migrateOwner, stagePrePublicationChecks, ...publishPayload } = args;
     const target = ownerHandle
       ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
           actorUserId: userId,
@@ -247,6 +247,9 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
       ...(target ? { ownerPublisherId: target.publisherId } : {}),
       ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
       ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+      ...(stagePrePublicationChecks === false
+        ? { stagePrePublicationChecks: false as const }
+        : {}),
     });
     return json({ ok: true, ...result });
   } catch (error) {
@@ -465,6 +468,8 @@ function parsePublishBody(body: unknown) {
       ...file,
       storageId: file.storageId as Id<"_storage">,
     })),
+    stagePrePublicationChecks:
+      parsed.stagePrePublicationChecks === false ? false : undefined,
   };
 }
 

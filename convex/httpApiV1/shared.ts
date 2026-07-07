@@ -389,6 +389,9 @@ export async function parseMultipartPublish(
     ...(Array.isArray(payload.categories) ? { categories: payload.categories } : {}),
     ...(Array.isArray(payload.topics) ? { topics: payload.topics } : {}),
     ...(payload.source ? { source: payload.source } : {}),
+    ...(typeof payload.stagePrePublicationChecks === "boolean"
+      ? { stagePrePublicationChecks: payload.stagePrePublicationChecks }
+      : {}),
     files,
     ...(forkOf ? { forkOf } : {}),
   };
@@ -489,6 +492,8 @@ export function parsePublishBody(body: unknown) {
       ...file,
       storageId: file.storageId as Id<"_storage">,
     })),
+    stagePrePublicationChecks:
+      parsed.stagePrePublicationChecks === false ? false : undefined,
   };
 }
 
