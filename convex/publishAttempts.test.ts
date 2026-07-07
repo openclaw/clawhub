@@ -491,6 +491,60 @@ describe("publishAttempts", () => {
     );
   });
 
+  it.each([
+    [
+      "redirected legacy slugs",
+      "Uncaught ConvexError: Slug redirects to an existing skill. Choose a different slug. Existing skill: /orchune/personal-finance",
+    ],
+    ["deleted fork sources", "Uncaught ConvexError: Upstream skill not found"],
+  ])("terminalizes %s instead of retrying finalization", async (_caseName, error) => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:legacy-fork",
+          kind: "skill",
+          status: "finalizing",
+          skillInsertArgs: {
+            slug: "demo-skill",
+            version: "1.0.0",
+            forkOf: { slug: "legacy-upstream" },
+          },
+          followup: {},
+          finalizationClaimId: "finalize:claim",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      releaseSkillFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:legacy-fork",
+        claimId: "finalize:claim",
+        error,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:legacy-fork",
+      status: "failed",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:legacy-fork",
+      expect.objectContaining({
+        status: "failed",
+        checkClaimId: undefined,
+        finalizationClaimId: undefined,
+        finalizationLastError: error,
+        failedAt: expect.any(Number),
+      }),
+    );
+  });
+
   it("terminalizes duplicate package versions while preserving transient retries", async () => {
     const duplicateCtx = {
       db: {

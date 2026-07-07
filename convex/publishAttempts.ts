@@ -86,7 +86,9 @@ function isTerminalFinalizationConflict(error: string | undefined) {
   return (
     typeof error === "string" &&
     (/Version .+ already exists\. Increment the version number and try again\./.test(error) ||
-      error.includes("Slug is used by multiple publishers. Use an owner-qualified skill URL."))
+      error.includes("Slug is used by multiple publishers. Use an owner-qualified skill URL.") ||
+      error.includes("Slug redirects to an existing skill. Choose a different slug.") ||
+      error.includes("Upstream skill not found"))
   );
 }
 
