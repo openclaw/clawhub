@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   configurePrePublicationCodexHome,
+  processPrePublicationBatch,
   processPrePublicationAttempt,
   resolveTruffleHogImage,
   runNativeTruffleHog,
@@ -106,6 +107,101 @@ describe("pre-publication worker", () => {
       }),
     );
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
+  });
+
+  it("publishes suspicious staged artifacts without treating them as malicious", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "finalized" }),
+    };
+
+    await expect(
+      processPrePublicationAttempt(client, "worker-token", attempt, {
+        runClawHubReview: vi.fn().mockResolvedValue({
+          llmAnalysis: {
+            checkedAt: 123,
+            confidence: "high",
+            status: "suspicious",
+            summary: "The artifact needs moderator review.",
+            verdict: "suspicious",
+          },
+        }),
+        runTruffleHog: vi.fn().mockResolvedValue({
+          status: "clean",
+          summary: "TruffleHog found no verified secrets.",
+        }),
+        writeWorkspace: vi.fn().mockResolvedValue(undefined),
+      }),
+    ).resolves.toMatchObject({ completed: true });
+
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        clawscan: {
+          status: "clean",
+          summary: "The artifact needs moderator review.",
+          redactedFindings: ["status=suspicious; verdict=suspicious"],
+        },
+        clawscanAnalysis: expect.objectContaining({
+          status: "suspicious",
+          verdict: "suspicious",
+        }),
+      }),
+    );
+  });
+
+  it("keeps malicious staged artifacts private", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "blocked" }),
+    };
+
+    await expect(
+      processPrePublicationAttempt(client, "worker-token", attempt, {
+        runClawHubReview: vi.fn().mockResolvedValue({
+          llmAnalysis: {
+            checkedAt: 123,
+            confidence: "high",
+            status: "malicious",
+            summary: "The artifact contains intentional credential exfiltration.",
+            verdict: "malicious",
+          },
+        }),
+        runTruffleHog: vi.fn().mockResolvedValue({
+          status: "clean",
+          summary: "TruffleHog found no verified secrets.",
+        }),
+        writeWorkspace: vi.fn().mockResolvedValue(undefined),
+      }),
+    ).resolves.toMatchObject({ completed: true });
+
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        clawscan: expect.objectContaining({
+          status: "blocked",
+          redactedFindings: ["status=malicious; verdict=malicious"],
+        }),
+        clawscanAnalysis: expect.objectContaining({
+          status: "malicious",
+          verdict: "malicious",
+        }),
+      }),
+    );
+  });
+
+  it("continues later attempts when one attempt throws", async () => {
+    const laterAttempt = {
+      ...attempt,
+      attemptId: "publishAttempts:later" as Id<"publishAttempts">,
+    };
+    const processAttempt = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("finalization conflict"))
+      .mockResolvedValueOnce({ completed: true });
+
+    await expect(
+      processPrePublicationBatch([attempt, laterAttempt], processAttempt),
+    ).resolves.toEqual([{ completed: false, result: undefined }, { completed: true }]);
+    expect(processAttempt).toHaveBeenCalledTimes(2);
   });
 
   it("blocks secret-positive attempts without running ClawHub review", async () => {

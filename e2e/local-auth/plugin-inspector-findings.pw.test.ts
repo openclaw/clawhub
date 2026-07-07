@@ -328,6 +328,47 @@ test("plugin publish stays private until mocked TruffleHog and ClawScan pass", a
   await expectHealthyInspectorPage(page, errors);
 });
 
+test("malicious ClawScan verdict keeps a staged plugin private", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const suffix = Date.now().toString(36);
+  const name = `pw-malicious-plugin-${suffix}`;
+  const displayName = `Playwright Malicious Plugin ${suffix}`;
+  const version = "1.0.0";
+
+  await signInAsLocalPersona(page, "admin");
+  await page.goto("/plugins/publish", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await uploadPluginZip(
+    page,
+    await writePluginZip(testInfo, {
+      name,
+      displayName,
+      kind: "warning",
+    }),
+  );
+  await expect(page.locator("#pluginName")).toHaveValue(name);
+  await page.locator("#pluginSourceCommit").fill("abc123");
+  const publishButton = page.getByRole("button", { name: "Publish plugin" });
+  await expect(publishButton).toBeEnabled({ timeout: 60_000 });
+  await publishButton.click({ timeout: 15_000 });
+  await expect(page.getByText("Running TruffleHog and ClawScan")).toBeVisible({
+    timeout: 60_000,
+  });
+
+  const result = (await completeMockPrePublicationChecks({
+    kind: "package",
+    slug: name,
+    version,
+    clawscan: "malicious",
+  })) as { status?: string };
+  expect(result.status).toBe("blocked");
+  await expect(await publicPackageVersionExists(request, name, version)).toBe(false);
+  await expectHealthyInspectorPage(page, errors);
+});
+
 test("plugin inspector blocks hard publish errors and publishes warning findings", async ({
   page,
 }, testInfo) => {

@@ -11744,6 +11744,7 @@ export const insertVersion = internalMutation({
       engineVersion: v.string(),
       checkedAt: v.number(),
     }),
+    llmAnalysis: v.optional(v.any()),
     embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
@@ -12243,6 +12244,7 @@ export const insertVersion = internalMutation({
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
+      llmAnalysis: args.llmAnalysis,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -12306,6 +12308,19 @@ export const insertVersion = internalMutation({
     const nextFlags = Array.from(
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
+    const scannerModerationPatch =
+      args.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+        ? buildScannerModerationPatchFromVersion({
+            owner: null,
+            version: {
+              _id: versionId,
+              staticScan: args.staticScan,
+              vtAnalysis: undefined,
+              llmAnalysis: args.llmAnalysis,
+            },
+            now,
+          })
+        : {};
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
@@ -12365,6 +12380,7 @@ export const insertVersion = internalMutation({
       unpublishedSlugReleasedAt: undefined,
       unpublishedOriginalSlug: undefined,
       updatedAt: now,
+      ...scannerModerationPatch,
     };
     const patch = applySkillManualOverrideToSkillPatch({
       skill,

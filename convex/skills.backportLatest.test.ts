@@ -500,6 +500,32 @@ describe("skills.insertVersion latest-tag protection", () => {
     });
   });
 
+  it("publishes suspicious prepublication results as active and flagged", async () => {
+    const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+    const llmAnalysis = {
+      status: "completed",
+      verdict: "suspicious",
+      summary: "Review before installing.",
+      checkedAt: 123,
+    };
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "2.1.0",
+        llmAnalysis,
+      }) as never,
+    );
+
+    expect(captured.versionInserted).toMatchObject({ llmAnalysis });
+    expect(captured.skillPatches.at(-1)).toMatchObject({
+      moderationStatus: "active",
+      moderationVerdict: "clean",
+      moderationFlags: ["flagged.review"],
+    });
+  });
+
   it("does not clobber latest when publishing an older (backport) version", async () => {
     const skill = buildExistingSkill({
       inferredCategories: ["automation"],

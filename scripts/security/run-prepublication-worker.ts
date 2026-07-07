@@ -58,6 +58,11 @@ type WorkerCheckResult = {
   redactedFindings?: string[];
 };
 
+type ProcessAttemptResult = {
+  completed: boolean;
+  result?: unknown;
+};
+
 type PrePublicationWorkerClient = Pick<ConvexHttpClient, "action">;
 
 type TruffleHogResult = WorkerCheckResult & {
@@ -341,16 +346,34 @@ async function runSkillSpectorIfApplicable(job: ClaimedJob, workspace: string) {
 function clawHubReviewCheckResult(llmAnalysis: StoredLlmAnalysis): WorkerCheckResult {
   const status = (llmAnalysis.status || llmAnalysis.verdict || "").trim().toLowerCase();
   const verdict = (llmAnalysis.verdict || "").trim().toLowerCase();
-  const isClean = status === "clean" || verdict === "benign";
+  const normalizedVerdict = verdict || status;
   const summary = publicText(
     llmAnalysis.summary ??
       llmAnalysis.findings ??
       `ClawHub security review returned ${llmAnalysis.status}.`,
   );
-  if (isClean) {
+  if (status === "clean" || normalizedVerdict === "benign") {
     return {
       status: "clean",
       summary: summary || "ClawHub security review passed.",
+    };
+  }
+  if (normalizedVerdict === "suspicious") {
+    return {
+      status: "clean",
+      summary: summary || "ClawHub security review requires user attention.",
+      redactedFindings: [
+        publicText(`status=${llmAnalysis.status}; verdict=${llmAnalysis.verdict}`),
+      ],
+    };
+  }
+  if (normalizedVerdict !== "malicious") {
+    return {
+      status: "failed",
+      summary: summary || "ClawHub security review did not return a final verdict.",
+      redactedFindings: [
+        publicText(`status=${llmAnalysis.status}; verdict=${llmAnalysis.verdict}`),
+      ],
     };
   }
   return {
@@ -376,6 +399,7 @@ async function completeAttempt(
   attempt: ClaimedPrePublicationAttempt,
   trufflehog: WorkerCheckResult,
   clawscan: WorkerCheckResult,
+  clawscanAnalysis?: StoredLlmAnalysis,
 ) {
   return await client.action(api.publishAttempts.completePrePublicationChecks, {
     token,
@@ -384,6 +408,7 @@ async function completeAttempt(
     artifactFingerprint: attempt.artifactFingerprint,
     trufflehog: checkResultForConvex(trufflehog),
     clawscan: checkResultForConvex(clawscan),
+    ...(clawscanAnalysis ? { clawscanAnalysis } : {}),
   });
 }
 
@@ -438,12 +463,14 @@ export async function processPrePublicationAttempt(
   const runTruffleHog = deps.runTruffleHog ?? runNativeTruffleHog;
   const runClawHubReview = deps.runClawHubReview ?? runNormalClawHubReview;
   let truffleHogBlocked = false;
+  let completionStarted = false;
   try {
     const job = buildSyntheticScanJob(attempt);
     await writeWorkspace(job, workspace);
     const trufflehog = await runTruffleHog(workspace);
     if (trufflehog.status === "blocked") {
       truffleHogBlocked = true;
+      completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
         summary: "ClawHub security review skipped because TruffleHog blocked the artifact.",
@@ -461,6 +488,7 @@ export async function processPrePublicationAttempt(
       return { completed: true, result };
     }
     if (trufflehog.status === "failed") {
+      completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
         summary: "ClawHub security review skipped because TruffleHog failed.",
@@ -469,8 +497,10 @@ export async function processPrePublicationAttempt(
     }
 
     let clawscan: WorkerCheckResult;
+    let clawscanAnalysis: StoredLlmAnalysis | undefined;
     try {
       const review = await runClawHubReview(job, workspace);
+      clawscanAnalysis = review.llmAnalysis;
       clawscan = clawHubReviewCheckResult(review.llmAnalysis);
     } catch (error) {
       clawscan = {
@@ -479,7 +509,15 @@ export async function processPrePublicationAttempt(
       };
     }
 
-    const result = await completeAttempt(client, token, attempt, trufflehog, clawscan);
+    completionStarted = true;
+    const result = await completeAttempt(
+      client,
+      token,
+      attempt,
+      trufflehog,
+      clawscan,
+      clawscanAnalysis,
+    );
     logger.info(
       {
         attemptId: attempt.attemptId,
@@ -491,7 +529,8 @@ export async function processPrePublicationAttempt(
       },
       "pre-publication attempt completed",
     );
-    return { completed: trufflehog.status === "clean" && clawscan.status === "clean", result };
+    const status = (result as { status?: string })?.status;
+    return { completed: status === "finalized" || status === "blocked", result };
   } catch (error) {
     if (truffleHogBlocked) {
       logger.error(
@@ -505,11 +544,37 @@ export async function processPrePublicationAttempt(
       );
       return { completed: false, result: undefined };
     }
+    if (completionStarted) {
+      logger.warn(
+        {
+          attemptId: attempt.attemptId,
+          durationMs: Date.now() - startedAt,
+          event: "prepublication_attempt_completion_failed",
+          kind: attempt.kind,
+        },
+        "pre-publication attempt completion failed; leaving attempt retryable",
+      );
+      return { completed: false, result: undefined };
+    }
     const failure = {
       status: "failed" as const,
       summary: publicText(error instanceof Error ? error.message : String(error)),
     };
-    const result = await completeAttempt(client, token, attempt, failure, failure);
+    let result: unknown;
+    try {
+      result = await completeAttempt(client, token, attempt, failure, failure);
+    } catch {
+      logger.warn(
+        {
+          attemptId: attempt.attemptId,
+          durationMs: Date.now() - startedAt,
+          event: "prepublication_attempt_failure_record_failed",
+          kind: attempt.kind,
+        },
+        "pre-publication attempt failure could not be recorded; leaving attempt retryable",
+      );
+      return { completed: false, result: undefined };
+    }
     logger.warn(
       {
         attemptId: attempt.attemptId,
@@ -523,6 +588,29 @@ export async function processPrePublicationAttempt(
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
+}
+
+export async function processPrePublicationBatch(
+  attempts: ClaimedPrePublicationAttempt[],
+  processAttempt: (attempt: ClaimedPrePublicationAttempt) => Promise<ProcessAttemptResult>,
+) {
+  return await Promise.all(
+    attempts.map(async (attempt) => {
+      try {
+        return await processAttempt(attempt);
+      } catch {
+        logger.warn(
+          {
+            attemptId: attempt.attemptId,
+            event: "prepublication_attempt_unhandled_failure",
+            kind: attempt.kind,
+          },
+          "pre-publication attempt failed unexpectedly; continuing batch",
+        );
+        return { completed: false, result: undefined };
+      }
+    }),
+  );
 }
 
 export async function claimPrePublicationAttempt(
@@ -570,8 +658,8 @@ async function main() {
     ).filter((attempt): attempt is ClaimedPrePublicationAttempt => Boolean(attempt));
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
-    const results = await Promise.all(
-      attempts.map((attempt) => processPrePublicationAttempt(client, token, attempt)),
+    const results = await processPrePublicationBatch(attempts, (attempt) =>
+      processPrePublicationAttempt(client, token, attempt),
     );
     totalCompleted += results.filter((result) => result.completed).length;
     if (attempts.length < Math.min(batchLimit, remainingJobs)) break;
