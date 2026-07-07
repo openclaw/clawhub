@@ -537,6 +537,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
             .order("asc")
             .take(25)
         ).find((candidate) => {
+          if ((candidate.checkClaimExpiresAt ?? 0) > now) return false;
           if (args.kind && candidate.kind !== args.kind) return false;
           if (args.slug && candidate.slug !== args.slug) return false;
           if (args.version && candidate.version !== args.version) return false;
@@ -545,10 +546,19 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
 
     if (!attempt) return null;
     if (attempt.status !== "ready_to_finalize") {
-      if (args.attemptId) {
-        throw new ConvexError(`Publish attempt is ${attempt.status}, not ready to finalize.`);
-      }
       return null;
+    }
+    if (args.kind && attempt.kind !== args.kind) {
+      throw new ConvexError("Publish attempt kind does not match worker claim.");
+    }
+    if (args.slug && attempt.slug !== args.slug) {
+      throw new ConvexError("Publish attempt slug does not match worker claim.");
+    }
+    if (args.version && attempt.version !== args.version) {
+      throw new ConvexError("Publish attempt version does not match worker claim.");
+    }
+    if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
+      throw new ConvexError("Publish attempt finalization retry is already claimed.");
     }
 
     await ctx.db.patch(attempt._id, {
@@ -864,11 +874,11 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       version: args.version,
     };
     const claimed = ((await ctx.runMutation(
-      internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
+      internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
       claimArgs,
     )) ??
       (await ctx.runMutation(
-        internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
+        internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
         claimArgs,
       ))) as null | {
       attemptId: Id<"publishAttempts">;

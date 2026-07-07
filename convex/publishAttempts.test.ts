@@ -1,7 +1,9 @@
+import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 import {
   claimPendingPublishAttemptChecksInternal,
   claimPrePublicationChecks,
+  claimReadyPublishAttemptFinalizationRetryInternal,
   completePendingPublishAttemptChecksInternal,
 } from "./publishAttempts";
 
@@ -12,6 +14,11 @@ const claimPendingChecksHandler = (
 )._handler;
 const completePendingChecksHandler = (
   completePendingPublishAttemptChecksInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const claimReadyFinalizationHandler = (
+  claimReadyPublishAttemptFinalizationRetryInternal as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
@@ -147,27 +154,24 @@ describe("publishAttempts", () => {
     expect(ctx.storage.getUrl).toHaveBeenCalledWith("_storage:clawpack");
   });
 
-  it("claims ready-to-finalize attempts for idempotent finalization retry", async () => {
+  it("prioritizes ready-to-finalize attempts over pending scanner work", async () => {
     const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
     process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
     const ctx = {
-      runMutation: vi
-        .fn()
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce({
-          attemptId: "publishAttempts:ready",
-          status: "ready_to_finalize",
-          claimId: "claim-1",
-          kind: "skill",
-          userId: "users:publisher",
-          slug: "demo-skill",
-          displayName: "Demo Skill",
-          version: "1.0.0",
-          artifactFingerprint: "fingerprint",
-          files: [],
-          checkClaimExpiresAt: Date.now() + 60_000,
-          createdAt: Date.now(),
-        }),
+      runMutation: vi.fn().mockResolvedValueOnce({
+        attemptId: "publishAttempts:ready",
+        status: "ready_to_finalize",
+        claimId: "claim-1",
+        kind: "skill",
+        userId: "users:publisher",
+        slug: "demo-skill",
+        displayName: "Demo Skill",
+        version: "1.0.0",
+        artifactFingerprint: "fingerprint",
+        files: [],
+        checkClaimExpiresAt: Date.now() + 60_000,
+        createdAt: Date.now(),
+      }),
       storage: {
         getUrl: vi.fn(),
       },
@@ -186,8 +190,101 @@ describe("publishAttempts", () => {
       else process.env.SECURITY_SCAN_WORKER_TOKEN = previousToken;
     }
 
-    expect(ctx.runMutation).toHaveBeenCalledTimes(2);
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
+    expect(
+      getFunctionName(ctx.runMutation.mock.calls[0]?.[0] as Parameters<typeof getFunctionName>[0]),
+    ).toBe("publishAttempts:claimReadyPublishAttemptFinalizationRetryInternal");
     expect(ctx.storage.getUrl).not.toHaveBeenCalled();
+  });
+
+  it("lets targeted pending attempts fall through the ready-finalization lookup", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:pending",
+          status: "pending_checks",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimReadyFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:pending",
+        claimId: "claim-1",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("skips ready-to-finalize attempts with an active retry lease", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [
+                {
+                  _id: "publishAttempts:ready",
+                  status: "ready_to_finalize",
+                  checkClaimId: "existing-claim",
+                  checkClaimExpiresAt: Date.now() + 60_000,
+                },
+              ]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimReadyFinalizationHandler(ctx, {
+        claimId: "new-claim",
+      }),
+    ).resolves.toBeNull();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("rejects targeted ready-finalization claims with mismatched filters", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:ready",
+          status: "ready_to_finalize",
+          kind: "skill",
+          slug: "expected-skill",
+          version: "1.0.0",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimReadyFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:ready",
+        claimId: "claim-1",
+        slug: "different-skill",
+      }),
+    ).rejects.toThrow("Publish attempt slug does not match worker claim.");
+    expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
   it("lets worker completion retries reclaim expired finalization leases", async () => {
