@@ -51,7 +51,7 @@
     "undici": "7.28.0"
   },
   "devDependencies": {
-    "@types/node": "26.0.0",
+    "@types/node": "26.1.0",
     "typescript": "6.0.3"
   },
   "engines": {
