@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  claimPrePublicationBatch,
   configurePrePublicationCodexHome,
   processPrePublicationBatch,
   processPrePublicationAttempt,
@@ -202,6 +203,31 @@ describe("pre-publication worker", () => {
       processPrePublicationBatch([attempt, laterAttempt], processAttempt),
     ).resolves.toEqual([{ completed: false, result: undefined }, { completed: true }]);
     expect(processAttempt).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues with successful claims when a concurrent claim fails", async () => {
+    const client = {
+      action: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("claim conflict"))
+        .mockResolvedValueOnce(attempt),
+    };
+
+    await expect(claimPrePublicationBatch(client, "worker-token", 2)).resolves.toEqual([attempt]);
+    expect(client.action).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails the worker batch when claims fail without claiming work", async () => {
+    const client = {
+      action: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("claim conflict"))
+        .mockResolvedValueOnce(null),
+    };
+
+    await expect(claimPrePublicationBatch(client, "worker-token", 2)).rejects.toThrow(
+      "Pre-publication claims failed without claiming work.",
+    );
   });
 
   it("blocks secret-positive attempts without running ClawHub review", async () => {

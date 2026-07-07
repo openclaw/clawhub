@@ -622,6 +622,33 @@ export async function claimPrePublicationAttempt(
   })) as ClaimedPrePublicationAttempt | null;
 }
 
+export async function claimPrePublicationBatch(
+  client: PrePublicationWorkerClient,
+  token: string,
+  limit: number,
+) {
+  const claims = await Promise.allSettled(
+    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token)),
+  );
+  const attempts: ClaimedPrePublicationAttempt[] = [];
+  const failures: unknown[] = [];
+  for (const claim of claims) {
+    if (claim.status === "fulfilled") {
+      if (claim.value) attempts.push(claim.value);
+      continue;
+    }
+    failures.push(claim.reason);
+    logger.warn(
+      { event: "prepublication_claim_failed" },
+      "pre-publication claim failed; continuing with successful claims",
+    );
+  }
+  if (attempts.length === 0 && failures.length > 0) {
+    throw new AggregateError(failures, "Pre-publication claims failed without claiming work.");
+  }
+  return attempts;
+}
+
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs } = parseArgs();
   assertCodexWorkerExecutionAllowed(process.env);
@@ -649,13 +676,11 @@ async function main() {
     if (totalClaimed > 0 && claimDeadline - Date.now() < CLAIM_WINDOW_SHUTDOWN_BUFFER_MS) break;
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
-    const attempts = (
-      await Promise.all(
-        Array.from({ length: Math.min(batchLimit, remainingJobs) }, () =>
-          claimPrePublicationAttempt(client, token),
-        ),
-      )
-    ).filter((attempt): attempt is ClaimedPrePublicationAttempt => Boolean(attempt));
+    const attempts = await claimPrePublicationBatch(
+      client,
+      token,
+      Math.min(batchLimit, remainingJobs),
+    );
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
     const results = await processPrePublicationBatch(attempts, (attempt) =>

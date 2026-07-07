@@ -82,6 +82,39 @@ function scannerFailureSummary(args: {
   return "Pre-publication scanner failed before returning a verdict.";
 }
 
+function isTerminalVersionConflict(error: string | undefined) {
+  return (
+    typeof error === "string" &&
+    /Version .+ already exists\. Increment the version number and try again\./.test(error)
+  );
+}
+
+function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
+  if (!isTerminalVersionConflict(error)) {
+    return {
+      status: "ready_to_finalize" as const,
+      finalizationClaimId: undefined,
+      finalizationClaimedAt: undefined,
+      finalizationClaimExpiresAt: undefined,
+      finalizationLastError: error,
+      updatedAt: now,
+    };
+  }
+  return {
+    status: "failed" as const,
+    checkClaimId: undefined,
+    checkClaimedAt: undefined,
+    checkClaimExpiresAt: undefined,
+    checkClaimLastError: undefined,
+    finalizationClaimId: undefined,
+    finalizationClaimedAt: undefined,
+    finalizationClaimExpiresAt: undefined,
+    finalizationLastError: error,
+    failedAt: now,
+    updatedAt: now,
+  };
+}
+
 export const createSkillPublishAttemptInternal = internalMutation({
   args: {
     userId: v.id("users"),
@@ -683,15 +716,9 @@ export const releaseSkillPublishAttemptFinalizationClaimInternal = internalMutat
       return { attemptId: attempt._id, status: attempt.status };
     }
 
-    await ctx.db.patch(attempt._id, {
-      status: "ready_to_finalize",
-      finalizationClaimId: undefined,
-      finalizationClaimedAt: undefined,
-      finalizationClaimExpiresAt: undefined,
-      finalizationLastError: args.error,
-      updatedAt: Date.now(),
-    });
-    return { attemptId: attempt._id, status: "ready_to_finalize" as const };
+    const patch = releaseFinalizationClaimPatch(args.error, Date.now());
+    await ctx.db.patch(attempt._id, patch);
+    return { attemptId: attempt._id, status: patch.status };
   },
 });
 
@@ -707,15 +734,9 @@ export const releasePackagePublishAttemptFinalizationClaimInternal = internalMut
       return { attemptId: attempt._id, status: attempt.status };
     }
 
-    await ctx.db.patch(attempt._id, {
-      status: "ready_to_finalize",
-      finalizationClaimId: undefined,
-      finalizationClaimedAt: undefined,
-      finalizationClaimExpiresAt: undefined,
-      finalizationLastError: args.error,
-      updatedAt: Date.now(),
-    });
-    return { attemptId: attempt._id, status: "ready_to_finalize" as const };
+    const patch = releaseFinalizationClaimPatch(args.error, Date.now());
+    await ctx.db.patch(attempt._id, patch);
+    return { attemptId: attempt._id, status: patch.status };
   },
 });
 

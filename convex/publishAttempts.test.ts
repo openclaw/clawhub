@@ -5,6 +5,8 @@ import {
   claimPrePublicationChecks,
   claimReadyPublishAttemptFinalizationRetryInternal,
   completePendingPublishAttemptChecksInternal,
+  releasePackagePublishAttemptFinalizationClaimInternal,
+  releaseSkillPublishAttemptFinalizationClaimInternal,
 } from "./publishAttempts";
 
 const claimPendingChecksHandler = (
@@ -24,6 +26,16 @@ const claimReadyFinalizationHandler = (
 )._handler;
 const claimPrePublicationChecksHandler = (
   claimPrePublicationChecks as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const releaseSkillFinalizationHandler = (
+  releaseSkillPublishAttemptFinalizationClaimInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const releasePackageFinalizationHandler = (
+  releasePackagePublishAttemptFinalizationClaimInternal as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
@@ -291,6 +303,7 @@ describe("publishAttempts", () => {
     const now = Date.now();
     const ctx = {
       db: {
+        delete: vi.fn(),
         get: vi.fn(async () => ({
           _id: "publishAttempts:demo",
           kind: "skill",
@@ -301,7 +314,6 @@ describe("publishAttempts", () => {
         patch: vi.fn(),
         insert: vi.fn(),
         replace: vi.fn(),
-        delete: vi.fn(),
         query: vi.fn(),
         normalizeId: vi.fn(),
         system: {},
@@ -384,6 +396,116 @@ describe("publishAttempts", () => {
     );
     const patch = ctx.db.patch.mock.calls[0]?.[1] as { checkClaimExpiresAt: number };
     expect(patch.checkClaimExpiresAt).toBeGreaterThan(now);
+  });
+
+  it("terminalizes duplicate skill versions instead of retrying finalization", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:demo",
+          kind: "skill",
+          status: "finalizing",
+          skillInsertArgs: { slug: "demo-skill", version: "1.0.0" },
+          followup: {},
+          finalizationClaimId: "finalize:claim",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+    const error =
+      "Uncaught ConvexError: Version 1.0.0 already exists. Increment the version number and try again.";
+
+    await expect(
+      releaseSkillFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "finalize:claim",
+        error,
+      }),
+    ).resolves.toEqual({ attemptId: "publishAttempts:demo", status: "failed" });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "failed",
+        checkClaimId: undefined,
+        finalizationClaimId: undefined,
+        finalizationLastError: error,
+        failedAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("terminalizes duplicate package versions while preserving transient retries", async () => {
+    const duplicateCtx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:demo-package",
+          kind: "package",
+          status: "finalizing",
+          packageInsertArgs: { name: "@demo/plugin", version: "1.0.0" },
+          finalizationClaimId: "finalize:claim",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+    const duplicateError =
+      "Version 1.0.0 already exists. Increment the version number and try again.";
+
+    await expect(
+      releasePackageFinalizationHandler(duplicateCtx, {
+        attemptId: "publishAttempts:demo-package",
+        claimId: "finalize:claim",
+        error: duplicateError,
+      }),
+    ).resolves.toEqual({ attemptId: "publishAttempts:demo-package", status: "failed" });
+
+    const transientCtx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:retry",
+          kind: "skill",
+          status: "finalizing",
+          skillInsertArgs: { slug: "demo-skill", version: "1.0.1" },
+          followup: {},
+          finalizationClaimId: "finalize:retry",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      releaseSkillFinalizationHandler(transientCtx, {
+        attemptId: "publishAttempts:retry",
+        claimId: "finalize:retry",
+        error: "Rate limit exceeded",
+      }),
+    ).resolves.toEqual({ attemptId: "publishAttempts:retry", status: "ready_to_finalize" });
+    expect(transientCtx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:retry",
+      expect.objectContaining({
+        status: "ready_to_finalize",
+        finalizationLastError: "Rate limit exceeded",
+      }),
+    );
+    expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
   });
 
   it("stores suspicious analysis with the staged insert before finalization", async () => {
