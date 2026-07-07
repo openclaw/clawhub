@@ -7,6 +7,7 @@ import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
+const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
 
 const publishResultValidator = v.object({
@@ -27,6 +28,27 @@ const workerCheckResultValidator = v.object({
   redactedFindings: v.optional(v.array(v.string())),
 });
 
+const workerLlmAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  confidence: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  dimensions: v.optional(
+    v.array(
+      v.object({
+        name: v.string(),
+        label: v.string(),
+        rating: v.string(),
+        detail: v.string(),
+      }),
+    ),
+  ),
+  guidance: v.optional(v.string()),
+  findings: v.optional(v.string()),
+  model: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -37,6 +59,27 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
   ) as Partial<T>;
+}
+
+function withClawscanAnalysis(insertArgs: unknown, clawscanAnalysis: unknown) {
+  if (!clawscanAnalysis) return insertArgs;
+  return {
+    ...asRecord(insertArgs),
+    llmAnalysis: clawscanAnalysis,
+  };
+}
+
+function scannerFailureSummary(args: {
+  trufflehog: { status: string; summary?: string };
+  clawscan: { status: string; summary?: string };
+}) {
+  if (args.trufflehog.status === "failed" && args.trufflehog.summary) {
+    return args.trufflehog.summary;
+  }
+  if (args.clawscan.status === "failed" && args.clawscan.summary) {
+    return args.clawscan.summary;
+  }
+  return "Pre-publication scanner failed before returning a verdict.";
 }
 
 export const createSkillPublishAttemptInternal = internalMutation({
@@ -278,6 +321,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     artifactFingerprint: v.string(),
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
+    clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
   },
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.attemptId);
@@ -341,6 +385,14 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       await ctx.db.patch(attempt._id, {
         status: "blocked",
         checks,
+        skillInsertArgs:
+          attempt.kind === "skill"
+            ? withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis)
+            : attempt.skillInsertArgs,
+        packageInsertArgs:
+          attempt.kind === "package"
+            ? withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis)
+            : attempt.packageInsertArgs,
         checkClaimId: undefined,
         checkClaimedAt: undefined,
         checkClaimExpiresAt: undefined,
@@ -353,21 +405,29 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
 
     if (args.trufflehog.status === "failed" || args.clawscan.status === "failed") {
       await ctx.db.patch(attempt._id, {
-        status: "failed",
+        status: "pending_checks",
         checks,
         checkClaimId: undefined,
         checkClaimedAt: undefined,
-        checkClaimExpiresAt: undefined,
-        checkClaimLastError: undefined,
-        failedAt: now,
+        checkClaimExpiresAt: now + CHECK_RETRY_BACKOFF_MS,
+        checkClaimLastError: scannerFailureSummary(args),
+        failedAt: undefined,
         updatedAt: now,
       });
-      return { attemptId: attempt._id, kind: attempt.kind, status: "failed" as const };
+      return { attemptId: attempt._id, kind: attempt.kind, status: "pending_checks" as const };
     }
 
     await ctx.db.patch(attempt._id, {
       status: "ready_to_finalize",
       checks,
+      skillInsertArgs:
+        attempt.kind === "skill"
+          ? withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis)
+          : attempt.skillInsertArgs,
+      packageInsertArgs:
+        attempt.kind === "package"
+          ? withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis)
+          : attempt.packageInsertArgs,
       checkClaimId: undefined,
       checkClaimedAt: undefined,
       checkClaimExpiresAt: undefined,
@@ -863,6 +923,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     artifactFingerprint: v.string(),
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
+    clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
   },
   handler: async (ctx, args): Promise<unknown> => {
     assertWorkerToken(args.token);
@@ -874,11 +935,12 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
         artifactFingerprint: args.artifactFingerprint,
         trufflehog: args.trufflehog,
         clawscan: args.clawscan,
+        clawscanAnalysis: args.clawscanAnalysis,
       },
     )) as {
       attemptId: Id<"publishAttempts">;
       kind: "skill" | "package";
-      status: "blocked" | "failed" | "ready_to_finalize";
+      status: "blocked" | "pending_checks" | "ready_to_finalize";
     };
 
     if (completed.status !== "ready_to_finalize") return completed;

@@ -231,6 +231,197 @@ describe("publishAttempts", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
+  it("keeps scanner execution failures fail-closed and retryable", async () => {
+    const now = Date.now();
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:demo",
+          kind: "skill",
+          status: "pending_checks",
+          artifactFingerprint: "fingerprint",
+          checkClaimId: "checks:claim",
+          checkClaimExpiresAt: now + 60_000,
+          checks: {
+            trufflehog: { status: "pending" },
+            clawscan: { status: "pending" },
+          },
+        })),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "failed", summary: "scanner unavailable" },
+        clawscan: { status: "failed", summary: "scanner unavailable" },
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      kind: "skill",
+      status: "pending_checks",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "pending_checks",
+        checkClaimId: undefined,
+        checkClaimedAt: undefined,
+        checkClaimExpiresAt: expect.any(Number),
+        checkClaimLastError: "scanner unavailable",
+        failedAt: undefined,
+      }),
+    );
+    const patch = ctx.db.patch.mock.calls[0]?.[1] as { checkClaimExpiresAt: number };
+    expect(patch.checkClaimExpiresAt).toBeGreaterThan(now);
+  });
+
+  it("stores suspicious analysis with the staged insert before finalization", async () => {
+    const now = Date.now();
+    const llmAnalysis = {
+      status: "completed",
+      verdict: "suspicious",
+      summary: "Review before installing.",
+      checkedAt: now,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:demo",
+          kind: "skill",
+          status: "pending_checks",
+          artifactFingerprint: "fingerprint",
+          checkClaimId: "checks:claim",
+          checkClaimExpiresAt: now + 60_000,
+          skillInsertArgs: {
+            slug: "demo-skill",
+            version: "1.0.0",
+          },
+        })),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: {
+          status: "clean",
+          redactedFindings: ["status=completed; verdict=suspicious"],
+        },
+        clawscanAnalysis: llmAnalysis,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      kind: "skill",
+      status: "ready_to_finalize",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "ready_to_finalize",
+        skillInsertArgs: {
+          slug: "demo-skill",
+          version: "1.0.0",
+          llmAnalysis,
+        },
+      }),
+    );
+  });
+
+  it("retains malicious analysis while keeping the staged artifact blocked", async () => {
+    const now = Date.now();
+    const llmAnalysis = {
+      status: "completed",
+      verdict: "malicious",
+      summary: "Credential theft behavior detected.",
+      checkedAt: now,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:demo",
+          kind: "package",
+          status: "pending_checks",
+          artifactFingerprint: "fingerprint",
+          checkClaimId: "checks:claim",
+          checkClaimExpiresAt: now + 60_000,
+          packageInsertArgs: {
+            name: "demo-plugin",
+            version: "1.0.0",
+          },
+        })),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: {
+          status: "blocked",
+          redactedFindings: ["status=completed; verdict=malicious"],
+        },
+        clawscanAnalysis: llmAnalysis,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      kind: "package",
+      status: "blocked",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "blocked",
+        packageInsertArgs: {
+          name: "demo-plugin",
+          version: "1.0.0",
+          llmAnalysis,
+        },
+      }),
+    );
+    expect(ctx.storage.delete).not.toHaveBeenCalled();
+  });
+
   it("emails the publisher when TruffleHog blocks a staged publish", async () => {
     const ctx = {
       db: {

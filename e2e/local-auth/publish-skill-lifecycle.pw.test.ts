@@ -368,6 +368,48 @@ OPENAI_API_KEY=sk-local-e2e-redacted-secret-not-real
   await expectHealthyPublishPage(page, errors);
 });
 
+test("suspicious ClawScan verdict publishes the skill with review metadata", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-suspicious-${Date.now().toString(36)}`;
+  const displayName = "Playwright Suspicious Review Skill";
+  const version = "1.0.0";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "suspicious review release",
+    changelog: "Suspicious review result should remain public and flagged.",
+    completeChecks: false,
+  });
+
+  const result = (await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    clawscan: "suspicious",
+  })) as { status?: string };
+  expect(result.status).toBe("finalized");
+  await expect
+    .poll(() => publicSkillVersionExists(request, { ownerHandle, slug, version }), {
+      timeout: 60_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toBe(true);
+
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expectHealthyPublishPage(page, errors);
+});
+
 test("skill publishers can create a skill and publish a new version", async ({
   page,
 }, testInfo) => {

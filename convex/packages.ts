@@ -86,6 +86,7 @@ import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/pac
 import {
   getPackageTrustReasons,
   isPackageBlockedFromPublic,
+  normalizePackageScanStatus,
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
@@ -9248,6 +9249,7 @@ export const insertReleaseInternal = internalMutation({
     compatibility: v.optional(v.any()),
     verification: v.optional(v.any()),
     staticScan: v.optional(v.any()),
+    llmAnalysis: v.optional(v.any()),
     allowExistingRelease: v.optional(v.boolean()),
     files: v.array(
       v.object({
@@ -9278,6 +9280,13 @@ export const insertReleaseInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const prePublicationScanStatus = args.llmAnalysis
+      ? normalizePackageScanStatus(args.llmAnalysis.verdict ?? args.llmAnalysis.status)
+      : undefined;
+    const releaseVerification =
+      args.verification && prePublicationScanStatus
+        ? { ...args.verification, scanStatus: prePublicationScanStatus }
+        : args.verification;
     const normalizedName = normalizePackageName(args.name);
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
@@ -9408,8 +9417,8 @@ export const insertReleaseInternal = internalMutation({
         topics: args.topics,
         tags: {},
         compatibility: args.compatibility,
-        verification: args.verification,
-        scanStatus: args.verification?.scanStatus,
+        verification: releaseVerification,
+        scanStatus: releaseVerification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
         ...computePackageRecommendationPatch(
           {
@@ -9491,8 +9500,9 @@ export const insertReleaseInternal = internalMutation({
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,
-      verification: args.verification,
+      verification: releaseVerification,
       staticScan: args.staticScan,
+      llmAnalysis: args.llmAnalysis,
       source: args.source,
       createdBy: args.actorUserId,
       publishActor: args.publishActor,
@@ -9547,14 +9557,14 @@ export const insertReleaseInternal = internalMutation({
             changelog: args.changelog,
             icon: args.icon,
             compatibility: args.compatibility,
-            verification: args.verification,
+            verification: releaseVerification,
             artifact: packageArtifactSummary(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,
       compatibility: shouldPromoteLatest ? args.compatibility : pkg.compatibility,
-      verification: shouldPromoteLatest ? args.verification : pkg.verification,
-      scanStatus: shouldPromoteLatest ? args.verification?.scanStatus : pkg.scanStatus,
+      verification: shouldPromoteLatest ? releaseVerification : pkg.verification,
+      scanStatus: shouldPromoteLatest ? releaseVerification?.scanStatus : pkg.scanStatus,
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
     });

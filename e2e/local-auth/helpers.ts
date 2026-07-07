@@ -124,7 +124,7 @@ export async function completeMockPrePublicationChecks(args: {
   slug: string;
   version: string;
   trufflehog?: "clean" | "blocked";
-  clawscan?: "clean" | "blocked";
+  clawscan?: "clean" | "suspicious" | "malicious" | "failed";
 }) {
   const claim = (await convexClient().action(api.publishAttempts.claimPrePublicationChecks, {
     token: WORKER_TOKEN,
@@ -140,6 +140,20 @@ export async function completeMockPrePublicationChecks(args: {
     throw new Error(`No pending ${args.kind} publish attempt for ${args.slug}@${args.version}`);
   }
 
+  const clawscan = args.clawscan ?? "clean";
+  const clawscanBlocked = clawscan === "malicious";
+  const clawscanFailed = clawscan === "failed";
+  const clawscanAnalysis =
+    clawscan === "suspicious" || clawscan === "malicious"
+      ? {
+          status: "completed",
+          verdict: clawscan,
+          confidence: "high",
+          summary: `Mock ClawScan marked the local e2e fixture ${clawscan}.`,
+          model: "mock-local-e2e",
+          checkedAt: Date.now(),
+        }
+      : undefined;
   return await convexClient().action(api.publishAttempts.completePrePublicationChecks, {
     token: WORKER_TOKEN,
     attemptId: claim.attemptId,
@@ -154,9 +168,14 @@ export async function completeMockPrePublicationChecks(args: {
       redactedFindings: args.trufflehog === "blocked" ? ["redacted-secret"] : undefined,
     },
     clawscan: {
-      status: args.clawscan ?? "clean",
+      status: clawscanBlocked ? "blocked" : clawscanFailed ? "failed" : "clean",
       summary: "Mock ClawScan completed for the local e2e fixture.",
+      redactedFindings:
+        clawscan === "suspicious" || clawscan === "malicious"
+          ? [`status=completed; verdict=${clawscan}`]
+          : undefined,
     },
+    clawscanAnalysis,
   });
 }
 

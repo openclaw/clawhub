@@ -241,6 +241,7 @@ const insertReleaseInternalHandler = (
       capabilities?: unknown;
       verification?: unknown;
       staticScan?: unknown;
+      llmAnalysis?: unknown;
       artifactKind?: "legacy-zip" | "npm-pack";
       clawpackStorageId?: string;
       clawpackSha256?: string;
@@ -7023,6 +7024,48 @@ describe("packages public queries", () => {
     ]) {
       expect(packagePatch).toHaveProperty(field, undefined);
     }
+  });
+
+  it("publishes suspicious prepublication plugin results with a suspicious scan status", async () => {
+    const ctx = makeInsertReleaseCtx(makePackageDoc());
+    const llmAnalysis = {
+      status: "completed",
+      verdict: "suspicious",
+      summary: "Review before installing.",
+      checkedAt: 123,
+    };
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.0.1",
+      changelog: "reviewed release",
+      tags: ["latest"],
+      summary: "demo",
+      verification: { tier: "structural", scanStatus: "pending" },
+      llmAnalysis,
+      files: [],
+      integritySha256: "abc123",
+      sha256hash: "abc123",
+    });
+
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packageReleases",
+      expect.objectContaining({
+        llmAnalysis,
+        verification: expect.objectContaining({ scanStatus: "suspicious" }),
+      }),
+    );
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        scanStatus: "suspicious",
+        verification: expect.objectContaining({ scanStatus: "suspicious" }),
+      }),
+    );
   });
 
   it("rejects family changes on an existing package name", async () => {
