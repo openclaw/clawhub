@@ -30847,6 +30847,12 @@ a[class*="rounded-full"] {
 
 .dashboard-catalog-row .skill-list-item-main {
   gap: 8px;
+  /* The body is a grid item in an `auto` column; without `min-width: 0` the
+     nowrap title's min-content floors the track and the ellipsis never fires.
+     `nowrap` keeps the version + visibility icon on the title's line so the
+     title truncates instead of wrapping its siblings below. */
+  min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .dashboard-catalog-version {
@@ -32447,8 +32453,22 @@ a[class*="rounded-full"] {
 
 .dashboard-final .dashboard-attention-row .skill-list-item-main {
   display: grid;
+  /* An implicit `auto` column floors at the nowrap title's min-content and
+     never shrinks, so the ellipsis can't fire. `minmax(0, 1fr)` lets the column
+     shrink to the row width. (`min-width: 0` alone isn't enough here because
+     `main` is a grid container, not flex — grid items don't shrink on their
+     own the way flex items do.) */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: start;
   gap: 7px;
+  min-width: 0;
+}
+
+/* With `justify-items: start` the title sizes to its (nowrap) content and
+   overflows instead of truncating; stretch it into the column so its
+   `overflow: hidden` + `text-overflow: ellipsis` actually fires. */
+.dashboard-final .dashboard-attention-row .skill-list-item-name {
+  justify-self: stretch;
 }
 
 .dashboard-final .dashboard-attention-visibility {
