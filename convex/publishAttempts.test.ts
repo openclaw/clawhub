@@ -441,6 +441,56 @@ describe("publishAttempts", () => {
     );
   });
 
+  it("terminalizes ambiguous legacy fork slugs instead of retrying finalization", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:ambiguous-fork",
+          kind: "skill",
+          status: "finalizing",
+          skillInsertArgs: {
+            slug: "demo-skill",
+            version: "1.0.0",
+            forkOf: { slug: "shared-upstream" },
+          },
+          followup: {},
+          finalizationClaimId: "finalize:claim",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+    const error =
+      "Uncaught ConvexError: Slug is used by multiple publishers. Use an owner-qualified skill URL.";
+
+    await expect(
+      releaseSkillFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:ambiguous-fork",
+        claimId: "finalize:claim",
+        error,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:ambiguous-fork",
+      status: "failed",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:ambiguous-fork",
+      expect.objectContaining({
+        status: "failed",
+        checkClaimId: undefined,
+        finalizationClaimId: undefined,
+        finalizationLastError: error,
+        failedAt: expect.any(Number),
+      }),
+    );
+  });
+
   it("terminalizes duplicate package versions while preserving transient retries", async () => {
     const duplicateCtx = {
       db: {

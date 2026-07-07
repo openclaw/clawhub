@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  claimBatchDrainedQueue,
   claimPrePublicationBatch,
   configurePrePublicationCodexHome,
   processPrePublicationBatch,
@@ -48,6 +49,13 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("keeps claiming after partial transient claim failures", () => {
+    expect(claimBatchDrainedQueue(0, 0, 6)).toBe(true);
+    expect(claimBatchDrainedQueue(0, 5, 6)).toBe(true);
+    expect(claimBatchDrainedQueue(1, 5, 6)).toBe(false);
+    expect(claimBatchDrainedQueue(0, 6, 6)).toBe(false);
+  });
+
   it("does not clear the Codex home configured by GitHub Actions login", () => {
     const env = {
       CI: "true",
@@ -213,7 +221,10 @@ describe("pre-publication worker", () => {
         .mockResolvedValueOnce(attempt),
     };
 
-    await expect(claimPrePublicationBatch(client, "worker-token", 2)).resolves.toEqual([attempt]);
+    await expect(claimPrePublicationBatch(client, "worker-token", 2)).resolves.toEqual({
+      attempts: [attempt],
+      claimFailures: 1,
+    });
     expect(client.action).toHaveBeenCalledTimes(2);
   });
 

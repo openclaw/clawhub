@@ -82,15 +82,16 @@ function scannerFailureSummary(args: {
   return "Pre-publication scanner failed before returning a verdict.";
 }
 
-function isTerminalVersionConflict(error: string | undefined) {
+function isTerminalFinalizationConflict(error: string | undefined) {
   return (
     typeof error === "string" &&
-    /Version .+ already exists\. Increment the version number and try again\./.test(error)
+    (/Version .+ already exists\. Increment the version number and try again\./.test(error) ||
+      error.includes("Slug is used by multiple publishers. Use an owner-qualified skill URL."))
   );
 }
 
 function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
-  if (!isTerminalVersionConflict(error)) {
+  if (!isTerminalFinalizationConflict(error)) {
     return {
       status: "ready_to_finalize" as const,
       finalizationClaimId: undefined,

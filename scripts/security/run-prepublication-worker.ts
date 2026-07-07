@@ -646,7 +646,15 @@ export async function claimPrePublicationBatch(
   if (attempts.length === 0 && failures.length > 0) {
     throw new AggregateError(failures, "Pre-publication claims failed without claiming work.");
   }
-  return attempts;
+  return { attempts, claimFailures: failures.length };
+}
+
+export function claimBatchDrainedQueue(
+  claimFailures: number,
+  claimedAttempts: number,
+  claimLimit: number,
+) {
+  return claimFailures === 0 && claimedAttempts < claimLimit;
 }
 
 async function main() {
@@ -676,18 +684,15 @@ async function main() {
     if (totalClaimed > 0 && claimDeadline - Date.now() < CLAIM_WINDOW_SHUTDOWN_BUFFER_MS) break;
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
-    const attempts = await claimPrePublicationBatch(
-      client,
-      token,
-      Math.min(batchLimit, remainingJobs),
-    );
+    const claimLimit = Math.min(batchLimit, remainingJobs);
+    const { attempts, claimFailures } = await claimPrePublicationBatch(client, token, claimLimit);
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
     const results = await processPrePublicationBatch(attempts, (attempt) =>
       processPrePublicationAttempt(client, token, attempt),
     );
     totalCompleted += results.filter((result) => result.completed).length;
-    if (attempts.length < Math.min(batchLimit, remainingJobs)) break;
+    if (claimBatchDrainedQueue(claimFailures, attempts.length, claimLimit)) break;
   }
 
   logger.info(
