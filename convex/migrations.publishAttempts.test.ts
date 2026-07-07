@@ -48,6 +48,20 @@ describe("suspicious publish attempt recovery", () => {
             trufflehog: { status: "clean" },
             clawscan: {
               status: "blocked",
+              summary: "No malicious behavior was confirmed, but review is required.",
+              redactedFindings: ["status=completed; verdict=suspicious"],
+            },
+          },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasStoredSuspiciousClawscanVerdict(
+        suspiciousAttempt({
+          checks: {
+            trufflehog: { status: "clean" },
+            clawscan: {
+              status: "blocked",
               redactedFindings: ["status=completed; verdict=malicious"],
             },
           },

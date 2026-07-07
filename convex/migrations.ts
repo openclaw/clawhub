@@ -118,7 +118,10 @@ export function hasStoredSuspiciousClawscanVerdict(attempt: Doc<"publishAttempts
     .filter((value): value is string => Boolean(value))
     .join(" ")
     .toLowerCase();
-  return storedReviewText.includes("verdict=suspicious") && !storedReviewText.includes("malicious");
+  return (
+    storedReviewText.includes("verdict=suspicious") &&
+    !storedReviewText.includes("verdict=malicious")
+  );
 }
 
 async function classifySuspiciousPublishAttemptPublicState(
