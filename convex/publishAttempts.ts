@@ -657,6 +657,7 @@ export const claimSkillPublishAttemptForFinalizationInternal = internalMutation(
     return {
       status: "claimed" as const,
       attemptId: attempt._id,
+      createdAt: attempt.createdAt,
       skillInsertArgs: attempt.skillInsertArgs,
       followup: buildSkillPublishFollowup(attempt),
     };
@@ -1057,6 +1058,7 @@ async function requireSkillPublishAttempt(
     version: string;
     displayName: string;
     artifactFingerprint: string;
+    createdAt: number;
     finalizationClaimId?: string;
     finalizationClaimExpiresAt?: number;
     result?: {
