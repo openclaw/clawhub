@@ -11,6 +11,9 @@ import BlockedVersionEmail, { type BlockedVersionEmailProps } from "../../emails
 import PluginInspectorFindingsEmail, {
   type PluginInspectorFindingsEmailProps,
 } from "../../emails/plugin-inspector-findings";
+import SecretBlockedPublishEmail, {
+  type SecretBlockedPublishEmailProps,
+} from "../../emails/secret-blocked-publish";
 
 export async function renderAccountSuspendedEmail(props: AccountSuspendedEmailProps) {
   return await renderEmail(<AccountSuspendedEmail {...props} />);
@@ -26,6 +29,10 @@ export async function renderBlockedVersionEmail(props: BlockedVersionEmailProps)
 
 export async function renderPluginInspectorFindingsEmail(props: PluginInspectorFindingsEmailProps) {
   return await renderEmail(<PluginInspectorFindingsEmail {...props} />);
+}
+
+export async function renderSecretBlockedPublishEmail(props: SecretBlockedPublishEmailProps) {
+  return await renderEmail(<SecretBlockedPublishEmail {...props} />);
 }
 
 export async function renderAdminOneOffEmail(props: AdminOneOffEmailProps) {

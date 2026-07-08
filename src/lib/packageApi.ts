@@ -7,7 +7,7 @@ import type {
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
 import { hasOwnProperty } from "./hasOwnProperty";
-import { getRequiredRuntimeEnv, getRuntimeEnv } from "./runtimeEnv";
+import { publicApiUrl } from "./publicApiUrl";
 
 export type PackageListItem = {
   name: string;
@@ -211,49 +211,8 @@ function normalizeApiPath(path: string) {
   return path.startsWith("/") ? path : `/${path}`;
 }
 
-function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
-  for (const candidate of candidates) {
-    const value = candidate?.trim();
-    if (!value) continue;
-    try {
-      return new URL(value).toString();
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
 async function packageApiUrl(path: string) {
-  const normalizedPath = normalizeApiPath(path);
-  if (typeof window !== "undefined") {
-    // In production, Vercel rewrites /api/* to the Convex site, so relative
-    // paths work. In local dev, Nitro intercepts the request before Vite's
-    // proxy, so we must use the Convex site URL directly.
-    const convexClientBaseUrl = resolveAbsoluteBaseUrl(
-      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
-      getRuntimeEnv("VITE_CONVEX_URL"),
-    );
-    if (
-      convexClientBaseUrl &&
-      (window.location.hostname === "localhost" ||
-        window.location.hostname === "127.0.0.1" ||
-        window.location.hostname === "0.0.0.0")
-    ) {
-      return new URL(normalizedPath, convexClientBaseUrl);
-    }
-    return new URL(normalizedPath, window.location.origin);
-  }
-  // On the server (SSR / loader), always use the Convex site URL directly.
-  // In production, Vercel rewrites /api/* but SSR loaders run server-side
-  // where the rewrite doesn't apply. Using getRequestUrl() would loop back
-  // into TanStack Start / Nitro, which rejects non-HTML requests.
-  const base =
-    resolveAbsoluteBaseUrl(
-      getRuntimeEnv("VITE_CONVEX_SITE_URL"),
-      getRuntimeEnv("VITE_CONVEX_URL"),
-    ) ?? getRequiredRuntimeEnv("VITE_CONVEX_URL");
-  return new URL(normalizedPath, base);
+  return publicApiUrl(path);
 }
 
 export function getPackageDownloadPath(name: string, version?: string | null) {

@@ -86,6 +86,7 @@ import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/pac
 import {
   getPackageTrustReasons,
   isPackageBlockedFromPublic,
+  normalizePackageScanStatus,
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
@@ -469,10 +470,12 @@ const internalRefs = internal as unknown as {
     scanPackageReleaseStaticallyInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
+    findPackagePublishResultInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
     getByNameForViewerInternal: unknown;
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
+    getReleaseByPackageAndVersionInternal: unknown;
     getPackageReleaseScanBackfillBatchInternal: unknown;
     listVersionsForViewerInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
@@ -506,6 +509,12 @@ const internalRefs = internal as unknown as {
   publishers: {
     getByIdInternal: unknown;
     resolvePublishTargetForUserInternal: unknown;
+  };
+  publishAttempts: {
+    createPackagePublishAttemptInternal: unknown;
+    claimPackagePublishAttemptForFinalizationInternal: unknown;
+    releasePackagePublishAttemptFinalizationClaimInternal: unknown;
+    recordPackagePublishAttemptFinalizedInternal: unknown;
   };
   securityScan: {
     enqueuePackageReleaseScanInternal: unknown;
@@ -630,6 +639,9 @@ type PackagePublishAuthContext =
       publishToken: Doc<"packagePublishTokens">;
     };
 type PackageTrustedPublisherDoc = Doc<"packageTrustedPublishers">;
+type PackagePublishOptions = {
+  stagePrePublicationChecks?: boolean;
+};
 type PackageDoc = Doc<"packages">;
 type PublicPackageListItem = {
   name: string;
@@ -4301,6 +4313,31 @@ export const getPackageByNameInternal = internalQuery({
   },
 });
 
+export const findPackagePublishResultInternal = internalQuery({
+  args: {
+    name: v.string(),
+    version: v.string(),
+    integritySha256: v.string(),
+    ownerUserId: v.id("users"),
+    ownerPublisherId: v.optional(v.id("publishers")),
+  },
+  handler: async (ctx, args) => {
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg) return null;
+    if (getPackageOwnerKey(pkg) !== getRequestedPackageOwnerKey(args)) return null;
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", args.version),
+      )
+      .unique();
+    if (!release || release.softDeletedAt || release.integritySha256 !== args.integritySha256) {
+      return null;
+    }
+    return { ok: true as const, packageId: pkg._id, releaseId: release._id };
+  },
+});
+
 async function buildPackageActivityTrend(ctx: DbReaderCtx, pkg: Doc<"packages">, endDay: number) {
   const safeEndDay = clampActivityTrendEndDay(endDay, Date.now());
   const { startDay, endDay: normalizedEndDay } = getActivityTrendRangeForEndDay(safeEndDay);
@@ -7331,6 +7368,7 @@ async function publishPackageImpl(
     Pick<ActionCtx, "storage" | "scheduler" | "runAction">,
   auth: PackagePublishAuthContext,
   rawPayload: unknown,
+  options: PackagePublishOptions = {},
 ) {
   const payload = parseArk<ServerPackagePublishRequest>(
     ServerPackagePublishRequestSchema,
@@ -7633,11 +7671,7 @@ async function publishPackageImpl(
     files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
   });
 
-  const publishResult = await runMutationRef<{
-    ok: true;
-    packageId: Id<"packages">;
-    releaseId: Id<"packageReleases">;
-  }>(ctx, internalRefs.packages.insertReleaseInternal, {
+  const packageInsertArgs = {
     actorUserId,
     ownerUserId,
     ownerPublisherId,
@@ -7679,12 +7713,116 @@ async function publishPackageImpl(
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     pluginManifestSummary,
     source: effectiveSource,
-  });
+  };
 
   const inspectorFindings =
     inspectorResult?.warnings.map((finding) =>
       toPackageInspectorPublishResponseFinding(finding, inspectorResult.metadata),
     ) ?? [];
+
+  if (options.stagePrePublicationChecks) {
+    if (existingPackage) {
+      const existingRelease = await runQueryRef<Doc<"packageReleases"> | null>(
+        ctx,
+        internalRefs.packages.getReleaseByPackageAndVersionInternal,
+        { packageId: existingPackage._id, version },
+      );
+      const canReuseExistingRelease =
+        packageInsertArgs.allowExistingRelease &&
+        existingRelease &&
+        !existingRelease.softDeletedAt &&
+        existingRelease.integritySha256 === integritySha256;
+      if (existingRelease && !canReuseExistingRelease) {
+        throw new ConvexError(
+          `Version ${version} already exists. Increment the version number and try again.`,
+        );
+      }
+    }
+
+    const staged = await runMutationRef<{
+      attemptId: Id<"publishAttempts">;
+      status: string;
+      result?: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
+    }>(ctx, internalRefs.publishAttempts.createPackagePublishAttemptInternal, {
+      userId: actorUserId,
+      ownerUserId,
+      ownerPublisherId,
+      name,
+      displayName,
+      version,
+      idempotencyKey: buildPackagePublishAttemptIdempotencyKey({
+        actorUserId,
+        ownerPublisherId,
+        ownerUserId,
+        name,
+        version,
+        integritySha256,
+      }),
+      artifactFingerprint: integritySha256,
+      files,
+      packageInsertArgs: stripUndefinedForStoredAttempt(packageInsertArgs),
+      packageFollowup: stripUndefinedForStoredAttempt({
+        ownerUserId,
+        ownerPublisherId,
+        packageName: name,
+        version,
+        inspectorWarnings: inspectorResult?.warnings ?? [],
+        inspectorMetadata: inspectorResult?.metadata,
+        trustedPublishTokenId: auth.kind === "github-actions" ? auth.publishToken._id : undefined,
+        manualOverrideAudit:
+          auth.kind === "user" && existingTrustedPublisher && manualOverrideReason
+            ? {
+                actorUserId,
+                version,
+                reason: manualOverrideReason,
+                trustedPublisher: {
+                  provider: existingTrustedPublisher.provider,
+                  repository: existingTrustedPublisher.repository,
+                  workflowFilename: existingTrustedPublisher.workflowFilename,
+                  environment: existingTrustedPublisher.environment,
+                },
+              }
+            : undefined,
+        githubActionsAudit:
+          auth.kind === "github-actions"
+            ? {
+                actorUserId,
+                version,
+                repository: auth.publishToken.repository,
+                workflowFilename: auth.publishToken.workflowFilename,
+                environment: auth.publishToken.environment,
+                runId: auth.publishToken.runId,
+                runAttempt: auth.publishToken.runAttempt,
+                sha: auth.publishToken.sha,
+              }
+            : undefined,
+      }),
+    });
+    if (auth.kind === "github-actions") {
+      await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
+        tokenId: auth.publishToken._id,
+      });
+    }
+
+    if (staged.status === "finalized" && staged.result) {
+      return inspectorFindings.length > 0 ? { ...staged.result, inspectorFindings } : staged.result;
+    }
+
+    return {
+      ok: true as const,
+      status: "pending" as const,
+      attemptId: staged.attemptId,
+      packageName: name,
+      version,
+      ...(inspectorFindings.length > 0 ? { inspectorFindings } : {}),
+    };
+  }
+
+  const publishResult = await runMutationRef<{
+    ok: true;
+    packageId: Id<"packages">;
+    releaseId: Id<"packageReleases">;
+  }>(ctx, internalRefs.packages.insertReleaseInternal, packageInsertArgs);
   if (inspectorResult?.warnings.length) {
     const insertFindingsResult = await runMutationRef<{
       ok: true;
@@ -7802,6 +7940,7 @@ export const publishPackageForUserInternal = internalAction({
       ctx,
       { kind: "user", actorUserId: args.actorUserId },
       args.payload,
+      { stagePrePublicationChecks: stagedPrePublicationPublishesEnabled() },
     );
   },
 });
@@ -7812,7 +7951,98 @@ export const publishRelease: ReturnType<typeof action> = action({
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
-    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload);
+    const stagePrePublicationChecks = stagedPrePublicationPublishesEnabled();
+    return await publishPackageImpl(ctx, { kind: "user", actorUserId: userId }, args.payload, {
+      stagePrePublicationChecks,
+    });
+  },
+});
+
+function stagedPrePublicationPublishesEnabled() {
+  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
+}
+
+export const finalizePackagePublishAttemptInternal = internalAction({
+  args: {
+    attemptId: v.id("publishAttempts"),
+  },
+  handler: async (ctx, args) => {
+    const claimId = buildPackageFinalizationClaimId();
+    const claim = await runMutationRef<
+      | {
+          status: "claimed";
+          attemptId: Id<"publishAttempts">;
+          packageInsertArgs: unknown;
+          packageFollowup: unknown;
+        }
+      | {
+          status: "finalized";
+          attemptId: Id<"publishAttempts">;
+          result: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
+          packageFollowup: unknown;
+        }
+    >(ctx, internalRefs.publishAttempts.claimPackagePublishAttemptForFinalizationInternal, {
+      attemptId: args.attemptId,
+      claimId,
+    });
+    if (claim.status === "finalized") return claim.result;
+
+    let publishResult: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
+    try {
+      publishResult = await runMutationRef(
+        ctx,
+        internalRefs.packages.insertReleaseInternal,
+        claim.packageInsertArgs,
+      );
+    } catch (error) {
+      const insertArgs = claim.packageInsertArgs as {
+        name?: string;
+        version?: string;
+        integritySha256?: string;
+        ownerUserId?: Id<"users">;
+        ownerPublisherId?: Id<"publishers">;
+      };
+      const existingResult =
+        insertArgs.name &&
+        insertArgs.version &&
+        insertArgs.integritySha256 &&
+        insertArgs.ownerUserId
+          ? await runQueryRef<{
+              ok: true;
+              packageId: Id<"packages">;
+              releaseId: Id<"packageReleases">;
+            } | null>(ctx, internalRefs.packages.findPackagePublishResultInternal, {
+              name: insertArgs.name,
+              version: insertArgs.version,
+              integritySha256: insertArgs.integritySha256,
+              ownerUserId: insertArgs.ownerUserId,
+              ownerPublisherId: insertArgs.ownerPublisherId,
+            })
+          : null;
+      if (!existingResult) {
+        await releasePackagePublishAttemptFinalizationClaim(ctx, claim.attemptId, claimId, error);
+        throw error;
+      }
+      publishResult = existingResult;
+    }
+
+    try {
+      await runPackagePublishPostFinalizeFollowups(ctx, publishResult, claim.packageFollowup);
+      await runMutationRef(
+        ctx,
+        internalRefs.publishAttempts.recordPackagePublishAttemptFinalizedInternal,
+        {
+          attemptId: claim.attemptId,
+          claimId,
+          result: publishResult,
+        },
+      );
+    } catch (error) {
+      await releasePackagePublishAttemptFinalizationClaim(ctx, claim.attemptId, claimId, error);
+      throw error;
+    }
+
+    return publishResult;
   },
 });
 
@@ -7840,9 +8070,185 @@ export const publishPackageForTrustedPublisherInternal = internalAction({
         "Trusted publish token no longer matches the current package trusted publisher",
       );
     }
-    return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload);
+    return await publishPackageImpl(ctx, { kind: "github-actions", publishToken }, args.payload, {
+      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
+    });
   },
 });
+
+function buildPackagePublishAttemptIdempotencyKey(args: {
+  actorUserId: Id<"users">;
+  ownerUserId: Id<"users">;
+  ownerPublisherId?: Id<"publishers">;
+  name: string;
+  version: string;
+  integritySha256: string;
+}) {
+  return [
+    "package",
+    args.actorUserId,
+    args.ownerPublisherId ?? args.ownerUserId,
+    args.name,
+    args.version,
+    args.integritySha256,
+  ].join(":");
+}
+
+function stripUndefinedForStoredAttempt(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefinedForStoredAttempt);
+  if (!value || typeof value !== "object") return value;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
+  }
+  return result;
+}
+
+function buildPackageFinalizationClaimId() {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+}
+
+async function releasePackagePublishAttemptFinalizationClaim(
+  ctx: ActionCtx,
+  attemptId: Id<"publishAttempts">,
+  claimId: string,
+  error: unknown,
+) {
+  await runMutationRef(
+    ctx,
+    internalRefs.publishAttempts.releasePackagePublishAttemptFinalizationClaimInternal,
+    {
+      attemptId,
+      claimId,
+      error: error instanceof Error ? error.message : String(error),
+    },
+  );
+}
+
+async function runPackagePublishPostFinalizeFollowups(
+  ctx: ActionCtx,
+  publishResult: { packageId: Id<"packages">; releaseId: Id<"packageReleases"> },
+  rawFollowup: unknown,
+) {
+  const followup = rawFollowup as {
+    ownerUserId?: Id<"users">;
+    ownerPublisherId?: Id<"publishers">;
+    packageName?: string;
+    version?: string;
+    inspectorWarnings?: PackageInspectorFinding[];
+    inspectorMetadata?: PackageInspectorPublishResult["metadata"];
+    trustedPublishTokenId?: Id<"packagePublishTokens">;
+    manualOverrideAudit?: {
+      actorUserId: Id<"users">;
+      version: string;
+      reason: string;
+      trustedPublisher: {
+        provider: string;
+        repository: string;
+        workflowFilename: string;
+        environment?: string;
+      };
+    };
+    githubActionsAudit?: {
+      actorUserId: Id<"users">;
+      version: string;
+      repository: string;
+      workflowFilename: string;
+      environment?: string;
+      runId?: string;
+      runAttempt?: string;
+      sha?: string;
+    };
+  };
+
+  if (
+    followup.ownerUserId &&
+    followup.packageName &&
+    followup.version &&
+    followup.inspectorWarnings?.length
+  ) {
+    const insertFindingsResult = await runMutationRef<{
+      ok: true;
+      inserted: number;
+      shouldEmailOwner: boolean;
+    }>(ctx, internalRefs.packages.insertPackageInspectorWarningsInternal, {
+      packageId: publishResult.packageId,
+      releaseId: publishResult.releaseId,
+      ownerUserId: followup.ownerUserId,
+      ownerPublisherId: followup.ownerPublisherId,
+      packageName: followup.packageName,
+      version: followup.version,
+      scanSource: "publish",
+      inspectorVersion: followup.inspectorMetadata?.inspectorVersion,
+      targetOpenClawVersion: followup.inspectorMetadata?.targetOpenClawVersion,
+      findings: followup.inspectorWarnings,
+    });
+    if (insertFindingsResult.shouldEmailOwner) {
+      try {
+        await runActionRef(ctx, internalRefs.packages.sendPackageInspectorFindingsEmailInternal, {
+          packageId: publishResult.packageId,
+          releaseId: publishResult.releaseId,
+        });
+      } catch (error) {
+        console.error("Package Inspector findings email failed", error);
+      }
+    }
+  }
+
+  if (followup.trustedPublishTokenId) {
+    await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
+      tokenId: followup.trustedPublishTokenId,
+    });
+  }
+
+  if (followup.manualOverrideAudit) {
+    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
+      actorUserId: followup.manualOverrideAudit.actorUserId,
+      action: "package.publish.manual_override",
+      targetType: "package",
+      targetId: String(publishResult.packageId),
+      metadata: {
+        version: followup.manualOverrideAudit.version,
+        reason: followup.manualOverrideAudit.reason,
+        trustedPublisher: followup.manualOverrideAudit.trustedPublisher,
+      },
+    });
+  }
+
+  if (followup.githubActionsAudit) {
+    await runMutationRef(ctx, internalRefs.packages.insertAuditLogInternal, {
+      actorUserId: followup.githubActionsAudit.actorUserId,
+      action: "package.publish.github_actions",
+      targetType: "package",
+      targetId: String(publishResult.packageId),
+      metadata: {
+        version: followup.githubActionsAudit.version,
+        repository: followup.githubActionsAudit.repository,
+        workflowFilename: followup.githubActionsAudit.workflowFilename,
+        environment: followup.githubActionsAudit.environment,
+        runId: followup.githubActionsAudit.runId,
+        runAttempt: followup.githubActionsAudit.runAttempt,
+        sha: followup.githubActionsAudit.sha,
+      },
+    });
+  }
+
+  await runAfterRef(
+    ctx,
+    INITIAL_PACKAGE_VT_SCAN_DELAY_MS,
+    internalRefs.vt.scanPackageReleaseWithVirusTotal,
+    {
+      releaseId: publishResult.releaseId,
+    },
+  );
+  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+    releaseId: publishResult.releaseId,
+    source: "publish",
+  });
+}
 
 export const reservePackageNameInternal = internalMutation({
   args: {
@@ -8843,6 +9249,7 @@ export const insertReleaseInternal = internalMutation({
     compatibility: v.optional(v.any()),
     verification: v.optional(v.any()),
     staticScan: v.optional(v.any()),
+    llmAnalysis: v.optional(v.any()),
     allowExistingRelease: v.optional(v.boolean()),
     files: v.array(
       v.object({
@@ -8873,6 +9280,13 @@ export const insertReleaseInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const prePublicationScanStatus = args.llmAnalysis
+      ? normalizePackageScanStatus(args.llmAnalysis.verdict ?? args.llmAnalysis.status)
+      : undefined;
+    const releaseVerification =
+      args.verification && prePublicationScanStatus
+        ? { ...args.verification, scanStatus: prePublicationScanStatus }
+        : args.verification;
     const normalizedName = normalizePackageName(args.name);
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
@@ -9003,8 +9417,8 @@ export const insertReleaseInternal = internalMutation({
         topics: args.topics,
         tags: {},
         compatibility: args.compatibility,
-        verification: args.verification,
-        scanStatus: args.verification?.scanStatus,
+        verification: releaseVerification,
+        scanStatus: releaseVerification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
         ...computePackageRecommendationPatch(
           {
@@ -9086,8 +9500,9 @@ export const insertReleaseInternal = internalMutation({
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,
-      verification: args.verification,
+      verification: releaseVerification,
       staticScan: args.staticScan,
+      llmAnalysis: args.llmAnalysis,
       source: args.source,
       createdBy: args.actorUserId,
       publishActor: args.publishActor,
@@ -9142,14 +9557,14 @@ export const insertReleaseInternal = internalMutation({
             changelog: args.changelog,
             icon: args.icon,
             compatibility: args.compatibility,
-            verification: args.verification,
+            verification: releaseVerification,
             artifact: packageArtifactSummary(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,
       compatibility: shouldPromoteLatest ? args.compatibility : pkg.compatibility,
-      verification: shouldPromoteLatest ? args.verification : pkg.verification,
-      scanStatus: shouldPromoteLatest ? args.verification?.scanStatus : pkg.scanStatus,
+      verification: shouldPromoteLatest ? releaseVerification : pkg.verification,
+      scanStatus: shouldPromoteLatest ? releaseVerification?.scanStatus : pkg.scanStatus,
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
     });

@@ -551,11 +551,14 @@ describe("Settings", () => {
     render(<Settings />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create org" }));
+    expect(screen.getAllByText("Create an organization for your team").length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText("@openclaw")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Handle"), { target: { value: "romneyda" } });
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "Dallin Romney @ OpenClaw" },
     });
-    const createOrgButtons = screen.getAllByRole("button", { name: "Create org" });
+    const createOrgButtons = screen.getAllByRole("button", { name: "Create" });
+    expect(createOrgButtons[createOrgButtons.length - 1]?.querySelector("svg")).toBeNull();
     fireEvent.click(createOrgButtons[createOrgButtons.length - 1]);
 
     await waitFor(() => {

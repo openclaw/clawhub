@@ -70,12 +70,15 @@ describe("security-scan-codex workflow", () => {
       "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",
     );
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
+    expect(jobEnv).not.toHaveProperty("CODEX_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expectSecretStepAllowlist(steps, "CODEX_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "OPENAI_API_KEY", [
       "Authenticate Codex CLI",
       "Run Codex security worker",
     ]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
+    expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();
@@ -86,6 +89,7 @@ describe("security-scan-codex workflow", () => {
     expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
     expect(skillspectorInstall).not.toContain("git+https://github.com/NVIDIA/skillspector.git'");
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({
+      CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
     });

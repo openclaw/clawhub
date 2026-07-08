@@ -28,6 +28,11 @@
       "statusCode": 308
     },
     {
+      "source": "/feeds/promotions",
+      "destination": "/v1/feeds/promotions",
+      "statusCode": 308
+    },
+    {
       "source": "/",
       "has": [
         {
@@ -64,6 +69,10 @@
     {
       "source": "/v1/feeds/skills",
       "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/skills"
+    },
+    {
+      "source": "/v1/feeds/promotions",
+      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/promotions"
     }
   ],
   "images": {

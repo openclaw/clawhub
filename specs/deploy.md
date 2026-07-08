@@ -174,7 +174,7 @@ The CLI can discover the API base from:
 
 Keep production rewrites and discovery metadata aligned before release.
 
-### Hosted catalog feed
+### Hosted feeds
 
 Refresh the OpenClaw hosted plugin and skill feeds after the production Convex
 deployment has the catalog projections:
@@ -188,6 +188,12 @@ through `/v1/feeds/plugins` and `/v1/feeds/skills` with public edge-cache
 validators. The unversioned `/feeds/plugins` and `/feeds/skills` paths redirect
 to their versioned routes. Attach `registry.openclaw.ai` to the same Vercel
 project before configuring OpenClaw's default feed URLs.
+
+Production backend deploys publish an initial promotions snapshot after Convex
+deploys. Active promotion changes then refresh the stored snapshot immediately,
+schedule refreshes at launch and expiry boundaries, and use a six-hour cron as
+an expiry backstop. The feed is served through `/v1/feeds/promotions`, with
+`/feeds/promotions` redirecting to the versioned route.
 
 ## 5) Post-deploy checks
 

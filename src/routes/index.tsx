@@ -4,6 +4,7 @@ import { HomeAppsSection } from "../components/HomeAppsSection";
 import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
+import { HomePromotionsSection } from "../components/HomePromotionsSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
 import { HOME_APP_ICON_PRELOAD_HREFS } from "../lib/homeApps";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
@@ -413,6 +414,7 @@ function SkillsHome() {
         <p className="home-v2-sub">Discover skills and plugins from top creators</p>
       </section>
 
+      <HomePromotionsSection />
       <HomeListingSection initialListing={initialListing} />
       <HomePopularPublishersSection />
       <HomeAppsSection />
