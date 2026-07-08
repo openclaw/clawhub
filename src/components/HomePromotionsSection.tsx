@@ -96,7 +96,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more <ArrowUpRight size={15} aria-hidden="true" />
+            Try it free <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         ) : null}
       </div>

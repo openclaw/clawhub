@@ -25542,14 +25542,14 @@ a.search-empty-action {
 .home-v2-promotion-card::before {
   background:
     radial-gradient(
-      ellipse 88% 130% at 76% 134%,
-      rgba(230, 60, 30, 0.22) 0%,
-      rgba(255, 80, 48, 0.1) 42%,
-      rgba(255, 80, 48, 0) 74%
+      ellipse 82% 120% at 84% 140%,
+      rgba(204, 48, 24, 0.2) 0%,
+      rgba(244, 68, 46, 0.1) 44%,
+      rgba(244, 68, 46, 0) 76%
     ),
     radial-gradient(
-      ellipse 42% 72% at 98% 124%,
-      rgba(244, 68, 46, 0.16) 0%,
+      ellipse 36% 70% at 98% 126%,
+      rgba(255, 80, 48, 0.14) 0%,
       rgba(244, 68, 46, 0) 70%
     );
   mix-blend-mode: multiply;
