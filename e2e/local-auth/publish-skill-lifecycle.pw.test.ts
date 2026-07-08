@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -7,8 +7,16 @@ import {
   expectNoRuntimeErrors,
   trackRuntimeErrors,
   waitForHydration,
+  withoutRecoverableReactHydrationErrors,
 } from "../helpers/runtimeErrors";
-import { expectOwnerHandleSelected, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
+import {
+  completeMockPrePublicationChecks,
+  expectOwnerHandleSelected,
+  publishedSkillVersionExists,
+  publishSkillVersion,
+  signInAsLocalPublisher,
+  skillMd,
+} from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -66,7 +74,7 @@ async function expectHealthyPublishPage(page: Page, errors: string[]) {
   await expectNoFatalErrorUi(page);
   await expectNoRuntimeErrors(
     page,
-    errors.filter(
+    withoutRecoverableReactHydrationErrors(errors).filter(
       (error) =>
         !(
           error.includes("Function execution timed out (maximum duration: 1s)") &&
@@ -166,6 +174,25 @@ async function waitForSkillCardEndpoint(page: Page, slug: string, markdown: stri
       120,
     )}`,
   );
+}
+
+async function publicSkillVersionExists(
+  request: APIRequestContext,
+  args: {
+    ownerHandle: string;
+    slug: string;
+    version: string;
+  },
+) {
+  const url = `${convexSiteUrl()}/api/v1/skills/${encodeURIComponent(args.slug)}/versions/${encodeURIComponent(
+    args.version,
+  )}?ownerHandle=${encodeURIComponent(args.ownerHandle)}`;
+  const response = await request.get(url, { timeout: 2_000 }).catch(() => null);
+  if (!response?.ok()) return false;
+  const body = (await response.json().catch(() => null)) as {
+    version?: { version?: unknown };
+  } | null;
+  return body?.version?.version === args.version;
 }
 
 async function completeScanJob(
@@ -277,6 +304,109 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
 
   expect(await cardResponse.text()).toBe(markdown);
 
+  await expectHealthyPublishPage(page, errors);
+});
+
+test("mocked TruffleHog blocks a secret-positive skill upload until the secret is removed", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-secret-${Date.now().toString(36)}`;
+  const displayName = "Playwright Secret Block Skill";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+  const version = "1.0.0";
+  const secretMarkdown = `${skillMd({
+    slug,
+    displayName,
+    versionLabel: "secret-positive release",
+  })}
+
+## Local secret fixture
+
+This fake token is intentionally redacted by the mocked TruffleHog worker:
+OPENAI_API_KEY=sk-local-e2e-redacted-secret-not-real
+`;
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "secret-positive release",
+    changelog: "Secret-positive release should remain private.",
+    skillMarkdown: secretMarkdown,
+    completeChecks: false,
+  });
+
+  await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    trufflehog: "blocked",
+  });
+
+  await expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+  await expect(await publishedSkillVersionExists(page, { ownerHandle, slug, version })).toBe(false);
+
+  await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "clean retry release",
+    changelog: "Clean retry after removing the secret.",
+    skillMarkdown: skillMd({
+      slug,
+      displayName,
+      versionLabel: "clean retry release",
+    }),
+  });
+
+  await expectCurrentVersion(page, version);
+  await expectHealthyPublishPage(page, errors);
+});
+
+test("suspicious ClawScan verdict publishes the skill with review metadata", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-suspicious-${Date.now().toString(36)}`;
+  const displayName = "Playwright Suspicious Review Skill";
+  const version = "1.0.0";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "suspicious review release",
+    changelog: "Suspicious review result should remain public and flagged.",
+    completeChecks: false,
+  });
+
+  const result = (await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    clawscan: "suspicious",
+  })) as { status?: string };
+  expect(result.status).toBe("finalized");
+  await expect
+    .poll(() => publicSkillVersionExists(request, { ownerHandle, slug, version }), {
+      timeout: 60_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toBe(true);
+
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
   await expectHealthyPublishPage(page, errors);
 });
 

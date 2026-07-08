@@ -76,6 +76,9 @@ describe("Footer", () => {
         .getAttribute("href"),
     ).toBe("https://openclaw.ai");
     expect(within(community as HTMLElement).queryByRole("link", { name: "About" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Status" }).getAttribute("href")).toBe(
+      "https://clawhub.betteruptime.com",
+    );
     expect(screen.getByRole("link", { name: "Deployed on Vercel" }).getAttribute("href")).toBe(
       "https://vercel.com",
     );

@@ -13,6 +13,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
+    "promotions-feed-refresh",
+    { hours: 6 },
+    internal.promotionsFeed.publishInternal,
+    {},
+  );
+
+  crons.interval(
     "trending-leaderboard",
     { minutes: 60 },
     internal.leaderboards.rebuildTrendingLeaderboardAction,
@@ -117,6 +124,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
       maxPages: 20,
       trigger: "cron",
     },
+  );
+
+  crons.interval(
+    "publisher-abuse-signal-notifications",
+    { hours: 1 },
+    internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
+    {},
   );
 
   crons.interval(

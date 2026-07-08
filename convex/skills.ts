@@ -135,9 +135,9 @@ import {
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import {
   fetchText,
-  type PublishResult,
-  publishVersionForUser,
   queueHighlightedWebhook,
+  stageSkillPublishAttemptForUser,
+  type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
@@ -3893,40 +3893,26 @@ export const listDashboardPaginated = query({
           ? (ownerPublisher.linkedUserId ?? (isOwnDashboard ? userId : undefined))
           : undefined;
       const shouldIncludeLegacyPersonalSkills = Boolean(legacyPersonalOwnerUserId);
-      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
-        shouldIncludeLegacyPersonalSkills
-          ? await ctx.db
-              .query("skills")
-              .withIndex("by_owner_active_updated", (q) =>
-                q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
-              )
-              .order("desc")
-              .paginate(paginationOpts)
-          : await ctx.db
-              .query("skills")
-              .withIndex("by_owner_publisher_active_updated", (q) =>
-                q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
-              )
-              .order("desc")
-              .paginate(paginationOpts);
-      let result = await paginateOwnerSkills(args.paginationOpts);
-      const scopePersonalDashboardPage = (page: Doc<"skills">[]) =>
-        shouldIncludeLegacyPersonalSkills
-          ? page.filter(
-              (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+      const result = shouldIncludeLegacyPersonalSkills
+        ? await ctx.db
+            .query("skills")
+            .withIndex("by_owner_active_updated", (q) =>
+              q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
             )
-          : page;
-      const scopedPage = scopePersonalDashboardPage(result.page);
-      if (shouldIncludeLegacyPersonalSkills) {
-        while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
-          result = await paginateOwnerSkills({
-            ...args.paginationOpts,
-            cursor: result.continueCursor,
-            numItems: args.paginationOpts.numItems - scopedPage.length,
-          });
-          scopedPage.push(...scopePersonalDashboardPage(result.page));
-        }
-      }
+            .order("desc")
+            .paginate(args.paginationOpts)
+        : await ctx.db
+            .query("skills")
+            .withIndex("by_owner_publisher_active_updated", (q) =>
+              q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+            )
+            .order("desc")
+            .paginate(args.paginationOpts);
+      const scopedPage = shouldIncludeLegacyPersonalSkills
+        ? result.page.filter(
+            (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+          )
+        : result.page;
       const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
@@ -3935,26 +3921,14 @@ export const listDashboardPaginated = query({
     if (ownerUserId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const isOwnDashboard = Boolean(userId && userId === ownerUserId);
-      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
-        await ctx.db
-          .query("skills")
-          .withIndex("by_owner_active_updated", (q) =>
-            q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
-          )
-          .order("desc")
-          .paginate(paginationOpts);
-      let result = await paginateOwnerSkills(args.paginationOpts);
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_active_updated", (q) =>
+          q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
       const scopedPage = await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId);
-      while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
-        result = await paginateOwnerSkills({
-          ...args.paginationOpts,
-          cursor: result.continueCursor,
-          numItems: args.paginationOpts.numItems - scopedPage.length,
-        });
-        scopedPage.push(
-          ...(await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId)),
-        );
-      }
       const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
@@ -9705,7 +9679,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       }),
     ),
   },
-  handler: async (ctx, args): Promise<PublishResult> => {
+  handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
       throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
     }
@@ -9728,14 +9702,19 @@ export const publishVersion: ReturnType<typeof action> = action({
           })) as { publisherId: Id<"publishers"> })
         : null;
     const { icon: _legacyIcon, ...publishArgs } = args;
-    return publishVersionForUser(ctx, userId, publishArgs, {
+    return stageSkillPublishAttemptForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
+      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
     });
   },
 });
+
+function stagedPrePublicationPublishesEnabled() {
+  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
+}
 
 export const generateChangelogPreview = action({
   args: {
@@ -11739,6 +11718,7 @@ export const insertVersion = internalMutation({
       engineVersion: v.string(),
       checkedAt: v.number(),
     }),
+    llmAnalysis: v.optional(v.any()),
     embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
@@ -12238,6 +12218,7 @@ export const insertVersion = internalMutation({
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
+      llmAnalysis: args.llmAnalysis,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -12301,6 +12282,19 @@ export const insertVersion = internalMutation({
     const nextFlags = Array.from(
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
+    const scannerModerationPatch =
+      args.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+        ? buildScannerModerationPatchFromVersion({
+            owner: null,
+            version: {
+              _id: versionId,
+              staticScan: args.staticScan,
+              vtAnalysis: undefined,
+              llmAnalysis: args.llmAnalysis,
+            },
+            now,
+          })
+        : {};
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
@@ -12360,6 +12354,7 @@ export const insertVersion = internalMutation({
       unpublishedSlugReleasedAt: undefined,
       unpublishedOriginalSlug: undefined,
       updatedAt: now,
+      ...scannerModerationPatch,
     };
     const patch = applySkillManualOverrideToSkillPatch({
       skill,

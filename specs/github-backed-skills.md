@@ -102,6 +102,12 @@ mutation. The intended split is:
 2. Fetch small target rows for changed/current skills.
 3. Persist `SKILL.md` / `skill-card.md` content per skill.
 
+Source discovery treats the repo's `skills/` tree as the canonical catalog area.
+If package directories also contain copied skill folders that normalize to the
+same slug, and exactly one matching `SKILL.md` path lives under `skills/`, sync
+uses that catalog path. If two or more catalog paths normalize to the same slug,
+sync rejects the repo with a client-visible validation error.
+
 ## Manifest Rendering
 
 The only supported display manifest today is `skills.sh.json`.

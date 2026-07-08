@@ -11,6 +11,7 @@ import {
   buildMaliciousArtifactEmail,
   buildPublisherAbuseWarningEmail,
   buildRestoredAccountEmail,
+  buildSecretBlockedPublishEmail,
   type NotificationArtifact,
 } from "./lib/emails";
 
@@ -173,6 +174,31 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
     });
     return await sendTransactionalEmail({
       idempotencyKey: `malicious-artifact:${args.userId}:${args.findingAt}:${args.artifact.kind}:${args.artifact.name}:${args.version ?? ""}`,
+      to: args.to,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+  },
+});
+
+export const sendSecretPublishBlockedNotificationInternal = internalAction({
+  args: {
+    attemptId: v.id("publishAttempts"),
+    userId: v.id("users"),
+    to: v.string(),
+    handle: v.optional(v.string()),
+    artifact: notificationArtifactValidator,
+    version: v.optional(v.string()),
+  },
+  handler: async (_ctx, args) => {
+    const email = await buildSecretBlockedPublishEmail({
+      handle: args.handle,
+      artifact: args.artifact as NotificationArtifact,
+      version: args.version,
+    });
+    return await sendTransactionalEmail({
+      idempotencyKey: `secret-publish-block:${args.attemptId}:${args.userId}`,
       to: args.to,
       subject: email.subject,
       text: email.text,

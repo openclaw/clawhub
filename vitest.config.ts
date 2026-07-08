@@ -34,6 +34,7 @@ export default defineConfig({
     hookTimeout: 15_000,
     exclude: [
       "**/node_modules/**",
+      "**/.artifacts/**",
       "**/.vercel/output/**",
       "**/.output/**",
       "**/.nitro/**",
@@ -64,6 +65,7 @@ export default defineConfig({
       ],
       exclude: [
         "node_modules/",
+        ".artifacts/",
         ".vercel/output/",
         ".output/",
         ".nitro/",

@@ -378,6 +378,53 @@ describe("Dashboard rows", () => {
     });
   });
 
+  it("waits for the publisher scope before loading dashboard skills", () => {
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return undefined;
+      return [];
+    });
+
+    renderDashboard();
+
+    expect(mocks.usePaginatedQuery).toHaveBeenCalledWith(expect.anything(), "skip", {
+      initialNumItems: 50,
+    });
+  });
+
+  it("loads personal dashboard skills by publisher scope", () => {
+    arrangeDashboard({});
+
+    renderDashboard();
+
+    expect(mocks.usePaginatedQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      { ownerPublisherId: "publishers:local" },
+      { initialNumItems: 50 },
+    );
+  });
+
+  it("advances past an empty filtered skill page", async () => {
+    const loadMore = vi.fn();
+    mocks.usePaginatedQuery.mockReturnValue({
+      results: [],
+      status: "CanLoadMore",
+      loadMore,
+    });
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return publishers;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
+      return [];
+    });
+
+    renderDashboard();
+
+    await waitFor(() => expect(loadMore).toHaveBeenCalledWith(50));
+  });
+
   it("filters catalog items by kind", () => {
     arrangeDashboard({
       skills: [

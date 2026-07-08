@@ -949,6 +949,42 @@ export const ApiV1SetRoleResponseSchema = type({
   role: '"admin"|"moderator"|"user"',
 });
 
+export const ApiV1PromotionModelSchema = type({
+  modelRef: "string",
+  alias: "string?",
+  suggestedDefault: "boolean?",
+});
+
+export const ApiV1PromotionSchema = type({
+  slug: "string",
+  title: "string",
+  blurb: "string",
+  sponsor: "string?",
+  status: '"draft"|"active"|"ended"',
+  active: "boolean",
+  startsAt: "number",
+  endsAt: "number",
+  provider: "string?",
+  authChoiceId: "string?",
+  pluginNames: "string[]?",
+  models: ApiV1PromotionModelSchema.array(),
+  signupUrl: "string?",
+  docsUrl: "string?",
+  launchPageUrl: "string?",
+});
+export type ApiV1Promotion = (typeof ApiV1PromotionSchema)[inferred];
+
+export const ApiV1PromotionsListResponseSchema = type({
+  promotions: ApiV1PromotionSchema.array(),
+  "nextCursor?": "string|null",
+});
+
+export const ApiV1PromotionWriteResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  status: '"draft"|"active"|"ended"',
+});
+
 export const ApiV1StarResponseSchema = type({
   ok: "true",
   starred: "boolean",
