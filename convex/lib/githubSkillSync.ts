@@ -365,14 +365,19 @@ export function buildGitHubSkillSyncPlan({
       discovered.upstreamVersion,
       existing.latestVersionSummary?.createdAt ?? now,
     );
+    const nextDisplayName =
+      existing.displayName.length > MAX_SKILL_DISPLAY_NAME_LENGTH &&
+      discovered.displayName.length >= MAX_SKILL_DISPLAY_NAME_LENGTH
+        ? existing.displayName
+        : discovered.displayName;
     const materialChanged =
       !currentContentUnchanged ||
-      existing.displayName !== discovered.displayName ||
+      existing.displayName !== nextDisplayName ||
       (existing.summary ?? undefined) !== (discovered.summary ?? undefined) ||
       (existing.githubPath ?? undefined) !== discovered.path ||
       !sameLatestVersionSummary(existing.latestVersionSummary, nextLatestVersionSummary);
     const patch = {
-      displayName: discovered.displayName,
+      displayName: nextDisplayName,
       summary: discovered.summary,
       ownerUserId,
       ...(ownerPublisherId ? { ownerPublisherId } : {}),
