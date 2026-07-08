@@ -25611,6 +25611,11 @@ a.search-empty-action {
   flex: 0 0 auto;
 }
 
+.home-v2-promotion-title-icon-fallback {
+  color: var(--hv2-text-secondary);
+  opacity: 0.72;
+}
+
 .home-v2-promotion-title-copy {
   min-width: 0;
   overflow: hidden;

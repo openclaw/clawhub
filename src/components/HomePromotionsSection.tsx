@@ -38,6 +38,10 @@ function formatDaysRemaining(endsAt: number) {
   return `${days} ${days === 1 ? "day" : "days"} left`;
 }
 
+function isTencentHyPromotion(title: string) {
+  return /tencent hy3/i.test(title);
+}
+
 function promotionDisplayTitle(title: string) {
   const match = /^(.*?)\s+is free on\s+(.*?)$/i.exec(title);
   if (!match) {
@@ -58,7 +62,7 @@ function promotionCtaUrl(promotion: PublicPromotion) {
 }
 
 function promotionMetaCopy(promotion: PublicPromotion) {
-  if (/tencent hy3/i.test(promotion.title)) {
+  if (isTencentHyPromotion(promotion.title)) {
     return `Tencent's latest model, free until ${formatPromotionDate(promotion.endsAt)}.`;
   }
 
@@ -68,18 +72,27 @@ function promotionMetaCopy(promotion: PublicPromotion) {
 function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
   const ctaUrl = promotionCtaUrl(promotion);
   const daysRemainingLabel = formatDaysRemaining(promotion.endsAt);
+  const isTencentPromotion = isTencentHyPromotion(promotion.title);
 
   return (
     <article className="home-v2-promotion-card">
       <div className="home-v2-promotion-content">
         <div className="home-v2-promotion-stack">
           <h3 className="home-v2-promotion-title">
-            <img
-              src="/tencent-hy-favicon.png"
-              alt=""
-              aria-hidden="true"
-              className="home-v2-promotion-title-icon"
-            />
+            {isTencentPromotion ? (
+              <img
+                src="/tencent-hy-favicon.png"
+                alt=""
+                aria-hidden="true"
+                className="home-v2-promotion-title-icon"
+              />
+            ) : (
+              <Gift
+                size={20}
+                aria-hidden="true"
+                className="home-v2-promotion-title-icon home-v2-promotion-title-icon-fallback"
+              />
+            )}
             <span className="home-v2-promotion-title-copy">
               {promotionDisplayTitle(promotion.title)}
             </span>
