@@ -25526,16 +25526,31 @@ a.search-empty-action {
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: var(--hv2-radius-md);
-  box-shadow: inset 0 1px 0 rgba(248, 113, 113, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+  background: var(--hv2-surface);
+}
+
+.home-v2-promotion-card::before,
+.home-v2-promotion-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.home-v2-promotion-card::before {
   background:
-    radial-gradient(ellipse 60% 50% at 96% 98%, rgba(248, 113, 113, 0.14), transparent 62%),
-    radial-gradient(
-      ellipse 90% 80% at 82% 100%,
-      rgba(196, 58, 47, 0.14) 0%,
-      rgba(127, 29, 29, 0.06) 46%,
-      transparent 76%
-    ),
-    var(--hv2-surface);
+    radial-gradient(ellipse 78% 70% at 86% 122%, rgba(220, 38, 64, 0.16), transparent 72%),
+    radial-gradient(ellipse 34% 42% at 102% 96%, rgba(255, 77, 46, 0.12), transparent 68%);
+  z-index: 0;
+}
+
+.home-v2-promotion-card::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='80' height='80' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  mix-blend-mode: overlay;
+  z-index: 0;
 }
 
 .home-v2-promotion-content {
@@ -25645,27 +25660,20 @@ a.search-empty-action {
 [data-theme-resolved="dark"] .home-v2-promotion-card {
   border-color: rgba(255, 255, 255, 0.08);
   box-shadow:
-    inset 0 1px 0 rgba(248, 113, 113, 0.2),
-    inset 1px 0 0 rgba(248, 113, 113, 0.08);
-  background:
-    radial-gradient(
-      ellipse 60% 50% at 96% 98%,
-      rgba(248, 113, 113, 0.34) 0%,
-      transparent 62%
-    ),
-    radial-gradient(
-      ellipse 90% 80% at 82% 100%,
-      rgba(196, 58, 47, 0.62) 0%,
-      rgba(127, 29, 29, 0.42) 46%,
-      transparent 76%
-    ),
-    linear-gradient(
-      135deg,
-      rgba(18, 18, 26, 0.78) 0%,
-      rgba(20, 25, 42, 0.74) 52%,
-      rgba(24, 34, 62, 0.78) 100%
-    );
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 1px 0 0 rgba(255, 255, 255, 0.04);
+  background: #0b0e1a;
   backdrop-filter: blur(10px) saturate(1.08);
+}
+
+[data-theme-resolved="dark"] .home-v2-promotion-card::before {
+  background:
+    radial-gradient(ellipse 84% 82% at 82% 126%, rgba(220, 38, 64, 0.42), transparent 72%),
+    radial-gradient(ellipse 38% 42% at 102% 96%, rgba(255, 77, 46, 0.24), transparent 68%);
+}
+
+[data-theme-resolved="dark"] .home-v2-promotion-card::after {
+  opacity: 0.04;
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-title-brand {
@@ -25681,7 +25689,7 @@ a.search-empty-action {
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-days {
-  color: rgba(255, 255, 255, 0.46);
+  color: rgba(255, 255, 255, 0.56);
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-link {
