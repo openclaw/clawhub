@@ -593,6 +593,7 @@ export function Upload() {
   const hasFilePanelFooter = Boolean(ignoredLocalMetadataNote || visibleFileIssues.length > 0);
   const publishBlockerSummary =
     !validation.ready && !isSubmitting ? summarizePublishBlockers(validation.issues) : null;
+  const isNewSkillPublishEmpty = files.length === 0 && !updateSlug;
 
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
@@ -793,16 +794,35 @@ export function Upload() {
   }
 
   return (
-    <main className="py-10">
-      <Container size="narrow">
-        <header className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <main className={isNewSkillPublishEmpty ? "publish-empty-main" : "py-10"}>
+      <Container
+        size="narrow"
+        className={isNewSkillPublishEmpty ? "publish-empty-container" : undefined}
+      >
+        <header
+          className={
+            isNewSkillPublishEmpty
+              ? "publish-empty-header"
+              : "mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          }
+        >
+          <div className={isNewSkillPublishEmpty ? "publish-empty-heading" : undefined}>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-              Publish a skill
+              {isNewSkillPublishEmpty ? "Publish Skill" : "Publish a skill"}
             </h1>
-            <p className="text-sm text-[color:var(--ink-soft)]">Drop or select a skill folder</p>
+            <p className="text-sm text-[color:var(--ink-soft)]">
+              {isNewSkillPublishEmpty
+                ? "Publish your skill to ClawHub so others can discover and install it. We'll check the skill details and run security checks before it can be installed."
+                : "Drop or select a skill folder"}
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div
+            className={
+              isNewSkillPublishEmpty
+                ? "publish-empty-actions flex flex-wrap items-center gap-2"
+                : "flex flex-wrap items-center gap-2"
+            }
+          >
             <Button asChild variant="outline" size="sm" className="w-fit">
               <Link to="/import" search={{ ownerHandle: undefined }}>
                 <GitHubLogo className="h-3.5 w-3.5" />
@@ -811,14 +831,21 @@ export function Upload() {
             </Button>
             <Button asChild variant="outline" size="sm" className="w-fit">
               <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-                Skill publishing guide
+                {isNewSkillPublishEmpty ? "Skill docs" : "Skill publishing guide"}
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             </Button>
           </div>
         </header>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+        <form
+          onSubmit={handleSubmit}
+          className={
+            isNewSkillPublishEmpty
+              ? "publish-empty-skill-form flex flex-col gap-6"
+              : "flex flex-col gap-6"
+          }
+        >
           {/* File upload panel */}
           <input
             ref={setFileInputRef}
@@ -998,10 +1025,14 @@ export function Upload() {
               </div>
             </div>
           ) : (
-            <Card>
-              <CardContent>
+            <Card className={isNewSkillPublishEmpty ? "publish-empty-upload-card" : undefined}>
+              <CardContent
+                className={isNewSkillPublishEmpty ? "publish-empty-upload-content" : undefined}
+              >
                 <div
-                  className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
+                  className={`${
+                    isNewSkillPublishEmpty ? "publish-empty-dropzone text-center" : "p-8"
+                  } relative flex flex-col items-center overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed transition-colors ${
                     isDragging
                       ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
                       : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -1014,15 +1045,20 @@ export function Upload() {
                   onDrop={handleFilesDrop}
                 >
                   <UploadDropzoneDecor active={isDragging} kind="skill" />
-                  <div className="relative z-[1] flex flex-col items-center gap-2 text-center">
+                  <div className="relative z-[1] flex flex-col items-center gap-3">
                     <div className="flex items-center gap-3">
-                      <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                      <strong>Drop a skill folder</strong>
+                      <UploadIcon
+                        className="h-4 w-4 text-[color:var(--ink-soft)]"
+                        aria-hidden="true"
+                      />
+                      <strong className="text-[color:var(--ink)]">Upload skill first</strong>
                     </div>
-                    <span className="text-xs text-[color:var(--ink-soft)]">
-                      We keep inner paths and remove the top-level folder automatically.
+                    <span className="max-w-[520px] text-sm text-[color:var(--ink-soft)]">
+                      Drop your skill folder here. We'll inspect the contents and fill in any
+                      details we can.
                     </span>
                     <Button
+                      className="mt-2"
                       variant="outline"
                       size="sm"
                       type="button"

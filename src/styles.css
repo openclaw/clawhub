@@ -2543,6 +2543,120 @@ code {
   font-weight: 600;
 }
 
+.publish-empty-main {
+  min-height: clamp(660px, 62vh, 1090px);
+  padding-top: 42px;
+  padding-bottom: 0;
+}
+
+.publish-empty-container {
+  display: flex;
+  width: 901px;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 36px;
+}
+
+.publish-empty-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  align-items: flex-start;
+  column-gap: 0;
+}
+
+.publish-empty-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.publish-empty-heading h1,
+.publish-empty-heading p {
+  margin: 0;
+}
+
+.publish-empty-upload-card {
+  display: flex;
+  height: 288px;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 0;
+  padding: 24px;
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.publish-empty-dropzone {
+  min-height: 0;
+  flex: 1 1 auto;
+  align-self: stretch;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 32px;
+  border-color: color-mix(in srgb, var(--ink) 12%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
+}
+
+.publish-empty-dropzone [aria-hidden="true"] > span {
+  opacity: 0.26;
+}
+
+.publish-empty-actions {
+  justify-self: end;
+}
+
+.publish-empty-container > form {
+  width: 100%;
+}
+
+.publish-empty-skill-form > .publish-empty-upload-card ~ * {
+  display: none;
+}
+
+.publish-empty-upload-content {
+  min-height: 0;
+  width: 100%;
+  flex: 1 1 auto;
+  align-self: stretch;
+  gap: 0;
+}
+
+@media (max-width: 640px) {
+  .publish-empty-main {
+    min-height: 560px;
+    padding-top: 28px;
+  }
+
+  .publish-empty-container {
+    width: 100%;
+    gap: 28px;
+  }
+
+  .publish-empty-header {
+    grid-template-columns: 1fr;
+    row-gap: 16px;
+  }
+
+  .publish-empty-upload-card {
+    height: 288px;
+    padding: 16px;
+  }
+
+  .publish-empty-dropzone {
+    padding: 36px 20px;
+  }
+
+  .publish-empty-actions {
+    justify-self: start;
+  }
+}
+
 .skill-publish-share-list {
   display: flex;
   flex-direction: column;
