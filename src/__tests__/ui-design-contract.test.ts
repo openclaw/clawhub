@@ -216,6 +216,7 @@ describe("restored UI design contract", () => {
     expect(navSource).toContain('label: "Publish Plugin"');
     expect(navSource).toContain('label: "GitHub"');
     expect(navSource).toContain('label: "OpenClaw"');
+    expect(navSource).toContain('label: "Status"');
     expect(navSource).toContain('label: "Deployed on Vercel"');
     expect(navSource).toContain('label: "Powered by Convex"');
 
