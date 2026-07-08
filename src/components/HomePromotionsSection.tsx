@@ -39,53 +39,6 @@ function formatDaysRemaining(endsAt: number) {
   return `${days} ${days === 1 ? "day" : "days"} left`;
 }
 
-function scrambleText(value: string) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return Array.from(value, (char) =>
-    char === " " ? " " : chars[Math.floor(Math.random() * chars.length)],
-  ).join("");
-}
-
-function useScrambledText(value: string) {
-  const [displayValue, setDisplayValue] = useState(value);
-
-  useEffect(() => {
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
-      setDisplayValue(value);
-      return;
-    }
-
-    const duration = 520;
-    const startedAt = performance.now();
-    let frame = 0;
-
-    function tick(now: number) {
-      const progress = Math.min(1, (now - startedAt) / duration);
-      const revealCount = Math.floor(progress * value.length);
-
-      setDisplayValue(
-        Array.from(value, (char, index) => {
-          if (char === " " || index < revealCount) return char;
-          return scrambleText(char);
-        }).join(""),
-      );
-
-      if (progress < 1) {
-        frame = requestAnimationFrame(tick);
-      } else {
-        setDisplayValue(value);
-      }
-    }
-
-    setDisplayValue(scrambleText(value));
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [value]);
-
-  return displayValue;
-}
-
 function promotionDisplayTitle(title: string) {
   const match = /^(.*?)\s+is free on\s+(.*?)$/i.exec(title);
   if (!match) {
@@ -108,7 +61,6 @@ function promotionCtaUrl(promotion: PublicPromotion) {
 function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
   const ctaUrl = promotionCtaUrl(promotion);
   const daysRemainingLabel = formatDaysRemaining(promotion.endsAt);
-  const daysRemaining = useScrambledText(daysRemainingLabel);
 
   return (
     <article className="home-v2-promotion-card">
@@ -133,9 +85,9 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
       {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
           separately; advertise it here once that CLI flow exists. */}
       <div className="home-v2-promotion-actions">
-        <span className="home-v2-promotion-days" aria-label={daysRemainingLabel}>
+        <span className="home-v2-promotion-days">
           <Gift size={14} aria-hidden="true" />
-          <span aria-hidden="true">{daysRemaining}</span>
+          <span>{daysRemainingLabel}</span>
         </span>
         {ctaUrl ? (
           <a
