@@ -38,6 +38,7 @@
         "convex": "1.41.0",
         "convex-helpers": "0.1.119",
         "fflate": "0.8.3",
+        "@openclaw/design-system": "git+ssh://git@github.com/openclaw/design-system.git#v0.0.3",
         "h3": "2.0.1-rc.22",
         "ignore": "7.0.5",
         "lucide-react": "1.21.0",
@@ -93,7 +94,7 @@
     },
     "packages/clawhub": {
       "name": "clawhub",
-      "version": "0.23.0",
+      "version": "0.23.1",
       "bin": {
         "clawdhub": "bin/clawdhub.js",
         "clawhub": "bin/clawdhub.js",
@@ -419,6 +420,8 @@
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
+
+    "@openclaw/design-system": ["@openclaw/design-system@git+ssh://git@github.com/openclaw/design-system.git#35c800b212fa0f8377012c2db70125f1babb74e9", {}, "35c800b212fa0f8377012c2db70125f1babb74e9"],
 
     "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.17", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-JPPHPhiXMsIvrV8UR8RQjhflMjRZX/uIhy9meE81dup7MMSnRJcsTGOXYACohv6e4z2P95z2QuE7nZkWT6Ysuw=="],
 

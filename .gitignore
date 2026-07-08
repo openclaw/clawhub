@@ -39,7 +39,6 @@ convex/_generated/*
 convex/_generated/ai/*
 !convex/_generated/ai/guidelines.md
 !convex/_generated/ai/ai-files.state.json
-skills-lock.json
 skills/*
 .codex/*
 !.codex/environments/
