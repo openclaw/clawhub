@@ -403,17 +403,24 @@ function PublisherProfile() {
 
 function PublisherProfileChromeActions({
   addHandle,
+  showEditProfile,
   isAuthenticated,
   onReport,
   requireSignIn,
 }: {
   addHandle?: string;
+  showEditProfile: boolean;
   isAuthenticated: boolean;
   onReport: () => void;
   requireSignIn: () => void;
 }) {
   return (
     <div className="publisher-profile-chrome-actions">
+      {showEditProfile ? (
+        <Button asChild size="sm" variant="outline">
+          <Link to="/settings">Edit profile</Link>
+        </Button>
+      ) : null}
       {addHandle ? (
         <Button asChild size="sm" variant="primary">
           <Link to="/add" search={{ kind: "skill", ownerHandle: addHandle, method: undefined }}>
@@ -422,33 +429,35 @@ function PublisherProfileChromeActions({
           </Link>
         </Button>
       ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Profile actions"
-            className="publisher-profile-chrome-more-trigger rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
-          >
-            <MoreHorizontal size={16} aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
-          <DropdownMenuItem
-            onSelect={() => {
-              if (!isAuthenticated) {
-                requireSignIn();
-                return;
-              }
-              onReport();
-            }}
-          >
-            <Flag size={14} aria-hidden="true" />
-            Report profile
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {showEditProfile ? null : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Profile actions"
+              className="publisher-profile-chrome-more-trigger rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <MoreHorizontal size={16} aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
+            <DropdownMenuItem
+              onSelect={() => {
+                if (!isAuthenticated) {
+                  requireSignIn();
+                  return;
+                }
+                onReport();
+              }}
+            >
+              <Flag size={14} aria-hidden="true" />
+              Report profile
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
@@ -558,6 +567,9 @@ export function PublisherProfilePage({
     () => Boolean(myPublisherMemberships?.some((entry) => entry.publisher.handle === handle)),
     [myPublisherMemberships, handle],
   );
+  const viewerOwnsPersonalPublisher =
+    publisher?.kind === "user" &&
+    (viewerCanAddToPublisher || (me?.handle != null && me.handle === handle));
   const viewerCanSeeOrgRoles = isAdmin(me) || (me?.handle != null && me.handle === handle);
 
   const {
@@ -731,6 +743,7 @@ export function PublisherProfilePage({
               <PublisherProfileChromeIdentity publisher={publisher} />
               <PublisherProfileChromeActions
                 addHandle={viewerCanAddToPublisher ? publisher.handle : undefined}
+                showEditProfile={viewerOwnsPersonalPublisher}
                 isAuthenticated={isAuthenticated}
                 onReport={openReportDialog}
                 requireSignIn={() => {
