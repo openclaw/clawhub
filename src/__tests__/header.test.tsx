@@ -663,6 +663,30 @@ describe("Header", () => {
     ).toBeTruthy();
   });
 
+  it("keeps signed-in account links out of the mobile menu", () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+
+    const labels = Array.from(document.querySelectorAll(".mobile-nav-section .mobile-nav-link"))
+      .map((element) => element.textContent?.trim())
+      .filter((label): label is string => Boolean(label));
+
+    expect(labels).toEqual(["Home", "Skills", "Plugins", "Creators", "Docs"]);
+  });
+
   it("links profile and starred skills from the signed-in avatar menu", () => {
     profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
