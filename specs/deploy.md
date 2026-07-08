@@ -130,11 +130,17 @@ Ensure Convex env is set (auth + embeddings):
   - `GITHUB_APP_PRIVATE_KEY`
 - Optional fallback: `GITHUB_TOKEN` (used when GitHub App auth is unavailable,
   and for arbitrary public repository lookups such as trusted-publisher setup)
+- `CLAWHUB_EDGE_SECRET` and `TRUST_FORWARDED_IPS=true` when the matching Vercel
+  deployment also has the same `CLAWHUB_EDGE_SECRET`.
 
-Do not set `TRUST_FORWARDED_IPS=true` while the Convex `*.convex.site` HTTP
-origin remains publicly reachable. That flag makes rate limits and download
-metrics trust forwarded client IP headers, so it is only safe behind a
-header-sanitizing edge that prevents direct origin requests.
+`TRUST_FORWARDED_IPS=true` is only effective when Convex also has
+`CLAWHUB_EDGE_SECRET`. The Vercel middleware strips caller-supplied client IP and
+edge trust headers before adding its own secret plus `x-forwarded-for` /
+`x-real-ip` for `/api/*` and hosted feed rewrites. Convex prefers that
+edge-stamped `x-forwarded-for` value over connection IP headers, because the
+connection into Convex may be Vercel rather than the original client. Direct
+`*.convex.site` calls without the secret remain in the missing-IP fallback
+bucket.
 
 ## 2) Deploy web app (Vercel)
 
@@ -163,6 +169,8 @@ This repo currently uses `vercel.json` rewrites:
 For self-host:
 
 - update `vercel.json` to your deployment's Convex site URL.
+- set the same `CLAWHUB_EDGE_SECRET` in Vercel and Convex before enabling
+  `TRUST_FORWARDED_IPS=true` in Convex.
 
 ## 4) Registry discovery
 

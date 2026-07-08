@@ -66,14 +66,21 @@ function componentRateLimitCalls(runMutation: ReturnType<typeof vi.fn>) {
 
 describe("getClientIp", () => {
   let prev: string | undefined;
+  let prevEdgeSecret: string | undefined;
   beforeEach(() => {
     prev = process.env.TRUST_FORWARDED_IPS;
+    prevEdgeSecret = process.env.CLAWHUB_EDGE_SECRET;
   });
   afterEach(() => {
     if (prev === undefined) {
       delete process.env.TRUST_FORWARDED_IPS;
     } else {
       process.env.TRUST_FORWARDED_IPS = prev;
+    }
+    if (prevEdgeSecret === undefined) {
+      delete process.env.CLAWHUB_EDGE_SECRET;
+    } else {
+      process.env.CLAWHUB_EDGE_SECRET = prevEdgeSecret;
     }
   });
 
@@ -107,34 +114,75 @@ describe("getClientIp", () => {
     expect(getClientIp(request)).toBeNull();
   });
 
-  it("returns first ip from cf-connecting-ip when trusted mode is enabled", () => {
+  it("ignores forwarded headers when trusted mode lacks the edge secret", () => {
     const request = new Request("https://example.com", {
       headers: {
+        "x-forwarded-for": "203.0.113.9",
+      },
+    });
+    process.env.TRUST_FORWARDED_IPS = "true";
+    delete process.env.CLAWHUB_EDGE_SECRET;
+    expect(getClientIp(request)).toBeNull();
+  });
+
+  it("ignores forwarded headers when the edge secret header is missing", () => {
+    const request = new Request("https://example.com", {
+      headers: {
+        "x-forwarded-for": "203.0.113.9",
+      },
+    });
+    process.env.TRUST_FORWARDED_IPS = "true";
+    process.env.CLAWHUB_EDGE_SECRET = "edge-secret";
+    expect(getClientIp(request)).toBeNull();
+  });
+
+  it("ignores forwarded headers when the edge secret header is wrong", () => {
+    const request = new Request("https://example.com", {
+      headers: {
+        "x-clawhub-edge-secret": "wrong",
+        "x-forwarded-for": "203.0.113.9",
+      },
+    });
+    process.env.TRUST_FORWARDED_IPS = "true";
+    process.env.CLAWHUB_EDGE_SECRET = "edge-secret";
+    expect(getClientIp(request)).toBeNull();
+  });
+
+  it("falls back to cf-connecting-ip when trusted edge mode has no forwarded header", () => {
+    const request = new Request("https://example.com", {
+      headers: {
+        "x-clawhub-edge-secret": "edge-secret",
         "cf-connecting-ip": "203.0.113.1, 198.51.100.2",
       },
     });
     process.env.TRUST_FORWARDED_IPS = "true";
+    process.env.CLAWHUB_EDGE_SECRET = "edge-secret";
     expect(getClientIp(request)).toBe("203.0.113.1");
   });
 
-  it("uses forwarded headers when opt-in enabled", () => {
+  it("uses forwarded headers when trusted edge mode is enabled", () => {
     const request = new Request("https://example.com", {
       headers: {
+        "x-clawhub-edge-secret": "edge-secret",
         "x-forwarded-for": "203.0.113.9, 198.51.100.2",
       },
     });
     process.env.TRUST_FORWARDED_IPS = "true";
+    process.env.CLAWHUB_EDGE_SECRET = "edge-secret";
     expect(getClientIp(request)).toBe("203.0.113.9");
   });
 
-  it("prefers x-forwarded-for over x-real-ip when trusted mode is enabled", () => {
+  it("prefers x-forwarded-for over edge connection IP headers", () => {
     const request = new Request("https://example.com", {
       headers: {
+        "x-clawhub-edge-secret": "edge-secret",
+        "cf-connecting-ip": "192.0.2.44",
         "x-forwarded-for": "203.0.113.9, 198.51.100.2",
         "x-real-ip": "198.51.100.77",
       },
     });
     process.env.TRUST_FORWARDED_IPS = "true";
+    process.env.CLAWHUB_EDGE_SECRET = "edge-secret";
     expect(getClientIp(request)).toBe("203.0.113.9");
   });
 });
@@ -557,6 +605,7 @@ describe("applyRateLimit headers", () => {
 
   it("scopes known-ip anonymous buckets by rate limit kind", async () => {
     vi.stubEnv("TRUST_FORWARDED_IPS", "true");
+    vi.stubEnv("CLAWHUB_EDGE_SECRET", "edge-secret");
     vi.spyOn(Date, "now").mockReturnValue(4_550_000);
     const readCtx = makeRateLimitCtx({
       ip: {
@@ -575,7 +624,10 @@ describe("applyRateLimit headers", () => {
       },
     });
     const request = new Request("https://example.com/api/v1/packages/demo/download", {
-      headers: { "cf-connecting-ip": "203.0.113.1" },
+      headers: {
+        "x-clawhub-edge-secret": "edge-secret",
+        "cf-connecting-ip": "203.0.113.1",
+      },
     });
 
     await applyRateLimit(readCtx, request, "read");
