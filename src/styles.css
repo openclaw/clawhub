@@ -25526,6 +25526,7 @@ a.search-empty-action {
   overflow: hidden;
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: var(--hv2-radius-md);
+  box-shadow: inset 0 1px 0 rgba(248, 113, 113, 0.1);
   background:
     radial-gradient(ellipse 60% 50% at 96% 98%, rgba(248, 113, 113, 0.14), transparent 62%),
     radial-gradient(
@@ -25563,11 +25564,26 @@ a.search-empty-action {
   white-space: nowrap;
 }
 
+.home-v2-promotion-title-brand {
+  color: var(--hv2-text);
+}
+
+.home-v2-promotion-title-muted {
+  color: var(--hv2-text-secondary);
+  font-weight: 500;
+}
+
 .home-v2-promotion-title-icon {
   width: 20px;
   height: 20px;
   border-radius: 5px;
   flex: 0 0 auto;
+}
+
+.home-v2-promotion-title-copy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .home-v2-promotion-meta {
@@ -25585,9 +25601,17 @@ a.search-empty-action {
 .home-v2-promotion-actions {
   display: flex;
   align-items: center;
+  gap: 18px;
   flex: 0 0 auto;
   position: relative;
   z-index: 1;
+}
+
+.home-v2-promotion-days {
+  color: var(--hv2-text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .home-v2-promotion-link {
@@ -25620,6 +25644,9 @@ a.search-empty-action {
 
 [data-theme-resolved="dark"] .home-v2-promotion-card {
   border-color: rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(248, 113, 113, 0.2),
+    inset 1px 0 0 rgba(248, 113, 113, 0.08);
   background:
     radial-gradient(
       ellipse 60% 50% at 96% 98%,
@@ -25641,12 +25668,20 @@ a.search-empty-action {
   backdrop-filter: blur(10px) saturate(1.08);
 }
 
-[data-theme-resolved="dark"] .home-v2-promotion-title {
+[data-theme-resolved="dark"] .home-v2-promotion-title-brand {
   color: rgba(255, 255, 255, 0.94);
+}
+
+[data-theme-resolved="dark"] .home-v2-promotion-title-muted {
+  color: rgba(255, 255, 255, 0.5);
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-meta {
   color: rgba(255, 255, 255, 0.52);
+}
+
+[data-theme-resolved="dark"] .home-v2-promotion-days {
+  color: rgba(255, 255, 255, 0.46);
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-link {

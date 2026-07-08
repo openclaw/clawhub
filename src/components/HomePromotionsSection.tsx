@@ -15,6 +15,7 @@ type PublicPromotion = {
 };
 
 const PROMOTIONS_POLL_INTERVAL_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) {
   return promotions.reduce(
@@ -33,8 +34,24 @@ function formatPromotionDate(endsAt: number) {
   }).format(new Date(endsAt));
 }
 
+function formatDaysRemaining(endsAt: number) {
+  const days = Math.max(0, Math.ceil((endsAt - Date.now()) / DAY_MS));
+  return `${days} ${days === 1 ? "day" : "days"} left`;
+}
+
 function promotionDisplayTitle(title: string) {
-  return title.replace(/\s+is free on\s+/i, " on ");
+  const match = /^(.*?)\s+is free on\s+(.*?)$/i.exec(title);
+  if (!match) {
+    return <span className="home-v2-promotion-title-brand">{title}</span>;
+  }
+
+  return (
+    <>
+      <span className="home-v2-promotion-title-brand">{match[1]}</span>
+      <span className="home-v2-promotion-title-muted"> is free on </span>
+      <span className="home-v2-promotion-title-brand">{match[2]}</span>
+    </>
+  );
 }
 
 function promotionCtaUrl(promotion: PublicPromotion) {
@@ -54,7 +71,9 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
               aria-hidden="true"
               className="home-v2-promotion-title-icon"
             />
-            {promotionDisplayTitle(promotion.title)}
+            <span className="home-v2-promotion-title-copy">
+              {promotionDisplayTitle(promotion.title)}
+            </span>
           </h3>
           <p className="home-v2-promotion-meta">
             Available at no cost until {formatPromotionDate(promotion.endsAt)}.
@@ -64,6 +83,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
       {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
           separately; advertise it here once that CLI flow exists. */}
       <div className="home-v2-promotion-actions">
+        <span className="home-v2-promotion-days">{formatDaysRemaining(promotion.endsAt)}</span>
         {ctaUrl ? (
           <a
             className="home-v2-promotion-link"
