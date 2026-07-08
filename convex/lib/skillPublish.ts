@@ -49,8 +49,6 @@ const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
-// Frozen after the CLAW-480 rollback snapshot. Remove after the incident cohort is drained.
-const CLAW_480_RECOVERY_ATTEMPT_CUTOFF_MS = Date.parse("2026-07-07T15:27:09Z");
 const MAX_PUBLISH_SUMMARY_LENGTH = 300;
 
 type FingerprintFile = { path: string; sha256: string };
@@ -567,10 +565,7 @@ export async function finalizeSkillPublishAttempt(
 
   let publishResult: PublishResult;
   try {
-    const skillInsertArgs = withStagedFinalizationRateLimitBypass(
-      await prepareSkillInsertArgsForFinalization(ctx, claim.skillInsertArgs),
-      claim.createdAt,
-    );
+    const skillInsertArgs = await prepareSkillInsertArgsForFinalization(ctx, claim.skillInsertArgs);
     publishResult = (await ctx.runMutation(
       internal.skills.insertVersion,
       skillInsertArgs as never,
@@ -601,22 +596,6 @@ export async function finalizeSkillPublishAttempt(
   }
 
   return publishResult;
-}
-
-function withStagedFinalizationRateLimitBypass(rawInsertArgs: unknown, attemptCreatedAt: number) {
-  if (!rawInsertArgs || typeof rawInsertArgs !== "object" || Array.isArray(rawInsertArgs)) {
-    return rawInsertArgs;
-  }
-  if (
-    attemptCreatedAt > CLAW_480_RECOVERY_ATTEMPT_CUTOFF_MS &&
-    (rawInsertArgs as Record<string, unknown>).bypassNewSkillRateLimit !== true
-  ) {
-    return rawInsertArgs;
-  }
-  return {
-    ...rawInsertArgs,
-    bypassNewSkillRateLimit: true,
-  };
 }
 
 async function prepareSkillInsertArgsForFinalization(
@@ -843,7 +822,6 @@ export const __test = {
   toStructuralFingerprint,
   derivePublishFilesFromStorage,
   buildSkillPublishAttemptIdempotencyKey,
-  withStagedFinalizationRateLimitBypass,
 };
 
 export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"skills">) {

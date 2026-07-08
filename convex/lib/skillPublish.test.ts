@@ -556,10 +556,7 @@ description: Security scanner smoke fixture.
       versionId: "skillVersions:demo",
       embeddingId: "skillEmbeddings:demo",
     });
-    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      ...insertArgs,
-      bypassNewSkillRateLimit: true,
-    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), insertArgs);
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       versionId: "skillVersions:demo",
     });
@@ -573,24 +570,6 @@ description: Security scanner smoke fixture.
       preserveActiveJob: true,
       preserveExistingJob: true,
     });
-  });
-
-  it("does not bypass new-skill limits for attempts created after the recovery cutoff", () => {
-    const insertArgs = {
-      userId: "users:1",
-      slug: "future-staged-skill",
-      version: "1.0.0",
-    };
-
-    expect(
-      __test.withStagedFinalizationRateLimitBypass(insertArgs, Date.parse("2026-07-07T15:27:10Z")),
-    ).toBe(insertArgs);
-    expect(
-      __test.withStagedFinalizationRateLimitBypass(
-        { ...insertArgs, bypassNewSkillRateLimit: true },
-        Date.parse("2026-07-07T15:27:10Z"),
-      ),
-    ).toEqual({ ...insertArgs, bypassNewSkillRateLimit: true });
   });
 
   it("releases the staged publish finalization claim when insertion fails", async () => {
