@@ -25542,6 +25542,12 @@ a.search-empty-action {
 .home-v2-promotion-card::before {
   background:
     radial-gradient(
+      ellipse 56% 72% at 26% -8%,
+      rgba(255, 255, 255, 0.14) 0%,
+      rgba(255, 255, 255, 0.06) 38%,
+      rgba(255, 255, 255, 0) 72%
+    ),
+    radial-gradient(
       ellipse 82% 120% at 84% 140%,
       rgba(204, 48, 24, 0.2) 0%,
       rgba(244, 68, 46, 0.1) 44%,
@@ -25701,6 +25707,12 @@ a.search-empty-action {
 
 [data-theme-resolved="dark"] .home-v2-promotion-card::before {
   background:
+    radial-gradient(
+      ellipse 56% 72% at 26% -8%,
+      rgba(255, 255, 255, 0.08) 0%,
+      rgba(255, 255, 255, 0.03) 38%,
+      rgba(255, 255, 255, 0) 72%
+    ),
     radial-gradient(
       ellipse 90% 140% at 76% 136%,
       rgba(220, 38, 64, 0.36) 0%,
