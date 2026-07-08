@@ -25541,8 +25541,17 @@ a.search-empty-action {
 
 .home-v2-promotion-card::before {
   background:
-    radial-gradient(ellipse 78% 70% at 86% 122%, rgba(220, 38, 64, 0.16), transparent 72%),
-    radial-gradient(ellipse 34% 42% at 102% 96%, rgba(255, 77, 46, 0.12), transparent 68%);
+    radial-gradient(
+      ellipse 88% 130% at 76% 134%,
+      rgba(220, 38, 64, 0.14) 0%,
+      rgba(220, 38, 64, 0.08) 42%,
+      rgba(220, 38, 64, 0) 74%
+    ),
+    radial-gradient(
+      ellipse 42% 72% at 98% 124%,
+      rgba(255, 77, 46, 0.1) 0%,
+      rgba(255, 77, 46, 0) 70%
+    );
   z-index: 0;
 }
 
@@ -25677,8 +25686,17 @@ a.search-empty-action {
 
 [data-theme-resolved="dark"] .home-v2-promotion-card::before {
   background:
-    radial-gradient(ellipse 84% 82% at 82% 126%, rgba(220, 38, 64, 0.42), transparent 72%),
-    radial-gradient(ellipse 38% 42% at 102% 96%, rgba(255, 77, 46, 0.24), transparent 68%);
+    radial-gradient(
+      ellipse 90% 140% at 76% 136%,
+      rgba(220, 38, 64, 0.36) 0%,
+      rgba(220, 38, 64, 0.2) 42%,
+      rgba(220, 38, 64, 0) 76%
+    ),
+    radial-gradient(
+      ellipse 44% 76% at 98% 126%,
+      rgba(255, 77, 46, 0.18) 0%,
+      rgba(255, 77, 46, 0) 70%
+    );
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-card::after {
