@@ -57,6 +57,14 @@ function promotionCtaUrl(promotion: PublicPromotion) {
   return promotion.launchPageUrl ?? promotion.signupUrl ?? promotion.docsUrl ?? null;
 }
 
+function promotionMetaCopy(promotion: PublicPromotion) {
+  if (/tencent hy3/i.test(promotion.title)) {
+    return `Tencent's latest model, free until ${formatPromotionDate(promotion.endsAt)}.`;
+  }
+
+  return promotion.blurb;
+}
+
 function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
   const ctaUrl = promotionCtaUrl(promotion);
   const daysRemainingLabel = formatDaysRemaining(promotion.endsAt);
@@ -76,9 +84,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
               {promotionDisplayTitle(promotion.title)}
             </span>
           </h3>
-          <p className="home-v2-promotion-meta">
-            Tencent&apos;s latest model, free until {formatPromotionDate(promotion.endsAt)}.
-          </p>
+          <p className="home-v2-promotion-meta">{promotionMetaCopy(promotion)}</p>
         </div>
       </div>
       {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
