@@ -1,5 +1,5 @@
 import { ApiRoutes } from "clawhub-schema/routes";
-import { ArrowRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
@@ -47,8 +47,15 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
     <article className="home-v2-promotion-card">
       <div className="home-v2-promotion-content">
         <div className="home-v2-promotion-stack">
-          <span className="home-v2-promotion-kicker">Limited access</span>
-          <h3 className="home-v2-promotion-title">{promotionDisplayTitle(promotion.title)}</h3>
+          <h3 className="home-v2-promotion-title">
+            <img
+              src="/tencent-hy-favicon.png"
+              alt=""
+              aria-hidden="true"
+              className="home-v2-promotion-title-icon"
+            />
+            {promotionDisplayTitle(promotion.title)}
+          </h3>
           <p className="home-v2-promotion-meta">
             Available at no cost until {formatPromotionDate(promotion.endsAt)}.
           </p>
@@ -64,7 +71,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more <ArrowRight size={13} aria-hidden="true" />
+            Learn more <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         ) : null}
       </div>
