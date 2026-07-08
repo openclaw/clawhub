@@ -13,6 +13,7 @@
     "coverage/",
     "dist/",
     "node_modules/",
+    ".agents/skills/openclaw-*/**",
     "public/",
     "src/routeTree.gen.ts",
     "test-results/",
