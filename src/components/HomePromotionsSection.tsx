@@ -1,5 +1,5 @@
 import { ApiRoutes } from "clawhub-schema/routes";
-import { ArrowRight, Gift } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
@@ -24,15 +24,17 @@ function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) 
   );
 }
 
-function formatEndsAt(endsAt: number) {
-  const now = new Date();
-  const end = new Date(endsAt);
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-  const days = Math.max(0, Math.round((endDay - today) / (24 * 60 * 60 * 1000)));
-  if (days === 0) return "Ends today";
-  if (days === 1) return "Ends tomorrow";
-  return `${days} days left`;
+function formatPromotionDate(endsAt: number) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(endsAt));
+}
+
+function promotionDisplayTitle(title: string) {
+  return title.replace(/\s+is free on\s+/i, " on ");
 }
 
 function promotionCtaUrl(promotion: PublicPromotion) {
@@ -43,19 +45,19 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
   const ctaUrl = promotionCtaUrl(promotion);
   return (
     <article className="home-v2-promotion-card">
-      <div className="home-v2-promotion-head">
-        <span className="home-v2-promotion-flag">
-          <Gift size={13} aria-hidden="true" />
-          {promotion.sponsor ? `${promotion.sponsor} promotion` : "Promotion"}
-        </span>
-        <span className="home-v2-promotion-ends">{formatEndsAt(promotion.endsAt)}</span>
+      <div className="home-v2-promotion-content">
+        <div className="home-v2-promotion-stack">
+          <span className="home-v2-promotion-kicker">Limited access</span>
+          <h3 className="home-v2-promotion-title">{promotionDisplayTitle(promotion.title)}</h3>
+          <p className="home-v2-promotion-meta">
+            Available at no cost until {formatPromotionDate(promotion.endsAt)}.
+          </p>
+        </div>
       </div>
-      <h3 className="home-v2-promotion-title">{promotion.title}</h3>
-      <p className="home-v2-promotion-blurb">{promotion.blurb}</p>
       {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
           separately; advertise it here once that CLI flow exists. */}
-      {ctaUrl ? (
-        <div className="home-v2-promotion-foot">
+      <div className="home-v2-promotion-actions">
+        {ctaUrl ? (
           <a
             className="home-v2-promotion-link"
             href={ctaUrl}
@@ -64,8 +66,8 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
           >
             Learn more <ArrowRight size={13} aria-hidden="true" />
           </a>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </article>
   );
 }
