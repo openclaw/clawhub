@@ -49,7 +49,7 @@ function promotionDisplayTitle(title: string) {
     <>
       <span className="home-v2-promotion-title-brand">{match[1]}</span>
       <span className="home-v2-promotion-title-muted"> is free on </span>
-      <span className="home-v2-promotion-title-brand">{match[2]}</span>
+      <span className="home-v2-promotion-title-muted">{match[2]}</span>
     </>
   );
 }
