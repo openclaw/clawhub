@@ -25617,6 +25617,7 @@ a.search-empty-action {
 }
 
 .home-v2-promotion-title-copy {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
