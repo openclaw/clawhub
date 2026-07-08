@@ -25543,15 +25543,16 @@ a.search-empty-action {
   background:
     radial-gradient(
       ellipse 88% 130% at 76% 134%,
-      rgba(220, 38, 64, 0.14) 0%,
-      rgba(220, 38, 64, 0.08) 42%,
-      rgba(220, 38, 64, 0) 74%
+      rgba(230, 60, 30, 0.22) 0%,
+      rgba(255, 80, 48, 0.1) 42%,
+      rgba(255, 80, 48, 0) 74%
     ),
     radial-gradient(
       ellipse 42% 72% at 98% 124%,
-      rgba(255, 77, 46, 0.1) 0%,
-      rgba(255, 77, 46, 0) 70%
+      rgba(244, 68, 46, 0.16) 0%,
+      rgba(244, 68, 46, 0) 70%
     );
+  mix-blend-mode: multiply;
   z-index: 0;
 }
 
@@ -25697,6 +25698,7 @@ a.search-empty-action {
       rgba(255, 77, 46, 0.18) 0%,
       rgba(255, 77, 46, 0) 70%
     );
+  mix-blend-mode: normal;
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-card::after {
