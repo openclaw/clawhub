@@ -1,5 +1,5 @@
 import { ApiRoutes } from "clawhub-schema/routes";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Gift } from "lucide-react";
 import { useEffect, useState } from "react";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
@@ -134,6 +134,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
           separately; advertise it here once that CLI flow exists. */}
       <div className="home-v2-promotion-actions">
         <span className="home-v2-promotion-days" aria-label={daysRemainingLabel}>
+          <Gift size={14} aria-hidden="true" />
           <span aria-hidden="true">{daysRemaining}</span>
         </span>
         {ctaUrl ? (

@@ -25623,6 +25623,9 @@ a.search-empty-action {
 }
 
 .home-v2-promotion-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 9ch;
   color: var(--hv2-text-secondary);
   font-size: 13px;
@@ -25630,6 +25633,11 @@ a.search-empty-action {
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
+}
+
+.home-v2-promotion-days svg {
+  color: currentColor;
+  opacity: 0.72;
 }
 
 .home-v2-promotion-link {
