@@ -1,5 +1,5 @@
 import { ApiRoutes } from "clawhub-schema/routes";
-import { ArrowRight, Gift } from "lucide-react";
+import { ArrowUpRight, Gift } from "lucide-react";
 import { useEffect, useState } from "react";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
@@ -15,6 +15,7 @@ type PublicPromotion = {
 };
 
 const PROMOTIONS_POLL_INTERVAL_MS = 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) {
   return promotions.reduce(
@@ -24,48 +25,99 @@ function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) 
   );
 }
 
-function formatEndsAt(endsAt: number) {
-  const now = new Date();
-  const end = new Date(endsAt);
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  const endDay = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
-  const days = Math.max(0, Math.round((endDay - today) / (24 * 60 * 60 * 1000)));
-  if (days === 0) return "Ends today";
-  if (days === 1) return "Ends tomorrow";
-  return `${days} days left`;
+function formatPromotionDate(endsAt: number) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(endsAt));
+}
+
+function formatDaysRemaining(endsAt: number) {
+  const days = Math.max(0, Math.ceil((endsAt - Date.now()) / DAY_MS));
+  return `${days} ${days === 1 ? "day" : "days"} left`;
+}
+
+function isTencentHyPromotion(title: string) {
+  return /tencent hy3/i.test(title);
+}
+
+function promotionDisplayTitle(title: string) {
+  const match = /^(.*?)\s+is free on\s+(.*?)$/i.exec(title);
+  if (!match) {
+    return <span className="home-v2-promotion-title-brand">{title}</span>;
+  }
+
+  return (
+    <>
+      <span className="home-v2-promotion-title-brand">{match[1]}</span>
+      <span className="home-v2-promotion-title-muted"> is free on </span>
+      <span className="home-v2-promotion-title-muted">{match[2]}</span>
+    </>
+  );
 }
 
 function promotionCtaUrl(promotion: PublicPromotion) {
   return promotion.launchPageUrl ?? promotion.signupUrl ?? promotion.docsUrl ?? null;
 }
 
+function promotionMetaCopy(promotion: PublicPromotion) {
+  if (isTencentHyPromotion(promotion.title)) {
+    return `Tencent's latest model, free until ${formatPromotionDate(promotion.endsAt)}.`;
+  }
+
+  return promotion.blurb;
+}
+
 function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
   const ctaUrl = promotionCtaUrl(promotion);
+  const daysRemainingLabel = formatDaysRemaining(promotion.endsAt);
+  const isTencentPromotion = isTencentHyPromotion(promotion.title);
+
   return (
     <article className="home-v2-promotion-card">
-      <div className="home-v2-promotion-head">
-        <span className="home-v2-promotion-flag">
-          <Gift size={13} aria-hidden="true" />
-          {promotion.sponsor ? `${promotion.sponsor} promotion` : "Promotion"}
-        </span>
-        <span className="home-v2-promotion-ends">{formatEndsAt(promotion.endsAt)}</span>
+      <div className="home-v2-promotion-content">
+        <div className="home-v2-promotion-stack">
+          <h3 className="home-v2-promotion-title">
+            {isTencentPromotion ? (
+              <img
+                src="/tencent-hy-favicon.png"
+                alt=""
+                aria-hidden="true"
+                className="home-v2-promotion-title-icon"
+              />
+            ) : (
+              <Gift
+                size={20}
+                aria-hidden="true"
+                className="home-v2-promotion-title-icon home-v2-promotion-title-icon-fallback"
+              />
+            )}
+            <span className="home-v2-promotion-title-copy">
+              {promotionDisplayTitle(promotion.title)}
+            </span>
+          </h3>
+          <p className="home-v2-promotion-meta">{promotionMetaCopy(promotion)}</p>
+        </div>
       </div>
-      <h3 className="home-v2-promotion-title">{promotion.title}</h3>
-      <p className="home-v2-promotion-blurb">{promotion.blurb}</p>
       {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
           separately; advertise it here once that CLI flow exists. */}
-      {ctaUrl ? (
-        <div className="home-v2-promotion-foot">
+      <div className="home-v2-promotion-actions">
+        <span className="home-v2-promotion-days">
+          <Gift size={14} aria-hidden="true" />
+          <span>{daysRemainingLabel}</span>
+        </span>
+        {ctaUrl ? (
           <a
             className="home-v2-promotion-link"
             href={ctaUrl}
             target="_blank"
             rel="noopener noreferrer"
           >
-            Learn more <ArrowRight size={13} aria-hidden="true" />
+            Try it free <ArrowUpRight size={15} aria-hidden="true" />
           </a>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </article>
   );
 }

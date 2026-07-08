@@ -58,7 +58,7 @@ describe("HomePromotionsSection", () => {
         promotionsResponse([{ ...promotion, startsAt: 120_000, endsAt: 200_000 }]),
       );
 
-    render(<HomePromotionsSection />);
+    const { container } = render(<HomePromotionsSection />);
     await flushPromises();
     expect(screen.queryByText(promotion.title)).toBeNull();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://clawhub.test/api/v1/promotions");
@@ -70,6 +70,8 @@ describe("HomePromotionsSection", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://clawhub.test/api/v1/promotions");
     expect(screen.getByText(promotion.title)).toBeTruthy();
+    expect(screen.getByText(promotion.blurb)).toBeTruthy();
+    expect(container.querySelector('img[src="/tencent-hy-favicon.png"]')).toBeNull();
   });
 
   it("removes a promotion at its expiry boundary and refreshes the query", async () => {
@@ -80,7 +82,7 @@ describe("HomePromotionsSection", () => {
     render(<HomePromotionsSection />);
     await flushPromises();
     expect(screen.getByText(promotion.title)).toBeTruthy();
-    expect(screen.getByText("Ends today")).toBeTruthy();
+    expect(screen.getByText(promotion.blurb)).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(501);

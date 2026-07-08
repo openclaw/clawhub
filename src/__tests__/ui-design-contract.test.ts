@@ -293,11 +293,9 @@ describe("restored UI design contract", () => {
   it("keeps promotion cards within narrow mobile viewports", () => {
     const css = styles();
 
-    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 84px");
-    expect(cssRule(css, ".home-v2-promotions-track")).toContain(
-      "grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-    );
-    expect(css).toContain("padding: 0 20px 72px");
+    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 56px");
+    expect(cssRule(css, ".home-v2-promotions-track")).toContain("display: grid");
+    expect(css).toContain("padding: 0 20px 48px");
   });
 
   it("keeps typeahead creator avatars round for users and square for orgs", () => {
