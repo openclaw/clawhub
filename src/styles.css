@@ -25613,6 +25613,7 @@ a.search-empty-action {
 
 .home-v2-promotion-meta {
   margin: 0;
+  padding-left: 28px;
   color: var(--hv2-text-secondary);
   font-size: 14px;
   font-weight: 500;
