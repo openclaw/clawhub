@@ -25527,38 +25527,14 @@ a.search-empty-action {
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: var(--hv2-radius-md);
   background:
-    radial-gradient(ellipse 60% 50% at 96% 98%, rgba(147, 197, 253, 0.16), transparent 62%),
+    radial-gradient(ellipse 60% 50% at 96% 98%, rgba(248, 113, 113, 0.14), transparent 62%),
     radial-gradient(
       ellipse 90% 80% at 82% 100%,
-      rgba(37, 99, 235, 0.12) 0%,
-      rgba(30, 58, 138, 0.06) 46%,
+      rgba(196, 58, 47, 0.14) 0%,
+      rgba(127, 29, 29, 0.06) 46%,
       transparent 76%
     ),
     var(--hv2-surface);
-}
-
-.home-v2-promotion-card::before,
-.home-v2-promotion-card::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-}
-
-.home-v2-promotion-card::before {
-  right: 0;
-  bottom: 0;
-  width: min(38%, 420px);
-  height: 100%;
-  background-image:
-    linear-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.06) 1px, transparent 1px);
-  background-size: 32px 32px;
-  background-position: right bottom;
-  opacity: 0.9;
-}
-
-.home-v2-promotion-card::after {
-  content: none;
 }
 
 .home-v2-promotion-content {
@@ -25647,13 +25623,13 @@ a.search-empty-action {
   background:
     radial-gradient(
       ellipse 60% 50% at 96% 98%,
-      rgba(147, 197, 253, 0.48) 0%,
+      rgba(248, 113, 113, 0.34) 0%,
       transparent 62%
     ),
     radial-gradient(
       ellipse 90% 80% at 82% 100%,
-      #2563eb 0%,
-      #1e3a8a 46%,
+      rgba(196, 58, 47, 0.62) 0%,
+      rgba(127, 29, 29, 0.42) 46%,
       transparent 76%
     ),
     linear-gradient(
@@ -25663,12 +25639,6 @@ a.search-empty-action {
       rgba(24, 34, 62, 0.78) 100%
     );
   backdrop-filter: blur(10px) saturate(1.08);
-}
-
-[data-theme-resolved="dark"] .home-v2-promotion-card::before {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
 }
 
 [data-theme-resolved="dark"] .home-v2-promotion-title {
@@ -25702,15 +25672,6 @@ a.search-empty-action {
     gap: 22px;
     min-height: 0;
     padding: 24px;
-  }
-
-  .home-v2-promotion-card::before {
-    width: 70%;
-    height: 100%;
-  }
-
-  .home-v2-promotion-card::after {
-    width: 84%;
   }
 
   .home-v2-promotion-content {
