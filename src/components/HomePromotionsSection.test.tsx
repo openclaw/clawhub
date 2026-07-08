@@ -70,7 +70,7 @@ describe("HomePromotionsSection", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://clawhub.test/api/v1/promotions");
     expect(screen.getByText(promotion.title)).toBeTruthy();
-    expect(screen.getByText("Available at no cost until January 1, 1970.")).toBeTruthy();
+    expect(screen.getByText("Tencent's latest model, free until January 1.")).toBeTruthy();
   });
 
   it("removes a promotion at its expiry boundary and refreshes the query", async () => {
@@ -81,7 +81,7 @@ describe("HomePromotionsSection", () => {
     render(<HomePromotionsSection />);
     await flushPromises();
     expect(screen.getByText(promotion.title)).toBeTruthy();
-    expect(screen.getByText("Available at no cost until January 1, 1970.")).toBeTruthy();
+    expect(screen.getByText("Tencent's latest model, free until January 1.")).toBeTruthy();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(501);

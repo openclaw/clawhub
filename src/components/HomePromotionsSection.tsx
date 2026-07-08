@@ -29,7 +29,6 @@ function formatPromotionDate(endsAt: number) {
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
-    year: "numeric",
     timeZone: "UTC",
   }).format(new Date(endsAt));
 }
@@ -78,7 +77,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
             </span>
           </h3>
           <p className="home-v2-promotion-meta">
-            Available at no cost until {formatPromotionDate(promotion.endsAt)}.
+            Tencent&apos;s latest model, free until {formatPromotionDate(promotion.endsAt)}.
           </p>
         </div>
       </div>
