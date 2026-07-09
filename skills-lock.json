@@ -1,41 +1,6 @@
 {
   "version": 1,
   "skills": {
-    "openclaw-brand": {
-      "source": "git@github.com:openclaw/design-system.git",
-      "ref": "v0.0.1",
-      "sourceType": "git",
-      "skillPath": "openclaw-brand/SKILL.md",
-      "computedHash": "d4bf50bb9d512dbfbcd4abde7a75d8399b0187ca9486dd7854844aab0cd02e6a"
-    },
-    "openclaw-design": {
-      "source": "git@github.com:openclaw/design-system.git",
-      "ref": "v0.0.1",
-      "sourceType": "git",
-      "skillPath": "SKILL.md",
-      "computedHash": "8de963d26ec19a920da5e2a5d029764bba7c941d5cb051c67a877d0e5d91c6a4"
-    },
-    "openclaw-design-audit": {
-      "source": "git@github.com:openclaw/design-system.git",
-      "ref": "v0.0.1",
-      "sourceType": "git",
-      "skillPath": "openclaw-design-audit/SKILL.md",
-      "computedHash": "12fec90fd4aa1aa569de1beb5a3c85d06887a5e548704dbd094355edc0f52ad3"
-    },
-    "openclaw-design-system": {
-      "source": "git@github.com:openclaw/design-system.git",
-      "ref": "v0.0.1",
-      "sourceType": "git",
-      "skillPath": "openclaw-design-system/SKILL.md",
-      "computedHash": "475604f08f37186237fa62605fbfe16ea04367af81f4c3a8c59bcb395ae70cca"
-    },
-    "openclaw-marketing-pages": {
-      "source": "git@github.com:openclaw/design-system.git",
-      "ref": "v0.0.1",
-      "sourceType": "git",
-      "skillPath": "openclaw-marketing-pages/SKILL.md",
-      "computedHash": "7da44d258d5a1e87b26535effa13cf20931fd04a884fd95225a4ff603932ef84"
-    },
     "axiom-alerting": {
       "source": "axiomhq/skills",
       "sourceType": "github",
@@ -59,6 +24,41 @@
       "sourceType": "github",
       "skillPath": "skills/controlling-costs/SKILL.md",
       "computedHash": "73ed9a6417283ee4029a9e61d11ee3cc9ae64268d131150c4c0f4a71f87cd549"
+    },
+    "openclaw-brand": {
+      "source": "openclaw/design-system",
+      "ref": "v0.0.1",
+      "sourceType": "github",
+      "skillPath": "openclaw-brand/SKILL.md",
+      "computedHash": "d4bf50bb9d512dbfbcd4abde7a75d8399b0187ca9486dd7854844aab0cd02e6a"
+    },
+    "openclaw-design": {
+      "source": "openclaw/design-system",
+      "ref": "v0.0.1",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "8de963d26ec19a920da5e2a5d029764bba7c941d5cb051c67a877d0e5d91c6a4"
+    },
+    "openclaw-design-audit": {
+      "source": "openclaw/design-system",
+      "ref": "v0.0.1",
+      "sourceType": "github",
+      "skillPath": "openclaw-design-audit/SKILL.md",
+      "computedHash": "12fec90fd4aa1aa569de1beb5a3c85d06887a5e548704dbd094355edc0f52ad3"
+    },
+    "openclaw-design-system": {
+      "source": "openclaw/design-system",
+      "ref": "v0.0.1",
+      "sourceType": "github",
+      "skillPath": "openclaw-design-system/SKILL.md",
+      "computedHash": "475604f08f37186237fa62605fbfe16ea04367af81f4c3a8c59bcb395ae70cca"
+    },
+    "openclaw-marketing-pages": {
+      "source": "openclaw/design-system",
+      "ref": "v0.0.1",
+      "sourceType": "github",
+      "skillPath": "openclaw-marketing-pages/SKILL.md",
+      "computedHash": "7da44d258d5a1e87b26535effa13cf20931fd04a884fd95225a4ff603932ef84"
     },
     "query-metrics": {
       "source": "axiomhq/skills",
