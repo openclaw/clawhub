@@ -72,6 +72,8 @@ describe("Convex HTTP proxy", () => {
       VITE_CONVEX_URL: "https://preview-branch-123.convex.cloud",
     });
 
+    expect(response).toBeInstanceOf(Response);
+    await expect(response.json()).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledWith(
       "https://preview-branch-123.convex.site/api/v1/skills/demo?include=latest",
       expect.objectContaining({ method: "GET" }),

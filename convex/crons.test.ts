@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
+  const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
   return {
     interval,
     githubSkillSyncRef,
@@ -31,6 +32,7 @@ const mocks = vi.hoisted(() => {
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
     promotionsFeedPublishRef,
+    securityScanDispatchWatchdogRef,
   };
 });
 
@@ -77,6 +79,9 @@ vi.mock("./_generated/api", () => ({
     },
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
+    },
+    securityScanDispatch: {
+      requestSecurityScanDispatchInternal: mocks.securityScanDispatchWatchdogRef,
     },
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
@@ -154,6 +159,17 @@ describe("crons", () => {
       { hours: 6 },
       expect.anything(),
       { batchSize: 10 },
+    );
+  });
+
+  it("runs the security scan dispatch recovery watchdog every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "codex-scan-dispatch-watchdog",
+      { minutes: 5 },
+      mocks.securityScanDispatchWatchdogRef,
+      {},
     );
   });
 

@@ -129,7 +129,9 @@ export async function resolvePublicBrowseVersionForSkill(
       q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
     )
     .order("desc")
-    .take(24);
+    // A hosted skill can only have its latest version pending review. Read that
+    // version plus the immediately preceding public fallback, then fail closed.
+    .take(2);
 
   for (const version of versions) {
     if (version._id === skill.moderationSourceVersionId) continue;

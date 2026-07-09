@@ -8,6 +8,7 @@ import {
   claimQueuedJobsInternal,
   completeCodexScanJob,
   enqueueBulkSkillRescanBatchForAdminInternal,
+  enqueuePackageReleaseScanInternal,
   enqueueSkillVersionScanInternal,
   failCodexScanJob,
   failJobInternal,
@@ -362,11 +363,23 @@ const enqueueSkillVersionScanInternalHandler = (
   enqueueSkillVersionScanInternal as unknown as WrappedHandler<
     {
       versionId: string;
-      source: "publish";
+      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
       priority?: number;
       waitForVtMs?: number;
       preserveActiveJob?: boolean;
       preserveExistingJob?: boolean;
+    },
+    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
+  >
+)._handler;
+
+const enqueuePackageReleaseScanInternalHandler = (
+  enqueuePackageReleaseScanInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+      priority?: number;
+      waitForVtMs?: number;
     },
     { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
   >
@@ -560,6 +573,7 @@ function makeRescanCtx(options: {
         role: options.actorRole ?? "user",
       },
       ...options.docs,
+      ...Object.fromEntries((options.activeJobs ?? []).map((job) => [String(job._id), job])),
     }),
   );
   const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
@@ -568,6 +582,7 @@ function makeRescanCtx(options: {
   const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
     const id = `${table}:${inserts.length + 1}`;
     inserts.push({ table, doc });
+    docs.set(id, { _id: id, _creationTime: Date.now(), ...doc });
     return id;
   });
   const patch = vi.fn(async (id: string, doc: Record<string, unknown>) => {
@@ -583,9 +598,31 @@ function makeRescanCtx(options: {
       buildRange({ eq });
       return {
         collect: vi.fn(async () => {
-          if (table === "securityScanJobs") return options.activeJobs ?? [];
+          if (table === "securityScanJobs") {
+            return Array.from(docs.values()).filter((doc) =>
+              String(doc._id).startsWith("securityScanJobs:"),
+            );
+          }
           return [];
         }),
+        order: vi.fn(() => ({
+          first: vi.fn(async () => {
+            if (table !== "securityScanJobs") return null;
+            return (
+              Array.from(docs.values())
+                .filter(
+                  (doc) =>
+                    String(doc._id).startsWith("securityScanJobs:") &&
+                    (!equals.has("status") || doc.status === equals.get("status")),
+                )
+                .sort(
+                  (a, b) =>
+                    Number(a.nextRunAt ?? 0) - Number(b.nextRunAt ?? 0) ||
+                    Number(a._creationTime ?? 0) - Number(b._creationTime ?? 0),
+                )[0] ?? null
+            );
+          }),
+        })),
         take: vi.fn(async () => {
           if (table === "skills") {
             return Array.from(docs.values()).filter((doc) => {
@@ -663,7 +700,10 @@ function makeRescanCtx(options: {
       };
     }),
   }));
-  const scheduler = { runAfter: vi.fn(async () => undefined) };
+  const scheduler = {
+    runAfter: vi.fn(async () => undefined),
+    runAt: vi.fn(async () => "_scheduled_functions:1"),
+  };
 
   return {
     ctx: {
@@ -1194,6 +1234,113 @@ describe("securityScan", () => {
     });
     expect(inserts.filter((entry) => entry.table === "securityScanJobs")).toEqual([]);
     expect(patches).toEqual([]);
+  });
+
+  it("keeps an unscanned skill publish at publish priority when VirusTotal finishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const existingJob = makeScanJob({
+      _id: "securityScanJobs:skill-publish",
+      source: "publish",
+      skillVersionId: "skillVersions:skill-publish",
+      waitForVtUntil: 1_500_000,
+      nextRunAt: 1_500_000,
+    });
+    const { ctx, patches } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skillVersions:skill-publish": {
+          _id: "skillVersions:skill-publish",
+          skillId: "skills:skill-publish",
+          version: "1.0.0",
+          vtAnalysis: { status: "clean", checkedAt: 1_000_000 },
+        },
+      },
+      activeJobs: [existingJob],
+    });
+
+    await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:skill-publish",
+      source: "vt-update",
+      waitForVtMs: 0,
+    });
+
+    expect(patches).toContainEqual({
+      id: "securityScanJobs:skill-publish",
+      patch: expect.objectContaining({
+        source: "publish",
+        nextRunAt: 1_000_000,
+      }),
+    });
+  });
+
+  it("keeps an unscanned package publish at publish priority when VirusTotal finishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2_000_000);
+    const existingJob = makeScanJob({
+      _id: "securityScanJobs:package-publish",
+      targetKind: "packageRelease",
+      skillVersionId: undefined,
+      packageReleaseId: "packageReleases:package-publish",
+      source: "publish",
+      waitForVtUntil: 2_500_000,
+      nextRunAt: 2_500_000,
+    });
+    const { ctx, patches } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "packageReleases:package-publish": {
+          _id: "packageReleases:package-publish",
+          packageId: "packages:package-publish",
+          version: "1.0.0",
+          vtAnalysis: { status: "clean", checkedAt: 2_000_000 },
+        },
+      },
+      activeJobs: [existingJob],
+    });
+
+    await enqueuePackageReleaseScanInternalHandler(ctx, {
+      releaseId: "packageReleases:package-publish",
+      source: "vt-update",
+      waitForVtMs: 0,
+    });
+
+    expect(patches).toContainEqual({
+      id: "securityScanJobs:package-publish",
+      patch: expect.objectContaining({
+        source: "publish",
+        nextRunAt: 2_000_000,
+      }),
+    });
+  });
+
+  it("requests an immediate worker dispatch when a publish scan becomes claimable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(3_000_000);
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+    vi.stubEnv("GITHUB_APP_ID", "configured");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    const { ctx, scheduler } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skillVersions:dispatch": {
+          _id: "skillVersions:dispatch",
+          skillId: "skills:dispatch",
+          version: "1.0.0",
+          vtAnalysis: { status: "clean", checkedAt: 3_000_000 },
+        },
+      },
+    });
+
+    await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:dispatch",
+      source: "publish",
+    });
+
+    expect(scheduler.runAt).toHaveBeenCalledWith(3_000_000, expect.anything(), {
+      scheduleToken: expect.any(String),
+    });
   });
 
   it("lets platform moderators request skill rescans", async () => {
@@ -3277,7 +3424,7 @@ describe("securityScan", () => {
       },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
@@ -3294,6 +3441,7 @@ describe("securityScan", () => {
         leaseToken: "lease-token",
       }),
     );
+    expect(runMutation).toHaveBeenNthCalledWith(3, expect.anything(), {});
   });
 
   it.each([

@@ -6,6 +6,7 @@ node_modules
 artifacts/
 .proof/
 .cache/
+.vite-temp/
 .data/
 bin/docs-list
 dist

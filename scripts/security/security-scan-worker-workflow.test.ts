@@ -36,8 +36,14 @@ describe("security-scan-codex workflow", () => {
         "codex-security-scan": {
           env?: Record<string, unknown>;
           steps: WorkflowStep[];
+          strategy?: { "max-parallel"?: number; matrix?: { shard?: number[] } };
           "timeout-minutes"?: number;
         };
+      };
+      on?: {
+        repository_dispatch?: { types?: string[] };
+        schedule?: Array<{ cron?: string }>;
+        workflow_dispatch?: unknown;
       };
     };
     const steps = workflow.jobs["codex-security-scan"].steps;
@@ -63,8 +69,19 @@ describe("security-scan-codex workflow", () => {
     );
     expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
     expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(20);
+    expect(workflow.on?.workflow_dispatch).toBeDefined();
+    expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);
+    expect(workflow.on?.schedule).toBeUndefined();
+    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(4);
+    expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.shard).toEqual([0, 1, 2, 3]);
+    expect(jobEnv.CODEX_SECURITY_SCAN_LIMIT).toBe(
+      "${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}",
+    );
+    expect(jobEnv.CODEX_SECURITY_SCAN_MAX_JOBS).toBe(
+      "${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}",
+    );
     expect(jobEnv.CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES).toBe(
-      "${{ inputs['max-runtime-minutes'] || '8' }}",
+      "${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '8' }}",
     );
     expect(jobEnv.CODEX_SECURITY_SCAN_TIMEOUT_MS).toBe(
       "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",

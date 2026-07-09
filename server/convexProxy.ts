@@ -1,10 +1,4 @@
-import {
-  defineEventHandler,
-  getRequestURL,
-  proxyRequest,
-  type H3Event,
-  type HTTPResponse,
-} from "h3";
+import { defineEventHandler, getRequestURL, proxyRequest, type H3Event } from "h3";
 import { convexDeploymentName, resolveConvexSiteUrl } from "../src/lib/convexDeploymentUrl";
 
 type ProxyEnv = {
@@ -59,7 +53,7 @@ export function buildConvexProxyTarget(pathAndQuery: string, env: ProxyEnv) {
 export async function proxyConvexRequest(
   event: H3Event,
   env: ProxyEnv = resolveConvexProxyEnv(process.env),
-): Promise<HTTPResponse | Response> {
+): Promise<Response> {
   if (!isConvexProxyMethodAllowed(event.req.method, env)) {
     return new Response("Disposable previews are read-only.", {
       status: 405,
@@ -73,7 +67,14 @@ export async function proxyConvexRequest(
 
   const requestUrl = getRequestURL(event);
   const target = buildConvexProxyTarget(`${requestUrl.pathname}${requestUrl.search}`, env);
-  const response = await proxyRequest(event, target);
+  const proxied = await proxyRequest(event, target);
+  // H3's HTTPResponse is not guaranteed to share Nitro's bundled class identity.
+  // Normalize it before crossing that boundary or Nitro can stringify the wrapper.
+  const response = new Response(proxied.body, {
+    status: proxied.status,
+    statusText: proxied.statusText,
+    headers: proxied.headers,
+  });
   if (isPreviewFrontend(env)) {
     const deployment = convexDeploymentName(target);
     if (deployment) response.headers.set("X-ClawHub-Preview-Backend", deployment);

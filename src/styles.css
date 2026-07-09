@@ -450,12 +450,12 @@ code {
 }
 
 .app-shell:has(
-    .skill-detail-page,
-    .plugin-detail-page,
-    .security-audit-page,
-    .publisher-profile-route,
-    .dashboard-route
-  )::before {
+  .skill-detail-page,
+  .plugin-detail-page,
+  .security-audit-page,
+  .publisher-profile-route,
+  .dashboard-route
+)::before {
   position: absolute;
   top: 0;
   right: 0;
