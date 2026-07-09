@@ -834,12 +834,14 @@ export function Upload() {
                 : "flex flex-wrap items-center gap-2"
             }
           >
-            <Button asChild variant="outline" size="sm" className="w-fit">
-              <Link to="/import" search={{ ownerHandle: undefined }}>
-                <GitHubLogo className="h-3.5 w-3.5" />
-                Import from GitHub
-              </Link>
-            </Button>
+            {isNewSkillPublishEmpty ? (
+              <Button asChild variant="outline" size="sm" className="w-fit">
+                <Link to="/import" search={{ ownerHandle: undefined }}>
+                  <GitHubLogo className="h-3.5 w-3.5" />
+                  Import from GitHub
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm" className="w-fit">
               <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
                 {isNewSkillPublishEmpty ? "Skill docs" : "Skill publishing guide"}
