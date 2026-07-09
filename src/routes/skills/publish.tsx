@@ -1043,6 +1043,7 @@ export function Upload() {
                 className={isNewSkillPublishEmpty ? "publish-empty-upload-content" : undefined}
               >
                 <div
+                  data-dragging={isDragging ? "true" : undefined}
                   className={`${
                     isNewSkillPublishEmpty ? "publish-empty-dropzone text-center" : "p-8"
                   } relative flex flex-col items-center overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed transition-colors ${

@@ -2603,8 +2603,9 @@ code {
   background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
 }
 
-.publish-empty-dropzone [aria-hidden="true"] > span {
-  opacity: 0.26;
+.publish-empty-dropzone[data-dragging="true"] {
+  border-color: color-mix(in srgb, var(--accent) 72%, transparent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-muted));
 }
 
 .publish-empty-actions {
@@ -13581,16 +13582,16 @@ code {
 @keyframes upload-decor-jiggle {
   0%,
   100% {
-    rotate: 0deg;
+    rotate: var(--upload-decor-base-rotate, 0deg);
   }
   25% {
-    rotate: -3deg;
+    rotate: calc(var(--upload-decor-base-rotate, 0deg) - 3deg);
   }
   50% {
-    rotate: 3deg;
+    rotate: calc(var(--upload-decor-base-rotate, 0deg) + 3deg);
   }
   75% {
-    rotate: -2deg;
+    rotate: calc(var(--upload-decor-base-rotate, 0deg) - 2deg);
   }
 }
 

@@ -289,6 +289,7 @@ export function PackageSourceChooser(props: {
       ) : (
         <Card className={props.emptyStateLayout ? "publish-empty-upload-card" : "mb-5"}>
           <div
+            data-dragging={isDragging ? "true" : undefined}
             className={`${
               props.emptyStateLayout ? "publish-empty-dropzone" : "p-8"
             } relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed text-center transition-colors ${
