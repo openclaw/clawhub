@@ -1,7 +1,6 @@
 ---
 name: convex
-description:
-  Routes general Convex requests to the right project skill. Use when the user
+description: Routes general Convex requests to the right project skill. Use when the user
   asks which Convex skill to use or gives an underspecified Convex app task.
 ---
 

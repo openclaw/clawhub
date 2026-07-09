@@ -1,7 +1,6 @@
 ---
 name: convex-setup-auth
-description:
-  Sets up Convex auth, identity mapping, and access control. Use for login, auth
+description: Sets up Convex auth, identity mapping, and access control. Use for login, auth
   providers, users tables, protected functions, or roles in a Convex app.
 ---
 
@@ -131,9 +130,7 @@ export const getMyProfile = query({
 
     return await ctx.db
       .query("users")
-      .withIndex("by_tokenIdentifier", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier),
-      )
+      .withIndex("by_tokenIdentifier", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
       .unique();
   },
 });
