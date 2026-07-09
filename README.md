@@ -16,6 +16,8 @@ ClawHub is the **public skill registry for OpenClaw**: publish, version, and sea
 It's designed for fast browsing + a CLI-friendly API, with moderation hooks and vector search.
 It also now exposes a native **OpenClaw package catalog** for code plugins and bundle plugins.
 
+This README-only change verifies disposable Vercel and Convex PR preview pairing.
+
 <p align="center">
   <a href="https://clawhub.ai">ClawHub</a> ·
   <a href="VISION.md">Vision</a> ·
