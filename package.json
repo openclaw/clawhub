@@ -10,6 +10,7 @@
   "scripts": {
     "admin": "bun packages/clawhub-admin/src/cli.ts",
     "build": "bun run llms:generate && vite build && bun scripts/copy-og-assets.ts",
+    "build:vercel": "bun scripts/vercel-build.ts",
     "check": "bun run lint",
     "check:peers": "bun scripts/check-peer-deps.ts",
     "check:release-workflow-action-pins": "node scripts/check-release-workflow-action-pins.mjs",
