@@ -3,6 +3,7 @@ import {
   beginSecurityScanDispatchInternal,
   dispatchSecurityScanWorkflow,
   finishSecurityScanDispatchInternal,
+  getGitHubRepositoryDispatchPermission,
   requestSecurityScanDispatchInternal,
 } from "./securityScanDispatch";
 
@@ -352,26 +353,19 @@ describe("securityScanDispatch", () => {
     );
   });
 
-  it("refuses to dispatch when the GitHub App lacks Actions write permission", async () => {
-    const fetchImpl = vi.fn();
-
-    await expect(
-      dispatchSecurityScanWorkflow(
-        {
-          token: "installation-token",
-          permissions: { actions: "read", contents: "read" },
-        },
-        fetchImpl,
-      ),
-    ).resolves.toEqual({
-      ok: false,
-      reason: "actions-write-required",
+  it("reports whether the GitHub App can create repository dispatches", () => {
+    expect(getGitHubRepositoryDispatchPermission({ contents: "read" })).toEqual({
+      contentsPermission: "read",
+      canDispatch: false,
     });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(getGitHubRepositoryDispatchPermission({ contents: "write" })).toEqual({
+      contentsPermission: "write",
+      canDispatch: true,
+    });
   });
 
-  it("dispatches the production workflow on main with bounded worker inputs", async () => {
-    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+  it("refuses to dispatch when the GitHub App lacks Contents write permission", async () => {
+    const fetchImpl = vi.fn();
 
     await expect(
       dispatchSecurityScanWorkflow(
@@ -381,20 +375,38 @@ describe("securityScanDispatch", () => {
         },
         fetchImpl,
       ),
+    ).resolves.toEqual({
+      ok: false,
+      reason: "contents-write-required",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("dispatches the production workflow through a narrowly typed repository event", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+
+    await expect(
+      dispatchSecurityScanWorkflow(
+        {
+          token: "installation-token",
+          permissions: { contents: "write" },
+        },
+        fetchImpl,
+      ),
     ).resolves.toEqual({ ok: true });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      "https://api.github.com/repos/openclaw/clawhub/actions/workflows/security-scan-codex.yml/dispatches",
+      "https://api.github.com/repos/openclaw/clawhub/dispatches",
       expect.objectContaining({
         method: "POST",
         headers: expect.objectContaining({
           Authorization: "Bearer installation-token",
         }),
         body: JSON.stringify({
-          ref: "main",
-          inputs: {
-            "batch-limit": "4",
-            "max-runtime-minutes": "8",
+          event_type: "clawhub-security-scan",
+          client_payload: {
+            batch_limit: "4",
+            max_runtime_minutes: "8",
           },
         }),
       }),

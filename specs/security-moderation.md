@@ -247,8 +247,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
   Successful completion requests another dispatch while queued work remains; a
   five-minute Convex cron is only a recovery watchdog for lost dispatch signals.
-  Event-driven dispatch stays disabled until the production GitHub App is
-  verified to have Actions write permission.
+  Convex emits the narrowly typed `clawhub-security-scan`
+  `repository_dispatch` event using the production GitHub App. Event-driven
+  dispatch stays disabled until that installation is verified to have Contents
+  write permission.
 - Queue source priority is `manual`, `backfill`, `publish`, `vt-update`, then
   `bulk-rescan`. A later VirusTotal update may make a waiting publish job
   claimable immediately, but it must not demote that job from publish priority.

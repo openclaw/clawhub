@@ -1,6 +1,8 @@
 name: Security Scan Codex Worker
 
 on:
+  repository_dispatch:
+    types: [clawhub-security-scan]
   workflow_dispatch:
     inputs:
       limit:
@@ -39,9 +41,9 @@ jobs:
         shard: [0, 1, 2, 3]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '4' }}
-      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
-      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
+      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
+      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '8' }}
       CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
       CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN: "1"
       CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX || 'docker' }}
