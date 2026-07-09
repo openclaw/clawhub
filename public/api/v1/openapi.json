@@ -2906,12 +2906,20 @@
                     "items": {
                       "type": "string",
                       "format": "binary"
-                    }
+                    },
+                    "description": "Inline file parts. Use for small bundles. Mutually exclusive with the staged bundle fields."
+                  },
+                  "bundleStorageId": {
+                    "type": "string",
+                    "description": "Storage id of a zip bundle staged via POST /api/v1/skills/-/upload-url. Used for large bundles that exceed the inline multipart body limit. Requires bundleUploadTicket."
+                  },
+                  "bundleUploadTicket": {
+                    "type": "string",
+                    "description": "Upload ticket returned with the staged bundle's upload URL, binding it to the publishing user."
                   }
                 },
                 "required": [
-                  "payload",
-                  "files"
+                  "payload"
                 ]
               }
             },
@@ -2993,6 +3001,44 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/skills/-/upload-url": {
+      "post": {
+        "summary": "Mint a staged upload URL for a large skill bundle",
+        "description": "Returns a one-shot storage upload URL plus a ticket. PUT the skill bundle zip to the URL, then reference it from POST /api/v1/skills via bundleStorageId + bundleUploadTicket. Used to publish bundles larger than the inline multipart body limit.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Upload URL and ticket",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "uploadUrl": {
+                      "type": "string"
+                    },
+                    "uploadTicket": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "uploadUrl",
+                    "uploadTicket"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
           }
         }
       }

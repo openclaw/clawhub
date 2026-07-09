@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { access, mkdir, open, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
+import { zipSync } from "fflate";
 import ignore from "ignore";
 import mime from "mime";
 import {
@@ -95,6 +96,37 @@ export async function listTextFiles(root: string) {
 }
 
 type SkillFileHash = { path: string; sha256: string; size: number };
+
+// Above this total upload size, the inline multipart POST /api/v1/skills request
+// is rejected at the platform edge (Vercel serverless body limit ~4.5MB) with a
+// raw 413. The CLI switches to the staged-bundle flow (zip -> storage upload
+// ticket -> publish by reference) past this threshold. Kept well under 4.5MB to
+// leave headroom for multipart framing and the JSON payload part.
+export const SKILL_INLINE_MULTIPART_MAX_BYTES = 4 * 1024 * 1024;
+
+export type SkillBundleFile = { relPath: string; bytes: Uint8Array };
+
+// Total on-disk bytes of the files the CLI would upload. This is the metric the
+// inline-vs-staged decision is based on (multipart framing overhead is minor).
+export function totalSkillFileBytes(files: Array<{ bytes: Uint8Array }>): number {
+  return files.reduce((sum, file) => sum + file.bytes.byteLength, 0);
+}
+
+export function shouldStageSkillBundle(files: Array<{ bytes: Uint8Array }>): boolean {
+  return totalSkillFileBytes(files) > SKILL_INLINE_MULTIPART_MAX_BYTES;
+}
+
+// Build a deterministic zip of the skill files for the staged-upload flow. The
+// server unzips it and runs each entry through the same per-file/total size
+// gates as the inline multipart path, so this only needs to preserve paths and
+// bytes. Level 6 matches the server-side download zip builder.
+export function buildSkillBundleZip(files: SkillBundleFile[]): Uint8Array {
+  const zipData: Record<string, Uint8Array> = {};
+  for (const file of files) {
+    zipData[file.relPath] = file.bytes;
+  }
+  return Uint8Array.from(zipSync(zipData, { level: 6 }));
+}
 
 export function sha256Hex(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");

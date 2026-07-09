@@ -16,6 +16,7 @@ export declare const ApiRoutes: {
     readonly download: "/api/v1/download";
     readonly publishTokenMint: "/api/v1/publish/token/mint";
     readonly skills: "/api/v1/skills";
+    readonly skillsUploadUrl: "/api/v1/skills/-/upload-url";
     readonly skillScans: "/api/v1/skills/-/scan";
     readonly plugins: "/api/v1/plugins";
     readonly pluginsExport: "/api/v1/plugins/export";

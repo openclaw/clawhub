@@ -30,6 +30,7 @@ import { createPublisherV1Handler } from "./httpApiV1/publishersV1";
 import {
   exportSkillsV1Handler,
   listSkillsV1Handler,
+  publishSkillUploadUrlV1Handler,
   publishSkillV1Handler,
   resolveSkillVersionV1Handler,
   searchSkillsV1Handler,
@@ -76,6 +77,7 @@ export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler
 export const listSkillsV1Http = httpAction(listSkillsV1Handler);
 export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler);
 export const publishSkillV1Http = httpAction(publishSkillV1Handler);
+export const publishSkillUploadUrlV1Http = httpAction(publishSkillUploadUrlV1Handler);
 export const skillSecurityVerdictsV1Http = httpAction(skillSecurityVerdictsV1Handler);
 export const skillScanSubmitV1Http = httpAction(skillScanSubmitV1Handler);
 export const skillScanGetRouterV1Http = httpAction(skillScanGetRouterV1Handler);

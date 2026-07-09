@@ -1314,6 +1314,12 @@ Publishes a new version.
 
 - Preferred: `multipart/form-data` with `payload` JSON + `files[]` blobs.
 - JSON body with `files` (storageId-based) is also accepted.
+- Large bundles: stage a single zip via `POST /api/v1/skills/-/upload-url`
+  (returns `uploadUrl` + `uploadTicket`), PUT the zip to `uploadUrl`, then send a
+  `multipart/form-data` request with `payload` + `bundleStorageId` +
+  `bundleUploadTicket` (and no `files`). This bypasses the inline multipart body
+  limit that otherwise rejects large bundles at the edge with a `413`. The
+  `clawhub` CLI switches to this path automatically past ~4MB of bundle content.
 - Optional payload field: `ownerHandle`. When present, the API resolves that
   publisher server-side and requires the actor to have publisher access.
 - Optional payload field: `migrateOwner`. When `true` with `ownerHandle`, an

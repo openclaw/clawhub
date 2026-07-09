@@ -166,6 +166,11 @@ export const RETENTION_POLICIES = {
     prune: "usage-time validation plus pending retention cleanup",
     retention: "Upload ticket TTL.",
   }),
+  skillPublishUploadTickets: ephemeral("Upload tickets expire shortly after creation.", {
+    expirationField: "expiresAt",
+    prune: "usage-time validation plus pending retention cleanup",
+    retention: "Upload ticket TTL.",
+  }),
   packageBadges: permanent("Curated package badges."),
   packageSearchDigest: derived("Search projection of package state.", "packages"),
   packageTopicSearchDigest: derived("Topic search projection of package state.", "packages"),

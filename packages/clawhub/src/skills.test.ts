@@ -2,10 +2,11 @@
 import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { strToU8, zipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import type { SkillOrigin } from "./skills";
 import {
+  buildSkillBundleZip,
   buildSkillFingerprint,
   extractGitHubZipPathToDir,
   extractZipToDir,
@@ -16,6 +17,9 @@ import {
   readLockfile,
   readSkillOrigin,
   sha256Hex,
+  SKILL_INLINE_MULTIPART_MAX_BYTES,
+  shouldStageSkillBundle,
+  totalSkillFileBytes,
   writeLockfile,
   writeSkillOrigin,
 } from "./skills";
@@ -315,5 +319,41 @@ describe("skills", () => {
       const result = await listManualSkills(join(dir, "missing"), new Set());
       expect(result).toEqual([]);
     });
+  });
+});
+
+describe("skill bundle staging", () => {
+  const file = (relPath: string, size: number) => ({
+    relPath,
+    bytes: new Uint8Array(size),
+  });
+
+  it("sums file bytes for the staging decision", () => {
+    expect(totalSkillFileBytes([file("a", 10), file("b", 25)])).toBe(35);
+    expect(totalSkillFileBytes([])).toBe(0);
+  });
+
+  it("stages only when total bytes exceed the inline multipart limit", () => {
+    expect(shouldStageSkillBundle([file("small.md", 1024)])).toBe(false);
+    // Exactly at the limit stays inline; one byte over switches to staged.
+    expect(shouldStageSkillBundle([file("edge", SKILL_INLINE_MULTIPART_MAX_BYTES)])).toBe(false);
+    expect(shouldStageSkillBundle([file("big", SKILL_INLINE_MULTIPART_MAX_BYTES + 1)])).toBe(true);
+  });
+
+  it("builds a zip that round-trips paths and bytes", () => {
+    const files = [
+      { relPath: "SKILL.md", bytes: strToU8("# Title\n") },
+      { relPath: "src/index.js", bytes: strToU8("export const x = 1;\n") },
+    ];
+    const zip = buildSkillBundleZip(files);
+    const entries = unzipSync(zip);
+    expect(Object.keys(entries).sort()).toEqual(["SKILL.md", "src/index.js"]);
+    expect(entries["SKILL.md"]).toEqual(files[0].bytes);
+    expect(entries["src/index.js"]).toEqual(files[1].bytes);
+  });
+
+  it("produces a byte-identical zip for identical input (deterministic)", () => {
+    const files = [{ relPath: "SKILL.md", bytes: strToU8("stable content\n") }];
+    expect(buildSkillBundleZip(files)).toEqual(buildSkillBundleZip(files));
   });
 });

@@ -1,14 +1,21 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
-import { apiRequest, apiRequestForm, registryUrl } from "../../http.js";
+import { apiRequest, apiRequestForm, registryUrl, uploadBinary } from "../../http.js";
 import {
+  ApiCliUploadUrlResponseSchema,
   ApiRoutes,
+  ApiUploadFileResponseSchema,
   ApiV1PublishResponseSchema,
   ApiV1SkillResolveResponseSchema,
   ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
-import { hashSkillFiles, listTextFiles } from "../../skills.js";
+import {
+  buildSkillBundleZip,
+  hashSkillFiles,
+  listTextFiles,
+  shouldStageSkillBundle,
+} from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
@@ -163,32 +170,46 @@ export async function cmdPublish(
       options.migrateOwner && publishOwnerHandle
         ? sourceOwnerHandle || explicitSourceOwnerHandle || (await getDefaultOwnerHandle(token))
         : undefined;
-    const form = new FormData();
-    form.set(
-      "payload",
-      JSON.stringify({
-        slug,
-        displayName,
-        ownerHandle: publishOwnerHandle,
-        ...(publishSourceOwnerHandle ? { sourceOwnerHandle: publishSourceOwnerHandle } : {}),
-        ...(options.migrateOwner ? { migrateOwner: true } : {}),
-        version,
-        changelog,
-        acceptLicenseTerms: true,
-        tags,
-        ...(options.categories !== undefined ? { categories } : {}),
-        ...(options.topics !== undefined ? { topics } : {}),
-        ...(source ? { source } : {}),
-        ...(forkOf ? { forkOf } : {}),
-      }),
-    );
+    const payloadJson = JSON.stringify({
+      slug,
+      displayName,
+      ownerHandle: publishOwnerHandle,
+      ...(publishSourceOwnerHandle ? { sourceOwnerHandle: publishSourceOwnerHandle } : {}),
+      ...(options.migrateOwner ? { migrateOwner: true } : {}),
+      version,
+      changelog,
+      acceptLicenseTerms: true,
+      tags,
+      ...(options.categories !== undefined ? { categories } : {}),
+      ...(options.topics !== undefined ? { topics } : {}),
+      ...(source ? { source } : {}),
+      ...(forkOf ? { forkOf } : {}),
+    });
 
-    let index = 0;
-    for (const file of filesOnDisk) {
-      index += 1;
-      if (spinner) spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
-      const blob = new Blob([Buffer.from(file.bytes)], { type: file.contentType ?? "text/plain" });
-      form.append("files", blob, file.relPath);
+    const form = new FormData();
+    form.set("payload", payloadJson);
+
+    if (shouldStageSkillBundle(filesOnDisk)) {
+      // Large bundle: stage a single zip in storage (bypassing the edge
+      // multipart body limit) and publish it by reference.
+      if (spinner) spinner.text = `Uploading skill bundle for ${slug}@${version}`;
+      const { storageId, uploadTicket } = await uploadSkillBundleToStorage(
+        registry,
+        token,
+        buildSkillBundleZip(filesOnDisk),
+      );
+      form.set("bundleStorageId", storageId);
+      form.set("bundleUploadTicket", uploadTicket);
+    } else {
+      let index = 0;
+      for (const file of filesOnDisk) {
+        index += 1;
+        if (spinner) spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
+        const blob = new Blob([Buffer.from(file.bytes)], {
+          type: file.contentType ?? "text/plain",
+        });
+        form.append("files", blob, file.relPath);
+      }
     }
 
     if (spinner) spinner.text = `Publishing ${slug}@${version}`;
@@ -223,6 +244,33 @@ function parseCsv(value: string | undefined) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+const SKILL_BUNDLE_UPLOAD_RETRY_COUNT = 5;
+
+// Stage a large skill bundle in Convex storage. Mints a one-shot upload URL +
+// ticket, PUTs the zip straight to storage (bypassing the edge multipart body
+// limit), and returns the storage id + ticket the publish request references.
+async function uploadSkillBundleToStorage(
+  registry: string,
+  token: string,
+  bundleBytes: Uint8Array,
+): Promise<{ storageId: string; uploadTicket: string }> {
+  const { uploadUrl, uploadTicket } = await apiRequest(
+    registry,
+    { method: "POST", path: ApiRoutes.skillsUploadUrl, token },
+    ApiCliUploadUrlResponseSchema,
+  );
+  const result = await uploadBinary(
+    {
+      url: uploadUrl,
+      bytes: bundleBytes,
+      contentType: "application/zip",
+      retryCount: SKILL_BUNDLE_UPLOAD_RETRY_COUNT,
+    },
+    ApiUploadFileResponseSchema,
+  );
+  return { storageId: result.storageId, uploadTicket };
 }
 
 export async function resolveDefaultOwnerHandle(registry: string, token: string) {

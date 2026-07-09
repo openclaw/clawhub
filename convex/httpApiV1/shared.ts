@@ -1,4 +1,5 @@
 import { CliPublishRequestSchema, normalizeTextContentType, parseArk } from "clawhub-schema";
+import { unzipSync } from "fflate";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -337,24 +338,20 @@ export async function parseMultipartPublish(
   request: Request,
 ): Promise<ReturnType<typeof parsePublishBody>> {
   const form = await request.formData();
+  return parseMultipartPublishForm(ctx, form);
+}
+
+export async function parseMultipartPublishForm(
+  ctx: ActionCtx,
+  form: FormData,
+): Promise<ReturnType<typeof parsePublishBody>> {
   const payloadRaw = form.get("payload");
   if (!payloadRaw || typeof payloadRaw !== "string") {
     throw new Error("Missing payload");
   }
-  let payload: Record<string, unknown>;
-  try {
-    payload = JSON.parse(payloadRaw) as Record<string, unknown>;
-  } catch {
-    throw new Error("Invalid JSON payload");
-  }
+  const payload = parsePublishPayloadJson(payloadRaw);
 
-  const files: Array<{
-    path: string;
-    size: number;
-    storageId: Id<"_storage">;
-    sha256: string;
-    contentType?: string;
-  }> = [];
+  const files: PublishStoredFile[] = [];
 
   for (const entry of form.getAll("files")) {
     const file = toFileLike(entry);
@@ -372,9 +369,33 @@ export async function parseMultipartPublish(
     files.push({ path, size, storageId, sha256, contentType });
   }
 
+  return parsePublishBody(buildPublishBody(payload, files));
+}
+
+type PublishStoredFile = {
+  path: string;
+  size: number;
+  storageId: Id<"_storage">;
+  sha256: string;
+  contentType?: string;
+};
+
+function parsePublishPayloadJson(payloadRaw: string): Record<string, unknown> {
+  try {
+    return JSON.parse(payloadRaw) as Record<string, unknown>;
+  } catch {
+    throw new Error("Invalid JSON payload");
+  }
+}
+
+// Assemble the CLI publish body from the parsed JSON payload metadata plus the
+// files that were persisted to storage. Shared by the inline multipart path
+// and the staged-bundle path so both produce an identical shape for
+// parsePublishBody (and therefore identical downstream validation).
+function buildPublishBody(payload: Record<string, unknown>, files: PublishStoredFile[]) {
   const forkOf = payload.forkOf && typeof payload.forkOf === "object" ? payload.forkOf : undefined;
   const hasAcceptLicenseTerms = Object.prototype.hasOwnProperty.call(payload, "acceptLicenseTerms");
-  const body = {
+  return {
     slug: payload.slug,
     displayName: payload.displayName,
     ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
@@ -392,8 +413,70 @@ export async function parseMultipartPublish(
     files,
     ...(forkOf ? { forkOf } : {}),
   };
+}
 
-  return parsePublishBody(body);
+// Staged-bundle publish: the CLI uploads the skill bundle as a single zip
+// directly to Convex storage (via an upload ticket), bypassing the ~4.5MB edge
+// multipart body limit, then references it here by storage id. We unzip the
+// bundle in the action, then run every entry through the same per-file size
+// gate and storage persistence as the inline multipart path so validation is
+// identical regardless of transport. The 50MB total-bundle cap is enforced
+// downstream in skillPublish on the assembled files array.
+export async function parseStagedBundlePublish(
+  ctx: ActionCtx,
+  args: { payloadRaw: string; bundleBytes: Uint8Array },
+): Promise<ReturnType<typeof parsePublishBody>> {
+  const payload = parsePublishPayloadJson(args.payloadRaw);
+  const entries = extractSkillBundleEntries(args.bundleBytes);
+
+  const files: PublishStoredFile[] = [];
+  for (const entry of entries) {
+    const sha256 = await sha256Hex(entry.bytes);
+    const storageId = await ctx.storage.store(new Blob([entry.bytes as BlobPart]));
+    files.push({
+      path: entry.path,
+      size: entry.size,
+      storageId,
+      sha256,
+      contentType: entry.contentType,
+    });
+  }
+
+  return parsePublishBody(buildPublishBody(payload, files));
+}
+
+export type SkillBundleEntry = {
+  path: string;
+  bytes: Uint8Array;
+  size: number;
+  contentType?: string;
+};
+
+// Pure (ctx-free) extraction of a staged skill-bundle zip into the publishable
+// file entries: unzips, drops directory + mac-junk entries, and enforces the
+// per-file size cap — the same gate the inline multipart path applies. Kept
+// separate from storage persistence so it can be unit-tested without a backend.
+export function extractSkillBundleEntries(bundleBytes: Uint8Array): SkillBundleEntry[] {
+  let entries: Record<string, Uint8Array>;
+  try {
+    entries = unzipSync(bundleBytes);
+  } catch {
+    throw new Error("Skill bundle is not a valid zip archive");
+  }
+
+  const files: SkillBundleEntry[] = [];
+  for (const [rawPath, bytes] of Object.entries(entries)) {
+    // Directory entries surface as zero-byte, slash-terminated names.
+    if (!rawPath || rawPath.endsWith("/")) continue;
+    if (isMacJunkPath(rawPath)) continue;
+    const size = bytes.byteLength;
+    if (size > MAX_PUBLISH_FILE_BYTES) {
+      throw new Error(getPublishFileSizeError(rawPath));
+    }
+    const contentType = normalizeTextContentType(rawPath, undefined) ?? undefined;
+    files.push({ path: rawPath, bytes, size, contentType });
+  }
+  return files;
 }
 
 export async function parseMultipartSkillScan(

@@ -2005,6 +2005,21 @@ const packagePublishUploadTickets = defineTable({
   storageId: v.optional(v.id("_storage")),
 }).index("by_publish_token", ["publishTokenId"]);
 
+// Staged upload tickets for large skill-bundle publishes. Mirrors
+// packagePublishUploadTickets, but skill publish only authenticates via a user
+// API token (requireApiTokenUserOrResponse), so there is no github-actions
+// kind here. A ticket binds a generated storage upload URL to the issuing user
+// so the /api/v1/skills route can accept a bundle tarball staged directly in
+// Convex storage (bypassing the ~4.5MB edge multipart body limit) instead of
+// inline multipart file parts.
+const skillPublishUploadTickets = defineTable({
+  userId: v.id("users"),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  usedAt: v.optional(v.number()),
+  storageId: v.optional(v.id("_storage")),
+}).index("by_user", ["userId"]);
+
 const packageSearchDigest = defineTable({
   packageId: v.id("packages"),
   name: v.string(),
@@ -3213,6 +3228,7 @@ export default defineSchema({
   packageTrustedPublishers,
   packagePublishTokens,
   packagePublishUploadTickets,
+  skillPublishUploadTickets,
   packageBadges,
   packageSearchDigest,
   packageTopicSearchDigest,
