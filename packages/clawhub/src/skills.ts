@@ -104,7 +104,7 @@ type SkillFileHash = { path: string; sha256: string; size: number };
 // leave headroom for multipart framing and the JSON payload part.
 export const SKILL_INLINE_MULTIPART_MAX_BYTES = 4 * 1024 * 1024;
 
-export type SkillBundleFile = { relPath: string; bytes: Uint8Array };
+type SkillBundleFile = { relPath: string; bytes: Uint8Array };
 
 // Total on-disk bytes of the files the CLI would upload. This is the metric the
 // inline-vs-staged decision is based on (multipart framing overhead is minor).
