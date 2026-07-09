@@ -163,6 +163,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
+    "codex-scan-queue-health",
+    { minutes: 5 },
+    internal.securityScan.logCodexScanQueueHealthInternal,
+    {},
+  );
+
+  crons.interval(
     "download-metric-dedupe-prune",
     { hours: 24 },
     internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
