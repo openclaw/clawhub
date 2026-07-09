@@ -244,6 +244,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   workspace with static and VT signals as context.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
+- Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
+  Successful completion requests another dispatch while queued work remains; a
+  five-minute Convex cron is only a recovery watchdog for lost dispatch signals.
+  Event-driven dispatch stays disabled until the production GitHub App is
+  verified to have Actions write permission.
+- Queue source priority is `manual`, `backfill`, `publish`, `vt-update`, then
+  `bulk-rescan`. A later VirusTotal update may make a waiting publish job
+  claimable immediately, but it must not demote that job from publish priority.
+- Bulk rescans stay lowest priority and use the bounded operator campaign flow,
+  which enqueues one page at a time and waits for that page before continuing.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker

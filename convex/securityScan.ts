@@ -22,6 +22,7 @@ import {
   serializedSkillScanRequestFilesBytes,
 } from "./lib/skillScanRequestFiles";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
+import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
@@ -154,6 +155,21 @@ const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "vt-update",
   "bulk-rescan",
 ];
+
+const SOURCE_PRIORITY: Record<SecurityScanJobSource, number> = {
+  manual: 5,
+  backfill: 4,
+  publish: 3,
+  "vt-update": 2,
+  "bulk-rescan": 1,
+};
+
+function higherPrioritySource(
+  current: SecurityScanJobSource,
+  requested: SecurityScanJobSource,
+): SecurityScanJobSource {
+  return SOURCE_PRIORITY[requested] > SOURCE_PRIORITY[current] ? requested : current;
+}
 
 type EnqueueSkillVersionScanArgs = {
   versionId: Id<"skillVersions">;
@@ -312,6 +328,9 @@ const internalRefs = internal as unknown as {
     recordSkillScanRequestFailedInternal: unknown;
     recordSkillScanRequestSucceededInternal: unknown;
     succeedJobInternal: unknown;
+  };
+  securityScanDispatch: {
+    requestSecurityScanDispatchInternal: unknown;
   };
   skills: {
     getSkillByIdInternal: unknown;
@@ -2089,13 +2108,14 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
       return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
     }
     await ctx.db.patch(active._id, {
-      source: args.source,
+      source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
       waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
     });
+    await requestSecurityScanDispatch(ctx);
     return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
   }
   const preservedExisting = args.preserveExistingJob
@@ -2120,6 +2140,7 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
     createdAt: now,
     updatedAt: now,
   });
+  await requestSecurityScanDispatch(ctx);
   return { ok: true as const, jobId, alreadyQueued: false as const };
 }
 
@@ -2150,13 +2171,14 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
   const active = existing.find((job) => job.status === "queued" || job.status === "running");
   if (active) {
     await ctx.db.patch(active._id, {
-      source: args.source,
+      source: higherPrioritySource(active.source, args.source),
       priority: Math.max(active.priority, args.priority ?? 0),
       hasMaliciousSignal,
       waitForVtUntil: Math.min(active.waitForVtUntil, waitForVtUntil),
       nextRunAt: Math.min(active.nextRunAt, nextRunAt),
       updatedAt: now,
     });
+    await requestSecurityScanDispatch(ctx);
     return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
   }
 
@@ -2173,6 +2195,7 @@ async function enqueuePackageReleaseScan(ctx: MutationCtx, args: EnqueuePackageR
     createdAt: now,
     updatedAt: now,
   });
+  await requestSecurityScanDispatch(ctx);
   return { ok: true as const, jobId, alreadyQueued: false as const };
 }
 
@@ -2740,11 +2763,21 @@ export const completeCodexScanJob = action({
       throw new ConvexError("Unsupported security scan target");
     }
 
-    return await runMutationRef(ctx, internalRefs.securityScan.succeedJobInternal, {
-      jobId: args.jobId,
-      leaseToken: args.leaseToken,
-      runId: args.runId,
-    });
+    const result = await runMutationRef<{ ok: true }>(
+      ctx,
+      internalRefs.securityScan.succeedJobInternal,
+      {
+        jobId: args.jobId,
+        leaseToken: args.leaseToken,
+        runId: args.runId,
+      },
+    );
+    await runMutationRef(
+      ctx,
+      internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+      {},
+    );
+    return result;
   },
 });
 

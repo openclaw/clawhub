@@ -1828,6 +1828,20 @@ const securityScanJobs = defineTable({
   .index("by_package_release", ["packageReleaseId"])
   .index("by_skill_scan_request", ["skillScanRequestId"]);
 
+const securityScanDispatchState = defineTable({
+  key: v.string(),
+  scheduledToken: v.optional(v.string()),
+  scheduledAt: v.optional(v.number()),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  lastDispatchAt: v.optional(v.number()),
+  lastDispatchStatus: v.optional(
+    v.union(v.literal("succeeded"), v.literal("failed"), v.literal("unknown")),
+  ),
+  lastError: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
 const skillScanRequests = defineTable({
   actorUserId: v.id("users"),
   sourceKind: skillScanRequestSourceKindValidator,
@@ -3189,6 +3203,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   securityScanJobs,
+  securityScanDispatchState,
   skillScanRequests,
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
