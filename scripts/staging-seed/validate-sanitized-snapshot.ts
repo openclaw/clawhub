@@ -1,9 +1,7 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { listSnapshotEntries, readSnapshotTable, runCommand } from "./snapshotIo";
+import { resolve } from "node:path";
+import { listSnapshotEntries, readSelectedSnapshotEntries, readSnapshotTable } from "./snapshotIo";
 import { sanitizePublicText, type SnapshotDocument, type SnapshotFile } from "./snapshotPolicy";
 
 const REQUIRED_TABLES = [
@@ -34,7 +32,8 @@ const ALLOWED_TABLES = new Set([
 const PRIVATE_KEY_PATTERN =
   /(?:email|phone|token|secret|password|authorization|githubId|oauth|ipAddress)/i;
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
-const LOCAL_PATH_PATTERN = /(?:\/Users\/|\/var\/folders\/|\/private\/tmp\/|C:\\Users\\)/i;
+const UNIX_LOCAL_PATH_PATTERN = /(?:\/Users\/|\/var\/folders\/|\/private\/tmp\/)/;
+const WINDOWS_LOCAL_PATH_PATTERN = /C:\\Users\\/i;
 const REDACTED_PATH_SUFFIX_PATTERN = /\[REDACTED_PATH\][\\/]/;
 
 export async function validateSanitizedSnapshot(snapshotPath: string) {
@@ -198,7 +197,7 @@ function validateDocument(value: unknown, location: string) {
 function walk(value: unknown, location: string) {
   if (typeof value === "string") {
     if (EMAIL_PATTERN.test(value)) throw new Error(`${location} contains an email address`);
-    if (LOCAL_PATH_PATTERN.test(value)) throw new Error(`${location} contains a local path`);
+    if (containsLocalPath(value)) throw new Error(`${location} contains a local path`);
     if (REDACTED_PATH_SUFFIX_PATTERN.test(value)) {
       throw new Error(`${location} contains a partially redacted local path`);
     }
@@ -213,6 +212,10 @@ function walk(value: unknown, location: string) {
     if (PRIVATE_KEY_PATTERN.test(key)) throw new Error(`${location} contains private key ${key}`);
     walk(child, `${location}.${key}`);
   }
+}
+
+export function containsLocalPath(value: string) {
+  return UNIX_LOCAL_PATH_PATTERN.test(value) || WINDOWS_LOCAL_PATH_PATTERN.test(value);
 }
 
 function validateCreatedBy(row: SnapshotDocument, userIds: ReadonlySet<string>, table: string) {
@@ -292,37 +295,38 @@ async function validateStorageContents(
   storageDocuments: ReadonlyMap<string, SnapshotDocument>,
   artifactFiles: ReadonlyMap<string, SnapshotFile>,
 ) {
-  const extractDir = await mkdtemp(join(tmpdir(), "clawhub-validate-snapshot-"));
-  try {
-    await runCommand("bsdtar", ["-xf", snapshotPath, "-C", extractDir, "_storage"]);
-    for (const [storageId, entry] of storageEntries) {
-      const bytes = await readFile(join(extractDir, entry));
-      const text = bytes.toString("utf8");
-      validateDocument(text, entry);
-      if (sanitizePublicText(text) !== text) {
-        throw new Error(`${entry} contains content that was not sanitized`);
-      }
-      const digest = createHash("sha256").update(bytes).digest();
-      const storageDocument = storageDocuments.get(storageId);
-      const artifactFile = artifactFiles.get(storageId);
-      if (!storageDocument || !artifactFile) {
-        throw new Error(`${entry} is missing linked metadata`);
-      }
-      if (storageDocument.size !== bytes.byteLength) {
-        throw new Error(`${entry} size does not match _storage metadata`);
-      }
-      if (storageDocument.sha256 !== digest.toString("base64")) {
-        throw new Error(`${entry} SHA-256 does not match _storage metadata`);
-      }
-      if (artifactFile.size !== bytes.byteLength) {
-        throw new Error(`${entry} size does not match artifact metadata`);
-      }
-      if (artifactFile.sha256 !== digest.toString("hex")) {
-        throw new Error(`${entry} SHA-256 does not match artifact metadata`);
-      }
+  const storageIdsByEntry = new Map(
+    [...storageEntries].map(([storageId, entry]) => [entry, storageId]),
+  );
+  for await (const { entry, bytes } of readSelectedSnapshotEntries(
+    snapshotPath,
+    new Set(storageEntries.values()),
+  )) {
+    const storageId = storageIdsByEntry.get(entry);
+    if (!storageId) throw new Error(`Unexpected storage entry: ${entry}`);
+    const text = bytes.toString("utf8");
+    validateDocument(text, entry);
+    if (sanitizePublicText(text) !== text) {
+      throw new Error(`${entry} contains content that was not sanitized`);
     }
-  } finally {
-    await rm(extractDir, { recursive: true, force: true });
+    const digest = createHash("sha256").update(bytes).digest();
+    const storageDocument = storageDocuments.get(storageId);
+    const artifactFile = artifactFiles.get(storageId);
+    if (!storageDocument || !artifactFile) {
+      throw new Error(`${entry} is missing linked metadata`);
+    }
+    if (storageDocument.size !== bytes.byteLength) {
+      throw new Error(`${entry} size does not match _storage metadata`);
+    }
+    if (storageDocument.sha256 !== digest.toString("base64")) {
+      throw new Error(`${entry} SHA-256 does not match _storage metadata`);
+    }
+    if (artifactFile.size !== bytes.byteLength) {
+      throw new Error(`${entry} size does not match artifact metadata`);
+    }
+    if (artifactFile.sha256 !== digest.toString("hex")) {
+      throw new Error(`${entry} SHA-256 does not match artifact metadata`);
+    }
   }
 }
 

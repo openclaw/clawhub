@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { openPromise } from "yauzl";
 import type { SnapshotDocument } from "./snapshotPolicy";
 
 export async function* readSnapshotTable(
@@ -46,6 +47,36 @@ export async function readSnapshotEntry(snapshotPath: string, entry: string) {
     );
   }
   return Buffer.concat(chunks);
+}
+
+export async function* readSelectedSnapshotEntries(
+  snapshotPath: string,
+  selectedEntries: ReadonlySet<string>,
+): AsyncGenerator<{ entry: string; bytes: Buffer }> {
+  if (selectedEntries.size === 0) return;
+
+  const found = new Set<string>();
+  const zip = await openPromise(snapshotPath, { autoClose: false, lazyEntries: true });
+  try {
+    for await (const file of zip.eachEntry()) {
+      if (!selectedEntries.has(file.fileName)) continue;
+      if (!file.canDecodeFileData()) {
+        throw new Error(`Cannot decode selected snapshot entry: ${file.fileName}`);
+      }
+      const stream = await zip.openReadStreamPromise(file);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      found.add(file.fileName);
+      yield { entry: file.fileName, bytes: Buffer.concat(chunks) };
+    }
+  } finally {
+    zip.close();
+  }
+
+  const missing = [...selectedEntries].filter((entry) => !found.has(entry));
+  if (missing.length > 0) {
+    throw new Error(`Snapshot is missing ${missing.length} selected entries`);
+  }
 }
 
 export async function listSelectedStorageEntries(

@@ -1,10 +1,16 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { createWriteStream } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
-import { listSelectedStorageEntries, readSnapshotTable, runCommand } from "./snapshotIo";
+import {
+  listSelectedStorageEntries,
+  readSelectedSnapshotEntries,
+  readSnapshotTable,
+  runCommand,
+} from "./snapshotIo";
 import {
   isPublicPackageSnapshot,
   isPublicSkillSnapshot,
@@ -305,11 +311,15 @@ async function sanitizeStorageFiles(
 ) {
   const outputStorageDir = join(bundleDir, "_storage");
   await mkdir(outputStorageDir, { recursive: true });
-
-  for (const [storageId, entry] of entries) {
+  const storageIdsByEntry = new Map([...entries].map(([storageId, entry]) => [entry, storageId]));
+  for await (const { entry, bytes: source } of readSelectedSnapshotEntries(
+    input,
+    new Set(entries.values()),
+  )) {
+    const storageId = storageIdsByEntry.get(entry);
+    if (!storageId) throw new Error(`Unexpected storage entry: ${entry}`);
     const outputPath = join(outputStorageDir, basename(entry));
-    const source = await readExtractedStorageFile(input, bundleDir, entry, entries);
-    const sanitized = sanitizePublicText(source);
+    const sanitized = sanitizePublicText(source.toString("utf8"));
     await writeFile(outputPath, sanitized, "utf8");
     const bytes = Buffer.byteLength(sanitized, "utf8");
     const sha256 = createHash("sha256").update(sanitized).digest();
@@ -318,27 +328,6 @@ async function sanitizeStorageFiles(
     storageDoc.size = bytes;
     storageDoc.sha256 = sha256.toString("base64");
   }
-  await rm(join(bundleDir, ".source-storage"), { recursive: true, force: true });
-  await rm(join(bundleDir, "storage-files.txt"), { force: true });
-}
-
-let storageExtractionReady = false;
-
-async function readExtractedStorageFile(
-  input: string,
-  bundleDir: string,
-  entry: string,
-  entries: ReadonlyMap<string, string>,
-) {
-  const extractedDir = join(bundleDir, ".source-storage");
-  if (!storageExtractionReady) {
-    const listPath = join(bundleDir, "storage-files.txt");
-    await writeFile(listPath, [...entries.values()].join("\n") + "\n");
-    await mkdir(extractedDir, { recursive: true });
-    await runCommand("bsdtar", ["-xf", input, "-C", extractedDir, "-T", listPath]);
-    storageExtractionReady = true;
-  }
-  return await readFile(join(extractedDir, entry), "utf8");
 }
 
 function updateArtifactFileMetadata(
@@ -365,20 +354,35 @@ async function copyDerivedTable(
   parents: ReadonlyMap<string, SnapshotDocument>,
   key: "skillId" | "packageId",
 ) {
-  const rows: SnapshotDocument[] = [];
+  const tableDir = join(bundleDir, table);
+  let writer: ReturnType<typeof createWriteStream> | null = null;
   try {
     for await (const doc of readSnapshotTable(input, table)) {
       const parentId = doc[key];
       if (typeof parentId !== "string") continue;
       const parent = parents.get(parentId);
       if (!parent) continue;
-      rows.push(sanitizeDerivedSnapshot(doc, parent, key === "skillId" ? "skill" : "package"));
+      if (!writer) {
+        await mkdir(tableDir, { recursive: true });
+        writer = createWriteStream(join(tableDir, "documents.jsonl"), { encoding: "utf8" });
+      }
+      const row = sanitizeDerivedSnapshot(doc, parent, key === "skillId" ? "skill" : "package");
+      if (!writer.write(`${JSON.stringify(row)}\n`)) await once(writer, "drain");
     }
   } catch (error) {
-    if (isMissingSnapshotEntryError(error)) return;
+    writer?.destroy();
+    if (isMissingSnapshotEntryError(error)) {
+      await rm(tableDir, { recursive: true, force: true });
+      return;
+    }
     throw error;
   }
-  if (rows.length > 0) await writeTable(bundleDir, table, rows, input);
+  if (writer) {
+    await new Promise<void>((resolvePromise, reject) => {
+      writer!.once("error", reject);
+      writer!.end(resolvePromise);
+    });
+  }
 }
 
 async function writeTable(
