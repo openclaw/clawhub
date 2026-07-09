@@ -58,6 +58,10 @@ jobs:
             --add \
             url."https://x-access-token:${DESIGN_SYSTEM_TOKEN}@github.com/".insteadOf \
             "git@github.com:"
+          git config --global \
+            --add \
+            url."https://x-access-token:${DESIGN_SYSTEM_TOKEN}@github.com/".insteadOf \
+            "https://github.com/"
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -173,7 +177,7 @@ jobs:
           VITE_CONVEX_SITE_URL: https://wry-manatee-359.convex.site
           VITE_CONVEX_URL: https://wry-manatee-359.convex.cloud
         run: |
-          set -o pipefail
+          set -euo pipefail
           {
             bun run test:ui-contract
             bun run ci:static
