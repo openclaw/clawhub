@@ -138,15 +138,15 @@ export function PackageSourceChooser(props: {
     props.family === "code-plugin" && props.codePluginFieldIssues.length > 0;
   const hasPackagePanelFooter = props.ignoredPaths.length > 0 || Boolean(props.validationError);
   const selectedPackagePanelToneClass = isDragging
-    ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+    ? "border-[color:var(--oc-border-accent)] bg-[color:var(--oc-surface-accent-soft)]"
     : isMetadataLocked
       ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-      : "border-emerald-300/45 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-950/25";
+      : "border-status-success-fg/35 bg-status-success-bg";
   const selectedPackagePanelBgClass = isDragging
-    ? "bg-[rgba(255,107,74,0.06)]"
+    ? "bg-[color:var(--oc-surface-accent-soft)]"
     : isMetadataLocked
       ? "bg-[color:var(--surface-muted)]"
-      : "bg-emerald-50/80 dark:bg-emerald-950/25";
+      : "bg-status-success-bg";
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;
@@ -292,9 +292,9 @@ export function PackageSourceChooser(props: {
       ) : (
         <Card className="mb-5">
           <div
-            className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
+            className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--oc-radius-inset)] border-2 border-dashed p-8 text-center transition-colors ${
               isDragging
-                ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+                ? "border-[color:var(--oc-border-accent)] bg-[color:var(--oc-surface-accent-soft)]"
                 : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
             }`}
             onDragOver={(event) => {

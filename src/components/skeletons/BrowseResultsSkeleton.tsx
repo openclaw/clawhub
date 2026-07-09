@@ -23,7 +23,7 @@ export function BrowseResultsSkeleton({
             className="card skill-card skill-card-spaced-footer"
           >
             <div className="skill-card-header">
-              <Skeleton className="h-[34px] w-[34px] rounded-[9px]" />
+              <Skeleton className="h-[34px] w-[34px] rounded-[var(--oc-radius-inset)]" />
               <div className="skill-card-identity">
                 <Skeleton className="h-5 w-40 max-w-full" />
                 <Skeleton className="h-4 w-24 max-w-full" />

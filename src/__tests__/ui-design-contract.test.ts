@@ -136,6 +136,41 @@ describe("restored UI design contract", () => {
     );
   });
 
+  it("keeps migrated application surfaces on canonical semantic tokens", () => {
+    const css = styles();
+    const sharedCss = designSystemStyles();
+
+    for (const legacyReference of [
+      "var(--danger)",
+      "var(--font-sans)",
+      "var(--ink-faint)",
+      "var(--surface-raised)",
+      "var(--transition-fast)",
+      "var(--card-border)",
+      "var(--color-muted)",
+      "var(--color-text)",
+    ]) {
+      expect(css).not.toContain(legacyReference);
+    }
+
+    expect(cssRule(css, ".dashboard-route")).toContain("--hv2-bg: var(--oc-bg-page)");
+    expect(cssRule(css, ".dashboard-route")).toContain("--hv2-radius-md: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("--status-pending-bg: var(--oc-surface-interactive)");
+    expect(sharedCss).toContain("--status-pending-fg: var(--oc-text-muted)");
+
+    for (const sourcePath of [
+      "src/components/SignInPrompt.tsx",
+      "src/components/SkillOwnershipPanel.tsx",
+      "src/routes/import.tsx",
+      "src/routes/settings.tsx",
+      "src/routes/skills/publish.tsx",
+    ]) {
+      expect(read(sourcePath)).not.toMatch(
+        /(?:text|bg|border)-(?:red|amber|emerald)-(?:\d+|\[[^\]]+\])/,
+      );
+    }
+  });
+
   it("keeps Vercel browser instrumentation mounted outside local dev", () => {
     const rootSource = rootRoute();
 
@@ -332,6 +367,7 @@ describe("restored UI design contract", () => {
 
   it("keeps runtime requirement text high contrast in both themes", () => {
     const css = styles();
+    const designTokens = read("node_modules/@openclaw/design-system/styles/tokens.css");
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
     expect(installCardSource).toContain("requirements-env-row");
@@ -342,12 +378,12 @@ describe("restored UI design contract", () => {
     );
 
     const darkRatio = contrastRatio(
-      tokenValue(css, ":root", "--ink"),
-      tokenValue(css, ":root", "--surface-muted"),
+      tokenValue(designTokens, ":root", "--oc-palette-ink-50"),
+      tokenValue(designTokens, ":root", "--oc-palette-ink-900"),
     );
     const lightRatio = contrastRatio(
-      tokenValue(css, '[data-theme-family="claw"][data-theme-resolved="light"]', "--ink"),
-      tokenValue(css, '[data-theme-family="claw"][data-theme-resolved="light"]', "--surface-muted"),
+      tokenValue(designTokens, ":root", "--oc-palette-paper-950"),
+      tokenValue(designTokens, ":root", "--oc-palette-paper-200"),
     );
 
     expect(darkRatio).toBeGreaterThanOrEqual(7);

@@ -6,6 +6,32 @@
 @import "@openclaw/design-system/compat/clawhub.css";
 
 /*
+ * Temporary aliases for legacy ClawHub styles that have not yet moved to the
+ * canonical token names. Values live here so old selectors cannot drift into
+ * a second theme system while the route CSS is migrated incrementally.
+ */
+:root {
+  --accent-soft: var(--oc-surface-accent-soft);
+  --card-border: var(--oc-border-subtle);
+  --color-muted: var(--oc-text-muted);
+  --color-text: var(--oc-text-primary);
+  --danger: var(--oc-status-error-fg);
+  --font-sans: var(--oc-font-body);
+  --ink-faint: var(--oc-text-muted);
+  --official-border: color-mix(in srgb, var(--oc-status-info-fg) 28%, var(--oc-border-subtle));
+  --shadow: var(--oc-shadow-md);
+  --shadow-card: var(--oc-shadow-sm);
+  --shadow-dialog: var(--oc-shadow-lg);
+  --shadow-hover: var(--oc-shadow-md);
+  --shadow-lg: var(--oc-shadow-lg);
+  --status-pending-bg: var(--oc-surface-interactive);
+  --status-pending-fg: var(--oc-text-muted);
+  --surface-raised: var(--oc-surface-interactive-hover);
+  --surface-subtle: var(--oc-surface-interactive);
+  --transition-fast: var(--oc-duration-fast) var(--oc-ease-out);
+}
+
+/*
  * The landing page predates the shared package and still references --hv2-*
  * variables throughout its layout CSS. Keep those aliases during migration,
  * but make the canonical design system their only source of visual values.

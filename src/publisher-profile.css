@@ -536,17 +536,13 @@
   max-height: min(20rem, 56vh);
   overflow: hidden !important;
   border: 1px solid var(--line) !important;
-  border-radius: 16px !important;
+  border-radius: var(--oc-radius-surface) !important;
   background: var(--surface) !important;
-  box-shadow:
-    0 18px 48px rgba(0, 0, 0, 0.24),
-    0 0 0 1px color-mix(in srgb, var(--ink) 4%, transparent) !important;
+  box-shadow: var(--oc-shadow-lg) !important;
 }
 
 [data-theme-resolved="light"] .publisher-profile-members-menu {
-  box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.1),
-    0 0 0 1px var(--line) !important;
+  box-shadow: var(--oc-shadow-lg) !important;
 }
 
 .publisher-profile-members-menu-list {

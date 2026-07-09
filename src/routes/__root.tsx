@@ -205,11 +205,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             position="bottom-right"
             toastOptions={{
               style: {
-                background: "var(--surface)",
-                color: "var(--ink)",
-                border: "1px solid var(--line)",
-                borderRadius: "var(--radius-md)",
-                fontFamily: "var(--font-body)",
+                background: "var(--oc-bg-elevated)",
+                color: "var(--oc-text-primary)",
+                border: "1px solid var(--oc-border-subtle)",
+                borderRadius: "var(--oc-radius-control)",
+                fontFamily: "var(--oc-font-body)",
               },
             }}
           />

@@ -1311,7 +1311,7 @@ export function Upload() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
               {error ? (
-                <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                <div className="text-sm font-medium text-status-error-fg" role="alert">
                   {error}
                 </div>
               ) : null}
@@ -1344,7 +1344,7 @@ export function Upload() {
 function InlineValidationMessage(props: { id: string; message?: string }) {
   if (!props.message) return null;
   return (
-    <p id={props.id} className="text-sm font-medium text-red-600 dark:text-red-400">
+    <p id={props.id} className="text-sm font-medium text-status-error-fg">
       {props.message}
     </p>
   );

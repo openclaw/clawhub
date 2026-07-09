@@ -199,7 +199,7 @@ export function Stars() {
                     handleUnstar(skill);
                   }}
                   aria-label={`Unstar ${skill.displayName}`}
-                  className="stars-card-unstar text-[color:var(--gold)] hover:text-red-500"
+                  className="stars-card-unstar text-[color:var(--gold)] hover:text-status-error-fg"
                 >
                   <Star className="h-4 w-4 fill-current" />
                 </Button>
@@ -221,7 +221,7 @@ export function Stars() {
                   handleUnstar(skill);
                 }}
                 aria-label={`Unstar ${skill.displayName}`}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--gold)] hover:text-red-500"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--gold)] hover:text-status-error-fg"
               >
                 <Star className="h-4 w-4 fill-current" />
               </Button>

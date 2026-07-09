@@ -235,7 +235,7 @@ export function PluginVersionsPanel({
               })}
             </div>
             {loadMoreError ? (
-              <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+              <p className="mt-3 text-sm font-medium text-status-error-fg" role="alert">
                 {loadMoreError}
               </p>
             ) : null}

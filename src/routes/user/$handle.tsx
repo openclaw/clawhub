@@ -374,7 +374,7 @@ function PublisherProfileMembers({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="publisher-profile-members-menu !overflow-hidden !rounded-2xl p-0 shadow-none"
+        className="publisher-profile-members-menu !overflow-hidden !rounded-[var(--oc-radius-surface)] p-0 shadow-none"
         aria-label={`${members.length} members`}
       >
         <div className="publisher-profile-members-menu-list">

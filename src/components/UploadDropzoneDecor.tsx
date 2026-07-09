@@ -59,7 +59,7 @@ function DecorIcon({ active, icon: Icon, className }: DecorIconProps) {
   return (
     <span
       data-active={active ? "true" : undefined}
-      className={`absolute hidden h-11 w-11 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)]/70 text-[color:var(--ink-soft)] opacity-45 shadow-sm data-[active=true]:animate-[upload-decor-jiggle_0.44s_ease-in-out_infinite] sm:flex ${className}`}
+      className={`absolute hidden h-11 w-11 items-center justify-center rounded-[var(--oc-radius-inset)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)]/70 text-[color:var(--oc-text-secondary)] opacity-45 shadow-[var(--oc-shadow-sm)] data-[active=true]:animate-[upload-decor-jiggle_0.44s_ease-in-out_infinite] sm:flex ${className}`}
     >
       <Icon className="h-5 w-5" strokeWidth={1.8} />
     </span>
