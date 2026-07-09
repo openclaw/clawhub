@@ -142,6 +142,7 @@
     "unified": "11.0.5",
     "unist-util-visit": "5.1.0",
     "yaml": "2.9.0",
+    "yauzl": "3.4.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -156,6 +157,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/semver": "7.7.1",
+    "@types/yauzl": "3.4.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.0.3",
     "@vitest/coverage-v8": "4.1.10",

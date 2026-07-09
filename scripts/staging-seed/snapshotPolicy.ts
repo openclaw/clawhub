@@ -99,7 +99,12 @@ export function sanitizePublisherSnapshot(
 }
 
 export function sanitizePublicText(value: string) {
-  let redacted = redactBundleContent(value);
+  let redacted = value;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const next = redactBundleContent(redacted);
+    if (next === redacted) break;
+    redacted = next;
+  }
   for (const pattern of LOCAL_PATH_PATTERNS) {
     redacted = redacted.replace(pattern, "[REDACTED_PATH]");
   }

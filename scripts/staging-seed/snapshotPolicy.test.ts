@@ -90,6 +90,8 @@ describe("staging snapshot policy", () => {
     expect(
       sanitizePublicText("path=/Users/patrick/My Private Project/config.json then continue"),
     ).toBe("path=[REDACTED_PATH]");
+    const token = sanitizePublicText("Token: supersecretvalue123");
+    expect(sanitizePublicText(token)).toBe(token);
   });
 
   it("drops private-looking metadata keys recursively", () => {
