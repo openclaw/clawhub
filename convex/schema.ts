@@ -448,6 +448,16 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const publicBrowseVersionStateValidator = v.union(
+  v.object({
+    status: v.literal("available"),
+    versionId: v.id("skillVersions"),
+  }),
+  v.object({
+    status: v.literal("unavailable"),
+  }),
+);
+
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -1241,6 +1251,9 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  // Missing means the rollout backfill has not reached this row. New writes
+  // always store an explicit available or unavailable public-version state.
+  publicVersion: v.optional(publicBrowseVersionStateValidator),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),

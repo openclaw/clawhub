@@ -5,6 +5,7 @@ import {
   isHostedSkillPendingFirstPublicRelease,
   isPubliclyListableSkillVersion,
   isSkillPendingPublicReview,
+  resolvePublicBrowseVersionState,
   resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
 } from "./publicBrowse";
@@ -201,6 +202,74 @@ describe("publicBrowse", () => {
 
     expect(version?._id).toBe("skillVersions:approved");
     expect(version?.version).toBe("1.0.0");
+  });
+
+  it("projects the exact approved fallback version for digest readers", async () => {
+    const pendingVersion = {
+      _id: "skillVersions:pending" as never,
+      skillId: "skills:1" as never,
+      softDeletedAt: undefined,
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "pending",
+      changelogSource: "user" as const,
+      parsed: { frontmatter: {}, license: "MIT-0" as const },
+      vtAnalysis: { status: "pending" as const, checkedAt: 2 },
+    };
+    const approvedVersion = {
+      ...pendingVersion,
+      _id: "skillVersions:approved" as never,
+      version: "1.0.0",
+      createdAt: 1,
+      vtAnalysis: { status: "clean" as const, checkedAt: 1 },
+    };
+
+    const state = await resolvePublicBrowseVersionState(
+      {
+        db: {
+          get: async () => pendingVersion,
+          query: () => ({
+            withIndex: () => ({
+              order: () => ({
+                take: async () => [pendingVersion, approvedVersion],
+              }),
+            }),
+          }),
+        },
+      } as never,
+      {
+        _id: "skills:1" as never,
+        latestVersionId: pendingVersion._id,
+        moderationSourceVersionId: pendingVersion._id,
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+        moderationFlags: undefined,
+        stats: { ...emptyStats, versions: 2 },
+        softDeletedAt: undefined,
+        moderationVerdict: "clean",
+        githubScanStatus: "clean",
+      },
+      { latestVersion: pendingVersion as never },
+    );
+
+    expect(state).toEqual({
+      status: "available",
+      versionId: "skillVersions:approved",
+    });
+  });
+
+  it("projects an explicit unavailable state for hidden skills", async () => {
+    const get = async () => {
+      throw new Error("hidden skills must not read versions");
+    };
+
+    const state = await resolvePublicBrowseVersionState({ db: { get } } as never, {
+      ...browseFields,
+      _id: "skills:1" as never,
+      moderationStatus: "hidden",
+    });
+
+    expect(state).toEqual({ status: "unavailable" });
   });
 
   it("does not skip past multiple pending hosted versions", async () => {

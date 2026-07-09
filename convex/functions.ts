@@ -425,6 +425,22 @@ triggers.register("skills", async (ctx, change) => {
   }
 });
 
+triggers.register("skillVersions", async (ctx, change) => {
+  if (change.operation === "insert") return;
+  if (
+    change.operation === "update" &&
+    change.oldDoc.softDeletedAt === change.newDoc.softDeletedAt &&
+    change.oldDoc.vtAnalysis?.status === change.newDoc.vtAnalysis?.status &&
+    (change.oldDoc.llmAnalysis?.verdict ?? change.oldDoc.llmAnalysis?.status) ===
+      (change.newDoc.llmAnalysis?.verdict ?? change.newDoc.llmAnalysis?.status) &&
+    change.oldDoc.staticScan?.status === change.newDoc.staticScan?.status
+  ) {
+    return;
+  }
+  const skillId = change.operation === "delete" ? change.oldDoc.skillId : change.newDoc.skillId;
+  await syncSkillSearchDigestForSkill(ctx, await ctx.db.get(skillId));
+});
+
 triggers.register("packages", async (ctx, change) => {
   await adjustPublisherStatsForPackageChange(
     ctx,
