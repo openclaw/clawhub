@@ -411,11 +411,7 @@ async function waitForPublishSkillMetadataForm(page: Page) {
   for (const selector of requiredControls) {
     await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
   }
-  await expect(rightsCheckbox)
-    .toBeVisible({ timeout: 15_000 })
-    .catch((error) => {
-      throw lastError ?? error;
-    });
+  await expect(rightsCheckbox).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
 }
 
