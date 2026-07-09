@@ -4,7 +4,7 @@ import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const crons = cronJobs();
 
-if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
+if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !== "1") {
   crons.interval(
     "github-skill-source-sync",
     { minutes: 15 },
@@ -160,6 +160,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     { hours: 6 },
     internal.securityScan.pruneExpiredSkillScanRequestsInternal,
     { batchSize: 10 },
+  );
+
+  crons.interval(
+    "codex-scan-queue-health",
+    { minutes: 5 },
+    internal.securityScan.logCodexScanQueueHealthInternal,
+    {},
   );
 
   crons.interval(

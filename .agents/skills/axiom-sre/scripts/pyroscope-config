@@ -1,0 +1,19 @@
+#!/bin/bash
+# Get Pyroscope config for a deployment (wrapper for unified config)
+# Usage: eval "$(pyroscope-config <deployment>)"
+# Returns: PYROSCOPE_URL and auth variables
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEPLOYMENT="${1:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: pyroscope-config <deployment>" >&2
+    echo "" >&2
+    echo "Available deployments:" >&2
+    "$SCRIPT_DIR/config" --list pyroscope | sed 's/^/  /' >&2
+    exit 1
+fi
+
+"$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT"

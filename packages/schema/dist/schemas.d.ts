@@ -158,6 +158,7 @@ export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveR
 export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     event: "install";
     slug: string;
+    ownerHandle?: string | undefined;
     version?: string | undefined;
     rootId?: string | undefined;
     rootLabel?: string | undefined;

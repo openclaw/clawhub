@@ -1,0 +1,295 @@
+#!/bin/bash
+# Test suite for AST parsing logic
+# Run: ./test-ast-parser
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+LIB_DIR="$SCRIPT_DIR/lib"
+PASS=0
+FAIL=0
+
+[[ -f "$LIB_DIR/ast-parser.jq" ]] || { echo "Error: ast-parser.jq not found" >&2; exit 1; }
+
+run_test() {
+    local name="$1"
+    local ast="$2"
+    local check="$3"  # jq expression that should return true
+    
+    result=$(echo "$ast" | jq -L "$LIB_DIR" 'include "ast-parser"; extract_query_info' | jq -r "$check")
+    if [[ "$result" == "true" ]]; then
+        echo "✅ PASS: $name"
+        PASS=$((PASS + 1))
+    else
+        echo "❌ FAIL: $name"
+        echo "   Check: $check"
+        echo "   Result: $(echo "$ast" | jq -L "$LIB_DIR" 'include "ast-parser"; extract_query_info')"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+echo "=== AST Parser Test Suite ==="
+echo ""
+
+# Test 1: Dataset name should NOT appear in columns
+run_test "Dataset name excluded from columns" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"my-dataset"}},"operations":[]}}' \
+    '.all_columns | index("my-dataset") | not'
+
+# Test 2: Simple column in where clause
+run_test "Simple column extraction" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"status"},"op":"==","right":{"kind":"String","value":"ok"}}}]}}' \
+    '.all_columns | index("status") != null'
+
+# Test 3: Column inside function call (isnotempty)
+run_test "Column inside function call" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"CallExpr","func":{"kind":"Entity","name":"isnotempty"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"message"}}]}}]}}' \
+    '.all_columns | index("message") != null'
+
+# Test 4: Function name should NOT appear as column
+run_test "Function name excluded from columns" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"CallExpr","func":{"kind":"Entity","name":"isnotempty"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"field"}}]}}]}}' \
+    '.all_columns | index("isnotempty") | not'
+
+# Test 5: IndexExpr bracket access - full path with string literal index
+run_test "IndexExpr full path with string index" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Extend","fields":[{"kind":"NamedExpression","expr":{"kind":"IndexExpr","left":{"kind":"Entity","name":"attributes"},"index":{"kind":"Literal","value":"custom.field"}}}]}]}}' \
+    '.all_columns | index("attributes.custom.field") != null'
+
+# Test 6: IndexExpr bracket access - extracts full dotted path
+run_test "IndexExpr extracts full dotted path" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Extend","fields":[{"kind":"NamedExpression","expr":{"kind":"IndexExpr","left":{"kind":"Entity","name":"resource"},"index":{"kind":"Literal","value":"k8s.namespace.name"}}}]}]}}' \
+    '.all_columns | index("resource.k8s.namespace.name") != null'
+
+# Test 7: No project = has_wildcard true
+run_test "No project clause = wildcard" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"x"},"op":"==","right":{"kind":"String","value":"y"}}}]}}' \
+    '.has_wildcard == true'
+
+# Test 8: Explicit project = no wildcard
+run_test "Explicit project = no wildcard" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Project","fields":[{"kind":"Entity","name":"col1"}]}]}}' \
+    '.has_wildcard == false'
+
+# Test 9: Project * = wildcard
+run_test "Project * = wildcard" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Project","fields":[{"kind":"Entity","name":"*"}]}]}}' \
+    '.has_wildcard == true'
+
+# Test 10: Summarize group by column extraction
+run_test "Summarize group by column" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"app"}}],"aggs":[]}]}}' \
+    '.summarize_groups | index("app") != null'
+
+# Test 11: Summarize group by bin(_time) extracts _time
+run_test "Summarize bin(_time) extracts _time" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"bin"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"_time"}}]}}],"aggs":[]}]}}' \
+    '.summarize_groups | index("_time") != null'
+
+# Test 12: Predicate extraction with == operator
+run_test "Predicate == extraction" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"status"},"op":"==","right":{"kind":"String","value":"error"}}}]}}' \
+    '.where_predicates | map(select(.field == "status" and .op == "==" and .value == "error")) | length > 0'
+
+# Test 13: Predicate extraction with contains operator
+run_test "Predicate contains extraction" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"message"},"op":"contains","right":{"kind":"String","value":"panic"}}}]}}' \
+    '.where_predicates | map(select(.field == "message" and .op == "contains")) | length > 0'
+
+# Test 14: Nested AND predicates
+run_test "Nested AND predicates" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"and","left":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"a"},"op":"==","right":{"kind":"String","value":"1"}},"right":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"b"},"op":"==","right":{"kind":"String","value":"2"}}}}]}}' \
+    '.where_predicates | length == 2'
+
+# Test 15: Comparison operators (> < >= <=)
+run_test "Comparison operator >" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"count"},"op":">","right":{"kind":"Long","value":100}}}]}}' \
+    '.where_predicates | map(select(.field == "count" and .op == ">")) | length > 0'
+
+# Test 16: Multiple columns from complex query
+run_test "Multiple columns extraction" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"and","left":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"field1"},"op":"==","right":{"kind":"String","value":"x"}},"right":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"field2"},"op":"contains","right":{"kind":"String","value":"y"}}}},{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"field3"}}],"aggs":[]}]}}' \
+    '(.all_columns | index("field1") != null) and (.all_columns | index("field2") != null) and (.all_columns | index("field3") != null)'
+
+# Test 17: !startswith operator
+run_test "!startswith operator" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"msg"},"op":"!startswith","right":{"kind":"String","value":"ignore"}}}]}}' \
+    '.where_predicates | map(select(.field == "msg" and .op == "!startswith")) | length > 0'
+
+# Test 18: contains_cs (case-sensitive contains)
+run_test "contains_cs operator" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"log"},"op":"contains_cs","right":{"kind":"String","value":"ERROR"}}}]}}' \
+    '.where_predicates | map(select(.field == "log" and .op == "contains_cs")) | length > 0'
+
+# Test 19: Alias in extend should not be treated as column usage
+run_test "Extend alias excluded from columns" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Extend","fields":[{"kind":"NamedExpression","aliases":[{"kind":"Entity","name":"new_col"}],"expr":{"kind":"Entity","name":"old_col"}}]}]}}' \
+    '(.all_columns | index("old_col") != null) and (.all_columns | index("new_col") | not)'
+
+# Test 20: Nested function calls extract inner column
+run_test "Nested function call column" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"CallExpr","func":{"kind":"Entity","name":"strlen"},"params":[{"kind":"CallParamScalar","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"tostring"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"deep_field"}}]}}]}}]}}' \
+    '.all_columns | index("deep_field") != null'
+
+# Test 21: Empty operations array
+run_test "Empty operations" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[]}}' \
+    '.has_wildcard == true and (.all_columns | length == 0)'
+
+# Test 22: IN expression predicate
+run_test "IN expression predicate" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"InExpr","left":{"kind":"Entity","name":"status"},"right":{"kind":"List","list":[{"kind":"String","value":"ok"},{"kind":"String","value":"pending"}]}}}]}}' \
+    '.where_predicates | map(select(.field == "status" and .op == "in" and (.values | index("ok") != null))) | length > 0'
+
+# Test 23: Multiple summarize groups
+run_test "Multiple summarize groups" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"region"}},{"kind":"NamedExpression","expr":{"kind":"Entity","name":"service"}}],"aggs":[]}]}}' \
+    '(.summarize_groups | index("region") != null) and (.summarize_groups | index("service") != null)'
+
+# Test 24: Project with specific fields = not wildcard
+run_test "Project specific fields = no wildcard" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Project","fields":[{"kind":"Entity","name":"a"},{"kind":"Entity","name":"b"}]}]}}' \
+    '.has_wildcard == false'
+
+# === Oracle-recommended additional tests ===
+
+# Test 25: Mixed AND/OR precedence (AND binds tighter)
+run_test "Mixed AND/OR precedence" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"or","left":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"a"},"op":"==","right":{"kind":"Long","value":1}},"right":{"kind":"BinaryExpr","op":"and","left":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"b"},"op":"==","right":{"kind":"Long","value":2}},"right":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"c"},"op":"==","right":{"kind":"Long","value":3}}}}}]}}' \
+    '(.all_columns | index("a") != null) and (.all_columns | index("b") != null) and (.all_columns | index("c") != null) and (.where_predicates | length == 3)'
+
+# Test 26: Unary NOT on predicate
+run_test "Unary NOT predicate" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"CallExpr","func":{"kind":"Entity","name":"not"},"params":[{"kind":"CallParamScalar","expr":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"field"},"op":"contains","right":{"kind":"String","value":"test"}}}]}}]}}' \
+    '.all_columns | index("field") != null'
+
+# Test 27: Nested IndexExpr (props["a"]["b"]) - extracts full path
+run_test "Nested IndexExpr extracts full path" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"IndexExpr","left":{"kind":"IndexExpr","left":{"kind":"Entity","name":"props"},"index":{"kind":"Literal","value":"a"}},"index":{"kind":"Literal","value":"b"}},"op":"==","right":{"kind":"String","value":"c"}}}]}}' \
+    '.all_columns | index("props.a.b") != null'
+
+# Test 28: Function with multiple column args (coalesce)
+run_test "Function with multiple column args" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"CallExpr","func":{"kind":"Entity","name":"coalesce"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"col_a"}},{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"col_b"}},{"kind":"CallParamScalar","expr":{"kind":"String","value":"default"}}]},"op":"==","right":{"kind":"String","value":"x"}}}]}}' \
+    '(.all_columns | index("col_a") != null) and (.all_columns | index("col_b") != null)'
+
+# Test 29: Multiple where clauses in pipeline
+run_test "Multiple where clauses" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"a"},"op":"==","right":{"kind":"Long","value":1}}},{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"b"},"op":"==","right":{"kind":"Long","value":2}}}]}}' \
+    '(.all_columns | index("a") != null) and (.all_columns | index("b") != null) and (.where_predicates | length == 2)'
+
+# Test 30: String literal should not be extracted as column
+run_test "String literal not extracted as column" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"message"},"op":"contains","right":{"kind":"String","value":"field == value"}}}]}}' \
+    '(.all_columns | index("message") != null) and (.all_columns | index("field") | not) and (.all_columns | index("value") | not)'
+
+# Test 31: Boolean literal in predicate
+run_test "Boolean literal predicate" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"is_active"},"op":"==","right":{"kind":"Bool","value":true}}}]}}' \
+    '.all_columns | index("is_active") != null'
+
+# Test 32: Summarize with function in group key (tostring)
+run_test "Summarize tostring in group" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"tostring"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"user_id"}}]}}],"aggs":[]}]}}' \
+    '.summarize_groups | index("user_id") != null'
+
+# Test 33: Project then where (no wildcard due to explicit project)
+run_test "Project then where = no wildcard" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Project","fields":[{"kind":"Entity","name":"a"},{"kind":"Entity","name":"b"}]},{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"a"},"op":"==","right":{"kind":"Long","value":1}}}]}}' \
+    '.has_wildcard == false'
+
+# Test 34: Where then summarize (wildcard due to no project)
+run_test "Where then summarize = wildcard" \
+    '{"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"a"},"op":"==","right":{"kind":"Long","value":1}}},{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"b"}}],"aggs":[]}]}}' \
+    '.has_wildcard == true'
+
+# Test 35: Query parameter declarations excluded
+run_test "Query parameter declarations excluded" \
+    '{"statements":[{"kind":"DeclareQueryParameters","parameters":[{"kind":"QueryParameter","name":{"kind":"Entity","name":"_param"},"type":{"kind":"DataType","type":"string"}}]}],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[]}}' \
+    '.all_columns | index("_param") | not'
+
+# Test 36: Query parameter USAGE in predicate should be excluded (symbol tracking)
+run_test "Query parameter usage in predicate excluded" \
+    '{"statements":[{"kind":"DeclareQueryParameters","parameters":[{"kind":"QueryParameter","name":{"kind":"Entity","name":"_cluster"},"type":{"kind":"DataType","type":"string"}}]}],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"cluster_name"},"op":"==","right":{"kind":"Entity","name":"_cluster"}}}]}}' \
+    '(.all_columns | index("cluster_name") != null) and (.all_columns | index("_cluster") | not)'
+
+# Test 37: Multiple query parameters all filtered from usage
+run_test "Multiple query parameters filtered" \
+    '{"statements":[{"kind":"DeclareQueryParameters","parameters":[{"kind":"QueryParameter","name":{"kind":"Entity","name":"_cluster"},"type":{"kind":"DataType","type":"string"}},{"kind":"QueryParameter","name":{"kind":"Entity","name":"_deployment"},"type":{"kind":"DataType","type":"string"}}]}],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"and","left":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"cluster"},"op":"==","right":{"kind":"Entity","name":"_cluster"}},"right":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"deployment"},"op":"==","right":{"kind":"Entity","name":"_deployment"}}}}]}}' \
+    '(.all_columns | index("cluster") != null) and (.all_columns | index("deployment") != null) and (.all_columns | index("_cluster") | not) and (.all_columns | index("_deployment") | not)'
+
+# Test 38: Project alias used later in pipeline should be excluded
+run_test "Project alias used in subsequent summarize excluded" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Project","fields":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"attributes.msg"},"aliases":[{"kind":"Entity","name":"msg"}]}]},{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"msg"},"aliases":[]}],"aggs":[{"kind":"NamedExpression","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"count"},"params":[]},"aliases":[{"kind":"Entity","name":"cnt"}]}]}]}}' \
+    '(.all_columns | index("attributes.msg") != null) and (.all_columns | index("msg") | not) and (.all_columns | index("cnt") | not)'
+
+# Test 39: Summarize agg alias used in final project should be excluded
+run_test "Summarize alias used in final project excluded" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"app"},"aliases":[]}],"aggs":[{"kind":"NamedExpression","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"count"},"params":[]},"aliases":[{"kind":"Entity","name":"total"}]}]},{"kind":"Project","fields":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"app"},"aliases":[]},{"kind":"NamedExpression","expr":{"kind":"Entity","name":"total"},"aliases":[]}]}]}}' \
+    '(.all_columns | index("app") != null) and (.all_columns | index("total") | not)'
+
+# Test 40: Multiple chained aliases all excluded
+run_test "Multiple chained aliases all excluded" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Extend","fields":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"status"},"aliases":[{"kind":"Entity","name":"s"}]}]},{"kind":"Extend","fields":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"error"},"aliases":[{"kind":"Entity","name":"e"}]}]},{"kind":"Project","fields":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"s"},"aliases":[]},{"kind":"NamedExpression","expr":{"kind":"Entity","name":"e"},"aliases":[]}]}]}}' \
+    '(.all_columns | index("status") != null) and (.all_columns | index("error") != null) and (.all_columns | index("s") | not) and (.all_columns | index("e") | not)'
+
+# Test 41: SelectorExpr (data.field) extracts full path
+run_test "SelectorExpr extracts full path" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"CallExpr","func":{"kind":"Entity","name":"isnotnull"},"params":[{"kind":"CallParamScalar","expr":{"kind":"SelectorExpr","left":{"kind":"Entity","name":"attributes"},"selector":{"name":"conversation_id"}}}]}}]}}' \
+    '.all_columns | index("attributes.conversation_id") != null'
+
+# Test 42: Implicit summarize alias (count_ from count()) excluded
+run_test "Implicit summarize alias count_ excluded" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Summarize","groups":[{"kind":"NamedExpression","expr":{"kind":"Entity","name":"app"},"aliases":[]}],"aggs":[{"kind":"NamedExpression","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"count"},"params":[]},"aliases":[]}]},{"kind":"SortBy","clauses":[{"kind":"FieldSort","field":{"kind":"Entity","name":"count_"},"direction":"desc"}]}]}}' \
+    '(.all_columns | index("app") != null) and (.all_columns | index("count_") | not)'
+
+# Test 43: IndexExpr on derived column - derived alias excluded, but full path for non-derived
+run_test "IndexExpr on derived column excludes derived alias" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Extend","fields":[{"kind":"NamedExpression","expr":{"kind":"CallExpr","func":{"kind":"Entity","name":"parse_json"},"params":[{"kind":"CallParamScalar","expr":{"kind":"Entity","name":"body"}}]},"aliases":[{"kind":"Entity","name":"parsed"}]}]},{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"IndexExpr","left":{"kind":"Entity","name":"parsed"},"index":{"kind":"Literal","value":"field"}},"op":"==","right":{"kind":"String","value":"x"}}}]}}' \
+    '(.all_columns | index("body") != null) and (.all_columns | index("parsed") | not)'
+
+# Test 44: IndexExpr on any column extracts full path
+run_test "IndexExpr on any column extracts full path" \
+    '{"statements":[],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"IndexExpr","left":{"kind":"Entity","name":"attributes"},"index":{"kind":"Literal","value":"status"}},"op":"==","right":{"kind":"String","value":"ok"}}}]}}' \
+    '.all_columns | index("attributes.status") != null'
+
+# Test 45: Let scalar variables are excluded when used in predicates
+run_test "Let scalar variable excluded" \
+    '{"statements":[{"kind":"LetScalar","name":{"kind":"Entity","name":"threshold"},"value":{"kind":"Long","value":100}}],"body":{"source":{"kind":"Dataset","name":{"kind":"Entity","name":"ds"}},"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","left":{"kind":"Entity","name":"count"},"op":">","right":{"kind":"Entity","name":"threshold"}}}]}}' \
+    '(.all_columns | index("count") != null) and (.all_columns | index("threshold") | not)'
+
+# === Oracle-identified critical bug fixes (field path extraction) ===
+
+# Test 46: Full path extraction in predicate - resource['k8s.namespace.name']
+run_test "Predicate with IndexExpr full path" \
+    '{"body":{"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"==","left":{"kind":"IndexExpr","left":{"kind":"Entity","name":"resource"},"index":{"kind":"Literal","value":"k8s.namespace.name"}},"right":{"kind":"Literal","value":"prod"}}}]}}' \
+    '.where_predicates[0].field == "resource.k8s.namespace.name"'
+
+# Test 47: Full path extraction in predicate - SelectorExpr a.b.c
+run_test "Predicate with SelectorExpr full path" \
+    '{"body":{"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"==","left":{"kind":"SelectorExpr","left":{"kind":"SelectorExpr","left":{"kind":"Entity","name":"resource"},"selector":{"name":"k8s"}},"selector":{"name":"namespace"}},"right":{"kind":"Literal","value":"prod"}}}]}}' \
+    '.where_predicates[0].field == "resource.k8s.namespace"'
+
+# Test 48: Summarize group by with full path
+run_test "Summarize group by full path" \
+    '{"body":{"operations":[{"kind":"Summarize","aggs":[],"groups":[{"expr":{"kind":"IndexExpr","left":{"kind":"Entity","name":"resource"},"index":{"kind":"Literal","value":"k8s.pod.labels.app"}}}]}]}}' \
+    '.summarize_groups | index("resource.k8s.pod.labels.app") != null'
+
+# Test 49: InExpr with full path
+run_test "InExpr with full path field" \
+    '{"body":{"operations":[{"kind":"Where","predicate":{"kind":"InExpr","left":{"kind":"SelectorExpr","left":{"kind":"Entity","name":"app"},"selector":{"name":"name"}},"right":{"list":[{"value":"a"},{"value":"b"}]}}}]}}' \
+    '.where_predicates[0].field == "app.name"'
+
+# Test 50: CallExpr wrapper with nested path - tolower(resource.k8s.name)
+run_test "CallExpr with nested SelectorExpr" \
+    '{"body":{"operations":[{"kind":"Where","predicate":{"kind":"BinaryExpr","op":"==","left":{"kind":"CallExpr","func":{"name":"tolower"},"params":[{"expr":{"kind":"SelectorExpr","left":{"kind":"Entity","name":"resource"},"selector":{"name":"name"}}}]},"right":{"kind":"Literal","value":"prod"}}}]}}' \
+    '.where_predicates[0].field == "resource.name"'
+
+echo ""
+echo "=== Results ==="
+echo "Passed: $PASS"
+echo "Failed: $FAIL"
+
+if [[ $FAIL -gt 0 ]]; then
+    exit 1
+fi
