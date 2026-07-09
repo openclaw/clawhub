@@ -71,6 +71,8 @@ async function fillPublishSkillForm(
   },
   skillDir: string,
 ) {
+  await page.getByTestId("upload-input").setInputFiles(skillDir, { timeout: 15_000 });
+  await waitForPublishSkillMetadataForm(page);
   await selectOwnerHandle(page, "#ownerHandle", args.ownerHandle);
   await page.locator("#slug").fill(args.slug, { timeout: 15_000 });
   await page.locator("#displayName").fill(args.displayName, { timeout: 15_000 });
@@ -81,7 +83,6 @@ async function fillPublishSkillForm(
     await changelog.fill(args.changelog, { timeout: 15_000 });
   }
   await page.getByLabel(/i have the rights to publish this skill/i).check({ timeout: 15_000 });
-  await page.getByTestId("upload-input").setInputFiles(skillDir, { timeout: 15_000 });
 }
 
 async function hasDuplicateVersionAlert(page: Page, version: string) {
@@ -374,20 +375,14 @@ export async function selectOwnerHandle(page: Page, selector: string, ownerHandl
 }
 
 async function waitForPublishSkillForm(page: Page) {
-  const heading = page.getByRole("heading", { name: "Publish a skill" });
+  const heading = page.getByRole("heading", { name: /Publish(?: a skill| Skill)/ });
   const retryButton = page.getByRole("button", { name: "Try again" });
-  const rightsCheckbox = page.getByLabel(/i have the rights to publish this skill/i);
-  const requiredControls = ["#ownerHandle", "#slug", "#displayName", "#version", "#tags"] as const;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await waitForHydration(page).catch(() => {});
     if (await heading.isVisible({ timeout: 5_000 }).catch(() => false)) {
       try {
-        for (const selector of requiredControls) {
-          await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
-        }
-        await expect(rightsCheckbox).toBeVisible({ timeout: 15_000 });
         await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
         return;
       } catch (error) {
@@ -402,6 +397,17 @@ async function waitForPublishSkillForm(page: Page) {
   }
 
   await expect(heading).toBeVisible({ timeout: 15_000 });
+  await page
+    .getByTestId("upload-input")
+    .waitFor({ state: "attached", timeout: 15_000 })
+    .catch((error) => {
+      throw lastError ?? error;
+    });
+}
+
+async function waitForPublishSkillMetadataForm(page: Page) {
+  const requiredControls = ["#ownerHandle", "#slug", "#displayName", "#version", "#tags"] as const;
+  const rightsCheckbox = page.getByLabel(/i have the rights to publish this skill/i);
   for (const selector of requiredControls) {
     await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
   }
