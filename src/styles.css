@@ -21482,7 +21482,7 @@ a.search-empty-action {
   min-height: 40px;
   padding: 4px 6px 4px 14px;
   border: 1px solid var(--hv2-border-strong);
-  border-radius: 10px;
+  border-radius: var(--oc-radius-control);
   background: color-mix(in srgb, var(--hv2-surface) 95%, var(--hv2-bg));
   transition:
     border-color 0.15s ease,
@@ -21528,7 +21528,7 @@ a.search-empty-action {
   width: 30px;
   height: 30px;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--oc-radius-control);
   background: transparent;
   color: color-mix(in srgb, var(--hv2-accent) 70%, var(--hv2-text-tertiary));
   cursor: pointer;
@@ -21810,7 +21810,7 @@ a.search-empty-action {
   min-height: 36px;
   padding: 7px 4px 7px 2px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--oc-radius-control);
   background: transparent;
   color: var(--hv2-text-secondary);
   font-size: 14px;
@@ -24404,7 +24404,7 @@ a.search-empty-action {
   all: unset;
   display: flex;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--oc-radius-control);
 }
 .home-v2-headline-trigger:focus-visible {
   outline: 2px solid var(--hv2-accent);
@@ -25607,7 +25607,7 @@ a.search-empty-action {
 .home-v2-promotion-title-icon {
   width: 20px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: var(--oc-radius-inset);
   flex: 0 0 auto;
 }
 
@@ -26112,7 +26112,7 @@ a.search-empty-action {
   min-height: 132px;
   padding: 22px 28px;
   border: 1px solid color-mix(in srgb, var(--hv2-border-strong) 54%, transparent);
-  border-radius: 12px;
+  border-radius: var(--oc-radius-surface);
   background: linear-gradient(135deg, rgb(31 42 66) 0%, rgb(35 35 51) 48%, rgb(28 27 31) 100%);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
@@ -26207,7 +26207,7 @@ a.search-empty-action {
   justify-content: center;
   width: 96px;
   height: 96px;
-  border-radius: 22px;
+  border-radius: var(--oc-radius-surface);
   background: rgb(247 247 246);
   box-shadow:
     0 18px 38px rgba(0, 0, 0, 0.26),
@@ -26648,7 +26648,7 @@ a.home-v2-apps-see-all:focus-visible svg {
   width: 36px;
   height: 36px;
   border: 1px solid var(--hv2-border);
-  border-radius: 10px;
+  border-radius: var(--oc-radius-inset);
   background: color-mix(in srgb, var(--hv2-bg) 55%, transparent);
 }
 
@@ -27205,7 +27205,7 @@ a.home-v2-apps-see-all:focus-visible svg {
   .home-v2-apps-workflow-tile {
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border-radius: var(--oc-radius-surface);
   }
 
   .home-v2-apps-workflow-tile img {
@@ -27733,7 +27733,7 @@ a.home-v2-apps-see-all:focus-visible svg {
 .home-v2-byos-term {
   width: 100%;
   border: 1px solid var(--hv2-border);
-  border-radius: 10px;
+  border-radius: var(--oc-radius-surface);
   background: color-mix(in srgb, var(--hv2-text) 4%, var(--hv2-surface));
   overflow: hidden;
 }
@@ -28030,7 +28030,7 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     min-height: 48px;
     padding: 0 14px;
     border: 1px solid var(--hv2-border);
-    border-radius: 14px;
+    border-radius: var(--oc-radius-control);
     background: color-mix(in srgb, var(--hv2-surface) 76%, transparent);
   }
   .home-v2-listing-category-panel {

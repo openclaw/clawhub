@@ -337,12 +337,12 @@ function SkillsHome() {
   };
 
   return (
-    <main className="home-v2-main">
+    <main className="home-v2-main oc-app-surface">
       <HomeV2FoldBottomFade />
       <canvas ref={confettiRef} className="home-v2-confetti" style={{ display: "none" }} />
 
       {/* ═══ HERO ═══ */}
-      <section className="home-v2-hero">
+      <section className="home-v2-hero oc-hero">
         <div className="home-v2-hero-bg">
           <div className="home-v2-glow" />
           <div className="home-v2-dots" />
@@ -353,7 +353,7 @@ function SkillsHome() {
 
         {slotState ? (
           <h1
-            className={`home-v2-headline home-v2-headline-slots${
+            className={`home-v2-headline home-v2-headline-slots oc-hero-title${
               slotState.phase === "stopped" && slotState.won
                 ? slotState.isHackJackpot
                   ? " home-v2-headline-jackpot home-v2-headline-hack"
@@ -385,7 +385,7 @@ function SkillsHome() {
             </button>
           </h1>
         ) : (
-          <h1 className="home-v2-headline">
+          <h1 className="home-v2-headline oc-hero-title">
             <button
               type="button"
               className="home-v2-headline-trigger"
@@ -411,7 +411,7 @@ function SkillsHome() {
           </h1>
         )}
 
-        <p className="home-v2-sub">Discover skills and plugins from top creators</p>
+        <p className="home-v2-sub oc-hero-lede">Discover skills and plugins from top creators</p>
       </section>
 
       <HomePromotionsSection />

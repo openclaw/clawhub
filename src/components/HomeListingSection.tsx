@@ -258,7 +258,9 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
   return (
     <Link
       to={skillLink(entry)}
-      className={`home-v2-listing-card${showStats ? "" : " has-no-stats"}`}
+      className={`home-v2-listing-card oc-card oc-card-interactive${
+        showStats ? "" : " has-no-stats"
+      }`}
     >
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
@@ -293,7 +295,7 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to={pluginHref} className="home-v2-listing-card">
+    <Link to={pluginHref} className="home-v2-listing-card oc-card oc-card-interactive">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           <MarketplaceIcon kind="plugin" label={name} size="sm" />
@@ -660,13 +662,19 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   };
 
   return (
-    <section id="home-v2-listing" className="home-v2-listing" aria-label="Browse catalog">
+    <section
+      id="home-v2-listing"
+      className="home-v2-listing oc-section"
+      aria-label="Browse catalog"
+    >
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
-          <div className="home-v2-listing-kind" role="group" aria-label="Content type">
+          <div className="home-v2-listing-kind oc-segmented" role="group" aria-label="Content type">
             <button
               type="button"
-              className={`home-v2-listing-kind-btn${kind === "skills" ? " is-active" : ""}`}
+              className={`home-v2-listing-kind-btn oc-segmented-item${
+                kind === "skills" ? " is-active" : ""
+              }`}
               aria-pressed={kind === "skills"}
               onClick={() => handleKindChange("skills")}
             >
@@ -674,7 +682,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             </button>
             <button
               type="button"
-              className={`home-v2-listing-kind-btn${kind === "plugins" ? " is-active" : ""}`}
+              className={`home-v2-listing-kind-btn oc-segmented-item${
+                kind === "plugins" ? " is-active" : ""
+              }`}
               aria-pressed={kind === "plugins"}
               onClick={() => handleKindChange("plugins")}
             >
@@ -713,7 +723,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             <div className="home-v2-listing-actions-rail has-category">
               <button
                 type="button"
-                className={`home-v2-listing-search-trigger${searchOpen ? " is-active" : ""}`}
+                className={`home-v2-listing-search-trigger oc-action oc-action-ghost oc-action-icon${
+                  searchOpen ? " is-active" : ""
+                }`}
                 aria-label="Search catalog"
                 aria-expanded={searchOpen}
                 aria-controls="home-v2-listing-search-panel"
@@ -729,10 +741,12 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 onChange={setCategorySlugs}
               />
 
-              <div className="home-v2-listing-view" role="group" aria-label="Layout">
+              <div className="home-v2-listing-view oc-segmented" role="group" aria-label="Layout">
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn${view === "list" ? " is-active" : ""}`}
+                  className={`home-v2-listing-view-btn oc-segmented-item${
+                    view === "list" ? " is-active" : ""
+                  }`}
                   aria-pressed={view === "list"}
                   aria-label="List view"
                   onClick={() => setView("list")}
@@ -741,7 +755,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 </button>
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn${view === "grid" ? " is-active" : ""}`}
+                  className={`home-v2-listing-view-btn oc-segmented-item${
+                    view === "grid" ? " is-active" : ""
+                  }`}
                   aria-pressed={view === "grid"}
                   aria-label="Grid view"
                   onClick={() => setView("grid")}
@@ -790,7 +806,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 <button
                   key={category.slug}
                   type="button"
-                  className="home-v2-listing-filter-chip"
+                  className="home-v2-listing-filter-chip oc-pill"
                   onClick={() => removeCategory(category.slug)}
                   aria-label={`Remove ${category.label} category filter`}
                 >
@@ -800,7 +816,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               ))
             ) : (
               <>
-                <span className="home-v2-listing-filter-chip is-summary">
+                <span className="home-v2-listing-filter-chip oc-pill is-summary">
                   {selectedCategories.length} categories
                 </span>
                 <button

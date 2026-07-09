@@ -1,7 +1,104 @@
 @import "@openclaw/design-system/tokens.css";
 @import "@openclaw/design-system/themes.css";
+@import "@openclaw/design-system/typography.css";
 @import "@openclaw/design-system/themes/product.css";
+@import "@openclaw/design-system/components.css";
 @import "@openclaw/design-system/compat/clawhub.css";
+
+/*
+ * The landing page predates the shared package and still references --hv2-*
+ * variables throughout its layout CSS. Keep those aliases during migration,
+ * but make the canonical design system their only source of visual values.
+ */
+.home-v2-main.oc-app-surface {
+  --hv2-bg: var(--oc-bg-page);
+  --hv2-surface: var(--oc-surface-card);
+  --hv2-surface-hover: var(--oc-surface-interactive);
+  --hv2-border: var(--oc-border-subtle);
+  --hv2-border-hover: color-mix(in srgb, var(--oc-text-primary) 28%, var(--oc-border-subtle));
+  --hv2-border-strong: color-mix(in srgb, var(--oc-text-primary) 20%, var(--oc-border-subtle));
+  --hv2-text: var(--oc-text-primary);
+  --hv2-text-secondary: var(--oc-text-secondary);
+  --hv2-text-tertiary: var(--oc-text-muted);
+  --hv2-accent: var(--oc-accent-primary);
+  --hv2-accent-fill: var(--oc-surface-accent-soft);
+  --hv2-accent-fill-hover: color-mix(
+    in srgb,
+    var(--oc-surface-accent-soft) 78%,
+    var(--oc-accent-primary)
+  );
+  --hv2-accent-glow: color-mix(in srgb, var(--oc-accent-primary) 12%, transparent);
+  --hv2-accent-border: var(--oc-border-accent);
+  --hv2-accent-border-hover: color-mix(in srgb, var(--oc-accent-primary) 68%, transparent);
+  --hv2-green: var(--oc-accent-secondary);
+  --hv2-green-fill: var(--oc-surface-secondary-soft);
+  --hv2-green-border: color-mix(in srgb, var(--oc-accent-secondary) 38%, transparent);
+  --hv2-green-border-hover: color-mix(in srgb, var(--oc-accent-secondary) 62%, transparent);
+  --hv2-green-fill-hover: color-mix(
+    in srgb,
+    var(--oc-surface-secondary-soft) 72%,
+    var(--oc-accent-secondary)
+  );
+  --hv2-radius-sm: var(--oc-radius-control);
+  --hv2-radius-md: var(--oc-radius-surface);
+  --hv2-radius-lg: var(--oc-radius-surface);
+  --hv2-ease-out: var(--oc-ease-out);
+  --hv2-duration-fast: var(--oc-duration-fast);
+  --hv2-duration-ui: var(--oc-duration-ui);
+}
+
+.home-v2-main .oc-card {
+  border-color: var(--oc-component-border);
+  border-radius: var(--oc-radius-surface);
+  background: var(--oc-component-surface);
+  color: var(--oc-text-primary);
+  box-shadow: var(--oc-component-shadow);
+}
+
+.home-v2-main .oc-card-interactive:hover,
+.home-v2-main .oc-card-interactive:focus-visible {
+  border-color: var(--oc-component-border-hover);
+  background: var(--oc-component-surface-hover);
+  box-shadow: var(--oc-component-shadow-hover);
+}
+
+.home-v2-main .oc-action-primary {
+  border-color: var(--oc-accent-primary);
+  background: var(--oc-accent-primary);
+  color: var(--oc-text-on-accent);
+}
+
+.home-v2-main .oc-action-primary:hover,
+.home-v2-main .oc-action-primary:focus-visible {
+  border-color: var(--oc-accent-primary-hover);
+  background: var(--oc-accent-primary-hover);
+  color: var(--oc-text-on-accent);
+}
+
+.home-v2-main .oc-segmented {
+  border-color: var(--oc-border-subtle);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface-card);
+}
+
+.home-v2-main .oc-segmented-item {
+  border-radius: var(--oc-radius-inset);
+}
+
+.home-v2-main .oc-segmented-item[aria-selected="true"],
+.home-v2-main .oc-segmented-item[aria-pressed="true"],
+.home-v2-main .oc-segmented-item.is-active {
+  background: var(--oc-surface-interactive-hover);
+  color: var(--oc-text-primary);
+}
+
+@media (max-width: 760px) {
+  .home-v2-main .home-v2-popular-publishers-header.oc-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--oc-space-3);
+  }
+}
 
 /*
  * The legacy light selectors in styles.css are more specific than the

@@ -75,7 +75,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
   const isTencentPromotion = isTencentHyPromotion(promotion.title);
 
   return (
-    <article className="home-v2-promotion-card">
+    <article className="home-v2-promotion-card oc-card">
       <div className="home-v2-promotion-content">
         <div className="home-v2-promotion-stack">
           <h3 className="home-v2-promotion-title">
@@ -109,7 +109,7 @@ function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
         </span>
         {ctaUrl ? (
           <a
-            className="home-v2-promotion-link"
+            className="home-v2-promotion-link oc-action oc-action-primary"
             href={ctaUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -167,7 +167,7 @@ export function HomePromotionsSection() {
   if (promotions.length === 0) return null;
 
   return (
-    <section className="home-v2-promotions" aria-labelledby="home-promotions-title">
+    <section className="home-v2-promotions oc-section" aria-labelledby="home-promotions-title">
       <h2 id="home-promotions-title" className="sr-only">
         Active promotions
       </h2>

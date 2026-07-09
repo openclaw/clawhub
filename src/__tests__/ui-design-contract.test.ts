@@ -76,13 +76,49 @@ describe("restored UI design contract", () => {
     const sharedCss = designSystemStyles();
 
     expect(sharedCss).toContain('@import "@openclaw/design-system/tokens.css";');
+    expect(sharedCss).toContain('@import "@openclaw/design-system/typography.css";');
     expect(sharedCss).toContain('@import "@openclaw/design-system/themes/product.css";');
+    expect(sharedCss).toContain('@import "@openclaw/design-system/components.css";');
     expect(sharedCss).toContain('@import "@openclaw/design-system/compat/clawhub.css";');
+    expect(sharedCss).toContain(".home-v2-main.oc-app-surface");
+    expect(sharedCss).toContain("--hv2-bg: var(--oc-bg-page)");
+    expect(sharedCss).toContain("--hv2-text: var(--oc-text-primary)");
+    expect(sharedCss).toContain("--hv2-accent: var(--oc-accent-primary)");
+    expect(sharedCss).toContain("--hv2-radius-md: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-control)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-inset)");
+    expect(sharedCss).toContain("@media (max-width: 760px)");
+    expect(sharedCss).toContain(
+      ".home-v2-main .home-v2-popular-publishers-header.oc-section-header",
+    );
     expect(sharedCss).toContain('[data-theme-family="claw"][data-theme-resolved="light"]');
     expect(sharedCss).toContain("--accent: var(--oc-accent-primary)");
     expect(sharedCss).toContain('[data-theme-family="claw"][data-theme-mode="system"]');
     expect(rootSource.indexOf("href: designSystemCss")).toBeGreaterThan(
       rootSource.indexOf("href: appCss"),
+    );
+  });
+
+  it("uses semantic design-system geometry across landing controls and surfaces", () => {
+    const css = styles();
+
+    for (const selector of [
+      ".home-v2-headline-trigger",
+      ".home-v2-listing-search-bar",
+      ".home-v2-listing-search-close",
+      ".home-v2-listing-category-trigger",
+    ]) {
+      expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-control)");
+    }
+    expect(cssRule(css, ".home-v2-promotion-title-icon")).toContain(
+      "border-radius: var(--oc-radius-inset)",
+    );
+    expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
+      "border-radius: var(--oc-radius-surface)",
+    );
+    expect(cssRule(css, ".home-v2-apps-tile-icon")).toContain(
+      "border-radius: var(--oc-radius-inset)",
     );
   });
 
@@ -197,8 +233,20 @@ describe("restored UI design contract", () => {
   it("requires the experiment hero and canonical home catalog without later sections", () => {
     const homeSource = home();
     const listingSource = read("src/components/HomeListingSection.tsx");
+    const appsSource = read("src/components/HomeAppsSection.tsx");
+    const publishersSource = read("src/components/HomePopularPublishersSection.tsx");
     const css = styles();
 
+    expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
+    expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
+    expect(listingSource).toContain("home-v2-listing-kind oc-segmented");
+    expect(appsSource).toContain("home-v2-apps-tile oc-card oc-card-interactive");
+    expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
+    expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
+    expect(publishersSource).toContain(
+      "home-v2-popular-publisher-card oc-card oc-card-interactive",
+    );
     expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
     expect(homeSource).not.toContain("Unleash.");
     expect(homeSource).not.toContain("Ship.");
