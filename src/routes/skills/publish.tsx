@@ -824,7 +824,7 @@ export function Upload() {
             <p className="text-sm text-[color:var(--ink-soft)]">
               {isNewSkillPublishEmpty
                 ? "Publish your skill to ClawHub so others can discover and install it."
-                : "Drop or select a skill folder"}
+                : "Review the detected skill details before publishing."}
             </p>
           </div>
           <div
@@ -1065,8 +1065,7 @@ export function Upload() {
                       <strong className="text-[color:var(--ink)]">Upload skill first</strong>
                     </div>
                     <span className="max-w-[520px] text-sm text-[color:var(--ink-soft)]">
-                      Drop your skill folder here. We'll inspect the contents and fill in any
-                      details we can.
+                      Drop a skill folder here.
                     </span>
                     <Button
                       className="mt-2"

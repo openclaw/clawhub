@@ -140,14 +140,10 @@ export function PackageSourceChooser(props: {
   const hasPackagePanelFooter = props.ignoredPaths.length > 0 || Boolean(props.validationError);
   const selectedPackagePanelToneClass = isDragging
     ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
-    : isMetadataLocked
-      ? "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
-      : "border-emerald-300/45 bg-emerald-50/80 dark:border-emerald-500/30 dark:bg-emerald-950/25";
+    : "border-[color:var(--line)] bg-[color:var(--surface-muted)]";
   const selectedPackagePanelBgClass = isDragging
     ? "bg-[rgba(255,107,74,0.06)]"
-    : isMetadataLocked
-      ? "bg-[color:var(--surface-muted)]"
-      : "bg-emerald-50/80 dark:bg-emerald-950/25";
+    : "bg-[color:var(--surface-muted)]";
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
     directoryInputRef.current = node;

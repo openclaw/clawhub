@@ -2545,7 +2545,7 @@ code {
 
 .publish-empty-main {
   min-height: clamp(660px, 62vh, 1090px);
-  padding-top: 42px;
+  padding-top: 34px;
   padding-bottom: 0;
 }
 
@@ -2555,14 +2555,14 @@ code {
   max-width: 100%;
   flex-direction: column;
   align-items: flex-start;
-  gap: 36px;
+  gap: 24px;
 }
 
 .publish-empty-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
-  align-items: flex-start;
+  align-items: center;
   column-gap: 0;
 }
 
@@ -2571,7 +2571,7 @@ code {
   min-width: 0;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
+  gap: 6px;
 }
 
 .publish-empty-heading h1,
@@ -2581,13 +2581,13 @@ code {
 
 .publish-empty-upload-card {
   display: flex;
-  height: 288px;
+  height: 260px;
   width: 100%;
   flex-direction: column;
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 0;
-  padding: 24px;
+  padding: 20px;
   border-color: color-mix(in srgb, var(--ink) 10%, transparent);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
@@ -2598,7 +2598,7 @@ code {
   align-self: stretch;
   justify-content: center;
   gap: 12px;
-  padding: 48px 32px;
+  padding: 36px 28px;
   border-color: color-mix(in srgb, var(--ink) 12%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
 }
@@ -2608,6 +2608,7 @@ code {
 }
 
 .publish-empty-actions {
+  align-self: center;
   justify-self: end;
 }
 
@@ -2630,29 +2631,31 @@ code {
 @media (max-width: 640px) {
   .publish-empty-main {
     min-height: 560px;
-    padding-top: 28px;
+    padding-top: 24px;
   }
 
   .publish-empty-container {
     width: 100%;
-    gap: 28px;
+    gap: 20px;
   }
 
   .publish-empty-header {
     grid-template-columns: 1fr;
+    align-items: flex-start;
     row-gap: 16px;
   }
 
   .publish-empty-upload-card {
-    height: 288px;
+    height: 248px;
     padding: 16px;
   }
 
   .publish-empty-dropzone {
-    padding: 36px 20px;
+    padding: 28px 20px;
   }
 
   .publish-empty-actions {
+    align-self: flex-start;
     justify-self: start;
   }
 }

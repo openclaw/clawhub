@@ -455,7 +455,7 @@ export function PublishPluginRoute() {
             <p className="text-sm text-[color:var(--ink-soft)]">
               {isNewPluginPublishEmpty
                 ? "Publish your plugin to ClawHub so others can discover and install it."
-                : "Drop or select a plugin folder, .zip, or .tgz"}
+                : "Review the detected plugin details before publishing."}
             </p>
             {search.name ? (
               <p className="text-sm text-[color:var(--ink-soft)]">
@@ -466,12 +466,20 @@ export function PublishPluginRoute() {
               </p>
             ) : null}
           </div>
-          <Button asChild variant="outline" size="sm" className="w-fit">
-            <a href={PLUGIN_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-              Plugin docs
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            </a>
-          </Button>
+          <div
+            className={
+              isNewPluginPublishEmpty
+                ? "publish-empty-actions flex flex-wrap items-center gap-2"
+                : "flex flex-wrap items-center gap-2"
+            }
+          >
+            <Button asChild variant="outline" size="sm" className="w-fit">
+              <a href={PLUGIN_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
+                Plugin docs
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+            </Button>
+          </div>
         </header>
 
         {SHOW_CLAWPACK_ONBOARDING_BANNER ? (
