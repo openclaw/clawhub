@@ -138,6 +138,7 @@ const jobSourceValidator = v.union(
 );
 
 type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+const codexScanWorkerLaneValidator = v.union(v.literal("priority"), v.literal("shared"));
 
 type CodexScanQueueHealth = {
   snapshotAt: number;
@@ -150,16 +151,16 @@ type CodexScanQueueHealth = {
 };
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
-  "backfill",
   "publish",
+  "backfill",
   "vt-update",
   "bulk-rescan",
 ];
 
 const SOURCE_PRIORITY: Record<SecurityScanJobSource, number> = {
   manual: 5,
-  backfill: 4,
-  publish: 3,
+  publish: 4,
+  backfill: 3,
   "vt-update": 2,
   "bulk-rescan": 1,
 };
@@ -327,6 +328,7 @@ const internalRefs = internal as unknown as {
     recordGitHubSkillScanResultInternal: unknown;
     recordSkillScanRequestFailedInternal: unknown;
     recordSkillScanRequestSucceededInternal: unknown;
+    requeueJobLeaseInternal: unknown;
     succeedJobInternal: unknown;
   };
   securityScanDispatch: {
@@ -2337,6 +2339,7 @@ export const clearQueuedBackfillJobsForLocalDev = internalMutation({
 export const claimQueuedJobsInternal = internalMutation({
   args: {
     workerId: v.string(),
+    lane: v.optional(codexScanWorkerLaneValidator),
     limit: v.number(),
     leaseMs: v.optional(v.number()),
   },
@@ -2344,23 +2347,6 @@ export const claimQueuedJobsInternal = internalMutation({
     const now = Date.now();
     const limit = normalizeLimit(args.limit);
     const leaseMs = Math.max(60_000, Math.min(args.leaseMs ?? DEFAULT_LEASE_MS, 60 * 60 * 1000));
-
-    const expiredRunning = await ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_and_lease_expires_at", (q) =>
-        q.eq("status", "running").lte("leaseExpiresAt", now),
-      )
-      .take(MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES);
-    for (const job of expiredRunning) {
-      await ctx.db.patch(job._id, {
-        status: "queued",
-        leaseToken: undefined,
-        leaseExpiresAt: undefined,
-        workerId: undefined,
-        nextRunAt: now,
-        updatedAt: now,
-      });
-    }
     const capacity = limit;
 
     const ready: Doc<"securityScanJobs">[] = [];
@@ -2399,9 +2385,12 @@ export const claimQueuedJobsInternal = internalMutation({
       );
     }
 
+    // Shared workers remain work-conserving and may help priority work. The dedicated
+    // priority lane never claims bulk sources, which guarantees reserved fast-path capacity.
     for (const source of CLAIM_SOURCE_ORDER) {
       addReadyJobs(await takeReadySourceJobs(source));
       if (remainingCapacity() === 0) break;
+      if (args.lane === "priority" && source === "publish") break;
     }
 
     const claimed = [];
@@ -2433,6 +2422,38 @@ export const claimQueuedJobsInternal = internalMutation({
       });
     }
     return claimed;
+  },
+});
+
+export const requeueExpiredCodexScanJobsInternal = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_and_lease_expires_at", (q) =>
+        q.eq("status", "running").lte("leaseExpiresAt", now),
+      )
+      .take(
+        Math.max(
+          1,
+          Math.min(args.limit ?? MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES, MAX_CODEX_SCAN_CLAIM_LIMIT),
+        ),
+      );
+    for (const job of jobs) {
+      await ctx.db.patch(job._id, {
+        status: "queued",
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        workerId: undefined,
+        nextRunAt: now,
+        updatedAt: now,
+      });
+    }
+    if (jobs.length > 0) await requestSecurityScanDispatch(ctx);
+    return { requeued: jobs.length };
   },
 });
 
@@ -2563,6 +2584,134 @@ export const failJobInternal = internalMutation({
   },
 });
 
+export const requeueJobLeaseInternal = internalMutation({
+  args: {
+    jobId: v.id("securityScanJobs"),
+    leaseToken: v.string(),
+    workerId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const job = await ctx.db.get(args.jobId);
+    if (
+      !job ||
+      job.status !== "running" ||
+      job.leaseToken !== args.leaseToken ||
+      job.workerId !== args.workerId
+    ) {
+      throw new ConvexError("Lease mismatch");
+    }
+    const now = Date.now();
+    await ctx.db.patch(job._id, {
+      status: "queued",
+      attempts: Math.max(0, job.attempts - 1),
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      workerId: undefined,
+      nextRunAt: now + 60_000,
+      updatedAt: now,
+    });
+    if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+      await ctx.db.patch(job.skillScanRequestId, {
+        status: "queued",
+        updatedAt: now,
+      });
+    }
+    await requestSecurityScanDispatch(ctx);
+    return { ok: true as const, nextRunAt: now + 60_000 };
+  },
+});
+
+type CodexScanHydrationCtx = {
+  runMutation: (ref: never, args: never) => Promise<unknown>;
+  runQuery: (ref: never, args: never) => Promise<unknown>;
+  storage: {
+    getUrl: (storageId: Id<"_storage">) => Promise<string | null>;
+  };
+};
+
+async function hydrateClaimedCodexScanJob(
+  ctx: CodexScanHydrationCtx,
+  job: Doc<"securityScanJobs"> & { leaseToken: string },
+  target: Record<string, unknown> | null,
+) {
+  if (!target || target.missing) {
+    await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
+      jobId: job._id,
+      leaseToken: job.leaseToken,
+      error: "Target artifact missing",
+    });
+    return null;
+  }
+
+  const scanRequest = target.scanRequest as Doc<"skillScanRequests"> | undefined;
+  const version = target.version as Doc<"skillVersions"> | undefined;
+  const release = target.release as Doc<"packageReleases"> | undefined;
+  let files: Array<{
+    path: string;
+    size: number;
+    sha256: string;
+    storageId: Id<"_storage">;
+    contentType?: string;
+  }> = [];
+  if (scanRequest) {
+    files =
+      (target.scanRequestFiles as Doc<"skillScanRequests">["files"] | undefined) ??
+      scanRequest.files;
+  } else if (version) {
+    const fingerprintEntries = await runQueryRef<
+      Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
+    >(ctx, internalRefs.skills.listVersionFingerprintsInternal, {
+      skillVersionId: version._id,
+    });
+    files = sourceSkillVersionFiles(version.files, {
+      generatedBundleFingerprints: fingerprintEntries
+        .filter((entry) => entry.kind === "generated-bundle")
+        .map((entry) => entry.fingerprint),
+    });
+  } else if (release) {
+    files = release.files;
+  }
+  const fileUrls = [];
+  for (const file of files) {
+    const url = await ctx.storage.getUrl(file.storageId);
+    if (!url) {
+      await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
+        jobId: job._id,
+        leaseToken: job.leaseToken,
+        error: `Artifact file unavailable: ${file.path}`,
+      });
+      return null;
+    }
+    fileUrls.push({
+      path: file.path,
+      size: file.size,
+      sha256: file.sha256,
+      contentType: file.contentType,
+      url,
+    });
+  }
+
+  const clawpackUrl = release?.clawpackStorageId
+    ? await ctx.storage.getUrl(release.clawpackStorageId)
+    : null;
+  if (release?.clawpackStorageId && !clawpackUrl) {
+    await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
+      jobId: job._id,
+      leaseToken: job.leaseToken,
+      error: "ClawPack artifact unavailable",
+    });
+    return null;
+  }
+  return {
+    job,
+    target: {
+      ...target,
+      files: fileUrls,
+      clawpackUrl,
+    },
+  };
+}
+
 export const claimCodexScanJobs = action({
   args: {
     token: v.string(),
@@ -2590,89 +2739,85 @@ export const claimCodexScanJobs = action({
         internalRefs.securityScan.getJobTargetInternal,
         { jobId: job._id },
       );
-      if (!target || target.missing) {
-        await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
-          jobId: job._id,
-          leaseToken: job.leaseToken,
-          error: "Target artifact missing",
-        });
-        continue;
-      }
-
-      const scanRequest = target.scanRequest as Doc<"skillScanRequests"> | undefined;
-      const version = target.version as Doc<"skillVersions"> | undefined;
-      const release = target.release as Doc<"packageReleases"> | undefined;
-      let files: Array<{
-        path: string;
-        size: number;
-        sha256: string;
-        storageId: Id<"_storage">;
-        contentType?: string;
-      }> = [];
-      if (scanRequest) {
-        files =
-          (target.scanRequestFiles as Doc<"skillScanRequests">["files"] | undefined) ??
-          scanRequest.files;
-      } else if (version) {
-        const fingerprintEntries = await runQueryRef<
-          Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
-        >(ctx, internalRefs.skills.listVersionFingerprintsInternal, {
-          skillVersionId: version._id,
-        });
-        files = sourceSkillVersionFiles(version.files, {
-          generatedBundleFingerprints: fingerprintEntries
-            .filter((entry) => entry.kind === "generated-bundle")
-            .map((entry) => entry.fingerprint),
-        });
-      } else if (release) {
-        files = release.files;
-      }
-      const fileUrls = [];
-      let missingStoragePath: string | null = null;
-      for (const file of files) {
-        const url = await ctx.storage.getUrl(file.storageId);
-        if (!url) {
-          missingStoragePath = file.path;
-          break;
-        }
-        fileUrls.push({
-          path: file.path,
-          size: file.size,
-          sha256: file.sha256,
-          contentType: file.contentType,
-          url,
-        });
-      }
-      if (missingStoragePath) {
-        await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
-          jobId: job._id,
-          leaseToken: job.leaseToken,
-          error: `Artifact file unavailable: ${missingStoragePath}`,
-        });
-        continue;
-      }
-
-      const clawpackUrl = release?.clawpackStorageId
-        ? await ctx.storage.getUrl(release.clawpackStorageId)
-        : null;
-      if (release?.clawpackStorageId && !clawpackUrl) {
-        await runMutationRef(ctx, internalRefs.securityScan.failJobInternal, {
-          jobId: job._id,
-          leaseToken: job.leaseToken,
-          error: "ClawPack artifact unavailable",
-        });
-        continue;
-      }
-      hydrated.push({
-        job,
-        target: {
-          ...target,
-          files: fileUrls,
-          clawpackUrl,
-        },
-      });
+      const claimedJob = await hydrateClaimedCodexScanJob(ctx, job, target);
+      if (claimedJob) hydrated.push(claimedJob);
     }
     return hydrated;
+  },
+});
+
+export const claimCodexScanJobLeases = action({
+  args: {
+    token: v.string(),
+    workerId: v.string(),
+    lane: v.optional(codexScanWorkerLaneValidator),
+    limit: v.optional(v.number()),
+    leaseMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    assertWorkerToken(args.token);
+    return await runMutationRef<Array<Doc<"securityScanJobs"> & { leaseToken: string }>>(
+      ctx,
+      internalRefs.securityScan.claimQueuedJobsInternal,
+      {
+        workerId: args.workerId,
+        lane: args.lane ?? "shared",
+        limit: normalizeLimit(args.limit),
+        leaseMs: args.leaseMs,
+      },
+    );
+  },
+});
+
+export const hydrateCodexScanJob = action({
+  args: {
+    token: v.string(),
+    workerId: v.string(),
+    jobId: v.id("securityScanJobs"),
+    leaseToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertWorkerToken(args.token);
+    const target = await runQueryRef<Record<string, unknown> | null>(
+      ctx,
+      internalRefs.securityScan.getJobTargetInternal,
+      { jobId: args.jobId },
+    );
+    const job = target?.job as Doc<"securityScanJobs"> | undefined;
+    if (
+      !job ||
+      job.status !== "running" ||
+      job.leaseToken !== args.leaseToken ||
+      job.workerId !== args.workerId
+    ) {
+      throw new ConvexError("Lease mismatch");
+    }
+    return hydrateClaimedCodexScanJob(
+      ctx,
+      job as Doc<"securityScanJobs"> & { leaseToken: string },
+      target,
+    );
+  },
+});
+
+export const requeueCodexScanJobLease = action({
+  args: {
+    token: v.string(),
+    workerId: v.string(),
+    jobId: v.id("securityScanJobs"),
+    leaseToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertWorkerToken(args.token);
+    return await runMutationRef<{ ok: true; nextRunAt: number }>(
+      ctx,
+      internalRefs.securityScan.requeueJobLeaseInternal,
+      {
+        workerId: args.workerId,
+        jobId: args.jobId,
+        leaseToken: args.leaseToken,
+      },
+    );
   },
 });
 

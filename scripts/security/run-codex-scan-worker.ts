@@ -45,6 +45,8 @@ export type ClaimedJob = {
   };
 };
 
+type ClaimedJobLease = ClaimedJob["job"];
+
 export type StoredLlmAnalysis = {
   status: string;
   verdict?: string;
@@ -147,7 +149,6 @@ type ProcessJobResult = {
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
-const CLAIM_WINDOW_SHUTDOWN_BUFFER_MS = 3 * 60 * 1000;
 const DEFAULT_CLAWSCAN_SHADOW_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_CLAWSCAN_SHADOW_SANDBOX_IMAGE =
   "ghcr.io/openclaw/clawscan-runtime@sha256:d85bfe671fe597edc6802f9d6a07dd91b59c69cec4faa6e8f89778037507dc3b";
@@ -200,6 +201,8 @@ function parseArgs() {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   };
+  const laneValue = get("--lane") ?? process.env.CODEX_SECURITY_SCAN_LANE;
+  const lane: "priority" | "shared" = laneValue === "priority" ? "priority" : "shared";
   return {
     batchLimit: numberFrom(
       get("--batch-limit") ?? get("--limit") ?? process.env.CODEX_SECURITY_SCAN_LIMIT,
@@ -216,11 +219,16 @@ function parseArgs() {
         get("--lease-minutes") ?? process.env.CODEX_SECURITY_SCAN_LEASE_MINUTES,
         DEFAULT_LEASE_MS / 60_000,
       ) * 60_000,
+    lane,
     diagnosticsRoot:
       get("--diagnostics-dir") ??
       process.env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR ??
       DEFAULT_DIAGNOSTICS_ROOT,
   };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function requireEnv(name: string) {
@@ -1207,18 +1215,6 @@ function clawScanShadowEnabled() {
   return value === "1" || value === "true" || value === "yes";
 }
 
-export function minimumClaimWindowMs(maxRuntimeMs: number, scanTimeoutMs: number) {
-  return Math.min(maxRuntimeMs, scanTimeoutMs + CLAIM_WINDOW_SHUTDOWN_BUFFER_MS);
-}
-
-export function shouldClaimSecurityScanBatch(
-  totalClaimed: number,
-  remainingRuntimeMs: number,
-  minClaimWindowMs: number,
-) {
-  return totalClaimed === 0 || remainingRuntimeMs >= minClaimWindowMs;
-}
-
 export async function runCodex(
   job: ClaimedJob,
   workspace: string,
@@ -1584,43 +1580,116 @@ export async function processJob(
   }
 }
 
-export async function claimCodexScanJobBatch(
-  claimLimit: number,
-  claimOne: () => Promise<ClaimedJob[]>,
-) {
-  const results = await Promise.allSettled(Array.from({ length: claimLimit }, () => claimOne()));
-  let claimFailures = 0;
-  const jobs = results.flatMap((result) => {
-    if (result.status === "fulfilled") return result.value;
-    claimFailures += 1;
-    const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
-    logger.error(
-      {
-        event: "security_scan_claim_failed",
-        publicReason: sanitizeWorkerErrorMessage(message),
-        scannerPhase: "claim",
-      },
-      "failed to claim security scan job",
-    );
-    return [];
-  });
-  return { claimFailures, jobs };
-}
+export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
+  concurrency: number;
+  maxJobs: number | undefined;
+  canClaim: (totalClaimed: number) => boolean;
+  claimJobs: (limit: number) => Promise<TJob[]>;
+  processClaimedJob: (job: TJob) => Promise<ProcessJobResult>;
+  idlePollMs?: number;
+  sleep?: (ms: number) => Promise<unknown>;
+}) {
+  const active = new Set<Promise<ProcessJobResult>>();
+  const sleepImpl = options.sleep ?? sleep;
+  let queueDrained = false;
+  let totalClaimed = 0;
+  let totalCompleted = 0;
+  let totalFailed = 0;
+  let totalRetryableFailed = 0;
+  let totalClaimFailures = 0;
 
-export function claimFailuresAreFatal(claimFailures: number, claimedJobs: number) {
-  return claimFailures > 0 && claimedJobs === 0;
-}
+  while (active.size > 0 || (!queueDrained && options.canClaim(totalClaimed))) {
+    while (active.size < options.concurrency && !queueDrained && options.canClaim(totalClaimed)) {
+      const remainingJobs =
+        options.maxJobs === undefined
+          ? options.concurrency - active.size
+          : Math.min(
+              options.concurrency - active.size,
+              Math.max(0, options.maxJobs - totalClaimed),
+            );
+      if (remainingJobs === 0) {
+        queueDrained = true;
+        break;
+      }
 
-export function claimBatchDrainedQueue(
-  claimFailures: number,
-  claimedJobs: number,
-  claimLimit: number,
-) {
-  return claimFailures === 0 && claimedJobs < claimLimit;
+      let jobs: TJob[];
+      try {
+        jobs = await options.claimJobs(remainingJobs);
+      } catch (error) {
+        totalClaimFailures += 1;
+        totalFailed += 1;
+        queueDrained = true;
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(
+          {
+            event: "security_scan_claim_failed",
+            publicReason: sanitizeWorkerErrorMessage(message),
+            requested: remainingJobs,
+            scannerPhase: "claim",
+          },
+          "failed to claim security scan jobs",
+        );
+        break;
+      }
+
+      if (jobs.length === 0) {
+        queueDrained = true;
+        break;
+      }
+      totalClaimed += jobs.length;
+      for (const job of jobs) {
+        const task = options.processClaimedJob(job).catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error(
+            {
+              event: "security_scan_unhandled_process_failure",
+              publicReason: sanitizeWorkerErrorMessage(message),
+              scannerPhase: "process",
+            },
+            "security scan job escaped worker error handling",
+          );
+          return {
+            completed: false,
+            hardFailed: true,
+            retryableFailed: false,
+          };
+        });
+        active.add(task);
+      }
+      if (jobs.length < remainingJobs) queueDrained = true;
+    }
+
+    if (active.size > 0) {
+      const settled = await Promise.race(
+        [...active].map(async (task) => ({ result: await task, task })),
+      );
+      active.delete(settled.task);
+      if (settled.result.completed) totalCompleted += 1;
+      if (settled.result.hardFailed) totalFailed += 1;
+      if (settled.result.retryableFailed) totalRetryableFailed += 1;
+      if (active.size > 0 || !queueDrained) continue;
+    }
+
+    const maxJobsReached = options.maxJobs !== undefined && totalClaimed >= options.maxJobs;
+    if (queueDrained && !maxJobsReached && options.idlePollMs && options.canClaim(totalClaimed)) {
+      await sleepImpl(options.idlePollMs);
+      queueDrained = false;
+      continue;
+    }
+    break;
+  }
+
+  return {
+    totalClaimed,
+    totalClaimFailures,
+    totalCompleted,
+    totalFailed,
+    totalRetryableFailed,
+  };
 }
 
 async function main() {
-  const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, diagnosticsRoot } = parseArgs();
+  const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, lane, diagnosticsRoot } = parseArgs();
   assertCodexWorkerExecutionAllowed(process.env);
   maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -1634,88 +1703,115 @@ async function main() {
     }:${process.env.CODEX_SECURITY_SCAN_SHARD ?? process.env.GITHUB_JOB ?? "0"}`;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
-  const minClaimWindowMs = minimumClaimWindowMs(maxRuntimeMs, codexScanTimeoutMs());
-  let totalClaimed = 0;
-  let totalCompleted = 0;
-  let totalFailed = 0;
-  let totalRetryableFailed = 0;
-  let totalClaimFailures = 0;
 
   logger.info(
-    { diagnosticsRoot, event: "security_scan_diagnostics_directory", workerId },
+    { diagnosticsRoot, event: "security_scan_diagnostics_directory", lane, workerId },
     "security scan diagnostics directory",
   );
 
-  while (Date.now() < claimDeadline) {
-    const remainingRuntimeMs = claimDeadline - Date.now();
-    if (!shouldClaimSecurityScanBatch(totalClaimed, remainingRuntimeMs, minClaimWindowMs)) {
+  const sharedShardIndex = Number(
+    process.env.CODEX_SECURITY_SCAN_SHARD?.match(/shared-(\d+)/)?.[1] ?? 0,
+  );
+  if (lane === "shared" && sharedShardIndex > 0) {
+    await sleep(sharedShardIndex * 250);
+  }
+
+  const stats = await runContinuouslyRefilledWorkerPool({
+    concurrency: batchLimit,
+    maxJobs,
+    canClaim: () => Date.now() < claimDeadline,
+    claimJobs: async (limit) => {
+      const leases = (await client.action(api.securityScan.claimCodexScanJobLeases, {
+        token,
+        workerId,
+        lane,
+        limit,
+        leaseMs,
+      })) as ClaimedJobLease[];
+      const hydrated = await Promise.all(
+        leases.map(async (lease) => {
+          try {
+            return {
+              job: (await client.action(api.securityScan.hydrateCodexScanJob, {
+                token,
+                workerId,
+                jobId: lease._id as Id<"securityScanJobs">,
+                leaseToken: lease.leaseToken,
+              })) as ClaimedJob | null,
+              requeued: false,
+            };
+          } catch (error) {
+            const message = sanitizeWorkerErrorMessage(
+              error instanceof Error ? error.message : String(error),
+            );
+            await client.action(api.securityScan.requeueCodexScanJobLease, {
+              token,
+              workerId,
+              jobId: lease._id as Id<"securityScanJobs">,
+              leaseToken: lease.leaseToken,
+            });
+            logger.error(
+              {
+                event: "security_scan_hydration_failed",
+                jobId: lease._id,
+                publicReason: message,
+                scannerPhase: "hydrate",
+              },
+              "failed to hydrate security scan job",
+            );
+            return { job: null, requeued: true };
+          }
+        }),
+      );
+      const jobs = hydrated
+        .map((outcome) => outcome.job)
+        .filter((job): job is ClaimedJob => job !== null);
+      const requeued = hydrated.filter((outcome) => outcome.requeued).length;
+      if (requeued > 0 && jobs.length === 0) {
+        throw new Error("All claimed security scan jobs failed hydration and were requeued");
+      }
       logger.info(
         {
-          event: "security_scan_claim_window_closed",
-          minClaimWindowMs,
-          remainingRuntimeMs,
+          claimed: leases.length,
+          event: "security_scan_jobs_claimed",
+          hydrated: jobs.length,
+          lane,
+          leaseMs,
+          requeued,
+          requested: limit,
           workerId,
         },
-        "stopping before claiming another security scan batch",
+        "claimed security scan jobs",
       );
-      break;
-    }
-    const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
-    if (remainingJobs === 0) break;
-    const claimLimit = Math.min(batchLimit, remainingJobs);
-    const claimBatch = await claimCodexScanJobBatch(
-      claimLimit,
-      async () =>
-        (await client.action(api.securityScan.claimCodexScanJobs, {
-          token,
-          workerId,
-          limit: 1,
-          leaseMs,
-        })) as ClaimedJob[],
-    );
-    const { claimFailures, jobs } = claimBatch;
-    totalClaimFailures += claimFailures;
-    if (claimFailuresAreFatal(claimFailures, jobs.length)) {
-      totalFailed += claimFailures;
-    }
+      return jobs;
+    },
+    processClaimedJob: (job) => processJob(client, token, job, diagnosticsRoot),
+    idlePollMs: lane === "priority" ? 15_000 : undefined,
+  });
+
+  const remainingRuntimeMs = claimDeadline - Date.now();
+  if (remainingRuntimeMs <= 0) {
     logger.info(
       {
-        claimed: jobs.length,
-        claimFailures,
-        claimLimit,
-        event: "security_scan_jobs_claimed",
-        leaseMs,
+        event: "security_scan_claim_window_closed",
+        remainingRuntimeMs,
         workerId,
       },
-      "claimed security scan jobs",
+      "stopping before claiming another security scan job",
     );
-    if (jobs.length === 0) break;
-
-    totalClaimed += jobs.length;
-    const results = await Promise.all(
-      jobs.map((job) => processJob(client, token, job, diagnosticsRoot)),
-    );
-    totalCompleted += results.filter((result) => result.completed).length;
-    totalFailed += results.filter((result) => result.hardFailed).length;
-    totalRetryableFailed += results.filter((result) => result.retryableFailed).length;
-
-    if (claimBatchDrainedQueue(claimFailures, jobs.length, claimLimit)) break;
   }
 
   logger.info(
     {
       elapsedMs: Date.now() - startedAt,
       event: "security_scan_worker_summary",
-      totalClaimed,
-      totalClaimFailures,
-      totalCompleted,
-      totalFailed,
-      totalRetryableFailed,
+      lane,
+      ...stats,
       workerId,
     },
     "security scan worker summary",
   );
-  if (totalFailed > 0) {
+  if (stats.totalFailed > 0) {
     process.exitCode = 1;
   }
 }

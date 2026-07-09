@@ -170,6 +170,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "codex-scan-expired-lease-recovery",
+    { minutes: 5 },
+    internal.securityScan.requeueExpiredCodexScanJobsInternal,
+    {},
+  );
+
+  crons.interval(
     "codex-scan-dispatch-watchdog",
     { minutes: 5 },
     internal.securityScanDispatch.requestSecurityScanDispatchInternal,

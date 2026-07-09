@@ -348,7 +348,7 @@ describe("securityScanDispatch", () => {
         scheduledToken: undefined,
         scheduledAt: undefined,
         leaseToken: result.leaseToken,
-        leaseExpiresAt: 1_300_000,
+        leaseExpiresAt: 1_900_000,
       }),
     );
   });
@@ -406,7 +406,7 @@ describe("securityScanDispatch", () => {
           event_type: "clawhub-security-scan",
           client_payload: {
             batch_limit: "4",
-            max_runtime_minutes: "8",
+            max_runtime_minutes: "12",
           },
         }),
       }),

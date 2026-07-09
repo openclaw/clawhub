@@ -4,6 +4,7 @@ import {
   appendGitHubSkillScanRequestFilesInternal,
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
+  claimCodexScanJobLeases,
   clearQueuedBackfillJobsForLocalDev,
   claimQueuedJobsInternal,
   completeCodexScanJob,
@@ -21,12 +22,16 @@ import {
   logCodexScanQueueHealthInternal,
   prepareGitHubSkillScanRequestInternal,
   pruneExpiredSkillScanRequestsInternal,
+  requeueCodexScanJobLease,
+  requeueExpiredCodexScanJobsInternal,
+  requeueJobLeaseInternal,
   recordGitHubSkillScanResultInternal,
   recordSkillScanRequestFailedInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
   requestSkillRescanForUserInternal,
   requestSkillRescan,
+  hydrateCodexScanJob,
 } from "./securityScan";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -45,10 +50,53 @@ const claimCodexScanJobsHandler = (
   >
 )._handler;
 
+const claimCodexScanJobLeasesHandler = (
+  claimCodexScanJobLeases as unknown as WrappedHandler<
+    {
+      token: string;
+      workerId: string;
+      lane?: "priority" | "shared";
+      limit?: number;
+      leaseMs?: number;
+    },
+    Array<ScanJob & { leaseToken: string; workerId: string }>
+  >
+)._handler;
+
+const hydrateCodexScanJobHandler = (
+  hydrateCodexScanJob as unknown as WrappedHandler<{
+    token: string;
+    workerId: string;
+    jobId: string;
+    leaseToken: string;
+  }>
+)._handler;
+
 const claimQueuedJobsInternalHandler = (
   claimQueuedJobsInternal as unknown as WrappedHandler<
-    { workerId: string; limit: number; leaseMs?: number },
+    { workerId: string; lane?: "priority" | "shared"; limit: number; leaseMs?: number },
     Array<ScanJob & { leaseToken: string; workerId: string }>
+  >
+)._handler;
+
+const requeueExpiredCodexScanJobsInternalHandler = (
+  requeueExpiredCodexScanJobsInternal as unknown as WrappedHandler<
+    { limit?: number },
+    { requeued: number }
+  >
+)._handler;
+
+const requeueJobLeaseInternalHandler = (
+  requeueJobLeaseInternal as unknown as WrappedHandler<
+    { jobId: string; leaseToken: string; workerId: string },
+    { ok: true; nextRunAt: number }
+  >
+)._handler;
+
+const requeueCodexScanJobLeaseHandler = (
+  requeueCodexScanJobLease as unknown as WrappedHandler<
+    { token: string; jobId: string; leaseToken: string; workerId: string },
+    { ok: true; nextRunAt: number }
   >
 )._handler;
 
@@ -2534,19 +2582,84 @@ describe("securityScan", () => {
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
   });
 
-  it("claims one hydrated scan job at a time to bound signed URL response size", async () => {
+  it("claims several lightweight leases in one mutation without hydrating signed URLs", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
-    const runMutation = vi.fn(async () => []);
+    const leases = Array.from({ length: 4 }, (_, index) => ({
+      ...claimedJob,
+      _id: `securityScanJobs:${index}`,
+      leaseToken: `lease-${index}`,
+    }));
+    const runMutation = vi.fn(async () => leases);
+    const runQuery = vi.fn();
+    const getUrl = vi.fn();
 
-    await claimCodexScanJobsHandler(
-      { runMutation, runQuery: vi.fn(), storage: { getUrl: vi.fn() } },
-      { token: "worker-secret", workerId: "worker-1", limit: 10 },
+    const result = await claimCodexScanJobLeasesHandler(
+      { runMutation, runQuery, storage: { getUrl } },
+      {
+        token: "worker-secret",
+        workerId: "worker-1",
+        lane: "shared",
+        limit: 4,
+      },
     );
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ workerId: "worker-1", limit: 1 }),
+      expect.objectContaining({
+        workerId: "worker-1",
+        lane: "shared",
+        limit: 4,
+      }),
     );
+    expect(result).toEqual(leases);
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("refuses to hydrate a lease owned by a different worker", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        ...claimedJob,
+        workerId: "worker-2",
+      },
+    }));
+    const getUrl = vi.fn();
+
+    await expect(
+      hydrateCodexScanJobHandler(
+        { runMutation: vi.fn(), runQuery, storage: { getUrl } },
+        {
+          token: "worker-secret",
+          workerId: "worker-1",
+          jobId: "securityScanJobs:1",
+          leaseToken: "lease-token",
+        },
+      ),
+    ).rejects.toThrow("Lease mismatch");
+    expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("exposes a worker-authenticated retry-safe lease requeue action", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runMutation = vi.fn(async () => ({ ok: true, nextRunAt: 1234 }));
+
+    await expect(
+      requeueCodexScanJobLeaseHandler(
+        { runMutation },
+        {
+          token: "worker-secret",
+          workerId: "worker-1",
+          jobId: "securityScanJobs:1",
+          leaseToken: "lease-token",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, nextRunAt: 1234 });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      workerId: "worker-1",
+      jobId: "securityScanJobs:1",
+      leaseToken: "lease-token",
+    });
   });
 
   it("hydrates only the declared bounded GitHub file chunks", async () => {
@@ -2969,8 +3082,8 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
       "securityScanJobs:malicious-publish",
-      "securityScanJobs:backfill",
       "securityScanJobs:old-publish",
+      "securityScanJobs:backfill",
     ]);
     expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
   });
@@ -3018,11 +3131,72 @@ describe("securityScan", () => {
 
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
-      "securityScanJobs:backfill",
       "securityScanJobs:publish",
+      "securityScanJobs:backfill",
       "securityScanJobs:vt-update",
       "securityScanJobs:bulk-rescan",
     ]);
+  });
+
+  it("reserves the priority lane for manual, malicious, and publish work", async () => {
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:vt-update",
+        source: "vt-update",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish",
+        source: "publish",
+        createdAt: 2,
+        nextRunAt: 2,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual",
+        source: "manual",
+        createdAt: 3,
+        nextRunAt: 3,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "priority-worker",
+      lane: "priority",
+      limit: 4,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:manual",
+      "securityScanJobs:publish",
+    ]);
+  });
+
+  it("lets shared workers help priority work before consuming bulk backlog", async () => {
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:vt-update",
+        source: "vt-update",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish",
+        source: "publish",
+        createdAt: 2,
+        nextRunAt: 2,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "shared-worker",
+      lane: "shared",
+      limit: 1,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:publish"]);
   });
 
   it("caps each Codex scan claim request", async () => {
@@ -3078,6 +3252,82 @@ describe("securityScan", () => {
       "securityScanJobs:manual-1",
       "securityScanJobs:manual-2",
     ]);
+  });
+
+  it("recovers expired leases separately from normal claim transactions", async () => {
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:expired",
+        status: "running",
+        leaseToken: "expired-lease",
+        leaseExpiresAt: Date.now() - 1,
+        workerId: "stale-worker",
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:active",
+        status: "running",
+        leaseToken: "active-lease",
+        leaseExpiresAt: Date.now() + 60_000,
+        workerId: "active-worker",
+      }),
+    ]);
+
+    await expect(requeueExpiredCodexScanJobsInternalHandler(ctx, {})).resolves.toEqual({
+      requeued: 1,
+    });
+    expect(patches).toEqual([
+      expect.objectContaining({
+        id: "securityScanJobs:expired",
+        patch: expect.objectContaining({
+          status: "queued",
+          leaseToken: undefined,
+          workerId: undefined,
+        }),
+      }),
+    ]);
+  });
+
+  it("requeues hydration failures without consuming a scanner attempt", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    const { ctx, patches } = makeFailurePersistenceCtx({
+      "securityScanJobs:1": {
+        ...claimedJob,
+        workerId: "worker-1",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:1",
+        attempts: 2,
+      },
+      "skillScanRequests:1": {
+        _id: "skillScanRequests:1",
+        status: "running",
+      },
+    });
+
+    await expect(
+      requeueJobLeaseInternalHandler(ctx, {
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        workerId: "worker-1",
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "securityScanJobs:1",
+          patch: expect.objectContaining({
+            status: "queued",
+            attempts: 1,
+            leaseToken: undefined,
+            workerId: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skillScanRequests:1",
+          patch: expect.objectContaining({ status: "queued" }),
+        }),
+      ]),
+    );
   });
 
   it("reports queued scan position for manual scan requests", async () => {

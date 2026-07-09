@@ -5,7 +5,7 @@ import { internalAction, internalMutation } from "./functions";
 import { createGitHubAppInstallationToken, isGitHubAppConfigured } from "./lib/githubAuth";
 
 const DISPATCH_STATE_KEY = "codex-worker";
-const DISPATCH_LEASE_MS = 5 * 60 * 1000;
+const DISPATCH_LEASE_MS = 15 * 60 * 1000;
 const SCHEDULE_STALE_MS = 60 * 1000;
 const GITHUB_REPOSITORY_DISPATCH_URL = "https://api.github.com/repos/openclaw/clawhub/dispatches";
 
@@ -69,7 +69,7 @@ export async function dispatchSecurityScanWorkflow(
       event_type: "clawhub-security-scan",
       client_payload: {
         batch_limit: "4",
-        max_runtime_minutes: "8",
+        max_runtime_minutes: "12",
       },
     }),
   });

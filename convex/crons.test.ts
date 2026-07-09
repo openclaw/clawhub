@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
+  const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
   const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
   return {
     interval,
@@ -32,6 +33,7 @@ const mocks = vi.hoisted(() => {
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
     promotionsFeedPublishRef,
+    securityScanExpiredLeaseRecoveryRef,
     securityScanDispatchWatchdogRef,
   };
 });
@@ -79,6 +81,7 @@ vi.mock("./_generated/api", () => ({
     },
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
+      requeueExpiredCodexScanJobsInternal: mocks.securityScanExpiredLeaseRecoveryRef,
     },
     securityScanDispatch: {
       requestSecurityScanDispatchInternal: mocks.securityScanDispatchWatchdogRef,
@@ -169,6 +172,17 @@ describe("crons", () => {
       "codex-scan-dispatch-watchdog",
       { minutes: 5 },
       mocks.securityScanDispatchWatchdogRef,
+      {},
+    );
+  });
+
+  it("recovers expired security scan leases outside the claim hot path", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "codex-scan-expired-lease-recovery",
+      { minutes: 5 },
+      mocks.securityScanExpiredLeaseRecoveryRef,
       {},
     );
   });
