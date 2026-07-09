@@ -29471,6 +29471,16 @@ a[class*="rounded-full"] {
     min-width: 0;
   }
 
+  .skills-browse-page .browse-tabs {
+    justify-content: flex-start;
+  }
+
+  .skills-browse-page .browse-tab {
+    flex: 0 0 auto;
+    min-width: max-content;
+    padding: 0 2px;
+  }
+
   .publishers-browse-page .browse-tabs {
     justify-content: stretch;
     gap: 10px;

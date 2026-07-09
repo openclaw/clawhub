@@ -263,7 +263,7 @@ export function SkillsIndex() {
   );
 
   return (
-    <main className="browse-page browse-page-borderless-header">
+    <main className="browse-page browse-page-borderless-header skills-browse-page">
       <div className="browse-page-header">
         <div className="browse-page-header-main">
           <h1 className="browse-title">
