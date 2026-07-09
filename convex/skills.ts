@@ -6001,12 +6001,18 @@ async function loadPublicLatestVersionForDigest(
     | "skillId"
     | "latestVersionId"
     | "latestVersionSkillId"
+    | "publicVersion"
     | "moderationReason"
     | "moderationFlags"
     | "stats"
     | "installKind"
   >,
 ) {
+  if (digest.publicVersion?.status === "unavailable") return null;
+  if (digest.publicVersion?.status === "available") {
+    const version = await ctx.db.get(digest.publicVersion.versionId);
+    return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
+  }
   if (!digest.latestVersionId) return null;
   if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
     return null;
@@ -6030,13 +6036,17 @@ async function resolveDigestLatestVersionForSkill(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
 ) {
+  if (digest.publicVersion?.status === "unavailable") return null;
+  const publicVersionId =
+    digest.publicVersion?.status === "available" ? digest.publicVersion.versionId : undefined;
   const needsApprovedSnapshot =
     isHostedSkillPendingPublicReview(digest) && hostedSkillMayHavePriorApprovedVersion(digest);
 
   if (
-    !needsApprovedSnapshot &&
+    (!needsApprovedSnapshot || publicVersionId === digest.latestVersionId) &&
     digest.latestVersionSummary &&
     digest.latestVersionId &&
+    (!publicVersionId || publicVersionId === digest.latestVersionId) &&
     (digest.latestVersionSkillId === undefined || digest.latestVersionSkillId === digest.skillId)
   ) {
     return toPublicSkillListVersionFromSummary(

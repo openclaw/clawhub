@@ -17,7 +17,7 @@ import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/of
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
 import { toPublicSkill } from "./lib/public";
 import {
-  hasResolvablePublicBrowseVersion,
+  hasResolvablePublicBrowseVersionFromState,
   shouldExcludeSkillFromPublicBrowse,
 } from "./lib/publicBrowse";
 import { getOwnerPublisher } from "./lib/publishers";
@@ -908,7 +908,14 @@ export const hydrateResults = internalQuery({
           ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         if (!resolved.owner) return null;
-        if (!(await hasResolvablePublicBrowseVersion(ctx, { ...skill, _id: skillId }))) return null;
+        if (
+          !(await hasResolvablePublicBrowseVersionFromState(
+            ctx,
+            { ...skill, _id: skillId },
+            digest?.publicVersion,
+          ))
+        )
+          return null;
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill) return null;
         return {
@@ -951,6 +958,7 @@ export const lexicalFallbackSkills = internalQuery({
       Id<"skills">,
       { ownerHandle: string | null; owner: PublicPublisher | null }
     >();
+    const publicVersions = new Map<Id<"skills">, Doc<"skillSearchDigest">["publicVersion"]>();
 
     // Exact slug matches via the skills table. Slugs are unique per publisher,
     // so this read must tolerate multiple rows for the same global slug.
@@ -1047,6 +1055,7 @@ export const lexicalFallbackSkills = internalQuery({
         // Pre-resolve owner from digest to avoid users table reads.
         const ownerInfo = digestToOwnerInfo(digest);
         if (ownerInfo) preResolvedOwners.set(digest.skillId, ownerInfo);
+        publicVersions.set(digest.skillId, digest.publicVersion);
       }
     };
     addDigestCandidates(recentByUpdated);
@@ -1073,7 +1082,13 @@ export const lexicalFallbackSkills = internalQuery({
           ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         if (!resolved.owner) return null;
-        if (!(await hasResolvablePublicBrowseVersion(ctx, { ...skill, _id: skill._id })))
+        if (
+          !(await hasResolvablePublicBrowseVersionFromState(
+            ctx,
+            { ...skill, _id: skill._id },
+            publicVersions.get(skill._id),
+          ))
+        )
           return null;
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill) return null;

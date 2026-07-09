@@ -288,6 +288,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hold applies. Codex malicious verdicts block the candidate version. On updates,
   the previous clean/current public version remains live; on first versions,
   nothing public is promoted.
+- `skillSearchDigest.publicVersion` is a derived public-browse cache, not a
+  moderation source of truth. `available` points to the exact approved public
+  `skillVersions` row and `unavailable` fails closed; a missing value exists only
+  during rollout/backfill and uses the legacy resolver. Skill visibility changes
+  and version scan-status changes must refresh the cache so hot browse/search
+  queries never need to walk version history.
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.

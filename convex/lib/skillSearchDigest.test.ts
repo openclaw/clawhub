@@ -247,7 +247,11 @@ describe("extractValidatedDigestFields", () => {
     const digest = await extractValidatedDigestFields(
       {
         db: {
-          get: async () => ({ skillId: "skills:abc", softDeletedAt: undefined }),
+          get: async () => ({
+            _id: "skillVersions:v1",
+            skillId: "skills:abc",
+            softDeletedAt: undefined,
+          }),
         },
       } as never,
       makeSkillDoc() as never,
@@ -256,6 +260,10 @@ describe("extractValidatedDigestFields", () => {
     expect(digest.latestVersionId).toBe("skillVersions:v1");
     expect(digest.latestVersionSkillId).toBe("skills:abc");
     expect(digest.latestVersionSummary).toMatchObject({ version: "1.0.0" });
+    expect(digest.publicVersion).toEqual({
+      status: "available",
+      versionId: "skillVersions:v1",
+    });
   });
 
   it("clears stale latest-version metadata when the version belongs to another skill", async () => {
@@ -271,6 +279,7 @@ describe("extractValidatedDigestFields", () => {
     expect(digest.latestVersionId).toBeUndefined();
     expect(digest.latestVersionSkillId).toBeUndefined();
     expect(digest.latestVersionSummary).toBeUndefined();
+    expect(digest.publicVersion).toEqual({ status: "unavailable" });
   });
 });
 

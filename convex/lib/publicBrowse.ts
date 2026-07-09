@@ -36,6 +36,10 @@ type SkillVersionPublicBrowseFields = Pick<
   | "staticScan"
 >;
 
+export type PublicBrowseVersionState =
+  | { status: "available"; versionId: Id<"skillVersions"> }
+  | { status: "unavailable" };
+
 function isPendingSkillModerationReason(reason: string | null | undefined) {
   const normalized = reason?.trim().toLowerCase();
   return (
@@ -105,15 +109,37 @@ export async function hasResolvablePublicBrowseVersion(
   return (await resolvePublicBrowseVersionForSkill(ctx, skill)) !== null;
 }
 
+export async function hasResolvablePublicBrowseVersionFromState(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  skill: SkillPublicBrowseFields & { _id: Id<"skills"> },
+  state: PublicBrowseVersionState | undefined,
+) {
+  if (shouldExcludeSkillFromPublicBrowse(skill)) return false;
+  if (state?.status === "available") return true;
+  if (state?.status === "unavailable") return false;
+  return hasResolvablePublicBrowseVersion(ctx, skill);
+}
+
+export async function resolvePublicBrowseVersionState(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  skill: SkillPublicBrowseFields & { _id: Id<"skills"> },
+  options?: { latestVersion: Doc<"skillVersions"> | null },
+): Promise<PublicBrowseVersionState> {
+  if (shouldExcludeSkillFromPublicBrowse(skill)) return { status: "unavailable" };
+  const version = await resolvePublicBrowseVersionForSkill(ctx, skill, options);
+  return version ? { status: "available", versionId: version._id } : { status: "unavailable" };
+}
+
 export async function resolvePublicBrowseVersionForSkill(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   skill: SkillPublicBrowseFields & { _id: Id<"skills"> },
+  options?: { latestVersion: Doc<"skillVersions"> | null },
 ): Promise<Doc<"skillVersions"> | null> {
   const latestVersionId = skill.latestVersionId;
   if (!latestVersionId) return null;
 
   if (!isSkillPendingPublicReview(skill)) {
-    const latestVersion = await ctx.db.get(latestVersionId);
+    const latestVersion = options ? options.latestVersion : await ctx.db.get(latestVersionId);
     return latestVersion &&
       latestVersion.skillId === skill._id &&
       isPubliclyListableSkillVersion(latestVersion)
