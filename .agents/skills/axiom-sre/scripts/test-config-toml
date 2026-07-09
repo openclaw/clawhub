@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# Test TOML parsing in scripts/config with various indentation styles.
+#
+# The config script parses a simple TOML subset used for tool credentials.
+# This test ensures extract_value, list_tools, and list_deployments work
+# correctly when section headers and key-value pairs are indented.
+#
+# Usage: scripts/test-config-toml
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
+
+PASS=0
+FAIL=0
+
+assert_eq() {
+    local label="$1" expected="$2" actual="$3"
+    if [[ "$expected" == "$actual" ]]; then
+        echo "  ✓ $label"
+        PASS=$((PASS + 1))
+    else
+        echo "  ✗ $label"
+        echo "    expected: $(printf '%q' "$expected")"
+        echo "    actual:   $(printf '%q' "$actual")"
+        FAIL=$((FAIL + 1))
+    fi
+}
+
+# ========== Test fixtures ==========
+
+# Standard (no indentation)
+cat > "$TEST_DIR/standard.toml" << 'EOF'
+[axiom.deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+
+[axiom.deployments.staging]
+url = "https://api.staging.axiom.co"
+token = "xaat-staging-token"
+org_id = "org-staging-456"
+
+[grafana.deployments.prod]
+url = "https://grafana.example.com"
+token = "glsa_grafana_token"
+
+[slack.workspaces.default]
+token = "xoxb-slack-token"
+EOF
+
+# Indented sections and values
+cat > "$TEST_DIR/indented.toml" << 'EOF'
+    [axiom.deployments.prod]
+    url = "https://api.axiom.co"
+    token = "xaat-prod-token"
+    org_id = "org-prod-123"
+
+    [axiom.deployments.staging]
+    url = "https://api.staging.axiom.co"
+    token = "xaat-staging-token"
+    org_id = "org-staging-456"
+
+    [grafana.deployments.prod]
+    url = "https://grafana.example.com"
+    token = "glsa_grafana_token"
+
+    [slack.workspaces.default]
+    token = "xoxb-slack-token"
+EOF
+
+# Mixed: some sections indented, some not
+cat > "$TEST_DIR/mixed.toml" << 'EOF'
+[axiom.deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+
+    [axiom.deployments.staging]
+    url = "https://api.staging.axiom.co"
+    token = "xaat-staging-token"
+    org_id = "org-staging-456"
+EOF
+
+# Tab-indented
+cat > "$TEST_DIR/tabs.toml" <<- 'EOF'
+	[axiom.deployments.prod]
+	url = "https://api.axiom.co"
+	token = "xaat-prod-token"
+	org_id = "org-prod-123"
+EOF
+
+# Values with extra spacing around =
+cat > "$TEST_DIR/spacing.toml" << 'EOF'
+[axiom.deployments.prod]
+url   =   "https://api.axiom.co"
+token =    "xaat-prod-token"
+org_id = "org-prod-123"
+EOF
+
+# Inline comments
+cat > "$TEST_DIR/comments.toml" << 'EOF'
+[axiom.deployments.prod]
+url = "https://api.axiom.co" # production API
+token = "xaat-prod-token" # keep secret
+org_id = "org-prod-123"
+EOF
+
+# Hash inside quoted value
+cat > "$TEST_DIR/hash_in_value.toml" << 'EOF'
+[axiom.deployments.prod]
+url = "https://example.com/path#fragment"
+token = "xaat-prod-token"
+org_id = "org-prod-123"
+EOF
+
+# ========== Tests via config script ==========
+# Use SRE_CONFIG env var to point config at our fixtures.
+
+echo "=== extract_value: standard config ==="
+export SRE_CONFIG="$TEST_DIR/standard.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url from prod" "https://api.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token from prod" "xaat-prod-token" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_ORG_ID")
+assert_eq "axiom org_id from prod" "org-prod-123" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom staging)" && echo "$AXIOM_URL")
+assert_eq "axiom url from staging" "https://api.staging.axiom.co" "$result"
+
+echo ""
+echo "=== extract_value: indented sections ==="
+export SRE_CONFIG="$TEST_DIR/indented.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url from prod" "https://api.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token from prod" "xaat-prod-token" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_ORG_ID")
+assert_eq "axiom org_id from prod" "org-prod-123" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom staging)" && echo "$AXIOM_URL")
+assert_eq "axiom url from staging" "https://api.staging.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" grafana prod)" && echo "$GRAFANA_URL")
+assert_eq "grafana url from prod" "https://grafana.example.com" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" slack default)" && echo "$SLACK_TOKEN")
+assert_eq "slack token" "xoxb-slack-token" "$result"
+
+echo ""
+echo "=== extract_value: mixed indentation ==="
+export SRE_CONFIG="$TEST_DIR/mixed.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url from prod (not indented)" "https://api.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom staging)" && echo "$AXIOM_URL")
+assert_eq "axiom url from staging (indented)" "https://api.staging.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom staging)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token from staging (indented)" "xaat-staging-token" "$result"
+
+echo ""
+echo "=== extract_value: tab indentation ==="
+export SRE_CONFIG="$TEST_DIR/tabs.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url from prod" "https://api.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token from prod" "xaat-prod-token" "$result"
+
+echo ""
+echo "=== extract_value: extra spacing ==="
+export SRE_CONFIG="$TEST_DIR/spacing.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url with spacing" "https://api.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token with spacing" "xaat-prod-token" "$result"
+
+echo ""
+echo "=== extract_value: inline comments ==="
+export SRE_CONFIG="$TEST_DIR/comments.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url with comment" "https://api.axiom.co" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token with comment" "xaat-prod-token" "$result"
+
+echo ""
+echo "=== extract_value: hash inside quoted value ==="
+export SRE_CONFIG="$TEST_DIR/hash_in_value.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_URL")
+assert_eq "axiom url with hash fragment" "https://example.com/path#fragment" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "axiom token after hash url" "xaat-prod-token" "$result"
+
+echo ""
+echo "=== extract_value: no cross-section leaking ==="
+export SRE_CONFIG="$TEST_DIR/standard.toml"
+result=$(eval "$("$SCRIPT_DIR/config" axiom prod)" && echo "$AXIOM_TOKEN")
+assert_eq "prod token stays in prod" "xaat-prod-token" "$result"
+result=$(eval "$("$SCRIPT_DIR/config" axiom staging)" && echo "$AXIOM_TOKEN")
+assert_eq "staging token stays in staging" "xaat-staging-token" "$result"
+
+echo ""
+echo "=== list_tools: standard ==="
+export SRE_CONFIG="$TEST_DIR/standard.toml"
+result=$("$SCRIPT_DIR/config" --list-tools)
+assert_eq "lists axiom"   "axiom"   "$(echo "$result" | grep -x axiom)"
+assert_eq "lists grafana" "grafana" "$(echo "$result" | grep -x grafana)"
+assert_eq "lists slack"   "slack"   "$(echo "$result" | grep -x slack)"
+
+echo ""
+echo "=== list_tools: indented ==="
+export SRE_CONFIG="$TEST_DIR/indented.toml"
+result=$("$SCRIPT_DIR/config" --list-tools)
+assert_eq "lists axiom (indented)"   "axiom"   "$(echo "$result" | grep -x axiom)"
+assert_eq "lists grafana (indented)" "grafana" "$(echo "$result" | grep -x grafana)"
+assert_eq "lists slack (indented)"   "slack"   "$(echo "$result" | grep -x slack)"
+
+echo ""
+echo "=== list_deployments: standard ==="
+export SRE_CONFIG="$TEST_DIR/standard.toml"
+result=$("$SCRIPT_DIR/config" --list axiom)
+assert_eq "lists prod"    "prod"    "$(echo "$result" | head -1)"
+assert_eq "lists staging" "staging" "$(echo "$result" | tail -1)"
+
+echo ""
+echo "=== list_deployments: indented ==="
+export SRE_CONFIG="$TEST_DIR/indented.toml"
+result=$("$SCRIPT_DIR/config" --list axiom)
+assert_eq "lists prod (indented)"    "prod"    "$(echo "$result" | head -1)"
+assert_eq "lists staging (indented)" "staging" "$(echo "$result" | tail -1)"
+
+echo ""
+echo "=== list_deployments: slack workspaces (indented) ==="
+export SRE_CONFIG="$TEST_DIR/indented.toml"
+result=$("$SCRIPT_DIR/config" --list slack)
+assert_eq "lists default workspace (indented)" "default" "$result"
+
+echo ""
+echo "==========================="
+echo "Results: $PASS passed, $FAIL failed"
+if [[ $FAIL -gt 0 ]]; then
+    exit 1
+fi

@@ -12,10 +12,12 @@ import {
   failCodexScanJob,
   failJobInternal,
   finalizeGitHubSkillScanRequestInternal,
+  getCodexScanQueueHealthInternal,
   getJobTargetInternal,
   getBulkSkillRescanBatchStatusForAdminInternal,
   getSkillScanRequestForUserInternal,
   getStoredScanReportForUserInternal,
+  logCodexScanQueueHealthInternal,
   prepareGitHubSkillScanRequestInternal,
   pruneExpiredSkillScanRequestsInternal,
   recordGitHubSkillScanResultInternal,
@@ -60,6 +62,36 @@ const failJobInternalHandler = (
   failJobInternal as unknown as WrappedHandler<
     { jobId: string; leaseToken: string; error: string },
     { ok: true; retry: boolean }
+  >
+)._handler;
+
+const getCodexScanQueueHealthInternalHandler = (
+  getCodexScanQueueHealthInternal as unknown as WrappedHandler<
+    Record<string, never>,
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
+  >
+)._handler;
+
+const logCodexScanQueueHealthInternalHandler = (
+  logCodexScanQueueHealthInternal as unknown as WrappedHandler<
+    Record<string, never>,
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
   >
 )._handler;
 
@@ -455,6 +487,52 @@ function makeScanJob(overrides: Partial<ScanJob> = {}): ScanJob {
     updatedAt: 50,
     ...overrides,
   };
+}
+
+function makeQueueHealthCtx(jobs: ScanJob[]) {
+  const query = vi.fn((table: string) => {
+    expect(table).toBe("securityScanJobs");
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+        ) => {
+          expect(indexName).toBe("by_status_and_next_run_at");
+          const equals = new Map<string, unknown>();
+          const range = {
+            eq(field: string, value: unknown) {
+              equals.set(field, value);
+              return range;
+            },
+          };
+          buildRange(range);
+          const matched = [...jobs]
+            .filter((job) =>
+              Array.from(equals.entries()).every(([field, value]) => {
+                return job[field as keyof ScanJob] === value;
+              }),
+            )
+            .sort(
+              (a, b) =>
+                a.nextRunAt - b.nextRunAt ||
+                a._creationTime - b._creationTime ||
+                a._id.localeCompare(b._id),
+            );
+          return {
+            order: vi.fn((direction: string) => {
+              expect(direction).toBe("asc");
+              return {
+                take: vi.fn(async (limit: number) => matched.slice(0, limit)),
+              };
+            }),
+          };
+        },
+      ),
+    };
+  });
+
+  return { db: { query } };
 }
 
 function makeTarget(llmStatus?: string) {
@@ -995,8 +1073,94 @@ function makeStoredScanReportCtx(options: {
 
 describe("securityScan", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("reports claimable queue depth and oldest overdue age", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const ctx = makeQueueHealthCtx([
+      makeScanJob({
+        _id: "securityScanJobs:oldest-ready",
+        nextRunAt: 100_000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:ready",
+        nextRunAt: 900_000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:future",
+        nextRunAt: 1_100_000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:running",
+        status: "running",
+        nextRunAt: 1,
+      }),
+    ]);
+
+    const result = await getCodexScanQueueHealthInternalHandler(ctx, {});
+
+    expect(result).toEqual({
+      snapshotAt: 1_000_000,
+      queueDepth: 3,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 900,
+      oldestReadyJobNextRunAt: 100_000,
+    });
+  });
+
+  it("marks capped queue health counts as estimates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const ctx = makeQueueHealthCtx(
+      Array.from({ length: 513 }, (_, index) =>
+        makeScanJob({
+          _id: `securityScanJobs:queued-${index}`,
+          _creationTime: index,
+          nextRunAt: index,
+        }),
+      ),
+    );
+
+    const result = await getCodexScanQueueHealthInternalHandler(ctx, {});
+
+    expect(result).toMatchObject({
+      queueDepth: 512,
+      queueDepthIsEstimate: true,
+      readyQueueDepth: 512,
+      readyQueueDepthIsEstimate: true,
+    });
+  });
+
+  it("logs the queue health snapshot as a structured observability event", async () => {
+    const snapshot = {
+      snapshotAt: 1_000_000,
+      queueDepth: 4,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 901,
+      oldestReadyJobNextRunAt: 99_000,
+    };
+    const runQuery = vi.fn(async () => snapshot);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const result = await logCodexScanQueueHealthInternalHandler({ runQuery }, {});
+
+    expect(result).toEqual(snapshot);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {});
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "security_scan_queue.snapshot",
+        ...snapshot,
+      }),
+    );
+    log.mockRestore();
   });
 
   it("does not enqueue a duplicate publish scan after the backup delay if the first scan already finished", async () => {

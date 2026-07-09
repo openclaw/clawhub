@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Generate shareable Sentry links
+# Usage: sentry-link <deployment> <path>
+# Example: sentry-link prod "/issues/12345/"
+# Example: sentry-link prod "/issues/?query=is:unresolved+service:api-gateway"
+#
+# Generates a full URL to a Sentry issue, search, or dashboard.
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+SENTRY_PATH="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$SENTRY_PATH" ]]; then
+  echo "Usage: sentry-link <deployment> <path>" >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  sentry-link prod /issues/12345/" >&2
+  echo "  sentry-link prod \"/issues/?query=is:unresolved+service:api-gateway\"" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" sentry "$DEPLOYMENT")"
+
+URL="${SENTRY_URL%/}"
+
+if [[ -z "$URL" ]]; then
+  echo "Error: Missing url for deployment '$DEPLOYMENT'" >&2
+  exit 1
+fi
+
+# Strip leading slash if present to avoid double slashes
+SENTRY_PATH="${SENTRY_PATH#/}"
+
+echo "${URL}/${SENTRY_PATH}"

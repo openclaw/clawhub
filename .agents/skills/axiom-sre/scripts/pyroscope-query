@@ -1,0 +1,35 @@
+#!/bin/bash
+# Query Pyroscope API with cloudflared authentication
+# Usage: pyroscope-query <deployment> <endpoint> [json-body]
+#
+# Examples:
+#   pyroscope-query prod ProfileTypes '{}'
+#   pyroscope-query prod LabelNames '{"start": 1700000000000, "end": 1700100000000}'
+#   pyroscope-query prod SelectMergeStacktraces '{"profileTypeID": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", ...}'
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+endpoint="${2:-}"
+body="${3:-{}}"
+
+if [[ -z "$DEPLOYMENT" || -z "$endpoint" ]]; then
+    echo "Usage: pyroscope-query <deployment> <endpoint> [json-body]" >&2
+    echo "" >&2
+    echo "Endpoints:" >&2
+    echo "  ProfileTypes        - List available profile types" >&2
+    echo "  LabelNames          - Get label names" >&2
+    echo "  LabelValues         - Get values for a label" >&2
+    echo "  Series              - Query series" >&2
+    echo "  SelectMergeStacktraces - Get flame graph" >&2
+    echo "  SelectSeries        - Get time series" >&2
+    echo "  Diff                - Compare two time ranges" >&2
+    echo "  GetProfileStats     - Get ingestion stats" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+api_url="${PYROSCOPE_URL}/querier.v1.QuerierService/${endpoint}"
+"$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST -d "$body" "$api_url"

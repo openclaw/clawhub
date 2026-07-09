@@ -100,14 +100,24 @@ describe("crons", () => {
     vi.resetModules();
     mocks.interval.mockReset();
     delete process.env.CLAWHUB_DISABLE_CRONS;
+    delete process.env.CLAWHUB_PREVIEW;
   });
 
   afterEach(() => {
     delete process.env.CLAWHUB_DISABLE_CRONS;
+    delete process.env.CLAWHUB_PREVIEW;
   });
 
   it("does not register production cron work when explicitly disabled", async () => {
     process.env.CLAWHUB_DISABLE_CRONS = "1";
+
+    await import("./crons");
+
+    expect(mocks.interval).not.toHaveBeenCalled();
+  });
+
+  it("does not register side-effecting cron work in disposable previews", async () => {
+    process.env.CLAWHUB_PREVIEW = "1";
 
     await import("./crons");
 

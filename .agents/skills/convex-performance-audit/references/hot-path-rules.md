@@ -112,7 +112,7 @@ backfilled". Verify.
 
 If correctness depends on handling old and new states during rollout, do not
 improvise a partial-backfill workaround in the hot path. Use a migration-safe
-rollout and consult `skills/convex-migration-helper/SKILL.md`.
+rollout and consult the `convex-migration-helper` skill.
 
 ```ts
 // Bad: optional booleans can miss older rows where the field is undefined

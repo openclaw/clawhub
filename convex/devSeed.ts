@@ -64,6 +64,12 @@ type PublicCorpusSeedBatchResult = {
   skipped: string[];
 };
 
+type PublicCorpusSeedBatchHandlerResult = {
+  ok: true;
+  seeded: string[];
+  skipped: string[];
+};
+
 function seededPackageRecommendationScore(stats: {
   downloads: number;
   installs: number;
@@ -188,6 +194,33 @@ const publicCorpusSeedRowValidator = v.union(
   publicCorpusSkillRowValidator,
   publicCorpusPluginRowValidator,
 );
+
+type PublicCorpusSeedRow =
+  | {
+      kind: "skill";
+      slug: string;
+      displayName: string;
+      version: string;
+      skillMd: string;
+      summary?: string;
+      createdAt?: number;
+      dummyOwner: PublicCorpusDummyOwner;
+    }
+  | {
+      kind: "plugin";
+      name: string;
+      displayName: string;
+      version: string;
+      readme: string;
+      summary?: string;
+      categories?: string[];
+      topics?: string[];
+      family?: "skill" | "code-plugin" | "bundle-plugin";
+      channel?: "official" | "community" | "private";
+      sourceRepoHost?: string | null;
+      createdAt?: number;
+      dummyOwner: PublicCorpusDummyOwner;
+    };
 
 const publicCorpusPreparedSkillRowValidator = v.object({
   kind: v.literal("skill"),
@@ -924,63 +957,70 @@ export const backfillExistingPublicCorpusBatchRows = internalMutation({
   },
 });
 
+async function seedPublicCorpusBatchHandler(
+  ctx: ActionCtx,
+  args: {
+    reset?: boolean;
+    resetOwnerHandles?: string[];
+    rows: PublicCorpusSeedRow[];
+  },
+): Promise<PublicCorpusSeedBatchHandlerResult> {
+  const existingResult: PublicCorpusExistingRowsResult | null = args.reset
+    ? null
+    : await ctx.runMutation(internal.devSeed.backfillExistingPublicCorpusBatchRows, {
+        rows: args.rows,
+      });
+  const missingKeys = new Set(existingResult?.missingKeys ?? []);
+  const rowsToPrepare = args.reset
+    ? args.rows
+    : args.rows.filter((row) => missingKeys.has(publicCorpusSeedRowKey(row)));
+  if (!args.reset && rowsToPrepare.length === 0) {
+    return { ok: true as const, seeded: [], skipped: existingResult?.skipped ?? [] };
+  }
+
+  const preparedRows = await Promise.all(
+    rowsToPrepare.map(async (row) => {
+      if (row.kind === "skill") {
+        const storageId = await ctx.storage.store(
+          new Blob([row.skillMd], { type: "text/markdown" }),
+        );
+        const frontmatter = parseFrontmatter(row.skillMd);
+        const embeddingText = buildEmbeddingText({
+          frontmatter,
+          readme: row.skillMd,
+          otherFiles: [],
+        });
+        const embedding = await generateEmbedding(embeddingText);
+        return { ...row, storageId, embedding };
+      }
+      const storageId = await ctx.storage.store(new Blob([row.readme], { type: "text/markdown" }));
+      return { ...row, storageId };
+    }),
+  );
+
+  const seedResult: PublicCorpusSeedBatchResult = await ctx.runMutation(
+    internal.devSeed.seedPublicCorpusBatchMutation,
+    {
+      reset: args.reset,
+      resetOwnerHandles: args.resetOwnerHandles,
+      rows: preparedRows,
+    },
+  );
+
+  return {
+    ok: true as const,
+    seeded: seedResult.seeded,
+    skipped: [...(existingResult?.skipped ?? []), ...seedResult.skipped],
+  };
+}
+
 export const seedPublicCorpusBatch: ReturnType<typeof internalAction> = internalAction({
   args: {
     reset: v.optional(v.boolean()),
     resetOwnerHandles: v.optional(v.array(v.string())),
     rows: v.array(publicCorpusSeedRowValidator),
   },
-  handler: async (ctx, args) => {
-    const existingResult: PublicCorpusExistingRowsResult | null = args.reset
-      ? null
-      : await ctx.runMutation(internal.devSeed.backfillExistingPublicCorpusBatchRows, {
-          rows: args.rows,
-        });
-    const missingKeys = new Set(existingResult?.missingKeys ?? []);
-    const rowsToPrepare = args.reset
-      ? args.rows
-      : args.rows.filter((row) => missingKeys.has(publicCorpusSeedRowKey(row)));
-    if (!args.reset && rowsToPrepare.length === 0) {
-      return { ok: true, seeded: [], skipped: existingResult?.skipped ?? [] };
-    }
-
-    const preparedRows = await Promise.all(
-      rowsToPrepare.map(async (row) => {
-        if (row.kind === "skill") {
-          const storageId = await ctx.storage.store(
-            new Blob([row.skillMd], { type: "text/markdown" }),
-          );
-          const frontmatter = parseFrontmatter(row.skillMd);
-          const embeddingText = buildEmbeddingText({
-            frontmatter,
-            readme: row.skillMd,
-            otherFiles: [],
-          });
-          const embedding = await generateEmbedding(embeddingText);
-          return { ...row, storageId, embedding };
-        }
-        const storageId = await ctx.storage.store(
-          new Blob([row.readme], { type: "text/markdown" }),
-        );
-        return { ...row, storageId };
-      }),
-    );
-
-    const seedResult: PublicCorpusSeedBatchResult = await ctx.runMutation(
-      internal.devSeed.seedPublicCorpusBatchMutation,
-      {
-        reset: args.reset,
-        resetOwnerHandles: args.resetOwnerHandles,
-        rows: preparedRows,
-      },
-    );
-
-    return {
-      ok: true,
-      seeded: seedResult.seeded,
-      skipped: [...(existingResult?.skipped ?? []), ...seedResult.skipped],
-    };
-  },
+  handler: seedPublicCorpusBatchHandler,
 });
 
 function publicCorpusSeedRowKey(
@@ -1016,9 +1056,15 @@ export const seedPublicCorpusBatchMutation = internalMutation({
 
     const seeded: string[] = [];
     const skipped: string[] = [];
+    const owners = new Map<string, { userId: Id<"users">; publisherId: Id<"publishers"> }>();
 
     for (const row of args.rows) {
-      const { userId, publisherId } = await ensurePublicCorpusOwner(ctx, row.dummyOwner);
+      let owner = owners.get(row.dummyOwner.handle);
+      if (!owner) {
+        owner = await ensurePublicCorpusOwner(ctx, row.dummyOwner);
+        owners.set(row.dummyOwner.handle, owner);
+      }
+      const { userId, publisherId } = owner;
       if (row.kind === "skill") {
         const existing = await ctx.db
           .query("skills")
