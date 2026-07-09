@@ -64,7 +64,7 @@ type PublicCorpusSeedBatchResult = {
   skipped: string[];
 };
 
-export type PublicCorpusSeedBatchHandlerResult = {
+type PublicCorpusSeedBatchHandlerResult = {
   ok: true;
   seeded: string[];
   skipped: string[];
@@ -149,7 +149,7 @@ type SeedGitHubBackedSkillSourceArgs = {
   }>;
 };
 
-export type PublicCorpusDummyOwner = {
+type PublicCorpusDummyOwner = {
   handle: string;
   displayName: string;
   image: string;
@@ -195,7 +195,7 @@ const publicCorpusSeedRowValidator = v.union(
   publicCorpusPluginRowValidator,
 );
 
-export type PublicCorpusSeedRow =
+type PublicCorpusSeedRow =
   | {
       kind: "skill";
       slug: string;
@@ -831,7 +831,7 @@ function injectMetadata(rawSkillMd: string, metadata: Record<string, unknown>) {
   )}${rawSkillMd.slice(frontmatterEnd)}`;
 }
 
-export async function seedLocalFixturesHandler(
+async function seedLocalFixturesHandler(
   ctx: ActionCtx,
   args: SeedActionArgs,
 ): Promise<SeedActionResult> {
@@ -957,7 +957,7 @@ export const backfillExistingPublicCorpusBatchRows = internalMutation({
   },
 });
 
-export async function seedPublicCorpusBatchHandler(
+async function seedPublicCorpusBatchHandler(
   ctx: ActionCtx,
   args: {
     reset?: boolean;
@@ -1056,9 +1056,15 @@ export const seedPublicCorpusBatchMutation = internalMutation({
 
     const seeded: string[] = [];
     const skipped: string[] = [];
+    const owners = new Map<string, { userId: Id<"users">; publisherId: Id<"publishers"> }>();
 
     for (const row of args.rows) {
-      const { userId, publisherId } = await ensurePublicCorpusOwner(ctx, row.dummyOwner);
+      let owner = owners.get(row.dummyOwner.handle);
+      if (!owner) {
+        owner = await ensurePublicCorpusOwner(ctx, row.dummyOwner);
+        owners.set(row.dummyOwner.handle, owner);
+      }
+      const { userId, publisherId } = owner;
       if (row.kind === "skill") {
         const existing = await ctx.db
           .query("skills")

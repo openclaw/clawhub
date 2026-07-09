@@ -56,6 +56,7 @@ function createDb() {
   const tables: Record<string, Array<Record<string, unknown> & { _id: string }>> = {};
   const counters: Record<string, number> = {};
   const operations: Array<{ type: "delete"; table: string; id: string }> = [];
+  const queries: Array<{ table: string; constraints: Record<string, unknown> }> = [];
 
   const list = (table: string) => {
     tables[table] ??= [];
@@ -114,6 +115,7 @@ function createDb() {
       withIndex: (_name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
         build(chainEq(constraints));
+        queries.push({ table, constraints });
         const matched = () =>
           list(table).filter((doc) => matches(doc as Record<string, unknown>, constraints));
         return {
@@ -137,7 +139,7 @@ function createDb() {
     }),
   };
 
-  return { db, tables, operations };
+  return { db, tables, operations, queries };
 }
 
 function createMutationCtx(db: ReturnType<typeof createDb>["db"]) {
@@ -275,6 +277,49 @@ describe("devSeed local fixtures", () => {
     expect((tables.skillDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0)).toBe(
       tables.skills?.[0]?.statsInstallsAllTime,
     );
+  });
+
+  it("resolves a shared public corpus owner once per mutation batch", async () => {
+    const { db, queries } = createDb();
+    const dummyOwner = {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      image: "https://example.invalid/avatar.png",
+    };
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-one",
+            displayName: "Corpus One",
+            version: "0.1.0",
+            skillMd: "# Corpus one",
+            storageId: "storage:corpus-one",
+            embedding: [0, 1, 2],
+            dummyOwner,
+          },
+          {
+            kind: "skill",
+            slug: "corpus-two",
+            displayName: "Corpus Two",
+            version: "0.1.0",
+            skillMd: "# Corpus two",
+            storageId: "storage:corpus-two",
+            embedding: [0, 1, 2],
+            dummyOwner,
+          },
+        ],
+      } as never,
+    );
+
+    expect(
+      queries.filter(
+        (query) => query.table === "users" && query.constraints.handle === dummyOwner.handle,
+      ),
+    ).toHaveLength(1);
   });
 
   it("backfills daily activity for existing public corpus skills", async () => {

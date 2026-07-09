@@ -18,15 +18,18 @@ Local fixture seeding is command-driven by default:
   the documented first-run local setup path.
 - CLI seeding (`bun run seed:dev`) runs the same seed path manually without starting the preview and
   bypasses the first-run sentinel.
+- `bun run seed` is the shared seed pipeline used after local setup and by disposable PR previews.
+  It installs the same moderation fixtures and committed public corpus, then refreshes global stats.
+  Without `--preview-name` it accepts only a local Convex deployment; remote use requires an
+  explicit preview name plus a Convex Preview deploy key. Vercel recreates that preview deployment
+  before invoking the shared seed, so the corpus import does not perform a destructive reset.
 - `bun run seed:public-corpus` is the lower-level corpus-only import command. Use it for corpus
-  fixture work, not as the default local setup command.
+  fixture work, not as the default local setup command. The importer keeps each dummy owner's
+  batches serialized while running different owners concurrently, so owner creation remains
+  deterministic without paying one network round trip per corpus row.
 - `bun run validate:public-corpus` validates the committed public corpus fixture without seeding.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
-- `internal.previewSeed.seed` is the disposable PR-preview seed. The Vercel preview build invokes it
-  only after recreating the paired Convex preview deployment. It requires `CLAWHUB_PREVIEW=1`,
-  rejects production, and resets a small deterministic public catalog plus moderation/scanner
-  presentation fixtures on every run.
 
 Current-user fixture seeding must not be exposed as a public Convex `api` function or browser UI
 action. Internal tooling may pass an `ownerUserId`, but that id must stay inside trusted local seed

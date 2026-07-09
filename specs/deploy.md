@@ -157,8 +157,8 @@ Deploy order:
 
 Vercel Preview builds use `bun run build:vercel`. The build entrypoint requires a
 Convex Preview deploy key, recreates the branch's Convex preview with
-`--preview-create`, builds the frontend with that deployment's URL, and runs
-`previewSeed:seed`.
+`--preview-create`, builds the frontend with that deployment's URL, and runs the
+same `bun run seed` pipeline used by local development against that preview name.
 
 One-time setup:
 
@@ -175,10 +175,11 @@ One-time setup:
    exists. Production Convex deploys remain manual-only through
    `.github/workflows/deploy.yml`.
 
-The preview seed fails closed unless `CLAWHUB_PREVIEW=1` is present and also
-rejects the production Convex deployment. It installs a small deterministic
-catalog plus synthetic clean, suspicious, and malicious presentation states.
-Running it again resets and recreates the same fixture rows.
+The shared seed command fails closed unless its target is local or an explicit
+preview name selected with a Convex Preview deploy key. It installs
+the committed public corpus plus the same synthetic clean, suspicious, and
+malicious presentation states used locally. Staging remains snapshot-backed and
+production is never seeded.
 
 Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
 requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
