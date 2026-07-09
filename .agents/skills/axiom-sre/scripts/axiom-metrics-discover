@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# Axiom MetricsDB info endpoint helper - discover metrics, tags, and tag values
+#
+# Usage: axiom-metrics-discover <deployment> <dataset> [options] <command> [args...]
+#
+# Commands:
+#   metrics                           List all metrics in dataset
+#   tags                              List all tags in dataset
+#   tag-values <tag>                  List values for a tag
+#   metric-tags <metric>              List tags for a metric
+#   metric-tag-values <metric> <tag>  List tag values for metric+tag
+#   search <value>                    Find metrics matching a tag value (POST)
+#
+# Options:
+#   --range <r>     Time range from now (e.g. 1h, 24h, 7d). Default: 1h
+#   --start <ts>    Start time (RFC3339)
+#   --end <ts>      End time (RFC3339)
+#
+# Examples:
+#   axiom-metrics-discover prod otel-metrics metrics
+#   axiom-metrics-discover prod otel-metrics --range 24h tags
+#   axiom-metrics-discover prod otel-metrics tag-values service.name
+#   axiom-metrics-discover prod otel-metrics metric-tags http.server.request.duration
+#   axiom-metrics-discover prod otel-metrics metric-tag-values http.server.request.duration service.name
+#   axiom-metrics-discover prod otel-metrics search "api-gateway"
+
+set -euo pipefail
+
+if [[ $# -lt 3 ]]; then
+  echo "Usage: axiom-metrics-discover <deployment> <dataset> [options] <command> [args...]" >&2
+  exit 1
+fi
+
+DEPLOYMENT="$1"
+DATASET="$2"
+shift 2
+
+START_TIME="${START_TIME:-}"
+END_TIME="${END_TIME:-}"
+RANGE="${RANGE:-}"
+
+# Parse options before command
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --start)
+      START_TIME="$2"
+      shift 2
+      ;;
+    --end)
+      END_TIME="$2"
+      shift 2
+      ;;
+    --range)
+      RANGE="$2"
+      shift 2
+      ;;
+    -*)
+      echo "Error: Unknown option '$1'." >&2
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -lt 1 ]]; then
+  echo "Error: No command specified. Use: metrics, tags, tag-values, metric-tags, metric-tag-values, search." >&2
+  exit 1
+fi
+
+COMMAND="$1"
+shift
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/lib-time"
+
+# Validate time arguments
+if [[ -n "$RANGE" && ( -n "$START_TIME" || -n "$END_TIME" ) ]]; then
+  echo "Error: --range cannot be combined with --start/--end." >&2
+  exit 1
+fi
+
+if [[ -n "$RANGE" ]]; then
+  START_TIME=$(range_to_rfc3339 "$RANGE") || exit 1
+  END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) || exit 1
+  if [[ -z "$START_TIME" || -z "$END_TIME" ]]; then
+    echo "Error: Failed to compute time range from '$RANGE'." >&2
+    exit 1
+  fi
+elif [[ -n "$START_TIME" && -n "$END_TIME" ]]; then
+  : # explicit start/end provided
+elif [[ -n "$START_TIME" || -n "$END_TIME" ]]; then
+  echo "Error: Both --start and --end are required when specifying explicit times." >&2
+  exit 1
+else
+  # Default to 1h
+  START_TIME=$(range_to_rfc3339 "1h") || exit 1
+  END_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) || exit 1
+  if [[ -z "$START_TIME" || -z "$END_TIME" ]]; then
+    echo "Error: Failed to compute default time range." >&2
+    exit 1
+  fi
+fi
+
+# URL-encode a path segment
+uriencode() {
+  jq -rn --arg x "$1" '$x|@uri'
+}
+
+DATASET_ENC=$(uriencode "$DATASET")
+START_ENC=$(uriencode "$START_TIME")
+END_ENC=$(uriencode "$END_TIME")
+BASE="/v1/query/metrics/info/datasets/${DATASET_ENC}"
+QS="start=${START_ENC}&end=${END_ENC}"
+
+case "$COMMAND" in
+  metrics)
+    "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics?${QS}" | jq .
+    ;;
+  tags)
+    "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/tags?${QS}" | jq .
+    ;;
+  tag-values)
+    if [[ $# -lt 1 ]]; then
+      echo "Error: tag-values requires a <tag> argument." >&2
+      exit 1
+    fi
+    TAG_ENC=$(uriencode "$1")
+    "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/tags/${TAG_ENC}/values?${QS}" | jq .
+    ;;
+  metric-tags)
+    if [[ $# -lt 1 ]]; then
+      echo "Error: metric-tags requires a <metric> argument." >&2
+      exit 1
+    fi
+    METRIC_ENC=$(uriencode "$1")
+    "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC_ENC}/tags?${QS}" | jq .
+    ;;
+  metric-tag-values)
+    if [[ $# -lt 2 ]]; then
+      echo "Error: metric-tag-values requires <metric> and <tag> arguments." >&2
+      exit 1
+    fi
+    METRIC_ENC=$(uriencode "$1")
+    TAG_ENC=$(uriencode "$2")
+    "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC_ENC}/tags/${TAG_ENC}/values?${QS}" | jq .
+    ;;
+  search)
+    if [[ $# -lt 1 ]]; then
+      echo "Error: search requires a <value> argument." >&2
+      exit 1
+    fi
+    BODY=$(jq -nc --arg v "$1" '{"value": $v}')
+    "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" POST "${BASE}/metrics?${QS}" "$BODY" | jq .
+    ;;
+  *)
+    echo "Error: Unknown command '$COMMAND'. Use: metrics, tags, tag-values, metric-tags, metric-tag-values, search." >&2
+    exit 1
+    ;;
+esac

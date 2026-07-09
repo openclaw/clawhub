@@ -10,3 +10,12 @@
 
 *.woff binary
 *.woff2 binary
+
+# Preserve intentional whitespace in the pinned Axiom upstream sources.
+.agents/skills/axiom-alerting/** -whitespace
+.agents/skills/axiom-sre/** -whitespace
+.agents/skills/building-dashboards/** -whitespace
+.agents/skills/controlling-costs/** -whitespace
+.agents/skills/query-metrics/** -whitespace
+.agents/skills/spl-to-apl/** -whitespace
+.agents/skills/writing-evals/** -whitespace
