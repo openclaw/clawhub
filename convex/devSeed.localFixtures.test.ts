@@ -170,14 +170,23 @@ function seedSkillArgs(storageId: string) {
 describe("devSeed local fixtures", () => {
   it("does not preconfigure GitHub-backed source fixtures in the local seed action", async () => {
     const mutationCalls: Array<{ args: Record<string, unknown> }> = [];
+    const deletedStorageIds: string[] = [];
     let storageCounter = 0;
     const ctx = {
       storage: {
         store: async () => `storage:${++storageCounter}`,
+        delete: async (storageId: string) => {
+          deletedStorageIds.push(storageId);
+        },
       },
       runMutation: async (_ref: unknown, args: Record<string, unknown>) => {
         mutationCalls.push({ args });
-        return { ok: true, seeded: ["local-moderation-fixtures"], skipped: [] };
+        return {
+          ok: true,
+          seeded: ["local-moderation-fixtures"],
+          skipped: [],
+          storageIdsToDelete: ["storage:old"],
+        };
       },
     };
 
@@ -193,6 +202,8 @@ describe("devSeed local fixtures", () => {
         results: [expect.objectContaining({ slug: "local-moderation-fixtures" })],
       }),
     );
+    expect((result as { results: unknown[] }).results[0]).not.toHaveProperty("storageIdsToDelete");
+    expect(deletedStorageIds).toEqual(["storage:old"]);
   });
 
   it("seeds core skill fixtures for an explicit local user without creating @local", async () => {
@@ -1163,6 +1174,60 @@ describe("devSeed local fixtures", () => {
         scannedPluginReadme: "# Scanned plugin",
       } as never,
     );
+    const reseedResult = (await seedLocalModerationFixturesHandler(
+      createMutationCtx(db) as never,
+      {
+        ownerUserId: userId,
+        flaggedSkillSlug,
+        scannedSkillSlug,
+        flaggedPluginName,
+        scannedPluginName,
+        flaggedSkillStorageId: "storage:skill-next",
+        flaggedSkillMd: `---\nname: ${flaggedSkillSlug}\n---\n# Flagged skill`,
+        scannedSkillStorageId: "storage:scanned-skill-next",
+        scannedSkillMd: `---\nname: ${scannedSkillSlug}\n---\n# Scanned skill`,
+        flaggedPluginStorageId: "storage:plugin-unused",
+        flaggedPluginReadme: "# Flagged plugin",
+        scannedPluginStorageId: "storage:scanned-plugin-unused",
+        scannedPluginReadme: "# Scanned plugin",
+      } as never,
+    )) as { storageIdsToDelete?: string[] };
+    expect(reseedResult.storageIdsToDelete).toEqual(
+      expect.arrayContaining([
+        "storage:skill",
+        "storage:scanned-skill",
+        "storage:plugin-unused",
+        "storage:scanned-plugin-unused",
+      ]),
+    );
+    const fixtureStorageId = (slug: string) => {
+      const skill = tables.skills?.find((row) => row.slug === slug);
+      const version = tables.skillVersions?.find((row) => row._id === skill?.latestVersionId);
+      return (version?.files as Array<{ storageId: string }> | undefined)?.[0]?.storageId;
+    };
+    expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
+    expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
+    const deduplicatedReseedResult = (await seedLocalModerationFixturesHandler(
+      createMutationCtx(db) as never,
+      {
+        ownerUserId: userId,
+        flaggedSkillSlug,
+        scannedSkillSlug,
+        flaggedPluginName,
+        scannedPluginName,
+        flaggedSkillStorageId: "storage:skill-next",
+        flaggedSkillMd: `---\nname: ${flaggedSkillSlug}\n---\n# Flagged skill`,
+        scannedSkillStorageId: "storage:scanned-skill-next",
+        scannedSkillMd: `---\nname: ${scannedSkillSlug}\n---\n# Scanned skill`,
+        flaggedPluginStorageId: "storage:plugin",
+        flaggedPluginReadme: "# Flagged plugin",
+        scannedPluginStorageId: "storage:scanned-plugin",
+        scannedPluginReadme: "# Scanned plugin",
+      } as never,
+    )) as { storageIdsToDelete?: string[] };
+    expect(deduplicatedReseedResult.storageIdsToDelete).toEqual([]);
+    expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
+    expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
     await seedFeaturedPluginPackagesHandler(
       createMutationCtx(db) as never,
       {
