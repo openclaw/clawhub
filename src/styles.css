@@ -1406,8 +1406,8 @@ code {
   --navbar-theme-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --navbar-theme-pad: 3px;
   --navbar-theme-gap: 2px;
-  --navbar-theme-outer-r: 10px;
-  --navbar-theme-inner-r: calc(var(--navbar-theme-outer-r) - var(--navbar-theme-pad));
+  --navbar-theme-outer-r: var(--oc-radius-control);
+  --navbar-theme-inner-r: var(--oc-radius-inset);
   --navbar-theme-seg: 26px;
   --navbar-theme-collapsed-w: calc(var(--navbar-theme-seg) + var(--navbar-theme-pad) * 2);
   --navbar-theme-expanded-w: calc(
@@ -1439,7 +1439,7 @@ code {
   width: 32px;
   height: 32px;
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-  border-radius: 10px;
+  border-radius: var(--oc-radius-control);
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--surface-muted) 78%, transparent),
@@ -3753,7 +3753,7 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--r-md);
+  border-radius: var(--oc-radius-inset);
   flex: 0 0 auto;
   background: color-mix(in srgb, var(--marketplace-icon-accent) 10%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--marketplace-icon-accent) 12%, var(--line));
@@ -3775,7 +3775,7 @@ code {
 }
 
 .marketplace-icon-xs.marketplace-icon-user {
-  border-radius: 999px;
+  border-radius: var(--oc-radius-round);
 }
 
 .marketplace-icon-sm {
@@ -3789,7 +3789,7 @@ code {
 }
 
 .marketplace-icon-user {
-  border-radius: 999px;
+  border-radius: var(--oc-radius-round);
 }
 
 .marketplace-icon-glyph {
@@ -3871,7 +3871,7 @@ code {
   --marketplace-icon-wash: transparent !important;
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--oc-radius-inset);
   background: color-mix(in srgb, var(--ink) 4%, transparent) !important;
   border: 1px solid color-mix(in srgb, var(--ink) 7%, transparent) !important;
   color: color-mix(in srgb, var(--ink-soft) 88%, transparent);
@@ -9321,7 +9321,7 @@ code {
   width: 34px;
   height: 34px;
   border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
-  border-radius: 9px;
+  border-radius: var(--oc-radius-inset);
   background: color-mix(in srgb, var(--ink) 4%, transparent) !important;
   color: var(--ink-soft);
   box-shadow: none;
@@ -9445,7 +9445,7 @@ code {
 .related-skill-icon-skeleton {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--oc-radius-inset);
 }
 
 .related-skill-title-skeleton {
@@ -22186,7 +22186,7 @@ a.search-empty-action {
 .home-v2-listing-card-icon .marketplace-icon {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--oc-radius-inset);
   opacity: 1;
   filter: none;
   transform: none;
@@ -22458,7 +22458,7 @@ a.search-empty-action {
 .home-v2-listing-row-icon .marketplace-icon {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--oc-radius-inset);
   pointer-events: none;
   transform: none;
   box-shadow: none;
@@ -25945,14 +25945,14 @@ a.search-empty-action {
 .home-v2-popular-publisher-card .marketplace-icon {
   width: 42px;
   height: 42px;
-  border-radius: 10px;
+  border-radius: var(--oc-radius-inset);
   background: rgb(22 22 24);
   border-color: var(--hv2-border-strong);
   box-shadow: none;
 }
 
 .home-v2-popular-publisher-card .marketplace-icon-user {
-  border-radius: 999px;
+  border-radius: var(--oc-radius-round);
 }
 
 .home-v2-popular-publisher-card:hover .marketplace-icon {
@@ -28999,7 +28999,7 @@ a[class*="rounded-full"] {
   width: 28px;
   height: 28px;
   border: 1px solid color-mix(in srgb, var(--ink) 9%, transparent) !important;
-  border-radius: 8px;
+  border-radius: var(--oc-radius-inset);
   background: color-mix(in srgb, var(--ink) 5%, transparent) !important;
   color: var(--ink-soft);
   box-shadow: none;
@@ -29017,11 +29017,11 @@ a[class*="rounded-full"] {
 }
 
 .navbar-search-typeahead-icon .marketplace-icon-user {
-  border-radius: 999px;
+  border-radius: var(--oc-radius-round);
 }
 
 .navbar-search-typeahead-icon .marketplace-icon-org {
-  border-radius: 8px;
+  border-radius: var(--oc-radius-inset);
 }
 
 .navbar-search-typeahead-icon .marketplace-icon-org .marketplace-icon-glyph,
@@ -30889,7 +30889,7 @@ a[class*="rounded-full"] {
 .browse-page .dashboard-catalog-row-icon .marketplace-icon {
   width: 34px;
   height: 34px;
-  border-radius: 9px;
+  border-radius: var(--oc-radius-inset);
   pointer-events: none;
   transform: none;
   box-shadow: none;

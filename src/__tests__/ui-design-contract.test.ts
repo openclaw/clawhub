@@ -120,6 +120,20 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".home-v2-apps-tile-icon")).toContain(
       "border-radius: var(--oc-radius-inset)",
     );
+    for (const selector of [
+      "\n.marketplace-icon",
+      ".browse-page .browse-results-grid .skill-card-header .marketplace-icon",
+      ".home-v2-listing-card-icon .marketplace-icon",
+      ".home-v2-listing-row-icon .marketplace-icon",
+      ".home-v2-popular-publisher-card .marketplace-icon",
+      ".navbar-search-typeahead-icon .marketplace-icon",
+      ".browse-page .dashboard-catalog-row-icon .marketplace-icon",
+    ]) {
+      expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-inset)");
+    }
+    expect(cssRule(css, ".marketplace-icon-user")).toContain(
+      "border-radius: var(--oc-radius-round)",
+    );
   });
 
   it("keeps Vercel browser instrumentation mounted outside local dev", () => {
@@ -193,6 +207,8 @@ describe("restored UI design contract", () => {
     expect(moreMenu).toContain("border-radius: var(--r-md)");
     expect(css).toContain(".navbar-theme-switcher {\n  --navbar-theme-ease");
     expect(css).toContain("--navbar-theme-pad: 3px");
+    expect(css).toContain("--navbar-theme-outer-r: var(--oc-radius-control)");
+    expect(css).toContain("--navbar-theme-inner-r: var(--oc-radius-inset)");
     expect(css).toContain("--navbar-theme-seg: 26px");
     expect(css).toContain("height: var(--navbar-theme-collapsed-w)");
     const mobileDrawerTheme = cssRule(css, ".mobile-nav-appearance-section .navbar-theme-switcher");
@@ -366,10 +382,10 @@ describe("restored UI design contract", () => {
     const css = styles();
 
     expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user")).toContain(
-      "border-radius: 999px",
+      "border-radius: var(--oc-radius-round)",
     );
     expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org")).toContain(
-      "border-radius: 8px",
+      "border-radius: var(--oc-radius-inset)",
     );
     expect(
       cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image"),

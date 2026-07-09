@@ -176,12 +176,12 @@
 .publisher-profile-member-avatar-stack-item .marketplace-icon,
 .publisher-profile-member-menu-row .marketplace-icon,
 .publisher-profile-meta-chip .marketplace-icon-user {
-  border-radius: 999px;
+  border-radius: var(--oc-radius-round);
 }
 
 .publisher-profile-chrome-identity .publisher-profile-avatar .marketplace-icon-org,
 .publisher-profile-meta-chip .marketplace-icon-org {
-  border-radius: var(--r-md);
+  border-radius: var(--oc-radius-inset);
 }
 
 .publisher-profile-chrome-identity
