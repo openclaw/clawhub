@@ -68,6 +68,18 @@ import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
+  buildOsvQueryBatchRequest,
+  cleanDependencyScanResult,
+  extractNpmDependencies,
+  failedDependencyScanResult,
+  mergeOsvQueryBatchResponses,
+  normalizeOsvQueryBatchResponse,
+  splitOsvQueryBatchRequest,
+  type PackageDependency,
+  type PackageDependencyScanResult,
+  type DependencyManifestFile,
+} from "./lib/packageDependencyScan";
+import {
   assertPackageVersion,
   derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
@@ -85,6 +97,7 @@ import {
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import {
   getPackageTrustReasons,
+  hasMaliciousPackageDependencyScan,
   isPackageBlockedFromPublic,
   normalizePackageScanStatus,
   resolvePackageReleaseScanStatus,
@@ -482,6 +495,8 @@ const internalRefs = internal as unknown as {
     publishPackageForUserInternal: unknown;
     insertAuditLogInternal: unknown;
     updateReleaseStaticScanInternal: unknown;
+    updateReleaseDependencyScanInternal: unknown;
+    scanPackageReleaseDependenciesInternal: unknown;
     backfillLatestPackageScanStatusInternal: unknown;
     normalizeOfficialPublisherPackagesInternal: unknown;
     insertPackageInspectorWarningsInternal: unknown;
@@ -562,6 +577,51 @@ const packageInspectorFindingInputValidator = v.object({
   ),
   fixture: v.optional(v.string()),
   decision: v.optional(v.string()),
+});
+
+const packageDependencyScanFindingInputValidator = v.object({
+  source: v.literal("osv"),
+  advisoryId: v.string(),
+  packageName: v.string(),
+  manifestName: v.optional(v.string()),
+  ecosystem: v.literal("npm"),
+  version: v.optional(v.string()),
+  summary: v.string(),
+  aliases: v.array(v.string()),
+  classification: v.union(v.literal("malware"), v.literal("vulnerability")),
+  confidence: v.union(v.literal("high"), v.literal("medium")),
+  severity: v.optional(v.string()),
+  url: v.optional(v.string()),
+  manifestPath: v.optional(v.string()),
+  dependencyKind: v.optional(
+    v.union(
+      v.literal("dependencies"),
+      v.literal("optionalDependencies"),
+      v.literal("peerDependencies"),
+      v.literal("bundledDependencies"),
+      v.literal("bundleDependencies"),
+    ),
+  ),
+});
+
+const packageDependencyScanInputValidator = v.object({
+  status: v.union(
+    v.literal("clean"),
+    v.literal("suspicious"),
+    v.literal("malicious"),
+    v.literal("skipped"),
+    v.literal("error"),
+  ),
+  provider: v.literal("osv"),
+  scannerVersion: v.string(),
+  dependencyCount: v.number(),
+  scannedDependencyCount: v.number(),
+  skippedDependencyCount: v.number(),
+  manifests: v.array(v.string()),
+  findings: v.array(packageDependencyScanFindingInputValidator),
+  summary: v.string(),
+  checkedAt: v.number(),
+  error: v.optional(v.string()),
 });
 
 type PackageInspectorAuthorRemediation = {
@@ -7145,12 +7205,14 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
     ]);
 
     const releases = [
-      ...recentReleases,
-      ...backlogReleases.filter(
-        (release, index, all) =>
-          recentReleases.findIndex((candidate) => candidate._id === release._id) === -1 &&
-          all.findIndex((candidate) => candidate._id === release._id) === index,
-      ),
+      ...recentReleases.map((release) => ({ release, source: "recent" as const })),
+      ...backlogReleases
+        .filter(
+          (release, index, all) =>
+            recentReleases.findIndex((candidate) => candidate._id === release._id) === -1 &&
+            all.findIndex((candidate) => candidate._id === release._id) === index,
+        )
+        .map((release) => ({ release, source: "backlog" as const })),
     ];
 
     const results: Array<{
@@ -7159,12 +7221,17 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       needsVt: boolean;
       needsLlm: boolean;
       needsStatic: boolean;
+      needsDependency?: true;
     }> = [];
     let nextCursor = cursor;
+    let consideredBacklogReleases = 0;
 
-    for (const release of releases) {
-      nextCursor = release._creationTime;
+    for (const { release, source } of releases) {
       if (results.length >= batchSize) break;
+      if (source === "backlog") {
+        nextCursor = release._creationTime;
+        consideredBacklogReleases += 1;
+      }
       if (release.softDeletedAt) continue;
 
       const pkg = await ctx.db.get(release.packageId);
@@ -7173,7 +7240,10 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       const needsVt = !release.vtAnalysis;
       const needsLlm = !release.llmAnalysis || release.llmAnalysis.status === "error";
       const needsStatic = !release.staticScan;
-      if (!needsVt && !needsLlm && !needsStatic) continue;
+      const needsDependency =
+        (!release.dependencyScan || release.dependencyScan.status === "error") &&
+        (release.files ?? []).some((file) => isDependencyManifestPath(file.path));
+      if (!needsVt && !needsLlm && !needsStatic && !needsDependency) continue;
 
       results.push({
         releaseId: release._id,
@@ -7181,13 +7251,16 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
         needsVt,
         needsLlm,
         needsStatic,
+        ...(needsDependency ? { needsDependency: true as const } : {}),
       });
     }
 
     return {
       releases: results,
       nextCursor,
-      done: backlogReleases.length < batchSize * 3,
+      done:
+        consideredBacklogReleases >= backlogReleases.length &&
+        backlogReleases.length < batchSize * 3,
     };
   },
 });
@@ -7905,6 +7978,9 @@ async function publishPackageImpl(
     releaseId: publishResult.releaseId,
     source: "publish",
   });
+  await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseDependenciesInternal, {
+    releaseId: publishResult.releaseId,
+  });
 
   return inspectorFindings.length > 0 ? { ...publishResult, inspectorFindings } : publishResult;
 }
@@ -8247,6 +8323,9 @@ async function runPackagePublishPostFinalizeFollowups(
   await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
     releaseId: publishResult.releaseId,
     source: "publish",
+  });
+  await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseDependenciesInternal, {
+    releaseId: publishResult.releaseId,
   });
 }
 
@@ -10115,6 +10194,147 @@ export const updateReleaseStaticScanInternal = internalMutation({
   },
 });
 
+export const updateReleaseDependencyScanInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    dependencyScan: packageDependencyScanInputValidator,
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.softDeletedAt) return;
+    const activeRelease = release;
+
+    const patch: Partial<Doc<"packageReleases">> = {
+      dependencyScan: args.dependencyScan,
+    };
+    if (activeRelease.verification) {
+      const previousVerificationWasDependencyMalicious =
+        activeRelease.verification.scanStatus === "malicious" &&
+        hasMaliciousPackageDependencyScan(activeRelease.dependencyScan);
+      const { scanStatus: _previousDependencyScanStatus, ...verificationWithoutScanStatus } =
+        activeRelease.verification;
+      const verificationForResolution =
+        previousVerificationWasDependencyMalicious && args.dependencyScan.status !== "error"
+          ? verificationWithoutScanStatus
+          : activeRelease.verification;
+      const nextScanStatus = resolvePackageReleaseScanStatus({
+        ...activeRelease,
+        verification: verificationForResolution,
+        dependencyScan: args.dependencyScan,
+      });
+      patch.verification = {
+        ...activeRelease.verification,
+        scanStatus: nextScanStatus,
+      };
+    }
+
+    await ctx.db.patch(args.releaseId, patch);
+    const updatedRelease = {
+      ...activeRelease,
+      ...patch,
+    } as Doc<"packageReleases">;
+    await syncLatestPackageVerification(
+      ctx,
+      updatedRelease,
+      hasMaliciousPackageDependencyScan(args.dependencyScan)
+        ? {
+            quarantineMaliciousLatest: true,
+            maliciousTrigger: "malicious.dependency_malware",
+          }
+        : {},
+    );
+  },
+});
+
+function isDependencyManifestPath(path: string) {
+  return /(?:^|\/)(?:package\.json|package-lock\.json|npm-shrinkwrap\.json)$/i.test(path);
+}
+
+async function readDependencyManifestFiles(
+  ctx: Pick<ActionCtx, "storage">,
+  files: Doc<"packageReleases">["files"],
+): Promise<DependencyManifestFile[]> {
+  const manifests: DependencyManifestFile[] = [];
+  for (const file of files) {
+    if (!isDependencyManifestPath(file.path)) continue;
+    manifests.push({
+      path: file.path,
+      content: await readStorageText(ctx, file.storageId),
+    });
+  }
+  return manifests;
+}
+
+export const scanPackageReleaseDependenciesInternal = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const release = await runQueryRef<Doc<"packageReleases"> | null>(
+      ctx,
+      internalRefs.packages.getReleaseByIdInternal,
+      { releaseId: args.releaseId },
+    );
+    if (!release || release.softDeletedAt) {
+      return { ok: true as const, skipped: "missing_release" as const };
+    }
+    const pkg = await runQueryRef<Doc<"packages"> | null>(
+      ctx,
+      internalRefs.packages.getPackageByIdInternal,
+      { packageId: release.packageId },
+    );
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      return { ok: true as const, skipped: "missing_package" as const };
+    }
+
+    let dependencyScan: PackageDependencyScanResult;
+    let dependencies: PackageDependency[] = [];
+    try {
+      const manifestFiles = await readDependencyManifestFiles(ctx, release.files);
+      dependencies = extractNpmDependencies(manifestFiles);
+      const request = buildOsvQueryBatchRequest(dependencies);
+      if (request.queries.length === 0) {
+        dependencyScan = cleanDependencyScanResult({ dependencies, checkedAt: Date.now() });
+      } else {
+        const responses: unknown[] = [];
+        for (const batch of splitOsvQueryBatchRequest(request)) {
+          const response = await fetch("https://api.osv.dev/v1/querybatch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(batch),
+          });
+          if (!response.ok) {
+            throw new Error(`OSV query failed with HTTP ${response.status}`);
+          }
+          responses.push((await response.json()) as unknown);
+        }
+        dependencyScan = normalizeOsvQueryBatchResponse({
+          dependencies,
+          response: mergeOsvQueryBatchResponses(responses),
+          checkedAt: Date.now(),
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      dependencyScan = failedDependencyScanResult({
+        dependencies,
+        checkedAt: Date.now(),
+        error: message.slice(0, 500),
+      });
+    }
+
+    await runMutationRef(ctx, internalRefs.packages.updateReleaseDependencyScanInternal, {
+      releaseId: args.releaseId,
+      dependencyScan,
+    });
+    return {
+      ok: true as const,
+      status: dependencyScan.status,
+      findingCount: dependencyScan.findings.length,
+    };
+  },
+});
+
 export const scanPackageReleaseStaticallyInternal = internalAction({
   args: {
     releaseId: v.id("packageReleases"),
@@ -10186,6 +10406,7 @@ export const backfillPackageReleaseScansInternal = internalAction({
         needsVt: boolean;
         needsLlm: boolean;
         needsStatic: boolean;
+        needsDependency?: true;
       }>;
       nextCursor: number;
       done: boolean;
@@ -10207,6 +10428,11 @@ export const backfillPackageReleaseScansInternal = internalAction({
       }
       if (release.needsStatic) {
         await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
+          releaseId: release.releaseId,
+        });
+      }
+      if (release.needsDependency) {
+        await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseDependenciesInternal, {
           releaseId: release.releaseId,
         });
       }

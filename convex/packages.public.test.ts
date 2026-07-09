@@ -49,6 +49,8 @@ import {
   listVersions,
   updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
+  updateReleaseDependencyScanInternal,
+  scanPackageReleaseDependenciesInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
   applyPublisherDeletionToOwnedPackagesBatchInternal,
   applyBanToOwnedPackagesBatchInternal,
@@ -670,6 +672,7 @@ const getPackageReleaseScanBackfillBatchInternalHandler = (
         needsVt: boolean;
         needsLlm: boolean;
         needsStatic: boolean;
+        needsDependency?: true;
       }>;
       nextCursor: number;
       done: boolean;
@@ -804,6 +807,53 @@ const updateReleaseStaticScanInternalHandler = (
     unknown
   >
 )._handler;
+const updateReleaseDependencyScanInternalHandler = (
+  updateReleaseDependencyScanInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      dependencyScan: {
+        status: "clean" | "suspicious" | "malicious" | "skipped" | "error";
+        provider: "osv";
+        scannerVersion: string;
+        dependencyCount: number;
+        scannedDependencyCount: number;
+        skippedDependencyCount: number;
+        manifests: string[];
+        findings: Array<{
+          source: "osv";
+          advisoryId: string;
+          packageName: string;
+          manifestName?: string;
+          ecosystem: "npm";
+          version?: string;
+          summary: string;
+          aliases: string[];
+          classification: "malware" | "vulnerability";
+          confidence: "high" | "medium";
+          severity?: string;
+          url?: string;
+          manifestPath?: string;
+          dependencyKind?:
+            | "dependencies"
+            | "optionalDependencies"
+            | "peerDependencies"
+            | "bundledDependencies"
+            | "bundleDependencies";
+        }>;
+        summary: string;
+        checkedAt: number;
+        error?: string;
+      };
+    },
+    unknown
+  >
+)._handler;
+const scanPackageReleaseDependenciesInternalHandler = (
+  scanPackageReleaseDependenciesInternal as unknown as WrappedHandler<
+    { releaseId: string },
+    { ok: true; status?: string; findingCount?: number; skipped?: string }
+  >
+)._handler;
 const updateReleaseLlmAnalysisInternalHandler = (
   updateReleaseLlmAnalysisInternal as unknown as WrappedHandler<
     {
@@ -925,6 +975,7 @@ const repairPackageIdentityInternalHandler = (
 afterEach(() => {
   vi.mocked(getAuthUserId).mockReset();
   vi.mocked(getAuthUserId).mockResolvedValue(null);
+  vi.unstubAllGlobals();
 });
 
 function makeDigest(
@@ -9392,6 +9443,121 @@ describe("packages public queries", () => {
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
+  it("schedules dependency scanning for plugin artifact publishes", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (typeof args === "object" && args !== null && "minimumRole" in args) return null;
+      return args;
+    });
+    const storedFiles = new Map<string, string>([
+      [
+        "storage:package",
+        JSON.stringify({
+          name: "demo-plugin",
+          dependencies: {
+            lodash: "4.17.21",
+          },
+          openclaw: {
+            extensions: ["./dist/index.js"],
+            compat: { pluginApi: "^1.0.0" },
+            build: { openclawVersion: "2026.3.14" },
+            configSchema: { type: "object" },
+          },
+        }),
+      ],
+      ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
+      ["storage:code", "export const demo = true;\n"],
+    ]);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      runAction: vi.fn(async () => ({
+        status: "pass",
+        summary: {
+          breakageCount: 0,
+          warningCount: 0,
+          deprecationWarningCount: 0,
+          issueCount: 0,
+        },
+        warnings: [],
+      })),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content ? new Blob([content]) : null;
+        }),
+      },
+    };
+
+    const result = (await publishPackageForUserInternalHandler(ctx as never, {
+      actorUserId: "users:owner",
+      payload: {
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/demo-plugin",
+          repo: "openclaw/demo-plugin",
+          ref: "refs/tags/v1.0.0",
+          commit: "abc123",
+          path: ".",
+          importedAt: Date.now(),
+        },
+        files: [
+          {
+            path: "package.json",
+            size: 1,
+            storageId: "storage:package",
+            sha256: "package",
+            contentType: "application/json",
+          },
+          {
+            path: "openclaw.plugin.json",
+            size: 1,
+            storageId: "storage:manifest",
+            sha256: "manifest",
+            contentType: "application/json",
+          },
+          {
+            path: "dist/index.js",
+            size: 1,
+            storageId: "storage:code",
+            sha256: "code",
+            contentType: "application/javascript",
+          },
+        ],
+      },
+    })) as Record<string, unknown>;
+
+    expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
+    expect(
+      ctx.scheduler.runAfter.mock.calls.some(
+        ([delay, _ref, args]) =>
+          delay === 0 &&
+          typeof args === "object" &&
+          args !== null &&
+          "releaseId" in args &&
+          args.releaseId === result.releaseId,
+      ),
+    ).toBe(true);
+  });
+
   it("stores plugin inspector warnings after successful warning-only publishes", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if ("minimumRole" in args) return null;
@@ -13087,6 +13253,133 @@ describe("package scan backfill", () => {
     ]);
   });
 
+  it("includes plugin releases missing dependency scans in the backfill batch", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:missing-dependency",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                      dependencyScan: undefined,
+                      files: [{ path: "package.json", storageId: "storage:package" }],
+                    },
+                    {
+                      _id: "packageReleases:dependency-scanned",
+                      _creationTime: 11,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                      dependencyScan: { status: "clean" },
+                      files: [{ path: "package.json", storageId: "storage:package" }],
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc({ family: "code-plugin" });
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result.releases).toEqual([
+      {
+        releaseId: "packageReleases:missing-dependency",
+        packageId: "packages:demo",
+        needsVt: false,
+        needsLlm: false,
+        needsStatic: false,
+        needsDependency: true,
+      },
+    ]);
+  });
+
+  it("does not let recent dependency backfill candidates skip older backlog releases", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([
+                  {
+                    _id: "packageReleases:recent-missing-dependency",
+                    _creationTime: 100,
+                    packageId: "packages:demo",
+                    sha256hash: "hash",
+                    vtAnalysis: { status: "clean" },
+                    llmAnalysis: { status: "clean" },
+                    staticScan: { status: "clean" },
+                    dependencyScan: undefined,
+                    files: [{ path: "package.json", storageId: "storage:package" }],
+                  },
+                ]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:older-missing-dependency",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                      dependencyScan: undefined,
+                      files: [{ path: "package.json", storageId: "storage:package" }],
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc({ family: "code-plugin" });
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 1 },
+    );
+
+    expect(result).toEqual({
+      releases: [
+        {
+          releaseId: "packageReleases:recent-missing-dependency",
+          packageId: "packages:demo",
+          needsVt: false,
+          needsLlm: false,
+          needsStatic: false,
+          needsDependency: true,
+        },
+      ],
+      nextCursor: 0,
+      done: false,
+    });
+  });
+
   it("does not repeatedly rescan a release solely because its artifact hash is missing", async () => {
     const result = await getPackageReleaseScanBackfillBatchInternalHandler(
       {
@@ -13230,6 +13523,37 @@ describe("package scan backfill", () => {
         process.env.VT_API_KEY = originalVtApiKey;
       }
     }
+  });
+
+  it("schedules dependency rescans for releases missing dependency scan data", async () => {
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const result = await backfillPackageReleaseScansInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          releases: [
+            {
+              releaseId: "packageReleases:dependency-only",
+              needsVt: false,
+              needsLlm: false,
+              needsStatic: false,
+              needsDependency: true,
+            },
+          ],
+          nextCursor: 123,
+          done: true,
+        }),
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
+    expect(runAfter).toHaveBeenCalledTimes(1);
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:dependency-only" }),
+    );
   });
 
   it("backfills legacy static-only package scan status into the package search digest", async () => {
@@ -13542,6 +13866,649 @@ describe("package scan backfill", () => {
     expect(patch).toHaveBeenCalledWith(
       "packageSearchDigest:demo",
       expect.objectContaining({ scanStatus: "pending" }),
+    );
+  });
+
+  it("quarantines malicious dependency scan results without blocking older clean releases", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const previousRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      version: "1.0.0",
+      distTags: [],
+      verification: { scanStatus: "clean" },
+      createdAt: 1_600_000_000_000,
+    });
+    const release = {
+      _id: "packageReleases:demo-2",
+      packageId: "packages:demo",
+      version: "2.0.0",
+      distTags: ["latest"],
+      createdAt: 1_700_000_000_000,
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "pending",
+      },
+      softDeletedAt: undefined,
+      createdBy: "users:owner",
+    };
+    const pkg = {
+      ...makePackageDoc(),
+      _id: "packages:demo",
+      latestReleaseId: "packageReleases:demo-2",
+      tags: { latest: "packageReleases:demo-2" },
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "pending",
+      },
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification: {
+          tier: "source-linked",
+          scope: "artifact-only",
+          scanStatus: "pending",
+        },
+      },
+    };
+
+    await updateReleaseDependencyScanInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return previousRelease;
+            if (id === "packageReleases:demo-2") return release;
+            if (id === "packages:demo") return pkg;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageReleases") {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([previousRelease, release]),
+                })),
+              };
+            }
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "pending",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-2",
+        dependencyScan: {
+          status: "malicious",
+          provider: "osv",
+          scannerVersion: "test",
+          dependencyCount: 1,
+          scannedDependencyCount: 1,
+          skippedDependencyCount: 0,
+          manifests: ["package.json"],
+          findings: [
+            {
+              source: "osv",
+              advisoryId: "MAL-2026-1234",
+              packageName: "demo-malware",
+              ecosystem: "npm",
+              version: "1.0.0",
+              summary: "Malicious package",
+              aliases: [],
+              classification: "malware",
+              confidence: "high",
+              manifestPath: "package.json",
+              dependencyKind: "dependencies",
+            },
+          ],
+          summary: "Detected 1 malicious dependency advisory.",
+          checkedAt: 1,
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "packageReleases:demo-2",
+      expect.objectContaining({
+        dependencyScan: expect.objectContaining({ status: "malicious" }),
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-2",
+      expect.objectContaining({
+        softDeletedAt: 1_700_000_000_000,
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageReleases:demo-1",
+      expect.objectContaining({ distTags: ["latest"] }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:demo-1",
+        scanStatus: "clean",
+        tags: { latest: "packageReleases:demo-1" },
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:demo",
+      expect.objectContaining({ scanStatus: "clean" }),
+    );
+  });
+
+  it("clears previous dependency-malicious trust when dependency rescans are non-malicious", async () => {
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const release = {
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      sha256hash: "a".repeat(64),
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "malicious",
+      },
+      dependencyScan: {
+        status: "malicious",
+        findings: [{ classification: "malware", confidence: "high" }],
+      },
+      softDeletedAt: undefined,
+    };
+    const pkg = {
+      ...makePackageDoc(),
+      _id: "packages:demo",
+      latestReleaseId: "packageReleases:demo-1",
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "malicious",
+      },
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification: {
+          tier: "source-linked",
+          scope: "artifact-only",
+          scanStatus: "malicious",
+        },
+      },
+    };
+
+    await updateReleaseDependencyScanInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            if (id === "packages:demo") return pkg;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "malicious",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-1",
+        dependencyScan: {
+          status: "skipped",
+          provider: "osv",
+          scannerVersion: "test",
+          dependencyCount: 1,
+          scannedDependencyCount: 0,
+          skippedDependencyCount: 1,
+          manifests: ["package.json"],
+          findings: [],
+          summary: "No exact npm dependency versions found for OSV scanning.",
+          checkedAt: 2,
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        dependencyScan: expect.objectContaining({ status: "skipped" }),
+        verification: expect.objectContaining({ scanStatus: "pending" }),
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "packages:demo",
+      expect.objectContaining({
+        scanStatus: "pending",
+        verification: expect.objectContaining({ scanStatus: "pending" }),
+        latestVersionSummary: expect.objectContaining({
+          verification: expect.objectContaining({ scanStatus: "pending" }),
+        }),
+      }),
+    );
+  });
+
+  it("keeps previous dependency-malicious trust when dependency rescans error", async () => {
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const release = {
+      _id: "packageReleases:demo-1",
+      packageId: "packages:demo",
+      sha256hash: "a".repeat(64),
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "malicious",
+      },
+      dependencyScan: {
+        status: "malicious",
+        findings: [{ classification: "malware", confidence: "high" }],
+      },
+      softDeletedAt: undefined,
+    };
+    const pkg = {
+      ...makePackageDoc(),
+      _id: "packages:demo",
+      latestReleaseId: "packageReleases:demo-1",
+      verification: {
+        tier: "source-linked",
+        scope: "artifact-only",
+        scanStatus: "malicious",
+      },
+      latestVersionSummary: {
+        version: "1.0.0",
+        verification: {
+          tier: "source-linked",
+          scope: "artifact-only",
+          scanStatus: "malicious",
+        },
+      },
+    };
+
+    await updateReleaseDependencyScanInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "packageReleases:demo-1") return release;
+            if (id === "packages:demo") return pkg;
+            return null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "packageSearchDigest") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn().mockResolvedValue({
+                    _id: "packageSearchDigest:demo",
+                    packageId: "packages:demo",
+                    scanStatus: "malicious",
+                  }),
+                })),
+              };
+            }
+            if (
+              table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
+              table === "packagePluginCategorySearchDigest"
+            ) {
+              return {
+                withIndex: vi.fn(() => ({
+                  collect: vi.fn().mockResolvedValue([]),
+                })),
+              };
+            }
+            throw new Error(`Unexpected query table: ${table}`);
+          }),
+          insert: vi.fn(),
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+      } as never,
+      {
+        releaseId: "packageReleases:demo-1",
+        dependencyScan: {
+          status: "error",
+          provider: "osv",
+          scannerVersion: "test",
+          dependencyCount: 1,
+          scannedDependencyCount: 1,
+          skippedDependencyCount: 0,
+          manifests: ["package.json"],
+          findings: [],
+          summary: "Dependency scan failed.",
+          checkedAt: 2,
+          error: "OSV unavailable",
+        },
+      },
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "packageReleases:demo-1",
+      expect.objectContaining({
+        dependencyScan: expect.objectContaining({ status: "error" }),
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+      }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "packages:demo",
+      expect.objectContaining({
+        scanStatus: "malicious",
+        verification: expect.objectContaining({ scanStatus: "malicious" }),
+        latestVersionSummary: expect.objectContaining({
+          verification: expect.objectContaining({ scanStatus: "malicious" }),
+        }),
+      }),
+    );
+  });
+
+  it("scans package dependency manifests with OSV and ingests normalized findings", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const fetchMock = vi.fn(async () => {
+      nowSpy.mockReturnValue(1_700_000_005_000);
+      return new Response(
+        JSON.stringify({
+          results: [
+            {
+              vulns: [
+                {
+                  id: "MAL-2026-1234",
+                  summary: "Malicious package",
+                  aliases: [],
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const result = await scanPackageReleaseDependenciesInternalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "packageReleases:demo-1",
+            packageId: "packages:demo",
+            softDeletedAt: undefined,
+            files: [
+              { path: "package.json", storageId: "storage:package" },
+              { path: "package-lock.json", storageId: "storage:lock" },
+            ],
+          })
+          .mockResolvedValueOnce({
+            _id: "packages:demo",
+            family: "code-plugin",
+            softDeletedAt: undefined,
+          }),
+        runMutation,
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            if (storageId === "storage:package") {
+              return new Blob([
+                JSON.stringify({
+                  dependencies: {
+                    "demo-malware": "^1.0.0",
+                  },
+                }),
+              ]);
+            }
+            if (storageId === "storage:lock") {
+              return new Blob([
+                JSON.stringify({
+                  lockfileVersion: 3,
+                  packages: {
+                    "node_modules/demo-malware": { version: "1.0.0" },
+                  },
+                }),
+              ]);
+            }
+            return null;
+          }),
+        },
+      } as never,
+      { releaseId: "packageReleases:demo-1" },
+    );
+
+    expect(result).toEqual({ ok: true, status: "malicious", findingCount: 1 });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.osv.dev/v1/querybatch",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          queries: [
+            {
+              package: { name: "demo-malware", ecosystem: "npm" },
+              version: "1.0.0",
+            },
+          ],
+        }),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:demo-1",
+        dependencyScan: expect.objectContaining({
+          status: "malicious",
+          checkedAt: 1_700_000_005_000,
+          findings: [
+            expect.objectContaining({
+              advisoryId: "MAL-2026-1234",
+              packageName: "demo-malware",
+              version: "1.0.0",
+              classification: "malware",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("chunks large OSV dependency scans before ingesting findings", async () => {
+    const lockfilePackages = Object.fromEntries(
+      Array.from({ length: 1_001 }, (_entry, index) => [
+        `node_modules/package-${index}`,
+        { version: "1.0.0" },
+      ]),
+    );
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (typeof init?.body !== "string") throw new Error("Expected JSON request body");
+      const body = JSON.parse(init.body) as {
+        queries: Array<{ package: { name: string }; version: string }>;
+      };
+      const results = body.queries.map((query) =>
+        query.package.name === "package-1000"
+          ? {
+              vulns: [
+                {
+                  id: "MAL-2026-9999",
+                  summary: "Malicious package",
+                  aliases: [],
+                },
+              ],
+            }
+          : {},
+      );
+      return new Response(JSON.stringify({ results }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const result = await scanPackageReleaseDependenciesInternalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "packageReleases:demo-1",
+            packageId: "packages:demo",
+            softDeletedAt: undefined,
+            files: [{ path: "package-lock.json", storageId: "storage:lock" }],
+          })
+          .mockResolvedValueOnce({
+            _id: "packages:demo",
+            family: "code-plugin",
+            softDeletedAt: undefined,
+          }),
+        runMutation,
+        storage: {
+          get: vi.fn(async () => {
+            return new Blob([
+              JSON.stringify({
+                lockfileVersion: 3,
+                packages: lockfilePackages,
+              }),
+            ]);
+          }),
+        },
+      } as never,
+      { releaseId: "packageReleases:demo-1" },
+    );
+
+    expect(result).toEqual({ ok: true, status: "malicious", findingCount: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://api.osv.dev/v1/querybatch",
+      expect.objectContaining({
+        body: expect.stringContaining('"package-999"'),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.osv.dev/v1/querybatch",
+      expect.objectContaining({
+        body: expect.stringContaining('"package-1000"'),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        dependencyScan: expect.objectContaining({
+          status: "malicious",
+          dependencyCount: 1_001,
+          scannedDependencyCount: 1_001,
+          findings: [
+            expect.objectContaining({
+              advisoryId: "MAL-2026-9999",
+              packageName: "package-1000",
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it("records dependency scan errors for malformed OSV responses", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(JSON.stringify({}), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const result = await scanPackageReleaseDependenciesInternalHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "packageReleases:demo-1",
+            packageId: "packages:demo",
+            softDeletedAt: undefined,
+            files: [{ path: "package.json", storageId: "storage:package" }],
+          })
+          .mockResolvedValueOnce({
+            _id: "packages:demo",
+            family: "code-plugin",
+            softDeletedAt: undefined,
+          }),
+        runMutation,
+        storage: {
+          get: vi.fn(async () => {
+            return new Blob([
+              JSON.stringify({
+                dependencies: {
+                  lodash: "4.17.20",
+                },
+              }),
+            ]);
+          }),
+        },
+      } as never,
+      { releaseId: "packageReleases:demo-1" },
+    );
+
+    expect(result).toEqual({ ok: true, status: "error", findingCount: 0 });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:demo-1",
+        dependencyScan: expect.objectContaining({
+          status: "error",
+          error: expect.stringContaining("results array"),
+        }),
+      }),
     );
   });
 
