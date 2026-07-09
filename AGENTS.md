@@ -52,7 +52,6 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Tests live in `src/**` and `convex/lib/**`.
 - Coverage threshold: 80% global (lines/functions/branches/statements).
 - Example: `convex/lib/skills.test.ts`.
-- When adding or changing Convex functions, do not rely only on mocked `ctx` tests for behavior that depends on Convex runtime semantics such as pagination, indexes, validators, auth identity, internal/public function boundaries, scheduler/cron behavior, actions calling queries/mutations, HTTP actions, storage, or OCC/transaction behavior. Add or run a real Convex validation path, such as `convex dev --once`, `convex run`, an HTTP action smoke, or a local-auth Playwright flow, covering the changed behavior. Mocked `ctx.db` / `ctx.runQuery` tests are still fine for pure business logic, but they do not count as Convex runtime validation.
 - For local UI state testing, prefer creating realistic backend state through seed logic plus a DevPersonaFab entry for the associated test user. Avoid one-off manual DB edits when the state is likely to be reused, such as org membership, official publisher access, moderation holds, or publishing permissions.
 
 ## Commit & Pull Request Guidelines
@@ -66,64 +65,15 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Screenshot proof MUST come from a real running ClawHub instance in a real browser. Do not use generated HTML mockups, synthetic terminal cards, or manually composed images as proof. For route/status/backend visibility bugs, run ClawHub locally with the relevant Convex code and fixture state, capture the actual browser page, and state the local URL and fixture used.
 - Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.
-- Repo-local developer skills under `.agents/skills/` should normally be ClawHub-specific, such as Convex, moderation, PR maintainer, or UI proof workflows. Keep generic shared skills in the global `agent-skills` install unless the repository explicitly vendors them for a shared operational workflow. Keep top-level `skills/` reserved for installed/published skill content and ignored by git.
-- Treat the skill trees installed from `get-convex/agent-skills` by `npx convex ai-files install` as upstream-managed content. The formatter excludes those generated directories so updates do not rewrite vendor files; custom ClawHub skills remain under normal formatting checks.
-- The skills from `axiomhq/skills` are explicit vendored exceptions. Install or update them with `npx skills add axiomhq/skills --agent codex --skill axiom-alerting building-dashboards controlling-costs query-metrics spl-to-apl axiom-sre writing-evals --yes --copy` so `skills-lock.json` stays in sync. The v1 lock records the official source, skill paths, and content hashes; `.agents/skills/axiomhq-skills.provenance.json` records the exact reviewed upstream revision represented by the committed files. Update and verify both together, and do not modify the managed files locally. Store all Axiom credentials in user-level configuration such as `~/.config/axiom-sre/config.toml` or `~/.axiom.toml`, never in git.
-- The `sentry-fix-issues` skill from `getsentry/sentry-for-ai` is an explicit vendored exception for the shared production-error workflow. Install or update it with `npx skills add getsentry/sentry-for-ai --agent codex --skill sentry-fix-issues --yes --copy`, then update `.agents/skills/getsentry-sentry-for-ai.provenance.json` to the reviewed upstream revision. Keep the managed skill file byte-for-byte upstream and store Sentry authentication only in user-level MCP or CLI configuration, never in git.
 
-## Production Release
+## Specialized Workflows
 
-- Production deploys are manual-only. Merging to `main` does **not** deploy.
-- To release production, start the GitHub Actions `Deploy` workflow from `main`:
-  `gh workflow run deploy.yml --repo openclaw/clawhub --ref main`
-- The workflow supports `full`, `backend`, and `frontend` targets.
-- `frontend` currently means: wait for the Vercel production deploy for the selected `main` SHA, then run production smoke checks. It does not call `vercel deploy` directly yet.
-- The workflow uses the GitHub `Production` environment for deploy secrets, but it does not require a separate approval step.
-- Prod deploy secrets live on the `Production` environment, not as ordinary repo secrets. Required: `CONVEX_DEPLOY_KEY`. Optional: `PLAYWRIGHT_AUTH_STORAGE_STATE_JSON`.
-- CLI npm releases are also manual-only and tag-based. Stable tags only: `vX.Y.Z`. Start `ClawHub CLI NPM Release` from `main`, first with `preflight_only=true`, then rerun it with the same tag and the successful `preflight_run_id`.
-- Real CLI publishes wait at the GitHub `npm-release` environment and use npm trusted publishing. Required npm trusted publisher settings: repository `openclaw/clawhub`, workflow `clawhub-cli-npm-release.yml`, environment `npm-release`.
-
-## Git Notes
-
-- If `git branch -d/-D <branch>` is policy-blocked, delete the local ref directly: `git update-ref -d refs/heads/<branch>`.
-
-## URL Quick Reference
-
-- Canonical site: `https://clawhub.ai` (prefer this over legacy domains).
-- Skill page URL format: `https://clawhub.ai/<owner>/<slug>` (owner handle preferred; falls back to owner id).
-- Skill API detail URL: `https://clawhub.ai/api/v1/skills/<slug>`.
-- Skill file URL: `https://clawhub.ai/api/v1/skills/<slug>/file?path=SKILL.md`.
-- For “full URL?” requests, return the canonical page URL first, then API URL if useful.
-
-## Configuration & Security
-
-- Local env: `.env.local` (never commit secrets).
-- Convex env holds JWT keys; Vercel only needs `VITE_CONVEX_URL` + `VITE_CONVEX_SITE_URL`.
-- OAuth: GitHub OAuth App credentials required for login.
-
-## Convex Ops (Gotchas)
-
-- Before any `bunx convex ...` command, name the target runtime (`local`, `dev`, or `prod`), the exact deployment when known, and whether the current function/schema code has already been pushed or deployed.
-- New Convex functions must be pushed before `convex run`: use `bunx convex dev --once` (dev) or `bunx convex deploy` (prod).
-- For non-interactive prod deploys, use `bunx convex deploy -y` to skip confirmation.
-- If `bunx convex run --env-file .env.local ...` returns `401 MissingAccessToken` despite `bunx convex login`, workaround: omit `--env-file` and use `--deployment <name>` / `--prod`.
-
-## Convex Migrations & Backfills
-
-- Any Convex production data migration, backfill, destructive cleanup, schema narrowing, or table reshaping must start with the `convex-migration-helper` skill. Default to `@convex-dev/migrations` for production data changes because it provides batching, dry runs, resume/progress tracking, and safer operator UX. Exceptions require an explicit note explaining why the component is unnecessary, plus equivalent dry-run support, cursor batching, resume/progress behavior, confirmation for destructive writes, and real Convex runtime validation.
-- When adding or changing Convex tables, TTL fields, cleanup crons, retention policy, auth/session cleanup, metric dedupe cleanup, or deprecated table removal, use the repo-local `convex-retention` skill and update `convex/lib/retentionPolicy.ts`.
-- Use `convex/migrations.ts` for component-backed table-wide backfills; keep custom repairs, admin-gated operations, and incident-specific workflows in `convex/maintenance.ts`.
-- After a migration or cleanup is verified complete, remove temporary migration functions/code in a follow-up PR unless they are intentionally retained as ongoing maintenance tooling.
-
-## Convex Query & Bandwidth Rules
-
-- **Always use `.withIndex()` instead of `.filter()` for fields that can be indexed.** `.filter()` causes full table scans — every doc is read and billed. Even a single `.filter()` on a 16K-row table reads ~16 MB per call.
-- **Convex reads entire documents** — no field projections. If you only need a few fields from large docs (~6 KB+), denormalize a lightweight summary onto the parent doc or use a lookup table (see `embeddingSkillMap`, `skill.latestVersionSummary`, `skill.badges` for examples).
-- **Denormalization pattern**: persist computed fields so they can be indexed. Every mutation that updates source fields must also update the denormalized field. Always write a cursor-based backfill for new fields (see `backfillIsSuspiciousInternal`, `backfillLatestVersionSummaryInternal`, `backfillDenormalizedBadgesInternal` for examples).
-- **Cron jobs must never scan entire tables.** Use indexed queries with equality filters. Use cursor-based pagination for large datasets. Prefer incremental/delta tracking over full recounts.
-- **32K document limit per query.** Split `.collect()` calls by a partition field (e.g., one day at a time instead of a 7-day range). See `rebuildTrendingLeaderboardAction` in `convex/leaderboards.ts` for an example.
-- **Common mistakes**: `.filter().collect()` without an index; `ctx.db.get()` on large docs in a loop for list views; while loops that paginate the whole table to find filtered results.
-- **Before writing or reviewing Convex queries, check deployment health.** Run `bunx convex insights` to check for OCC conflicts, `bytesReadLimit`, and `documentsReadLimit` errors. Run `bunx convex logs --failure` to see individual error messages and stack traces. This helps identify which functions are causing bandwidth issues so you can prioritize fixes.
+- For any Convex work, use
+  `.agents/skills/clawhub-convex/SKILL.md`. It routes to the managed Convex
+  skills and owns ClawHub-specific runtime, migration, retention, validation,
+  performance, and skill-stat conventions.
+- For app production deploys or stable CLI npm releases, use
+  `.agents/skills/clawhub-production-release/SKILL.md`.
 
 <!-- convex-ai-start -->
 
@@ -138,23 +88,3 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
-
-## Stat Field Migration Rules
-
-The `skills` table maintains two parallel sets of stat fields as part of an in-progress field migration:
-
-| Legacy (nested, `@deprecated`) | Top-level (source of truth, indexable) |
-| ------------------------------ | -------------------------------------- |
-| `stats.downloads`              | `statsDownloads`                       |
-| `stats.stars`                  | `statsStars`                           |
-| `stats.installsCurrent`        | `statsInstallsCurrent`                 |
-| `stats.installsAllTime`        | `statsInstallsAllTime`                 |
-
-**Rules:**
-
-- **Always use `readCanonicalStat(skill, field)` (`convex/lib/skillStats.ts`) to read** any of the four migrated fields. It prefers the top-level field and falls back to the nested field for pre-migration documents. Never access `skill.stats.downloads` / `.stars` / `.installsCurrent` / `.installsAllTime` directly.
-- **Always use `applySkillStatDeltas()` to write** stat deltas. It writes both the top-level and nested fields in the same patch to keep them in sync.
-- **Both sets of fields must be written together** in any patch that touches stat values (see the return shape of `applySkillStatDeltas`).
-- **Nested-only reads are acceptable only for** `stats.comments` and `stats.versions` — no top-level field exists for these yet.
-- The four legacy nested fields are marked `@deprecated` in `statsValidator` (schema.ts). Any IDE access to `skill.stats.downloads` etc. will show a strikethrough warning — treat this as a signal to use `readCanonicalStat()` instead.
-- When adding new stat fields, follow the same dual-write pattern and add a cursor-based backfill mutation (see `backfillSkillStatFieldsInternal` for an example).
