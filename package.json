@@ -66,7 +66,7 @@
     "seed:public-corpus": "bun run setup:worktree -- --quiet && bunx convex dev --once --typecheck=disable && bun scripts/public-corpus/seed-public-corpus.ts",
     "setup:worktree": "bun scripts/setup-worktree.ts",
     "skill-cards:worker": "bun scripts/skill-cards/run-skill-card-worker.ts",
-    "skills:install": "npm exec --yes --package=skills@1.5.15 -- skills add 'openclaw/design-system#v0.0.1' --skill '*' --agent codex --copy --yes --full-depth",
+    "skills:install": "npx --yes skills@1.5.15 add openclaw/design-system --skill openclaw-design openclaw-brand openclaw-design-system openclaw-marketing-pages openclaw-design-audit --agent codex --copy --yes",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
     "test:e2e:local": "bash scripts/run-playwright-local.sh",
