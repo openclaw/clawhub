@@ -201,15 +201,13 @@ const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25;
 const BAN_USER_SKILLS_BATCH_SIZE = 25;
 const MAX_REPORT_REASON_SAMPLE = 5;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
-const RATE_LIMIT_HOUR_MS = 60 * 60 * 1000;
-const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS;
+const RATE_LIMIT_DAY_MS = 24 * 60 * 60 * 1000;
 const SLUG_RESERVATION_DAYS = 90;
 const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
 const UNPUBLISHED_SLUG_RESERVATION_DAYS = 30;
 const UNPUBLISHED_SLUG_RESERVATION_MS = UNPUBLISHED_SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
 const MAX_SKILL_SLUG_ALIASES_PER_SKILL = 5;
 const MAX_SKILL_SLUG_ALIASES_PER_OWNER = 25;
-const LOW_TRUST_ACCOUNT_AGE_MS = 30 * RATE_LIMIT_DAY_MS;
 const MAX_MANUAL_OVERRIDE_NOTE_LENGTH = 1200;
 const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
@@ -853,13 +851,8 @@ export const previewLatestSkillModerationInternal = internalQuery({
     };
   },
 });
-const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10;
-const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8;
 const OWNER_ACTIVITY_SCAN_LIMIT = 500;
-const NEW_SKILL_RATE_LIMITS = {
-  lowTrust: { perHour: 5, perDay: 20 },
-  trusted: { perHour: 20, perDay: 80 },
-} as const;
+const NEW_SKILL_DAILY_LIMIT = 200;
 
 const SORT_INDEXES = {
   recommended: "by_active_recommended_score",
@@ -906,9 +899,7 @@ function isUserId(value: Id<"users"> | null | undefined): value is Id<"users"> {
   return typeof value === "string" && value.length > 0;
 }
 
-type OwnerTrustSignals = {
-  isLowTrust: boolean;
-  skillsLastHour: number;
+type OwnerPublishActivity = {
   skillsLastDay: number;
 };
 
@@ -1462,53 +1453,33 @@ async function adjustGlobalPublicCountForSkillChange(
   await adjustGlobalPublicSkillsCount(ctx, delta);
 }
 
-async function getOwnerTrustSignals(
+async function getOwnerPublishActivity(
   ctx: QueryCtx | MutationCtx,
-  owner: Doc<"users">,
+  ownerUserId: Id<"users">,
   now: number,
-): Promise<OwnerTrustSignals> {
+): Promise<OwnerPublishActivity> {
   const ownerSkills = await ctx.db
     .query("skills")
-    .withIndex("by_owner", (q) => q.eq("ownerUserId", owner._id))
+    .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
     .order("desc")
     .take(OWNER_ACTIVITY_SCAN_LIMIT);
 
-  const hourThreshold = now - RATE_LIMIT_HOUR_MS;
   const dayThreshold = now - RATE_LIMIT_DAY_MS;
-  let skillsLastHour = 0;
   let skillsLastDay = 0;
 
   for (const skill of ownerSkills) {
     if (skill.createdAt >= dayThreshold) {
       skillsLastDay += 1;
-      if (skill.createdAt >= hourThreshold) {
-        skillsLastHour += 1;
-      }
     }
   }
 
-  const accountCreatedAt = owner.createdAt ?? owner._creationTime;
-  const accountAgeMs = Math.max(0, now - accountCreatedAt);
-  const isLowTrust =
-    accountAgeMs < LOW_TRUST_ACCOUNT_AGE_MS ||
-    ownerSkills.length < TRUSTED_PUBLISHER_SKILL_THRESHOLD ||
-    skillsLastHour >= LOW_TRUST_BURST_THRESHOLD_PER_HOUR;
-
-  return { isLowTrust, skillsLastHour, skillsLastDay };
+  return { skillsLastDay };
 }
 
-function enforceNewSkillRateLimit(signals: OwnerTrustSignals) {
-  const limits = signals.isLowTrust
-    ? NEW_SKILL_RATE_LIMITS.lowTrust
-    : NEW_SKILL_RATE_LIMITS.trusted;
-  if (signals.skillsLastHour >= limits.perHour) {
+function enforceNewSkillRateLimit(activity: OwnerPublishActivity) {
+  if (activity.skillsLastDay >= NEW_SKILL_DAILY_LIMIT) {
     throw new ConvexError(
-      `Rate limit: max ${limits.perHour} new skills per hour. Please wait before publishing more.`,
-    );
-  }
-  if (signals.skillsLastDay >= limits.perDay) {
-    throw new ConvexError(
-      `Rate limit: max ${limits.perDay} new skills per 24 hours. Please wait before publishing more.`,
+      `Rate limit: max ${NEW_SKILL_DAILY_LIMIT} new skills per 24 hours. Please wait before publishing more.`,
     );
   }
 }
@@ -12071,8 +12042,8 @@ export const insertVersion = internalMutation({
       });
 
       if (!args.bypassNewSkillRateLimit) {
-        const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now);
-        enforceNewSkillRateLimit(ownerTrustSignals);
+        const ownerPublishActivity = await getOwnerPublishActivity(ctx, user._id, now);
+        enforceNewSkillRateLimit(ownerPublishActivity);
       }
 
       const forkOfSlug = args.forkOf?.slug.trim().toLowerCase() || "";
