@@ -1,6 +1,6 @@
 # ClawHub design audit
 
-- Design system: `v0.0.3`
+- Design system: `v0.0.1`
 - ClawHub commit: `274c5b71ef2abef87dcf7442a086629a6ea71992`
 - Comparison base: `735e1c4d`
 - Generated: 2026-07-08T23:59:54.797Z
