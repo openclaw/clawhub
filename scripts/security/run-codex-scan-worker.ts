@@ -1584,7 +1584,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   concurrency: number;
   maxJobs: number | undefined;
   canClaim: (totalClaimed: number) => boolean;
-  claimJobs: (limit: number) => Promise<TJob[]>;
+  claimJobs: (limit: number) => Promise<{ claimedCount: number; jobs: TJob[] }>;
   processClaimedJob: (job: TJob) => Promise<ProcessJobResult>;
   idlePollMs?: number;
   sleep?: (ms: number) => Promise<unknown>;
@@ -1612,9 +1612,10 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         break;
       }
 
+      let claimedCount: number;
       let jobs: TJob[];
       try {
-        jobs = await options.claimJobs(remainingJobs);
+        ({ claimedCount, jobs } = await options.claimJobs(remainingJobs));
       } catch (error) {
         totalClaimFailures += 1;
         totalFailed += 1;
@@ -1632,11 +1633,10 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         break;
       }
 
-      if (jobs.length === 0) {
+      totalClaimed += claimedCount;
+      if (claimedCount < remainingJobs) {
         queueDrained = true;
-        break;
       }
-      totalClaimed += jobs.length;
       for (const job of jobs) {
         const task = options.processClaimedJob(job).catch((error) => {
           const message = error instanceof Error ? error.message : String(error);
@@ -1656,7 +1656,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         });
         active.add(task);
       }
-      if (jobs.length < remainingJobs) queueDrained = true;
+      if (jobs.length === 0 && queueDrained) break;
     }
 
     if (active.size > 0) {
@@ -1767,9 +1767,6 @@ async function main() {
         .map((outcome) => outcome.job)
         .filter((job): job is ClaimedJob => job !== null);
       const requeued = hydrated.filter((outcome) => outcome.requeued).length;
-      if (requeued > 0 && jobs.length === 0) {
-        throw new Error("All claimed security scan jobs failed hydration and were requeued");
-      }
       logger.info(
         {
           claimed: leases.length,
@@ -1783,7 +1780,7 @@ async function main() {
         },
         "claimed security scan jobs",
       );
-      return jobs;
+      return { claimedCount: leases.length, jobs };
     },
     processClaimedJob: (job) => processJob(client, token, job, diagnosticsRoot),
     idlePollMs: lane === "priority" ? 15_000 : undefined,
