@@ -106,6 +106,9 @@ Stores your API token + cached registry URL.
 - Output includes the skill slug, owner handle, display name, and relevance score.
 - Search favors exact slug/name token matches before download popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
 - Popularity is a small ranking prior, not a guarantee of top placement.
+- `--prefix`: treats the query as a skill slug prefix and returns deterministic slug-prefix matches, capped at 200 results.
+- `--exact`: treats the query as an exact skill slug and returns deterministic exact-slug matches, capped at 200 results.
+- `--prefix` and `--exact` are mutually exclusive.
 - If a skill should appear but does not, run `clawhub inspect @owner/slug` while logged in to check owner-visible moderation diagnostics before renaming metadata.
 
 ### `explore`

@@ -101,9 +101,17 @@ Query params:
 
 - `q` (required): query string
 - `limit` (optional): integer
+- `mode` (optional): `prefix` for deterministic skill slug-prefix matches or `exact` for deterministic exact-slug matches
 - `highlightedOnly` (optional): `true` to filter to highlighted skills
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
+
+Search modes:
+
+- Omit `mode` for the default relevance-ranked skill search.
+- `mode=prefix` treats `q` as a skill slug prefix, bypasses semantic/vector recall, and is capped at 200 results.
+- `mode=exact` treats `q` as an exact skill slug, bypasses semantic/vector recall, and is capped at 200 results.
+- Invalid `mode` values return `400 Invalid search mode`.
 
 Response:
 
