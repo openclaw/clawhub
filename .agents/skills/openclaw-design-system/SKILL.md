@@ -5,8 +5,8 @@ description: Build or modify OpenClaw application UI using canonical semantic to
 
 # OpenClaw Design System
 
-Use the shared package for foundations and the consumer repository for product
-components and layouts.
+Use the shared package for foundations and framework-neutral visual primitives.
+Keep consumer-specific behavior, data, routes, and layout composition local.
 
 ## Workflow
 
@@ -20,19 +20,22 @@ components and layouts.
 ## Interface Rules
 
 - Import the complete CSS contract or its focused exported entry points.
+- Compose shared classes from `components.css` before adding a one-off visual implementation.
 - Use local shared primitives before raw controls or one-off component implementations.
 - Keep one primary action per decision area.
 - Use familiar icons for icon-only commands and provide accessible names.
 - Use status colors for status, warning, success, error, and informational meaning.
 - Keep cards, controls, and repeated fixed-format elements dimensionally stable.
 - Avoid nested decorative cards and page sections styled as floating cards.
-- Use an 8px maximum default radius unless a documented consumer pattern requires otherwise.
+- Keep surfaces, controls, and insets square through their semantic radius tokens.
+- Reserve round geometry for avatars, status dots, and other truly circular indicators.
 - Keep focus, hover, active, disabled, loading, and invalid states coherent.
 - Keep text within its container at supported viewport sizes.
 - Prefer dense, scan-friendly composition for operational product surfaces.
 
 ## Ownership
 
-Move an implementation into this repository only when at least two consumers need
-the same interface and behavior. Token aliases and thin framework adapters are
-shared; application components remain local by default.
+Move visual implementation into this repository when its interface is
+framework-neutral and useful across consumers. Keep runtime behavior and
+framework adapters local until at least two consumers need the same interface
+and behavior.

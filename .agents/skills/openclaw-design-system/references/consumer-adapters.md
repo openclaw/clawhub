@@ -9,7 +9,7 @@ Use the complete contract when the global reset is desired:
 ```
 
 For a controlled migration, import `tokens.css`, `themes.css`, and
-`typography.css`, then retain consumer-specific base and component CSS.
+`typography.css`, then `components.css`. Retain consumer-specific layout CSS.
 Theme switching remains application-owned. The canonical public-site selector is
 `html[data-theme="light"|"dark"]`.
 
@@ -21,13 +21,15 @@ Import in this order:
 @import "@openclaw/design-system/tokens.css";
 @import "@openclaw/design-system/themes.css";
 @import "@openclaw/design-system/typography.css";
+@import "@openclaw/design-system/components.css";
 @import "@openclaw/design-system/themes/product.css";
 @import "@openclaw/design-system/compat/clawhub.css";
 @import "@openclaw/design-system/tailwind.css";
 ```
 
-The Tailwind adapter exposes theme utilities; it does not add components. Keep
-Radix, React, route, and product primitives in the consumer.
+The Tailwind adapter exposes theme utilities. `components.css` provides
+framework-neutral classes; keep Radix, React, route, and product behavior in the
+consumer.
 
 The ClawHub compatibility adapter understands:
 
