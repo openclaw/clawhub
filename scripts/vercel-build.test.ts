@@ -62,4 +62,35 @@ describe("Vercel build plan", () => {
       }),
     ).toThrow("Production Vercel builds must not receive CONVEX_DEPLOY_KEY");
   });
+
+  it("uses the permanent backend for the custom test environment", () => {
+    expect(
+      resolveVercelBuildPlan({
+        VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "test",
+      }),
+    ).toEqual([
+      {
+        command: "bun",
+        args: ["scripts/vercel-build-frontend.ts"],
+      },
+    ]);
+
+    expect(() =>
+      resolveVercelBuildPlan({
+        VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "test",
+        CONVEX_DEPLOY_KEY: "preview:openclaw:clawhub|secret",
+      }),
+    ).toThrow("Test Vercel builds must not receive CONVEX_DEPLOY_KEY");
+  });
+
+  it("fails closed for an unknown target environment", () => {
+    expect(() =>
+      resolveVercelBuildPlan({
+        VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "qa",
+      }),
+    ).toThrow("Unsupported Vercel target environment: qa");
+  });
 });

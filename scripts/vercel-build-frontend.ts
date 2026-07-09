@@ -4,15 +4,16 @@ import { spawnSync } from "node:child_process";
 import { resolveConvexSiteUrl } from "../src/lib/convexDeploymentUrl";
 
 export function resolveFrontendBuildEnv(env: NodeJS.ProcessEnv) {
+  const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
   const convexSiteUrl = resolveConvexSiteUrl({
     CONVEX_URL: env.CONVEX_URL,
-    VITE_CONVEX_SITE_URL: env.VERCEL_ENV === "preview" ? undefined : env.VITE_CONVEX_SITE_URL,
+    VITE_CONVEX_SITE_URL: targetEnvironment === "preview" ? undefined : env.VITE_CONVEX_SITE_URL,
     VITE_CONVEX_URL: env.VITE_CONVEX_URL,
   });
   return {
     ...env,
     VITE_CONVEX_SITE_URL: convexSiteUrl,
-    VITE_CLAWHUB_DEPLOY_ENV: env.VERCEL_ENV ?? "development",
+    VITE_CLAWHUB_DEPLOY_ENV: targetEnvironment ?? "development",
   };
 }
 

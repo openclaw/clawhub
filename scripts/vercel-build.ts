@@ -6,6 +6,7 @@ type BuildEnv = {
   CONVEX_DEPLOY_KEY?: string;
   VERCEL_ENV?: string;
   VERCEL_GIT_COMMIT_REF?: string;
+  VERCEL_TARGET_ENV?: string;
 };
 
 type BuildStep = {
@@ -14,11 +15,18 @@ type BuildStep = {
 };
 
 export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
-  if (env.VERCEL_ENV !== "preview") {
-    if (env.VERCEL_ENV === "production" && env.CONVEX_DEPLOY_KEY?.trim()) {
-      throw new Error("Production Vercel builds must not receive CONVEX_DEPLOY_KEY");
+  const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
+
+  if (targetEnvironment === "production" || targetEnvironment === "test") {
+    if (env.CONVEX_DEPLOY_KEY?.trim()) {
+      const environmentLabel = targetEnvironment === "production" ? "Production" : "Test";
+      throw new Error(`${environmentLabel} Vercel builds must not receive CONVEX_DEPLOY_KEY`);
     }
     return [{ command: "bun", args: ["scripts/vercel-build-frontend.ts"] }];
+  }
+
+  if (targetEnvironment !== "preview") {
+    throw new Error(`Unsupported Vercel target environment: ${targetEnvironment ?? "missing"}`);
   }
 
   const deployKey = env.CONVEX_DEPLOY_KEY?.trim();
