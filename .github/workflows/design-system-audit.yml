@@ -169,9 +169,15 @@ jobs:
             --output "$ARTIFACT_DIRECTORY/codex-report.json" \
             --events "$ARTIFACT_DIRECTORY/codex-events.jsonl"
 
+      - name: Validate agent change boundary
+        id: change_boundary
+        if: steps.codex.outcome == 'success'
+        continue-on-error: true
+        run: bun scripts/design-audit/validate-changes.ts
+
       - name: Validate proposed source fixes
         id: validation
-        if: steps.codex.outcome == 'success'
+        if: steps.codex.outcome == 'success' && steps.change_boundary.outcome == 'success'
         continue-on-error: true
         env:
           VITE_CONVEX_SITE_URL: https://wry-manatee-359.convex.site
@@ -188,7 +194,7 @@ jobs:
 
       - name: Finalize reports
         id: finalize
-        if: steps.codex.outcome == 'success' && !cancelled()
+        if: steps.codex.outcome == 'success' && steps.change_boundary.outcome == 'success' && !cancelled()
         run: |
           bun scripts/design-audit/finalize.ts \
             --deterministic "$ARTIFACT_DIRECTORY/deterministic.json" \
@@ -275,7 +281,7 @@ jobs:
           retention-days: 30
 
       - name: Fail unsuccessful audit
-        if: steps.codex.outcome == 'failure' || steps.validation.outcome == 'failure'
+        if: steps.codex.outcome == 'failure' || steps.change_boundary.outcome == 'failure' || steps.validation.outcome == 'failure'
         run: |
           echo "The audit or validation failed. Artifacts were preserved and no PR was created." >&2
           exit 1

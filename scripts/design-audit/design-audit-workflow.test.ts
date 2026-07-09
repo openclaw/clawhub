@@ -57,6 +57,22 @@ describe("weekly design-system audit workflow", () => {
     expect(failure?.if).toContain("steps.validation.outcome == 'failure'");
   });
 
+  it("enforces the agent change boundary before running repository scripts", async () => {
+    const workflow = parseYaml(
+      await readFile(".github/workflows/design-system-audit.yml", "utf8"),
+    ) as { jobs: { audit: { steps: Step[] } } };
+    const steps = workflow.jobs.audit.steps;
+    const boundaryIndex = steps.findIndex((step) => step.name === "Validate agent change boundary");
+    const validationIndex = steps.findIndex(
+      (step) => step.name === "Validate proposed source fixes",
+    );
+
+    expect(boundaryIndex).toBeGreaterThan(-1);
+    expect(boundaryIndex).toBeLessThan(validationIndex);
+    expect(steps[boundaryIndex]?.run).toContain("validate-changes.ts");
+    expect(steps[validationIndex]?.if).toContain("steps.change_boundary.outcome == 'success'");
+  });
+
   it("pins the design release and audit inputs in every report", async () => {
     const source = await readFile(".github/workflows/design-system-audit.yml", "utf8");
     expect(source).toContain("repos/openclaw/design-system/releases/latest");

@@ -47,6 +47,16 @@ export function validateSafeChanges(paths: string[], numstat: string) {
   }
 }
 
+export function validateCurrentSafeChanges() {
+  const changedFiles = git("diff", "--name-only", "HEAD").split("\n").filter(Boolean);
+  const untracked = git("ls-files", "--others", "--exclude-standard").split("\n").filter(Boolean);
+  if (untracked.length > 0) {
+    throw new Error(`audit created untracked files: ${untracked.join(", ")}`);
+  }
+  validateSafeChanges(changedFiles, git("diff", "--numstat", "HEAD"));
+  return changedFiles;
+}
+
 async function main() {
   const deterministicPath = argument("--deterministic");
   const codexPath = argument("--codex");
@@ -69,12 +79,7 @@ async function main() {
     throw new Error("missing required design-audit finalize argument");
   }
 
-  const changedFiles = git("diff", "--name-only", "HEAD").split("\n").filter(Boolean);
-  const untracked = git("ls-files", "--others", "--exclude-standard").split("\n").filter(Boolean);
-  if (untracked.length > 0) {
-    throw new Error(`audit created untracked files: ${untracked.join(", ")}`);
-  }
-  validateSafeChanges(changedFiles, git("diff", "--numstat", "HEAD"));
+  const changedFiles = validateCurrentSafeChanges();
 
   const deterministic = JSON.parse(await readFile(deterministicPath, "utf8"));
   const codex = JSON.parse(await readFile(codexPath, "utf8"));
