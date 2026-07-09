@@ -19,3 +19,6 @@
 .agents/skills/query-metrics/** -whitespace
 .agents/skills/spl-to-apl/** -whitespace
 .agents/skills/writing-evals/** -whitespace
+
+# Preserve intentional whitespace in the pinned Sentry upstream source.
+.agents/skills/sentry-fix-issues/** -whitespace

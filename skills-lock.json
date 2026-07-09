@@ -31,6 +31,12 @@
       "skillPath": "skills/query-metrics/SKILL.md",
       "computedHash": "3da9845936d9cb99f8fa6fdcdced06cc25eb9f16aa401e4838991d7f039fc177"
     },
+    "sentry-fix-issues": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills/sentry-fix-issues/SKILL.md",
+      "computedHash": "0ef2103f20d698acc56d856a07a372a0a68cb02bad654d0dacb4e2ffe87e98b5"
+    },
     "spl-to-apl": {
       "source": "axiomhq/skills",
       "sourceType": "github",
