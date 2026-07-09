@@ -1,5 +1,5 @@
 ---
-summary: "Maintainer deploy checklist: Convex backend, Vercel web app, CLI npm release, and /api rewrites."
+summary: "Maintainer deploy checklist: Convex backend, Vercel web app and PR previews, CLI npm release, and API routing."
 ---
 
 # Deploy
@@ -153,16 +153,52 @@ Deploy order:
 3. wait for Vercel production deploy for the same Git SHA
 4. smoke
 
+### Disposable PR previews
+
+Vercel Preview builds use `bun run build:vercel`. The build entrypoint requires a
+Convex Preview deploy key, recreates the branch's Convex preview with
+`--preview-create`, builds the frontend with that deployment's URL, and runs
+`previewSeed:seed`.
+
+One-time setup:
+
+1. In the Convex project settings, generate a Preview deploy key.
+2. In the Vercel project, set `CONVEX_DEPLOY_KEY` to that key for the **Preview**
+   environment only.
+3. In the Convex project default environment variables for Preview deployments,
+   set:
+   - `CLAWHUB_PREVIEW=1`
+   - `CLAWHUB_DISABLE_CRONS=1`
+4. Do not copy production auth, email, webhook, scanner, worker, backup, or
+   user-channel secrets into Preview defaults.
+5. Remove `CONVEX_DEPLOY_KEY` from the Vercel **Production** environment if it
+   exists. Production Convex deploys remain manual-only through
+   `.github/workflows/deploy.yml`.
+
+The preview seed fails closed unless `CLAWHUB_PREVIEW=1` is present and also
+rejects the production Convex deployment. It installs a small deterministic
+catalog plus synthetic clean, suspicious, and malicious presentation states.
+Running it again resets and recreates the same fixture rows.
+
+Preview browser traffic is public and read-only. Nitro rejects non-GET/HEAD
+requests before proxying and adds `X-ClawHub-Preview-Backend` to proxied preview
+responses so smoke proof can record the paired non-secret deployment name.
+Authenticated write flows belong in the permanent test environment.
+
 ## 3) Route `/api/*` to Convex
 
-This repo currently uses `vercel.json` rewrites:
+Nitro handles `/api/**` and `/v1/feeds/**` through the environment-aware Convex
+proxy in `server/convexProxy.ts`. The target comes from the build's
+`VITE_CONVEX_SITE_URL`, or is derived from the paired `VITE_CONVEX_URL`. Those
+build-time values are compiled into the Nitro server output so stale Vercel
+runtime variables cannot redirect a Preview deployment to production.
 
-- `source: /api/:path*`
-- `destination: https://<deployment>.convex.site/api/:path*`
+Do not add a production deployment hostname back to `vercel.json`. Static
+rewrites would make Vercel previews query production even when their Convex
+client points at a disposable backend.
 
-For self-host:
-
-- update `vercel.json` to your deployment's Convex site URL.
+For self-hosting, set `VITE_CONVEX_URL` and optionally
+`VITE_CONVEX_SITE_URL` to the intended deployment before building.
 
 ## 4) Registry discovery
 

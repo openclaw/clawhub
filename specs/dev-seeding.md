@@ -23,6 +23,10 @@ Local fixture seeding is command-driven by default:
 - `bun run validate:public-corpus` validates the committed public corpus fixture without seeding.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
+- `internal.previewSeed.seed` is the disposable PR-preview seed. The Vercel preview build invokes it
+  only after recreating the paired Convex preview deployment. It requires `CLAWHUB_PREVIEW=1`,
+  rejects production, and resets a small deterministic public catalog plus moderation/scanner
+  presentation fixtures on every run.
 
 Current-user fixture seeding must not be exposed as a public Convex `api` function or browser UI
 action. Internal tooling may pass an `ownerUserId`, but that id must stay inside trusted local seed
@@ -34,5 +38,5 @@ should not be exposed as a first-run dashboard button unless the UX and ownershi
 intentionally revisited.
 
 Without `OPENAI_API_KEY`, public corpus import may use zero vectors. That is
-acceptable for local setup and layout QA, but semantic search quality will be weaker than an
-embedding-backed local database.
+acceptable for local setup, disposable PR previews, and layout QA, but semantic search quality will
+be weaker than an embedding-backed database.
