@@ -7,8 +7,7 @@ import { createGitHubAppInstallationToken, isGitHubAppConfigured } from "./lib/g
 const DISPATCH_STATE_KEY = "codex-worker";
 const DISPATCH_LEASE_MS = 5 * 60 * 1000;
 const SCHEDULE_STALE_MS = 60 * 1000;
-const GITHUB_WORKFLOW_DISPATCH_URL =
-  "https://api.github.com/repos/openclaw/clawhub/actions/workflows/security-scan-codex.yml/dispatches";
+const GITHUB_REPOSITORY_DISPATCH_URL = "https://api.github.com/repos/openclaw/clawhub/dispatches";
 
 const internalRefs = internal as unknown as {
   securityScanDispatch: {
@@ -38,6 +37,14 @@ export function isSecurityScanEventDispatchEnabled(env: NodeJS.ProcessEnv = proc
   );
 }
 
+export function getGitHubRepositoryDispatchPermission(permissions: Record<string, string>) {
+  const contentsPermission = permissions.contents ?? "none";
+  return {
+    contentsPermission,
+    canDispatch: contentsPermission === "write",
+  };
+}
+
 export async function dispatchSecurityScanWorkflow(
   installationToken: {
     token: string;
@@ -45,11 +52,11 @@ export async function dispatchSecurityScanWorkflow(
   },
   fetchImpl: typeof fetch = fetch,
 ) {
-  if (installationToken.permissions.actions !== "write") {
-    return { ok: false as const, reason: "actions-write-required" as const };
+  if (!getGitHubRepositoryDispatchPermission(installationToken.permissions).canDispatch) {
+    return { ok: false as const, reason: "contents-write-required" as const };
   }
 
-  const response = await fetchImpl(GITHUB_WORKFLOW_DISPATCH_URL, {
+  const response = await fetchImpl(GITHUB_REPOSITORY_DISPATCH_URL, {
     method: "POST",
     headers: {
       Accept: "application/vnd.github+json",
@@ -59,10 +66,10 @@ export async function dispatchSecurityScanWorkflow(
       "X-GitHub-Api-Version": "2022-11-28",
     },
     body: JSON.stringify({
-      ref: "main",
-      inputs: {
-        "batch-limit": "4",
-        "max-runtime-minutes": "8",
+      event_type: "clawhub-security-scan",
+      client_payload: {
+        batch_limit: "4",
+        max_runtime_minutes: "8",
       },
     }),
   });
@@ -210,24 +217,23 @@ export const finishSecurityScanDispatchInternal = internalMutation({
   },
 });
 
-export const checkGitHubActionsPermissionInternal = internalAction({
+export const checkGitHubRepositoryDispatchPermissionInternal = internalAction({
   args: {},
   handler: async () => {
     if (!isGitHubAppConfigured()) {
       return {
         configured: false as const,
-        actionsPermission: null,
+        contentsPermission: null,
         canDispatch: false,
       };
     }
     const installationToken = await createGitHubAppInstallationToken({
       userAgent: "clawhub/security-scan-dispatch-preflight",
     });
-    const actionsPermission = installationToken.permissions.actions ?? "none";
+    const permission = getGitHubRepositoryDispatchPermission(installationToken.permissions);
     return {
       configured: true as const,
-      actionsPermission,
-      canDispatch: actionsPermission === "write",
+      ...permission,
     };
   },
 });
@@ -264,9 +270,9 @@ export const dispatchSecurityScanWorkerInternal = internalAction({
       }
 
       const error =
-        result.reason === "actions-write-required"
-          ? "GitHub App Actions write permission is required"
-          : `GitHub workflow dispatch rejected with HTTP ${result.status}`;
+        result.reason === "contents-write-required"
+          ? "GitHub App Contents write permission is required"
+          : `GitHub repository dispatch rejected with HTTP ${result.status}`;
       await runMutationRef(
         ctx,
         internalRefs.securityScanDispatch.finishSecurityScanDispatchInternal,
