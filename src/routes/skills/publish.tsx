@@ -3,7 +3,6 @@ import { inferSkillCategories, isSkillCategorySlug, resolveSkillCategories } fro
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
-  PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema/licenseConstants";
 import { normalizeTextContentType } from "clawhub-schema/textFiles";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -1243,9 +1242,9 @@ export function Upload() {
               </div>
               <div className="flex flex-col gap-1 text-sm text-[color:var(--ink-soft)]">
                 <p>
-                  ClawHub records a supported license from package.json or LICENSE when present;
-                  otherwise skills default to {PLATFORM_SKILL_LICENSE}.{" "}
-                  {PLATFORM_SKILL_LICENSE_SUMMARY}
+                  Supported skill licenses are MIT-0 and MIT. ClawHub records a supported license
+                  from package.json or LICENSE when present; otherwise skills default to{" "}
+                  {PLATFORM_SKILL_LICENSE}.
                 </p>
                 <p>
                   ClawHub does not support paid skills, per-skill pricing, or paywalled releases.

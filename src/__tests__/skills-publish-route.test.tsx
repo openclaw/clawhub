@@ -1006,7 +1006,7 @@ describe("Upload route", () => {
     });
     fireEvent.click(
       screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
+        name: /i have the rights to publish this skill under its declared or default clawhub license/i,
       }),
     );
 
