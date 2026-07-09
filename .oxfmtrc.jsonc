@@ -18,6 +18,7 @@
     ".agents/skills/convex-quickstart/",
     ".agents/skills/convex-setup-auth/",
     ".agents/skills/query-metrics/",
+    ".agents/skills/sentry-fix-issues/",
     ".agents/skills/spl-to-apl/",
     ".agents/skills/writing-evals/",
     ".output/",
