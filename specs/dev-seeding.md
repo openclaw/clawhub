@@ -28,6 +28,15 @@ Local fixture seeding is command-driven by default:
   batches serialized while running different owners concurrently, so owner creation remains
   deterministic without paying one network round trip per corpus row.
 - `bun run validate:public-corpus` validates the committed public corpus fixture without seeding.
+- `bun run seed:test` targets only the permanent `academic-chihuahua-392` ClawHub Test deployment.
+  It applies the deterministic moderation fixture overlay without importing the local/public corpus,
+  cloning a current user, or resetting production-derived staging rows. The Convex action also
+  requires `CLAWHUB_ENV=test`, `CLAWHUB_DISABLE_CRONS=1`, and
+  `CLAWHUB_DEPLOYMENT_NAME=academic-chihuahua-392`.
+- `bun run seed:test:import-snapshot -- --snapshot <sanitized.zip>` is the destructive one-time
+  baseline restore. It validates the archive, refuses every deployment except
+  `academic-chihuahua-392`, and uses Convex `--replace-all` so cross-project table IDs restore
+  correctly.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
 
