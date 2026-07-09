@@ -10,6 +10,7 @@ import { convexDeploymentName, resolveConvexSiteUrl } from "../src/lib/convexDep
 type ProxyEnv = {
   CONVEX_URL?: string;
   VERCEL_ENV?: string;
+  VERCEL_TARGET_ENV?: string;
   VITE_CLAWHUB_DEPLOY_ENV?: string;
   VITE_CONVEX_SITE_URL?: string;
   VITE_CONVEX_URL?: string;
@@ -38,7 +39,9 @@ export function resolveConvexProxyEnv(
 }
 
 function isPreviewFrontend(env: ProxyEnv) {
-  return env.VERCEL_ENV === "preview" || env.VITE_CLAWHUB_DEPLOY_ENV === "preview";
+  const targetEnvironment =
+    env.VERCEL_TARGET_ENV?.trim() || env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_ENV?.trim();
+  return targetEnvironment === "preview";
 }
 
 export function isConvexProxyMethodAllowed(method: string, env: ProxyEnv) {

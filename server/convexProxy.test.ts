@@ -36,6 +36,17 @@ describe("Convex HTTP proxy", () => {
     expect(isConvexProxyMethodAllowed("POST", { VERCEL_ENV: "production" })).toBe(true);
   });
 
+  it("allows writes in the permanent custom test environment", () => {
+    const testEnv = {
+      VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "test",
+      VITE_CLAWHUB_DEPLOY_ENV: "test",
+    };
+
+    expect(isConvexProxyMethodAllowed("POST", testEnv)).toBe(true);
+    expect(isConvexProxyMethodAllowed("DELETE", testEnv)).toBe(true);
+  });
+
   it("prefers the build-paired Convex URL over stale Vercel runtime values", () => {
     expect(
       resolveConvexProxyEnv(

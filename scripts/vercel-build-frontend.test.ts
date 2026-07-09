@@ -23,4 +23,16 @@ describe("Vercel frontend build environment", () => {
     expect(env.VITE_CONVEX_SITE_URL).toBe("https://api.clawhub.example");
     expect(env.VITE_CLAWHUB_DEPLOY_ENV).toBe("production");
   });
+
+  it("preserves the permanent backend URLs for the custom test environment", () => {
+    const env = resolveFrontendBuildEnv({
+      VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "test",
+      VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
+      VITE_CONVEX_SITE_URL: "https://academic-chihuahua-392.convex.site",
+    });
+
+    expect(env.VITE_CONVEX_SITE_URL).toBe("https://academic-chihuahua-392.convex.site");
+    expect(env.VITE_CLAWHUB_DEPLOY_ENV).toBe("test");
+  });
 });
