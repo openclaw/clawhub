@@ -42,10 +42,9 @@ describe("weekly design-system audit workflow", () => {
     expect(closeClean?.if).toContain("steps.validation.outcome == 'success'");
     expect(closeClean?.run).toContain("gh pr close");
 
-    const appToken = steps.find((step) => step.name === "Create repository token");
-    expect(appToken?.with?.owner).toBe("${{ github.repository_owner }}");
-    expect(appToken?.with?.repositories).toContain("clawhub");
-    expect(appToken?.with?.repositories).toContain("design-system");
+    expect(steps.some((step) => step.name === "Create repository token")).toBe(false);
+    expect(source).not.toContain("DESIGN_SYSTEM_READ_TOKEN");
+    expect(source).not.toContain("steps.app-token.outputs.token");
   });
 
   it("preserves artifacts and suppresses PRs when validation fails", async () => {
@@ -92,9 +91,7 @@ describe("weekly design-system audit workflow", () => {
       "require('./node_modules/@openclaw/design-system/package.json').version",
     );
     expect(source).toContain("repos/openclaw/design-system/releases/tags/${release}");
-    expect(source).toContain(
-      "url.https://x-access-token:${DESIGN_SYSTEM_TOKEN}@github.com/openclaw/design-system.git.insteadOf=https://github.com/openclaw/design-system.git",
-    );
+    expect(source).toContain("https://github.com/openclaw/design-system.git");
     expect(source).toContain('clone \\\n            --branch "$release"');
     expect(source).toContain("--consumer-sha");
     expect(source).toContain("--base-sha");

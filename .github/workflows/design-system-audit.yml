@@ -38,31 +38,6 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      - name: Create repository token
-        id: app-token
-        continue-on-error: true
-        uses: actions/create-github-app-token@1b10c78c7865c340bc4f6099eb2f838309f1e8c3 # v3.1.1
-        with:
-          app-id: "2729701"
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: |
-            clawhub
-            design-system
-
-      - name: Configure design-system access
-        env:
-          DESIGN_SYSTEM_TOKEN: ${{ secrets.DESIGN_SYSTEM_READ_TOKEN || steps.app-token.outputs.token || github.token }}
-        run: |
-          set -euo pipefail
-          git config --global \
-            url."https://x-access-token:${DESIGN_SYSTEM_TOKEN}@github.com/".insteadOf \
-            "ssh://git@github.com/"
-          git config --global \
-            --add \
-            url."https://x-access-token:${DESIGN_SYSTEM_TOKEN}@github.com/".insteadOf \
-            "git@github.com:"
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -72,8 +47,7 @@ jobs:
       - name: Resolve installed design-system release
         id: release
         env:
-          DESIGN_SYSTEM_TOKEN: ${{ secrets.DESIGN_SYSTEM_READ_TOKEN || steps.app-token.outputs.token || github.token }}
-          GH_TOKEN: ${{ secrets.DESIGN_SYSTEM_READ_TOKEN || steps.app-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           release="v$(node -p "require('./node_modules/@openclaw/design-system/package.json').version")"
@@ -81,9 +55,7 @@ jobs:
           gh api "repos/openclaw/design-system/releases/tags/${release}" >/dev/null
           echo "tag=$release" >> "$GITHUB_OUTPUT"
           mkdir -p "$ARTIFACT_DIRECTORY"
-          git -c \
-            "url.https://x-access-token:${DESIGN_SYSTEM_TOKEN}@github.com/openclaw/design-system.git.insteadOf=https://github.com/openclaw/design-system.git" \
-            clone \
+          git clone \
             --branch "$release" \
             --depth 1 \
             https://github.com/openclaw/design-system.git \
@@ -233,7 +205,7 @@ jobs:
       - name: Open or update draft pull request
         if: steps.finalize.outputs.open_pr == 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           open_pr="$(
@@ -265,7 +237,7 @@ jobs:
       - name: Close obsolete clean audit pull request
         if: steps.validation.outcome == 'success' && steps.finalize.outputs.open_pr != 'true'
         env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           open_pr="$(
