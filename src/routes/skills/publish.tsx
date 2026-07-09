@@ -823,7 +823,7 @@ export function Upload() {
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
               {isNewSkillPublishEmpty
-                ? "Publish your skill to ClawHub so others can discover and install it. We'll check the skill details and run security checks before it can be installed."
+                ? "Publish your skill to ClawHub so others can discover and install it."
                 : "Drop or select a skill folder"}
             </p>
           </div>

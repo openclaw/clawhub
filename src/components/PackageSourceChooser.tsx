@@ -314,8 +314,7 @@ export function PackageSourceChooser(props: {
                 <strong className="text-[color:var(--ink)]">Upload plugin first</strong>
               </div>
               <span className="max-w-[520px] text-sm text-[color:var(--ink-soft)]">
-                Drop your plugin file or folder here. We&apos;ll inspect the package and fill in any
-                details we can.
+                Drop a plugin file or folder here.
               </span>
               <div className="flex gap-3 pt-2">
                 <Button

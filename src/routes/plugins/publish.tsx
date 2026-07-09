@@ -454,7 +454,7 @@ export function PublishPluginRoute() {
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
               {isNewPluginPublishEmpty
-                ? "Publish your plugin to ClawHub so others can discover and install it. We'll check the package and run security checks before it can be installed."
+                ? "Publish your plugin to ClawHub so others can discover and install it."
                 : "Drop or select a plugin folder, .zip, or .tgz"}
             </p>
             {search.name ? (

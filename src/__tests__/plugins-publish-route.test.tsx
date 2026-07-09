@@ -193,11 +193,7 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     expect(screen.getByText(/Upload plugin first/i)).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Drop your plugin file or folder here. We'll inspect the package and fill in any details we can.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Drop a plugin file or folder here.")).toBeTruthy();
     expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
     expect(screen.queryByPlaceholderText("Display name")).toBeNull();
     expect(screen.queryByPlaceholderText("Version")).toBeNull();
