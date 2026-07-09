@@ -30,6 +30,8 @@ temporary migration code.
    - resumable/progress behavior
    - destructive confirmation token
    - real Convex runtime validation
+5. Use `clawhub-convex` for repository-specific file placement and runtime
+   targeting. Use `clawhub-production-release` for production deploy phases.
 
 ## Safety Rules
 

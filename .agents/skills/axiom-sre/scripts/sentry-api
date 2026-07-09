@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Make raw Sentry API calls
+# Usage: sentry-api <deployment> <method> <path> [body]
+#
+# Examples:
+#   sentry-api prod GET /api/0/organizations/example-org/issues/?query=is:unresolved
+#   sentry-api prod GET /organizations/example-org/projects/
+#   sentry-api prod POST /organizations/example-org/issues/ '{"status":"resolved"}'
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+METHOD="${2:-GET}"
+REQUEST_PATH="${3:-}"
+BODY="${4:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$REQUEST_PATH" ]]; then
+    echo "Usage: sentry-api <deployment> <method> <path> [body]" >&2
+    echo "" >&2
+    echo "Common paths:" >&2
+    echo "  /organizations/{org}/issues/?query=is:unresolved&sort=freq" >&2
+    echo "  /issues/{issue_id}/events/latest/" >&2
+    echo "  /organizations/{org}/releases/" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" sentry "$DEPLOYMENT")"
+
+if [[ "$REQUEST_PATH" =~ ^https?:// ]]; then
+    api_url="$REQUEST_PATH"
+else
+    base_url="${SENTRY_URL%/}"
+    normalized_path="$REQUEST_PATH"
+    if [[ "$normalized_path" != /* ]]; then
+        normalized_path="/${normalized_path}"
+    fi
+    if [[ "$normalized_path" != /api/0/* ]]; then
+        normalized_path="/api/0${normalized_path}"
+    fi
+    api_url="${base_url}${normalized_path}"
+fi
+
+if [[ -n "$BODY" ]]; then
+    result=$("$SCRIPT_DIR/curl-auth" sentry "$DEPLOYMENT" -X "$METHOD" -d "$BODY" "$api_url")
+else
+    result=$("$SCRIPT_DIR/curl-auth" sentry "$DEPLOYMENT" -X "$METHOD" "$api_url")
+fi
+
+if command -v jq &>/dev/null; then
+    echo "$result" | jq .
+else
+    echo "$result"
+fi

@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+# chart-add: Emit a valid Axiom dashboard chart JSON object on stdout.
+#
+# The agent supplies *semantic* inputs (id, name, query, unit-as-string).
+# This script applies all the API-shape rules:
+#
+# - APL vs MPL are distinct languages with distinct validation, and the
+#   flags reflect that:
+#     --apl '<APL pipeline>'        → events/logs query (no dataset arg)
+#     --mpl '<MPL pipeline>' --dataset <name>  → metrics query
+#   Internally both land in `query.apl` (the API field is shared); MPL
+#   additionally gets `query.metricsDataset`, which is what tells the
+#   backend to interpret the string as MPL.
+#
+# - MPL-specific validation:
+#     • Inline time ranges (`[1h..]`, `[30d..]`, etc.) are rejected at
+#       chart construction. They deploy fine but render with
+#       `AST Error (Time is provided both in the query and as a parameter)`
+#       because the dashboard runtime always supplies start/end via the
+#       API. Use `align to $__interval using …` for bucketing.
+#
+# - Statistic gets BOTH `unit` (enum, e.g. Percent100) AND `customUnits`
+#   (suffix, e.g. "%"). The mapping is delegated to scripts/metrics/unit-for,
+#   which already handles UCUM → Axiom-enum lookup, the "%" double-emit,
+#   and the "1" / "By" / "m" ambiguities.
+# - TimeSeries / Table / Pie / LogStream / Heatmap accept ONLY `customUnits`
+#   (never the `unit` enum — the create API rejects it). They get the raw
+#   unit string passed verbatim as customUnits.
+# - Note has neither — only `text` (top-level, never inside an `options{}`
+#   wrapper).
+# - Always-rejected fields (`description`, `options`,
+#   `overrideDashboardTimeRange`, `overrideDashboardCompareAgainst`,
+#   `decimals`) are NEVER emitted, regardless of input.
+# - Thresholds: NOT exposed yet. The API accepts `errorThreshold` /
+#   `warningThreshold` as bare string enums (`Above`/`AboveOrEqual`/
+#   `Below`/`BelowOrEqual`/`AboveOrBelow`) but the companion *value*
+#   field is not reachable through the create API on the deployments
+#   probed so far — anything we tried (`thresholdValue`, `errorValue`,
+#   numeric `errorThreshold`, etc.) is rejected as `Unrecognized keys`.
+#   Once the value field is documented or returned by `dashboard-get`
+#   on a UI-authored chart, add `--warn-when` / `--error-when` flags
+#   here. Until then, set thresholds via the UI.
+#
+# Usage:
+#   chart-add --type <type> --id <id> --name <name> [type-specific opts]
+#
+# Types: Note, Statistic, TimeSeries, Table, Pie, LogStream, Heatmap
+#
+# Per-type required flags:
+#   Note:       --text <markdown>
+#   All others: exactly one of --apl <APL> or --mpl <MPL> --dataset <name>
+#
+# Common optional flags (data charts only):
+#   --unit <string>      Friendly unit string ("%", "s", "ms", "B",
+#                        "req/s", "bytes", etc.). For Statistic, mapped
+#                        via unit-for. For other charts, becomes
+#                        customUnits verbatim.
+#
+# Statistic-only flags:
+#   --show-chart         Render a sparkline behind the value
+#
+# Examples:
+#   chart-add --type Note --id intro --name Notice --text "**Scope:** ..."
+#
+#   # APL / events
+#   chart-add --type Table --id top-errs --name "Top Errors" \
+#       --apl "['logs'] | where status >= 500 | summarize count() by route | top 10 by count_"
+#
+#   # MPL / metrics
+#   chart-add --type Statistic --id avail --name "Availability (30d)" \
+#       --mpl '...MPL...' --dataset k8s-metrics-staging --unit "%"
+#
+#   chart-add --type TimeSeries --id rps --name "Read Requests (req/s)" \
+#       --mpl '...MPL...' --dataset k8s-metrics-staging --unit "req/s"
+#
+# Composing a dashboard:
+#   chart-add --type Note ... > /tmp/c1.json
+#   chart-add --type Statistic ... > /tmp/c2.json
+#   layout-pack c1:Note c2:Statistic > /tmp/layout.json
+#   dashboard-assemble --name "..." --datasets ds --layout /tmp/layout.json \
+#                      /tmp/c1.json /tmp/c2.json > /tmp/dashboard.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UNIT_FOR="$SCRIPT_DIR/metrics/unit-for"
+
+TYPE=""
+ID=""
+NAME=""
+APL=""
+MPL=""
+TEXT=""
+DATASET=""
+UNIT=""
+SHOW_CHART=""
+
+usage() {
+    sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \?//' | sed '$d'
+    exit "${1:-1}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --type)        TYPE="$2"; shift 2 ;;
+        --id)          ID="$2"; shift 2 ;;
+        --name)        NAME="$2"; shift 2 ;;
+        --apl)         APL="$2"; shift 2 ;;
+        --mpl)         MPL="$2"; shift 2 ;;
+        --text)        TEXT="$2"; shift 2 ;;
+        --dataset)     DATASET="$2"; shift 2 ;;
+        --unit)        UNIT="$2"; shift 2 ;;
+        --show-chart)  SHOW_CHART=1; shift ;;
+        -h|--help)     usage 0 ;;
+        *) echo "Error: unknown option '$1'" >&2; usage ;;
+    esac
+done
+
+# --- Required-flag validation -----------------------------------------------
+
+[[ -z "$TYPE" ]] && { echo "Error: --type is required" >&2; usage; }
+[[ -z "$ID"   ]] && { echo "Error: --id is required" >&2; usage; }
+[[ -z "$NAME" ]] && { echo "Error: --name is required" >&2; usage; }
+
+case "$TYPE" in
+    Note|Statistic|TimeSeries|Table|Pie|LogStream|Heatmap) ;;
+    *) echo "Error: --type must be one of: Note, Statistic, TimeSeries, Table, Pie, LogStream, Heatmap (got '$TYPE')" >&2; exit 1 ;;
+esac
+
+# --apl and --mpl are mutually exclusive everywhere they're allowed at all.
+if [[ -n "$APL" && -n "$MPL" ]]; then
+    echo "Error: --apl and --mpl are mutually exclusive (a chart is either an events/logs query or a metrics query, not both)" >&2
+    exit 1
+fi
+
+case "$TYPE" in
+    Note)
+        [[ -z "$TEXT" ]] && { echo "Error: --text is required for Note" >&2; exit 1; }
+        if [[ -n "$APL" || -n "$MPL" || -n "$DATASET" || -n "$UNIT" || -n "$SHOW_CHART" ]]; then
+            echo "Error: --apl, --mpl, --dataset, --unit, --show-chart are not valid for Note" >&2
+            exit 1
+        fi
+        ;;
+    Statistic|TimeSeries|Table|Pie|LogStream|Heatmap)
+        [[ -n "$TEXT" ]] && { echo "Error: --text is only valid for Note" >&2; exit 1; }
+        if [[ -z "$APL" && -z "$MPL" ]]; then
+            echo "Error: $TYPE requires exactly one of --apl <APL pipeline> or --mpl <MPL pipeline>" >&2
+            exit 1
+        fi
+        # MPL requires --dataset (the metrics dataset name); APL forbids it.
+        if [[ -n "$MPL" && -z "$DATASET" ]]; then
+            echo "Error: --mpl requires --dataset <name> (the metrics dataset; sets query.metricsDataset, which is what flags the chart as MPL on the backend)" >&2
+            exit 1
+        fi
+        if [[ -n "$APL" && -n "$DATASET" ]]; then
+            echo "Error: --dataset is for metrics charts only — pair it with --mpl, not --apl. (APL charts read from the dataset(s) declared at dashboard level.)" >&2
+            exit 1
+        fi
+        # Inline-range check is MPL-only. APL doesn't use [N..] time-range
+        # syntax (its time semantics live in `where _time between (...)`,
+        # which dashboards don't need anyway).
+        if [[ -n "$MPL" ]] && printf '%s' "$MPL" | grep -qE '\[[^]]*\.\.[^]]*\]'; then
+            echo "Error: --mpl contains an inline time range (e.g. [1h..]). Dashboard chart queries cannot use inline ranges — the dashboard time picker supplies start/end. Use 'align to \$__interval using …' for bucketing instead." >&2
+            exit 1
+        fi
+        ;;
+esac
+
+if [[ "$TYPE" != "Statistic" && -n "$SHOW_CHART" ]]; then
+    echo "Error: --show-chart is only valid for Statistic" >&2
+    exit 1
+fi
+
+# --- Helpers ---------------------------------------------------------------
+
+# Echo the unit-fields JSON object for a Statistic chart.
+# Empty input → {} (chart will render bare numbers; caller's choice).
+unit_fields_statistic() {
+    local u="$1"
+    if [[ -z "$u" ]]; then
+        echo '{}'
+        return
+    fi
+    "$UNIT_FOR" "$u"
+}
+
+# Echo the unit-fields JSON object for any non-Statistic data chart.
+# Always {customUnits: ...} or {} — never the `unit` enum (API rejects it).
+unit_fields_other() {
+    local u="$1"
+    if [[ -z "$u" ]]; then
+        echo '{}'
+    else
+        jq -n --arg u "$u" '{customUnits: $u}'
+    fi
+}
+
+# Build the query object. Both APL and MPL land in `query.apl` (shared API
+# field); MPL also gets `query.metricsDataset`.
+build_query() {
+    if [[ -n "$MPL" ]]; then
+        jq -n --arg apl "$MPL" --arg ds "$DATASET" '{apl: $apl, metricsDataset: $ds}'
+    else
+        jq -n --arg apl "$APL" '{apl: $apl}'
+    fi
+}
+
+# --- Emit chart JSON -------------------------------------------------------
+
+case "$TYPE" in
+    Note)
+        jq -n --arg id "$ID" --arg name "$NAME" --arg text "$TEXT" \
+            '{id: $id, name: $name, type: "Note", text: $text}'
+        ;;
+    Statistic)
+        UNIT_JSON=$(unit_fields_statistic "$UNIT")
+        QUERY_JSON=$(build_query)
+        RESULT=$(jq -n \
+            --arg id "$ID" \
+            --arg name "$NAME" \
+            --argjson query "$QUERY_JSON" \
+            --argjson unit "$UNIT_JSON" \
+            '{id: $id, name: $name, type: "Statistic", query: $query} + $unit')
+        if [[ -n "$SHOW_CHART" ]]; then
+            RESULT=$(jq '. + {showChart: true}' <<<"$RESULT")
+        fi
+        echo "$RESULT"
+        ;;
+    TimeSeries|Table|Pie|LogStream|Heatmap)
+        UNIT_JSON=$(unit_fields_other "$UNIT")
+        QUERY_JSON=$(build_query)
+        jq -n \
+            --arg id "$ID" \
+            --arg name "$NAME" \
+            --arg type "$TYPE" \
+            --argjson query "$QUERY_JSON" \
+            --argjson unit "$UNIT_JSON" \
+            '{id: $id, name: $name, type: $type, query: $query} + $unit'
+        ;;
+esac

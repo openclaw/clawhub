@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# axiom-api: Make authenticated requests to the Axiom DASHBOARD/APP API
+#
+# ⚠️ This script rewrites URLs (api.* → app.*/api) for the dashboard API.
+# For data/metrics API calls (/v1/query/*, /v1/datasets), use scripts/metrics/axiom-api instead.
+#
+# Usage: axiom-api <deployment> <method> <path> [json-body]
+#
+# Reads credentials from ~/.axiom.toml (shared with axiom-sre)
+#
+# Examples:
+#   axiom-api prod GET /dashboards
+#   axiom-api prod GET /dashboards/abc123
+#   axiom-api prod POST /dashboards '{"name":"Test",...}'
+#   axiom-api prod GET /user
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+METHOD="${2:-}"
+PATH_="${3:-}"
+BODY="${4:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$METHOD" || -z "$PATH_" ]]; then
+    echo "Usage: axiom-api <deployment> <method> <path> [json-body]" >&2
+    exit 1
+fi
+
+# Reject data/metrics paths that should use scripts/metrics/axiom-api
+case "$PATH_" in
+    /v1/query/*|/v1/datasets*)
+        echo "Error: This script is for the dashboard/app API." >&2
+        echo "For data/metrics endpoints ($PATH_), use scripts/metrics/axiom-api instead." >&2
+        exit 2
+        ;;
+esac
+
+CONFIG_FILE="$HOME/.axiom.toml"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: $CONFIG_FILE not found" >&2
+    exit 1
+fi
+
+# Parse TOML for deployment config
+extract_value() {
+    local key="$1"
+    awk -v deployment="$DEPLOYMENT" -v key="$key" '
+        /^[[:space:]]*\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment {
+            gsub(/^[[:space:]]+/, "")
+            if ($1 == key) {
+                sub(/^[^=]*=[[:space:]]*/, "")
+                if (match($0, /^"[^"]*"/)) {
+                    $0 = substr($0, RSTART+1, RLENGTH-2)
+                } else {
+                    sub(/[[:space:]]*#.*$/, "")
+                }
+                print
+                exit
+            }
+        }
+    ' "$CONFIG_FILE"
+}
+
+URL=$(extract_value "url")
+TOKEN=$(extract_value "token")
+ORG_ID=$(extract_value "org_id")
+
+if [[ -z "$URL" || -z "$TOKEN" || -z "$ORG_ID" ]]; then
+    echo "Error: Could not find deployment '$DEPLOYMENT' in $CONFIG_FILE" >&2
+    exit 1
+fi
+
+API_URL="${URL%/}/v2"
+
+CURL_ARGS=(
+    -s
+    -X "$METHOD"
+    -H "Authorization: Bearer $TOKEN"
+    -H "X-Axiom-Org-Id: $ORG_ID"
+    -H "Content-Type: application/json"
+    -H "Accept: application/json"
+    -H "User-Agent: axiom-skills/1.0 (agent)"
+)
+
+if [[ -n "$BODY" ]]; then
+    CURL_ARGS+=(-d "$BODY")
+fi
+
+curl "${CURL_ARGS[@]}" "${API_URL}${PATH_}"

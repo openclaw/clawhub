@@ -5,6 +5,11 @@ import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
+import {
+  getSkillBySlugForPublisher,
+  getSkillSlugAliasBySlugForPublisher,
+  resolvePublisherByOwnerHandle,
+} from "./lib/skills/slugResolution";
 import { insertStatEvent } from "./skillStatEvents";
 
 const DAY_MS = 86_400_000;
@@ -12,11 +17,13 @@ const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
 const PRUNE_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
 const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
+const INSTALL_TELEMETRY_SLUG_MATCH_LIMIT = 25;
 
 export const reportCliInstallInternal = internalMutation({
   args: {
     userId: v.id("users"),
     slug: v.string(),
+    ownerHandle: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -91,16 +98,16 @@ export const clearUserTelemetryInternal = internalMutation({
 
 async function upsertUserSkillInstall(
   ctx: MutationCtx,
-  params: { userId: Id<"users">; slug: string; version?: string },
+  params: { userId: Id<"users">; slug: string; ownerHandle?: string; version?: string },
 ) {
   const slug = params.slug.trim().toLowerCase();
   if (!slug) return;
 
-  const skill = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
-    .unique();
-  if (!skill || skill.softDeletedAt) return;
+  const skill = await resolveInstallTelemetrySkill(ctx, {
+    slug,
+    ownerHandle: params.ownerHandle,
+  });
+  if (!skill) return;
 
   const now = Date.now();
   const duplicate = await markInstallTelemetrySeen(ctx, {
@@ -132,6 +139,32 @@ async function upsertUserSkillInstall(
     lastVersion: version,
   });
   await insertStatEvent(ctx, { skillId: skill._id, kind: "install_new" });
+}
+
+async function resolveInstallTelemetrySkill(
+  ctx: MutationCtx,
+  params: { slug: string; ownerHandle?: string },
+) {
+  if (params.ownerHandle) {
+    const { publisher } = await resolvePublisherByOwnerHandle(ctx, params.ownerHandle);
+    if (!publisher) return null;
+    let skill = await getSkillBySlugForPublisher(ctx, params.slug, publisher);
+    if (!skill) {
+      const alias = await getSkillSlugAliasBySlugForPublisher(ctx, params.slug, publisher);
+      skill = alias ? await ctx.db.get(alias.skillId) : null;
+    }
+    return skill && !skill.softDeletedAt ? skill : null;
+  }
+
+  // Older clients only report a bare slug. Once slugs are owner-scoped,
+  // telemetry must not guess which publisher should receive the install.
+  const candidates = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", params.slug))
+    .take(INSTALL_TELEMETRY_SLUG_MATCH_LIMIT + 1);
+  if (candidates.length > INSTALL_TELEMETRY_SLUG_MATCH_LIMIT) return null;
+  const activeSkills = candidates.filter((candidate) => !candidate.softDeletedAt);
+  return activeSkills.length === 1 ? activeSkills[0] : null;
 }
 
 async function clearTelemetryForUser(

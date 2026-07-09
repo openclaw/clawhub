@@ -1,0 +1,233 @@
+#!/bin/bash
+# Get CPU flame graph for a service
+# Usage: pyroscope-flamegraph <deployment> <service_name> [options]
+#
+# Options:
+#   --range <duration>  Time range: 10m, 30m, 1h, 6h (default: 10m)
+#   --start <time>      Start time (ISO 8601, epoch ms, or relative like -2h)
+#   --end <time>        End time (ISO 8601, epoch ms, or relative like -1h)
+#   --type <profile>    Profile type (default: CPU)
+#   --label <k=v>       Additional label filter (can be repeated)
+#   --max-nodes <N>     Max flame graph nodes (default: 16384)
+#   --json              Output raw JSON
+#
+# Examples:
+#   pyroscope-flamegraph prod axiom-db
+#   pyroscope-flamegraph prod axiom-db --range 30m
+#   pyroscope-flamegraph prod axiom-db --start 2026-01-17T04:00:00Z --end 2026-01-17T06:00:00Z
+#   pyroscope-flamegraph prod axiom-db --range 1h --type memory
+#   pyroscope-flamegraph prod axiom-db --range 10m --json
+#   pyroscope-flamegraph prod axiom-db --label profile_id=debug-conor
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+service="${2:-}"
+shift 2 2>/dev/null || true
+
+# Defaults
+range_duration="10m"
+start_time=""
+end_time=""
+profile_type="process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+max_nodes="16384"
+output_json=""
+extra_labels=""
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --range)
+            range_duration="$2"
+            shift 2
+            ;;
+        --start)
+            start_time="$2"
+            shift 2
+            ;;
+        --end)
+            end_time="$2"
+            shift 2
+            ;;
+        --type)
+            case "$2" in
+                cpu|CPU) profile_type="process_cpu:cpu:nanoseconds:cpu:nanoseconds" ;;
+                memory|mem|inuse) profile_type="memory:inuse_space:bytes:space:bytes" ;;
+                alloc|allocations) profile_type="memory:alloc_space:bytes:space:bytes" ;;
+                goroutine|goroutines) profile_type="goroutine:goroutine:count:goroutine:count" ;;
+                mutex) profile_type="mutex:delay:nanoseconds:contentions:count" ;;
+                block) profile_type="block:delay:nanoseconds:contentions:count" ;;
+                *) profile_type="$2" ;;
+            esac
+            shift 2
+            ;;
+        --label)
+            # Parse key=value into key="value" (escaped for JSON)
+            local_key="${2%%=*}"
+            local_val="${2#*=}"
+            extra_labels="${extra_labels}, ${local_key}=\\\"${local_val}\\\""
+            shift 2
+            ;;
+        --max-nodes)
+            max_nodes="$2"
+            shift 2
+            ;;
+        --json)
+            output_json="1"
+            shift
+            ;;
+        *)
+            # Legacy positional args: [duration] [profile_type] [max_nodes]
+            if [[ -z "$start_time" && "$1" =~ ^[0-9]+[smhd]$ ]]; then
+                range_duration="$1"
+            elif [[ "$1" =~ : ]]; then
+                profile_type="$1"
+            elif [[ "$1" =~ ^[0-9]+$ ]]; then
+                max_nodes="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "$DEPLOYMENT" || -z "$service" ]]; then
+    echo "Usage: pyroscope-flamegraph <deployment> <service_name> [options]" >&2
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  --range <dur>     - Time range: 10m, 30m, 1h, 6h (default: 10m)" >&2
+    echo "  --start <time>    - Start time (ISO 8601, epoch ms, or -2h)" >&2
+    echo "  --end <time>      - End time (ISO 8601, epoch ms, or -1h)" >&2
+    echo "  --type <profile>  - Profile type: cpu, memory, alloc, goroutine, mutex, block" >&2
+    echo "  --label <k=v>     - Additional label filter (can be repeated)" >&2
+    echo "  --max-nodes <N>   - Max flame graph nodes (default: 16384)" >&2
+    echo "  --json            - Output raw JSON" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  pyroscope-flamegraph prod axiom-db --range 30m" >&2
+    echo "  pyroscope-flamegraph prod axiom-db --start 2026-01-17T04:00:00Z --end 2026-01-17T06:00:00Z" >&2
+    echo "  pyroscope-flamegraph prod axiom-db --range 1h --type memory" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+# Parse duration to milliseconds
+parse_duration_ms() {
+    local dur="$1"
+    local num="${dur%[smhd]*}"
+    local unit="${dur#$num}"
+    case "$unit" in
+        s) echo $((num * 1000)) ;;
+        m) echo $((num * 60 * 1000)) ;;
+        h) echo $((num * 3600 * 1000)) ;;
+        d) echo $((num * 86400 * 1000)) ;;
+        *) echo $((num * 60 * 1000)) ;;
+    esac
+}
+
+# Parse time to milliseconds
+parse_time_ms() {
+    local t="$1"
+    local now_ms=$(($(date +%s) * 1000))
+    
+    if [[ "$t" == "now" ]]; then
+        echo "$now_ms"
+    elif [[ "$t" =~ ^[0-9]{10,13}$ ]]; then
+        # Epoch (seconds or milliseconds)
+        if [[ ${#t} -le 10 ]]; then
+            echo $((t * 1000))
+        else
+            echo "$t"
+        fi
+    elif [[ "$t" =~ ^- ]]; then
+        # Relative time like -2h, -30m
+        local dur="${t#-}"
+        local ms=$(parse_duration_ms "$dur")
+        echo $((now_ms - ms))
+    else
+        # ISO timestamp
+        # Use TZ=UTC for Z suffix to ensure correct UTC interpretation
+        local secs
+        if [[ "$t" == *Z ]]; then
+            if secs=$(TZ=UTC date -j -f "%Y-%m-%dT%H:%M:%SZ" "$t" +%s 2>/dev/null); then
+                echo $((secs * 1000))
+                return
+            fi
+        fi
+        if secs=$(date -j -f "%Y-%m-%dT%H:%M:%S" "$t" +%s 2>/dev/null); then
+            echo $((secs * 1000))
+        elif secs=$(date -d "$t" +%s 2>/dev/null); then
+            # Linux date handles Z correctly
+            echo $((secs * 1000))
+        else
+            echo "Error: Cannot parse time: $t" >&2
+            exit 1
+        fi
+    fi
+}
+
+# Calculate time range
+now_ms=$(($(date +%s) * 1000))
+if [[ -n "$start_time" && -n "$end_time" ]]; then
+    start_ms=$(parse_time_ms "$start_time")
+    end_ms=$(parse_time_ms "$end_time")
+    time_desc="$start_time to $end_time"
+elif [[ -n "$start_time" ]]; then
+    echo "Error: --start requires --end" >&2
+    exit 1
+else
+    duration_ms=$(parse_duration_ms "$range_duration")
+    start_ms=$((now_ms - duration_ms))
+    end_ms=$now_ms
+    time_desc="$range_duration"
+fi
+
+# Build label selector (escape quotes for JSON)
+label_selector="{service_name=\\\"$service\\\"${extra_labels}}"
+
+body=$(cat <<EOF
+{
+  "profileTypeID": "$profile_type",
+  "labelSelector": "$label_selector",
+  "start": $start_ms,
+  "end": $end_ms,
+  "maxNodes": $max_nodes
+}
+EOF
+)
+
+api_url="${PYROSCOPE_URL}/querier.v1.QuerierService/SelectMergeStacktraces"
+result=$("$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST -d "$body" "$api_url")
+
+# Output
+if [[ -n "$output_json" ]]; then
+    echo "$result" | jq '.' 2>/dev/null || echo "$result"
+    exit 0
+fi
+
+if command -v jq &>/dev/null; then
+    echo "Deployment: $DEPLOYMENT"
+    echo "Service: $service"
+    echo "Profile: $profile_type"
+    echo "Time: $time_desc"
+    echo ""
+    
+    # Extract summary stats
+    total=$(echo "$result" | jq -r '.flamegraph.total // "0"')
+    max_self=$(echo "$result" | jq -r '.flamegraph.maxSelf // "0"')
+    num_names=$(echo "$result" | jq -r '(.flamegraph.names // []) | length')
+    num_levels=$(echo "$result" | jq -r '(.flamegraph.levels // []) | length')
+    
+    echo "Total samples: $total"
+    echo "Max self: $max_self"
+    echo "Functions: $num_names"
+    echo "Stack depth: $num_levels"
+    echo ""
+    
+    # Show top functions (by name index order from profile)
+    echo "Top functions:"
+    echo "$result" | jq -r '.flamegraph.names[:20] | to_entries | .[] | "  \(.key): \(.value)"' 2>/dev/null || true
+else
+    echo "$result"
+fi

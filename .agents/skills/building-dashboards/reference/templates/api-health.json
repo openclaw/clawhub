@@ -1,0 +1,131 @@
+{
+  "name": "{{service}} - API Health",
+  "description": "HTTP API health dashboard showing golden signals: traffic, errors, latency, and status distribution.",
+  "owner": "X-AXIOM-EVERYONE",
+  "datasets": ["{{dataset}}"],
+  "refreshTime": 60,
+  "schemaVersion": 2,
+  "timeWindowStart": "qr-now-1h",
+  "timeWindowEnd": "qr-now",
+  "charts": [
+    {
+      "id": "total-requests",
+      "name": "Total Requests",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize total = count()"
+      }
+    },
+    {
+      "id": "error-rate",
+      "name": "Error Rate (%)",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize total = count(), errors = countif(status >= 500) | extend error_rate = iff(total > 0, round(100.0 * errors / total, 2), 0.0) | project error_rate"
+      }
+    },
+    {
+      "id": "p50-latency",
+      "name": "p50 Latency (ms)",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize p50 = percentile(duration_ms, 50)"
+      }
+    },
+    {
+      "id": "p99-latency",
+      "name": "p99 Latency (ms)",
+      "type": "Statistic",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize p99 = percentile(duration_ms, 99)"
+      }
+    },
+    {
+      "id": "traffic-ts",
+      "name": "Request Rate Over Time",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize requests = count() by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "error-rate-ts",
+      "name": "Error Rate Over Time",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize total = count(), errors = countif(status >= 500) by bin_auto(_time) | extend error_rate = iff(total > 0, round(100.0 * errors / total, 2), 0.0) | project _time, error_rate"
+      }
+    },
+    {
+      "id": "latency-percentiles-ts",
+      "name": "Latency Percentiles Over Time",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize percentiles_array(duration_ms, 50, 95, 99) by bin_auto(_time)"
+      }
+    },
+    {
+      "id": "status-distribution",
+      "name": "Status Code Distribution",
+      "type": "Pie",
+      "query": {
+        "apl": "['{{dataset}}'] | extend status_class = case(status < 300, '2xx', status < 400, '3xx', status < 500, '4xx', '5xx') | summarize count() by status_class"
+      }
+    },
+    {
+      "id": "traffic-by-status-ts",
+      "name": "Traffic by Status Class",
+      "type": "TimeSeries",
+      "query": {
+        "apl": "['{{dataset}}'] | extend status_class = case(status < 300, '2xx', status < 400, '3xx', status < 500, '4xx', '5xx') | summarize count() by bin_auto(_time), status_class"
+      }
+    },
+    {
+      "id": "top-routes-by-traffic",
+      "name": "Top Routes by Traffic",
+      "type": "Table",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize requests = count(), errors = countif(status >= 500), p95 = percentile(duration_ms, 95) by route | top 10 by requests | project Route = route, Requests = requests, Errors = errors, 'p95 (ms)' = p95"
+      }
+    },
+    {
+      "id": "top-routes-by-errors",
+      "name": "Top Routes by Errors",
+      "type": "Table",
+      "query": {
+        "apl": "['{{dataset}}'] | where status >= 500 | summarize errors = count() by route, status | top 10 by errors | project Route = route, Status = status, Errors = errors"
+      }
+    },
+    {
+      "id": "slowest-routes",
+      "name": "Slowest Routes (by p99)",
+      "type": "Table",
+      "query": {
+        "apl": "['{{dataset}}'] | summarize requests = count(), p99 = percentile(duration_ms, 99) by route | where requests >= 10 | top 10 by p99 | project Route = route, 'p99 (ms)' = p99, Requests = requests"
+      }
+    },
+    {
+      "id": "recent-errors",
+      "name": "Recent Errors",
+      "type": "LogStream",
+      "query": {
+        "apl": "['{{dataset}}'] | where status >= 500 | project-keep _time, trace_id, method, route, status, error_message, duration_ms | order by _time desc | take 100"
+      }
+    }
+  ],
+  "layout": [
+    {"i": "total-requests", "x": 0, "y": 0, "w": 3, "h": 2},
+    {"i": "error-rate", "x": 3, "y": 0, "w": 3, "h": 2},
+    {"i": "p50-latency", "x": 6, "y": 0, "w": 3, "h": 2},
+    {"i": "p99-latency", "x": 9, "y": 0, "w": 3, "h": 2},
+    {"i": "traffic-ts", "x": 0, "y": 2, "w": 6, "h": 4},
+    {"i": "error-rate-ts", "x": 6, "y": 2, "w": 6, "h": 4},
+    {"i": "latency-percentiles-ts", "x": 0, "y": 6, "w": 6, "h": 4},
+    {"i": "status-distribution", "x": 6, "y": 6, "w": 3, "h": 4},
+    {"i": "traffic-by-status-ts", "x": 9, "y": 6, "w": 3, "h": 4},
+    {"i": "top-routes-by-traffic", "x": 0, "y": 10, "w": 4, "h": 4},
+    {"i": "top-routes-by-errors", "x": 4, "y": 10, "w": 4, "h": 4},
+    {"i": "slowest-routes", "x": 8, "y": 10, "w": 4, "h": 4},
+    {"i": "recent-errors", "x": 0, "y": 14, "w": 12, "h": 6}
+  ]
+}

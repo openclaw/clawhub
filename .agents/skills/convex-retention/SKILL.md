@@ -13,7 +13,7 @@ their lifecycle is handled by usage-time validation or a documented component.
 
 ## Checklist
 
-- Read `convex/_generated/ai/guidelines.md` and the Convex ops rules in `AGENTS.md` first.
+- Use `clawhub-convex` and read `convex/_generated/ai/guidelines.md` first.
 - Add every new schema table to `RETENTION_POLICIES`; the `Record<TableNames, RetentionPolicy>` type
   is the enforcement gate.
 - For ephemeral tables, prefer an explicit expiration field plus index, then prune with `.withIndex()`

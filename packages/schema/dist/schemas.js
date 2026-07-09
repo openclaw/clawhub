@@ -136,6 +136,7 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
 export const CliTelemetryInstallRequestSchema = type({
     event: '"install"',
     slug: "string",
+    ownerHandle: "string?",
     version: "string?",
     // Deprecated compatibility fields accepted and ignored by the backend.
     rootId: "string?",

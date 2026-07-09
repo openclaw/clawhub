@@ -155,7 +155,7 @@ describe("clawhub-schema", () => {
   it("accepts current and legacy install telemetry payloads", () => {
     const current = parseArk(
       CliTelemetryInstallRequestSchema,
-      { event: "install", slug: "demo", version: "1.0.0" },
+      { event: "install", slug: "demo", ownerHandle: "alice", version: "1.0.0" },
       "Install telemetry",
     );
     const legacy = parseArk(
@@ -172,7 +172,7 @@ describe("clawhub-schema", () => {
       "Install telemetry",
     );
 
-    expect(current).toMatchObject({ event: "install", slug: "demo" });
+    expect(current).toMatchObject({ event: "install", slug: "demo", ownerHandle: "alice" });
     expect(legacy).toMatchObject({ roots: [{ rootId: "root" }] });
   });
 
