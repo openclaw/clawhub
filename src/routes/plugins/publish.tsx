@@ -528,19 +528,6 @@ export function PublishPluginRoute() {
                       onChange={(event) => setName(event.target.value)}
                     />
                   </div>
-                  {ownerScopeError ? (
-                    <Badge variant="warning" className="md:col-span-2">
-                      <span>{ownerScopeError}</span>
-                      <a
-                        href={DocsLinks.clawhub.packageScopeFaq}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline underline-offset-2"
-                      >
-                        Learn how publishing works
-                      </a>
-                    </Badge>
-                  ) : null}
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="pluginDisplayName">Display name</Label>
                     <Input
@@ -559,16 +546,6 @@ export function PublishPluginRoute() {
                     >
                       {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
                     </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="pluginOwner">Owner</Label>
-                    <PublisherOwnerSelect
-                      id="pluginOwner"
-                      value={ownerHandle}
-                      memberships={publishers}
-                      disabled={metadataDisabled}
-                      onValueChange={setOwnerHandle}
-                    />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label htmlFor="pluginVersion">Version</Label>
@@ -619,6 +596,29 @@ export function PublishPluginRoute() {
                       </div>
                     </>
                   ) : null}
+                  {ownerScopeError ? (
+                    <Badge variant="warning" className="md:col-span-2">
+                      <span>{ownerScopeError}</span>
+                      <a
+                        href={DocsLinks.clawhub.packageScopeFaq}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-2"
+                      >
+                        Learn how publishing works
+                      </a>
+                    </Badge>
+                  ) : null}
+                  <div className="flex flex-col gap-2 md:col-span-2">
+                    <Label htmlFor="pluginOwner">Publishing as</Label>
+                    <PublisherOwnerSelect
+                      id="pluginOwner"
+                      value={ownerHandle}
+                      memberships={publishers}
+                      disabled={metadataDisabled}
+                      onValueChange={setOwnerHandle}
+                    />
+                  </div>
                 </div>
               </div>
             </Card>
