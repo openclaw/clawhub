@@ -176,7 +176,10 @@ describe("publicBrowse", () => {
           query: () => ({
             withIndex: () => ({
               order: () => ({
-                take: async () => [pendingVersion, approvedVersion],
+                take: async (limit: number) => {
+                  expect(limit).toBe(2);
+                  return [pendingVersion, approvedVersion];
+                },
               }),
             }),
           }),
@@ -200,7 +203,7 @@ describe("publicBrowse", () => {
     expect(version?.version).toBe("1.0.0");
   });
 
-  it("returns null when every hosted version is still pending review", async () => {
+  it("does not skip past multiple pending hosted versions", async () => {
     const pendingV2 = {
       _id: "skillVersions:pending-2" as never,
       skillId: "skills:1" as never,
@@ -218,6 +221,13 @@ describe("publicBrowse", () => {
       version: "1.0.0",
       createdAt: 1,
     };
+    const olderApproved = {
+      ...pendingV2,
+      _id: "skillVersions:approved" as never,
+      version: "0.9.0",
+      createdAt: 0,
+      vtAnalysis: { status: "clean" as const, checkedAt: 0 },
+    };
 
     const version = await resolvePublicBrowseVersionForSkill(
       {
@@ -226,7 +236,8 @@ describe("publicBrowse", () => {
           query: () => ({
             withIndex: () => ({
               order: () => ({
-                take: async () => [pendingV2, pendingV1],
+                take: async (limit: number) =>
+                  [pendingV2, pendingV1, olderApproved].slice(0, limit),
               }),
             }),
           }),
