@@ -311,6 +311,7 @@ describe("httpApi handlers", () => {
         body: JSON.stringify({
           event: "install",
           slug: "weather",
+          ownerHandle: "openclaw",
           version: "1.0.0",
           rootId: "abc",
           rootLabel: "~/skills",
@@ -322,6 +323,7 @@ describe("httpApi handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       userId: "users:1",
       slug: "weather",
+      ownerHandle: "openclaw",
       version: "1.0.0",
     });
   });
@@ -340,7 +342,7 @@ describe("httpApi handlers", () => {
               rootId: "abc",
               label: "~/skills",
               skills: [
-                { slug: "weather", ownerHandle: "openclaw", version: "1.0.0" },
+                { slug: "weather", version: "1.0.0" },
                 { slug: "calendar", version: null },
               ],
             },

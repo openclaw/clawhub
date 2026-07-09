@@ -10,6 +10,7 @@
   "scripts": {
     "admin": "bun packages/clawhub-admin/src/cli.ts",
     "build": "bun run llms:generate && vite build && bun scripts/copy-og-assets.ts",
+    "build:vercel": "bun scripts/vercel-build.ts",
     "check": "bun run lint",
     "check:peers": "bun scripts/check-peer-deps.ts",
     "check:release-workflow-action-pins": "node scripts/check-release-workflow-action-pins.mjs",
@@ -60,6 +61,7 @@
     "release:clawhub:cli:changelog": "node scripts/extract-changelog-release.mjs",
     "release:clawhub:cli:npm:check": "node scripts/clawhub-cli-npm-release-check.mjs",
     "security:codex-worker": "bun scripts/security/run-codex-scan-worker.ts",
+    "seed": "bun scripts/seed.ts",
     "seed:dev": "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts --seed-only",
     "seed:public-corpus": "bun run setup:worktree -- --quiet && bunx convex dev --once --typecheck=disable && bun scripts/public-corpus/seed-public-corpus.ts",
     "setup:worktree": "bun scripts/setup-worktree.ts",

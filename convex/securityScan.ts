@@ -2,9 +2,10 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { action, internalMutation, internalQuery, mutation } from "./functions";
+import { action, internalAction, internalMutation, internalQuery, mutation } from "./functions";
 import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
+import { Events, logEvent } from "./lib/observabilityEvents";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { normalizePackageScanStatus } from "./lib/packageSecurity";
 import { assertCanManageOwnedResource } from "./lib/publishers";
@@ -44,6 +45,7 @@ const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_SKILL_SCAN_REQUEST_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SKILL_SCAN_QUEUE_POSITION_READS = 250;
 const MAX_SKILL_SCAN_RUNNING_COUNT_READS = 512;
+const MAX_SECURITY_SCAN_QUEUE_HEALTH_READS = 512;
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to complete.";
 
@@ -135,6 +137,16 @@ const jobSourceValidator = v.union(
 );
 
 type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+
+type CodexScanQueueHealth = {
+  snapshotAt: number;
+  queueDepth: number;
+  queueDepthIsEstimate: boolean;
+  readyQueueDepth: number;
+  readyQueueDepthIsEstimate: boolean;
+  oldestReadyJobAgeSeconds: number;
+  oldestReadyJobNextRunAt: number | null;
+};
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "backfill",
@@ -293,6 +305,7 @@ const internalRefs = internal as unknown as {
     enqueuePackageReleaseScanInternal: unknown;
     enqueueSkillVersionScanInternal: unknown;
     failJobInternal: unknown;
+    getCodexScanQueueHealthInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getJobTargetInternal: unknown;
     recordGitHubSkillScanResultInternal: unknown;
@@ -1047,6 +1060,49 @@ async function countSecurityScanJobs(
     isEstimate: jobs.length > MAX_SKILL_SCAN_RUNNING_COUNT_READS,
   };
 }
+
+export const getCodexScanQueueHealthInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const snapshotAt = Date.now();
+    const queuedJobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued"))
+      .order("asc")
+      .take(MAX_SECURITY_SCAN_QUEUE_HEALTH_READS + 1);
+    const sampledJobs = queuedJobs.slice(0, MAX_SECURITY_SCAN_QUEUE_HEALTH_READS);
+    const firstFutureJobIndex = sampledJobs.findIndex((job) => job.nextRunAt > snapshotAt);
+    const readyQueueDepth = firstFutureJobIndex === -1 ? sampledJobs.length : firstFutureJobIndex;
+    const queueDepthIsEstimate = queuedJobs.length > MAX_SECURITY_SCAN_QUEUE_HEALTH_READS;
+    const oldestReadyJob = readyQueueDepth > 0 ? sampledJobs[0] : null;
+
+    return {
+      snapshotAt,
+      queueDepth: sampledJobs.length,
+      queueDepthIsEstimate,
+      readyQueueDepth,
+      readyQueueDepthIsEstimate:
+        queueDepthIsEstimate && readyQueueDepth === MAX_SECURITY_SCAN_QUEUE_HEALTH_READS,
+      oldestReadyJobAgeSeconds: oldestReadyJob
+        ? Math.max(0, Math.floor((snapshotAt - oldestReadyJob.nextRunAt) / 1000))
+        : 0,
+      oldestReadyJobNextRunAt: oldestReadyJob?.nextRunAt ?? null,
+    };
+  },
+});
+
+export const logCodexScanQueueHealthInternal = internalAction({
+  args: {},
+  handler: async (ctx): Promise<CodexScanQueueHealth> => {
+    const snapshot = await runQueryRef<CodexScanQueueHealth>(
+      ctx,
+      internalRefs.securityScan.getCodexScanQueueHealthInternal,
+      {},
+    );
+    logEvent(Events.SecurityScanQueueSnapshot, snapshot);
+    return snapshot;
+  },
+});
 
 function compareQueuedScanClaimOrder(a: Doc<"securityScanJobs">, b: Doc<"securityScanJobs">) {
   if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt - b.nextRunAt;

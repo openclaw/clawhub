@@ -1566,6 +1566,21 @@ describe("cmdInstall", () => {
         },
       },
     });
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        token: "tkn",
+        body: {
+          event: "install",
+          slug: "demo",
+          ownerHandle: "openclaw",
+          version: "1.0.0",
+        },
+      }),
+      expect.anything(),
+    );
   });
 
   it("keeps same-slug installs from different owners isolated", async () => {
@@ -1652,6 +1667,21 @@ describe("cmdInstall", () => {
     expect(writeSkillOrigin).toHaveBeenCalledWith(
       "/work/skills/@source/old-demo",
       expect.objectContaining({ slug: "old-demo", ownerHandle: "source" }),
+    );
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        token: "tkn",
+        body: {
+          event: "install",
+          slug: "demo",
+          ownerHandle: "target",
+          version: "1.0.0",
+        },
+      }),
+      expect.anything(),
     );
   });
 

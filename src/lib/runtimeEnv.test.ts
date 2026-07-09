@@ -25,6 +25,20 @@ describe("runtimeEnv", () => {
     import.meta.env.VITE_SITE_URL = originalClientValue;
   });
 
+  it("prefers the bundled Convex URL for preview SSR", () => {
+    const originalDeployEnv = import.meta.env.VITE_CLAWHUB_DEPLOY_ENV;
+    const originalConvexUrl = import.meta.env.VITE_CONVEX_URL;
+    vi.stubEnv("VITE_CLAWHUB_DEPLOY_ENV", "production");
+    vi.stubEnv("VITE_CONVEX_URL", "https://wry-manatee-359.convex.cloud");
+    import.meta.env.VITE_CLAWHUB_DEPLOY_ENV = "preview";
+    import.meta.env.VITE_CONVEX_URL = "https://paired-preview-123.convex.cloud";
+
+    expect(getRuntimeEnv("VITE_CONVEX_URL")).toBe("https://paired-preview-123.convex.cloud");
+
+    import.meta.env.VITE_CLAWHUB_DEPLOY_ENV = originalDeployEnv;
+    import.meta.env.VITE_CONVEX_URL = originalConvexUrl;
+  });
+
   it("throws for missing required env", () => {
     expect(() => getRequiredRuntimeEnv("VITE_MISSING_VALUE")).toThrow(
       "Missing required environment variable: VITE_MISSING_VALUE",

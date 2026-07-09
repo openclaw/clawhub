@@ -16,7 +16,6 @@ type Options = {
 
 const DEFAULT_ENV_SOURCES = [".env.local"];
 const CONVEX_START_TIMEOUT_MS = 120_000;
-const CONVEX_FUNCTIONS_READY_TIMEOUT_MS = 120_000;
 const REACHABILITY_POLL_MS = 500;
 const RUNTIME_DIR = ".codex/runtime";
 const DETACHED_PID_FILE = `${RUNTIME_DIR}/dev-worktree.pid`;
@@ -305,57 +304,6 @@ export function runSync(
   );
 }
 
-function runSyncBuffered(
-  command: string,
-  args: string[],
-  extraEnv: Record<string, string | undefined>,
-) {
-  const result = spawnSync(command, args, {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: { ...process.env, ...extraEnv },
-  });
-
-  return {
-    output: `${result.stdout ?? ""}${result.stderr ?? ""}`,
-    status: result.status ?? 1,
-  };
-}
-
-function writeBufferedOutput(output: string) {
-  if (output) process.stdout.write(output);
-}
-
-export function isConvexFunctionUnavailableOutput(output: string) {
-  return (
-    output.includes("Could not find function for") &&
-    output.includes("Did you forget to run `npx convex dev`")
-  );
-}
-
-async function runConvexFunctionWhenReady(args: string[]) {
-  const startedAt = Date.now();
-
-  while (true) {
-    const result = runSyncBuffered("bunx", args, {});
-    if (result.status === 0) {
-      writeBufferedOutput(result.output);
-      return 0;
-    }
-
-    if (
-      !isConvexFunctionUnavailableOutput(result.output) ||
-      Date.now() - startedAt >= CONVEX_FUNCTIONS_READY_TIMEOUT_MS
-    ) {
-      writeBufferedOutput(result.output);
-      return result.status;
-    }
-
-    console.log("Convex functions are not queryable yet; retrying...");
-    await sleep(REACHABILITY_POLL_MS);
-  }
-}
-
 function spawnManaged(command: string, args: string[]) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
@@ -549,24 +497,8 @@ async function main() {
 
   if (seed.seed) {
     console.log("Seeding local fixtures and public corpus...");
-    const seedStatus = await runConvexFunctionWhenReady([
-      "convex",
-      "run",
-      "--no-push",
-      "devSeed:seedLocalFixtures",
-    ]);
+    const seedStatus = runSync("bun", ["run", "seed"], {});
     if (seedStatus !== 0) exitAfterStoppingManagedChildren(seedStatus);
-
-    const publicCorpusStatus = runSync("bun", ["scripts/public-corpus/seed-public-corpus.ts"], {});
-    if (publicCorpusStatus !== 0) exitAfterStoppingManagedChildren(publicCorpusStatus);
-
-    const statsStatus = await runConvexFunctionWhenReady([
-      "convex",
-      "run",
-      "--no-push",
-      "statsMaintenance:updateGlobalStatsAction",
-    ]);
-    if (statsStatus !== 0) exitAfterStoppingManagedChildren(statsStatus);
     writeSeedSentinel(convexUrl, convexDeployment?.trim() ?? "");
   }
 
