@@ -21,7 +21,9 @@ or voice. For a product application, start with `openclaw-design-system`.
 
 ## Shared Contract
 
-- Treat this repository's release tag as the version of both runtime CSS and agent guidance.
+- Install agent guidance from this repository's default branch and refresh it with
+  `npx skills update --project --yes`.
+- Keep runtime CSS pinned to a semantic release tag.
 - Prefer semantic tokens over raw palette values.
 - Keep product-specific components and layouts in their consumer repository.
 - Add shared implementation only after at least two consumers demonstrate the same interface.
