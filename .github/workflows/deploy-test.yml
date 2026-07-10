@@ -189,6 +189,7 @@ jobs:
 
       - name: Assign stable Test alias
         env:
+          DEPLOYMENT_URL: ${{ steps.vercel.outputs.deployment_url }}
           TEST_SITE_URL: ${{ vars.SITE_URL }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
@@ -198,7 +199,7 @@ jobs:
           set -euo pipefail
           alias="${TEST_SITE_URL#https://}"
           bunx --bun vercel@50.44.0 alias set \
-            "${{ steps.vercel.outputs.deployment_url }}" \
+            "$DEPLOYMENT_URL" \
             "$alias" \
             --scope "$VERCEL_SCOPE" \
             --token "$VERCEL_TOKEN"
