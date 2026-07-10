@@ -126,6 +126,11 @@ import {
   reserveSlugForHardDeleteFinalize,
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
+import {
+  compareRankedSearchKeys,
+  rankedSearchKey,
+  type SearchTrustSignals,
+} from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import {
   selectGeneratedSkillCardFile,
@@ -6638,12 +6643,18 @@ function skillCatalogSearchMatch(
 
 function compareSkillCatalogSearchMatches<
   T extends SkillCatalogSearchMatch & {
-    package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt">;
+    package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt" | "stats">;
   },
 >(a: T, b: T) {
+  // Skills have no verification tiers, so official flag + adoption are the
+  // only trust signals feeding the shared squat gate.
+  const signals = (entry: T): SearchTrustSignals => ({
+    isOfficial: entry.package.isOfficial,
+    downloads: entry.package.stats.downloads,
+    installs: entry.package.stats.installs,
+  });
   return (
-    a.rankTier - b.rankTier ||
-    b.score - a.score ||
+    compareRankedSearchKeys(rankedSearchKey(a, signals(a)), rankedSearchKey(b, signals(b))) ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
     b.package.updatedAt - a.package.updatedAt
   );

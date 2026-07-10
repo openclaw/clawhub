@@ -114,6 +114,12 @@ import {
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
+import {
+  compareRankedSearchKeys,
+  rankedSearchKey,
+  verificationRank,
+  type SearchTrustSignals,
+} from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
@@ -1738,16 +1744,14 @@ function comparePackageSearchMatches<
     };
   },
 >(a: T, b: T) {
-  const verificationRank = (tier: PackageDigestLike["verificationTier"] | null) => {
-    if (tier === "rebuild-verified") return 4;
-    if (tier === "provenance-verified") return 3;
-    if (tier === "source-linked") return 2;
-    if (tier === "structural") return 1;
-    return 0;
-  };
+  const signals = (entry: T): SearchTrustSignals => ({
+    isOfficial: entry.package.isOfficial,
+    verificationTier: entry.package.verificationTier,
+    downloads: entry.package.stats?.downloads,
+    installs: entry.package.stats?.installs,
+  });
   return (
-    a.rankTier - b.rankTier ||
-    b.score - a.score ||
+    compareRankedSearchKeys(rankedSearchKey(a, signals(a)), rankedSearchKey(b, signals(b))) ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
     verificationRank(b.package.verificationTier) - verificationRank(a.package.verificationTier) ||
     (b.package.stats?.stars ?? 0) - (a.package.stats?.stars ?? 0) ||
