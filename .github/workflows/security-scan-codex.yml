@@ -36,7 +36,7 @@ jobs:
     environment: Production
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 9
       matrix:
         include:
           - lane: priority
@@ -55,6 +55,8 @@ jobs:
             shard: shared-5
           - lane: shared
             shard: shared-6
+          - lane: shared
+            shard: shared-7
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
