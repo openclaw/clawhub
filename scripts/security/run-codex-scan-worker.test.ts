@@ -67,7 +67,10 @@ describe("run-codex-scan-worker diagnostics", () => {
       releaseSlowJob = resolve;
     });
     const jobs = ["slow", "fast", "next"];
-    const claimJobs = vi.fn(async (limit: number) => jobs.splice(0, limit).map((id) => ({ id })));
+    const claimJobs = vi.fn(async (limit: number) => {
+      const claimedJobs = jobs.splice(0, limit).map((id) => ({ id }));
+      return { claimedCount: claimedJobs.length, jobs: claimedJobs };
+    });
     const processClaimedJob = vi.fn(async (job: { id: string }) => {
       started.push(job.id);
       if (job.id === "slow") await slowJob;
@@ -96,6 +99,38 @@ describe("run-codex-scan-worker diagnostics", () => {
       totalClaimFailures: 0,
     });
     expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 1, 1]);
+  });
+
+  it("keeps refilling after a full lease batch has no hydratable jobs", async () => {
+    const claimJobs = vi
+      .fn()
+      .mockResolvedValueOnce({ claimedCount: 2, jobs: [] })
+      .mockResolvedValueOnce({
+        claimedCount: 2,
+        jobs: [{ id: "next-1" }, { id: "next-2" }],
+      })
+      .mockResolvedValue({ claimedCount: 0, jobs: [] });
+    const processClaimedJob = vi.fn(async () => ({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    }));
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 2,
+        maxJobs: undefined,
+        canClaim: () => true,
+        claimJobs,
+        processClaimedJob,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 4,
+      totalCompleted: 2,
+      totalClaimFailures: 0,
+    });
+    expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 2, 1]);
+    expect(processClaimedJob).toHaveBeenCalledTimes(2);
   });
 
   it("counts one failed batch lease request without multiplying it by slot count", async () => {
@@ -130,7 +165,10 @@ describe("run-codex-scan-worker diagnostics", () => {
         concurrency: 4,
         maxJobs: undefined,
         canClaim: () => canClaim,
-        claimJobs: vi.fn(async () => [{ id: "publish" }]),
+        claimJobs: vi.fn(async () => ({
+          claimedCount: 1,
+          jobs: [{ id: "publish" }],
+        })),
         processClaimedJob: vi.fn(async () => ({
           completed: true,
           hardFailed: false,
@@ -154,7 +192,10 @@ describe("run-codex-scan-worker diagnostics", () => {
         concurrency: 4,
         maxJobs: 1,
         canClaim: () => true,
-        claimJobs: vi.fn(async () => [{ id: "publish" }]),
+        claimJobs: vi.fn(async () => ({
+          claimedCount: 1,
+          jobs: [{ id: "publish" }],
+        })),
         processClaimedJob: vi.fn(async () => ({
           completed: true,
           hardFailed: false,

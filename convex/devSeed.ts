@@ -30,6 +30,7 @@ import {
 import type { SourceBackedSkillScanStatus } from "./lib/securityScanPolicy";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { readCanonicalStat } from "./lib/skillStats";
+import { assertTestSeedAllowed } from "./lib/testSeed";
 import { generateToken, hashToken } from "./lib/tokens";
 
 type SeedSkillSpec = {
@@ -44,6 +45,10 @@ type SeedSkillSpec = {
 type SeedActionArgs = {
   reset?: boolean;
   ownerUserId?: Id<"users">;
+  flaggedSkillSlug?: string;
+  scannedSkillSlug?: string;
+  flaggedPluginName?: string;
+  scannedPluginName?: string;
 };
 
 type SeedActionResult = {
@@ -851,6 +856,10 @@ async function seedLocalFixturesHandler(
     internal.devSeed.seedLocalModerationFixturesMutation,
     {
       reset: args.reset,
+      flaggedSkillSlug: args.flaggedSkillSlug,
+      scannedSkillSlug: args.scannedSkillSlug,
+      flaggedPluginName: args.flaggedPluginName,
+      scannedPluginName: args.scannedPluginName,
       flaggedSkillStorageId,
       flaggedSkillMd: FLAGGED_SKILL_MD,
       scannedSkillStorageId,
@@ -861,10 +870,18 @@ async function seedLocalFixturesHandler(
       scannedPluginReadme: SCANNED_PLUGIN_README,
     },
   );
+  const storageIdsToDelete = Array.isArray(fixtureResult.storageIdsToDelete)
+    ? fixtureResult.storageIdsToDelete.filter(
+        (storageId): storageId is Id<"_storage"> => typeof storageId === "string",
+      )
+    : [];
+  await Promise.allSettled(storageIdsToDelete.map((storageId) => ctx.storage.delete(storageId)));
+  const result = { ...fixtureResult };
+  delete result.storageIdsToDelete;
 
   return {
     ok: true,
-    results: [{ slug: "local-moderation-fixtures", ...fixtureResult }],
+    results: [{ slug: "local-moderation-fixtures", ...result }],
   };
 }
 
@@ -873,6 +890,20 @@ export const seedLocalFixtures: ReturnType<typeof internalAction> = internalActi
     reset: v.optional(v.boolean()),
   },
   handler: seedLocalFixturesHandler,
+});
+
+export const seedTestFixtures: ReturnType<typeof internalAction> = internalAction({
+  args: {},
+  handler: async (ctx) => {
+    assertTestSeedAllowed();
+    return await seedLocalFixturesHandler(ctx, {
+      reset: false,
+      flaggedSkillSlug: "test-flagged-wallet-sync",
+      scannedSkillSlug: "test-agentic-risk-demo",
+      flaggedPluginName: "test-flagged-runtime-plugin",
+      scannedPluginName: "test-scanned-runtime-plugin",
+    });
+  },
 });
 
 export const backfillExistingPublicCorpusBatchRows = internalMutation({
@@ -2567,6 +2598,7 @@ export async function seedLocalModerationFixturesHandler(
     !args.reset
   ) {
     const { userId, publisherId } = owner;
+    const storageIdsToDelete: Id<"_storage">[] = [];
     const ownerPatch = { ownerUserId: userId, ownerPublisherId: publisherId, updatedAt: now };
     for (const skill of [existingSkill, existingScannedSkill]) {
       if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
@@ -2594,9 +2626,23 @@ export async function seedLocalModerationFixturesHandler(
         now,
       });
     }
+    for (const [pkg, storageId] of [
+      [existingPlugin, args.flaggedPluginStorageId],
+      [existingScannedPlugin, args.scannedPluginStorageId],
+    ] as const) {
+      const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+      if (!latestRelease?.files.some((file) => file.storageId === storageId)) {
+        storageIdsToDelete.push(storageId);
+      }
+    }
     if (existingSkill.latestVersionId) {
       const latestVersion = await ctx.db.get(existingSkill.latestVersionId);
       if (latestVersion) {
+        storageIdsToDelete.push(
+          ...latestVersion.files
+            .map((file) => file.storageId)
+            .filter((storageId) => storageId !== args.flaggedSkillStorageId),
+        );
         await ctx.db.patch(latestVersion._id, {
           files: [
             {
@@ -2623,6 +2669,8 @@ export async function seedLocalModerationFixturesHandler(
             checkedAt: now,
           },
         });
+      } else {
+        storageIdsToDelete.push(args.flaggedSkillStorageId);
       }
       if (
         existingSkill.summary ===
@@ -2634,10 +2682,17 @@ export async function seedLocalModerationFixturesHandler(
           updatedAt: now,
         });
       }
+    } else {
+      storageIdsToDelete.push(args.flaggedSkillStorageId);
     }
     if (existingScannedSkill.latestVersionId) {
       const latestVersion = await ctx.db.get(existingScannedSkill.latestVersionId);
       if (latestVersion) {
+        storageIdsToDelete.push(
+          ...latestVersion.files
+            .map((file) => file.storageId)
+            .filter((storageId) => storageId !== args.scannedSkillStorageId),
+        );
         await ctx.db.patch(latestVersion._id, {
           files: [
             {
@@ -2653,7 +2708,11 @@ export async function seedLocalModerationFixturesHandler(
             clawdis: scannedSkillClawdis,
           },
         });
+      } else {
+        storageIdsToDelete.push(args.scannedSkillStorageId);
       }
+    } else {
+      storageIdsToDelete.push(args.scannedSkillStorageId);
     }
     if (existingScannedPlugin.latestReleaseId) {
       const latestRelease = await ctx.db.get(existingScannedPlugin.latestReleaseId);
@@ -2691,6 +2750,7 @@ export async function seedLocalModerationFixturesHandler(
       flaggedPluginReleaseId: existingPlugin.latestReleaseId,
       scannedPluginId: existingScannedPlugin._id,
       scannedPluginReleaseId: existingScannedPlugin.latestReleaseId,
+      storageIdsToDelete,
     };
   }
 

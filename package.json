@@ -64,6 +64,10 @@
     "seed": "bun scripts/seed.ts",
     "seed:dev": "bun run setup:worktree -- --quiet && bun scripts/dev-worktree.ts --seed-only",
     "seed:public-corpus": "bun run setup:worktree -- --quiet && bunx convex dev --once --typecheck=disable && bun scripts/public-corpus/seed-public-corpus.ts",
+    "seed:test": "bun scripts/seed-test.ts",
+    "seed:test:import-snapshot": "bun scripts/staging-seed/import-test-snapshot.ts",
+    "seed:test:sanitize-snapshot": "bun scripts/staging-seed/sanitize-prod-snapshot.ts",
+    "seed:test:validate-snapshot": "bun scripts/staging-seed/validate-sanitized-snapshot.ts",
     "setup:worktree": "bun scripts/setup-worktree.ts",
     "skill-cards:worker": "bun scripts/skill-cards/run-skill-card-worker.ts",
     "skills:install": "npx --yes skills@1.5.15 add openclaw/design-system --skill openclaw-design openclaw-brand openclaw-design-system openclaw-marketing-pages openclaw-design-audit --agent codex --copy --yes",
@@ -138,6 +142,7 @@
     "unified": "11.0.5",
     "unist-util-visit": "5.1.0",
     "yaml": "2.9.0",
+    "yauzl": "3.4.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -152,6 +157,7 @@
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@types/semver": "7.7.1",
+    "@types/yauzl": "3.4.0",
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.0.3",
     "@vitest/coverage-v8": "4.1.10",
