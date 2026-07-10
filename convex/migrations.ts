@@ -26,10 +26,7 @@ import {
   INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
   INSTALL_BACKFILL_DEFAULTS,
 } from "./lib/skillInstallBackfill";
-import {
-  extractValidatedDigestFields,
-  syncSkillSearchDigestForSkill,
-} from "./lib/skillSearchDigest";
+import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
@@ -481,25 +478,6 @@ export const canonicalizePackageCatalogMetadata = migrations.define({
     };
     await ctx.db.patch(pkg._id, patch);
     await syncPackageSearchDigestForPackageId(ctx, pkg._id);
-  },
-});
-
-export const backfillSkillSearchDigestPublicVersions = migrations.define({
-  table: "skillSearchDigest",
-  batchSize: 25,
-  migrateOne: async (ctx, digest) => {
-    if (digest.publicVersion !== undefined) return;
-    const skill = await ctx.db.get(digest.skillId);
-    if (!skill) {
-      await ctx.db.patch(digest._id, {
-        publicVersion: { status: "unavailable" },
-      });
-      return;
-    }
-    const fields = await extractValidatedDigestFields(ctx, skill);
-    await ctx.db.patch(digest._id, {
-      publicVersion: fields.publicVersion ?? { status: "unavailable" },
-    });
   },
 });
 
