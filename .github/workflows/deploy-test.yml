@@ -1,0 +1,231 @@
+name: Deploy Test
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-test:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+      url: ${{ vars.SITE_URL }}
+    outputs:
+      deployment_url: ${{ steps.vercel.outputs.deployment_url }}
+      deploy_sha: ${{ steps.revision.outputs.deploy_sha }}
+      fixture_version: ${{ steps.revision.outputs.fixture_version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Resolve deployment revision
+        id: revision
+        run: |
+          set -euo pipefail
+          deploy_sha="$(git rev-parse HEAD)"
+          git fetch --no-tags origin main
+          main_sha="$(git rev-parse origin/main)"
+          if [[ "$deploy_sha" != "$main_sha" ]]; then
+            echo "::error::Refusing stale Test deploy: $deploy_sha is not current main $main_sha"
+            exit 1
+          fi
+          fixture_version="$(
+            git hash-object convex/devSeed.ts convex/lib/testSeed.ts |
+              sha256sum |
+              cut -c1-12
+          )"
+          echo "deploy_sha=$deploy_sha" >> "$GITHUB_OUTPUT"
+          echo "fixture_version=$fixture_version" >> "$GITHUB_OUTPUT"
+
+      - name: Check Test configuration
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VITE_CONVEX_SITE_URL: ${{ vars.VITE_CONVEX_SITE_URL }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            CONVEX_DEPLOY_KEY \
+            VERCEL_AUTOMATION_BYPASS_SECRET \
+            VERCEL_ORG_ID \
+            VERCEL_PROJECT_ID \
+            VERCEL_SCOPE \
+            VERCEL_TOKEN \
+            TEST_SITE_URL \
+            VITE_CONVEX_SITE_URL \
+            VITE_CONVEX_URL
+          do
+            if [[ -z "${!name}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing Test environment configuration: ${missing[*]}"
+            exit 1
+          fi
+          if [[ "$CONVEX_DEPLOY_KEY" != prod:academic-chihuahua-392\|* ]]; then
+            echo "::error::CONVEX_DEPLOY_KEY must target academic-chihuahua-392"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Stamp Convex build SHA
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex env set APP_BUILD_SHA "${{ steps.revision.outputs.deploy_sha }}" --prod
+
+      - name: Stamp Convex deploy time
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex env set APP_DEPLOYED_AT "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" --prod
+
+      - name: Deploy Convex Test
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run convex:deploy
+
+      - name: Verify Convex contract
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bun run verify:convex-contract -- --prod
+
+      - name: Apply additive Test fixtures
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CONVEX_DEPLOYMENT: ${{ vars.CONVEX_DEPLOYMENT }}
+        run: bun run seed:test
+
+      - name: Deploy unpromoted Vercel Test candidate
+        id: vercel
+        env:
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VITE_CONVEX_SITE_URL: ${{ vars.VITE_CONVEX_SITE_URL }}
+          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+        run: |
+          set -euo pipefail
+          deployment_json="$(
+            bunx --bun vercel@50.44.0 deploy \
+              --target=preview \
+              --yes \
+              --scope "$VERCEL_SCOPE" \
+              --token "$VERCEL_TOKEN" \
+              --meta githubSha="${{ steps.revision.outputs.deploy_sha }}" \
+              --meta clawhubEnvironment=test \
+              --build-env CONVEX_DEPLOY_KEY= \
+              --build-env VERCEL_ENV=test \
+              --build-env VERCEL_TARGET_ENV=test \
+              --build-env CLAWHUB_ENV=test \
+              --build-env SITE_URL="$TEST_SITE_URL" \
+              --build-env VITE_CLAWHUB_DEPLOY_ENV=test \
+              --build-env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
+              --build-env VITE_CONVEX_SITE_URL="$VITE_CONVEX_SITE_URL" \
+              --build-env VITE_SITE_URL="$TEST_SITE_URL" \
+              --env CONVEX_DEPLOY_KEY= \
+              --env CLAWHUB_ENV=test \
+              --env SITE_URL="$TEST_SITE_URL" \
+              --env VITE_CLAWHUB_DEPLOY_ENV=test \
+              --env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
+              --env VITE_CONVEX_SITE_URL="$VITE_CONVEX_SITE_URL" \
+              --env VITE_SITE_URL="$TEST_SITE_URL" \
+              --format=json
+          )"
+          deployment_url="$(jq -r '.url // .deployment.url // empty' <<< "$deployment_json")"
+          if [[ -z "$deployment_url" ]]; then
+            echo "::error::Vercel did not return a candidate deployment URL"
+            exit 1
+          fi
+          if [[ "$deployment_url" != http* ]]; then
+            deployment_url="https://$deployment_url"
+          fi
+          echo "deployment_url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Smoke Test candidate HTTP
+        env:
+          CLAWHUB_E2E_CANONICAL_SITE: ${{ vars.SITE_URL }}
+          CLAWHUB_E2E_EXPECT_TEST_BACKEND: academic-chihuahua-392
+          CLAWHUB_E2E_SITE: ${{ steps.vercel.outputs.deployment_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun run test:e2e:prod-http
+
+      - name: Smoke Test candidate UI
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ steps.vercel.outputs.deployment_url }}
+          PLAYWRIGHT_WORKERS: "1"
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bunx playwright test --project=chromium e2e/ci-smoke.pw.test.ts
+
+      - name: Assign stable Test alias
+        env:
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set -euo pipefail
+          alias="${TEST_SITE_URL#https://}"
+          bunx --bun vercel@50.44.0 alias set \
+            "${{ steps.vercel.outputs.deployment_url }}" \
+            "$alias" \
+            --scope "$VERCEL_SCOPE" \
+            --token "$VERCEL_TOKEN"
+
+      - name: Verify stable Test URL
+        env:
+          CLAWHUB_E2E_CANONICAL_SITE: ${{ vars.SITE_URL }}
+          CLAWHUB_E2E_EXPECT_TEST_BACKEND: academic-chihuahua-392
+          CLAWHUB_E2E_SITE: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun run test:e2e:prod-http
+
+      - name: Write deployment summary
+        if: always()
+        env:
+          CANDIDATE_URL: ${{ steps.vercel.outputs.deployment_url }}
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+          FIXTURE_VERSION: ${{ steps.revision.outputs.fixture_version }}
+          STABLE_URL: ${{ vars.SITE_URL }}
+        run: |
+          {
+            echo "## ClawHub Test deployment"
+            echo
+            echo "- Git SHA: \`${DEPLOY_SHA:-unresolved}\`"
+            echo "- Convex deployment: \`academic-chihuahua-392\`"
+            echo "- Vercel candidate: ${CANDIDATE_URL:-not created}"
+            echo "- Stable Test URL: ${STABLE_URL:-not configured}"
+            echo "- Fixture version: \`${FIXTURE_VERSION:-unresolved}\`"
+            echo "- Result: \`${{ job.status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

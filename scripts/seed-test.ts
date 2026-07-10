@@ -25,9 +25,15 @@ export function assertSeedTestTarget(deployment: string) {
   }
 }
 
-export function buildSeedTestCommands(deployment: string) {
+export function buildSeedTestCommands(deployment: string, deployKey?: string) {
   assertSeedTestTarget(deployment);
-  const target = ["convex", "run", "--deployment", deployment, "--no-push"];
+  const expectedDeployKeyPrefix = `prod:${deployment}|`;
+  if (deployKey && !deployKey.startsWith(expectedDeployKeyPrefix)) {
+    throw new Error(`seed:test deploy key must target ${deployment}`);
+  }
+  const target = deployKey
+    ? ["convex", "run", "--no-push"]
+    : ["convex", "run", "--deployment", deployment, "--no-push"];
   return [
     {
       command: "bunx",
@@ -42,7 +48,7 @@ export function buildSeedTestCommands(deployment: string) {
 
 async function main() {
   const options = parseSeedTestArgs(process.argv.slice(2));
-  for (const step of buildSeedTestCommands(options.deployment)) {
+  for (const step of buildSeedTestCommands(options.deployment, process.env.CONVEX_DEPLOY_KEY)) {
     const result = spawnSync(step.command, step.args, {
       cwd: process.cwd(),
       env: process.env,

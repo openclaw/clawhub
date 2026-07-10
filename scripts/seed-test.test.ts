@@ -33,6 +33,30 @@ describe("seed:test", () => {
     ]);
   });
 
+  it("uses a deployment-scoped CI key without combining auth target formats", () => {
+    expect(
+      buildSeedTestCommands(
+        CLAWHUB_TEST_DEPLOYMENT,
+        `prod:${CLAWHUB_TEST_DEPLOYMENT}|deployment-key`,
+      ),
+    ).toEqual([
+      {
+        command: "bunx",
+        args: ["convex", "run", "--no-push", "devSeed:seedTestFixtures"],
+      },
+      {
+        command: "bunx",
+        args: ["convex", "run", "--no-push", "statsMaintenance:updateGlobalStatsAction"],
+      },
+    ]);
+  });
+
+  it("rejects a deploy key for any other deployment", () => {
+    expect(() =>
+      buildSeedTestCommands(CLAWHUB_TEST_DEPLOYMENT, "prod:wry-manatee-359|deployment-key"),
+    ).toThrow(`seed:test deploy key must target ${CLAWHUB_TEST_DEPLOYMENT}`);
+  });
+
   it("rejects every other deployment", () => {
     expect(() => buildSeedTestCommands("wry-manatee-359")).toThrow(
       `seed:test may only target ${CLAWHUB_TEST_DEPLOYMENT}`,

@@ -92,6 +92,23 @@ describe("Convex HTTP proxy", () => {
     expect(response.headers.get("X-ClawHub-Preview-Backend")).toBe("preview-branch-123");
   });
 
+  it("exposes the permanent Test backend name for deployment proof", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }))),
+    );
+    const event = mockEvent("https://test.example/api/v1/skills/demo");
+
+    const response = await proxyConvexRequest(event, {
+      VERCEL_TARGET_ENV: "preview",
+      VITE_CLAWHUB_DEPLOY_ENV: "test",
+      VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
+    });
+
+    expect(response.headers.get("X-ClawHub-Test-Backend")).toBe("academic-chihuahua-392");
+    expect(response.headers.get("X-ClawHub-Preview-Backend")).toBeNull();
+  });
+
   it("rejects preview writes without contacting Convex", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

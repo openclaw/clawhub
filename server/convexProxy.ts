@@ -34,8 +34,14 @@ export function resolveConvexProxyEnv(
 
 function isPreviewFrontend(env: ProxyEnv) {
   const targetEnvironment =
-    env.VERCEL_TARGET_ENV?.trim() || env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_ENV?.trim();
+    env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
   return targetEnvironment === "preview";
+}
+
+function isTestFrontend(env: ProxyEnv) {
+  const targetEnvironment =
+    env.VITE_CLAWHUB_DEPLOY_ENV?.trim() || env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
+  return targetEnvironment === "test";
 }
 
 export function isConvexProxyMethodAllowed(method: string, env: ProxyEnv) {
@@ -78,9 +84,14 @@ export async function proxyConvexRequest(
     statusText: proxied.statusText,
     headers: proxied.headers,
   });
-  if (isPreviewFrontend(env)) {
+  if (isPreviewFrontend(env) || isTestFrontend(env)) {
     const deployment = convexDeploymentName(target);
-    if (deployment) response.headers.set("X-ClawHub-Preview-Backend", deployment);
+    if (deployment) {
+      response.headers.set(
+        isTestFrontend(env) ? "X-ClawHub-Test-Backend" : "X-ClawHub-Preview-Backend",
+        deployment,
+      );
+    }
   }
   return response;
 }
