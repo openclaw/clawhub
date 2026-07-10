@@ -3545,6 +3545,79 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("skill version moderation posts exact-version revocations", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        slug: "demo",
+        version: "1.0.0",
+        skillId: "skills:1",
+        versionId: "skillVersions:1",
+        alreadyRevoked: false,
+        replacementVersion: null,
+        skillHidden: true,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0/moderation", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          state: "revoked",
+          reason: "confirmed unsafe artifact",
+          ownerHandle: "publisher",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      version: "1.0.0",
+      skillHidden: true,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .revokeSkillVersionForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        slug: "demo",
+        version: "1.0.0",
+        reason: "confirmed unsafe artifact",
+        ownerHandle: "publisher",
+      },
+    );
+  });
+
+  it("rejects unsupported skill version moderation states", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0/moderation", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ state: "approved", reason: "no longer blocked" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("skill appeal posts owner appeal requests", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:owner",

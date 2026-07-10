@@ -1026,6 +1026,13 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   ownerDeletedAt: v.optional(v.number()),
   ownerDeletedBy: v.optional(v.id("users")),
+  manualRevocation: v.optional(
+    v.object({
+      reason: v.string(),
+      reviewerUserId: v.id("users"),
+      revokedAt: v.number(),
+    }),
+  ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),

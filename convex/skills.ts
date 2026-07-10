@@ -590,13 +590,11 @@ type SkillVersionOwnerDeleteAvailability = Pick<
   | "skillId"
   | "softDeletedAt"
   | "ownerDeletedAt"
+  | "manualRevocation"
   | "staticScan"
   | "vtAnalysis"
   | "llmAnalysis"
-> & {
-  // Exact-version moderator revocation lands separately; stay compatible before its schema does.
-  manualRevocation?: unknown;
-};
+>;
 
 function isSkillVersionAvailableForOwnerDeleteSafety(
   version: SkillVersionOwnerDeleteAvailability | null | undefined,
@@ -638,10 +636,100 @@ async function findReplacementLatestSkillVersion(
         (candidate) =>
           candidate._id !== quarantinedVersionId &&
           !candidate.softDeletedAt &&
+          !candidate.manualRevocation &&
           !isKnownMaliciousSkillVersion(candidate),
       )
       .sort(compareSkillVersionsForRestore)[0] ?? null
   );
+}
+
+type SkillVersionRevocationSkill = Pick<
+  Doc<"skills">,
+  | "_id"
+  | "slug"
+  | "displayName"
+  | "summary"
+  | "icon"
+  | "latestVersionId"
+  | "latestVersionSummary"
+  | "tags"
+>;
+
+type SkillVersionRevocationVersion = Pick<
+  Doc<"skillVersions">,
+  "_id" | "skillId" | "version" | "createdAt" | "changelog" | "changelogSource" | "parsed" | "icon"
+>;
+
+export function buildSkillVersionRevocationPlan(params: {
+  actorUserId: Id<"users">;
+  skill: SkillVersionRevocationSkill;
+  target: SkillVersionRevocationVersion;
+  replacement: SkillVersionRevocationVersion | null;
+  reason: string;
+  now: number;
+}) {
+  const versionPatch: Partial<Doc<"skillVersions">> = {
+    softDeletedAt: params.now,
+    manualRevocation: {
+      reason: params.reason,
+      reviewerUserId: params.actorUserId,
+      revokedAt: params.now,
+    },
+  };
+  const isLatest =
+    params.skill.latestVersionId === params.target._id ||
+    params.skill.tags.latest === params.target._id ||
+    params.skill.latestVersionSummary?.version === params.target.version;
+  const nextTags = Object.fromEntries(
+    Object.entries(params.skill.tags).filter(([, versionId]) => versionId !== params.target._id),
+  ) as Doc<"skills">["tags"];
+
+  if (!isLatest) {
+    return {
+      versionPatch,
+      skillPatch: {
+        tags: nextTags,
+        updatedAt: params.now,
+      } satisfies Partial<Doc<"skills">>,
+      isLatest,
+    };
+  }
+
+  if (params.replacement) {
+    nextTags.latest = params.replacement._id;
+    return {
+      versionPatch,
+      skillPatch: {
+        displayName: skillDisplayNameFromSkillVersion(params.replacement) ?? params.skill.slug,
+        summary: skillSummaryFromSkillVersion(params.replacement),
+        icon: skillIconFromSkillVersion(params.replacement) ?? params.skill.icon,
+        latestVersionId: params.replacement._id,
+        latestVersionSummary: latestVersionSummaryFromSkillVersion(params.replacement),
+        tags: nextTags,
+        updatedAt: params.now,
+      } satisfies Partial<Doc<"skills">>,
+      isLatest,
+    };
+  }
+
+  return {
+    versionPatch,
+    skillPatch: {
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: nextTags,
+      softDeletedAt: params.now,
+      moderationStatus: "hidden",
+      moderationReason: "manual.version_revoked",
+      moderationNotes: params.reason,
+      hiddenAt: params.now,
+      hiddenBy: params.actorUserId,
+      manualOverride: undefined,
+      lastReviewedAt: params.now,
+      updatedAt: params.now,
+    } satisfies Partial<Doc<"skills">>,
+    isLatest,
+  };
 }
 
 async function clearSkillEmbeddingsLatestVersion(
@@ -8444,13 +8532,14 @@ async function setSkillEmbeddingsLatestVersion(
   skillId: Id<"skills">,
   latestVersionId: Id<"skillVersions">,
   now: number,
+  skillHidden = false,
 ) {
   const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId);
   for (const embedding of embeddings) {
     const isLatest = embedding.versionId === latestVersionId;
     await ctx.db.patch(embedding._id, {
       isLatest,
-      visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
+      visibility: skillHidden ? "deleted" : embeddingVisibilityFor(isLatest, embedding.isApproved),
       updatedAt: now,
     });
   }
@@ -9612,6 +9701,155 @@ export const deleteOwnedVersionForUserInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     return await deleteOwnedSkillVersionForUser(ctx, args);
+  },
+});
+
+export async function revokeSkillVersionForUser(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    slug: string;
+    version: string;
+    reason: string;
+    ownerHandle?: string;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  assertModerator(actor);
+
+  const slug = args.slug.trim().toLowerCase();
+  if (!slug) throw new ConvexError("Slug required");
+  const versionName = args.version.trim();
+  if (!versionName) throw new ConvexError("Version required");
+  const reason = trimManualOverrideNote(args.reason);
+  const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+
+  const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle, {
+    includeSoftDeleted: true,
+  });
+  if (resolved.ambiguous) {
+    throw new ConvexError("Slug is used by multiple publishers. Pass an owner handle.");
+  }
+  const skill = resolved.skill;
+  if (!skill) throw new ConvexError("Skill not found");
+
+  const version = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", versionName))
+    .unique();
+  if (!version) throw new ConvexError("Skill version not found");
+
+  if (version.manualRevocation) {
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      version: version.version,
+      skillId: skill._id,
+      versionId: version._id,
+      alreadyRevoked: true,
+      replacementVersion:
+        skill.latestVersionId === version._id
+          ? null
+          : (skill.latestVersionSummary?.version ?? null),
+      skillHidden: Boolean(skill.softDeletedAt),
+    };
+  }
+
+  const isLatest =
+    skill.latestVersionId === version._id ||
+    skill.tags.latest === version._id ||
+    skill.latestVersionSummary?.version === version.version;
+  const replacement = isLatest
+    ? await findReplacementLatestSkillVersion(ctx, skill._id, version._id)
+    : null;
+  const now = Date.now();
+  const plan = buildSkillVersionRevocationPlan({
+    actorUserId: actor._id,
+    skill,
+    target: version,
+    replacement,
+    reason,
+    now,
+  });
+
+  if (replacement && !shouldPreserveExistingModerationLock(skill)) {
+    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+    Object.assign(
+      plan.skillPatch,
+      applySkillManualOverrideToSkillPatch({
+        skill,
+        basePatch: buildScannerModerationPatchFromVersion({
+          owner,
+          version: replacement,
+          now,
+        }),
+        now,
+        stripUpdatedAt: true,
+      }),
+    );
+  }
+
+  await ctx.db.patch(version._id, plan.versionPatch);
+  const nextSkill = { ...skill, ...plan.skillPatch };
+  await ctx.db.patch(skill._id, plan.skillPatch);
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+
+  if (plan.isLatest) {
+    if (replacement) {
+      await setSkillEmbeddingsLatestVersion(
+        ctx,
+        skill._id,
+        replacement._id,
+        now,
+        Boolean(nextSkill.softDeletedAt),
+      );
+    } else {
+      await clearSkillEmbeddingsLatestVersion(ctx, skill._id, now);
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now);
+    }
+  }
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "skill.version.revoke",
+    targetType: "skillVersion",
+    targetId: version._id,
+    metadata: {
+      skillId: skill._id,
+      slug: skill.slug,
+      version: version.version,
+      reason,
+      replacementVersion: replacement?.version ?? null,
+      skillHidden: Boolean(nextSkill.softDeletedAt),
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    slug: skill.slug,
+    version: version.version,
+    skillId: skill._id,
+    versionId: version._id,
+    alreadyRevoked: false,
+    replacementVersion: replacement?.version ?? null,
+    skillHidden: Boolean(nextSkill.softDeletedAt),
+  };
+}
+
+export const revokeSkillVersionForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+    reason: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await revokeSkillVersionForUser(ctx, args);
   },
 });
 

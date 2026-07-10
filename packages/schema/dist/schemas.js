@@ -330,6 +330,21 @@ export const ApiV1SkillModerationResponseSchema = type({
         }).array(),
     }).or("null"),
 });
+export const SkillVersionRevokeRequestSchema = type({
+    state: '"revoked"',
+    reason: "string",
+    ownerHandle: "string?",
+});
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    versionId: "string",
+    alreadyRevoked: "boolean",
+    replacementVersion: "string|null",
+    skillHidden: "boolean",
+});
 export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export const SkillReportFinalActionSchema = type('"none"|"hide"');
 export const SkillReportListStatusSchema = SkillReportStatusSchema.or('"all"');

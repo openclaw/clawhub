@@ -473,6 +473,26 @@ export const ApiV1SkillModerationResponseSchema = type({
   }).or("null"),
 });
 
+export const SkillVersionRevokeRequestSchema = type({
+  state: '"revoked"',
+  reason: "string",
+  ownerHandle: "string?",
+});
+export type SkillVersionRevokeRequest = (typeof SkillVersionRevokeRequestSchema)[inferred];
+
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  versionId: "string",
+  alreadyRevoked: "boolean",
+  replacementVersion: "string|null",
+  skillHidden: "boolean",
+});
+export type ApiV1SkillVersionRevokeResponse =
+  (typeof ApiV1SkillVersionRevokeResponseSchema)[inferred];
+
 export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
 export const SkillReportFinalActionSchema = type('"none"|"hide"');

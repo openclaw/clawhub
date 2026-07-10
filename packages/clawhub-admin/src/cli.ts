@@ -32,6 +32,7 @@ import {
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
+  cmdRevokeSkillVersion,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -772,6 +773,20 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  command
+    .command("revoke-version")
+    .description("Permanently remove one skill version from public access")
+    .argument("<slug>", "Skill slug")
+    .requiredOption("--version <version>", "Exact version to revoke")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--owner <handle>", "Owner handle when the slug is shared")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRevokeSkillVersion(opts, slug, options, isInputAllowed());
+    });
+
   command
     .command("unhide")
     .description("Manually restore a hidden skill after moderator review")

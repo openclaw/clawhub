@@ -26,6 +26,25 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Restore pages only clear the exact `softDeletedAt` timestamp from the ban
   being lifted and only for skills hidden with `moderationReason = "user.banned"`.
 
+## Exact-version revocation
+
+- Staff can permanently revoke one hosted skill version without deleting the
+  publisher account or preventing a later corrected version.
+- Revocation soft-deletes the `skillVersions` row and records
+  `manualRevocation` evidence with the reason, reviewer, and timestamp. Revoked
+  versions must remain unavailable from exact-version metadata, raw-file, and
+  ZIP download paths.
+- If the revoked version is current, `latestVersionId`, `latest` tags, card
+  metadata, embeddings, and search state move to the highest remaining
+  non-revoked, non-malicious version.
+- If no usable version remains, the skill gets its own
+  `moderationReason = "manual.version_revoked"` hold and no latest pointer.
+  This hold is intentionally independent from `user.banned`, so account unban
+  cannot re-expose the revoked skill history.
+- Publishing a new version may make that corrected version current and clear
+  the skill-level hold. It must never clear `manualRevocation` or
+  `softDeletedAt` from older revoked versions.
+
 ## Account and publisher deletion
 
 - User and org deletion are soft-delete flows. They must not hard-delete users,
