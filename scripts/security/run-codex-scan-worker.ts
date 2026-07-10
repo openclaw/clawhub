@@ -1586,6 +1586,7 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   canClaim: (totalClaimed: number) => boolean;
   claimJobs: (limit: number) => Promise<{ claimedCount: number; jobs: TJob[] }>;
   processClaimedJob: (job: TJob) => Promise<ProcessJobResult>;
+  claimRetryMs?: number;
   idlePollMs?: number;
   sleep?: (ms: number) => Promise<unknown>;
 }) {
@@ -1618,8 +1619,6 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
         ({ claimedCount, jobs } = await options.claimJobs(remainingJobs));
       } catch (error) {
         totalClaimFailures += 1;
-        totalFailed += 1;
-        queueDrained = true;
         const message = error instanceof Error ? error.message : String(error);
         logger.error(
           {
@@ -1630,7 +1629,18 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
           },
           "failed to claim security scan jobs",
         );
-        break;
+        if (!options.canClaim(totalClaimed)) {
+          totalFailed += 1;
+          queueDrained = true;
+          break;
+        }
+        await sleepImpl(options.claimRetryMs ?? 1_000);
+        if (!options.canClaim(totalClaimed)) {
+          totalFailed += 1;
+          queueDrained = true;
+          break;
+        }
+        continue;
       }
 
       totalClaimed += claimedCount;
@@ -1783,6 +1793,7 @@ async function main() {
       return { claimedCount: leases.length, jobs };
     },
     processClaimedJob: (job) => processJob(client, token, job, diagnosticsRoot),
+    claimRetryMs: 1_000,
     idlePollMs: lane === "priority" ? 15_000 : undefined,
   });
 

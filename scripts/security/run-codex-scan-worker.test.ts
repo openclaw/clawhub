@@ -133,10 +133,12 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(processClaimedJob).toHaveBeenCalledTimes(2);
   });
 
-  it("counts one failed batch lease request without multiplying it by slot count", async () => {
-    const claimJobs = vi.fn(async () => {
-      throw new Error("claim outage");
-    });
+  it("retries a transient failed batch lease request without multiplying it by slot count", async () => {
+    const claimJobs = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("claim outage"))
+      .mockResolvedValueOnce({ claimedCount: 0, jobs: [] });
+    const sleep = vi.fn(async () => {});
 
     await expect(
       runContinuouslyRefilledWorkerPool({
@@ -145,13 +147,41 @@ describe("run-codex-scan-worker diagnostics", () => {
         canClaim: () => true,
         claimJobs,
         processClaimedJob: vi.fn(),
+        claimRetryMs: 25,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 0,
+      totalClaimFailures: 1,
+      totalFailed: 0,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(25);
+  });
+
+  it("fails when the claim window closes during retry backoff", async () => {
+    let canClaim = true;
+    const sleep = vi.fn(async () => {
+      canClaim = false;
+    });
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: undefined,
+        canClaim: () => canClaim,
+        claimJobs: vi.fn(async () => {
+          throw new Error("claim outage");
+        }),
+        processClaimedJob: vi.fn(),
+        claimRetryMs: 25,
+        sleep,
       }),
     ).resolves.toMatchObject({
       totalClaimed: 0,
       totalClaimFailures: 1,
       totalFailed: 1,
     });
-    expect(claimJobs).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the priority lane alive after processing a partial batch", async () => {
