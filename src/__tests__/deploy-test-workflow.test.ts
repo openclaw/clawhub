@@ -113,6 +113,8 @@ describe("Test deploy workflow", () => {
     expect(deployStep?.run).toContain('--scope "$VERCEL_SCOPE"');
     expect(deployStep?.run).toContain("--build-env CONVEX_DEPLOY_KEY=");
     expect(aliasStep?.run).toContain("vercel@50.44.0 alias set");
+    expect(aliasStep?.run).toContain('"$DEPLOYMENT_URL"');
+    expect(aliasStep?.run).not.toContain("${{ steps.vercel.outputs.deployment_url }}");
     expect(aliasStep?.run).toContain('--scope "$VERCEL_SCOPE"');
   });
 });
