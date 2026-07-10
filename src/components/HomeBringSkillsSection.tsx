@@ -178,19 +178,21 @@ export function HomeBringSkillsSection() {
 
   return (
     <section
-      className="home-v2-byos"
+      className="home-v2-byos oc-section"
       aria-labelledby="home-v2-byos-title"
       onPointerMove={handlePointerMove}
       onPointerLeave={handlePointerLeave}
     >
       <ByosRevealBackdrop />
       <div className="home-v2-byos-content">
-        <header className="home-v2-byos-head">
-          <span className="home-v2-byos-eyebrow">ClawHub CLI</span>
-          <h2 id="home-v2-byos-title" className="home-v2-byos-title">
+        <header className="home-v2-byos-head oc-section-heading">
+          <span className="home-v2-byos-eyebrow oc-eyebrow">ClawHub CLI</span>
+          <h2 id="home-v2-byos-title" className="home-v2-byos-title oc-section-title">
             Bring your skills to ClawHub
           </h2>
-          <p className="home-v2-byos-lede">Publish and sync your skills to ClawHub, your way.</p>
+          <p className="home-v2-byos-lede oc-section-copy">
+            Publish and sync your skills to ClawHub, your way.
+          </p>
         </header>
 
         <div className="home-v2-byos-tabs" role="tablist" aria-label="Choose an audience">
@@ -224,7 +226,11 @@ export function HomeBringSkillsSection() {
         </div>
 
         <div className="home-v2-byos-foot">
-          <Link to="/import" search={{ ownerHandle: undefined }} className="home-v2-byos-import">
+          <Link
+            to="/import"
+            search={{ ownerHandle: undefined }}
+            className="home-v2-byos-import oc-action oc-action-ghost"
+          >
             <GitHubGlyph />
             or import from your GitHub
             <ArrowRight size={15} aria-hidden="true" />

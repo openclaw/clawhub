@@ -1,0 +1,212 @@
+@import "@openclaw/design-system/tokens.css";
+@import "@openclaw/design-system/themes.css";
+@import "@openclaw/design-system/typography.css";
+@import "@openclaw/design-system/themes/product.css";
+@import "@openclaw/design-system/components.css";
+@import "@openclaw/design-system/compat/clawhub.css";
+
+/*
+ * Temporary aliases for legacy ClawHub styles that have not yet moved to the
+ * canonical token names. Values live here so old selectors cannot drift into
+ * a second theme system while the route CSS is migrated incrementally.
+ */
+:root {
+  --accent-soft: var(--oc-surface-accent-soft);
+  --card-border: var(--oc-border-subtle);
+  --color-muted: var(--oc-text-muted);
+  --color-text: var(--oc-text-primary);
+  --danger: var(--oc-status-error-fg);
+  --font-sans: var(--oc-font-body);
+  --ink-faint: var(--oc-text-muted);
+  --official-border: color-mix(in srgb, var(--oc-status-info-fg) 28%, var(--oc-border-subtle));
+  --shadow: var(--oc-shadow-md);
+  --shadow-card: var(--oc-shadow-sm);
+  --shadow-dialog: var(--oc-shadow-lg);
+  --shadow-hover: var(--oc-shadow-md);
+  --shadow-lg: var(--oc-shadow-lg);
+  --status-pending-bg: var(--oc-surface-interactive);
+  --status-pending-fg: var(--oc-text-muted);
+  --surface-raised: var(--oc-surface-interactive-hover);
+  --surface-subtle: var(--oc-surface-interactive);
+  --transition-fast: var(--oc-duration-fast) var(--oc-ease-out);
+}
+
+/*
+ * The landing page predates the shared package and still references --hv2-*
+ * variables throughout its layout CSS. Keep those aliases during migration,
+ * but make the canonical design system their only source of visual values.
+ */
+.home-v2-main.oc-app-surface {
+  --hv2-bg: var(--oc-bg-page);
+  --hv2-surface: var(--oc-surface-card);
+  --hv2-surface-hover: var(--oc-surface-interactive);
+  --hv2-border: var(--oc-border-subtle);
+  --hv2-border-hover: color-mix(in srgb, var(--oc-text-primary) 28%, var(--oc-border-subtle));
+  --hv2-border-strong: color-mix(in srgb, var(--oc-text-primary) 20%, var(--oc-border-subtle));
+  --hv2-text: var(--oc-text-primary);
+  --hv2-text-secondary: var(--oc-text-secondary);
+  --hv2-text-tertiary: var(--oc-text-muted);
+  --hv2-accent: var(--oc-accent-primary);
+  --hv2-accent-fill: var(--oc-surface-accent-soft);
+  --hv2-accent-fill-hover: color-mix(
+    in srgb,
+    var(--oc-surface-accent-soft) 78%,
+    var(--oc-accent-primary)
+  );
+  --hv2-accent-glow: color-mix(in srgb, var(--oc-accent-primary) 12%, transparent);
+  --hv2-accent-border: var(--oc-border-accent);
+  --hv2-accent-border-hover: color-mix(in srgb, var(--oc-accent-primary) 68%, transparent);
+  --hv2-green: var(--oc-accent-secondary);
+  --hv2-green-fill: var(--oc-surface-secondary-soft);
+  --hv2-green-border: color-mix(in srgb, var(--oc-accent-secondary) 38%, transparent);
+  --hv2-green-border-hover: color-mix(in srgb, var(--oc-accent-secondary) 62%, transparent);
+  --hv2-green-fill-hover: color-mix(
+    in srgb,
+    var(--oc-surface-secondary-soft) 72%,
+    var(--oc-accent-secondary)
+  );
+  --hv2-radius-sm: var(--oc-radius-control);
+  --hv2-radius-md: var(--oc-radius-surface);
+  --hv2-radius-lg: var(--oc-radius-surface);
+  --hv2-ease-out: var(--oc-ease-out);
+  --hv2-duration-fast: var(--oc-duration-fast);
+  --hv2-duration-ui: var(--oc-duration-ui);
+}
+
+.home-v2-main .oc-card {
+  border-color: var(--oc-component-border);
+  border-radius: var(--oc-radius-surface);
+  background: var(--oc-component-surface);
+  color: var(--oc-text-primary);
+  box-shadow: var(--oc-component-shadow);
+}
+
+.home-v2-main .oc-card-interactive:hover,
+.home-v2-main .oc-card-interactive:focus-visible {
+  border-color: var(--oc-component-border-hover);
+  background: var(--oc-component-surface-hover);
+  box-shadow: var(--oc-component-shadow-hover);
+}
+
+.home-v2-main .oc-action-primary {
+  border-color: var(--oc-accent-primary);
+  background: var(--oc-accent-primary);
+  color: var(--oc-text-on-accent);
+}
+
+.home-v2-main .oc-action-primary:hover,
+.home-v2-main .oc-action-primary:focus-visible {
+  border-color: var(--oc-accent-primary-hover);
+  background: var(--oc-accent-primary-hover);
+  color: var(--oc-text-on-accent);
+}
+
+.home-v2-main .oc-segmented {
+  border-color: var(--oc-border-subtle);
+  border-radius: var(--oc-radius-control);
+  background: var(--oc-surface-card);
+}
+
+.home-v2-main .oc-segmented-item {
+  border-radius: var(--oc-radius-inset);
+}
+
+.home-v2-main .oc-segmented-item[aria-selected="true"],
+.home-v2-main .oc-segmented-item[aria-pressed="true"],
+.home-v2-main .oc-segmented-item.is-active {
+  background: var(--oc-surface-interactive-hover);
+  color: var(--oc-text-primary);
+}
+
+@media (max-width: 760px) {
+  .home-v2-main .home-v2-popular-publishers-header.oc-section-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--oc-space-3);
+  }
+}
+
+/*
+ * The legacy light selectors in styles.css are more specific than the
+ * compatibility aliases' :root rule. Rebind those aliases at the same
+ * specificity while keeping every value owned by the shared package.
+ */
+[data-theme-family="claw"][data-theme-resolved="light"] {
+  --bg: var(--oc-bg-page);
+  --bg-soft: var(--oc-bg-surface);
+  --surface: var(--oc-bg-elevated);
+  --surface-muted: var(--oc-bg-surface);
+  --nav-bg: var(--oc-bg-page);
+  --ink: var(--oc-text-primary);
+  --ink-soft: var(--oc-text-secondary);
+  --accent: var(--oc-accent-primary);
+  --accent-fg: var(--oc-text-on-accent);
+  --accent-deep: var(--oc-accent-primary-hover);
+  --accent-subtle: var(--oc-surface-accent-soft);
+  --line: var(--oc-border-subtle);
+  --border-ui: var(--oc-border-subtle);
+  --border-ui-hover: color-mix(in srgb, var(--oc-text-primary) 20%, transparent);
+  --border-ui-active: var(--oc-border-accent);
+  --status-success-bg: var(--oc-status-success-bg);
+  --status-success-fg: var(--oc-status-success-fg);
+  --status-warning-bg: var(--oc-status-warning-bg);
+  --status-warning-fg: var(--oc-status-warning-fg);
+  --status-error-bg: var(--oc-status-error-bg);
+  --status-error-fg: var(--oc-status-error-fg);
+  --official-bg: var(--oc-status-info-bg);
+  --official-fg: var(--oc-status-info-fg);
+  --input-border: var(--oc-input-border);
+  --input-bg: var(--oc-input-bg);
+  --input-placeholder: var(--oc-input-placeholder);
+  --input-focus-border: var(--oc-input-focus-border);
+  --input-focus-ring: var(--oc-input-focus-ring);
+  --label-fg: var(--oc-text-secondary);
+  --hover-bg: var(--oc-surface-interactive);
+  --active-bg: var(--oc-surface-accent-soft);
+  --overlay-bg: var(--oc-surface-overlay);
+  --diff-added: var(--oc-diff-added);
+  --diff-added-strong: var(--oc-diff-added-strong);
+  --diff-removed: var(--oc-diff-removed);
+  --diff-removed-strong: var(--oc-diff-removed-strong);
+}
+
+@media (prefers-color-scheme: light) {
+  [data-theme-family="claw"][data-theme-mode="system"] {
+    --bg: var(--oc-bg-page);
+    --bg-soft: var(--oc-bg-surface);
+    --surface: var(--oc-bg-elevated);
+    --surface-muted: var(--oc-bg-surface);
+    --nav-bg: var(--oc-bg-page);
+    --ink: var(--oc-text-primary);
+    --ink-soft: var(--oc-text-secondary);
+    --accent: var(--oc-accent-primary);
+    --accent-fg: var(--oc-text-on-accent);
+    --accent-deep: var(--oc-accent-primary-hover);
+    --accent-subtle: var(--oc-surface-accent-soft);
+    --line: var(--oc-border-subtle);
+    --border-ui: var(--oc-border-subtle);
+    --border-ui-hover: color-mix(in srgb, var(--oc-text-primary) 20%, transparent);
+    --border-ui-active: var(--oc-border-accent);
+    --status-success-bg: var(--oc-status-success-bg);
+    --status-success-fg: var(--oc-status-success-fg);
+    --status-warning-bg: var(--oc-status-warning-bg);
+    --status-warning-fg: var(--oc-status-warning-fg);
+    --status-error-bg: var(--oc-status-error-bg);
+    --status-error-fg: var(--oc-status-error-fg);
+    --official-bg: var(--oc-status-info-bg);
+    --official-fg: var(--oc-status-info-fg);
+    --input-border: var(--oc-input-border);
+    --input-bg: var(--oc-input-bg);
+    --input-placeholder: var(--oc-input-placeholder);
+    --input-focus-border: var(--oc-input-focus-border);
+    --input-focus-ring: var(--oc-input-focus-ring);
+    --label-fg: var(--oc-text-secondary);
+    --hover-bg: var(--oc-surface-interactive);
+    --active-bg: var(--oc-surface-accent-soft);
+    --overlay-bg: var(--oc-surface-overlay);
+    --diff-added: var(--oc-diff-added);
+    --diff-added-strong: var(--oc-diff-added-strong);
+    --diff-removed: var(--oc-diff-removed);
+    --diff-removed-strong: var(--oc-diff-removed-strong);
+  }
+}

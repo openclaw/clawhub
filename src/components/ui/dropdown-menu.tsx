@@ -17,7 +17,7 @@ const DropdownMenuContent = React.forwardRef<
       align={align}
       data-slot="dropdown-menu-content"
       className={cn(
-        "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[180px] origin-[var(--radix-dropdown-menu-content-transform-origin)] overflow-x-hidden overflow-y-auto rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-2 text-[color:var(--ink)] shadow-[var(--shadow)]",
+        "z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-[180px] origin-[var(--radix-dropdown-menu-content-transform-origin)] overflow-x-hidden overflow-y-auto rounded-[var(--oc-radius-surface)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)] p-2 text-[color:var(--oc-text-primary)] shadow-[var(--oc-shadow-lg)]",
         "data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         "data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
         "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
@@ -42,7 +42,7 @@ const DropdownMenuItem = React.forwardRef<
     data-inset={inset}
     data-variant={variant}
     className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] outline-none transition-colors focus-visible:outline-none data-[highlighted]:bg-[color:var(--surface-muted)] data-[highlighted]:text-[color:var(--ink)] focus:bg-[color:var(--surface-muted)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset=true]:pl-8 data-[variant=destructive]:text-status-error-fg",
+      "relative flex cursor-pointer select-none items-center gap-2 rounded-[var(--oc-radius-control)] px-3 py-2 text-sm font-semibold text-[color:var(--oc-text-primary)] outline-none transition-colors focus-visible:outline-none data-[highlighted]:bg-[color:var(--oc-surface-interactive)] data-[highlighted]:text-[color:var(--oc-text-primary)] focus:bg-[color:var(--oc-surface-interactive)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset=true]:pl-8 data-[variant=destructive]:text-status-error-fg",
       className,
     )}
     {...props}
@@ -58,7 +58,7 @@ const DropdownMenuCheckboxItem = React.forwardRef<
     ref={ref}
     data-slot="dropdown-menu-checkbox-item"
     className={cn(
-      "relative flex cursor-pointer select-none items-center rounded-[var(--radius-sm)] py-2 pr-3 pl-8 text-sm font-semibold text-[color:var(--ink)] outline-none transition-colors focus:bg-[color:var(--surface-muted)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      "relative flex cursor-pointer select-none items-center rounded-[var(--oc-radius-control)] py-2 pr-3 pl-8 text-sm font-semibold text-[color:var(--oc-text-primary)] outline-none transition-colors focus:bg-[color:var(--oc-surface-interactive)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className,
     )}
     {...props}

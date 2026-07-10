@@ -37,9 +37,9 @@
     "verify:build": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "1.6.0",
+    "@clack/prompts": "1.7.0",
     "@openclaw/plugin-inspector": "0.3.17",
-    "arktype": "2.2.1",
+    "arktype": "2.2.3",
     "commander": "15.0.0",
     "fflate": "0.8.3",
     "ignore": "7.0.5",
@@ -51,7 +51,8 @@
     "undici": "7.28.0"
   },
   "devDependencies": {
-    "@types/node": "26.0.0",
+    "@types/node": "26.1.1",
+    "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "6.0.3"
   },
   "engines": {

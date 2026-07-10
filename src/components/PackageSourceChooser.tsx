@@ -139,10 +139,10 @@ export function PackageSourceChooser(props: {
     props.family === "code-plugin" && props.codePluginFieldIssues.length > 0;
   const hasPackagePanelFooter = props.ignoredPaths.length > 0 || Boolean(props.validationError);
   const selectedPackagePanelToneClass = isDragging
-    ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+    ? "border-[color:var(--oc-border-accent)] bg-[color:var(--oc-surface-accent-soft)]"
     : "border-[color:var(--line)] bg-[color:var(--surface-muted)]";
   const selectedPackagePanelBgClass = isDragging
-    ? "bg-[rgba(255,107,74,0.06)]"
+    ? "bg-[color:var(--oc-surface-accent-soft)]"
     : "bg-[color:var(--surface-muted)]";
 
   const setDirectoryInputRef = (node: HTMLInputElement | null) => {
@@ -292,9 +292,9 @@ export function PackageSourceChooser(props: {
             data-dragging={isDragging ? "true" : undefined}
             className={`${
               props.emptyStateLayout ? "publish-empty-dropzone" : "p-8"
-            } relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed text-center transition-colors ${
+            } relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--oc-radius-inset)] border-2 border-dashed text-center transition-colors ${
               isDragging
-                ? "border-[color:var(--accent)] bg-[rgba(255,107,74,0.06)]"
+                ? "border-[color:var(--oc-border-accent)] bg-[color:var(--oc-surface-accent-soft)]"
                 : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
             }`}
             onDragOver={(event) => {

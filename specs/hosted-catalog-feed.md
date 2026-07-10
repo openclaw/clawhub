@@ -124,11 +124,11 @@ provides:
 - `Surrogate-Control: max-age=300, stale-while-revalidate=86400`
 - `304 Not Modified` for matching `If-None-Match` or `If-Modified-Since`
 
-`vercel.json` exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
-`/v1/feeds/promotions` as edge-friendly rewrites to the Convex endpoints. The
-unversioned `/feeds/*` paths permanently redirect to their versioned paths. The
-`registry.openclaw.ai` custom domain must point at the same Vercel project
-before the public RFC URLs are enabled.
+Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
+`/v1/feeds/promotions` through the same environment-aware Convex proxy used for
+`/api/*`. The unversioned `/feeds/*` paths permanently redirect to their
+versioned paths. The `registry.openclaw.ai` custom domain must point at the same
+Vercel project before the public RFC URLs are enabled.
 
 The serialized payload uses stable object-key ordering and deterministic entry
 and install-candidate ordering. Additive fields may be introduced within a

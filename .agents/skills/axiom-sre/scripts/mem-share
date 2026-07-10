@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Share a memory entry to org (commit to org repo)
+# Usage: scripts/mem-share <org-name> "commit message"
+#
+# Example:
+#   scripts/mem-share axiom "Add pattern: connection pool exhaustion"
+
+set -euo pipefail
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+ORGS_DIR="$CONFIG_DIR/memory/orgs"
+
+if [[ $# -lt 2 ]]; then
+  echo "Usage: scripts/mem-share <org-name> \"commit message\""
+  echo ""
+  echo "Example:"
+  echo "  scripts/mem-share axiom \"Add pattern: connection pool exhaustion\""
+  exit 1
+fi
+
+ORG_NAME="$1"
+MESSAGE="$2"
+ORG_DIR="$ORGS_DIR/$ORG_NAME"
+
+if [[ ! -d "$ORG_DIR" ]]; then
+  echo "⚠️  Org '$ORG_NAME' not found at $ORG_DIR"
+  echo "   Add it with: scripts/org-add $ORG_NAME <git-repo-url>"
+  exit 1
+fi
+
+if [[ ! -d "$ORG_DIR/.git" ]]; then
+  echo "⚠️  Org '$ORG_NAME' is local-only (no git repo)"
+  echo "   Cannot share without a remote. Add a repo URL."
+  exit 1
+fi
+
+cd "$ORG_DIR"
+
+# Check for changes
+if [[ -z $(git status --porcelain) ]]; then
+  echo "No changes to share in $ORG_NAME"
+  exit 0
+fi
+
+echo "=== Sharing to Org: $ORG_NAME ==="
+echo ""
+echo "Changes:"
+git status --short
+echo ""
+
+git add -A
+git commit -m "$MESSAGE"
+
+if git push; then
+  echo "✓ Pushed to $ORG_NAME org memory"
+else
+  echo "⚠️  Push failed. Check permissions or network."
+  echo "   Commit saved locally. Retry with: cd $ORG_DIR && git push"
+  exit 1
+fi

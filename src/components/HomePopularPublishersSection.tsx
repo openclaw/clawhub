@@ -42,7 +42,7 @@ function PopularPublisherCard({
     <Link
       to="/$slug"
       params={{ slug: pinned.handle }}
-      className="home-v2-popular-publisher-card"
+      className="home-v2-popular-publisher-card oc-card oc-card-interactive"
       aria-label={`${name}, @${pinned.handle}`}
       draggable={false}
     >
@@ -140,13 +140,18 @@ export function HomePopularPublishersSection() {
   };
 
   return (
-    <section className="home-v2-popular-publishers" aria-labelledby="popular-publishers-title">
-      <header className="home-v2-popular-publishers-header">
-        <div className="home-v2-popular-publishers-heading">
-          <h2 id="popular-publishers-title">Popular creators</h2>
-          <p>Explore skills and plugins from standout builders.</p>
+    <section
+      className="home-v2-popular-publishers oc-section"
+      aria-labelledby="popular-publishers-title"
+    >
+      <header className="home-v2-popular-publishers-header oc-section-header">
+        <div className="home-v2-popular-publishers-heading oc-section-heading">
+          <h2 id="popular-publishers-title" className="oc-section-title">
+            Popular creators
+          </h2>
+          <p className="oc-section-copy">Explore skills and plugins from standout builders.</p>
         </div>
-        <Link to="/creators" className="home-v2-popular-publishers-link">
+        <Link to="/creators" className="home-v2-popular-publishers-link oc-action oc-action-ghost">
           Browse creators <ArrowRight size={14} aria-hidden="true" />
         </Link>
       </header>

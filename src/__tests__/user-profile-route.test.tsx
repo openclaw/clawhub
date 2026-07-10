@@ -15,7 +15,8 @@ import {
   shouldShowPublisherCatalogLoadMore,
 } from "../routes/user/$handle";
 
-const { loaderDataMock, paginatedQueryMock, queryMock } = vi.hoisted(() => ({
+const { authStatusMock, loaderDataMock, paginatedQueryMock, queryMock } = vi.hoisted(() => ({
+  authStatusMock: vi.fn(),
   loaderDataMock: vi.fn(),
   paginatedQueryMock: vi.fn(),
   queryMock: vi.fn(),
@@ -31,7 +32,7 @@ vi.mock("@convex-dev/auth/react", () => ({
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
-  useAuthStatus: () => ({ isAuthenticated: false, isLoading: false, me: null }),
+  useAuthStatus: () => authStatusMock(),
 }));
 
 vi.mock("sonner", () => ({
@@ -85,6 +86,8 @@ describe("user profile route", () => {
     vi.resetModules();
     loaderDataMock.mockReset();
     loaderDataMock.mockReturnValue({ publisher });
+    authStatusMock.mockReset();
+    authStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: false, me: null });
     paginatedQueryMock.mockReset();
     paginatedQueryMock.mockReturnValue({
       loadMore: vi.fn(),
@@ -122,6 +125,44 @@ describe("user profile route", () => {
     expect(screen.queryByRole("button", { name: "Follow" })).toBeNull();
     expect(screen.getByRole("button", { name: "Profile actions" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /github/i })).toBeTruthy();
+  });
+
+  it("shows edit profile instead of report on the viewer's own publisher page", async () => {
+    const personalPublisher = {
+      ...publisher,
+      kind: "user" as const,
+    };
+    loaderDataMock.mockReturnValue({ publisher: personalPublisher });
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { handle: "nvidia" },
+    });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: personalPublisher, members: [] };
+      if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) {
+        return [{ publisher: { handle: "nvidia", kind: "user" }, role: "owner" }];
+      }
+      return personalPublisher;
+    });
+
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const editProfile = screen.getByRole("link", { name: "Edit profile" });
+    const add = screen.getByRole("link", { name: "Add" });
+
+    expect(
+      screen.getAllByRole("link", { name: /^(Edit profile|Add)$/ }).map((link) => link.textContent),
+    ).toEqual(["Edit profile", "Add"]);
+    expect(editProfile.getAttribute("href")).toBe("/settings");
+    expect(add.getAttribute("href")).toContain("/add");
+    expect(screen.queryByRole("button", { name: "Profile actions" })).toBeNull();
+    expect(screen.queryByText("Report profile")).toBeNull();
   });
 
   it("renders segmented catalog tabs and sort control", async () => {

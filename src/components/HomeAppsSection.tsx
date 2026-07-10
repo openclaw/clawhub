@@ -60,7 +60,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
     <Link
       to="/skills"
       search={{ ...SKILLS_BROWSE_SEARCH, q: app.browseQuery }}
-      className="home-v2-apps-tile"
+      className="home-v2-apps-tile oc-card oc-card-interactive"
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
@@ -79,7 +79,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
   return (
     <Link
       to={buildPluginDetailHref(shortcut.packageName)}
-      className="home-v2-apps-tile"
+      className="home-v2-apps-tile oc-card oc-card-interactive"
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
@@ -255,12 +255,14 @@ export function HomeAppsSection() {
   }, [activeCategoryId]);
 
   return (
-    <section className="home-v2-apps" aria-labelledby="home-v2-apps-title">
+    <section className="home-v2-apps oc-section" aria-labelledby="home-v2-apps-title">
       <div className="home-v2-apps-stage">
         <div className="home-v2-apps-workflow-header">
-          <div className="home-v2-apps-workflow-copy">
-            <h2 id="home-v2-apps-title">Skills for the apps you already use</h2>
-            <p>
+          <div className="home-v2-apps-workflow-copy oc-section-heading">
+            <h2 id="home-v2-apps-title" className="oc-section-title">
+              Skills for the apps you already use
+            </h2>
+            <p className="oc-section-copy">
               Ready-made skills and gateway plugins that plug OpenClaw straight into your everyday
               tools.
             </p>
@@ -275,7 +277,11 @@ export function HomeAppsSection() {
           </div>
         </div>
 
-        <div className="home-v2-apps-categories" role="tablist" aria-label="App categories">
+        <div
+          className="home-v2-apps-categories oc-segmented"
+          role="tablist"
+          aria-label="App categories"
+        >
           {appCategories.map((category) => {
             const Icon = category.icon;
             return (
@@ -284,7 +290,7 @@ export function HomeAppsSection() {
                 type="button"
                 role="tab"
                 aria-selected={category.id === activeCategoryId}
-                className="home-v2-apps-category-tab"
+                className="home-v2-apps-category-tab oc-segmented-item"
                 onClick={() => setActiveCategoryId(category.id)}
               >
                 <Icon className="home-v2-apps-category-tab-icon" size={14} aria-hidden="true" />
@@ -305,7 +311,11 @@ export function HomeAppsSection() {
         </div>
 
         <div className="home-v2-apps-see-all-row">
-          <Link to="/skills" search={SKILLS_BROWSE_SEARCH} className="home-v2-apps-see-all">
+          <Link
+            to="/skills"
+            search={SKILLS_BROWSE_SEARCH}
+            className="home-v2-apps-see-all oc-action oc-action-ghost"
+          >
             Browse all skills
             <ArrowRight size={14} aria-hidden="true" />
           </Link>

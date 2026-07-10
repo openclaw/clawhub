@@ -153,7 +153,7 @@ export function DevPersonaFab() {
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-[9999px] border border-[color:var(--line)] bg-[color:var(--surface)] p-0 text-[color:var(--ink)] shadow-[var(--shadow)] transition-colors hover:bg-[color:var(--surface-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]"
+            className="flex h-14 w-14 shrink-0 cursor-pointer items-center justify-center rounded-[var(--oc-radius-round)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)] p-0 text-[color:var(--oc-text-primary)] shadow-[var(--oc-shadow-md)] transition-colors hover:bg-[color:var(--oc-surface-interactive)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oc-focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--oc-bg-page)]"
             aria-label="Open local dev personas"
           >
             <Wrench size={22} aria-hidden="true" />

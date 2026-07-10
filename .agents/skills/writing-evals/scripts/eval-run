@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Run Axiom evaluations
+# Usage: eval-run [target] [options]
+#
+# Arguments:
+#   target    File, directory, glob, or eval name (default: current directory)
+#
+# Options:
+#   --debug   Run locally without network operations
+#   --watch   Watch for file changes
+#   --list    List cases without running
+#   Any other options are passed through to 'axiom eval'
+#
+# Examples:
+#   eval-run                                    # Run all evals
+#   eval-run src/my-feature.eval.ts             # Run specific file
+#   eval-run --debug                            # Local mode
+#   eval-run --flag.myCapability.model=gpt-4o-mini  # Override flag
+#   eval-run -b BASELINE_ID                     # Compare to baseline
+
+set -euo pipefail
+
+npx axiom eval "$@"

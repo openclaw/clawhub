@@ -14,6 +14,7 @@ type GitHubAppConfig = {
 type InstallationToken = {
   token: string;
   expiresAt: number;
+  permissions: Record<string, string>;
 };
 
 type CachedInstallationToken = InstallationToken & {
@@ -106,12 +107,16 @@ export async function createGitHubAppInstallationToken(
     throw new Error(`GitHub App token failed: ${message}`);
   }
 
-  const payload = (await response.json()) as { token?: string; expires_at?: string };
+  const payload = (await response.json()) as {
+    token?: string;
+    expires_at?: string;
+    permissions?: Record<string, string>;
+  };
   const token = payload.token?.trim();
   if (!token) throw new Error("GitHub App token missing");
   const expiresAt = payload.expires_at ? Date.parse(payload.expires_at) : Number.NaN;
   if (!Number.isFinite(expiresAt)) throw new Error("GitHub App token expiry missing");
-  return { token, expiresAt };
+  return { token, expiresAt, permissions: payload.permissions ?? {} };
 }
 
 async function getCachedGitHubAppInstallationToken(options: {
