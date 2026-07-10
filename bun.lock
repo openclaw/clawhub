@@ -39,7 +39,7 @@
         "convex": "1.42.1",
         "convex-helpers": "0.1.120",
         "fflate": "0.8.3",
-        "h3": "2.0.1-rc.23",
+        "h3": "2.0.1-rc.24",
         "ignore": "7.0.5",
         "lucide-react": "1.24.0",
         "mermaid": "^11.16.0",
@@ -431,7 +431,7 @@
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
-    "@openclaw/design-system": ["@openclaw/design-system@github:openclaw/design-system#b1774c3", {}, "openclaw-design-system-b1774c3", "sha512-MDWcUclOCIb2eX8MAxQfZoVIDdKTwo5qM084NR0bnKPmuNiNdzcIT+GpWGt9e/VUHFhJFttoL8cLlQN5eHjjnw=="],
+    "@openclaw/design-system": ["@openclaw/design-system@github:openclaw/design-system#b1774c3", {}, "openclaw-design-system-b1774c3"],
 
     "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.17", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-JPPHPhiXMsIvrV8UR8RQjhflMjRZX/uIhy9meE81dup7MMSnRJcsTGOXYACohv6e4z2P95z2QuE7nZkWT6Ysuw=="],
 
@@ -1297,7 +1297,7 @@
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 
-    "h3": ["h3@2.0.1-rc.23", "", { "dependencies": { "rou3": "^0.9.0", "srvx": "^0.11.21" }, "peerDependencies": { "crossws": "^0.4.9" }, "optionalPeers": ["crossws"], "bin": { "h3": "bin/h3.mjs" } }, "sha512-WeWSA0zoL9yWSffB0XMEf1v2zNvvRq4eevFX9xd8jZV5QSYTh6VcLTlR1cv/FusD4eRYHkHeXD9hksTmzgufsQ=="],
+    "h3": ["h3@2.0.1-rc.24", "", { "dependencies": { "rou3": "^0.9.1", "srvx": "^0.11.21" }, "peerDependencies": { "crossws": "^0.4.9" }, "optionalPeers": ["crossws"], "bin": { "h3": "bin/h3.mjs" } }, "sha512-saxpbF+/oPUCVvdkrcjiXhH5b7US1tul9qe0w9t6FMMBXYeuTB1tPxSEY8AFsA6g9sT8VmQGN7jERxdX5ew1Ow=="],
 
     "h3-v2": ["h3@2.0.1-rc.20", "", { "dependencies": { "rou3": "^0.8.1", "srvx": "^0.11.13" }, "peerDependencies": { "crossws": "^0.4.1" }, "optionalPeers": ["crossws"], "bin": { "h3": "bin/h3.mjs" } }, "sha512-28ljodXuUp0fZovdiSRq4G9OgrxCztrJe5VdYzXAB7ueRvI7pIUqLU14Xi3XqdYJ/khXjfpUOOD2EQa6CmBgsg=="],
 
