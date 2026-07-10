@@ -3957,6 +3957,51 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["clean-demo"]);
   });
 
+  it("does not let a fresh exact-name package headline over adopted matches at limit 1", async () => {
+    // Regression for #3054: the untrusted exact hit fills the direct-match
+    // slot, but it must not satisfy the collection quota, or the fallback
+    // scan never gathers the adopted alternative it is ranked against.
+    const { ctx } = makeDigestCtx({
+      exactDigests: [makeDigest("youtube")],
+      pages: [
+        {
+          page: [
+            makeDigest("youtube-transcript", {
+              stats: { downloads: 4200, installs: 800, stars: 12, versions: 3 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, { query: "youtube", limit: 1 });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["youtube-transcript"]);
+  });
+
+  it("keeps trusted exact-name matches on top at limit 1", async () => {
+    const { ctx } = makeDigestCtx({
+      exactDigests: [makeDigest("youtube", { isOfficial: true })],
+      pages: [
+        {
+          page: [
+            makeDigest("youtube-transcript", {
+              stats: { downloads: 4200, installs: 800, stars: 12, versions: 3 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, { query: "youtube", limit: 1 });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["youtube"]);
+  });
+
   it("allows owners to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
       pages: [

@@ -116,6 +116,7 @@ import {
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import {
   compareRankedSearchKeys,
+  isDemotedExactMatch,
   rankedSearchKey,
   verificationRank,
   type SearchTrustSignals,
@@ -1734,6 +1735,19 @@ function packageSearchMatch(
   return { rankTier, score };
 }
 
+function packageTrustSignals(pkg: {
+  isOfficial: boolean;
+  verificationTier?: PackageDigestLike["verificationTier"] | null;
+  stats?: { downloads: number; installs: number; stars: number } | null;
+}): SearchTrustSignals {
+  return {
+    isOfficial: pkg.isOfficial,
+    verificationTier: pkg.verificationTier,
+    downloads: pkg.stats?.downloads,
+    installs: pkg.stats?.installs,
+  };
+}
+
 function comparePackageSearchMatches<
   T extends PackageSearchMatch & {
     package: {
@@ -1744,14 +1758,11 @@ function comparePackageSearchMatches<
     };
   },
 >(a: T, b: T) {
-  const signals = (entry: T): SearchTrustSignals => ({
-    isOfficial: entry.package.isOfficial,
-    verificationTier: entry.package.verificationTier,
-    downloads: entry.package.stats?.downloads,
-    installs: entry.package.stats?.installs,
-  });
   return (
-    compareRankedSearchKeys(rankedSearchKey(a, signals(a)), rankedSearchKey(b, signals(b))) ||
+    compareRankedSearchKeys(
+      rankedSearchKey(a, packageTrustSignals(a.package)),
+      rankedSearchKey(b, packageTrustSignals(b.package)),
+    ) ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
     verificationRank(b.package.verificationTier) - verificationRank(a.package.verificationTier) ||
     (b.package.stats?.stars ?? 0) - (a.package.stats?.stars ?? 0) ||
@@ -4259,7 +4270,14 @@ async function searchPackagesImpl(
     });
   }
 
-  if (matches.length < targetCount) {
+  // Demoted exact hits never satisfy the collection quota: the fallback scan
+  // must still gather the adopted lexical alternatives they are ranked against
+  // (top-1 queries would otherwise return a name squat unchallenged).
+  const authoritativeMatchCount = () =>
+    matches.filter((entry) => !isDemotedExactMatch(entry, packageTrustSignals(entry.package)))
+      .length;
+
+  if (authoritativeMatchCount() < targetCount) {
     const scanLimit = Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
     const collectDigestMatches = async (digests: PackageDigestLike[]) => {
       for (const digest of digests) {
@@ -4272,7 +4290,7 @@ async function searchPackagesImpl(
           ...match,
           package: await toPublicPackageListItem(ctx, digest),
         });
-        if (matches.length >= targetCount) break;
+        if (authoritativeMatchCount() >= targetCount) break;
       }
     };
 
@@ -4282,7 +4300,7 @@ async function searchPackagesImpl(
       let scanPages = 0;
       let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
       while (
-        matches.length < targetCount &&
+        authoritativeMatchCount() < targetCount &&
         !isDone &&
         scanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
         remainingScanBudget > 0

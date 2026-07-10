@@ -76,3 +76,12 @@ export function rankedSearchKey(
 export function compareRankedSearchKeys(a: RankedSearchKey, b: RankedSearchKey): number {
   return a.tier - b.tier || b.adoption - a.adoption || b.score - a.score;
 }
+
+// Collection guard: a demoted exact match must not satisfy "enough results"
+// short-circuits while candidates are being gathered. The squat gate only
+// works when the fallback scan still runs to collect the adopted lexical
+// alternatives the demoted hit is compared against; otherwise a top-1 query
+// returns the squat unchallenged.
+export function isDemotedExactMatch(match: SearchTextMatch, signals: SearchTrustSignals): boolean {
+  return match.rankTier === 0 && rankedSearchKey(match, signals).tier !== 0;
+}

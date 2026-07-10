@@ -3,6 +3,7 @@ import {
   adoptionBucket,
   compareRankedSearchKeys,
   hasStrongTrustSignal,
+  isDemotedExactMatch,
   rankedSearchKey,
   verificationRank,
   type SearchTrustSignals,
@@ -81,6 +82,22 @@ describe("rankedSearchKey", () => {
   it("leaves non-exact tiers untouched", () => {
     expect(rankedSearchKey({ rankTier: 1, score: 80 }, community()).tier).toBe(1);
     expect(rankedSearchKey({ rankTier: 3, score: 20 }, community()).tier).toBe(3);
+  });
+});
+
+describe("isDemotedExactMatch", () => {
+  it("flags untrusted zero-adoption exact matches so they cannot fill collection quotas", () => {
+    expect(isDemotedExactMatch({ rankTier: 0, score: 200 }, community())).toBe(true);
+  });
+
+  it("does not flag trusted, adopted, or non-exact matches", () => {
+    expect(isDemotedExactMatch({ rankTier: 0, score: 200 }, community({ isOfficial: true }))).toBe(
+      false,
+    );
+    expect(isDemotedExactMatch({ rankTier: 0, score: 200 }, community({ downloads: 40 }))).toBe(
+      false,
+    );
+    expect(isDemotedExactMatch({ rankTier: 1, score: 80 }, community())).toBe(false);
   });
 });
 

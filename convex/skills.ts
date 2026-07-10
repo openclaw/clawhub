@@ -128,6 +128,7 @@ import {
 } from "./lib/reservedSlugs";
 import {
   compareRankedSearchKeys,
+  isDemotedExactMatch,
   rankedSearchKey,
   type SearchTrustSignals,
 } from "./lib/searchRanking";
@@ -6641,20 +6642,28 @@ function skillCatalogSearchMatch(
   return { rankTier, score };
 }
 
+// Skills have no verification tiers, so official flag + adoption are the
+// only trust signals feeding the shared squat gate.
+function skillTrustSignals(
+  pkg: Pick<PublicSkillCatalogItem, "isOfficial" | "stats">,
+): SearchTrustSignals {
+  return {
+    isOfficial: pkg.isOfficial,
+    downloads: pkg.stats.downloads,
+    installs: pkg.stats.installs,
+  };
+}
+
 function compareSkillCatalogSearchMatches<
   T extends SkillCatalogSearchMatch & {
     package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt" | "stats">;
   },
 >(a: T, b: T) {
-  // Skills have no verification tiers, so official flag + adoption are the
-  // only trust signals feeding the shared squat gate.
-  const signals = (entry: T): SearchTrustSignals => ({
-    isOfficial: entry.package.isOfficial,
-    downloads: entry.package.stats.downloads,
-    installs: entry.package.stats.installs,
-  });
   return (
-    compareRankedSearchKeys(rankedSearchKey(a, signals(a)), rankedSearchKey(b, signals(b))) ||
+    compareRankedSearchKeys(
+      rankedSearchKey(a, skillTrustSignals(a.package)),
+      rankedSearchKey(b, skillTrustSignals(b.package)),
+    ) ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
     b.package.updatedAt - a.package.updatedAt
   );
@@ -6844,7 +6853,13 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
     }
   }
 
-  if (!topic && matches.length < targetCount) {
+  // Demoted exact hits never satisfy the collection quota: the fallback scans
+  // must still gather the adopted lexical alternatives they are ranked against
+  // (top-1 queries would otherwise return a slug squat unchallenged).
+  const authoritativeMatchCount = () =>
+    matches.filter((entry) => !isDemotedExactMatch(entry, skillTrustSignals(entry.package))).length;
+
+  if (!topic && authoritativeMatchCount() < targetCount) {
     const directTopic = normalizeCatalogTopic(queryText);
     if (directTopic) {
       const exactTopicDigests = await ctx.db
@@ -6886,12 +6901,12 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
           ...match,
           package: catalogItem,
         });
-        if (matches.length >= targetCount) break;
+        if (authoritativeMatchCount() >= targetCount) break;
       }
     }
   }
 
-  if (matches.length < targetCount) {
+  if (authoritativeMatchCount() < targetCount) {
     const pageSize = Math.min(MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
     const candidateDigests: Doc<"skillSearchDigest">[] = [];
     if (topic) {
