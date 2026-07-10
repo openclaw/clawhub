@@ -75,7 +75,7 @@ describe("security-scan-codex workflow", () => {
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);
     expect(workflow.on?.schedule).toBeUndefined();
-    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(9);
+    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(10);
     expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.include).toEqual([
       { lane: "priority", shard: "priority-0" },
       { lane: "shared", shard: "shared-0" },
@@ -86,6 +86,7 @@ describe("security-scan-codex workflow", () => {
       { lane: "shared", shard: "shared-5" },
       { lane: "shared", shard: "shared-6" },
       { lane: "shared", shard: "shared-7" },
+      { lane: "shared", shard: "shared-8" },
     ]);
     expect(jobEnv.CODEX_SECURITY_SCAN_LANE).toBe("${{ matrix.lane }}");
     expect(jobEnv.CODEX_SECURITY_SCAN_LIMIT).toBe(
