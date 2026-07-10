@@ -328,7 +328,8 @@ async function getSelectedOwnerHandle(page: Page, selector: string) {
     const value = await ownerControl.inputValue();
     if (value) return value;
   }
-  const directText = await ownerControl.innerText().catch(() => "");
+  // Empty publish states keep the owner control mounted but visually hidden until upload.
+  const directText = (await ownerControl.textContent().catch(() => "")) ?? "";
   const directHandle = parseOwnerHandle(directText);
   if (directHandle) return directHandle;
 
