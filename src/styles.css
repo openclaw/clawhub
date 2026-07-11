@@ -18059,7 +18059,7 @@ body:has(.browse-page-borderless-header) .navbar {
   cursor: pointer;
   font: inherit;
   font-size: 14px;
-  font-weight: 560;
+  font-weight: 400;
   line-height: 1;
   white-space: nowrap;
   transition:
@@ -18081,6 +18081,7 @@ body:has(.browse-page-borderless-header) .navbar {
 .browse-tab.is-active {
   border-bottom-color: var(--ink);
   color: var(--ink);
+  font-weight: 600;
 }
 
 .browse-tab-count {
@@ -18145,7 +18146,7 @@ body:has(.browse-page-borderless-header) .navbar {
 .browse-sort-label {
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  font-size: 14px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -22185,7 +22186,7 @@ a.search-empty-action {
   background: none;
   padding: 0 2px;
   font-size: 14px;
-  font-weight: 560;
+  font-weight: 400;
   line-height: 1;
   color: var(--hv2-text-tertiary);
   cursor: pointer;
@@ -22212,6 +22213,7 @@ a.search-empty-action {
 .home-v2-listing-tab.is-active {
   color: var(--hv2-text);
   border-bottom-color: var(--hv2-text);
+  font-weight: 600;
 }
 
 .home-v2-listing-tab.is-active .home-v2-listing-tab-icon {

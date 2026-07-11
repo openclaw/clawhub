@@ -677,10 +677,14 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     >
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
-          <div className="home-v2-listing-kind oc-segmented" role="group" aria-label="Content type">
+          <div
+            className="home-v2-listing-kind clawhub-segmented"
+            role="group"
+            aria-label="Content type"
+          >
             <button
               type="button"
-              className={`home-v2-listing-kind-btn oc-segmented-item${
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn${
                 kind === "skills" ? " is-active" : ""
               }`}
               aria-pressed={kind === "skills"}
@@ -690,7 +694,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             </button>
             <button
               type="button"
-              className={`home-v2-listing-kind-btn oc-segmented-item${
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn${
                 kind === "plugins" ? " is-active" : ""
               }`}
               aria-pressed={kind === "plugins"}
@@ -749,10 +753,14 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 onChange={setCategorySlugs}
               />
 
-              <div className="home-v2-listing-view oc-segmented" role="group" aria-label="Layout">
+              <div
+                className="home-v2-listing-view clawhub-segmented"
+                role="group"
+                aria-label="Layout"
+              >
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn oc-segmented-item${
+                  className={`home-v2-listing-view-btn clawhub-segmented-btn${
                     view === "list" ? " is-active" : ""
                   }`}
                   aria-pressed={view === "list"}
@@ -763,7 +771,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 </button>
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn oc-segmented-item${
+                  className={`home-v2-listing-view-btn clawhub-segmented-btn${
                     view === "grid" ? " is-active" : ""
                   }`}
                   aria-pressed={view === "grid"}

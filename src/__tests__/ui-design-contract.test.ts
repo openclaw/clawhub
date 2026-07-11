@@ -291,7 +291,7 @@ describe("restored UI design contract", () => {
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
     expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
-    expect(listingSource).toContain("home-v2-listing-kind oc-segmented");
+    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented");
     expect(appsSource).toContain("home-v2-apps-tile oc-card oc-card-interactive");
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
     expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
