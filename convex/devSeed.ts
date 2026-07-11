@@ -274,6 +274,10 @@ const FLAGGED_SKILL_SLUG = "local-flagged-wallet-sync";
 const SCANNED_SKILL_SLUG = "local-agentic-risk-demo";
 const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
+const TRUNCATION_SKILL_SLUG = "local-truncation-plugin-runtime-integration-skill";
+const TRUNCATION_PLUGIN_NAME = "local-truncation-runtime-plugin";
+const TRUNCATION_FIXTURE_DISPLAY_NAME =
+  "[120] Plugin Runtime Integration ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHI";
 const SCANNED_SKILL_SUMMARY =
   "Seeded fixture for previewing ClawHub security buckets with a deliberately long explanation that should wrap for two lines in the skill header, then truncate before the metadata column.";
 const FLAGGED_SKILL_MD = `---
@@ -2590,17 +2594,21 @@ export async function seedLocalModerationFixturesHandler(
   const existingScannedSkill = await findScannedSkillFixture(ctx, scannedSkillSlug);
   const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
   const existingScannedPlugin = await findScannedPluginFixture(ctx, scannedPluginName);
+  const existingTruncationSkill = await findSeedSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
+  const existingTruncationPlugin = await findSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
   if (
     existingSkill &&
     existingScannedSkill &&
     existingPlugin &&
     existingScannedPlugin &&
+    existingTruncationSkill &&
+    existingTruncationPlugin &&
     !args.reset
   ) {
     const { userId, publisherId } = owner;
     const storageIdsToDelete: Id<"_storage">[] = [];
     const ownerPatch = { ownerUserId: userId, ownerPublisherId: publisherId, updatedAt: now };
-    for (const skill of [existingSkill, existingScannedSkill]) {
+    for (const skill of [existingSkill, existingScannedSkill, existingTruncationSkill]) {
       if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
         await ctx.db.patch(skill._id, ownerPatch);
       }
@@ -2614,7 +2622,7 @@ export async function seedLocalModerationFixturesHandler(
       updatedAt: now,
     });
     await ensureSkillBadge(ctx, existingScannedSkill._id, userId, now, "official");
-    for (const pkg of [existingPlugin, existingScannedPlugin]) {
+    for (const pkg of [existingPlugin, existingScannedPlugin, existingTruncationPlugin]) {
       if (pkg.ownerUserId !== userId || pkg.ownerPublisherId !== publisherId) {
         await ctx.db.patch(pkg._id, ownerPatch);
       }
@@ -2746,18 +2754,24 @@ export async function seedLocalModerationFixturesHandler(
       flaggedSkillVersionId: existingSkill.latestVersionId,
       scannedSkillId: existingScannedSkill._id,
       scannedSkillVersionId: existingScannedSkill.latestVersionId,
+      truncationSkillId: existingTruncationSkill._id,
+      truncationSkillVersionId: existingTruncationSkill.latestVersionId,
       flaggedPluginId: existingPlugin._id,
       flaggedPluginReleaseId: existingPlugin.latestReleaseId,
       scannedPluginId: existingScannedPlugin._id,
       scannedPluginReleaseId: existingScannedPlugin.latestReleaseId,
+      truncationPluginId: existingTruncationPlugin._id,
+      truncationPluginReleaseId: existingTruncationPlugin.latestReleaseId,
       storageIdsToDelete,
     };
   }
 
   await deleteSeedSkillFixture(ctx, flaggedSkillSlug);
   await deleteScannedSkillFixture(ctx, scannedSkillSlug);
+  await deleteSeedSkillFixture(ctx, TRUNCATION_SKILL_SLUG);
   await deleteSeedPluginFixture(ctx, flaggedPluginName);
   await deleteScannedPluginFixture(ctx, scannedPluginName);
+  await deleteSeedPluginFixtureByName(ctx, TRUNCATION_PLUGIN_NAME);
 
   const { userId, publisherId } = owner;
   const staticScan = staticMaliciousScan(now);
@@ -2942,6 +2956,87 @@ export async function seedLocalModerationFixturesHandler(
       installsCurrent: 1,
       installsAllTime: 3,
       stars: 2,
+      versions: 1,
+      comments: 0,
+    },
+    updatedAt: now,
+  });
+
+  const truncationSkillId = await ctx.db.insert("skills", {
+    slug: TRUNCATION_SKILL_SLUG,
+    displayName: TRUNCATION_FIXTURE_DISPLAY_NAME,
+    summary: "Long local owner skill fixture for dashboard truncation checks.",
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    latestVersionId: undefined,
+    tags: {},
+    softDeletedAt: undefined,
+    badges: { redactionApproved: undefined },
+    moderationStatus: "active",
+    moderationReason: undefined,
+    moderationVerdict: "clean",
+    moderationReasonCodes: [],
+    moderationEvidence: undefined,
+    moderationSummary: undefined,
+    moderationEngineVersion: undefined,
+    moderationEvaluatedAt: now,
+    moderationFlags: [],
+    isSuspicious: false,
+    statsDownloads: 7,
+    statsStars: 1,
+    statsInstallsCurrent: 1,
+    statsInstallsAllTime: 2,
+    stats: {
+      downloads: 7,
+      installsCurrent: 1,
+      installsAllTime: 2,
+      stars: 1,
+      versions: 0,
+      comments: 0,
+    },
+    createdAt: now,
+    updatedAt: now,
+  });
+  const truncationSkillVersionId = await ctx.db.insert("skillVersions", {
+    skillId: truncationSkillId,
+    version: "0.1.0",
+    changelog: "Seeded local long-name version for dashboard truncation checks.",
+    files: [
+      {
+        path: "SKILL.md",
+        size: args.scannedSkillMd.length,
+        storageId: args.scannedSkillStorageId,
+        sha256: "seeded-truncation-skill",
+        contentType: "text/markdown",
+      },
+    ],
+    parsed: {
+      frontmatter: {
+        name: TRUNCATION_SKILL_SLUG,
+        description: "Long local owner skill fixture for dashboard truncation checks.",
+      },
+    },
+    createdBy: userId,
+    createdAt: now,
+    softDeletedAt: undefined,
+    sha256hash: "seeded-truncation-skill-hash",
+    vtAnalysis: {
+      status: "clean",
+      verdict: "clean",
+      analysis: "Local truncation fixture scanned clean.",
+      source: "local-dev-seed",
+      checkedAt: now,
+    },
+  });
+  await ctx.db.patch(truncationSkillId, {
+    latestVersionId: truncationSkillVersionId,
+    moderationSourceVersionId: truncationSkillVersionId,
+    tags: { latest: truncationSkillVersionId },
+    stats: {
+      downloads: 7,
+      installsCurrent: 1,
+      installsAllTime: 2,
+      stars: 1,
       versions: 1,
       comments: 0,
     },
@@ -3161,6 +3256,106 @@ export async function seedLocalModerationFixturesHandler(
     installs: 1,
     now,
   });
+  const truncationPackageId = await ctx.db.insert("packages", {
+    name: TRUNCATION_PLUGIN_NAME,
+    normalizedName: normalizePackageName(TRUNCATION_PLUGIN_NAME),
+    displayName: TRUNCATION_FIXTURE_DISPLAY_NAME,
+    summary: "Long local owner plugin fixture for dashboard truncation checks.",
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    family: "code-plugin",
+    channel: "community",
+    isOfficial: false,
+    runtimeId: "local.truncation.runtime",
+    sourceRepo: "openclaw/local-dev-fixture",
+    latestReleaseId: undefined,
+    latestVersionSummary: undefined,
+    tags: {},
+    compatibility: { pluginApiRange: ">=0.1.0" },
+    verification: {
+      tier: "structural",
+      scope: "artifact-only",
+      summary: "Local dev fixture for long-name layout checks.",
+      sourceRepo: "openclaw/local-dev-fixture",
+      scanStatus: "clean",
+    },
+    scanStatus: "clean",
+    stats: { downloads: 5, installs: 1, stars: 1, versions: 0 },
+    ...seededPackageRecommendationPatch({ downloads: 5, installs: 1, stars: 1 }),
+    softDeletedAt: undefined,
+    createdAt: now,
+    updatedAt: now,
+  });
+  const truncationPackageReleaseId = await ctx.db.insert("packageReleases", {
+    packageId: truncationPackageId,
+    version: "0.1.0",
+    changelog: "Seeded local long-name release for dashboard truncation checks.",
+    summary: "Long local owner plugin fixture for dashboard truncation checks.",
+    distTags: ["latest"],
+    files: [
+      {
+        path: "README.md",
+        size: args.scannedPluginReadme.length,
+        storageId: args.scannedPluginStorageId,
+        sha256: "seeded-truncation-plugin",
+        contentType: "text/markdown",
+      },
+    ],
+    integritySha256: "seeded-truncation-plugin-integrity",
+    extractedPackageJson: {
+      name: TRUNCATION_PLUGIN_NAME,
+      version: "0.1.0",
+      description: "Long local owner plugin fixture for dashboard truncation checks.",
+    },
+    compatibility: { pluginApiRange: ">=0.1.0" },
+    verification: {
+      tier: "structural",
+      scope: "artifact-only",
+      summary: "Local dev fixture for long-name layout checks.",
+      sourceRepo: "openclaw/local-dev-fixture",
+      scanStatus: "clean",
+    },
+    sha256hash: "seeded-truncation-plugin-hash",
+    vtAnalysis: {
+      status: "clean",
+      verdict: "clean",
+      analysis: "Local truncation fixture scanned clean.",
+      source: "local-dev-seed",
+      checkedAt: now,
+    },
+    source: { kind: "github", repo: "openclaw/local-dev-fixture", path: "." },
+    createdBy: userId,
+    publishActor: { kind: "user", userId },
+    createdAt: now,
+    softDeletedAt: undefined,
+  });
+  await ctx.db.patch(truncationPackageId, {
+    latestReleaseId: truncationPackageReleaseId,
+    latestVersionSummary: {
+      version: "0.1.0",
+      createdAt: now,
+      changelog: "Seeded local long-name release for dashboard truncation checks.",
+      compatibility: { pluginApiRange: ">=0.1.0" },
+      verification: {
+        tier: "structural",
+        scope: "artifact-only",
+        summary: "Local dev fixture for long-name layout checks.",
+        sourceRepo: "openclaw/local-dev-fixture",
+        scanStatus: "clean",
+      },
+    },
+    tags: { latest: truncationPackageReleaseId },
+    stats: { downloads: 5, installs: 1, stars: 1, versions: 1 },
+    ...seededPackageRecommendationPatch({ downloads: 5, installs: 1, stars: 1 }),
+    updatedAt: now,
+  });
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId: truncationPackageId,
+    key: TRUNCATION_PLUGIN_NAME,
+    downloads: 5,
+    installs: 1,
+    now,
+  });
   await ctx.db.insert("packageInspectorWarnings", {
     packageId: scannedPackageId,
     releaseId: scannedPackageReleaseId,
@@ -3205,8 +3400,8 @@ export async function seedLocalModerationFixturesHandler(
   });
   await ctx.db.patch(userId, {
     publishedSkills: 6,
-    totalStars: 3,
-    totalDownloads: 13,
+    totalStars: 4,
+    totalDownloads: 20,
     updatedAt: now,
   });
 
@@ -3218,10 +3413,14 @@ export async function seedLocalModerationFixturesHandler(
     flaggedSkillVersionId: skillVersionId,
     scannedSkillId,
     scannedSkillVersionId,
+    truncationSkillId,
+    truncationSkillVersionId,
     flaggedPluginId: packageId,
     flaggedPluginReleaseId: packageReleaseId,
     scannedPluginId: scannedPackageId,
     scannedPluginReleaseId: scannedPackageReleaseId,
+    truncationPluginId: truncationPackageId,
+    truncationPluginReleaseId: truncationPackageReleaseId,
   };
 }
 

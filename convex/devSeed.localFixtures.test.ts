@@ -1254,7 +1254,11 @@ describe("devSeed local fixtures", () => {
     expect(tables.users?.[0]).toEqual(expect.objectContaining({ handle: "fuller-stack-dev" }));
     expect(
       tables.skills?.map((skill) => String(skill.slug)).sort((a, b) => a.localeCompare(b)),
-    ).toEqual([scannedSkillSlug, flaggedSkillSlug]);
+    ).toEqual([
+      scannedSkillSlug,
+      flaggedSkillSlug,
+      "local-truncation-plugin-runtime-integration-skill",
+    ]);
     expect(tables.skills?.every((skill) => skill.ownerUserId === userId)).toBe(true);
     expect(
       tables.packages?.map((pkg) => String(pkg.name)).sort((a, b) => a.localeCompare(b)),
@@ -1262,6 +1266,7 @@ describe("devSeed local fixtures", () => {
       flaggedPluginName,
       currentUserSeedPackageName(userId, "local-merge-notes-plugin"),
       scannedPluginName,
+      "local-truncation-runtime-plugin",
     ]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
     expect(tables.packages).toEqual(
