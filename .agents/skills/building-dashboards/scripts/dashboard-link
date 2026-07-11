@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# dashboard-link: Generate a link to an Axiom dashboard
+#
+# Usage: dashboard-link <deployment> <dashboard-id>
+#
+# Examples:
+#   dashboard-link prod EHYTHcQmO0ZZCK0zdw
+#   dashboard-link staging abc123
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+DASHBOARD_ID="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$DASHBOARD_ID" ]]; then
+    echo "Usage: dashboard-link <deployment> <dashboard-id>" >&2
+    exit 1
+fi
+
+CONFIG_FILE="$HOME/.axiom.toml"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: $CONFIG_FILE not found" >&2
+    exit 1
+fi
+
+# Parse TOML for deployment config
+extract_value() {
+    local key="$1"
+    awk -v deployment="$DEPLOYMENT" -v key="$key" '
+        /^[[:space:]]*\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment {
+            gsub(/^[[:space:]]+/, "")
+            if ($1 == key) {
+                sub(/^[^=]*=[[:space:]]*/, "")
+                if (match($0, /^"[^"]*"/)) {
+                    $0 = substr($0, RSTART+1, RLENGTH-2)
+                } else {
+                    sub(/[[:space:]]*#.*$/, "")
+                }
+                print
+                exit
+            }
+        }
+    ' "$CONFIG_FILE"
+}
+
+URL=$(extract_value "url")
+ORG_ID=$(extract_value "org_id")
+
+
+if [[ -z "$URL" || -z "$ORG_ID" ]]; then
+    echo "Error: Could not find deployment '$DEPLOYMENT' in $CONFIG_FILE" >&2
+    exit 1
+fi
+
+# Resolve short ID for the UI URL
+LINK_ID=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "/dashboards/uid/$DASHBOARD_ID" | jq -r '.id // empty')
+if [[ -z "$LINK_ID" ]]; then
+    echo "Error: Could not resolve dashboard ID '$DASHBOARD_ID'" >&2
+    exit 1
+fi
+
+# Convert API URL to app URL
+# api.axiom.co -> app.axiom.co
+# api.dev.axiomtestlabs.co -> app.dev.axiomtestlabs.co
+APP_URL="${URL/api./app.}"
+
+echo "${APP_URL}/${ORG_ID}/dashboards/${LINK_ID}"

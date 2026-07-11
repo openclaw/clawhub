@@ -20,8 +20,8 @@ function resolveAbsoluteBaseUrl(...candidates: Array<string | undefined>) {
 export function publicApiUrl(path: string) {
   const normalizedPath = normalizeApiPath(path);
   if (typeof window !== "undefined") {
-    // In production, Vercel rewrites /api/* to the Convex site. Local Nitro
-    // intercepts those paths, so local browsers use the Convex site directly.
+    // Hosted browsers use the same-origin Nitro proxy. Local browsers use the
+    // Convex site directly so anonymous local backends do not need edge routing.
     const convexClientBaseUrl = resolveAbsoluteBaseUrl(
       getRuntimeEnv("VITE_CONVEX_SITE_URL"),
       getRuntimeEnv("VITE_CONVEX_URL"),

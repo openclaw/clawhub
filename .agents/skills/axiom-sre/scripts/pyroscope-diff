@@ -1,0 +1,153 @@
+#!/bin/bash
+# Compare CPU profiles between two time periods
+# Usage: pyroscope-diff <deployment> <service_name> [options] <baseline_start> <baseline_end> <comparison_start> <comparison_end>
+#
+# Options:
+#   --type <profile>    Profile type (default: cpu)
+#   --label <k=v>       Additional label filter (can be repeated)
+#
+# Times can be:
+#   - ISO timestamps: 2024-01-15T10:00:00Z
+#   - Relative: -2h, -30m (from now)
+#   - "now" for current time
+#
+# Examples:
+#   pyroscope-diff prod axiom-db -2h -1h -1h now
+#   pyroscope-diff prod axiom-db 2024-01-15T10:00:00Z 2024-01-15T11:00:00Z 2024-01-15T14:00:00Z 2024-01-15T15:00:00Z
+#   pyroscope-diff prod axiom-db --label profile_id=debug-conor -2h -1h -1h now
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+service="${2:-}"
+shift 2 2>/dev/null || true
+
+# Defaults
+profile_type="process_cpu:cpu:nanoseconds:cpu:nanoseconds"
+extra_labels=""
+positional_args=()
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --type)
+            case "$2" in
+                cpu|CPU) profile_type="process_cpu:cpu:nanoseconds:cpu:nanoseconds" ;;
+                memory|mem|inuse) profile_type="memory:inuse_space:bytes:space:bytes" ;;
+                alloc|allocations) profile_type="memory:alloc_space:bytes:space:bytes" ;;
+                goroutine|goroutines) profile_type="goroutine:goroutine:count:goroutine:count" ;;
+                mutex) profile_type="mutex:delay:nanoseconds:contentions:count" ;;
+                block) profile_type="block:delay:nanoseconds:contentions:count" ;;
+                *) profile_type="$2" ;;
+            esac
+            shift 2
+            ;;
+        --label)
+            # Parse key=value into key="value" (escaped for JSON)
+            local_key="${2%%=*}"
+            local_val="${2#*=}"
+            extra_labels="${extra_labels}, ${local_key}=\\\"${local_val}\\\""
+            shift 2
+            ;;
+        *)
+            positional_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+baseline_start="${positional_args[0]:-}"
+baseline_end="${positional_args[1]:-}"
+comparison_start="${positional_args[2]:-}"
+comparison_end="${positional_args[3]:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$service" || -z "$baseline_start" || -z "$baseline_end" || -z "$comparison_start" || -z "$comparison_end" ]]; then
+    echo "Usage: pyroscope-diff <deployment> <service> [options] <baseline_start> <baseline_end> <comparison_start> <comparison_end>" >&2
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  --type <profile>  - Profile type: cpu, memory, alloc, goroutine, mutex, block" >&2
+    echo "  --label <k=v>     - Additional label filter (can be repeated)" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  pyroscope-diff prod axiom-db -2h -1h -1h now" >&2
+    echo "  pyroscope-diff prod axiom-db 2024-01-15T10:00:00Z 2024-01-15T11:00:00Z 2024-01-15T14:00:00Z 2024-01-15T15:00:00Z" >&2
+    echo "  pyroscope-diff prod axiom-db --label profile_id=debug-conor -2h -1h -1h now" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+# Parse time to milliseconds
+parse_time() {
+    local t="$1"
+    local now_ms=$(($(date +%s) * 1000))
+    
+    if [[ "$t" == "now" ]]; then
+        echo "$now_ms"
+    elif [[ "$t" =~ ^- ]]; then
+        # Relative time like -2h, -30m
+        local num="${t#-}"
+        num="${num%[smhd]*}"
+        local unit="${t#-$num}"
+        case "$unit" in
+            s) echo $((now_ms - num * 1000)) ;;
+            m) echo $((now_ms - num * 60 * 1000)) ;;
+            h) echo $((now_ms - num * 3600 * 1000)) ;;
+            d) echo $((now_ms - num * 86400 * 1000)) ;;
+            *) echo $((now_ms - num * 60 * 1000)) ;;
+        esac
+    else
+        # ISO timestamp
+        echo $(($(date -j -f "%Y-%m-%dT%H:%M:%SZ" "$t" +%s 2>/dev/null || date -d "$t" +%s) * 1000))
+    fi
+}
+
+left_start=$(parse_time "$baseline_start")
+left_end=$(parse_time "$baseline_end")
+right_start=$(parse_time "$comparison_start")
+right_end=$(parse_time "$comparison_end")
+
+# Build label selector (escape quotes for JSON)
+label_selector="{service_name=\\\"$service\\\"${extra_labels}}"
+
+body=$(cat <<EOF
+{
+  "left": {
+    "profileTypeID": "$profile_type",
+    "labelSelector": "$label_selector",
+    "start": $left_start,
+    "end": $left_end
+  },
+  "right": {
+    "profileTypeID": "$profile_type",
+    "labelSelector": "$label_selector",
+    "start": $right_start,
+    "end": $right_end
+  }
+}
+EOF
+)
+
+api_url="${PYROSCOPE_URL}/querier.v1.QuerierService/Diff"
+result=$("$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST -d "$body" "$api_url")
+
+if command -v jq &>/dev/null; then
+    echo "Deployment: $DEPLOYMENT"
+    echo "Service: $service"
+    echo "Baseline: $baseline_start to $baseline_end"
+    echo "Comparison: $comparison_start to $comparison_end"
+    echo ""
+    
+    left_ticks=$(echo "$result" | jq -r '.flamegraph.leftTicks // 0')
+    right_ticks=$(echo "$result" | jq -r '.flamegraph.rightTicks // 0')
+    total=$(echo "$result" | jq -r '.flamegraph.total // 0')
+    num_names=$(echo "$result" | jq -r '(.flamegraph.names // []) | length')
+    
+    echo "Left (baseline) ticks: $left_ticks"
+    echo "Right (comparison) ticks: $right_ticks"
+    echo "Total: $total"
+    echo "Functions: $num_names"
+else
+    echo "$result"
+fi

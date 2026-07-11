@@ -307,7 +307,10 @@ export function hasSecretLikeValue(value: string) {
 }
 
 export function redactSkillContent(value: string | null | undefined) {
-  return redactText(value, MAX_REDACTED_SKILL_CONTENT_LENGTH);
+  if (!value) return null;
+  const redacted = redactBundleContent(value);
+  if (redacted.length <= MAX_REDACTED_SKILL_CONTENT_LENGTH) return redacted;
+  return `${redacted.slice(0, MAX_REDACTED_SKILL_CONTENT_LENGTH - 1)}...`;
 }
 
 export function normalizeArtifactExport(inputs: ArtifactExportInput[]): NormalizedDatasetRows {

@@ -27,6 +27,7 @@ describe("githubAuth", () => {
       Response.json({
         token: "ghs_app_token",
         expires_at: "2026-02-02T13:00:00Z",
+        permissions: { actions: "write", contents: "read" },
       }),
     );
 
@@ -35,6 +36,7 @@ describe("githubAuth", () => {
     ).resolves.toEqual({
       token: "ghs_app_token",
       expiresAt: Date.parse("2026-02-02T13:00:00Z"),
+      permissions: { actions: "write", contents: "read" },
     });
 
     expect(fetchMock).toHaveBeenCalledWith(

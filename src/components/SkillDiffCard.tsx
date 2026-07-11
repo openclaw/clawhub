@@ -716,17 +716,17 @@ function buildDiffOptions(
 
 function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const styles = getComputedStyle(document.documentElement);
-  const surface = normalizeHex(styles.getPropertyValue("--surface").trim() || "#ffffff");
-  const surfaceMuted = styles.getPropertyValue("--surface-muted").trim() || "#f6f1ec";
-  const ink = styles.getPropertyValue("--ink").trim() || "#1d1a17";
-  const inkSoft = styles.getPropertyValue("--ink-soft").trim() || "#4c463f";
-  const line = styles.getPropertyValue("--line").trim() || "rgba(29, 26, 23, 0.12)";
-  const accent = styles.getPropertyValue("--accent").trim() || "#e65c46";
-  const seafoam = styles.getPropertyValue("--seafoam").trim() || "#2bc6a4";
-  const diffAdded = styles.getPropertyValue("--diff-added").trim() || "#9bb955";
-  const diffAddedStrong = styles.getPropertyValue("--diff-added-strong").trim() || seafoam;
-  const diffRemoved = styles.getPropertyValue("--diff-removed").trim() || "#e47866";
-  const diffRemovedStrong = styles.getPropertyValue("--diff-removed-strong").trim() || accent;
+  const surface = normalizeHex(styles.getPropertyValue("--oc-bg-elevated").trim() || "#ffffff");
+  const surfaceMuted = styles.getPropertyValue("--oc-bg-surface").trim() || "#f6f1ec";
+  const ink = styles.getPropertyValue("--oc-text-primary").trim() || "#1d1a17";
+  const inkSoft = styles.getPropertyValue("--oc-text-secondary").trim() || "#4c463f";
+  const line = styles.getPropertyValue("--oc-border-subtle").trim() || "rgba(29, 26, 23, 0.12)";
+  const accent = styles.getPropertyValue("--oc-accent-primary").trim() || "#e65c46";
+  const seafoam = styles.getPropertyValue("--oc-accent-secondary").trim() || "#2bc6a4";
+  const diffAdded = styles.getPropertyValue("--oc-diff-added").trim() || "#9bb955";
+  const diffAddedStrong = styles.getPropertyValue("--oc-diff-added-strong").trim() || seafoam;
+  const diffRemoved = styles.getPropertyValue("--oc-diff-removed").trim() || "#e47866";
+  const diffRemovedStrong = styles.getPropertyValue("--oc-diff-removed-strong").trim() || accent;
   const diffDiagonal = toMonacoColor(
     styles.getPropertyValue("--diff-diagonal").trim() || "#22222233",
   );

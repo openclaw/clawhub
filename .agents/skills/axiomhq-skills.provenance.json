@@ -1,0 +1,35 @@
+{
+  "repository": "https://github.com/axiomhq/skills",
+  "resolvedCommit": "0e98ebaeec76a70c8fda9a7737605800c2f1245d",
+  "license": "MIT",
+  "skills": {
+    "axiom-alerting": {
+      "installSelector": "axiom-alerting",
+      "sourcePath": "skills/axiom-alerting"
+    },
+    "axiom-sre": {
+      "installSelector": "axiom-sre",
+      "sourcePath": "skills/sre"
+    },
+    "building-dashboards": {
+      "installSelector": "building-dashboards",
+      "sourcePath": "skills/building-dashboards"
+    },
+    "controlling-costs": {
+      "installSelector": "controlling-costs",
+      "sourcePath": "skills/controlling-costs"
+    },
+    "query-metrics": {
+      "installSelector": "query-metrics",
+      "sourcePath": "skills/query-metrics"
+    },
+    "spl-to-apl": {
+      "installSelector": "spl-to-apl",
+      "sourcePath": "skills/spl-to-apl"
+    },
+    "writing-evals": {
+      "installSelector": "writing-evals",
+      "sourcePath": "skills/writing-evals"
+    }
+  }
+}

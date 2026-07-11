@@ -129,6 +129,7 @@ export const RETENTION_POLICIES = {
   ),
   packageInspectorScanCursors: permanent("Package inspector scan progress cursor."),
   securityScanJobs: permanent("Security scan job history and current processing state."),
+  securityScanDispatchState: permanent("Security scan worker dispatch coordination state."),
   skillScanRequests: ephemeral(
     "Uploaded or GitHub scan requests expire and delete temporary blobs.",
     {

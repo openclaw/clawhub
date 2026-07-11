@@ -1,4 +1,5 @@
 {
+  "buildCommand": "bun run build:vercel",
   "headers": [
     {
       "source": "/(.*)",
@@ -55,24 +56,6 @@
       ],
       "destination": "https://cn.clawhub-mirror.com/:path*",
       "statusCode": 302
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "https://wry-manatee-359.convex.site/api/:path*"
-    },
-    {
-      "source": "/v1/feeds/plugins",
-      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/plugins"
-    },
-    {
-      "source": "/v1/feeds/skills",
-      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/skills"
-    },
-    {
-      "source": "/v1/feeds/promotions",
-      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/promotions"
     }
   ],
   "images": {

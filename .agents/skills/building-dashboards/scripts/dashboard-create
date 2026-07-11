@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+# dashboard-create: Create a dashboard from JSON file
+#
+# Usage: dashboard-create <deployment> <json-file>
+#
+# The JSON file should NOT contain id, version, createdAt, updatedAt fields.
+# Use templates or dashboard-from-template to generate valid JSON.
+#
+# Examples:
+#   dashboard-create prod ./my-dashboard.json
+#   dashboard-create staging ./dashboard.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+JSON_FILE="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$JSON_FILE" ]]; then
+    echo "Usage: dashboard-create <deployment> <json-file>" >&2
+    exit 1
+fi
+
+if [[ ! -f "$JSON_FILE" ]]; then
+    echo "Error: File not found: $JSON_FILE" >&2
+    exit 1
+fi
+
+# Validate dashboard structure before deploying
+if ! "$SCRIPT_DIR/dashboard-validate" "$JSON_FILE" --strict >&2; then
+    echo "Error: Dashboard validation failed. Fix the errors above before deploying." >&2
+    exit 1
+fi
+
+# Read, strip server-managed fields, and normalize layout for react-grid-layout
+BODY=$(jq -L "$SCRIPT_DIR" '
+  include "dashboard-normalize";
+  del(.id, .uid, .version, .createdAt, .updatedAt, .createdBy, .updatedBy) |
+  normalize_dashboard_layout
+' "$JSON_FILE")
+
+BODY=$(echo "$BODY" | jq '{dashboard: .}')
+
+RESPONSE=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" POST "/dashboards" "$BODY")
+
+# Extract and print the new dashboard UID
+ID=$(echo "$RESPONSE" | jq -r '.dashboard.uid // empty')
+if [[ -n "$ID" ]]; then
+    echo "$ID"
+else
+    echo "Error creating dashboard:" >&2
+    echo "$RESPONSE" | jq . >&2
+    exit 1
+fi

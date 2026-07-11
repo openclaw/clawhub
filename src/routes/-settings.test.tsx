@@ -501,7 +501,8 @@ describe("Settings", () => {
     expect(screen.getByRole("heading", { name: "Delete synced repo & skills" })).toBeTruthy();
     expect(screen.getByText(/This will delete the sync job for this repo/i)).toBeTruthy();
     const deleteButton = screen.getByRole("button", { name: "Delete" });
-    expect(deleteButton.className).toMatch(/border-red/);
+    expect(deleteButton.className).toContain("bg-status-error-bg");
+    expect(deleteButton.className).toContain("text-status-error-fg");
 
     fireEvent.click(deleteButton);
 

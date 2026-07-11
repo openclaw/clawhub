@@ -97,10 +97,10 @@ describe("Upload route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("links to the skill publishing guide", () => {
+  it("links to the skill docs", () => {
     render(<Upload />);
 
-    const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
+    const guideLink = screen.getByRole("link", { name: /Skill docs/i });
     expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });

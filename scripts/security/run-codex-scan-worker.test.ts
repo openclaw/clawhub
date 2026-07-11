@@ -9,18 +9,14 @@ import {
   LOCAL_CODEX_WORKER_OPT_IN,
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
-import * as codexScanWorker from "./run-codex-scan-worker";
 import {
   buildPrompt,
-  claimBatchDrainedQueue,
-  claimFailuresAreFatal,
-  minimumClaimWindowMs,
   normalizeSkillSpectorAnalysis,
   processJob,
   resolveSkillSpectorScanInput,
   resolveSkillSpectorScanInputs,
+  runContinuouslyRefilledWorkerPool,
   runClawScanShadow,
-  shouldClaimSecurityScanBatch,
   writeArtifactWorkspace,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
@@ -64,115 +60,155 @@ function unsafeFixtureLabels() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
-  it("treats transient claim failures as fatal only when no jobs were claimed", () => {
-    expect(claimFailuresAreFatal(0, 0)).toBe(false);
-    expect(claimFailuresAreFatal(1, 0)).toBe(true);
-    expect(claimFailuresAreFatal(1, 3)).toBe(false);
+  it("refills a free slot without waiting for the slowest active job", async () => {
+    const started: string[] = [];
+    let releaseSlowJob: (() => void) | undefined;
+    const slowJob = new Promise<void>((resolve) => {
+      releaseSlowJob = resolve;
+    });
+    const jobs = ["slow", "fast", "next"];
+    const claimJobs = vi.fn(async (limit: number) => {
+      const claimedJobs = jobs.splice(0, limit).map((id) => ({ id }));
+      return { claimedCount: claimedJobs.length, jobs: claimedJobs };
+    });
+    const processClaimedJob = vi.fn(async (job: { id: string }) => {
+      started.push(job.id);
+      if (job.id === "slow") await slowJob;
+      return {
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+    });
+
+    await vi.waitFor(() => expect(started).toEqual(["slow", "fast", "next"]));
+    expect(releaseSlowJob).toBeTypeOf("function");
+    releaseSlowJob?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 3,
+      totalCompleted: 3,
+      totalClaimFailures: 0,
+    });
+    expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 1, 1]);
   });
 
-  it("keeps claiming after partial transient claim failures", () => {
-    expect(claimBatchDrainedQueue(0, 0, 4)).toBe(true);
-    expect(claimBatchDrainedQueue(0, 3, 4)).toBe(true);
-    expect(claimBatchDrainedQueue(1, 3, 4)).toBe(false);
-    expect(claimBatchDrainedQueue(0, 4, 4)).toBe(false);
-  });
-
-  it("keeps enough wall-clock room for one Codex scan plus cleanup before claiming", () => {
-    expect(minimumClaimWindowMs(8 * 60_000, 4 * 60_000)).toBe(7 * 60_000);
-    expect(minimumClaimWindowMs(5 * 60_000, 4 * 60_000)).toBe(5 * 60_000);
-  });
-
-  it("always allows the first claim even when the configured runtime is short", () => {
-    expect(shouldClaimSecurityScanBatch(0, 1, 5 * 60_000)).toBe(true);
-    expect(shouldClaimSecurityScanBatch(1, 1, 5 * 60_000)).toBe(false);
-    expect(shouldClaimSecurityScanBatch(1, 5 * 60_000, 5 * 60_000)).toBe(true);
-  });
-
-  it("keeps successful claims when a parallel claim request fails", async () => {
-    const claimCodexScanJobBatch = (
-      codexScanWorker as typeof codexScanWorker & {
-        claimCodexScanJobBatch?: (
-          claimLimit: number,
-          claimOne: () => Promise<
-            Array<{
-              job: {
-                _id: string;
-                leaseToken: string;
-                targetKind: "skillVersion";
-                source: string;
-                hasMaliciousSignal: boolean;
-                waitForVtUntil: number;
-              };
-              target: Record<string, unknown>;
-            }>
-          >,
-        ) => Promise<{ claimFailures: number; jobs: Array<{ job: { _id: string } }> }>;
-      }
-    ).claimCodexScanJobBatch;
-    expect(claimCodexScanJobBatch).toBeTypeOf("function");
-    if (!claimCodexScanJobBatch) return;
-
-    const claimOne = vi
+  it("keeps refilling after a full lease batch has no hydratable jobs", async () => {
+    const claimJobs = vi
       .fn()
-      .mockResolvedValueOnce([
-        {
-          job: {
-            _id: "securityScanJobs:1",
-            leaseToken: "lease",
-            targetKind: "skillVersion",
-            source: "publish",
-            hasMaliciousSignal: false,
-            waitForVtUntil: 0,
-          },
-          target: {},
-        },
-      ])
-      .mockRejectedValueOnce(
-        new Error(
-          "temporary claim failure https://signed.example.invalid/file?token=claim-secret OPENAI_API_KEY=claim-process-secret",
-        ),
-      )
-      .mockResolvedValueOnce([]);
-    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      .mockResolvedValueOnce({ claimedCount: 2, jobs: [] })
+      .mockResolvedValueOnce({
+        claimedCount: 2,
+        jobs: [{ id: "next-1" }, { id: "next-2" }],
+      })
+      .mockResolvedValue({ claimedCount: 0, jobs: [] });
+    const processClaimedJob = vi.fn(async () => ({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    }));
 
-    await expect(claimCodexScanJobBatch(3, claimOne)).resolves.toMatchObject({
-      claimFailures: 1,
-      jobs: [{ job: { _id: "securityScanJobs:1" } }],
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 2,
+        maxJobs: undefined,
+        canClaim: () => true,
+        claimJobs,
+        processClaimedJob,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 4,
+      totalCompleted: 2,
+      totalClaimFailures: 0,
     });
-    expect(claimOne).toHaveBeenCalledTimes(3);
-    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
-    expect(logged).toContain("security_scan_claim_failed");
-    expect(logged).toContain("temporary claim failure");
-    expect(logged).not.toContain("https://signed.example.invalid");
-    expect(logged).not.toContain("claim-secret");
-    expect(logged).not.toContain("claim-process-secret");
-    stdoutWrite.mockRestore();
+    expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 2, 1]);
+    expect(processClaimedJob).toHaveBeenCalledTimes(2);
   });
 
-  it("counts total claim failures even when no jobs are claimed", async () => {
-    const claimCodexScanJobBatch = (
-      codexScanWorker as typeof codexScanWorker & {
-        claimCodexScanJobBatch?: (
-          claimLimit: number,
-          claimOne: () => Promise<never[]>,
-        ) => Promise<{ claimFailures: number; jobs: Array<{ job: { _id: string } }> }>;
-      }
-    ).claimCodexScanJobBatch;
-    expect(claimCodexScanJobBatch).toBeTypeOf("function");
-    if (!claimCodexScanJobBatch) return;
-
-    const claimOne = vi.fn().mockRejectedValue(new Error("claim outage"));
-    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    await expect(claimCodexScanJobBatch(2, claimOne)).resolves.toMatchObject({
-      claimFailures: 2,
-      jobs: [],
+  it("counts one failed batch lease request without multiplying it by slot count", async () => {
+    const claimJobs = vi.fn(async () => {
+      throw new Error("claim outage");
     });
-    expect(claimOne).toHaveBeenCalledTimes(2);
-    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
-    expect(logged).toContain("security_scan_claim_failed");
-    expect(logged).toContain("claim outage");
-    stdoutWrite.mockRestore();
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: undefined,
+        canClaim: () => true,
+        claimJobs,
+        processClaimedJob: vi.fn(),
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 0,
+      totalClaimFailures: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the priority lane alive after processing a partial batch", async () => {
+    let canClaim = true;
+    const sleep = vi.fn(async () => {
+      canClaim = false;
+    });
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: undefined,
+        canClaim: () => canClaim,
+        claimJobs: vi.fn(async () => ({
+          claimedCount: 1,
+          jobs: [{ id: "publish" }],
+        })),
+        processClaimedJob: vi.fn(async () => ({
+          completed: true,
+          hardFailed: false,
+          retryableFailed: false,
+        })),
+        idlePollMs: 15_000,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 1,
+      totalCompleted: 1,
+    });
+    expect(sleep).toHaveBeenCalledWith(15_000);
+  });
+
+  it("exits a priority worker after reaching its explicit max-jobs cap", async () => {
+    const sleep = vi.fn();
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: 1,
+        canClaim: () => true,
+        claimJobs: vi.fn(async () => ({
+          claimedCount: 1,
+          jobs: [{ id: "publish" }],
+        })),
+        processClaimedJob: vi.fn(async () => ({
+          completed: true,
+          hardFailed: false,
+          retryableFailed: false,
+        })),
+        idlePollMs: 15_000,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 1,
+      totalCompleted: 1,
+    });
+    expect(sleep).not.toHaveBeenCalled();
   });
 
   it("blocks direct local Codex security worker runs without opt-in", () => {

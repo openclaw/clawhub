@@ -448,6 +448,16 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const publicBrowseVersionStateValidator = v.union(
+  v.object({
+    status: v.literal("available"),
+    versionId: v.id("skillVersions"),
+  }),
+  v.object({
+    status: v.literal("unavailable"),
+  }),
+);
+
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -1016,6 +1026,13 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   ownerDeletedAt: v.optional(v.number()),
   ownerDeletedBy: v.optional(v.id("users")),
+  manualRevocation: v.optional(
+    v.object({
+      reason: v.string(),
+      reviewerUserId: v.id("users"),
+      revokedAt: v.number(),
+    }),
+  ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -1241,6 +1258,9 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  // Missing means the rollout backfill has not reached this row. New writes
+  // always store an explicit available or unavailable public-version state.
+  publicVersion: v.optional(publicBrowseVersionStateValidator),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
@@ -1827,6 +1847,20 @@ const securityScanJobs = defineTable({
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
   .index("by_skill_scan_request", ["skillScanRequestId"]);
+
+const securityScanDispatchState = defineTable({
+  key: v.string(),
+  scheduledToken: v.optional(v.string()),
+  scheduledAt: v.optional(v.number()),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  lastDispatchAt: v.optional(v.number()),
+  lastDispatchStatus: v.optional(
+    v.union(v.literal("succeeded"), v.literal("failed"), v.literal("unknown")),
+  ),
+  lastError: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
 
 const skillScanRequests = defineTable({
   actorUserId: v.id("users"),
@@ -3189,6 +3223,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   securityScanJobs,
+  securityScanDispatchState,
   skillScanRequests,
   skillScanRequestFileChunks,
   skillCardGenerationJobs,

@@ -161,6 +161,7 @@ export type ApiV1SkillInstallResolveResponse =
 export const CliTelemetryInstallRequestSchema = type({
   event: '"install"',
   slug: "string",
+  ownerHandle: "string?",
   version: "string?",
   // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",
@@ -471,6 +472,26 @@ export const ApiV1SkillModerationResponseSchema = type({
     }).array(),
   }).or("null"),
 });
+
+export const SkillVersionRevokeRequestSchema = type({
+  state: '"revoked"',
+  reason: "string",
+  ownerHandle: "string?",
+});
+export type SkillVersionRevokeRequest = (typeof SkillVersionRevokeRequestSchema)[inferred];
+
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  versionId: "string",
+  alreadyRevoked: "boolean",
+  replacementVersion: "string|null",
+  skillHidden: "boolean",
+});
+export type ApiV1SkillVersionRevokeResponse =
+  (typeof ApiV1SkillVersionRevokeResponseSchema)[inferred];
 
 export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];

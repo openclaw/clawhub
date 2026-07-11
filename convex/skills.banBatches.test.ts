@@ -730,6 +730,32 @@ describe("skills ban/unban batches", () => {
     expect(patch).not.toHaveBeenCalledWith("skills:removed", expect.anything());
   });
 
+  it("does not restore an independent exact-version revocation hold", async () => {
+    const { ctx, patch } = makeCtx({
+      user: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      skills: [
+        {
+          _id: "skills:revoked",
+          ownerUserId: "users:owner",
+          softDeletedAt: 2_000,
+          moderationStatus: "hidden",
+          moderationReason: "manual.version_revoked",
+          latestVersionId: undefined,
+          tags: {},
+        },
+      ],
+    });
+
+    await expect(
+      restoreUnbanHandler(ctx, { ownerUserId: "users:owner", bannedAt: 1_000 }),
+    ).resolves.toMatchObject({
+      restoredCount: 0,
+      scheduled: false,
+    });
+
+    expect(patch).not.toHaveBeenCalledWith("skills:revoked", expect.anything());
+  });
+
   it("continues stale retired comment cleanup phases at skill reports", async () => {
     const { ctx, query, scheduler } = makeCtx({
       user: { _id: "users:owner", role: "admin" },
