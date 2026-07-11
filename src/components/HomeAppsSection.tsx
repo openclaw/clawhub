@@ -60,7 +60,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
     <Link
       to="/skills"
       search={{ ...SKILLS_BROWSE_SEARCH, q: app.browseQuery }}
-      className="home-v2-apps-tile oc-card oc-card-interactive"
+      className="home-v2-apps-tile"
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
@@ -79,7 +79,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
   return (
     <Link
       to={buildPluginDetailHref(shortcut.packageName)}
-      className="home-v2-apps-tile oc-card oc-card-interactive"
+      className="home-v2-apps-tile"
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
@@ -277,11 +277,7 @@ export function HomeAppsSection() {
           </div>
         </div>
 
-        <div
-          className="home-v2-apps-categories oc-segmented"
-          role="tablist"
-          aria-label="App categories"
-        >
+        <div className="home-v2-apps-categories" role="tablist" aria-label="App categories">
           {appCategories.map((category) => {
             const Icon = category.icon;
             return (
@@ -290,7 +286,7 @@ export function HomeAppsSection() {
                 type="button"
                 role="tab"
                 aria-selected={category.id === activeCategoryId}
-                className="home-v2-apps-category-tab oc-segmented-item"
+                className="home-v2-apps-category-tab"
                 onClick={() => setActiveCategoryId(category.id)}
               >
                 <Icon className="home-v2-apps-category-tab-icon" size={14} aria-hidden="true" />
