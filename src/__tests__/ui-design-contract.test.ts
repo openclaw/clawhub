@@ -136,6 +136,17 @@ describe("restored UI design contract", () => {
     );
   });
 
+  it("keeps dashboard package names inside their rows and attention cards", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".dashboard-catalog-row .skill-list-item-name")).toContain(
+      "max-width: min(48ch, 100%)",
+    );
+    expect(
+      cssRule(css, ".dashboard-final .dashboard-attention-row .skill-list-item-name"),
+    ).toContain("max-width: 100%");
+  });
+
   it("keeps migrated application surfaces on canonical semantic tokens", () => {
     const css = styles();
     const sharedCss = designSystemStyles();

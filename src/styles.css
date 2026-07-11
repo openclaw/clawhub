@@ -31208,7 +31208,14 @@ a[class*="rounded-full"] {
 }
 
 .dashboard-catalog-row .skill-list-item-main {
+  min-width: 0;
   gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.dashboard-catalog-row .skill-list-item-name {
+  flex: 0 1 auto;
+  max-width: min(48ch, 100%);
 }
 
 .dashboard-catalog-version {
@@ -32807,8 +32814,16 @@ a[class*="rounded-full"] {
 
 .dashboard-final .dashboard-attention-row .skill-list-item-main {
   display: grid;
+  width: 100%;
+  min-width: 0;
   justify-items: start;
   gap: 7px;
+}
+
+.dashboard-final .dashboard-attention-row .skill-list-item-name {
+  display: block;
+  width: 100%;
+  max-width: 100%;
 }
 
 .dashboard-final .dashboard-attention-visibility {
