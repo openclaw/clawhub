@@ -1,0 +1,41 @@
+{
+  "baseline": "not run: Crabbox unavailable locally",
+  "candidate": "worktree",
+  "generatedAt": "2026-07-11T13:33:23Z",
+  "lanes": [
+    {
+      "localOutputDir": ".artifacts/clawhub-ui-proof/pr-2962-local/candidate",
+      "name": "candidate",
+      "ref": "worktree",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Home catalog long skill name",
+          "screenshot": "screenshots/home-catalog-long-skill-name.png",
+          "slug": "home-catalog-long-skill-name",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Skills list long name and owner",
+          "screenshot": "screenshots/skills-list-long-name-and-owner.png",
+          "slug": "skills-list-long-name-and-owner",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Plugins list long name and owner",
+          "screenshot": "screenshots/plugins-list-long-name-and-owner.png",
+          "slug": "plugins-list-long-name-and-owner",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": ".artifacts/clawhub-ui-proof/pr-2962-local",
+  "provider": "local",
+  "scenario": ".artifacts/proof-scenarios/pr-2962-long-names.mjs",
+  "status": "pass"
+}
