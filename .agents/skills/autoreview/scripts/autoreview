@@ -146,7 +146,7 @@ SECRET_ASSIGNMENT_PATTERN = re.compile(
     r"'(?P<single_value>[^'\r\n]{12,})'|"
     r"`(?P<backtick_value>[^`\r\n]{12,})`|"
     r"(?P<call_value>[A-Za-z_$][A-Za-z0-9_$]*"
-    r"(?:(?:\?\.|\.)[A-Za-z_$][A-Za-z0-9_$]*)*)(?=\s*\()|"
+    r"(?:(?:\?\.|\.)[A-Za-z_$][A-Za-z0-9_$]*)*)(?=\()|"
     r"(?P<reference_value>[A-Za-z_$][A-Za-z0-9_$]*"
     r"(?:(?:\?\.|\.)[A-Za-z_$][A-Za-z0-9_$]*"
     r"|\[(?:[\"'][A-Za-z_$][A-Za-z0-9_$]*[\"']|[0-9]+)\])+)"
@@ -227,6 +227,10 @@ BACKTICK_SECRET_REFERENCE_PATTERNS = (
         r"(?P<op_quote>[\"'])op://[^`\"'\r\n]+(?P=op_quote)"
         r")$"
     ),
+)
+BACKTICK_TEMPLATE_INTERPOLATION_PATTERN = re.compile(r"\$\{([^{}\r\n]+)\}")
+BACKTICK_TEMPLATE_SAFE_LITERAL_PATTERN = re.compile(
+    r"(?i)(?:(?:Bearer|Basic)[ \t]+|[ \t:./,_-]*)"
 )
 DEFAULT_ENGINE_PATHS = ("/usr/local/bin", "/usr/bin", "/bin")
 # Keep this explicit: suffix matching leaks unrelated process credentials such
@@ -1540,7 +1544,9 @@ def bounded_field(text: str, limit: int) -> str:
 def read_prefix(path: Path, limit: int) -> tuple[bytes, bool]:
     descriptor: int | None = None
     try:
-        before = path.stat(follow_symlinks=False)
+        # os.stat, not Path.stat: the follow_symlinks kwarg on pathlib needs
+        # Python 3.10+, and macOS system python3 is still 3.9.
+        before = os.stat(path, follow_symlinks=False)
         if not stat.S_ISREG(before.st_mode):
             raise OSError("not a regular file")
         flags = (
@@ -1807,7 +1813,183 @@ def safe_secret_assignment_suffix(text: str, end: int) -> bool:
     return True
 
 
-def safe_secret_call_suffix(text: str, end: int) -> bool:
+def split_top_level_call_arguments(text: str) -> list[str]:
+    arguments: list[str] = []
+    start = 0
+    stack: list[str] = []
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    quote: str | None = None
+    escaped = False
+    line_comment = False
+    block_comment = False
+    index = 0
+    while index < len(text):
+        char = text[index]
+        next_char = text[index + 1] if index + 1 < len(text) else ""
+        if line_comment:
+            if char == "\n":
+                line_comment = False
+            index += 1
+            continue
+        if block_comment:
+            if char == "*" and next_char == "/":
+                block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            index += 1
+            continue
+        if char == "/" and next_char == "/":
+            line_comment = True
+            index += 2
+        elif char == "/" and next_char == "*":
+            block_comment = True
+            index += 2
+        elif char in {'"', "'", "`"}:
+            quote = char
+            index += 1
+        elif char in pairs:
+            stack.append(pairs[char])
+            index += 1
+        elif stack and char == stack[-1]:
+            stack.pop()
+            index += 1
+        elif char == "," and not stack:
+            arguments.append(text[start:index])
+            start = index + 1
+            index += 1
+        else:
+            index += 1
+    arguments.append(text[start:])
+    return arguments
+
+
+def safe_credential_lookup_argument(
+    call_target: str,
+    argument: str,
+    argument_index: int,
+) -> bool:
+    if argument_index != 0:
+        return False
+    normalized_target = call_target.replace("?.", ".")
+    if (
+        normalized_target not in {"os.getenv", "os.environ.get"}
+        and not normalized_target.endswith(".headers.get")
+    ):
+        return False
+    match = re.fullmatch(r"\s*([\"'])([^\"'\r\n]+)\1\s*", argument)
+    if match is None:
+        return False
+    key = match.group(2)
+    return (
+        re.fullmatch(r"[A-Z][A-Z0-9_]{2,}", key) is not None
+        or key.casefold() in {"authorization", "proxy-authorization"}
+    )
+
+
+def public_call_argument_risk(
+    call_target: str,
+    argument: str,
+    argument_index: int,
+) -> bool | None:
+    normalized_target = call_target.replace("?.", ".")
+    target_parts = normalized_target.split(".")
+    credential_scope_call = (
+        len(target_parts) >= 2
+        and target_parts[-2] in {"credential", "credentials"}
+        and target_parts[-1] == "get_token"
+    )
+    if not credential_scope_call and normalized_target not in {
+        "input",
+        "getpass.getpass",
+    }:
+        return None
+    if not credential_scope_call and argument_index != 0:
+        return None
+    literal_argument = argument
+    if normalized_target == "getpass.getpass":
+        literal_argument = re.sub(
+            r"^\s*prompt\s*=\s*",
+            "",
+            literal_argument,
+            count=1,
+        )
+    match = re.fullmatch(r"\s*([\"'])([^\"'\r\n]+)\1\s*", literal_argument)
+    if match is None:
+        return None
+    value = match.group(2)
+    if credential_scope_call:
+        decoded_value = value
+        for _ in range(8):
+            next_value = urllib.parse.unquote(decoded_value)
+            if next_value == decoded_value:
+                break
+            decoded_value = next_value
+        else:
+            return True
+        if any(ord(char) < 32 or ord(char) == 127 for char in decoded_value):
+            return True
+        if secret_text_risk(decoded_value):
+            return True
+        if "://" not in decoded_value:
+            return None
+        try:
+            parsed = urllib.parse.urlsplit(decoded_value)
+            hostname = parsed.hostname
+            port = parsed.port
+        except ValueError:
+            return None
+        valid_authority = (
+            parsed.username is None
+            and parsed.password is None
+            and hostname is not None
+            and re.fullmatch(
+                r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+                r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*",
+                hostname,
+            )
+            is not None
+            and (port is None or 1 <= port <= 65535)
+        )
+        valid_scope_uri = (
+            parsed.scheme in {"api", "https"}
+            and valid_authority
+            and parsed.path == "/.default"
+            and not parsed.query
+            and not parsed.fragment
+        )
+        return False if valid_scope_uri else None
+    generic_prompt = re.fullmatch(
+        r"(?i)\s*(?:(?:enter|type|provide)\s+(?:your\s+)?)?"
+        r"(?:password|passphrase)\s*[:?]\s*",
+        value,
+    )
+    return False if generic_prompt is not None else None
+
+
+def call_arguments_risk(arguments: str, call_target: str) -> bool:
+    for index, argument in enumerate(split_top_level_call_arguments(arguments)):
+        public_risk = public_call_argument_risk(call_target, argument, index)
+        if public_risk is not None:
+            if public_risk:
+                return True
+            continue
+        if not safe_credential_lookup_argument(
+            call_target, argument, index
+        ) and fallback_secret_risk(argument):
+            return True
+    return False
+
+
+def safe_secret_call_suffix(text: str, end: int, call_target: str) -> bool:
     if end >= len(text) or text[end] != "(":
         return False
 
@@ -1868,28 +2050,68 @@ def safe_secret_call_suffix(text: str, end: int) -> bool:
                 index += 1
         return None
 
-    cursor = balanced_end(end, "(", ")")
+    def safe_call_end(start: int, target: str) -> int | None:
+        cursor = balanced_end(start, "(", ")")
+        if cursor is None:
+            return None
+        arguments = text[start + 1 : cursor - 1]
+        return None if call_arguments_risk(arguments, target) else cursor
+
+    cursor = safe_call_end(end, call_target)
     if cursor is None:
         return False
+    chained_target = "<call-result>"
     while True:
         match = re.match(r"\s*(?:\?\.|\.)[A-Za-z_][A-Za-z0-9_]*", text[cursor:])
         if match is not None:
+            member = re.search(r"[A-Za-z_][A-Za-z0-9_]*$", match.group(0))
+            assert member is not None
+            chained_target = (
+                f"{chained_target}.{member.group(0)}"
+                if chained_target
+                else member.group(0)
+            )
             cursor += match.end()
             continue
         whitespace = re.match(r"\s*", text[cursor:])
         assert whitespace is not None
         call_start = cursor + whitespace.end()
         if call_start < len(text) and text[call_start] == "(":
-            cursor = balanced_end(call_start, "(", ")")
+            cursor = safe_call_end(call_start, chained_target)
             if cursor is None:
                 return False
+            chained_target = "<call-result>"
             continue
         if call_start < len(text) and text[call_start] == "[":
             cursor = balanced_end(call_start, "[", "]")
             if cursor is None:
                 return False
+            chained_target = "<call-result>"
             continue
         return safe_secret_assignment_suffix(text, cursor)
+
+
+def safe_backtick_secret_template(value: str) -> bool:
+    cursor = 0
+    found_interpolation = False
+    for match in BACKTICK_TEMPLATE_INTERPOLATION_PATTERN.finditer(value):
+        literal = value[cursor : match.start()]
+        if BACKTICK_TEMPLATE_SAFE_LITERAL_PATTERN.fullmatch(literal) is None:
+            return False
+        expression = match.group(1).strip()
+        quoted_reference = "${" + expression + "}"
+        if not any(
+            pattern.fullmatch(quoted_reference)
+            for pattern in QUOTED_SECRET_REFERENCE_PATTERNS
+        ):
+            return False
+        found_interpolation = True
+        cursor = match.end()
+    literal = value[cursor:]
+    return (
+        found_interpolation
+        and BACKTICK_TEMPLATE_SAFE_LITERAL_PATTERN.fullmatch(literal) is not None
+    )
 
 
 def secret_text_risk(text: str) -> bool:
@@ -1912,9 +2134,12 @@ def secret_text_risk(text: str) -> bool:
             continue
         if (
             match.group("backtick_value") is not None
-            and any(
-                pattern.fullmatch(value)
-                for pattern in BACKTICK_SECRET_REFERENCE_PATTERNS
+            and (
+                any(
+                    pattern.fullmatch(value)
+                    for pattern in BACKTICK_SECRET_REFERENCE_PATTERNS
+                )
+                or safe_backtick_secret_template(value)
             )
             and safe_secret_assignment_suffix(text, match.end())
         ):
@@ -1933,7 +2158,7 @@ def secret_text_risk(text: str) -> bool:
             value,
         )
         if not quoted and call_target and text[match.end() :].startswith("("):
-            if safe_secret_call_suffix(text, match.end()):
+            if safe_secret_call_suffix(text, match.end(), value):
                 continue
             return True
         if any(pattern.fullmatch(value) for pattern in reference_patterns):
@@ -2606,6 +2831,8 @@ def build_prompt(repo: Path, target: str, target_ref: str | None, bundle: str, e
         - Shell commands, if available, must be read-only inspection commands. Do not run tests, formatters, package installs, generators, network mutation commands, git mutation commands, or commands that write files.
         - Report only actionable defects introduced or exposed by this change.
         - Prefer high-signal findings over style feedback.
+        - Report EVERY distinct actionable defect in this single pass, ordered most severe first. Each review round costs the caller a full fix-test-review cycle; withholding a known defect until a later round wastes one.
+        - Before returning, sweep the bundle once more for independent defects in other files or failure modes that you may have stopped scanning for after an earlier find.
         - Include security findings: injection, secret leaks, authz/authn bypass, path traversal, unsafe deserialization, unsafe filesystem or shell use, privacy leaks, and credential handling.
         - Do not reject legitimate functionality merely because it touches shell, filesystem, network, auth, or sensitive data. Report a security finding only when the patch creates a concrete exploitable risk, removes an important safety check, or lacks validation at a trust boundary.
         - For each finding, use the smallest file/line location that demonstrates the issue.
