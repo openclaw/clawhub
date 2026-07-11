@@ -17483,8 +17483,21 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .publisher-published-rail-item {
+  position: relative;
   display: inline-flex;
   margin-left: -10px;
+}
+
+.publisher-published-rail-item:nth-child(1) {
+  z-index: 3;
+}
+
+.publisher-published-rail-item:nth-child(2) {
+  z-index: 2;
+}
+
+.publisher-published-rail-item:nth-child(3) {
+  z-index: 1;
 }
 
 .publisher-published-rail .marketplace-icon {
@@ -17517,6 +17530,21 @@ a.agentic-risk-finding-title:focus-visible {
 
 .browse-page .publisher-directory-list .publisher-card-list .publisher-card-copy {
   gap: 3px;
+}
+
+.browse-page .publisher-directory-list .publisher-card-list .publisher-card-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.browse-page .publisher-directory-list .publisher-card-list .publisher-card-title-row {
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.browse-page .publisher-directory-list .publisher-card-list .publisher-card-handle {
+  min-width: 0;
 }
 
 .browse-page .publisher-directory-list .publisher-card-list .publisher-card-name {
@@ -17573,6 +17601,11 @@ a.agentic-risk-finding-title:focus-visible {
   border-radius: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.browse-page .publisher-published-rail .marketplace-icon {
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .browse-page .publisher-directory-list .publisher-card .marketplace-icon {
