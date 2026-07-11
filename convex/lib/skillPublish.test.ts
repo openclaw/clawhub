@@ -12,66 +12,60 @@ vi.mock("./embeddings", () => ({
 }));
 
 describe("skillPublish", () => {
-  it("rejects new skills with display names over the publish limit", async () => {
+  it("publishes long display names without rewriting the stored label", async () => {
+    const displayName = "A".repeat(120);
+    const skillMarkdown = `---\ndescription: Long compatibility name.\n---\n# ${displayName}\n`;
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:long-name",
+          versionId: "skillVersions:long-name",
+          embeddingId: "skillEmbeddings:long-name",
+        };
+      }
+      return null;
+    });
     const ctx = {
-      runQuery: vi.fn(async () => null),
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
       storage: {
-        get: vi.fn(async () => {
-          throw new Error("storage should not be read");
-        }),
+        get: vi.fn(async () => new Blob([skillMarkdown])),
       },
     };
 
-    await expect(
-      publishVersionForUser(
-        ctx as never,
-        "users:1" as never,
-        {
-          slug: "long-name",
-          displayName: "A".repeat(41),
-          version: "1.0.0",
-          changelog: "Initial release",
-          files: [
-            {
-              path: "SKILL.md",
-              size: 6,
-              storageId: "_storage:skill" as never,
-              sha256: "a".repeat(64),
-              contentType: "text/markdown",
-            },
-          ],
-        },
-        {
-          bypassGitHubAccountAge: true,
-          bypassQualityGate: true,
-        },
-      ),
-    ).rejects.toThrow(/Display name must be 40 characters or less/i);
-    expect(ctx.storage.get).not.toHaveBeenCalled();
-  });
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "long-name",
+        displayName,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: skillMarkdown.length,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
 
-  it("grandfathers existing skills that already have over-limit display names", () => {
-    const legacyName = "B".repeat(41);
-    expect(
-      __test.shouldEnforceDisplayNameLimit(legacyName, {
-        displayName: legacyName,
-      } as never),
-    ).toBe(false);
-    expect(
-      __test.shouldEnforceDisplayNameLimit("Shorter legacy name", {
-        displayName: legacyName,
-      } as never),
-    ).toBe(false);
-    expect(
-      __test.shouldEnforceDisplayNameLimit("A".repeat(41), {
-        displayName: legacyName,
-      } as never),
-    ).toBe(true);
-    expect(
-      __test.shouldEnforceDisplayNameLimit("A".repeat(41), {
-        displayName: "Existing short name",
-      } as never),
-    ).toBe(true);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ displayName }),
+    );
   });
 
   it("ignores taxonomy declarations from metadata.openclaw.json", async () => {

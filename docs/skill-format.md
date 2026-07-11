@@ -42,6 +42,12 @@ Workdir install state (written by the CLI):
 - The server extracts metadata from frontmatter during publish.
 - `description` is used as the skill summary in the UI/search.
 
+For portable Agent Skills, `name` should match the parent directory and use
+1–64 lowercase letters, numbers, or hyphens. ClawHub keeps the routable slug and
+catalog display name separate, so existing names from other clients remain
+publishable and are not silently rewritten. Catalog lists may shorten long names
+visually without changing the stored name.
+
 ## Frontmatter metadata
 
 Skill metadata is declared in the YAML frontmatter at the top of your `SKILL.md`. This tells the registry (and security analysis) what your skill needs to run.

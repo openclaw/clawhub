@@ -16830,6 +16830,22 @@ a.agentic-risk-finding-title:focus-visible {
   line-height: 1.25;
 }
 
+.skill-list-item-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.skill-list-item-identity .skill-list-item-name {
+  flex: 1 1 auto;
+}
+
+.skill-list-item-identity .skill-list-item-owner {
+  flex: 0 0 auto;
+}
+
 .skill-list-item-body {
   display: grid;
   gap: 5px;
@@ -22203,7 +22219,7 @@ a.search-empty-action {
 }
 
 .home-v2-listing-head {
-  --home-v2-listing-copy-max: min(24rem, 42vw);
+  --home-v2-listing-copy-max: min(54rem, 60vw);
   display: grid;
   grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;
   gap: 16px 20px;
@@ -22498,7 +22514,7 @@ a.search-empty-action {
 }
 
 .home-v2-listing-row {
-  --home-v2-listing-copy-max: min(24rem, 42vw);
+  --home-v2-listing-copy-max: min(54rem, 60vw);
   position: relative;
   display: grid;
   grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr auto;

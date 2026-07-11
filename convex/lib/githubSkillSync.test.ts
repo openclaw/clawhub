@@ -1,4 +1,3 @@
-import { MAX_SKILL_DISPLAY_NAME_LENGTH } from "clawhub-schema";
 import { describe, expect, it } from "vitest";
 import {
   buildGitHubSkillSourceSnapshot,
@@ -183,19 +182,18 @@ describe("buildGitHubSkillSourceSnapshot", () => {
     expect(snapshot.skills[0]?.displayName).toBe("AIQ Deploy");
   });
 
-  it("caps GitHub-backed display names before they can enter catalog writes", async () => {
+  it("preserves long frontmatter display names from compatible GitHub sources", async () => {
+    const displayName = "A".repeat(120);
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
       commit: "1".repeat(40),
       entries: repoEntries({
-        "skills/this-slug-is-also-longer-than-forty-characters/SKILL.md":
-          "---\nname: This display name is intentionally much longer than forty characters\n---\n# Long\n",
+        "skills/long-name/SKILL.md": `---\nname: ${displayName}\n---\n# Long name\n`,
       }),
     });
 
-    expect(snapshot.skills[0]?.displayName).toMatch(/^This Slug Is Also Longer Than Forty/);
-    expect(snapshot.skills[0]?.displayName).toHaveLength(MAX_SKILL_DISPLAY_NAME_LENGTH);
+    expect(snapshot.skills[0]?.displayName).toBe(displayName);
   });
 
   it("rejects oversized cached markdown before writing Convex content docs", async () => {
@@ -305,48 +303,6 @@ describe("buildGitHubSkillSyncPlan", () => {
     });
     expect(plan.skillPatches[0]?.patch).not.toHaveProperty("updatedAt");
     expect(plan.skillPatches[0]?.patch).not.toHaveProperty("latestVersionSummary");
-    expect(plan.stats.unchanged).toBe(1);
-  });
-
-  it("preserves existing over-limit GitHub-backed display names during sync", async () => {
-    const snapshot = await buildGitHubSkillSourceSnapshot({
-      repo: "NVIDIA/skills",
-      defaultBranch: "main",
-      commit: "2".repeat(40),
-      entries: repoEntries({
-        "skills/this-slug-is-also-longer-than-forty-characters/SKILL.md":
-          "---\nname: This display name is intentionally much longer than forty characters\n---\n# Long\n",
-      }),
-    });
-    const contentHash = snapshot.skills[0]?.contentHash ?? "";
-    const legacyDisplayName = "This existing GitHub-backed display name is longer than forty characters";
-
-    const plan = buildGitHubSkillSyncPlan({
-      sourceId: "githubSkillSources:nvidia",
-      ownerUserId: "users:nvidia",
-      ownerPublisherId: "publishers:nvidia",
-      existingSkills: [
-        {
-          _id: "skills:long-name",
-          slug: "this-slug-is-also-longer-than-forty-characters",
-          displayName: legacyDisplayName,
-          githubPath: "skills/this-slug-is-also-longer-than-forty-characters",
-          githubCurrentStatus: "present",
-          githubCurrentContentHash: contentHash,
-          githubScanStatus: "clean",
-        },
-      ],
-      snapshot,
-      now: 123,
-    });
-
-    expect(snapshot.skills[0]?.displayName).not.toBe(legacyDisplayName);
-    expect(plan.skillPatches[0]?.patch).toMatchObject({
-      displayName: legacyDisplayName,
-      githubCurrentContentHash: contentHash,
-      githubScanStatus: "clean",
-    });
-    expect(plan.skillPatches[0]?.patch).not.toHaveProperty("updatedAt");
     expect(plan.stats.unchanged).toBe(1);
   });
 

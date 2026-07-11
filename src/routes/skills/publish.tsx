@@ -1,10 +1,5 @@
 import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import {
-  inferSkillCategories,
-  isSkillCategorySlug,
-  MAX_SKILL_DISPLAY_NAME_LENGTH,
-  resolveSkillCategories,
-} from "clawhub-schema";
+import { inferSkillCategories, isSkillCategorySlug, resolveSkillCategories } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -327,8 +322,8 @@ export function Upload() {
     if (!existing?.latestVersion || !existing?.skill) return;
     const name = existing.skill.displayName;
     const nextSlug = existing.skill.slug;
-    if (nextSlug && !dirtyFields.slug) setSlug(nextSlug);
-    if (name && !dirtyFields.displayName) setDisplayName(name);
+    if (nextSlug) setSlug(nextSlug);
+    if (name) setDisplayName(name);
     if (!categoriesTouchedRef.current) {
       const nextCategories = (existing.skill.categories ?? []).filter(isSkillCategorySlug);
       setCategories((current) =>
@@ -347,8 +342,8 @@ export function Upload() {
       setSummary((current) => (current === nextSummary ? current : nextSummary));
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
-    if (nextVersion && !dirtyFields.version) setVersion(nextVersion);
-  }, [dirtyFields.displayName, dirtyFields.slug, dirtyFields.version, existing]);
+    if (nextVersion) setVersion(nextVersion);
+  }, [existing]);
 
   useEffect(() => {
     if (summaryTouchedRef.current) return;
@@ -462,11 +457,6 @@ export function Upload() {
   // `confirmMigrateOwner` checkbox, mirroring the backend's `migrateOwner`
   // contract.
   const existingOwnerHandle = existing?.owner?.handle ?? null;
-  const hasGrandfatheredDisplayName = Boolean(
-    updateSlug &&
-    existing?.skill?.displayName &&
-    existing.skill.displayName.length > MAX_SKILL_DISPLAY_NAME_LENGTH,
-  );
   const isOwnerMigration = Boolean(
     updateSlug && existingOwnerHandle && ownerHandle && ownerHandle !== existingOwnerHandle,
   );
@@ -488,11 +478,6 @@ export function Upload() {
     }
     if (!trimmedName) {
       issues.push("Display name is required.");
-    } else if (
-      trimmedName.length > MAX_SKILL_DISPLAY_NAME_LENGTH &&
-      (!hasGrandfatheredDisplayName || trimmedName !== existing?.skill?.displayName)
-    ) {
-      issues.push(`Display name must be ${MAX_SKILL_DISPLAY_NAME_LENGTH} characters or less.`);
     }
     if (!semver.valid(trimmedVersion)) {
       issues.push("Version must be valid semver (e.g. 1.0.0).");
@@ -554,8 +539,6 @@ export function Upload() {
     isOwnerMigration,
     confirmMigrateOwner,
     existingOwnerHandle,
-    existing?.skill?.displayName,
-    hasGrandfatheredDisplayName,
     ownerHandle,
     trimmedSummary,
   ]);
@@ -585,7 +568,7 @@ export function Upload() {
   const showSlugUnavailableIcon = Boolean(slugCollisionIssue);
   const showSlugStatusIcon = showSlugAvailableIcon || showSlugUnavailableIcon;
   const displayNameIssue = shouldShowDisplayNameIssue
-    ? validation.issues.find((issue) => issue.startsWith("Display name"))
+    ? validation.issues.find((issue) => issue === "Display name is required.")
     : undefined;
   const versionIssue = shouldShowVersionIssue
     ? validation.issues.find((issue) => issue.startsWith("Version must "))
@@ -1119,9 +1102,6 @@ export function Upload() {
                       markFieldDirty("displayName");
                       setDisplayName(event.target.value);
                     }}
-                    maxLength={
-                      hasGrandfatheredDisplayName ? undefined : MAX_SKILL_DISPLAY_NAME_LENGTH
-                    }
                     placeholder="My skill"
                   />
                   <InlineValidationMessage

@@ -5,7 +5,7 @@ import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
-import { truncateText } from "../lib/truncateText";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -41,8 +41,12 @@ export function SkillListItem({
       <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} skill={skill} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
-          <span className="skill-list-item-name">{truncateText(skill.displayName, 40)}</span>
-          {handle ? <span className="skill-list-item-owner">@{handle}</span> : null}
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={skill.displayName}>
+              {truncateText(skill.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </span>
+            {handle ? <span className="skill-list-item-owner">@{handle}</span> : null}
+          </span>
           {isOfficial ? <OfficialBadge /> : null}
           {badges
             .filter((badge) => badge !== "Verified")

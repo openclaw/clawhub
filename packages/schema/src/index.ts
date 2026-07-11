@@ -11,5 +11,4 @@ export * from "./pluginCategories.js";
 export * from "./promotionsFeed.js";
 export { ApiRoutes, LegacyApiRoutes } from "./routes.js";
 export * from "./schemas.js";
-export * from "./skillLimits.js";
 export * from "./textFiles.js";

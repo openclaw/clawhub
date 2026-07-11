@@ -407,52 +407,6 @@ describe("Upload route", () => {
     expect(messages[0]?.id).toBe("display-name-validation-error");
   });
 
-  it("shows display name length validation inline", () => {
-    render(<Upload />);
-    const displayNameInput = screen.getByPlaceholderText("My skill");
-
-    fireEvent.change(displayNameInput, { target: { value: "A".repeat(41) } });
-
-    const message = screen.getByText(/Display name must be 40 characters or less\./i);
-    expect(message.id).toBe("display-name-validation-error");
-    expect(displayNameInput.getAttribute("maxLength")).toBe("40");
-  });
-
-  it("allows updates to keep an existing over-limit display name", async () => {
-    useSearchMock.mockReturnValue({ updateSlug: "legacy-long-name" });
-    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
-      if (name === "skills:getBySlug") {
-        return {
-          skill: {
-            slug: "legacy-long-name",
-            displayName: "A".repeat(45),
-          },
-          latestVersion: { version: "1.0.0" },
-          owner: { handle: "alice", displayName: "Alice" },
-        };
-      }
-      if (name === "publishers:listMine") return [];
-      return null;
-    });
-
-    render(<Upload />);
-    const displayNameInput = (await screen.findByDisplayValue("A".repeat(45))) as HTMLInputElement;
-
-    expect(displayNameInput.getAttribute("maxLength")).toBeNull();
-
-    fireEvent.submit(screen.getByRole("button", { name: /publish skill/i }).closest("form")!);
-
-    expect(screen.queryByText(/Display name must be 40 characters or less\./i)).toBeNull();
-
-    fireEvent.change(displayNameInput, { target: { value: "B".repeat(45) } });
-
-    await waitFor(() => {
-      expect(screen.getByText(/Display name must be 40 characters or less\./i)).toBeTruthy();
-    });
-  });
-
   it("marks the input for folder uploads", async () => {
     render(<Upload />);
     const input = screen.getByTestId("upload-input");

@@ -49,7 +49,7 @@ import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
-import { truncateText } from "../lib/truncateText";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -197,7 +197,9 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
-          <span className="home-v2-listing-row-name">{name}</span>
+          <span className="home-v2-listing-row-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {handle ? <span className="home-v2-listing-row-by">@{handle}</span> : null}
         </div>
         <p className="home-v2-listing-row-summary">
@@ -231,7 +233,9 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
-          <span className="home-v2-listing-row-name">{name}</span>
+          <span className="home-v2-listing-row-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {plugin.ownerHandle ? (
             <span className="home-v2-listing-row-by">@{plugin.ownerHandle}</span>
           ) : null}
@@ -267,7 +271,9 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
           <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
         </span>
         <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name">{name}</span>
+          <span className="home-v2-listing-card-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {handle ? <span className="home-v2-listing-card-by">@{handle}</span> : null}
         </div>
       </div>
@@ -301,7 +307,9 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
           <MarketplaceIcon kind="plugin" label={name} size="sm" />
         </span>
         <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name">{name}</span>
+          <span className="home-v2-listing-card-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           <span className="home-v2-listing-card-by-row">
             {plugin.ownerHandle ? (
               <span className="home-v2-listing-card-by">@{plugin.ownerHandle}</span>

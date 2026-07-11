@@ -1,4 +1,3 @@
-import { MAX_SKILL_DISPLAY_NAME_LENGTH } from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
@@ -212,7 +211,7 @@ export async function buildGitHubSkillSourceSnapshot({
 
     skills.push({
       slug,
-      displayName: normalizeGitHubSkillDisplayName(frontmatterName || heading, slug),
+      displayName: frontmatterName || heading || titleizeSlug(slug),
       ...(frontmatterDescription ? { summary: frontmatterDescription } : {}),
       ...(frontmatterVersion ? { upstreamVersion: frontmatterVersion } : {}),
       path,
@@ -366,19 +365,14 @@ export function buildGitHubSkillSyncPlan({
       discovered.upstreamVersion,
       existing.latestVersionSummary?.createdAt ?? now,
     );
-    const nextDisplayName =
-      existing.displayName.length > MAX_SKILL_DISPLAY_NAME_LENGTH &&
-      discovered.displayName.length >= MAX_SKILL_DISPLAY_NAME_LENGTH
-        ? existing.displayName
-        : discovered.displayName;
     const materialChanged =
       !currentContentUnchanged ||
-      existing.displayName !== nextDisplayName ||
+      existing.displayName !== discovered.displayName ||
       (existing.summary ?? undefined) !== (discovered.summary ?? undefined) ||
       (existing.githubPath ?? undefined) !== discovered.path ||
       !sameLatestVersionSummary(existing.latestVersionSummary, nextLatestVersionSummary);
     const patch = {
-      displayName: nextDisplayName,
+      displayName: discovered.displayName,
       summary: discovered.summary,
       ownerUserId,
       ...(ownerPublisherId ? { ownerPublisherId } : {}),
@@ -438,14 +432,6 @@ function githubScanStatusForUnchangedContent(
 ): GitHubSkillScanStatus {
   if (shouldPreserveSecurityScanStateForUnchangedContent(status)) return status;
   return "pending";
-}
-
-function normalizeGitHubSkillDisplayName(name: string | undefined, slug: string) {
-  const preferred = name?.trim() || titleizeSlug(slug);
-  if (preferred.length <= MAX_SKILL_DISPLAY_NAME_LENGTH) return preferred;
-  const fallback = titleizeSlug(slug);
-  if (fallback.length <= MAX_SKILL_DISPLAY_NAME_LENGTH) return fallback;
-  return fallback.slice(0, MAX_SKILL_DISPLAY_NAME_LENGTH).trimEnd();
 }
 
 export function githubBackedSkillModeration(

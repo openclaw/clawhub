@@ -53,6 +53,31 @@ describe("SkillCard", () => {
     expect(screen.getByText("#google-calendar")).toBeTruthy();
     expect(screen.getByText("#productivity")).toBeTruthy();
   });
+
+  it("shows standard-length names in full and previews longer compatibility names", () => {
+    const portableName = "S".repeat(64);
+    const compatibilityName = "L".repeat(71);
+    const { rerender } = render(
+      <SkillCard
+        skill={makeSkill({ displayName: portableName })}
+        summaryFallback="Fallback summary"
+        meta={<span>meta</span>}
+      />,
+    );
+
+    expect(screen.getByText(portableName)).toBeTruthy();
+
+    rerender(
+      <SkillCard
+        skill={makeSkill({ displayName: compatibilityName })}
+        summaryFallback="Fallback summary"
+        meta={<span>meta</span>}
+      />,
+    );
+
+    const preview = `${"L".repeat(69)}…`;
+    expect(screen.getByText(preview).getAttribute("title")).toBe(compatibilityName);
+  });
 });
 
 function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {
