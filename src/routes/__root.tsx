@@ -205,12 +205,16 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             closeButton
             position="bottom-right"
             toastOptions={{
+              classNames: {
+                closeButton: "clawhub-toast-close",
+              },
               style: {
                 background: "var(--oc-bg-elevated)",
                 color: "var(--oc-text-primary)",
                 border: "1px solid var(--oc-border-subtle)",
                 borderRadius: "var(--oc-radius-control)",
                 fontFamily: "var(--oc-font-body)",
+                paddingRight: "48px",
               },
             }}
           />

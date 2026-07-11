@@ -361,6 +361,30 @@ html {
   scrollbar-gutter: stable;
 }
 
+[data-sonner-toast][data-styled="true"] .clawhub-toast-close {
+  top: 50% !important;
+  right: 14px !important;
+  left: auto !important;
+  width: 24px !important;
+  height: 24px !important;
+  border: 0 !important;
+  border-radius: var(--oc-radius-control) !important;
+  background: transparent !important;
+  color: var(--oc-text-muted) !important;
+  transform: translateY(-50%) !important;
+}
+
+[data-sonner-toast][data-styled="true"] .clawhub-toast-close:hover {
+  background: var(--oc-surface-interactive) !important;
+  color: var(--oc-text-primary) !important;
+}
+
+[data-sonner-toast][data-styled="true"] .clawhub-toast-close:focus-visible {
+  background: var(--oc-surface-interactive) !important;
+  box-shadow: 0 0 0 2px var(--oc-focus-ring) !important;
+  color: var(--oc-text-primary) !important;
+}
+
 /*
  * Radix UI (react-remove-scroll) locks body scroll when a dropdown/dialog/popover
  * opens and, to prevent the scrollbar from disappearing visibly, injects a
@@ -21841,7 +21865,7 @@ a.search-empty-action {
   --clawhub-segmented-h: calc(var(--clawhub-segmented-seg-h) + 8px);
   --home-v2-listing-control-h: var(--clawhub-segmented-h);
   --home-v2-listing-control-seg-h: var(--clawhub-segmented-seg-h);
-  --clawhub-segmented-border: var(--line);
+  --clawhub-segmented-border: color-mix(in srgb, var(--line) 58%, transparent);
   --clawhub-segmented-bg: color-mix(in srgb, var(--surface) 95%, transparent);
   --clawhub-segmented-fg: var(--ink-soft);
   --clawhub-segmented-fg-hover: var(--ink);
@@ -21944,7 +21968,7 @@ a.search-empty-action {
 .app-shell:has(.home-v2-main) .home-v2-listing-kind,
 .app-shell:has(.home-v2-main) .home-v2-listing-view,
 .app-shell:has(.home-v2-main) .browse-view-toggle {
-  --clawhub-segmented-border: var(--hv2-border-strong);
+  --clawhub-segmented-border: color-mix(in srgb, var(--hv2-border) 72%, transparent);
   --clawhub-segmented-bg: color-mix(in srgb, var(--hv2-surface) 95%, transparent);
   --clawhub-segmented-fg: var(--hv2-text-tertiary);
   --clawhub-segmented-fg-hover: var(--hv2-text-secondary);
@@ -29253,7 +29277,7 @@ a[class*="rounded-full"] {
 .clawhub-segmented {
   --clawhub-segmented-seg-h: 30px;
   --clawhub-segmented-h: calc(var(--clawhub-segmented-seg-h) + 8px);
-  --clawhub-segmented-border: var(--line);
+  --clawhub-segmented-border: color-mix(in srgb, var(--line) 58%, transparent);
   --clawhub-segmented-bg: color-mix(in srgb, var(--surface) 95%, transparent);
   --clawhub-segmented-fg: var(--ink-soft);
   --clawhub-segmented-fg-hover: var(--ink);
@@ -29320,7 +29344,7 @@ a[class*="rounded-full"] {
 }
 
 .app-shell:has(.home-v2-main) .clawhub-segmented {
-  --clawhub-segmented-border: var(--hv2-border-strong);
+  --clawhub-segmented-border: color-mix(in srgb, var(--hv2-border) 72%, transparent);
   --clawhub-segmented-bg: color-mix(in srgb, var(--hv2-surface) 95%, transparent);
   --clawhub-segmented-fg: var(--hv2-text-tertiary);
   --clawhub-segmented-fg-hover: var(--hv2-text-secondary);

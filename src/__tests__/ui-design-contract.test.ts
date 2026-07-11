@@ -162,11 +162,34 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".browse-tab.is-active")).not.toContain("font-weight");
   });
 
+  it("keeps shared segmented controls visually quiet across homepage variants", () => {
+    const css = styles();
+
+    expect(css).toContain("--clawhub-segmented-border: color-mix(in srgb, var(--line) 58%");
+    expect(css).toContain("--clawhub-segmented-border: color-mix(in srgb, var(--hv2-border) 72%");
+    expect(css).not.toContain("--clawhub-segmented-border: var(--hv2-border-strong)");
+    expect(cssRule(css, ".clawhub-segmented")).toContain(
+      "border: 1px solid var(--clawhub-segmented-border)",
+    );
+    expect(cssRule(css, ".clawhub-segmented-btn.browse-view-btn")).toContain(
+      "width: var(--clawhub-segmented-seg-h)",
+    );
+  });
+
   it("makes global toasts dismissible", () => {
     const rootSource = rootRoute();
+    const css = styles();
 
     expect(rootSource).toContain("<Toaster");
     expect(rootSource).toContain("closeButton");
+    expect(rootSource).toContain('closeButton: "clawhub-toast-close"');
+    expect(rootSource).toContain('paddingRight: "48px"');
+    expect(cssRule(css, '[data-sonner-toast][data-styled="true"] .clawhub-toast-close')).toContain(
+      "right: 14px !important",
+    );
+    expect(cssRule(css, '[data-sonner-toast][data-styled="true"] .clawhub-toast-close')).toContain(
+      "background: transparent !important",
+    );
   });
 
   it("keeps migrated application surfaces on canonical semantic tokens", () => {
