@@ -147,6 +147,14 @@ describe("restored UI design contract", () => {
     ).toContain("max-width: 100%");
   });
 
+  it("keeps the homepage CLI band full bleed after design-system styles load", () => {
+    const css = styles();
+    const cliBand = cssRule(css, ".home-v2-byos.oc-section");
+
+    expect(cliBand).toContain("width: 100vw");
+    expect(cliBand).toContain("max-width: none");
+  });
+
   it("keeps migrated application surfaces on canonical semantic tokens", () => {
     const css = styles();
     const sharedCss = designSystemStyles();

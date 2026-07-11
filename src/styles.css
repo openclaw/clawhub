@@ -27554,7 +27554,7 @@ a.home-v2-apps-see-all:focus-visible svg {
 
 /* ===== Home v2 — Bring your skills (CLI) ===== */
 
-.home-v2-byos {
+.home-v2-byos.oc-section {
   --byos-x: 50%;
   --byos-y: 42%;
   --byos-intensity: 0;
