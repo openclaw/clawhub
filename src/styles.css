@@ -18092,7 +18092,7 @@ body:has(.browse-page-borderless-header) .navbar {
   cursor: pointer;
   font: inherit;
   font-size: 14px;
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
   transition:
@@ -18114,7 +18114,6 @@ body:has(.browse-page-borderless-header) .navbar {
 .browse-tab.is-active {
   border-bottom-color: var(--ink);
   color: var(--ink);
-  font-weight: 600;
 }
 
 .browse-tab-count {

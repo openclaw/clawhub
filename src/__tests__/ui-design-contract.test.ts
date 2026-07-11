@@ -155,6 +155,20 @@ describe("restored UI design contract", () => {
     expect(cliBand).toContain("max-width: none");
   });
 
+  it("keeps browse segmented labels stable across active state changes", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".browse-tab")).toContain("font-weight: 600");
+    expect(cssRule(css, ".browse-tab.is-active")).not.toContain("font-weight");
+  });
+
+  it("makes global toasts dismissible", () => {
+    const rootSource = rootRoute();
+
+    expect(rootSource).toContain("<Toaster");
+    expect(rootSource).toContain("closeButton");
+  });
+
   it("keeps migrated application surfaces on canonical semantic tokens", () => {
     const css = styles();
     const sharedCss = designSystemStyles();

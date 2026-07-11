@@ -202,6 +202,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <Footer />
           </div>
           <Toaster
+            closeButton
             position="bottom-right"
             toastOptions={{
               style: {
