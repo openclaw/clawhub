@@ -189,6 +189,8 @@ type PackageApiErrorOptions = {
   retryAfterSeconds?: number | null;
 };
 
+type PackageApiViewerMode = "request" | "anonymous";
+
 export class PackageApiError extends Error {
   status: number;
   retryAfterSeconds: number | null;
@@ -229,7 +231,7 @@ export function getPackageArtifactDownloadPath(name: string, version: string) {
   );
 }
 
-async function getForwardedHeaders() {
+async function getForwardedHeaders(viewerMode: PackageApiViewerMode) {
   if (typeof window !== "undefined" || !import.meta.env.SSR) return {};
   try {
     const serverRuntimeModule = "@tanstack/react-start/server";
@@ -246,8 +248,10 @@ async function getForwardedHeaders() {
       "x-real-ip",
       "fly-client-ip",
     ] as const;
-    if (cookie) headers.cookie = cookie;
-    if (authorization) headers.authorization = authorization;
+    if (viewerMode === "request") {
+      if (cookie) headers.cookie = cookie;
+      if (authorization) headers.authorization = authorization;
+    }
     for (const headerName of clientIpHeaders) {
       const value = requestHeaders.get(headerName);
       if (value) headers[headerName] = value;
@@ -258,8 +262,13 @@ async function getForwardedHeaders() {
   }
 }
 
-async function packageFetch(url: URL, accept: string, signal?: AbortSignal) {
-  const forwarded = await getForwardedHeaders();
+async function packageFetch(
+  url: URL,
+  accept: string,
+  signal?: AbortSignal,
+  viewerMode: PackageApiViewerMode = "request",
+) {
+  const forwarded = await getForwardedHeaders(viewerMode);
   const isSameOrigin = typeof window !== "undefined" && url.origin === window.location.origin;
   return await fetch(url.toString(), {
     method: "GET",
@@ -267,7 +276,7 @@ async function packageFetch(url: URL, accept: string, signal?: AbortSignal) {
     // rewrite). Cross-origin requests to the Convex site URL don't need
     // cookies, and `credentials: "include"` is rejected when the server
     // responds with `Access-Control-Allow-Origin: *`.
-    credentials: isSameOrigin ? "include" : "omit",
+    credentials: viewerMode === "request" && isSameOrigin ? "include" : "omit",
     headers: {
       Accept: accept,
       ...forwarded,
@@ -315,8 +324,12 @@ function normalizePackageApiErrorBody(status: number, body: string) {
   return body || `Request failed with status ${status}`;
 }
 
-async function fetchJson<T>(url: URL, signal?: AbortSignal): Promise<T> {
-  const response = await packageFetch(url, "application/json", signal);
+async function fetchJson<T>(
+  url: URL,
+  signal?: AbortSignal,
+  viewerMode?: PackageApiViewerMode,
+): Promise<T> {
+  const response = await packageFetch(url, "application/json", signal, viewerMode);
   if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as T;
 }
@@ -334,6 +347,7 @@ export async function fetchPackages(params: {
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
+  viewerMode?: PackageApiViewerMode;
 }) {
   if (params.q?.trim()) {
     const url = await packageApiUrl(`${ApiRoutes.packages}/search`);
@@ -352,7 +366,7 @@ export async function fetchPackages(params: {
         score: number;
         package: PackageListItem;
       }>;
-    }>(url, params.signal);
+    }>(url, params.signal, params.viewerMode);
   }
 
   const route =
@@ -379,6 +393,7 @@ export async function fetchPackages(params: {
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
     url,
     params.signal,
+    params.viewerMode,
   );
 }
 
@@ -395,6 +410,7 @@ export async function fetchPluginCatalog(params: {
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
+  viewerMode?: PackageApiViewerMode;
 }): Promise<PluginCatalogResult> {
   if (params.family) {
     const response = await fetchPackages({
@@ -410,6 +426,7 @@ export async function fetchPluginCatalog(params: {
       sort: params.sort,
       limit: params.limit,
       signal: params.signal,
+      viewerMode: params.viewerMode,
     });
     if (hasOwnProperty(response, "results") && Array.isArray(response.results)) {
       return {
@@ -444,7 +461,7 @@ export async function fetchPluginCatalog(params: {
         score: number;
         package: PackageListItem;
       }>;
-    }>(url, params.signal);
+    }>(url, params.signal, params.viewerMode);
     return {
       items: (response?.results ?? []).map((entry) => entry?.package).filter(Boolean),
       nextCursor: null,
@@ -465,7 +482,7 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
   }
   if (params.sort) url.searchParams.set("sort", params.sort);
-  const result = await fetchJson<PluginCatalogResult>(url, params.signal);
+  const result = await fetchJson<PluginCatalogResult>(url, params.signal, params.viewerMode);
   return {
     items: result?.items ?? [],
     nextCursor: result?.nextCursor ?? null,
