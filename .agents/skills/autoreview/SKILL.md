@@ -204,8 +204,11 @@ Parallel tests inherit only a small allowlist of ordinary OS, CI, and toolchain
 variables. Put additional non-secret project controls directly in the test command.
 Home and standard config directories point to a temporary isolated root that is
 removed after the command exits. Do not put secrets in the command because it is
-printed before execution. Run secret-bearing or credentialed tests separately in an
-appropriately isolated remote runner.
+printed before execution. `OPENCLAW_TESTBOX=1` is the narrow trusted-maintainer-code
+exception: it stages only the Blacksmith credential file into the temporary home so
+the command can delegate remotely. Never use this credential-hydrated path for
+untrusted contributor or fork code. Run other secret-bearing or credentialed tests
+separately in an appropriately isolated remote runner.
 
 Tradeoff: tests may force code changes that stale the review. If tests or review lead to code edits, rerun the affected tests and rerun review until no accepted/actionable findings remain. Once that rerun exits cleanly, stop; do not spend another long review cycle on redundant confirmation.
 
