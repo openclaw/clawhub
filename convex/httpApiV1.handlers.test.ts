@@ -57,6 +57,17 @@ function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   );
 }
 
+function isRateLimitMetadataArgs(args: unknown) {
+  if (!args || typeof args !== "object") return false;
+  const value = args as Record<string, unknown>;
+  return (
+    typeof value.name === "string" &&
+    typeof value.key === "string" &&
+    typeof value.ttlMs === "number" &&
+    !("config" in value)
+  );
+}
+
 function hasSlugArgs(args: unknown): args is { slug: string } {
   if (!args || typeof args !== "object") return false;
   const value = args as Record<string, unknown>;
@@ -235,13 +246,16 @@ function makeCtx(partial: Record<string, unknown>) {
   const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
     return partialRunQuery ? await partialRunQuery(query, args) : null;
   });
-  const runMutation =
+  const partialRunMutation =
     typeof partial.runMutation === "function"
-      ? partial.runMutation
-      : vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-          if (isRateLimitArgs(args)) return rateLimitStatus?.(args) ?? okRate();
-          return okRate();
-        });
+      ? (partial.runMutation as (mutation: unknown, args: Record<string, unknown>) => unknown)
+      : null;
+  const runMutation = vi.fn(async (mutation: unknown, args: Record<string, unknown>) => {
+    if (isRateLimitMetadataArgs(args)) return { action: "retained" };
+    if (partialRunMutation) return await partialRunMutation(mutation, args);
+    if (isRateLimitArgs(args)) return rateLimitStatus?.(args) ?? okRate();
+    return okRate();
+  });
 
   return { ...partial, runQuery, runMutation } as unknown as ActionCtx;
 }

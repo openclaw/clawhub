@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- API: keep successful rate-limit checks available when retention metadata writes contend, while preserving fail-closed enforcement for authoritative counter conflicts.
 - CLI: accept npm 12's package-keyed `npm pack --json` output when building ClawPacks while retaining compatibility with earlier npm array output.
 - Web/API: preserve JSON, SSR, and OG responses through the Convex proxy after the H3 response-wrapper update.
 

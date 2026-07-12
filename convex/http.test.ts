@@ -21,6 +21,9 @@ function makeDeniedRateLimitCtx() {
       const config = args.config as { period: number };
       return { ok: false, retryAfter: config.period };
     }
+    if ("name" in args && "key" in args && "ttlMs" in args) {
+      return { action: "retained" };
+    }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
   return {
@@ -40,6 +43,9 @@ function makeAllowedRateLimitCtx() {
   const runMutation = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
     if ("name" in args && "config" in args) {
       return { ok: true };
+    }
+    if ("name" in args && "key" in args && "ttlMs" in args) {
+      return { action: "retained" };
     }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
@@ -198,7 +204,7 @@ describe("HTTP route rate limit defaults", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
