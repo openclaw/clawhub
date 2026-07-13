@@ -1,0 +1,46 @@
+{
+  "baseline": "not run for feature proof",
+  "candidate": "brzezowski/perf-3064-publisher-reads",
+  "generatedAt": "2026-07-13T13:21:34.000Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "d2e29f3ae18bbadfc73a9265149595e32e2e0798",
+      "status": "passed",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Publisher catalog first indexed page (12 of 14 skills)",
+          "screenshot": "screenshots/catalog-first-page.png",
+          "slug": "catalog-first-page",
+          "status": "passed"
+        },
+        {
+          "lane": "candidate",
+          "name": "Publisher catalog after loading the second indexed page (14 of 14 skills)",
+          "screenshot": "screenshots/catalog-all-pages.png",
+          "slug": "catalog-all-pages",
+          "status": "passed"
+        },
+        {
+          "lane": "candidate",
+          "name": "Account deletion settings before inventory is requested",
+          "screenshot": "screenshots/settings-before-dialog.png",
+          "slug": "settings-before-dialog",
+          "status": "passed"
+        },
+        {
+          "lane": "candidate",
+          "name": "Deletion dialog with the complete 2-skill and 3-plugin inventory",
+          "screenshot": "screenshots/deletion-inventory.png",
+          "slug": "deletion-inventory",
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "provider": "real Chromium against local ClawHub fixtures",
+  "scenario": "Bounded publisher catalog pages and dialog-gated deletion inventory",
+  "status": "passed"
+}
