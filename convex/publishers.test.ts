@@ -14,6 +14,7 @@ import {
   listPublic,
   listMine,
   getMyProfileHandle,
+  getHomePublisherSummaries,
   getProfileByHandle,
   createMemberInvite,
   declineMemberInvite,
@@ -302,6 +303,10 @@ const listMembersHandler = (
 
 const getProfileByHandleHandler = (
   getProfileByHandle as unknown as WrappedHandler<{ handle: string }>
+)._handler;
+
+const getHomePublisherSummariesHandler = (
+  getHomePublisherSummaries as unknown as WrappedHandler<{ handles: string[] }>
 )._handler;
 
 const getOgMetaByHandleHandler = (
@@ -774,6 +779,150 @@ function makeResolvePublishTargetCtx(options: {
     },
   };
 }
+
+function makeHomeSummaryPublisher(handle: string, overrides: Record<string, unknown> = {}) {
+  return {
+    _id: `publishers:${handle}`,
+    _creationTime: 1,
+    kind: "org",
+    handle,
+    displayName: handle,
+    publishedSkills: 2,
+    publishedPackages: 1,
+    totalInstalls: 3,
+    totalDownloads: 4,
+    totalStars: 5,
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function makeHomePublisherSummariesCtx(
+  publishers: Array<ReturnType<typeof makeHomeSummaryPublisher>>,
+  users: Record<string, Record<string, unknown> | null> = {},
+) {
+  const publishersByHandle = new Map(publishers.map((publisher) => [publisher.handle, publisher]));
+  const publisherReads: string[] = [];
+  const query = vi.fn((table: string) => {
+    if (table !== "publishers") throw new Error(`unexpected table ${table}`);
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildQuery: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+        ) => {
+          if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+          let handle: string | undefined;
+          const q = {
+            eq(field: string, value: unknown) {
+              if (field === "handle") handle = String(value);
+              return q;
+            },
+          };
+          buildQuery(q);
+          return {
+            unique: vi.fn(async () => {
+              if (!handle) return null;
+              publisherReads.push(handle);
+              return publishersByHandle.get(handle) ?? null;
+            }),
+          };
+        },
+      ),
+    };
+  });
+  const get = vi.fn(async (id: string) => users[id] ?? null);
+
+  return { ctx: { db: { query, get } }, publisherReads, query, get };
+}
+
+describe("home publisher summaries", () => {
+  it("rejects more than ten input handles before reading the database", async () => {
+    const query = vi.fn();
+    const get = vi.fn();
+
+    await expect(
+      getHomePublisherSummariesHandler({ db: { query, get } } as never, {
+        handles: Array.from({ length: 11 }, () => "duplicate"),
+      }),
+    ).rejects.toThrow("at most 10");
+    expect(query).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it("normalizes and deduplicates handles while preserving first-seen order", async () => {
+    const bravo = makeHomeSummaryPublisher("bravo", {
+      kind: "user",
+      linkedUserId: "users:bravo",
+      displayName: "Publisher fallback",
+    });
+    const alpha = makeHomeSummaryPublisher("alpha");
+    const { ctx, publisherReads, get } = makeHomePublisherSummariesCtx([bravo, alpha], {
+      "users:bravo": {
+        _id: "users:bravo",
+        displayName: "Bravo Builder",
+        image: "https://example.test/bravo.png",
+        bio: "Builds useful tools.",
+      },
+    });
+
+    const summaries = await getHomePublisherSummariesHandler(ctx as never, {
+      handles: [" @Bravo ", "alpha", "BRAVO"],
+    });
+
+    expect(summaries).toEqual([
+      expect.objectContaining({
+        handle: "bravo",
+        displayName: "Bravo Builder",
+        image: "https://example.test/bravo.png",
+        bio: "Builds useful tools.",
+        stats: { skills: 2, packages: 1, installs: 3, downloads: 4, stars: 5 },
+      }),
+      expect.objectContaining({
+        handle: "alpha",
+        displayName: "alpha",
+        stats: { skills: 2, packages: 1, installs: 3, downloads: 4, stars: 5 },
+      }),
+    ]);
+    expect(publisherReads).toEqual(["bravo", "alpha"]);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("users:bravo");
+  });
+
+  it("omits incomplete or invisible summaries without reading catalog or membership tables", async () => {
+    const publishers = [
+      makeHomeSummaryPublisher("incomplete", { totalStars: undefined }),
+      makeHomeSummaryPublisher("deactivated", { deactivatedAt: 2 }),
+      makeHomeSummaryPublisher("deleted", { deletedAt: 2 }),
+      makeHomeSummaryPublisher("missing-user", {
+        kind: "user",
+        linkedUserId: "users:missing",
+      }),
+      makeHomeSummaryPublisher("deleted-user", {
+        kind: "user",
+        linkedUserId: "users:deleted",
+      }),
+      makeHomeSummaryPublisher("deactivated-user", {
+        kind: "user",
+        linkedUserId: "users:deactivated",
+      }),
+      makeHomeSummaryPublisher("legacy-unlinked", { kind: "user" }),
+    ];
+    const { ctx, query, get } = makeHomePublisherSummariesCtx(publishers, {
+      "users:deleted": { _id: "users:deleted", deletedAt: 2 },
+      "users:deactivated": { _id: "users:deactivated", deactivatedAt: 2 },
+    });
+
+    await expect(
+      getHomePublisherSummariesHandler(ctx as never, {
+        handles: [...publishers.map((publisher) => publisher.handle), "not-found"],
+      }),
+    ).resolves.toEqual([]);
+    expect(query).toHaveBeenCalledTimes(8);
+    expect(get).toHaveBeenCalledTimes(3);
+  });
+});
 
 describe("publishers membership controls", () => {
   it("lets an org owner delete an org and cascade owned resources", async () => {

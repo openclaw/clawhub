@@ -4,7 +4,7 @@ import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { formatCompactStat } from "../lib/numberFormat";
-import type { PublicPublisherListItem } from "../lib/publicUser";
+import type { PublicPublisherSummary } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
 type PinnedPublisher = {
@@ -31,12 +31,12 @@ function PopularPublisherCard({
   publisher,
 }: {
   pinned: PinnedPublisher;
-  publisher?: PublicPublisherListItem;
+  publisher?: PublicPublisherSummary;
 }) {
   const name = publisher?.displayName?.trim() || pinned.name;
   const bio = publisher?.bio?.trim() || "Publisher on ClawHub.";
   const kind = publisher?.kind ?? pinned.kind;
-  const itemCount = (publisher?.stats?.skills ?? 0) + (publisher?.stats?.packages ?? 0);
+  const itemCount = publisher ? publisher.stats.skills + publisher.stats.packages : null;
 
   return (
     <Link
@@ -58,7 +58,9 @@ function PopularPublisherCard({
       <div className="home-v2-popular-publisher-copy">
         <p className="home-v2-popular-publisher-bio">{bio}</p>
         <span className="home-v2-popular-publisher-stats">
-          Explore {formatCompactStat(itemCount)} {itemCount === 1 ? "item" : "items"}
+          {itemCount === null
+            ? "Explore creator"
+            : `Explore ${formatCompactStat(itemCount)} ${itemCount === 1 ? "item" : "items"}`}
           <ArrowRight size={13} aria-hidden="true" />
         </span>
       </div>
@@ -70,37 +72,51 @@ export function HomePopularPublishersSection() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
   const [dragging, setDragging] = useState(false);
+  const requestedPublishersRef = useRef(false);
   const [publishersByHandle, setPublishersByHandle] = useState<
-    Record<string, PublicPublisherListItem>
+    Record<string, PublicPublisherSummary>
   >({});
 
   useEffect(() => {
     let cancelled = false;
 
     const hydratePublishers = async () => {
-      // These profile queries compute catalog totals. Keep them serial so the
-      // homepage does not starve auth and navigation queries on smaller deployments.
-      for (const pinned of PINNED_PUBLISHERS) {
-        try {
-          const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
-            handle: pinned.handle,
-          })) as PublicPublisherListItem | null;
-          if (cancelled) return;
-          if (publisher) {
-            setPublishersByHandle((current) => ({
-              ...current,
-              [pinned.handle]: publisher,
-            }));
-          }
-        } catch {
-          // Static card metadata remains usable when a profile cannot be hydrated.
-        }
+      if (requestedPublishersRef.current) return;
+      requestedPublishersRef.current = true;
+      try {
+        const publishers = (await convexHttp.query(api.publishers.getHomePublisherSummaries, {
+          handles: PINNED_PUBLISHERS.map((publisher) => publisher.handle),
+        })) as PublicPublisherSummary[];
+        if (cancelled) return;
+        setPublishersByHandle(
+          Object.fromEntries(publishers.map((publisher) => [publisher.handle, publisher])),
+        );
+      } catch {
+        // Static card metadata remains usable when summaries cannot be loaded.
       }
     };
 
-    void hydratePublishers();
+    const viewport = viewportRef.current;
+    if (!viewport || typeof IntersectionObserver === "undefined") {
+      void hydratePublishers();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries.some((entry) => entry.isIntersecting)) return;
+        observer.disconnect();
+        void hydratePublishers();
+      },
+      { rootMargin: "600px 0px" },
+    );
+    observer.observe(viewport);
+
     return () => {
       cancelled = true;
+      observer.disconnect();
     };
   }, []);
 
