@@ -86,6 +86,16 @@ describe("home route", () => {
     return (Route as unknown as { __config: { loader: () => Promise<unknown> } }).__config.loader;
   }
 
+  async function getRouteHeadLinks() {
+    const { Route } = await import("../routes/index");
+    const head = (
+      Route as unknown as {
+        __config: { head?: () => { links?: Array<{ rel?: string; as?: string; href?: string }> } };
+      }
+    ).__config.head?.();
+    return head?.links ?? [];
+  }
+
   function clickHeroHeadlineTriple() {
     const headline = screen.getByRole("button", { name: /Equip/ });
     act(() => {
@@ -135,6 +145,15 @@ describe("home route", () => {
 
     await expect(loader()).resolves.toBe(initialListingFixture);
     expect(fetchInitialHomeListingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prioritize offscreen app icons in the route head", async () => {
+    const links = await getRouteHeadLinks();
+
+    expect(links.some((link) => link.rel === "preload" && link.as === "image")).toBe(false);
+    expect(links.some((link) => link.rel === "preconnect" && link.href?.includes("jsdelivr"))).toBe(
+      false,
+    );
   });
 
   it("falls back to client loading when the default listing loader fails", async () => {

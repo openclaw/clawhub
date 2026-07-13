@@ -13,7 +13,7 @@ import {
   OPENCLAW_SITE_URL,
 } from "../lib/nav-items";
 
-const FOOTER_BRAND_MARK_SRC = "/og-clawhub-watermark.png";
+const FOOTER_BRAND_MARK_SRC = "/logo-transparent.png";
 const FOOTER_EASTER_ASCII = [
   "....:: clawhub/openclaw ::....  skills plugins publishers trust signals",
   ">>> install scan publish verify    @@ gateway @@ registry @@ agents @@",
@@ -74,7 +74,7 @@ function FooterEcoMark({
   const content = (
     <>
       <span className="footer-v2-eco-mark-logo" aria-hidden="true">
-        <img src={project.logoUrl} alt="" width={28} height={28} decoding="async" />
+        <img src={project.logoUrl} alt="" width={28} height={28} loading="lazy" decoding="async" />
       </span>
       <span className="footer-v2-eco-mark-label">{project.label}</span>
     </>
@@ -216,6 +216,7 @@ export function Footer() {
                 alt=""
                 width={22}
                 height={22}
+                loading="lazy"
                 decoding="async"
               />
               <span className="footer-v2-brand-name">ClawHub</span>
@@ -303,7 +304,14 @@ export function Footer() {
           <p className="footer-v2-eco-label">
             Built alongside{" "}
             <span className="footer-v2-eco-label-accent">
-              <img src={OPENCLAW_LOGO_URL} alt="" width={14} height={14} decoding="async" />
+              <img
+                src={OPENCLAW_LOGO_URL}
+                alt=""
+                width={14}
+                height={14}
+                loading="lazy"
+                decoding="async"
+              />
               the OpenClaw ecosystem
             </span>
           </p>

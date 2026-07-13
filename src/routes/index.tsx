@@ -6,40 +6,9 @@ import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomePromotionsSection } from "../components/HomePromotionsSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
-import { HOME_APP_ICON_PRELOAD_HREFS } from "../lib/homeApps";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
-type HomeRouteHeadLink =
-  | {
-      rel: "preconnect";
-      href: string;
-    }
-  | {
-      rel: "preload";
-      as: "image";
-      href: string;
-    };
-
-function imagePreloadLink(href: string): HomeRouteHeadLink {
-  return {
-    rel: "preload",
-    as: "image",
-    href,
-  };
-}
-
-const HOME_ROUTE_HEAD_LINKS = [
-  {
-    rel: "preconnect",
-    href: "https://cdn.jsdelivr.net",
-  },
-  ...HOME_APP_ICON_PRELOAD_HREFS.map(imagePreloadLink),
-] satisfies HomeRouteHeadLink[];
-
 export const Route = createFileRoute("/")({
-  head: () => ({
-    links: HOME_ROUTE_HEAD_LINKS,
-  }),
   loader: loadInitialHomeListing,
   component: SkillsHome,
 });

@@ -87,6 +87,23 @@ describe("Footer", () => {
     );
   });
 
+  it("keeps offscreen imagery lazy and dimensioned", () => {
+    const { container } = render(<Footer />);
+    const images = Array.from(container.querySelectorAll("img"));
+
+    expect(images.length).toBeGreaterThan(0);
+    for (const image of images) {
+      expect(image.getAttribute("loading")).toBe("lazy");
+      expect(image.getAttribute("decoding")).toBe("async");
+      expect(image.width).toBeGreaterThan(0);
+      expect(image.height).toBeGreaterThan(0);
+    }
+    expect(container.querySelector(".footer-v2-brand-mark")?.getAttribute("src")).toBe(
+      "/logo-transparent.png",
+    );
+    expect(container.querySelector('img[src="/og-clawhub-watermark.png"]')).toBeNull();
+  });
+
   it("collapses footer sections by heading until toggled open", async () => {
     mockMatchMedia(true);
     render(<Footer />);
