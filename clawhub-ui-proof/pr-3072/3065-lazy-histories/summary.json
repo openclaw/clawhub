@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "Plugin history loads only on the Versions tab",
+  "provider": "real Chromium against local ClawHub fixtures",
+  "candidate": "brzezowski/perf-3065-lazy-histories",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Default detail: no history request",
+          "slug": "default",
+          "screenshot": "default.png",
+          "status": "passed"
+        },
+        {
+          "name": "Versions tab: history loaded on demand",
+          "slug": "versions",
+          "screenshot": "versions.png",
+          "status": "passed"
+        },
+        {
+          "name": "Deep link: Versions selected and history loaded",
+          "slug": "deep-link",
+          "screenshot": "deep-link.png",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}
