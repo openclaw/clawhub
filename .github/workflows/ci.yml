@@ -148,7 +148,7 @@ jobs:
 
   playwright-local-auth-shard:
     name: playwright-local-auth / ${{ matrix.name }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ matrix.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -156,6 +156,7 @@ jobs:
       matrix:
         include:
           - name: account-cleanup
+            runner: blacksmith-8vcpu-ubuntu-2404
             specs: |
               e2e/local-auth/delete-account-resources.pw.test.ts
               e2e/local-auth/delete-org-resources.pw.test.ts
@@ -164,6 +165,7 @@ jobs:
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
           - name: moderation-star
+            runner: blacksmith-8vcpu-ubuntu-2404
             specs: |
               e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
               e2e/local-auth/skill-star-sync.pw.test.ts

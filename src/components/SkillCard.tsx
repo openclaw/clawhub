@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { getSkillCategoryForSkill } from "../lib/categories";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-import { truncateText } from "../lib/truncateText";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -60,7 +60,9 @@ export function SkillCard({
           size="md"
         />
         <div className="skill-card-identity">
-          <h3 className="skill-card-title">{truncateText(skill.displayName, 40)}</h3>
+          <h3 className="skill-card-title" title={skill.displayName}>
+            {truncateText(skill.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </h3>
           {ownerHandle ? (
             <span className="skill-card-owner-row">
               <span className="skill-card-owner">@{ownerHandle}</span>

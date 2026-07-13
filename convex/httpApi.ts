@@ -331,6 +331,7 @@ async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
       await ctx.runMutation(internal.telemetry.reportCliInstallInternal, {
         userId,
         slug: args.slug,
+        ownerHandle: args.ownerHandle,
         version: args.version,
       });
     }

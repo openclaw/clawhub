@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+# metrics-info: Discover metrics, tags, and tag values in a dataset
+#
+# Usage:
+#   metrics-info <deployment> <dataset> metrics [--by-type] [--type T]... [--start T --end T]
+#   metrics-info <deployment> <dataset> metrics <metric> info [--start T --end T]
+#   metrics-info <deployment> <dataset> metrics <metric> describe [--no-values] [--values-limit N] [--start T --end T]
+#   metrics-info <deployment> <dataset> metrics <metric> tags [--start T --end T]
+#   metrics-info <deployment> <dataset> metrics <metric> tags <tag> values [--start T --end T]
+#   metrics-info <deployment> <dataset> metrics <metric> tags <tag> type [--start T --end T]
+#   metrics-info <deployment> <dataset> tags    [--start T --end T]
+#   metrics-info <deployment> <dataset> tags <tag> values [--start T --end T]
+#   metrics-info <deployment> <dataset> find-metrics <search-value> [--start T --end T]
+#
+# Metric metadata. The `metrics` listing returns a v2 payload where each entry
+# carries `type` (Gauge | CounterMonotonic | CounterNonMonotonic | Histogram),
+# `temporality` (Cumulative | Delta | null), and `unit` (UCUM string or null).
+# Use this metadata to choose the right MPL query shape (consult metrics-spec
+# for the exact operator names per type).
+#
+#   --by-type           Group the listing by `type` instead of returning a flat
+#                       name->meta object. Pure client-side reshape; no extra
+#                       server call.
+#   --type T            Filter the listing to entries whose `type` equals T.
+#                       Repeatable; multiple --type flags act as OR.
+#                       Composes with --by-type.
+#
+# `metrics <metric> info` extracts a single metric's metadata block
+# ({type, temporality, unit}). Non-zero exit if the metric is absent.
+#
+# `metrics <metric> describe` bundles metadata + tags + tag values for one
+# metric in a single call (replaces the typical 1+1+N round trips).
+#   --no-values         Return tag names only, not values (1+1 calls).
+#   --values-limit N    Cap each tag's value list at N entries (default 50;
+#                       0 = no limit). Applied client-side after fetch.
+#
+# `metrics <metric> tags <tag> type` probes whether a tag is int/float/string/
+# bool-typed by running `metrics-query` with `filter <tag> is <T>` for each.
+# Returns:
+#   {"type": "int", "present_types": ["int"]}
+#   {"type": "mixed", "present_types": ["int","string"]}
+#   {"type": "absent", "present_types": []}
+# (mixed = the tag carries different types across rows; use the defensive
+# `(tag is int and tag == 200) or (tag is string and tag == "200")` form.)
+#
+# find-metrics searches TAG VALUES, not metric names. Use it when you know a
+# specific entity name (service, host, device) to find which metrics carry it.
+# To list metric names, use the `metrics` subcommand instead.
+#
+# --start and --end default to the last 24 hours if omitted.
+# For sparse metrics (sensors, batch jobs), try --start with a wider range (e.g. 7 days).
+#
+# Examples:
+#   metrics-info prod my-dataset metrics                                # Raw listing
+#   metrics-info prod my-dataset metrics --by-type                      # Grouped by type
+#   metrics-info prod my-dataset metrics --type Histogram               # Only histograms
+#   metrics-info prod my-dataset metrics --type Gauge --type Histogram --by-type
+#   metrics-info prod my-dataset metrics http.server.duration info      # Single metric meta
+#   metrics-info prod my-dataset metrics http.server.duration describe  # Bundle: meta + tags + values
+#   metrics-info prod my-dataset metrics http.server.duration describe --no-values
+#   metrics-info prod my-dataset metrics http.server.duration tags code type
+#   metrics-info prod my-dataset tags service.name values               # List values for a tag
+#   metrics-info prod my-dataset find-metrics "frontend"                # Find metrics with tag value "frontend"
+#   metrics-info prod my-dataset metrics http.server.duration tags --start 2025-06-01T00:00:00Z --end 2025-06-02T00:00:00Z
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+show_usage() {
+    echo "Usage:" >&2
+    echo "  metrics-info <deploy> <dataset> metrics [--by-type] [--type T]..." >&2
+    echo "  metrics-info <deploy> <dataset> metrics <metric> info" >&2
+    echo "  metrics-info <deploy> <dataset> metrics <metric> describe [--no-values] [--values-limit N]" >&2
+    echo "  metrics-info <deploy> <dataset> metrics <metric> tags" >&2
+    echo "  metrics-info <deploy> <dataset> metrics <metric> tags <tag> values" >&2
+    echo "  metrics-info <deploy> <dataset> metrics <metric> tags <tag> type" >&2
+    echo "  metrics-info <deploy> <dataset> tags" >&2
+    echo "  metrics-info <deploy> <dataset> tags <tag> values" >&2
+    echo "  metrics-info <deploy> <dataset> find-metrics <search-value>  (searches tag values, not metric names)" >&2
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  --start T          Start time (RFC3339). Default: 24h ago" >&2
+    echo "  --end T            End time (RFC3339). Default: now" >&2
+    echo "  --by-type          (metrics listing) Group entries by metric type" >&2
+    echo "  --type T           (metrics listing) Filter to type T. Repeatable." >&2
+    echo "  --no-values        (describe) Return tag names only" >&2
+    echo "  --values-limit N   (describe) Cap each tag's value list at N (default 50; 0 = unlimited)" >&2
+    exit 1
+}
+
+DEPLOYMENT="${1:-}"
+DATASET="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$DATASET" ]]; then
+    show_usage
+fi
+
+shift 2
+
+# Collect positional args and parse --start/--end, listing-view, describe flags.
+POSITIONAL=()
+START=""
+END=""
+BY_TYPE=0
+TYPE_FILTERS=()
+NO_VALUES=0
+VALUES_LIMIT=50
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --start)         START="$2"; shift 2 ;;
+        --end)           END="$2"; shift 2 ;;
+        --by-type)       BY_TYPE=1; shift ;;
+        --type)          TYPE_FILTERS+=("$2"); shift 2 ;;
+        --no-values)     NO_VALUES=1; shift ;;
+        --values-limit)  VALUES_LIMIT="$2"; shift 2 ;;
+        *)               POSITIONAL+=("$1"); shift ;;
+    esac
+done
+
+# Default time range: last 24 hours
+if [[ -z "$START" ]]; then
+    if date --version &>/dev/null 2>&1; then
+        START=$(date -u -d '24 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+    else
+        START=$(date -u -v-24H '+%Y-%m-%dT%H:%M:%SZ')
+    fi
+fi
+if [[ -z "$END" ]]; then
+    END=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+fi
+
+TIME_PARAMS="start=${START}&end=${END}"
+BASE="/v1/query/metrics/info/datasets/${DATASET}"
+
+# Resolve the regional edge URL for this dataset
+RESOLVED_URL=$("$SCRIPT_DIR/resolve-url" "$DEPLOYMENT" "$DATASET" 2>/dev/null || true)
+if [[ -n "$RESOLVED_URL" ]]; then
+    export AXIOM_URL_OVERRIDE="$RESOLVED_URL"
+fi
+
+if [[ ${#POSITIONAL[@]} -eq 0 ]]; then
+    show_usage
+fi
+
+# Fetch the bulk metrics listing (v2 payload with type/temporality/unit per metric).
+# Used directly by `metrics` and indirectly by `metrics <metric> info`.
+fetch_metrics_listing() {
+    AXIOM_ACCEPT="application/vnd.metrics-info.v2+json" "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics?${TIME_PARAMS}"
+}
+
+case "${POSITIONAL[0]}" in
+    metrics)
+        if [[ ${#POSITIONAL[@]} -eq 1 ]]; then
+            # List metrics. Default behaviour returns the raw v2 payload byte-for-byte;
+            # --type / --by-type apply pure client-side reshapes via jq.
+            if [[ $BY_TYPE -eq 0 && ${#TYPE_FILTERS[@]} -eq 0 ]]; then
+                fetch_metrics_listing
+            else
+                RAW=$(fetch_metrics_listing)
+                JQ_FILTER='.'
+                if [[ ${#TYPE_FILTERS[@]} -gt 0 ]]; then
+                    # Build a JSON array of allowed types and filter entries.
+                    TYPES_JSON=$(printf '%s\n' "${TYPE_FILTERS[@]}" | jq -R . | jq -s .)
+                    JQ_FILTER='to_entries | map(select(.value.type as $vt | ($types | index($vt)))) | from_entries'
+                    if [[ $BY_TYPE -eq 1 ]]; then
+                        JQ_FILTER="$JQ_FILTER"' | to_entries | group_by(.value.type) | map({(.[0].value.type): (map({(.key): {temporality: .value.temporality, unit: .value.unit}}) | add)}) | add // {}'
+                    fi
+                    printf '%s' "$RAW" | jq --argjson types "$TYPES_JSON" "$JQ_FILTER"
+                else
+                    # --by-type only
+                    JQ_FILTER='to_entries | group_by(.value.type) | map({(.[0].value.type): (map({(.key): {temporality: .value.temporality, unit: .value.unit}}) | add)}) | add // {}'
+                    printf '%s' "$RAW" | jq "$JQ_FILTER"
+                fi
+            fi
+        elif [[ ${#POSITIONAL[@]} -eq 3 && "${POSITIONAL[2]}" == "info" ]]; then
+            # Single-metric metadata: {type, temporality, unit}. Derived client-side
+            # from the bulk listing because there is no per-metric metadata endpoint.
+            METRIC="${POSITIONAL[1]}"
+            RAW=$(fetch_metrics_listing)
+            # -e exits non-zero when the value is null/false; we want non-zero on missing.
+            printf '%s' "$RAW" | jq -e --arg m "$METRIC" '.[$m] // error("metric not found in listing for the given time range: " + $m)'
+        elif [[ ${#POSITIONAL[@]} -eq 3 && "${POSITIONAL[2]}" == "describe" ]]; then
+            # Bundle metadata + tags + tag values into a single output. Replaces
+            # the typical 1+1+N round trips an agent would make to characterise
+            # an unfamiliar metric.
+            METRIC="${POSITIONAL[1]}"
+            RAW=$(fetch_metrics_listing)
+            META=$(printf '%s' "$RAW" | jq -e --arg m "$METRIC" '.[$m] // error("metric not found in listing for the given time range: " + $m)')
+            TAGS_JSON=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags?${TIME_PARAMS}")
+            if [[ "$NO_VALUES" -eq 1 ]]; then
+                # tags as flat array of names
+                jq -n --argjson m "$META" --argjson tags "$TAGS_JSON" '$m + {tags: $tags}'
+            else
+                # tags as object: { tag_name: [values…] }
+                VALUES_OBJ='{}'
+                while IFS= read -r tag; do
+                    [[ -z "$tag" ]] && continue
+                    VALUES=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags/${tag}/values?${TIME_PARAMS}")
+                    if [[ "$VALUES_LIMIT" -gt 0 ]]; then
+                        VALUES=$(printf '%s' "$VALUES" | jq --argjson n "$VALUES_LIMIT" '.[:$n]')
+                    fi
+                    VALUES_OBJ=$(jq -n --argjson o "$VALUES_OBJ" --arg t "$tag" --argjson v "$VALUES" '$o + {($t): $v}')
+                done < <(printf '%s' "$TAGS_JSON" | jq -r '.[]?')
+                jq -n --argjson m "$META" --argjson tags "$VALUES_OBJ" '$m + {tags: $tags}'
+            fi
+        elif [[ ${#POSITIONAL[@]} -eq 3 && "${POSITIONAL[2]}" == "tags" ]]; then
+            # List tags for a metric
+            METRIC="${POSITIONAL[1]}"
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags?${TIME_PARAMS}"
+        elif [[ ${#POSITIONAL[@]} -eq 5 && "${POSITIONAL[2]}" == "tags" && "${POSITIONAL[4]}" == "values" ]]; then
+            # List tag values for a metric+tag
+            METRIC="${POSITIONAL[1]}"
+            TAG="${POSITIONAL[3]}"
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/metrics/${METRIC}/tags/${TAG}/values?${TIME_PARAMS}"
+        elif [[ ${#POSITIONAL[@]} -eq 5 && "${POSITIONAL[2]}" == "tags" && "${POSITIONAL[4]}" == "type" ]]; then
+            # Probe the typing of a metric+tag by running `metrics-query` with
+            # `filter <tag> is <T>` for each candidate type. The type(s) that
+            # return non-empty `series` are present in the dataset for that
+            # metric+tag in the time window.
+            METRIC="${POSITIONAL[1]}"
+            TAG="${POSITIONAL[3]}"
+            PRESENT_JSON='[]'
+            for t in int float string bool; do
+                # Backtick-escape dataset / metric / tag names. The probe pipeline:
+                #   `<dataset>`:`<metric>` | filter `<tag>` is <T> | align to 5m using sum
+                # If <tag> is <T> matches no rows, the response has empty `series`.
+                PROBE_QUERY='`'"$DATASET"'`:`'"$METRIC"'` | filter `'"$TAG"'` is '"$t"' | align to 5m using sum'
+                RESPONSE=$("$SCRIPT_DIR/metrics-query" "$DEPLOYMENT" "$PROBE_QUERY" "$START" "$END" 2>/dev/null || echo '{}')
+                COUNT=$(printf '%s' "$RESPONSE" | jq -r '(.series // []) | length' 2>/dev/null || echo 0)
+                if [[ "$COUNT" -gt 0 ]]; then
+                    PRESENT_JSON=$(printf '%s' "$PRESENT_JSON" | jq --arg t "$t" '. + [$t]')
+                fi
+            done
+            jq -n --argjson present "$PRESENT_JSON" '
+                {
+                    type: (
+                        if   ($present | length) == 0 then "absent"
+                        elif ($present | length) == 1 then $present[0]
+                        else                                "mixed"
+                        end
+                    ),
+                    present_types: $present
+                }'
+        else
+            show_usage
+        fi
+        ;;
+    tags)
+        if [[ ${#POSITIONAL[@]} -eq 1 ]]; then
+            # List tags
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/tags?${TIME_PARAMS}"
+        elif [[ ${#POSITIONAL[@]} -eq 3 && "${POSITIONAL[2]}" == "values" ]]; then
+            # List values for a tag
+            TAG="${POSITIONAL[1]}"
+            "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "${BASE}/tags/${TAG}/values?${TIME_PARAMS}"
+        else
+            show_usage
+        fi
+        ;;
+    find-metrics)
+        if [[ ${#POSITIONAL[@]} -ne 2 ]]; then
+            show_usage
+        fi
+        VALUE="${POSITIONAL[1]}"
+        BODY=$(jq -n --arg v "$VALUE" '{value: $v}')
+        "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" POST "${BASE}/metrics?${TIME_PARAMS}" "$BODY"
+        ;;
+    *)
+        show_usage
+        ;;
+esac

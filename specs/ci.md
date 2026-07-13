@@ -28,7 +28,10 @@ failing command.
   Convex backend with dev auth, then runs the chromium specs under
   `e2e/local-auth/`. Related low-risk specs are grouped so the matrix spends
   fewer Blacksmith runner registrations while keeping publish lifecycle checks
-  isolated for easier failure triage.
+  isolated for easier failure triage. The account cleanup and moderation/star
+  shards use 8-vCPU runners because their browser flows share the machine with
+  the local Convex backend; the remaining shards use 4-vCPU runners. The matrix
+  keeps `max-parallel: 3` to cap organization-level runner registrations.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the

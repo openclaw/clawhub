@@ -1,0 +1,537 @@
+#!/usr/bin/env bash
+# Gilfoyle Sleep Cycle
+#
+# Multi-phase memory consolidation workflow:
+# - Review recent entries
+# - Analyze duplicate/type drift
+# - Optionally apply deterministic cleanup (dedupe + supersede + type normalization)
+# - Optionally commit/push org memory repos
+
+set -euo pipefail
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+MEMORY_DIR="$CONFIG_DIR/memory"
+ORGS_DIR="$MEMORY_DIR/orgs"
+
+# Defaults
+ORG=""
+DAYS=7
+DEEP=false
+APPLY=false
+SHARE=false
+REVIEW=true
+PRINT_PROMPT=false
+AUTO=false
+MODE_SET=false
+DRY_RUN=false
+
+# Colors
+BOLD='\033[1m'
+CYAN='\033[36m'
+YELLOW='\033[33m'
+GREEN='\033[32m'
+NC='\033[0m'
+
+usage() {
+  cat <<EOF
+Usage: scripts/sleep [options]
+
+Modes:
+  (default)                Full sleep cycle preset (deep + apply + share + prompt)
+  --dry-run                Analyze + print prompt only (no apply/share)
+
+Options:
+  --org <name>             Target a specific org memory only (default: all tiers)
+  --days <n>               Review window in days (default: 7)
+  --dry-run                Equivalent to: --deep --prompt --no-review
+  --auto                   Explicit full preset (optional; default behavior)
+  -h, --help               Show this help
+
+Examples:
+  scripts/sleep
+  scripts/sleep --org axiom
+  scripts/sleep --org axiom --dry-run
+EOF
+}
+
+days_ago() {
+  local days="$1"
+  date -v-"$days"d +%Y-%m-%d 2>/dev/null || date -d "$days days ago" +%Y-%m-%d
+}
+
+phase() {
+  local label="$1"
+  echo -e "${BOLD}${CYAN}${label}${NC}"
+}
+
+target_label() {
+  local dir="$1"
+  if [[ "$dir" == "$MEMORY_DIR" ]]; then
+    echo "personal"
+  else
+    echo "org:$(basename "$dir")"
+  fi
+}
+
+collect_targets() {
+  local -n out_ref="$1"
+
+  if [[ -n "$ORG" ]]; then
+    local org_dir="$ORGS_DIR/$ORG"
+    if [[ ! -d "$org_dir/kb" ]]; then
+      echo "Error: org '$ORG' not found at $org_dir" >&2
+      exit 1
+    fi
+    out_ref=("$org_dir")
+    return
+  fi
+
+  out_ref=()
+  if [[ -d "$MEMORY_DIR/kb" ]]; then
+    out_ref+=("$MEMORY_DIR")
+  fi
+  if [[ -d "$ORGS_DIR" ]]; then
+    local org_dir
+    for org_dir in "$ORGS_DIR"/*; do
+      [[ -d "$org_dir/kb" ]] && out_ref+=("$org_dir")
+    done
+  fi
+}
+
+review_target() {
+  local dir="$1"
+  local label="$2"
+  local cutoff
+  cutoff=$(days_ago "$DAYS")
+
+  phase "N1 review [$label] (window: ${cutoff}..now)"
+  local shown=false
+  local file
+  for file in "$dir"/kb/*.md; do
+    [[ -f "$file" ]] || continue
+    shown=true
+    echo -e "${BOLD}File: $(basename "$file")${NC}"
+    awk -v d="$cutoff" '
+      BEGIN { count=0 }
+      /^## M-/ {
+        day = substr($2, 3, 10)
+        if (day >= d) {
+          print NR ":" $0
+          count++
+          if (count >= 8) exit
+        }
+      }
+      END {
+        if (count == 0) print "(none in window)"
+      }
+    ' "$file"
+    echo
+  done
+
+  if [[ "$shown" == false ]]; then
+    echo "(no kb files found)"
+    echo
+  fi
+}
+
+analyze_target() {
+  local dir="$1"
+  local label="$2"
+
+  phase "N2 analysis [$label]"
+  local files=(facts incidents patterns queries integrations)
+  local base file entries dup_keys dup_extras
+
+  for base in "${files[@]}"; do
+    file="$dir/kb/$base.md"
+    [[ -f "$file" ]] || continue
+    entries=$(awk '/^## M-/{c++} END{print c+0}' "$file")
+    dup_keys=$(awk '/^## M-/{k[$3]++} END{d=0; for (x in k) if (k[x]>1) d++; print d+0}' "$file")
+    dup_extras=$(awk '/^## M-/{k[$3]++} END{e=0; for (x in k) if (k[x]>1) e+=(k[x]-1); print e+0}' "$file")
+    printf "  %-12s entries=%-4s dup_keys=%-3s dup_entries=%-3s\n" "$base" "$entries" "$dup_keys" "$dup_extras"
+  done
+
+  # Type hygiene summary
+  local expected total correct
+  for base in incidents patterns queries; do
+    file="$dir/kb/$base.md"
+    [[ -f "$file" ]] || continue
+    case "$base" in
+      incidents) expected="incident" ;;
+      patterns) expected="pattern" ;;
+      queries) expected="query" ;;
+      *) expected="" ;;
+    esac
+    total=$(awk '/^- type:/{c++} END{print c+0}' "$file")
+    correct=$(awk -v t="$expected" '/^- type:/{if($3==t)c++} END{print c+0}' "$file")
+    printf "  %-12s type_ok=%s/%s (%s)\n" "$base" "$correct" "$total" "$expected"
+  done
+  echo
+}
+
+apply_cleanup_target() {
+  local dir="$1"
+  local label="$2"
+  local result
+
+  phase "N3 apply [$label] (dedupe + supersede + type normalization)"
+
+  result=$(python3 - "$dir" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+target = Path(sys.argv[1])
+kb = target / "kb"
+files = ["facts.md", "incidents.md", "patterns.md", "queries.md", "integrations.md"]
+expected_type = {
+    "incidents.md": "incident",
+    "patterns.md": "pattern",
+    "queries.md": "query",
+}
+
+header_re = re.compile(r"^## M-(\S+)\s+(\S+)\s*$")
+supersede_re = re.compile(r"Supersedes\s+`([^`]+)`")
+
+total_removed_old = 0
+total_removed_superseded = 0
+total_removed_duplicate = 0
+total_type_normalized = 0
+
+for file_name in files:
+    path = kb / file_name
+    if not path.exists():
+        continue
+
+    original = path.read_text()
+    lines = original.splitlines(keepends=True)
+
+    preamble = []
+    entries = []
+
+    i = 0
+    while i < len(lines) and not header_re.match(lines[i]):
+        preamble.append(lines[i])
+        i += 1
+
+    while i < len(lines):
+        m = header_re.match(lines[i])
+        if not m:
+            if entries:
+                entries[-1]["lines"].append(lines[i])
+            else:
+                preamble.append(lines[i])
+            i += 1
+            continue
+
+        ts = m.group(1)
+        key = m.group(2)
+        block = [lines[i]]
+        i += 1
+        while i < len(lines) and not header_re.match(lines[i]):
+            block.append(lines[i])
+            i += 1
+        entries.append({"ts": ts, "key": key, "lines": block})
+
+    latest_by_key = {}
+    superseded_keys = set()
+    for entry in entries:
+        key = entry["key"]
+        ts = entry["ts"]
+        if key not in latest_by_key or ts > latest_by_key[key]:
+            latest_by_key[key] = ts
+        body = "".join(entry["lines"])
+        for superseded in supersede_re.findall(body):
+            superseded_keys.add(superseded)
+
+    kept = []
+    seen_key_ts = set()
+    removed_old = 0
+    removed_superseded = 0
+    removed_duplicate = 0
+    type_normalized = 0
+
+    for entry in entries:
+        key = entry["key"]
+        ts = entry["ts"]
+        if ts < latest_by_key.get(key, ts):
+            removed_old += 1
+            continue
+        if key in superseded_keys:
+            removed_superseded += 1
+            continue
+        key_ts = (key, ts)
+        if key_ts in seen_key_ts:
+            removed_duplicate += 1
+            continue
+        seen_key_ts.add(key_ts)
+
+        expected = expected_type.get(file_name)
+        if expected:
+            for idx, line in enumerate(entry["lines"]):
+                if line.startswith("- type: "):
+                    if line.strip() != f"- type: {expected}":
+                        entry["lines"][idx] = f"- type: {expected}\n"
+                        type_normalized += 1
+                    break
+        kept.append(entry)
+
+    rendered = "".join(preamble + ["".join(entry["lines"]) for entry in kept])
+    if rendered and not rendered.endswith("\n"):
+        rendered += "\n"
+
+    if rendered != original:
+        path.write_text(rendered)
+
+    print(
+        f"{file_name}: entries {len(entries)} -> {len(kept)}, "
+        f"removed_old={removed_old}, removed_superseded={removed_superseded}, "
+        f"removed_duplicate={removed_duplicate}, type_normalized={type_normalized}"
+    )
+
+    total_removed_old += removed_old
+    total_removed_superseded += removed_superseded
+    total_removed_duplicate += removed_duplicate
+    total_type_normalized += type_normalized
+
+print(
+    f"TOTAL: removed_old={total_removed_old}, removed_superseded={total_removed_superseded}, "
+    f"removed_duplicate={total_removed_duplicate}, type_normalized={total_type_normalized}"
+)
+PY
+)
+
+  echo "$result"
+  echo
+}
+
+share_target() {
+  local dir="$1"
+  local label="$2"
+
+  if [[ ! -d "$dir/.git" ]]; then
+    echo "REM share [$label] skipped (not a git repo)"
+    return
+  fi
+
+  if [[ -z "$(git -C "$dir" status --porcelain)" ]]; then
+    echo "REM share [$label] skipped (no changes)"
+    return
+  fi
+
+  phase "REM share [$label] (commit + push)"
+  git -C "$dir" add kb/*.md
+  git -C "$dir" commit -m "Sleep cycle: dedupe and normalize memory"
+  if git -C "$dir" push; then
+    echo -e "${GREEN}✓ Shared [$label]${NC}"
+  else
+    echo -e "${YELLOW}⚠️  Push failed for [$label]. Commit saved locally.${NC}"
+  fi
+  echo
+}
+
+print_prompt_target() {
+  local dir="$1"
+  local label="$2"
+  local today
+  local org_arg
+  local mem_target
+
+  today=$(date -u +%Y-%m-%d)
+  if [[ "$label" == org:* ]]; then
+    org_arg="--org ${label#org:}"
+    mem_target="org memory (${label#org:})"
+  else
+    org_arg=""
+    mem_target="personal memory"
+  fi
+
+  phase "PROMPT [$label]"
+  cat <<EOF
+Use this fixed prompt for semantic sleep distillation (SLEEP-V1):
+
+Task:
+- Distill ${mem_target} after deterministic cleanup.
+- Read full kb files before writing.
+- Preserve unresolved caveats and corrected conclusions.
+- Do not invent channels, tools, org details, or ownership data.
+
+Output requirements:
+1) Write exactly four entries:
+   - incidents: sleep-cycle-incidents-${today}
+   - facts: sleep-cycle-facts-${today}
+   - patterns: sleep-cycle-patterns-${today}
+   - queries: sleep-cycle-query-pack-${today}
+2) If a same-day key already exists, append -v2 / -v3 and include:
+   Supersedes \`<older-key>\`.
+3) Keep claims evidence-grounded; mark uncertainty explicitly.
+4) Keep query pack minimal and high-yield.
+
+Write commands:
+  scripts/mem-write ${org_arg} --type incident incidents "<key>" "<content>"
+  scripts/mem-write ${org_arg} --type fact facts "<key>" "<content>"
+  scripts/mem-write ${org_arg} --type pattern patterns "<key>" "<content>"
+  scripts/mem-write ${org_arg} --type query queries "<key>" "<content>"
+
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --org)
+      ORG="${2:-}"
+      [[ -n "$ORG" ]] || { echo "Error: --org requires a value" >&2; exit 1; }
+      shift 2
+      ;;
+    --days)
+      DAYS="${2:-}"
+      [[ -n "$DAYS" ]] || { echo "Error: --days requires a value" >&2; exit 1; }
+      shift 2
+      ;;
+    --auto)
+      MODE_SET=true
+      AUTO=true
+      DEEP=true
+      APPLY=true
+      SHARE=true
+      PRINT_PROMPT=true
+      REVIEW=false
+      shift
+      ;;
+    --dry-run)
+      MODE_SET=true
+      DRY_RUN=true
+      AUTO=false
+      DEEP=true
+      APPLY=false
+      SHARE=false
+      PRINT_PROMPT=true
+      REVIEW=false
+      shift
+      ;;
+    --deep)
+      MODE_SET=true
+      DEEP=true
+      shift
+      ;;
+    --apply)
+      MODE_SET=true
+      APPLY=true
+      shift
+      ;;
+    --share)
+      MODE_SET=true
+      SHARE=true
+      shift
+      ;;
+    --no-review)
+      MODE_SET=true
+      REVIEW=false
+      shift
+      ;;
+    --prompt)
+      MODE_SET=true
+      PRINT_PROMPT=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+  esac
+done
+
+if [[ "$MODE_SET" == false ]]; then
+  AUTO=true
+  DEEP=true
+  APPLY=true
+  SHARE=true
+  PRINT_PROMPT=true
+  REVIEW=false
+fi
+
+if [[ ! "$DAYS" =~ ^[0-9]+$ ]]; then
+  echo "Error: --days must be an integer" >&2
+  exit 1
+fi
+
+if [[ "$APPLY" == true && "$DEEP" == false ]]; then
+  echo "Error: --apply requires --deep" >&2
+  exit 1
+fi
+
+if [[ "$SHARE" == true && "$APPLY" == false ]]; then
+  echo "Error: --share requires --apply" >&2
+  exit 1
+fi
+
+if [[ "$PRINT_PROMPT" == true && "$DEEP" == false ]]; then
+  echo "Error: --prompt requires --deep" >&2
+  exit 1
+fi
+
+if [[ ! -d "$MEMORY_DIR" ]]; then
+  echo "Error: memory directory not found at $MEMORY_DIR" >&2
+  echo "Run: scripts/init"
+  exit 1
+fi
+
+phase "=== Sleep Cycle ==="
+echo "Config: $CONFIG_DIR"
+echo "Memory: $MEMORY_DIR"
+if [[ "$AUTO" == true ]]; then
+  echo "Mode: auto preset"
+elif [[ "$DRY_RUN" == true ]]; then
+  echo "Mode: dry-run"
+fi
+echo
+
+targets=()
+collect_targets targets
+if [[ ${#targets[@]} -eq 0 ]]; then
+  echo "No memory targets found."
+  exit 0
+fi
+
+for dir in "${targets[@]}"; do
+  label=$(target_label "$dir")
+  echo -e "${BOLD}Target: $label${NC}"
+  echo "Path: $dir"
+  echo
+
+  if [[ "$REVIEW" == true ]]; then
+    review_target "$dir" "$label"
+  fi
+
+  if [[ "$DEEP" == true ]]; then
+    analyze_target "$dir" "$label"
+  fi
+
+  if [[ "$APPLY" == true ]]; then
+    apply_cleanup_target "$dir" "$label"
+    analyze_target "$dir" "$label"
+  fi
+
+  if [[ "$SHARE" == true ]]; then
+    share_target "$dir" "$label"
+  fi
+
+  if [[ "$PRINT_PROMPT" == true ]]; then
+    print_prompt_target "$dir" "$label"
+  fi
+done
+
+if [[ "$DEEP" == false ]]; then
+  echo "Tips:"
+  echo "  scripts/sleep --org axiom"
+  echo "  scripts/sleep --org axiom --dry-run"
+else
+  if [[ "$APPLY" == false ]]; then
+    echo "Dry run only. Re-run without --dry-run to apply cleanup/share."
+  fi
+fi

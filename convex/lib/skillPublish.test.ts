@@ -165,6 +165,62 @@ copies or substantial portions of the Software.
     ).toBe("MIT");
   });
 
+  it("publishes long display names without rewriting the stored label", async () => {
+    const displayName = "A".repeat(120);
+    const skillMarkdown = `---\ndescription: Long compatibility name.\n---\n# ${displayName}\n`;
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:long-name",
+          versionId: "skillVersions:long-name",
+          embeddingId: "skillEmbeddings:long-name",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async () => new Blob([skillMarkdown])),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "long-name",
+        displayName,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: skillMarkdown.length,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ displayName }),
+    );
+  });
+
   it("ignores taxonomy declarations from metadata.openclaw.json", async () => {
     const storedFiles = new Map([
       [
@@ -709,10 +765,7 @@ description: Security scanner smoke fixture.
       versionId: "skillVersions:demo",
       embeddingId: "skillEmbeddings:demo",
     });
-    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      ...insertArgs,
-      bypassNewSkillRateLimit: true,
-    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), insertArgs);
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       versionId: "skillVersions:demo",
     });
@@ -726,24 +779,6 @@ description: Security scanner smoke fixture.
       preserveActiveJob: true,
       preserveExistingJob: true,
     });
-  });
-
-  it("does not bypass new-skill limits for attempts created after the recovery cutoff", () => {
-    const insertArgs = {
-      userId: "users:1",
-      slug: "future-staged-skill",
-      version: "1.0.0",
-    };
-
-    expect(
-      __test.withStagedFinalizationRateLimitBypass(insertArgs, Date.parse("2026-07-07T15:27:10Z")),
-    ).toBe(insertArgs);
-    expect(
-      __test.withStagedFinalizationRateLimitBypass(
-        { ...insertArgs, bypassNewSkillRateLimit: true },
-        Date.parse("2026-07-07T15:27:10Z"),
-      ),
-    ).toEqual({ ...insertArgs, bypassNewSkillRateLimit: true });
   });
 
   it("releases the staged publish finalization claim when insertion fails", async () => {

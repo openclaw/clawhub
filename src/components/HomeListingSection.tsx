@@ -49,7 +49,7 @@ import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
-import { truncateText } from "../lib/truncateText";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -197,7 +197,9 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
-          <span className="home-v2-listing-row-name">{name}</span>
+          <span className="home-v2-listing-row-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {handle ? <span className="home-v2-listing-row-by">@{handle}</span> : null}
         </div>
         <p className="home-v2-listing-row-summary">
@@ -231,7 +233,9 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
-          <span className="home-v2-listing-row-name">{name}</span>
+          <span className="home-v2-listing-row-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {plugin.ownerHandle ? (
             <span className="home-v2-listing-row-by">@{plugin.ownerHandle}</span>
           ) : null}
@@ -258,14 +262,18 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
   return (
     <Link
       to={skillLink(entry)}
-      className={`home-v2-listing-card${showStats ? "" : " has-no-stats"}`}
+      className={`home-v2-listing-card oc-card oc-card-interactive${
+        showStats ? "" : " has-no-stats"
+      }`}
     >
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
         </span>
         <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name">{name}</span>
+          <span className="home-v2-listing-card-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {handle ? <span className="home-v2-listing-card-by">@{handle}</span> : null}
         </div>
       </div>
@@ -293,13 +301,15 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to={pluginHref} className="home-v2-listing-card">
+    <Link to={pluginHref} className="home-v2-listing-card oc-card oc-card-interactive">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           <MarketplaceIcon kind="plugin" label={name} size="sm" />
         </span>
         <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name">{name}</span>
+          <span className="home-v2-listing-card-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           <span className="home-v2-listing-card-by-row">
             {plugin.ownerHandle ? (
               <span className="home-v2-listing-card-by">@{plugin.ownerHandle}</span>
@@ -660,13 +670,23 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   };
 
   return (
-    <section id="home-v2-listing" className="home-v2-listing" aria-label="Browse catalog">
+    <section
+      id="home-v2-listing"
+      className="home-v2-listing oc-section"
+      aria-label="Browse catalog"
+    >
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
-          <div className="home-v2-listing-kind" role="group" aria-label="Content type">
+          <div
+            className="home-v2-listing-kind clawhub-segmented"
+            role="group"
+            aria-label="Content type"
+          >
             <button
               type="button"
-              className={`home-v2-listing-kind-btn${kind === "skills" ? " is-active" : ""}`}
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn${
+                kind === "skills" ? " is-active" : ""
+              }`}
               aria-pressed={kind === "skills"}
               onClick={() => handleKindChange("skills")}
             >
@@ -674,7 +694,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             </button>
             <button
               type="button"
-              className={`home-v2-listing-kind-btn${kind === "plugins" ? " is-active" : ""}`}
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn${
+                kind === "plugins" ? " is-active" : ""
+              }`}
               aria-pressed={kind === "plugins"}
               onClick={() => handleKindChange("plugins")}
             >
@@ -713,7 +735,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             <div className="home-v2-listing-actions-rail has-category">
               <button
                 type="button"
-                className={`home-v2-listing-search-trigger${searchOpen ? " is-active" : ""}`}
+                className={`home-v2-listing-search-trigger oc-action oc-action-ghost oc-action-icon${
+                  searchOpen ? " is-active" : ""
+                }`}
                 aria-label="Search catalog"
                 aria-expanded={searchOpen}
                 aria-controls="home-v2-listing-search-panel"
@@ -729,10 +753,16 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 onChange={setCategorySlugs}
               />
 
-              <div className="home-v2-listing-view" role="group" aria-label="Layout">
+              <div
+                className="home-v2-listing-view clawhub-segmented"
+                role="group"
+                aria-label="Layout"
+              >
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn${view === "list" ? " is-active" : ""}`}
+                  className={`home-v2-listing-view-btn clawhub-segmented-btn${
+                    view === "list" ? " is-active" : ""
+                  }`}
                   aria-pressed={view === "list"}
                   aria-label="List view"
                   onClick={() => setView("list")}
@@ -741,7 +771,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 </button>
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn${view === "grid" ? " is-active" : ""}`}
+                  className={`home-v2-listing-view-btn clawhub-segmented-btn${
+                    view === "grid" ? " is-active" : ""
+                  }`}
                   aria-pressed={view === "grid"}
                   aria-label="Grid view"
                   onClick={() => setView("grid")}
@@ -790,7 +822,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 <button
                   key={category.slug}
                   type="button"
-                  className="home-v2-listing-filter-chip"
+                  className="home-v2-listing-filter-chip oc-pill"
                   onClick={() => removeCategory(category.slug)}
                   aria-label={`Remove ${category.label} category filter`}
                 >
@@ -800,7 +832,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               ))
             ) : (
               <>
-                <span className="home-v2-listing-filter-chip is-summary">
+                <span className="home-v2-listing-filter-chip oc-pill is-summary">
                   {selectedCategories.length} categories
                 </span>
                 <button

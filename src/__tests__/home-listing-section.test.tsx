@@ -100,6 +100,55 @@ describe("HomeListingSection", () => {
     });
   });
 
+  it("previews long skill and plugin names while retaining their full labels", async () => {
+    const skillName = "S".repeat(71);
+    const pluginName = "P".repeat(71);
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:long",
+            slug: "long-skill",
+            displayName: skillName,
+            summary: "A helpful skill.",
+            stats: { stars: 12, downloads: 340 },
+          },
+          ownerHandle: "builder",
+        },
+      ],
+    });
+    fetchPluginCatalogMock.mockResolvedValue({
+      items: [
+        {
+          name: "long-plugin",
+          displayName: pluginName,
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          summary: "Runs workflows.",
+          createdAt: 1,
+          updatedAt: 2,
+          latestVersion: "1.0.0",
+          stats: { stars: 8, downloads: 120, installs: 120, versions: 1 },
+        },
+      ],
+      nextCursor: null,
+    });
+
+    render(<HomeListingSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText(`${"S".repeat(69)}…`).getAttribute("title")).toBe(skillName);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(`${"P".repeat(69)}…`).getAttribute("title")).toBe(pluginName);
+    });
+  });
+
   it("renders the initial Skills Top listing without refetching on mount", async () => {
     render(
       <HomeListingSection

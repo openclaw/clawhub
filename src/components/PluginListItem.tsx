@@ -5,7 +5,7 @@ import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
-import { truncateText } from "../lib/truncateText";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -61,7 +61,9 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
         <div className="skill-card-header">
           <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} size="md" />
           <div className="skill-card-identity">
-            <h3 className="skill-card-title">{truncateText(item.displayName, 40)}</h3>
+            <h3 className="skill-card-title" title={item.displayName}>
+              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </h3>
             <span className="skill-card-owner-row">
               <span className="skill-card-owner">
                 {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
@@ -108,10 +110,14 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
       <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
-          <span className="skill-list-item-name">{truncateText(item.displayName, 40)}</span>
-          {item.ownerHandle ? (
-            <span className="skill-list-item-owner">@{item.ownerHandle}</span>
-          ) : null}
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={item.displayName}>
+              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </span>
+            {item.ownerHandle ? (
+              <span className="skill-list-item-owner">@{item.ownerHandle}</span>
+            ) : null}
+          </span>
           {item.isOfficial ? <OfficialBadge /> : null}
           <CatalogTopicList topics={taxonomy.labels} limit={2} ariaLabel={taxonomy.ariaLabel} />
         </div>

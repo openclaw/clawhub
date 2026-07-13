@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
+import type { SkillPageInitialData } from "../lib/skillPage";
 
 const navigateMock = vi.fn();
 const routerInvalidateMock = vi.fn();
@@ -78,6 +79,47 @@ describe("SkillDetailPage", () => {
   const ownerPublisherId = "publishers:steipete" as Id<"publishers">;
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
+
+  function makeInitialData(githubBacked = false): SkillPageInitialData {
+    return {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: githubBacked ? "github-skill" : "weather",
+          displayName: githubBacked ? "GitHub Skill" : "Weather",
+          summary: githubBacked ? "Loaded from GitHub." : "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          ...(githubBacked ? { installKind: "github" as const } : {}),
+          tags: {},
+          badges: {},
+          stats: { stars: 0, downloads: 0, installs: 0, versions: 2, comments: 0 },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: null,
+        latestVersion: githubBacked
+          ? null
+          : {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "2.0.0",
+              fingerprint: "abc",
+              changelog: "Current release",
+              parsed: { frontmatter: {} },
+              files: [],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: githubBacked ? null : "# Weather",
+      readmeError: null,
+    };
+  }
 
   beforeEach(() => {
     window.location.hash = "";
@@ -191,6 +233,73 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
+  });
+
+  it("bounds version eligibility reads and loads full history only in Versions", async () => {
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        getFunctionName(query as never) === "skills:listVersions" &&
+        args &&
+        typeof args === "object" &&
+        "limit" in args &&
+        args.limit === 2
+      ) {
+        return [
+          { _id: "skillVersions:1", version: "2.0.0", files: [] },
+          { _id: "skillVersions:2", version: "1.0.0", files: [] },
+        ];
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query as never) === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 2,
+      ),
+    ).toBe(true);
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query as never) === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 50,
+      ),
+    ).toBe(false);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+    await waitFor(() =>
+      expect(
+        useQueryMock.mock.calls.some(
+          ([query, args]) =>
+            getFunctionName(query as never) === "skills:listVersions" &&
+            args &&
+            typeof args === "object" &&
+            "limit" in args &&
+            args.limit === 50,
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("skips archive version reads for GitHub-backed skills", () => {
+    render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
+
+    const versionCalls = useQueryMock.mock.calls.filter(
+      ([query]) => getFunctionName(query as never) === "skills:listVersions",
+    );
+    expect(versionCalls.length).toBeGreaterThan(0);
+    expect(versionCalls.every(([, args]) => args === "skip")).toBe(true);
   });
 
   it("keeps loader-backed skill content visible while staff live query resolves", async () => {

@@ -214,12 +214,11 @@ async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const now = Date.now();
   try {
+    await touchRateLimitKeyMetadata(ctx, { name, key, now });
     const status = await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
       name,
       key,
       config: HTTP_RATE_LIMIT_CONFIGS[name],
-      now,
-      ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS,
     });
     if (!status.ok) {
       return {
@@ -236,7 +235,7 @@ async function checkRateLimit(
       resetAt: getCurrentWindowResetAt(now),
     };
   } catch (error) {
-    if (!isRateLimitWriteConflict(error)) throw error;
+    if (!isRateLimitCounterWriteConflict(error)) throw error;
     return {
       allowed: false,
       remaining: 0,
@@ -244,6 +243,26 @@ async function checkRateLimit(
       resetAt: now + 1000,
       unavailable: true,
     };
+  }
+}
+
+async function touchRateLimitKeyMetadata(
+  ctx: ActionCtx,
+  args: { name: HttpRateLimitName; key: string; now: number },
+) {
+  try {
+    await ctx.runMutation(internal.rateLimits.touchHttpRateLimitKeyInternal, {
+      ...args,
+      ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS,
+    });
+  } catch (error) {
+    if (!isRateLimitMetadataWriteConflict(error)) throw error;
+    // Metadata must be attempted before quota consumption so cleanup cannot
+    // reset a bucket after it is consumed. A conflict means cleanup or another
+    // refresh committed first, so the later counter mutation remains ordered.
+    console.warn("rate_limit_metadata_write_contention", {
+      name: args.name,
+    });
   }
 }
 
@@ -320,10 +339,18 @@ function shouldTrustClientIpHeaders() {
   return false;
 }
 
-function isRateLimitWriteConflict(error: unknown) {
+function isRateLimitCounterWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    (error.message.includes("rateLimits") || error.message.includes("httpRateLimitKeys")) &&
+    error.message.includes("rateLimits") &&
+    error.message.includes("changed while this mutation was being run")
+  );
+}
+
+function isRateLimitMetadataWriteConflict(error: unknown) {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.message.includes("httpRateLimitKeys") &&
     error.message.includes("changed while this mutation was being run")
   );
 }

@@ -6,40 +6,9 @@ import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomePromotionsSection } from "../components/HomePromotionsSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
-import { HOME_APP_ICON_PRELOAD_HREFS } from "../lib/homeApps";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
-type HomeRouteHeadLink =
-  | {
-      rel: "preconnect";
-      href: string;
-    }
-  | {
-      rel: "preload";
-      as: "image";
-      href: string;
-    };
-
-function imagePreloadLink(href: string): HomeRouteHeadLink {
-  return {
-    rel: "preload",
-    as: "image",
-    href,
-  };
-}
-
-const HOME_ROUTE_HEAD_LINKS = [
-  {
-    rel: "preconnect",
-    href: "https://cdn.jsdelivr.net",
-  },
-  ...HOME_APP_ICON_PRELOAD_HREFS.map(imagePreloadLink),
-] satisfies HomeRouteHeadLink[];
-
 export const Route = createFileRoute("/")({
-  head: () => ({
-    links: HOME_ROUTE_HEAD_LINKS,
-  }),
   loader: loadInitialHomeListing,
   component: SkillsHome,
 });
@@ -337,12 +306,12 @@ function SkillsHome() {
   };
 
   return (
-    <main className="home-v2-main">
+    <main className="home-v2-main oc-app-surface">
       <HomeV2FoldBottomFade />
       <canvas ref={confettiRef} className="home-v2-confetti" style={{ display: "none" }} />
 
       {/* ═══ HERO ═══ */}
-      <section className="home-v2-hero">
+      <section className="home-v2-hero oc-hero">
         <div className="home-v2-hero-bg">
           <div className="home-v2-glow" />
           <div className="home-v2-dots" />
@@ -353,7 +322,7 @@ function SkillsHome() {
 
         {slotState ? (
           <h1
-            className={`home-v2-headline home-v2-headline-slots${
+            className={`home-v2-headline home-v2-headline-slots oc-hero-title${
               slotState.phase === "stopped" && slotState.won
                 ? slotState.isHackJackpot
                   ? " home-v2-headline-jackpot home-v2-headline-hack"
@@ -385,7 +354,7 @@ function SkillsHome() {
             </button>
           </h1>
         ) : (
-          <h1 className="home-v2-headline">
+          <h1 className="home-v2-headline oc-hero-title">
             <button
               type="button"
               className="home-v2-headline-trigger"
@@ -411,7 +380,7 @@ function SkillsHome() {
           </h1>
         )}
 
-        <p className="home-v2-sub">Discover skills and plugins from top creators</p>
+        <p className="home-v2-sub oc-hero-lede">Discover skills and plugins from top creators</p>
       </section>
 
       <HomePromotionsSection />

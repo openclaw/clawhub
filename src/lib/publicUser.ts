@@ -18,6 +18,10 @@ type PublicPublisherStats = {
   stars: number;
 };
 
+export type PublicPublisherSummary = PublicPublisher & {
+  stats: PublicPublisherStats;
+};
+
 export type PublicPublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
@@ -31,8 +35,7 @@ export type PublicPublisherPublishedItem = {
   downloads?: number;
 };
 
-export type PublicPublisherListItem = PublicPublisher & {
-  stats: PublicPublisherStats;
+export type PublicPublisherListItem = PublicPublisherSummary & {
   publishedItems: PublicPublisherPublishedItem[];
   starredCount?: number;
   affiliations?: Array<{
@@ -40,6 +43,8 @@ export type PublicPublisherListItem = PublicPublisher & {
     role: "owner" | "admin" | "publisher";
   }>;
 };
+
+export type PublicPublisherProfileItem = Omit<PublicPublisherListItem, "publishedItems">;
 
 export type PublicPublisherCatalogItem = {
   _id: string;

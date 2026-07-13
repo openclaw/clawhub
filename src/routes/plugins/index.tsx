@@ -40,6 +40,7 @@ type LegacyPluginSort = PluginSort | "newest" | "name" | "installs";
 type PluginBrowseTab = VisiblePluginSort | "official";
 
 const PLUGINS_PAGE_SIZE = 25;
+const PLUGIN_CATALOG_REQUEST_TIMEOUT_MS = 5_000;
 
 type PluginSearchState = {
   q?: string;
@@ -166,14 +167,25 @@ function hasPersistentPluginBrowseFilter(
 ) {
   return Boolean(args.category || args.featured || args.official);
 }
-function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
-  if (signal?.aborted) return true;
-  return err instanceof Error && err.name === "AbortError";
+
+function isNavigationAbortError(signal?: AbortSignal) {
+  return Boolean(signal?.aborted);
 }
 
 export async function loadPluginsPageData(
   args: PluginsPageDataRequest,
 ): Promise<PluginsLoaderData> {
+  const requestController = new AbortController();
+  const abortFromNavigation = () => requestController.abort(args.signal?.reason);
+  if (args.signal?.aborted) {
+    abortFromNavigation();
+  } else {
+    args.signal?.addEventListener("abort", abortFromNavigation, { once: true });
+  }
+  const timeoutId = setTimeout(() => {
+    requestController.abort(new DOMException("Plugin catalog request timed out", "TimeoutError"));
+  }, PLUGIN_CATALOG_REQUEST_TIMEOUT_MS);
+
   try {
     const data = await fetchPluginCatalog({
       q: args.q,
@@ -192,7 +204,9 @@ export async function loadPluginsPageData(
         ? { sort: args.sort ?? getDefaultPluginBrowseSort(args) }
         : {}),
       limit: PLUGINS_PAGE_SIZE,
-      signal: args.signal,
+      signal: requestController.signal,
+      // Public browse SSR must not serialize request-scoped private package visibility.
+      viewerMode: "anonymous",
     });
 
     return {
@@ -205,7 +219,7 @@ export async function loadPluginsPageData(
       apiError: false,
     };
   } catch (error) {
-    if (isNavigationAbortError(error, args.signal)) throw error;
+    if (isNavigationAbortError(args.signal)) throw error;
     if (isRateLimitedPackageApiError(error)) {
       return {
         items: [],
@@ -227,6 +241,9 @@ export async function loadPluginsPageData(
       isLoading: false,
       apiError: true,
     };
+  } finally {
+    clearTimeout(timeoutId);
+    args.signal?.removeEventListener("abort", abortFromNavigation);
   }
 }
 
@@ -294,7 +311,23 @@ export const Route = createFileRoute("/plugins/")({
       });
     }
   },
-  loader: (): PluginsLoaderData => createPluginsLoadingData(),
+  loaderDeps: ({ search }) => {
+    const hasQuery = Boolean(search.q);
+    return {
+      q: search.q,
+      category: search.category,
+      topic: search.topic,
+      cursor: hasQuery ? undefined : search.cursor,
+      featured: search.featured,
+      official: search.official,
+      sort: hasQuery ? undefined : normalizeActivePluginSort(search.sort),
+    };
+  },
+  loader: async ({ deps, abortController }): Promise<PluginsLoaderData> =>
+    await loadPluginsPageData({
+      ...deps,
+      signal: abortController.signal,
+    }),
   component: PluginsIndex,
 });
 
@@ -340,20 +373,20 @@ function PluginsIndex() {
   const navigate = Route.useNavigate();
   const { search, activeTopic } = useBrowseTopicSearch(routeSearch, navigate);
   const initialLoaderData = Route.useLoaderData() as PluginsLoaderData | undefined;
-  const [catalogData, setCatalogData] = useState<PluginsLoaderData>(
-    () => initialLoaderData ?? createPluginsLoadingData(),
-  );
-  const shouldKeepInitialDataRef = useRef(
-    Boolean(initialLoaderData && !initialLoaderData.isLoading),
-  );
+  const [catalogState, setCatalogState] = useState(() => ({
+    loaderData: initialLoaderData,
+    data: initialLoaderData ?? createPluginsLoadingData(),
+  }));
+  const catalogData =
+    catalogState.loaderData === initialLoaderData
+      ? catalogState.data
+      : (initialLoaderData ?? catalogState.data);
 
   // Defensive handling for when loader data is unavailable (SSR errors, etc.)
   const items = catalogData.items;
   const nextCursor = catalogData.nextCursor;
   const rateLimited = catalogData.rateLimited;
   const retryAfterSeconds = catalogData.retryAfterSeconds;
-  const totalPluginsCount = useQuery(api.packages.countPublicPlugins, {});
-  const totalCount = catalogData.totalCount ?? totalPluginsCount ?? null;
   const isLoading = catalogData.isLoading ?? false;
   const apiError = catalogData.apiError ?? false;
   const view = normalizePluginView(search.view) ?? "list";
@@ -365,6 +398,7 @@ function PluginsIndex() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
+  const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const searchNavigateTimer = useRef<number>(0);
 
   useEffect(() => {
@@ -378,50 +412,25 @@ function PluginsIndex() {
     Boolean(activeTopic) ||
     Boolean(search.official) ||
     Boolean(search.featured);
-  const formattedCount = !hasActiveFilters ? formatBrowseCount(totalCount) : null;
+  const shouldResolveTotalCount =
+    !hasActiveFilters && !search.cursor && catalogData.totalCount == null;
+  const totalPluginsCount = useQuery(
+    api.packages.countPublicPlugins,
+    shouldResolveTotalCount ? {} : "skip",
+  );
+  const totalCount = catalogData.totalCount ?? totalPluginsCount ?? null;
+  const formattedCount = !hasActiveFilters && !search.cursor ? formatBrowseCount(totalCount) : null;
 
   useEffect(() => {
-    if (shouldKeepInitialDataRef.current) {
-      shouldKeepInitialDataRef.current = false;
-      return () => {};
+    if (initialLoaderData) {
+      loadMoreAbortControllerRef.current?.abort();
+      loadMoreAbortControllerRef.current = null;
+      setIsLoadingMore(false);
+      loadMoreInFlightRef.current = false;
+      setCatalogState({ loaderData: initialLoaderData, data: initialLoaderData });
     }
-    const controller = new AbortController();
-    setIsLoadingMore(false);
-    loadMoreInFlightRef.current = false;
-    setCatalogData(createPluginsLoadingData());
-    void loadPluginsPageData({
-      q: search.q,
-      category: search.category,
-      topic: search.topic,
-      cursor: search.cursor,
-      featured: search.featured,
-      official: search.official,
-      sort: normalizeActivePluginSort(search.sort),
-      signal: controller.signal,
-    })
-      .then((data) => setCatalogData(data))
-      .catch((error) => {
-        if (isNavigationAbortError(error, controller.signal)) return;
-        setCatalogData({
-          items: [],
-          nextCursor: null,
-          rateLimited: false,
-          retryAfterSeconds: null,
-          totalCount: null,
-          isLoading: false,
-          apiError: true,
-        });
-      });
-    return () => controller.abort();
-  }, [
-    search.category,
-    search.cursor,
-    search.featured,
-    search.official,
-    search.q,
-    search.sort,
-    search.topic,
-  ]);
+    return () => loadMoreAbortControllerRef.current?.abort();
+  }, [initialLoaderData]);
 
   const activeCategory = search.category;
   const categoryTopics = useQuery(
@@ -594,6 +603,8 @@ function PluginsIndex() {
 
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadMoreInFlightRef.current) return;
+    const controller = new AbortController();
+    loadMoreAbortControllerRef.current = controller;
     loadMoreInFlightRef.current = true;
     setIsLoadingMore(true);
     try {
@@ -605,16 +616,30 @@ function PluginsIndex() {
         featured: search.featured,
         official: search.official,
         sort: normalizeActivePluginSort(search.sort),
+        signal: controller.signal,
       });
-      setCatalogData((previous) => ({
-        ...data,
-        items: [...previous.items, ...data.items],
-      }));
+      if (controller.signal.aborted) return;
+      setCatalogState((previous) => {
+        if (previous.loaderData !== initialLoaderData) return previous;
+        return {
+          ...previous,
+          data: {
+            ...data,
+            items: [...previous.data.items, ...data.items],
+          },
+        };
+      });
+    } catch (error) {
+      if (!isNavigationAbortError(controller.signal)) throw error;
     } finally {
-      setIsLoadingMore(false);
-      loadMoreInFlightRef.current = false;
+      if (loadMoreAbortControllerRef.current === controller) {
+        loadMoreAbortControllerRef.current = null;
+        setIsLoadingMore(false);
+        loadMoreInFlightRef.current = false;
+      }
     }
   }, [
+    initialLoaderData,
     nextCursor,
     search.category,
     search.featured,

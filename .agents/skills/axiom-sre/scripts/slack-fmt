@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Slack API response formatter - compact, token-efficient
+# Usage: ... | slack-fmt [--raw|--full]
+
+set -euo pipefail
+
+FULL=false
+for arg in "$@"; do
+  case "$arg" in
+    --raw) cat; exit 0 ;;
+    --full) FULL=true ;;
+  esac
+done
+
+INPUT=$(cat)
+
+# Check for error
+OK=$(echo "$INPUT" | jq -r '.ok // "false"')
+if [[ "$OK" != "true" ]]; then
+  ERROR=$(echo "$INPUT" | jq -r '.error // "unknown"')
+  DETAIL=$(echo "$INPUT" | jq -r '.response_metadata.messages[0] // empty' 2>/dev/null || true)
+  echo "error: $ERROR${DETAIL:+ ($DETAIL)}" >&2
+  exit 1
+fi
+
+echo "$INPUT" | jq -r --argjson full "$FULL" '
+def fmt:
+  if . == null then "-"
+  elif type == "boolean" then (if . then "Y" else "N" end)
+  elif type == "number" then
+    if . > 1000000000 and . < 2000000000 then
+      # Unix timestamp - show as short datetime
+      (. | strftime("%m-%d %H:%M"))
+    elif . == (. | floor) then tostring
+    else ((. * 100 | floor) / 100 | tostring)
+    end
+  elif type == "string" then
+    if (. | length) > 80 and ($full | not) then
+      .[0:60] + "...[+" + ((. | length) - 60 | tostring) + "]"
+    else .
+    end
+  elif type == "array" then
+    if length == 0 then "[]"
+    elif length <= 3 and (.[0] | type) == "string" then
+      "[" + (map(.[0:20]) | join(",")) + "]"
+    else "[" + (length | tostring) + "]"
+    end
+  elif type == "object" then "{" + (keys | length | tostring) + "}"
+  else tostring
+  end;
+
+def fmt_channel:
+  "\(.id) \(.name)\(if .is_private then " [priv]" else "" end)\(if .is_archived then " [arch]" else "" end)";
+
+def fmt_user:
+  "\(.id) \(.name) \(.real_name // "-")\(if .deleted then " [del]" else "" end)";
+
+def fmt_message:
+  "\(.ts) \(.user // .bot_id // "-") \(.text | fmt)";
+
+def fmt_file:
+  "\(.id) \(.name) \(.size // 0)B \(.filetype // "-")";
+
+def fmt_reminder:
+  "\(.id) \(.text | fmt) \(.time | fmt)";
+
+def fmt_usergroup:
+  "\(.id) @\(.handle) \(.name)\(if .user_count then " [\(.user_count) users]" else "" end)";
+
+def fmt_search_match:
+  "\(.ts) \(.channel.name // .channel.id) \(.username // "-") \(.text | fmt)";
+
+def fmt_generic:
+  to_entries | map(select(.value != null and .value != "" and .value != false)) |
+  map("\(.key)=\(.value | fmt)") | join(" ");
+
+# Route to appropriate formatter based on response shape
+if .channels then
+  "# \(.channels | length) channels\(if .response_metadata.next_cursor then " (more avail)" else "" end)",
+  (.channels[] | fmt_channel)
+elif .members and (.members[0] | type) == "object" and (.members[0].id // "" | startswith("U")) then
+  "# \(.members | length) users",
+  (.members[] | select(.is_bot == false) | fmt_user)
+elif .members and (.members[0] | type) == "string" then
+  "# \(.members | length) members\(if .response_metadata.next_cursor then " (more)" else "" end)",
+  (.members[] | .)
+elif .messages and (.messages | type) == "array" then
+  "# \(.messages | length) messages",
+  (.messages[] | fmt_message)
+elif .files then
+  "# \(.files | length) files",
+  (.files[] | fmt_file)
+elif .reminders then
+  "# \(.reminders | length) reminders",
+  (.reminders[] | fmt_reminder)
+elif .usergroups then
+  "# \(.usergroups | length) usergroups",
+  (.usergroups[] | fmt_usergroup)
+elif .messages and .query then
+  "# \(.messages.total) matches\(if .messages.paging.pages > 1 then " (page \(.messages.paging.page)/\(.messages.paging.pages))" else "" end)",
+  (.messages.matches[] | fmt_search_match)
+elif .channel and (.channel | type) == "object" then
+  "# channel",
+  (.channel | fmt_channel),
+  "topic=\(.channel.topic.value // "-" | fmt)",
+  "purpose=\(.channel.purpose.value // "-" | fmt)",
+  "members=\(.channel.num_members // "-")"
+elif .user and (.user | type) == "object" then
+  "# user",
+  (.user | fmt_user),
+  "email=\(.user.profile.email // "-")",
+  "status=\(.user.profile.status_emoji // "")\(.user.profile.status_text // "")",
+  "tz=\(.user.tz // "-")"
+elif .message then
+  "# message posted",
+  "ts=\(.ts) channel=\(.channel)"
+elif .scheduled_message_id then
+  "# scheduled",
+  "id=\(.scheduled_message_id) ts=\(.post_at | fmt) channel=\(.channel)"
+elif .ts and .channel then
+  "# ok",
+  "ts=\(.ts) channel=\(.channel)"
+elif .profile then
+  "# profile updated",
+  "status=\(.profile.status_emoji // "")\(.profile.status_text // "")"
+elif .snooze_enabled != null then
+  "# dnd",
+  "snooze=\(if .snooze_enabled then "on \(.snooze_remaining // 0)s" else "off" end)",
+  "dnd=\(if .dnd_enabled then "on" else "off" end)"
+elif .url and .user and (.user | type) == "string" then
+  "# auth ok",
+  "user=\(.user) team=\(.team) url=\(.url)"
+elif .file_id then
+  "# upload ready",
+  "file_id=\(.file_id)",
+  "upload_url=\(.upload_url | fmt)"
+elif .files and (.files[0].id // null) then
+  "# upload complete",
+  (.files[] | "id=\(.id) name=\(.name // "-")")
+else
+  "# ok",
+  (. | del(.ok, .response_metadata) | fmt_generic)
+end
+'

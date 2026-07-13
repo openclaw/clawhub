@@ -25,12 +25,25 @@ function getSiteBase() {
   );
 }
 
+function getCanonicalSiteBase() {
+  return process.env.CLAWHUB_E2E_CANONICAL_SITE?.trim() || getSiteBase();
+}
+
 function getSkillSlug() {
   return process.env.CLAWHUB_E2E_SKILL_SLUG?.trim() || "gifgrep";
 }
 
 function getSkillOwner() {
   return process.env.CLAWHUB_E2E_SKILL_OWNER?.trim() || "steipete";
+}
+
+function withDeploymentProtection(init?: RequestInit): RequestInit {
+  const headers = new Headers(init?.headers);
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (bypassSecret) {
+    headers.set("x-vercel-protection-bypass", bypassSecret);
+  }
+  return { ...init, headers };
 }
 
 async function fetchWithTimeout(
@@ -41,7 +54,10 @@ async function fetchWithTimeout(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error("Timeout")), timeoutMs);
   try {
-    return await fetch(input, { ...init, signal: controller.signal });
+    return await fetch(input, {
+      ...withDeploymentProtection(init),
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timeout);
   }
@@ -140,6 +156,10 @@ async function fetchSkillDetail() {
         },
       );
       expect(response.ok).toBe(true);
+      const expectedTestBackend = process.env.CLAWHUB_E2E_EXPECT_TEST_BACKEND?.trim();
+      if (expectedTestBackend) {
+        expect(response.headers.get("x-clawhub-test-backend")).toBe(expectedTestBackend);
+      }
       return (await response.json()) as SkillDetailResponse;
     })();
   }
@@ -166,7 +186,7 @@ describe("prod http smoke", () => {
     expectLinkWithRelAndHref(
       html,
       "canonical",
-      `${getSiteBase()}/${owner}/skills/${detail.skill.slug}`,
+      `${getCanonicalSiteBase()}/${owner}/skills/${detail.skill.slug}`,
     );
     if (detail.skill.summary) {
       expect(html).toContain(detail.skill.summary);
@@ -196,5 +216,18 @@ describe("prod http smoke", () => {
     if (detail.latestVersion?.version) {
       expect(response.headers.get("cache-control")).toContain("immutable");
     }
+  });
+
+  it("serves the published SKILL.md file", async () => {
+    const detail = await fetchSkillDetail();
+    const response = await fetchWithRetry(
+      new URL(`/api/v1/skills/${detail.skill.slug}/file?path=SKILL.md`, getSiteBase()),
+      {
+        headers: { Accept: "text/plain" },
+      },
+    );
+
+    expect(response.ok).toBe(true);
+    expect((await response.text()).trim().length).toBeGreaterThan(0);
   });
 });

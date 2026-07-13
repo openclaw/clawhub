@@ -68,7 +68,164 @@ describe("restored UI design contract", () => {
   const publicRegistry = () => read("src/lib/publicRegistry.ts");
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
+  const designSystemStyles = () => read("src/design-system.css");
   const theme = () => read("src/lib/theme.ts");
+
+  it("loads the shared OpenClaw token adapter after the legacy application stylesheet", () => {
+    const rootSource = rootRoute();
+    const sharedCss = designSystemStyles();
+
+    expect(sharedCss).toContain('@import "@openclaw/design-system/tokens.css";');
+    expect(sharedCss).toContain('@import "@openclaw/design-system/typography.css";');
+    expect(sharedCss).toContain('@import "@openclaw/design-system/themes/product.css";');
+    expect(sharedCss).toContain('@import "@openclaw/design-system/components.css";');
+    expect(sharedCss).toContain('@import "@openclaw/design-system/compat/clawhub.css";');
+    expect(sharedCss).toContain(".home-v2-main.oc-app-surface");
+    expect(sharedCss).toContain("--hv2-bg: var(--oc-bg-page)");
+    expect(sharedCss).toContain("--hv2-text: var(--oc-text-primary)");
+    expect(sharedCss).toContain("--hv2-accent: var(--oc-accent-primary)");
+    expect(sharedCss).toContain("--hv2-radius-md: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-control)");
+    expect(sharedCss).toContain("border-radius: var(--oc-radius-inset)");
+    expect(sharedCss).toContain("@media (max-width: 760px)");
+    expect(sharedCss).toContain(
+      ".home-v2-main .home-v2-popular-publishers-header.oc-section-header",
+    );
+    expect(sharedCss).toContain('[data-theme-family="claw"][data-theme-resolved="light"]');
+    expect(sharedCss).toContain("--accent: var(--oc-accent-primary)");
+    expect(sharedCss).toContain('[data-theme-family="claw"][data-theme-mode="system"]');
+    expect(rootSource.indexOf("href: designSystemCss")).toBeGreaterThan(
+      rootSource.indexOf("href: appCss"),
+    );
+  });
+
+  it("uses semantic design-system geometry across landing controls and surfaces", () => {
+    const css = styles();
+
+    for (const selector of [
+      ".home-v2-headline-trigger",
+      ".home-v2-listing-search-bar",
+      ".home-v2-listing-search-close",
+      ".home-v2-listing-category-trigger",
+    ]) {
+      expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-control)");
+    }
+    expect(cssRule(css, ".home-v2-promotion-title-icon")).toContain(
+      "border-radius: var(--oc-radius-inset)",
+    );
+    expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
+      "border-radius: var(--oc-radius-surface)",
+    );
+    expect(cssRule(css, ".home-v2-apps-tile-icon")).toContain(
+      "border-radius: var(--oc-radius-inset)",
+    );
+    for (const selector of [
+      "\n.marketplace-icon",
+      ".browse-page .browse-results-grid .skill-card-header .marketplace-icon",
+      ".home-v2-listing-card-icon .marketplace-icon",
+      ".home-v2-listing-row-icon .marketplace-icon",
+      ".home-v2-popular-publisher-card .marketplace-icon",
+      ".navbar-search-typeahead-icon .marketplace-icon",
+      ".browse-page .dashboard-catalog-row-icon .marketplace-icon",
+    ]) {
+      expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-inset)");
+    }
+    expect(cssRule(css, ".marketplace-icon-user")).toContain(
+      "border-radius: var(--oc-radius-round)",
+    );
+  });
+
+  it("keeps dashboard package names inside their rows and attention cards", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".dashboard-catalog-row .skill-list-item-name")).toContain(
+      "max-width: min(48ch, 100%)",
+    );
+    expect(
+      cssRule(css, ".dashboard-final .dashboard-attention-row .skill-list-item-name"),
+    ).toContain("max-width: 100%");
+  });
+
+  it("keeps the homepage CLI band full bleed after design-system styles load", () => {
+    const css = styles();
+    const cliBand = cssRule(css, ".home-v2-byos.oc-section");
+
+    expect(cliBand).toContain("width: 100vw");
+    expect(cliBand).toContain("max-width: none");
+  });
+
+  it("keeps browse segmented labels stable across active state changes", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".browse-tab")).toContain("font-weight: 600");
+    expect(cssRule(css, ".browse-tab.is-active")).not.toContain("font-weight");
+  });
+
+  it("keeps shared segmented controls visually quiet across homepage variants", () => {
+    const css = styles();
+
+    expect(css).toContain("--clawhub-segmented-border: color-mix(in srgb, var(--line) 58%");
+    expect(css).toContain("--clawhub-segmented-border: color-mix(in srgb, var(--hv2-border) 72%");
+    expect(css).not.toContain("--clawhub-segmented-border: var(--hv2-border-strong)");
+    expect(cssRule(css, ".clawhub-segmented")).toContain(
+      "border: 1px solid var(--clawhub-segmented-border)",
+    );
+    expect(cssRule(css, ".clawhub-segmented-btn.browse-view-btn")).toContain(
+      "width: var(--clawhub-segmented-seg-h)",
+    );
+  });
+
+  it("makes global toasts dismissible", () => {
+    const rootSource = rootRoute();
+    const css = styles();
+
+    expect(rootSource).toContain("<Toaster");
+    expect(rootSource).toContain("closeButton");
+    expect(rootSource).toContain('closeButton: "clawhub-toast-close"');
+    expect(rootSource).toContain('paddingRight: "48px"');
+    expect(cssRule(css, '[data-sonner-toast][data-styled="true"] .clawhub-toast-close')).toContain(
+      "right: 14px !important",
+    );
+    expect(cssRule(css, '[data-sonner-toast][data-styled="true"] .clawhub-toast-close')).toContain(
+      "background: transparent !important",
+    );
+  });
+
+  it("keeps migrated application surfaces on canonical semantic tokens", () => {
+    const css = styles();
+    const sharedCss = designSystemStyles();
+
+    for (const legacyReference of [
+      "var(--danger)",
+      "var(--font-sans)",
+      "var(--ink-faint)",
+      "var(--surface-raised)",
+      "var(--transition-fast)",
+      "var(--card-border)",
+      "var(--color-muted)",
+      "var(--color-text)",
+    ]) {
+      expect(css).not.toContain(legacyReference);
+    }
+
+    expect(cssRule(css, ".dashboard-route")).toContain("--hv2-bg: var(--oc-bg-page)");
+    expect(cssRule(css, ".dashboard-route")).toContain("--hv2-radius-md: var(--oc-radius-surface)");
+    expect(sharedCss).toContain("--status-pending-bg: var(--oc-surface-interactive)");
+    expect(sharedCss).toContain("--status-pending-fg: var(--oc-text-muted)");
+
+    for (const sourcePath of [
+      "src/components/SignInPrompt.tsx",
+      "src/components/SkillOwnershipPanel.tsx",
+      "src/routes/import.tsx",
+      "src/routes/settings.tsx",
+      "src/routes/skills/publish.tsx",
+    ]) {
+      expect(read(sourcePath)).not.toMatch(
+        /(?:text|bg|border)-(?:red|amber|emerald)-(?:\d+|\[[^\]]+\])/,
+      );
+    }
+  });
 
   it("keeps Vercel browser instrumentation mounted outside local dev", () => {
     const rootSource = rootRoute();
@@ -141,6 +298,8 @@ describe("restored UI design contract", () => {
     expect(moreMenu).toContain("border-radius: var(--r-md)");
     expect(css).toContain(".navbar-theme-switcher {\n  --navbar-theme-ease");
     expect(css).toContain("--navbar-theme-pad: 3px");
+    expect(css).toContain("--navbar-theme-outer-r: var(--oc-radius-control)");
+    expect(css).toContain("--navbar-theme-inner-r: var(--oc-radius-inset)");
     expect(css).toContain("--navbar-theme-seg: 26px");
     expect(css).toContain("height: var(--navbar-theme-collapsed-w)");
     const mobileDrawerTheme = cssRule(css, ".mobile-nav-appearance-section .navbar-theme-switcher");
@@ -181,8 +340,20 @@ describe("restored UI design contract", () => {
   it("requires the experiment hero and canonical home catalog without later sections", () => {
     const homeSource = home();
     const listingSource = read("src/components/HomeListingSection.tsx");
+    const appsSource = read("src/components/HomeAppsSection.tsx");
+    const publishersSource = read("src/components/HomePopularPublishersSection.tsx");
     const css = styles();
 
+    expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
+    expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
+    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented");
+    expect(appsSource).toContain('className="home-v2-apps-tile"');
+    expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
+    expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
+    expect(publishersSource).toContain(
+      "home-v2-popular-publisher-card oc-card oc-card-interactive",
+    );
     expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
     expect(homeSource).not.toContain("Unleash.");
     expect(homeSource).not.toContain("Ship.");
@@ -216,6 +387,7 @@ describe("restored UI design contract", () => {
     expect(navSource).toContain('label: "Publish Plugin"');
     expect(navSource).toContain('label: "GitHub"');
     expect(navSource).toContain('label: "OpenClaw"');
+    expect(navSource).toContain('label: "Status"');
     expect(navSource).toContain('label: "Deployed on Vercel"');
     expect(navSource).toContain('label: "Powered by Convex"');
 
@@ -251,6 +423,7 @@ describe("restored UI design contract", () => {
 
   it("keeps runtime requirement text high contrast in both themes", () => {
     const css = styles();
+    const designTokens = read("node_modules/@openclaw/design-system/styles/tokens.css");
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
     expect(installCardSource).toContain("requirements-env-row");
@@ -261,12 +434,12 @@ describe("restored UI design contract", () => {
     );
 
     const darkRatio = contrastRatio(
-      tokenValue(css, ":root", "--ink"),
-      tokenValue(css, ":root", "--surface-muted"),
+      tokenValue(designTokens, ":root", "--oc-palette-ink-50"),
+      tokenValue(designTokens, ":root", "--oc-palette-ink-900"),
     );
     const lightRatio = contrastRatio(
-      tokenValue(css, '[data-theme-family="claw"][data-theme-resolved="light"]', "--ink"),
-      tokenValue(css, '[data-theme-family="claw"][data-theme-resolved="light"]', "--surface-muted"),
+      tokenValue(designTokens, ":root", "--oc-palette-paper-950"),
+      tokenValue(designTokens, ":root", "--oc-palette-paper-200"),
     );
 
     expect(darkRatio).toBeGreaterThanOrEqual(7);
@@ -292,21 +465,19 @@ describe("restored UI design contract", () => {
   it("keeps promotion cards within narrow mobile viewports", () => {
     const css = styles();
 
-    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 84px");
-    expect(cssRule(css, ".home-v2-promotions-track")).toContain(
-      "grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr))",
-    );
-    expect(css).toContain("padding: 0 20px 72px");
+    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 56px");
+    expect(cssRule(css, ".home-v2-promotions-track")).toContain("display: grid");
+    expect(css).toContain("padding: 0 20px 48px");
   });
 
   it("keeps typeahead creator avatars round for users and square for orgs", () => {
     const css = styles();
 
     expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user")).toContain(
-      "border-radius: 999px",
+      "border-radius: var(--oc-radius-round)",
     );
     expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org")).toContain(
-      "border-radius: 8px",
+      "border-radius: var(--oc-radius-inset)",
     );
     expect(
       cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image"),

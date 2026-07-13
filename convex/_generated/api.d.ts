@@ -151,6 +151,7 @@ import type * as search from "../search.js";
 import type * as securityDataset from "../securityDataset.js";
 import type * as securityDatasetNode from "../securityDatasetNode.js";
 import type * as securityScan from "../securityScan.js";
+import type * as securityScanDispatch from "../securityScanDispatch.js";
 import type * as skillCards from "../skillCards.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
@@ -314,6 +315,7 @@ declare const fullApi: ApiFromModules<{
   securityDataset: typeof securityDataset;
   securityDatasetNode: typeof securityDatasetNode;
   securityScan: typeof securityScan;
+  securityScanDispatch: typeof securityScanDispatch;
   skillCards: typeof skillCards;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;

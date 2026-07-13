@@ -139,7 +139,7 @@ export function AddPage() {
             type="button"
             className={`flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] px-3 text-sm font-semibold transition-colors ${
               kind === "skill"
-                ? "bg-[color:var(--surface)] text-[color:var(--ink)] shadow-sm"
+                ? "bg-[color:var(--oc-bg-elevated)] text-[color:var(--oc-text-primary)] shadow-[var(--oc-shadow-sm)]"
                 : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
             }`}
             aria-pressed={kind === "skill"}
@@ -152,7 +152,7 @@ export function AddPage() {
             type="button"
             className={`flex min-h-11 items-center justify-center gap-2 rounded-[var(--radius-sm)] px-3 text-sm font-semibold transition-colors ${
               kind === "plugin"
-                ? "bg-[color:var(--surface)] text-[color:var(--ink)] shadow-sm"
+                ? "bg-[color:var(--oc-bg-elevated)] text-[color:var(--oc-text-primary)] shadow-[var(--oc-shadow-sm)]"
                 : "text-[color:var(--ink-soft)] hover:text-[color:var(--ink)]"
             }`}
             aria-pressed={kind === "plugin"}
