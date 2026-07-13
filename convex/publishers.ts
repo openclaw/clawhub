@@ -60,6 +60,7 @@ const MAX_PENDING_PUBLISHER_INVITES = 100;
 const PUBLISHER_OG_AFFILIATION_LIMIT = 5;
 const PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE = 64;
 const PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT = 512;
+const MAX_HOME_PUBLISHER_SUMMARIES = 10;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -656,6 +657,27 @@ async function toVisiblePublisherListSummary(
       displayName: resolvePublisherDisplayName(visibility.publisher, visibility.linkedUser),
     },
     visibility,
+  };
+}
+
+async function toHomePublisherSummary(
+  ctx: Pick<QueryCtx, "db">,
+  publisher: Doc<"publishers"> | null,
+) {
+  if (!publisher || !isPublisherActive(publisher) || !hasPublisherStats(publisher)) return null;
+  if (publisher.kind === "user" && !publisher.linkedUserId) return null;
+
+  const visibility = await getPublicPublisherVisibility(ctx, publisher);
+  if (!visibility) return null;
+  const publicPublisher = toPublicPublisher(publisher);
+  if (!publicPublisher) return null;
+
+  return {
+    ...publicPublisher,
+    displayName: resolvePublisherDisplayName(publisher, visibility.linkedUser),
+    image: publicPublisher.image ?? visibility.linkedUser?.image,
+    bio: publicPublisher.bio ?? visibility.linkedUser?.bio,
+    stats: getPublisherDenormalizedStats(publisher),
   };
 }
 
@@ -2254,6 +2276,29 @@ export const getProfileByHandle = query({
       includePublishedItems: true,
       includeStarredCount: true,
     });
+  },
+});
+
+export const getHomePublisherSummaries = query({
+  args: { handles: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    if (args.handles.length > MAX_HOME_PUBLISHER_SUMMARIES) {
+      throw new ConvexError(`Expected at most ${MAX_HOME_PUBLISHER_SUMMARIES} publisher handles`);
+    }
+
+    const handles = [
+      ...new Set(
+        args.handles
+          .map((handle) => normalizePublisherHandle(handle))
+          .filter((handle): handle is string => Boolean(handle)),
+      ),
+    ];
+    const summaries = await Promise.all(
+      handles.map(async (handle) =>
+        toHomePublisherSummary(ctx, await getPublisherByHandle(ctx, handle)),
+      ),
+    );
+    return summaries.filter((summary): summary is NonNullable<typeof summary> => Boolean(summary));
   },
 });
 
