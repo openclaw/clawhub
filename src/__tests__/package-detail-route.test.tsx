@@ -31,7 +31,7 @@ let pathnameMock = "/plugins/demo-plugin";
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
-  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null;
+  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null | undefined;
   readme: string | null;
   rateLimited: {
     scope: "detail" | "metadata";
@@ -394,6 +394,117 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Download .zip")).toBeNull();
   });
 
+  it("defers the first release-history request until Versions opens", async () => {
+    loaderDataMock = { ...loaderDataMock, versions: undefined };
+    vi.mocked(fetchPackageVersions).mockResolvedValueOnce({
+      items: [
+        {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Loaded on demand",
+          distTags: ["latest"],
+        },
+      ],
+      nextCursor: null,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(fetchPackageVersions).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
+    expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
+      limit: 20,
+      signal: expect.any(AbortSignal),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Show changelog for v1.0.0" }));
+    expect(await screen.findByText("Loaded on demand")).toBeTruthy();
+  });
+
+  it("retries an unavailable first release-history request", async () => {
+    loaderDataMock = { ...loaderDataMock, versions: undefined };
+    vi.mocked(fetchPackageVersions)
+      .mockRejectedValueOnce(new Error("versions unavailable"))
+      .mockResolvedValueOnce(emptyVersions);
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(await screen.findByText("Release history is temporarily unavailable.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    expect(await screen.findByText("No active releases are available.")).toBeTruthy();
+    expect(fetchPackageVersions).toHaveBeenCalledTimes(2);
+  });
+
+  it("aborts and discards a stale first release-history request after navigation", async () => {
+    let resolveFirstPage!: (page: Awaited<ReturnType<typeof fetchPackageVersions>>) => void;
+    const firstPage = new Promise<Awaited<ReturnType<typeof fetchPackageVersions>>>((resolve) => {
+      resolveFirstPage = resolve;
+    });
+    loaderDataMock = { ...loaderDataMock, versions: undefined };
+    vi.mocked(fetchPackageVersions)
+      .mockReturnValueOnce(firstPage)
+      .mockResolvedValueOnce({
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Second plugin release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: null,
+      });
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+    const { rerender } = render(
+      <PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(1));
+    const firstSignal = vi.mocked(fetchPackageVersions).mock.calls[0]?.[1]?.signal;
+
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "second-plugin",
+          displayName: "Second Plugin",
+        },
+        owner: null,
+      },
+      versions: undefined,
+    };
+    window.location.hash = "#versions";
+    rerender(<PluginDetailPage name="second-plugin" loaderData={loaderDataMock} />);
+
+    await waitFor(() => expect(fetchPackageVersions).toHaveBeenCalledTimes(2));
+    expect(firstSignal?.aborted).toBe(true);
+    await act(async () => {
+      resolveFirstPage({
+        items: [
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Stale first plugin release",
+            distTags: [],
+          },
+        ],
+        nextCursor: null,
+      });
+    });
+
+    openRelease("2.0.0");
+    expect(screen.getByText("Second plugin release")).toBeTruthy();
+    expect(screen.queryByText("Stale first plugin release")).toBeNull();
+  });
+
   it("loads and appends the next active release page", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -433,6 +544,7 @@ describe("plugin detail route", () => {
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
       cursor: "versions:next",
       limit: 20,
+      signal: expect.any(AbortSignal),
     });
     openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
@@ -470,7 +582,7 @@ describe("plugin detail route", () => {
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
-  it("resets shared detail state when navigating between scoped plugins without a hash", async () => {
+  it("resets shared detail state when the resolved package changes", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -507,7 +619,7 @@ describe("plugin detail route", () => {
     });
     const { PluginDetailPage } = await import("../routes/plugins/$name");
     const { rerender } = render(
-      <PluginDetailPage name="@scope/plugin-a" loaderData={loaderDataMock} />,
+      <PluginDetailPage name="shared-plugin" loaderData={loaderDataMock} />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
@@ -542,7 +654,7 @@ describe("plugin detail route", () => {
         nextCursor: null,
       },
     };
-    rerender(<PluginDetailPage name="@scope/plugin-b" loaderData={loaderDataMock} />);
+    rerender(<PluginDetailPage name="shared-plugin" loaderData={loaderDataMock} />);
 
     expect(screen.getByRole("tab", { name: "README.md" }).getAttribute("aria-selected")).toBe(
       "true",
@@ -754,6 +866,7 @@ describe("plugin detail route", () => {
     expect(fetchPackageVersions).toHaveBeenLastCalledWith("demo-plugin", {
       cursor: "versions:next",
       limit: 20,
+      signal: expect.any(AbortSignal),
     });
     openRelease("1.0.0");
     expect(screen.getByText("Loaded after retry")).toBeTruthy();
@@ -808,6 +921,8 @@ describe("plugin detail route", () => {
         nextCursor: null,
       },
     };
+    paramsMock = { name: "second-plugin" };
+    pathnameMock = "/plugins/second-plugin";
     rerender(<Component />);
 
     await act(async () => {
@@ -833,18 +948,19 @@ describe("plugin detail route", () => {
     window.location.hash = "#versions";
     loaderDataMock = {
       ...loaderDataMock,
-      versions: {
-        items: [
-          {
-            version: "1.0.0",
-            createdAt: 1,
-            changelog: "Initial release",
-            distTags: ["latest"],
-          },
-        ],
-        nextCursor: null,
-      },
+      versions: undefined,
     };
+    vi.mocked(fetchPackageVersions).mockResolvedValueOnce({
+      items: [
+        {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+        },
+      ],
+      nextCursor: null,
+    });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -854,6 +970,7 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+    expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
     openRelease("1.0.0");
     expect(screen.getByText("Initial release")).toBeTruthy();
   });
@@ -1279,7 +1396,20 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
+    expect(
+      useQueryMock.mock.calls
+        .filter(([query]) => getFunctionName(query as never) === "packages:canDeleteVersions")
+        .at(-1)?.[1],
+    ).toBe("skip");
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    await waitFor(() =>
+      expect(
+        useQueryMock.mock.calls.some(
+          ([query, args]) =>
+            getFunctionName(query as never) === "packages:canDeleteVersions" && args !== "skip",
+        ),
+      ).toBe(true),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
 
@@ -1936,7 +2066,8 @@ describe("plugin detail route", () => {
     expect(result.detail.package?.name).toBe("demo-plugin");
     expect(result.readme).toBeNull();
     expect(result.version).toBeNull();
-    expect(result.versions).toBeNull();
+    expect(result.versions).toBeUndefined();
+    expect(fetchPackageVersions).not.toHaveBeenCalled();
     expect(result.rateLimited).toEqual({
       scope: "metadata",
       retryAfterSeconds: 11,
@@ -1960,13 +2091,12 @@ describe("plugin detail route", () => {
     });
     vi.mocked(fetchPackageVersion).mockResolvedValueOnce({ package: null, version: null });
     vi.mocked(fetchPackageReadme).mockResolvedValueOnce("README");
-    vi.mocked(fetchPackageVersions).mockRejectedValueOnce(new Error("versions unavailable"));
-
     const result = await loader({ params: { name: "demo-plugin" } });
 
     expect(result.readme).toBe("README");
     expect(result.version).toEqual({ package: null, version: null });
-    expect(result.versions).toBeNull();
+    expect(result.versions).toBeUndefined();
+    expect(fetchPackageVersions).not.toHaveBeenCalled();
     expect(result.rateLimited).toBeNull();
   });
 
@@ -1988,13 +2118,12 @@ describe("plugin detail route", () => {
     });
     vi.mocked(fetchPackageVersion).mockResolvedValueOnce(latestVersion);
     vi.mocked(fetchPackageReadme).mockResolvedValueOnce("README");
-    vi.mocked(fetchPackageVersions).mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
-
     const result = await loader({ params: { name: "demo-plugin" } });
 
     expect(result.version).toBe(latestVersion);
     expect(result.readme).toBe("README");
-    expect(result.versions).toBeNull();
+    expect(result.versions).toBeUndefined();
+    expect(fetchPackageVersions).not.toHaveBeenCalled();
     expect(result.rateLimited).toBeNull();
   });
 
@@ -2037,7 +2166,7 @@ describe("plugin detail route", () => {
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
-    expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 20 });
+    expect(fetchPackageVersions).not.toHaveBeenCalled();
   });
 
   it("uses extension npm config for short plugin route candidates", async () => {

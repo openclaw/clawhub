@@ -21,6 +21,7 @@ type PluginVersionsPanelProps = {
   latestVersion: string | null;
   canDeleteVersions: boolean;
   onVersionDeleted?: () => void | Promise<void>;
+  onRetry?: () => void;
   panelId?: string;
   labelledBy?: string;
   hidden?: boolean;
@@ -39,11 +40,13 @@ export function PluginVersionsPanel({
   latestVersion,
   canDeleteVersions,
   onVersionDeleted,
+  onRetry,
   panelId,
   labelledBy,
   hidden = false,
 }: PluginVersionsPanelProps) {
-  const isUnavailable = versions == null;
+  const isLoading = versions === undefined;
+  const isUnavailable = versions === null;
   const deleteOwnedRelease = useMutation(api.packages.deleteOwnedRelease);
   const [releases, setReleases] = useState(versions?.items ?? []);
   const [nextCursor, setNextCursor] = useState(versions?.nextCursor ?? null);
@@ -53,9 +56,11 @@ export function PluginVersionsPanel({
   const [isDeleting, setIsDeleting] = useState(false);
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => new Set());
   const loadMoreInFlightRef = useRef(false);
+  const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
 
   useEffect(() => {
+    loadMoreAbortControllerRef.current?.abort();
     requestGenerationRef.current += 1;
     loadMoreInFlightRef.current = false;
     setReleases(versions?.items ?? []);
@@ -65,6 +70,7 @@ export function PluginVersionsPanel({
     setDeletingVersion(null);
     setIsDeleting(false);
     setExpandedVersions(new Set());
+    return () => loadMoreAbortControllerRef.current?.abort();
   }, [packageName, versions]);
 
   const toggleVersion = (version: string) => {
@@ -83,6 +89,8 @@ export function PluginVersionsPanel({
     if (!nextCursor || loadMoreInFlightRef.current) return;
     const cursor = nextCursor;
     const requestGeneration = requestGenerationRef.current;
+    const controller = new AbortController();
+    loadMoreAbortControllerRef.current = controller;
     loadMoreInFlightRef.current = true;
     setIsLoadingMore(true);
     setLoadMoreError(null);
@@ -90,17 +98,21 @@ export function PluginVersionsPanel({
       const page = await fetchPackageVersions(packageName, {
         cursor,
         limit: PLUGIN_VERSIONS_PAGE_SIZE,
+        signal: controller.signal,
       });
       if (requestGeneration !== requestGenerationRef.current) return;
       setReleases((current) => [...current, ...page.items]);
       setNextCursor(page.nextCursor);
     } catch {
-      if (requestGeneration !== requestGenerationRef.current) return;
+      if (requestGeneration !== requestGenerationRef.current || controller.signal.aborted) return;
       setLoadMoreError("Could not load more releases. Try again.");
     } finally {
       if (requestGeneration === requestGenerationRef.current) {
         setIsLoadingMore(false);
         loadMoreInFlightRef.current = false;
+        if (loadMoreAbortControllerRef.current === controller) {
+          loadMoreAbortControllerRef.current = null;
+        }
       }
     }
   };
@@ -143,10 +155,20 @@ export function PluginVersionsPanel({
         <div className="skill-versions-header">
           <h2>Versions</h2>
         </div>
-        {isUnavailable ? (
+        {isLoading ? (
+          <div className="stat p-4" role="status">
+            Loading release history...
+          </div>
+        ) : isUnavailable ? (
           <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
             <p className="empty-state-title">Release history is temporarily unavailable.</p>
-            <p className="empty-state-body">Try again later.</p>
+            {onRetry ? (
+              <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+                Try again
+              </Button>
+            ) : (
+              <p className="empty-state-body">Try again later.</p>
+            )}
           </div>
         ) : releases.length > 0 || nextCursor ? (
           <div className="skill-versions-scroll">

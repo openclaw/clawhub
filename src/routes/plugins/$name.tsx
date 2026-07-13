@@ -148,7 +148,7 @@ type PluginInspectorValidationSummary = {
 export type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
-  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null;
+  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null | undefined;
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
@@ -168,7 +168,7 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
         return {
           detail: { package: null, owner: null },
           version: null,
-          versions: null,
+          versions: undefined,
           readme: null,
           rateLimited: {
             scope: "detail",
@@ -187,25 +187,24 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
   }
 
   if (!detail.package) {
-    return { detail, version: null, versions: null, readme: null, rateLimited: null };
+    return { detail, version: null, versions: undefined, readme: null, rateLimited: null };
   }
 
   try {
-    const [version, versions, readme] = await Promise.all([
+    const [version, readme] = await Promise.all([
       detail.package.latestVersion
         ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
         : Promise.resolve(null),
-      fetchPackageVersions(resolvedName, { limit: PLUGIN_VERSIONS_PAGE_SIZE }).catch(() => null),
       fetchPackageReadme(resolvedName),
     ]);
 
-    return { detail, version, versions, readme, rateLimited: null };
+    return { detail, version, versions: undefined, readme, rateLimited: null };
   } catch (error) {
     if (isRateLimitedPackageApiError(error)) {
       return {
         detail,
         version: null,
-        versions: null,
+        versions: undefined,
         readme: null,
         rateLimited: {
           scope: "metadata",
@@ -1030,7 +1029,9 @@ type PluginDetailPageProps = {
 };
 
 export function PluginDetailPage(props: PluginDetailPageProps) {
-  return <PluginDetailPageContent key={props.name} {...props} />;
+  return (
+    <PluginDetailPageContent key={props.loaderData.detail.package?.name ?? props.name} {...props} />
+  );
 }
 
 function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
@@ -1038,6 +1039,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const router = useRouter();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
+  const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
+  const [loadedVersions, setLoadedVersions] = useState(versions);
   const isNestedPluginRoute =
     pathname.includes("/security/") || pathname.endsWith("/security-audit");
   const manageCandidateNames = getOpenClawPackageCandidateNames(name);
@@ -1050,7 +1053,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   );
   const canDeleteVersions = useQuery(
     api.packages.canDeleteVersions,
-    me && !isNestedPluginRoute && detail.package
+    me && !isNestedPluginRoute && detail.package && activeTab === "versions"
       ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
   );
@@ -1078,7 +1081,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     authorInspectorFindings && shouldShowDevValidationFindingMocks()
       ? [...authorInspectorFindings, ...buildDevValidationFindingMocks(authorInspectorFindings[0])]
       : authorInspectorFindings;
-  const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
   const [mobileDetailPanel, setMobileDetailPanel] = useState<"content" | "stats">("content");
   const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
@@ -1090,6 +1092,28 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     syncTabFromHash();
     return () => window.removeEventListener("hashchange", syncTabFromHash);
   }, []);
+  useEffect(() => {
+    const packageName = detail.package?.name;
+    if (activeTab !== "versions" || loadedVersions !== undefined || !packageName) return undefined;
+
+    const controller = new AbortController();
+    let stale = false;
+    void fetchPackageVersions(packageName, {
+      limit: PLUGIN_VERSIONS_PAGE_SIZE,
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (!stale) setLoadedVersions(result);
+      })
+      .catch(() => {
+        if (!stale && !controller.signal.aborted) setLoadedVersions(null);
+      });
+
+    return () => {
+      stale = true;
+      controller.abort();
+    };
+  }, [activeTab, detail.package?.name, loadedVersions]);
   if (isNestedPluginRoute) {
     return <Outlet />;
   }
@@ -1187,10 +1211,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const versionsPanel = (hidden: boolean) => (
     <PluginVersionsPanel
       packageName={pkg.name}
-      versions={versions}
+      versions={loadedVersions}
       latestVersion={pkg.latestVersion ?? null}
       canDeleteVersions={canDeleteVersions === true}
       onVersionDeleted={() => router.invalidate()}
+      onRetry={() => setLoadedVersions(undefined)}
       panelId="plugin-tabpanel-versions"
       labelledBy="plugin-tab-versions"
       hidden={hidden}
