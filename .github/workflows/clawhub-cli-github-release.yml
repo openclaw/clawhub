@@ -43,13 +43,13 @@ jobs:
       contents: write
     steps:
       - name: Checkout release tooling
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.ref }}
           path: release-tools
 
       - name: Checkout release tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.0
         with:
           ref: refs/tags/${{ inputs.tag }}
           fetch-depth: 0

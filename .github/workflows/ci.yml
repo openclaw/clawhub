@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
 
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - uses: ./.github/actions/setup-bun
 
@@ -181,7 +181,7 @@ jobs:
             grep: skill publishers can create a skill
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - uses: ./.github/actions/setup-bun
 

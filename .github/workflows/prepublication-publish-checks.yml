@@ -54,7 +54,7 @@ jobs:
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       SKILLSPECTOR_PROVIDER: openai
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - uses: ./.github/actions/setup-bun
 
