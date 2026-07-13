@@ -44,6 +44,8 @@ export type PublicPublisherListItem = PublicPublisherSummary & {
   }>;
 };
 
+export type PublicPublisherProfileItem = Omit<PublicPublisherListItem, "publishedItems">;
+
 export type PublicPublisherCatalogItem = {
   _id: string;
   kind: "skill" | "plugin";

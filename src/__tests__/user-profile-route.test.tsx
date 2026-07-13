@@ -253,6 +253,18 @@ describe("user profile route", () => {
     expect(args).toContainEqual(expect.objectContaining({ handle: "nvidia", sort: "downloads" }));
   });
 
+  it("keeps later indexed pages reachable when a page has no visible items", async () => {
+    const loadMore = vi.fn();
+    paginatedQueryMock.mockReturnValue({ loadMore, results: [], status: "CanLoadMore" });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(loadMore).toHaveBeenCalledWith(12);
+  });
+
   it("groups published items by topic and labels empty topics as uncategorized", async () => {
     paginatedQueryMock.mockReturnValue({
       loadMore: vi.fn(),

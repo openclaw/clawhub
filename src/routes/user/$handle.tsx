@@ -72,7 +72,7 @@ import type {
   PublicPublisher,
   PublicPublisherCatalogDisplay,
   PublicPublisherCatalogItem,
-  PublicPublisherListItem,
+  PublicPublisherProfileItem,
   PublicSkill,
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
@@ -92,7 +92,7 @@ export const Route = createFileRoute("/user/$handle")({
     const { convexHttp } = await import("../../convex/client");
     const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
       handle: params.handle,
-    })) as PublicPublisherListItem | null;
+    })) as PublicPublisherProfileItem | null;
     if (!publisher) throw notFound();
     return { publisher };
   },
@@ -166,15 +166,19 @@ function formatCatalogTabCount(value: number) {
 }
 
 export function resolveDefaultCatalogTab(
-  publisher: Pick<PublicPublisherListItem, "stats">,
+  publisher: Pick<PublicPublisherProfileItem, "stats">,
 ): Extract<ProfileCatalogTab, "skills" | "plugins"> {
   if (publisher.stats.skills > 0) return "skills";
   if (publisher.stats.packages > 0) return "plugins";
   return "skills";
 }
 
-function buildCatalogTabOptions(publisher: PublicPublisherListItem) {
-  const options = [
+function buildCatalogTabOptions(publisher: PublicPublisherProfileItem) {
+  const options: Array<{
+    value: ProfileCatalogTab;
+    label: string;
+    count?: string;
+  }> = [
     {
       value: "skills",
       label: "Skills",
@@ -190,7 +194,10 @@ function buildCatalogTabOptions(publisher: PublicPublisherListItem) {
     options.push({
       value: "stars",
       label: "Starred",
-      count: formatCatalogTabCount(publisher.starredCount ?? 0),
+      count:
+        publisher.starredCount === undefined
+          ? undefined
+          : formatCatalogTabCount(publisher.starredCount),
     });
   }
   return options;
@@ -265,7 +272,9 @@ type PublisherStatCard = {
   icon: LucideIcon;
 };
 
-export function buildPublisherStatCards(publisher: PublicPublisherListItem): PublisherStatCard[] {
+export function buildPublisherStatCards(
+  publisher: PublicPublisherProfileItem,
+): PublisherStatCard[] {
   return [
     {
       key: "downloads",
@@ -396,7 +405,7 @@ function PublisherProfileMembers({
 function PublisherProfile() {
   const { handle } = Route.useParams();
   const { publisher: loaderPublisher } = Route.useLoaderData() as {
-    publisher: PublicPublisherListItem;
+    publisher: PublicPublisherProfileItem;
   };
   return <PublisherProfilePage handle={handle} loaderPublisher={loaderPublisher} />;
 }
@@ -462,7 +471,7 @@ function PublisherProfileChromeActions({
   );
 }
 
-function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublisherListItem }) {
+function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublisherProfileItem }) {
   return (
     <div className="publisher-profile-chrome-identity">
       <div className="publisher-profile-avatar">
@@ -498,7 +507,7 @@ export function PublisherProfilePage({
   loaderPublisher,
 }: {
   handle: string;
-  loaderPublisher: PublicPublisherListItem;
+  loaderPublisher: PublicPublisherProfileItem;
 }) {
   const { isAuthenticated, me } = useAuthStatus();
   const { signIn } = useAuthActions();
@@ -534,7 +543,7 @@ export function PublisherProfilePage({
   }, [handle, catalogTab, apiSort]);
 
   const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
-    | PublicPublisherListItem
+    | PublicPublisherProfileItem
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
@@ -641,7 +650,7 @@ export function PublisherProfilePage({
     setIsReportDialogOpen(true);
   };
 
-  const submitPublisherReport = async (reportedPublisher: PublicPublisherListItem) => {
+  const submitPublisherReport = async (reportedPublisher: PublicPublisherProfileItem) => {
     const trimmedReason = reportReason.trim();
     if (!trimmedReason) {
       setReportError("Report reason required.");
@@ -937,13 +946,20 @@ export function PublisherProfilePage({
                 <EmptyState
                   icon={catalogSearch.trim().length > 0 ? Search : undefined}
                   title={
-                    catalogSearch.trim().length > 0
-                      ? "No matching items"
-                      : catalogTab === "stars"
-                        ? "No starred items yet"
-                        : catalogTab === "plugins"
-                          ? "No published plugins yet"
-                          : "No published skills yet"
+                    showCatalogLoadMore
+                      ? "No visible items on this page"
+                      : catalogSearch.trim().length > 0
+                        ? "No matching items"
+                        : catalogTab === "stars"
+                          ? "No starred items yet"
+                          : catalogTab === "plugins"
+                            ? "No published plugins yet"
+                            : "No published skills yet"
+                  }
+                  action={
+                    showCatalogLoadMore
+                      ? { label: "Load more", onClick: () => activeLoadMore(12) }
+                      : undefined
                   }
                 />
               )}

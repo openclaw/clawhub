@@ -121,13 +121,20 @@ type PublisherMembership = {
       downloads: number;
       stars: number;
     };
-    publishedItems?: Array<{
-      kind: "skill" | "plugin";
-      displayName: string;
-      downloads: number;
-    }>;
   };
   role: "owner" | "admin" | "publisher";
+};
+
+type PublisherDeletionInventory = {
+  handle: string;
+  stats: {
+    skills: number;
+    packages: number;
+  };
+  publishedItems: Array<{
+    kind: "skill" | "plugin";
+    displayName: string;
+  }>;
 };
 
 type OrgMembersResult = {
@@ -260,7 +267,7 @@ export function Settings() {
   const revokeToken = useMutation(api.tokens.revoke);
   const publisherMemberships = useQuery(
     api.publishers.listMine,
-    shouldLoadAccountScopedQueries ? {} : "skip",
+    shouldLoadAccountScopedQueries ? { includePublishedItems: false } : "skip",
   ) as Array<PublisherMembership> | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
@@ -368,9 +375,14 @@ export function Settings() {
       ? {}
       : "skip",
   ) as GitHubSkillSource[] | undefined;
-  const deletionPublishers = (publisherMemberships ?? []).filter(
-    (entry) => entry.publisher.kind === "user" || entry.role === "owner",
-  );
+  const deletionInventory = useQuery(
+    api.publishers.getDeletionInventory,
+    shouldLoadAccountScopedQueries && deleteOrgDialogOpen && selectedOrg
+      ? { publisherId: selectedOrg.publisher._id }
+      : shouldLoadAccountScopedQueries && deleteDialogOpen
+        ? {}
+        : "skip",
+  ) as PublisherDeletionInventory[] | undefined;
 
   useEffect(() => {
     if (!me) return;
@@ -1339,7 +1351,7 @@ export function Settings() {
                                     </DialogDescription>
                                   </DialogHeader>
                                   <DeletionResourceSummary
-                                    publishers={[selectedOrg]}
+                                    inventory={deletionInventory}
                                     emptyLabel="This organization has no published skills or plugins."
                                   />
                                   <DialogFooter>
@@ -1351,6 +1363,7 @@ export function Settings() {
                                     </Button>
                                     <Button
                                       variant="destructive"
+                                      disabled={deletionInventory === undefined}
                                       onClick={() => void onDeleteOrg()}
                                     >
                                       Permanently delete organization
@@ -1693,14 +1706,18 @@ export function Settings() {
                           </DialogDescription>
                         </DialogHeader>
                         <DeletionResourceSummary
-                          publishers={deletionPublishers}
+                          inventory={deletionInventory}
                           emptyLabel="No published skills or plugins are attached to your account."
                         />
                         <DialogFooter>
                           <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
                             Cancel
                           </Button>
-                          <Button variant="destructive" onClick={() => void onDelete()}>
+                          <Button
+                            variant="destructive"
+                            disabled={deletionInventory === undefined}
+                            onClick={() => void onDelete()}
+                          >
                             Permanently delete account
                           </Button>
                         </DialogFooter>
@@ -1756,24 +1773,32 @@ function formatGitHubSourceSyncToast(
 }
 
 function DeletionResourceSummary({
-  publishers,
+  inventory,
   emptyLabel,
 }: {
-  publishers: PublisherMembership[];
+  inventory: PublisherDeletionInventory[] | undefined;
   emptyLabel: string;
 }) {
-  const totals = publishers.reduce(
+  if (inventory === undefined) {
+    return (
+      <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-3 text-sm text-[color:var(--ink-soft)]">
+        Loading published resources...
+      </div>
+    );
+  }
+
+  const totals = inventory.reduce(
     (acc, entry) => {
-      acc.skills += entry.publisher.stats?.skills ?? 0;
-      acc.plugins += entry.publisher.stats?.packages ?? 0;
+      acc.skills += entry.stats.skills;
+      acc.plugins += entry.stats.packages;
       return acc;
     },
     { skills: 0, plugins: 0 },
   );
-  const resources = publishers.flatMap((entry) =>
-    (entry.publisher.publishedItems ?? []).map((item) => ({
+  const resources = inventory.flatMap((entry) =>
+    entry.publishedItems.map((item) => ({
       ...item,
-      publisherHandle: entry.publisher.handle,
+      publisherHandle: entry.handle,
     })),
   );
   const totalResources = totals.skills + totals.plugins;

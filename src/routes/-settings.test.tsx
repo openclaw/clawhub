@@ -137,11 +137,13 @@ function mockSignedInSettings({
   pendingInvites = [],
   myInvites = [],
   membersLoading = false,
+  deletionInventoryLoading = false,
 }: {
   search?: Record<string, unknown>;
   memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
   membersLoading?: boolean;
+  deletionInventoryLoading?: boolean;
   pendingInvites?: PublisherInviteFixture[];
   myInvites?: PublisherInviteFixture[];
   githubSources?: Array<{
@@ -196,6 +198,9 @@ function mockSignedInSettings({
     if (args === "skip") return undefined;
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
+    if (queryName === "publishers:getDeletionInventory") {
+      return deletionInventoryLoading ? undefined : [];
+    }
     if (queryName === "publishers:listMembers" && membersLoading) return undefined;
     if (queryName === "publishers:listMembers") return members;
     if (queryName === "publishers:listInvitesForPublisher") return pendingInvites;
@@ -321,11 +326,30 @@ describe("Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
 
     expect(await screen.findByText(/Permanently delete @openclaw/)).toBeTruthy();
+    expect(getLastQueryArgs("publishers:getDeletionInventory")).toEqual({
+      publisherId: "publisher_openclaw",
+    });
     fireEvent.click(screen.getByRole("button", { name: "Permanently delete organization" }));
 
     await waitFor(() =>
       expect(deleteOrg).toHaveBeenCalledWith({ publisherId: "publisher_openclaw" }),
     );
+  });
+
+  it("blocks organization deletion until its inventory loads", async () => {
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      deletionInventoryLoading: true,
+    });
+
+    render(<Settings />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+
+    expect(
+      (await screen.findByRole("button", { name: "Permanently delete organization" })).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
   });
 
   it("stops account-scoped queries before deleting the signed-in account", async () => {
@@ -341,9 +365,11 @@ describe("Settings", () => {
     render(<Settings />);
 
     expect(getLastQueryArgs("tokens:listMine")).toEqual({});
-    expect(getLastQueryArgs("publishers:listMine")).toEqual({});
+    expect(getLastQueryArgs("publishers:listMine")).toEqual({ includePublishedItems: false });
+    expect(getLastQueryArgs("publishers:getDeletionInventory")).toBe("skip");
     useQueryMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(getLastQueryArgs("publishers:getDeletionInventory")).toEqual({});
     fireEvent.click(await screen.findByRole("button", { name: "Permanently delete account" }));
 
     await waitFor(() => expect(deleteAccount).toHaveBeenCalled());
@@ -351,6 +377,23 @@ describe("Settings", () => {
       expect(getLastQueryArgs("tokens:listMine")).toBe("skip");
       expect(getLastQueryArgs("publishers:listMine")).toBe("skip");
     });
+  });
+
+  it("blocks account deletion until its inventory loads", async () => {
+    mockSignedInSettings({
+      search: { view: "danger" },
+      memberships: [personalMembership],
+      deletionInventoryLoading: true,
+    });
+
+    render(<Settings />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+
+    expect(
+      (await screen.findByRole("button", { name: "Permanently delete account" })).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
   });
 
   it("clears auth state and leaves settings after account deletion succeeds", async () => {
