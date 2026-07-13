@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "Rendered plugin catalog reference; SSR request measurements remain in the PR body",
+  "provider": "real Chromium against public ClawHub",
+  "candidate": "merged PR #3062 visual reference",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Public plugin catalog rendered with live catalog data",
+          "slug": "plugins-catalog",
+          "status": "pass",
+          "screenshot": "screenshots/plugins-catalog.png"
+        }
+      ]
+    }
+  ]
+}
