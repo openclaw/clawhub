@@ -168,4 +168,32 @@ describe("package publish workflow", () => {
     expect(workflow).not.toContain("Prebuilt artifact mode does not accept source_path");
     expect(workflow).toContain('cmd += ["--source-path", source_path]');
   });
+
+  it("forwards optional catalog metadata and changelog inputs", () => {
+    const workflowText = readFileSync(resolve(".github/workflows/package-publish.yml"), "utf8");
+    const workflow = parseYaml(workflowText) as {
+      on?: {
+        workflow_call?: {
+          inputs?: Record<string, { required?: boolean; type?: string }>;
+        };
+      };
+      jobs?: {
+        publish?: {
+          steps?: Array<{ name?: string; env?: Record<string, string>; run?: string }>;
+        };
+      };
+    };
+    const inputs = workflow.on?.workflow_call?.inputs;
+    const resolveStep = workflow.jobs?.publish?.steps?.find(
+      (step) => step.name === "Resolve publish command",
+    );
+
+    for (const name of ["changelog", "categories", "topics"]) {
+      const envName = `INPUT_${name.toUpperCase()}`;
+      expect(inputs?.[name]).toMatchObject({ required: false, type: "string" });
+      expect(resolveStep?.env?.[envName]).toBe(`\${{ inputs.${name} }}`);
+      expect(resolveStep?.run).toContain(`${name} = os.environ["${envName}"].strip()`);
+      expect(resolveStep?.run).toContain(`if ${name}:\n    cmd += ["--${name}", ${name}]`);
+    }
+  });
 });

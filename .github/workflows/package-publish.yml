@@ -49,6 +49,18 @@ on:
         required: false
         type: string
         default: latest
+      changelog:
+        description: Optional release changelog shown on ClawHub.
+        required: false
+        type: string
+      categories:
+        description: Optional comma-separated plugin category slugs.
+        required: false
+        type: string
+      topics:
+        description: Optional comma-separated catalog topics.
+        required: false
+        type: string
       source_repo:
         description: Optional source repo override for local-folder publishes.
         required: false
@@ -294,6 +306,9 @@ jobs:
           INPUT_FAMILY: ${{ inputs.family }}
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_TAGS: ${{ inputs.tags }}
+          INPUT_CHANGELOG: ${{ inputs.changelog }}
+          INPUT_CATEGORIES: ${{ inputs.categories }}
+          INPUT_TOPICS: ${{ inputs.topics }}
           INPUT_SOURCE_REPO: ${{ inputs.source_repo }}
           INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
@@ -457,6 +472,9 @@ jobs:
           family = os.environ["INPUT_FAMILY"].strip()
           version = os.environ["INPUT_VERSION"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
+          changelog = os.environ["INPUT_CHANGELOG"].strip()
+          categories = os.environ["INPUT_CATEGORIES"].strip()
+          topics = os.environ["INPUT_TOPICS"].strip()
           if owner:
               cmd += ["--owner", owner]
           if family:
@@ -470,6 +488,12 @@ jobs:
               cmd += ["--version", version]
           if tags:
               cmd += ["--tags", tags]
+          if changelog:
+              cmd += ["--changelog", changelog]
+          if categories:
+              cmd += ["--categories", categories]
+          if topics:
+              cmd += ["--topics", topics]
           source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
           source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
           source_ref = os.environ["INPUT_SOURCE_REF"].strip()
