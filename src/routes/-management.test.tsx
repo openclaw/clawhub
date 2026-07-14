@@ -114,6 +114,16 @@ function makePublisherAbuseSignal() {
       allTimeDownloads: 10_000,
       allTimeInstalls: 1_200,
       allTimeInstallDownloadRatio: 0.12,
+      temporalBenchmark: {
+        scope: "all_active_skills",
+        sampleSize: 1000,
+        downloads30dAverage: 180,
+        downloads30dMedian: 45,
+        downloads30dP95: 900,
+        downloads30dP99: 3000,
+        spikeMultiplier7dP95: 4,
+        spikeMultiplier7dP99: 12,
+      },
     },
     publisher: {
       _id: "publishers:ratio-owner",
@@ -539,6 +549,9 @@ describe("Management", () => {
     expect(screen.getByText("96 installs / 800 downloads")).toBeTruthy();
     expect(screen.getByText("288 installs / 2,400 downloads")).toBeTruthy();
     expect(screen.getByText("1,200 installs / 10,000 downloads")).toBeTruthy();
+    expect(
+      screen.getByText(/Platform 30d downloads across all 1,000 active skills: P95 900, P99 3,000/),
+    ).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Snooze 14 days$/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^Dismiss signal$/ })).toBeTruthy();
     expect(screen.queryByRole("columnheader", { name: "Z-score" })).toBeNull();
@@ -1398,9 +1411,54 @@ describe("Management", () => {
   });
 
   it("shows temporal download/install evidence in the abuse drawer", () => {
+    const temporalEvidence = [
+      {
+        skillId: "skills:burst",
+        slug: "download-burst",
+        displayName: "Download Burst",
+        spike: false,
+        sustained: true,
+        pressure: 18,
+        recent7Downloads: 5000,
+        recent7Installs: 0,
+        previous30Downloads: 120,
+        baseline7Downloads: 100,
+        spikeMultiplier: 8,
+        recent30Downloads: 16_200,
+        recent30Installs: 0,
+        downloadInstallRatio30: 16_200,
+        downloads30dCohortBand: "p99",
+        downloads30dVsPeerP95: 18,
+        spikeMultiplierVsPeerP95: 2,
+        sustainedWindowStartDay: 1,
+        sustainedWindowEndDay: 30,
+        reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+      },
+    ];
     const item = makePublisherAbuseItem({
       handle: "temporal-pub",
       zScore: 2.65,
+      scoreOverrides: {
+        modelVersion: "publisher-abuse-temporal.v1",
+        pressure: 1101,
+        temporalMaxPressure: 1,
+        reasonCodes: ["temporal_sustained_downloads_flat_installs"],
+        temporalBenchmark: {
+          scope: "all_active_skills",
+          sampleSize: 1000,
+          downloads30dAverage: 180,
+          downloads30dMedian: 45,
+          downloads30dP95: 900,
+          downloads30dP99: 3000,
+          spikeMultiplier7dP95: 4,
+          spikeMultiplier7dP99: 12,
+        },
+        temporalEvidence,
+      },
+    });
+    const legacyItem = makePublisherAbuseItem({
+      handle: "legacy-temporal-pub",
+      id: "2",
       scoreOverrides: {
         modelVersion: "publisher-abuse-temporal.v1",
         pressure: 1101,
@@ -1415,30 +1473,7 @@ describe("Management", () => {
           spikeMultiplier7dP95: 4,
           spikeMultiplier7dP99: 12,
         },
-        temporalEvidence: [
-          {
-            skillId: "skills:burst",
-            slug: "download-burst",
-            displayName: "Download Burst",
-            spike: false,
-            sustained: true,
-            pressure: 18,
-            recent7Downloads: 5000,
-            recent7Installs: 0,
-            previous30Downloads: 120,
-            baseline7Downloads: 100,
-            spikeMultiplier: 8,
-            recent30Downloads: 16_200,
-            recent30Installs: 0,
-            downloadInstallRatio30: 16_200,
-            downloads30dCohortBand: "p99",
-            downloads30dVsPeerP95: 18,
-            spikeMultiplierVsPeerP95: 2,
-            sustainedWindowStartDay: 1,
-            sustainedWindowEndDay: 30,
-            reasonCodes: ["temporal_sustained_downloads_flat_installs"],
-          },
-        ],
+        temporalEvidence,
       },
     });
 
@@ -1452,7 +1487,7 @@ describe("Management", () => {
         return {
           latestRun: null,
           pendingItems: [],
-          pendingPotentialBanCandidateItems: [item],
+          pendingPotentialBanCandidateItems: [item, legacyItem],
           pendingReviewItems: [],
           recentResolvedItems: [],
         };
@@ -1468,10 +1503,15 @@ describe("Management", () => {
     expect(screen.getByText("Temporal signal")).toBeTruthy();
     expect(screen.getByText("Low (1)")).toBeTruthy();
     expect(screen.queryByText("Very High")).toBeNull();
-    expect(screen.getByText(/Compared with 1,000 scanned skills/)).toBeTruthy();
+    expect(screen.getByText(/Compared with all 1,000 active skills/)).toBeTruthy();
     expect(screen.getByText("Download Burst")).toBeTruthy();
     expect(screen.getByText("16,200")).toBeTruthy();
-    expect(screen.getByText("Peer 30d P95")).toBeTruthy();
+    expect(screen.getByText("Platform 30d P95")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("legacy-temporal-pub"));
+
+    expect(screen.getByText(/Compared with a legacy cohort of 1,000 active skills/)).toBeTruthy();
+    expect(screen.getByText("Legacy cohort 30d P95")).toBeTruthy();
   });
 
   it("bans potential-ban nominations through the publisher abuse flow", async () => {

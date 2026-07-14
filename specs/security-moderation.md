@@ -64,15 +64,28 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse scoring classifies bulk-publishing abuse for staff review and
   warning-first automatic enforcement. Scheduled pressure scoring runs daily.
   Plain temporal dry runs are read-only. The scheduled temporal scan explicitly
-  opts into archived dry-run signal rows for the staff Signals tab until it has
-  persisted aggregation/cursor state. The `review` label remains a
-  calibration/manual-review signal. The `potential_ban_candidate` label is an
+  opts into archived dry-run signal rows for the staff Signals tab. It persists
+  bounded source pages, exact percentile samples, and review candidates, then
+  resumes through percentile and classification phases. Temporary scan rows
+  expire after seven days. Explicitly bounded manual scans remain diagnostic-only.
+  The `review` label remains a calibration/manual-review signal. The
+  `potential_ban_candidate` label is an
   enforcement signal only for pressure-score nominations: the first eligible
   enforcement sweep must warn the linked non-staff user by email and persist the
   warning score/run/deadline on the nomination. A later sweep may automatically
   ban only after the warning deadline has passed and a newer pressure score
   still places the publisher in `potential_ban_candidate`. A stale warning by
   itself is not enough to ban.
+- Temporal download percentiles use the full active-skill population, including
+  zero-download, official, staff-owned, and personal skills. Publisher
+  exclusions apply only to review candidates, not to the platform benchmark.
+  Partial scans must not archive signals or present their top-download slice as
+  a platform percentile.
+- Flat-install temporal review signals are deliberately high-confidence:
+  sustained volume must exceed the platform P99, reach at least 3,000 downloads
+  in 30 days, and have at most 5 installs; a spike must exceed the platform P99,
+  reach at least 2,000 downloads in 7 days, and have at most 2 installs. These
+  signals indicate anomalous traffic for manual review, not publisher attribution.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score

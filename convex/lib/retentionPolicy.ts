@@ -212,6 +212,24 @@ export const RETENTION_POLICIES = {
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
+  publisherAbuseTemporalScanSamples: ephemeral(
+    "Exact temporal percentile samples are temporary scan working state.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "publisherAbuseTemporalScan.pruneExpiredTemporalScanRowsInternal",
+      retention: "Seven days after the scan starts.",
+    },
+  ),
+  publisherAbuseTemporalScanCandidates: ephemeral(
+    "Temporal review candidates are temporary scan working state.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "publisherAbuseTemporalScan.pruneExpiredTemporalScanRowsInternal",
+      retention: "Seven days after the scan starts.",
+    },
+  ),
   publisherAbuseScores: permanent("Abuse score history used for review decisions."),
   publisherAbuseReviewNominations: permanent("Abuse review workflow state."),
   publisherAbuseReviewEvents: permanent("Abuse review event history."),

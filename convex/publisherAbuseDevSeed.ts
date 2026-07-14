@@ -398,6 +398,7 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
   const now = args.now;
   const todayDay = Math.floor(now / DAY_MS);
   const temporalBenchmark = {
+    scope: "all_active_skills" as const,
     sampleSize: 1000,
     downloads30dAverage: 180,
     downloads30dMedian: 45,
