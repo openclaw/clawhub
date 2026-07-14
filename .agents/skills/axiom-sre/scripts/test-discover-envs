@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Test discover-* scripts env filtering.
+#
+# Verifies that discover scripts accept optional space-separated env arguments
+# to limit discovery to specific deployments instead of all configured ones.
+#
+# Uses stubbed API scripts to avoid network calls.
+#
+# Usage: scripts/test-discover-envs
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
+
+PASS=0
+FAIL=0
+
+pass() { echo "  ✓ $1"; PASS=$((PASS + 1)); }
+fail() { echo "  ✗ $1"; FAIL=$((FAIL + 1)); }
+
+strip_ansi() { sed $'s/\033\[[0-9;]*m//g'; }
+
+# --- Setup: copy discover scripts + config to test dir, stub API scripts ---
+
+for s in discover-axiom discover-grafana discover-alerts discover-pyroscope discover-slack config; do
+    cp "$SCRIPT_DIR/$s" "$TEST_DIR/$s"
+    chmod +x "$TEST_DIR/$s"
+done
+
+# Stubs for API-calling scripts (no-op, instant)
+for stub in axiom-query axiom-api grafana-api grafana-alerts pyroscope-services slack; do
+    cat > "$TEST_DIR/$stub" << 'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+    chmod +x "$TEST_DIR/$stub"
+done
+
+# Config fixture: 3 envs per tool
+cat > "$TEST_DIR/config.toml" << 'EOF'
+[axiom.deployments.alpha]
+url = "http://localhost:1"
+token = "fake"
+org_id = "fake"
+
+[axiom.deployments.beta]
+url = "http://localhost:1"
+token = "fake"
+org_id = "fake"
+
+[axiom.deployments.gamma]
+url = "http://localhost:1"
+token = "fake"
+org_id = "fake"
+
+[grafana.deployments.alpha]
+url = "http://localhost:1"
+token = "fake"
+
+[grafana.deployments.beta]
+url = "http://localhost:1"
+token = "fake"
+
+[grafana.deployments.gamma]
+url = "http://localhost:1"
+token = "fake"
+
+[pyroscope.deployments.alpha]
+url = "http://localhost:1"
+token = "fake"
+
+[pyroscope.deployments.beta]
+url = "http://localhost:1"
+token = "fake"
+
+[pyroscope.deployments.gamma]
+url = "http://localhost:1"
+token = "fake"
+
+[slack.workspaces.alpha]
+token = "fake"
+
+[slack.workspaces.beta]
+token = "fake"
+
+[slack.workspaces.gamma]
+token = "fake"
+EOF
+
+export SRE_CONFIG="$TEST_DIR/config.toml"
+
+echo "=== discover env filtering tests ==="
+
+# Generic test function
+# Usage: test_script <script> <label> <env1> <env2> <env3>
+test_script() {
+    local script="$1" label="$2" env1="$3" env2="$4" env3="$5"
+
+    echo ""
+    echo "--- $script ---"
+
+    local output count
+
+    # No args: all 3 envs
+    output=$("$TEST_DIR/$script" 2>&1 || true)
+    count=$(echo "$output" | strip_ansi | grep -c "^${label}: " || true)
+    if [[ "$count" -eq 3 ]]; then
+        pass "$script (no args): all 3 envs"
+    else
+        fail "$script (no args): expected 3 envs, got $count"
+    fi
+
+    # Single env
+    output=$("$TEST_DIR/$script" "$env1" 2>&1 || true)
+    count=$(echo "$output" | strip_ansi | grep -c "^${label}: " || true)
+    if [[ "$count" -eq 1 ]]; then
+        pass "$script $env1: only 1 env"
+    else
+        fail "$script $env1: expected 1 env, got $count"
+    fi
+    if echo "$output" | strip_ansi | grep -q "^${label}: ${env1}"; then
+        pass "$script $env1: correct env"
+    else
+        fail "$script $env1: '${env1}' not in output"
+    fi
+
+    # Two envs, middle one excluded
+    output=$("$TEST_DIR/$script" "$env1" "$env3" 2>&1 || true)
+    count=$(echo "$output" | strip_ansi | grep -c "^${label}: " || true)
+    if [[ "$count" -eq 2 ]]; then
+        pass "$script $env1 $env3: 2 envs"
+    else
+        fail "$script $env1 $env3: expected 2 envs, got $count"
+    fi
+    if echo "$output" | strip_ansi | grep -q "^${label}: ${env2}"; then
+        fail "$script $env1 $env3: '$env2' should be excluded"
+    else
+        pass "$script $env1 $env3: '$env2' excluded"
+    fi
+}
+
+test_script discover-axiom     deployment alpha beta gamma
+test_script discover-grafana   deployment alpha beta gamma
+test_script discover-alerts    deployment alpha beta gamma
+test_script discover-pyroscope deployment alpha beta gamma
+test_script discover-slack     workspace  alpha beta gamma
+
+echo ""
+echo "==========================="
+echo "Results: $PASS passed, $FAIL failed"
+if [[ $FAIL -gt 0 ]]; then
+    exit 1
+fi

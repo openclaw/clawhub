@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Gilfoyle Alert Discovery
+# Usage: ./scripts/discover-alerts [env ...]
+#
+# Checks all Grafana deployments for FIRING alerts.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_SCRIPT="$SCRIPT_DIR/config"
+
+# Colors for output
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+if [[ ! -f "$CONFIG_SCRIPT" ]]; then
+    exit 1
+fi
+
+if [[ $# -gt 0 ]]; then
+    deployments="$*"
+else
+    deployments=$("$CONFIG_SCRIPT" --list grafana)
+    if [[ "$deployments" == "(none configured)" ]]; then
+        exit 0
+    fi
+fi
+
+echo -e "${BLUE}=== Active Alerts (Grafana) ===${NC}"
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+current_time_ms() {
+    local t=${EPOCHREALTIME:-$(date +%s).000}
+    local s=${t%.*}
+    local us=${t#*.}
+    us=$(printf "%-06s" "$us" | cut -c1-6)
+    echo $(( s * 1000 + 10#${us%???} ))
+}
+
+check_alerts() {
+    local dep="$1"
+    local out="$TMP_DIR/$dep"
+    
+    {
+        START_TIME=$(current_time_ms)
+        # We assume firing alerts are what we care about during init
+        response=$("$SCRIPT_DIR/grafana-alerts" "$dep" "firing" 2>/dev/null || echo "")
+        
+        END_TIME=$(current_time_ms)
+        DURATION=$(( END_TIME - START_TIME ))
+        
+        # Parse the output of grafana-alerts script
+        # grep -c returns 0 and exit code 1 if no matches. We mask the exit code.
+        count=$(echo "$response" | grep -c "^\[FIRING\]" || true)
+        
+        if [[ "$count" -gt 0 ]]; then
+            echo -e "deployment: ${BOLD}$dep${NC} - ${RED}$count FIRING${NC} (${DURATION}ms)"
+            echo "$response" | grep -A 3 "^\[FIRING\]" | sed 's/^/  /'
+        else
+            echo -e "deployment: ${BOLD}$dep${NC} - ${GREEN}All clear${NC} (${DURATION}ms)"
+        fi
+    } > "$out" 2>&1
+}
+
+for dep in $deployments; do
+    check_alerts "$dep" &
+done
+wait
+
+for dep in $deployments; do
+    [[ -f "$TMP_DIR/$dep" ]] && cat "$TMP_DIR/$dep"
+done

@@ -534,6 +534,7 @@ describe("version Delete UI", () => {
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
       cursor: "versions:next",
       limit: 20,
+      signal: expect.any(AbortSignal),
     });
     expect(screen.getByRole("button", { name: "Delete version 0.9.0" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();

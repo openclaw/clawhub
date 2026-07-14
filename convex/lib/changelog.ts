@@ -62,6 +62,7 @@ function pickPaths(values: string[]) {
 
 async function generateWithOpenAI(args: {
   subjectLabel?: string;
+  readmeLabel?: string;
   slug: string;
   version: string;
   oldReadme: string | null;
@@ -72,6 +73,7 @@ async function generateWithOpenAI(args: {
   if (!apiKey) return null;
 
   const subjectLabel = args.subjectLabel ?? "Skill";
+  const readmeLabel = args.readmeLabel ?? "SKILL.md";
   const oldReadme = args.oldReadme ? clampText(args.oldReadme, MAX_README_CHARS) : "";
   const nextReadme = clampText(args.nextReadme, MAX_README_CHARS);
 
@@ -88,8 +90,8 @@ async function generateWithOpenAI(args: {
     changedPaths.length ? `Changed files (sample): ${changedPaths.join(", ")}` : null,
     addedPaths.length ? `Added files (sample): ${addedPaths.join(", ")}` : null,
     removedPaths.length ? `Removed files (sample): ${removedPaths.join(", ")}` : null,
-    oldReadme ? `Previous SKILL.md:\n${oldReadme}` : null,
-    `New SKILL.md:\n${nextReadme}`,
+    oldReadme ? `Previous ${readmeLabel}:\n${oldReadme}` : null,
+    `New ${readmeLabel}:\n${nextReadme}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -244,6 +246,7 @@ export async function generatePackageChangelogPreview(
 
     const ai = await generateWithOpenAI({
       subjectLabel: "Package",
+      readmeLabel: "README",
       slug: args.name,
       version: args.version,
       oldReadme: oldReadmeText,

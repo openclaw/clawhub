@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,17 +9,14 @@ import {
   LOCAL_CODEX_WORKER_OPT_IN,
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
-import * as codexScanWorker from "./run-codex-scan-worker";
 import {
   buildPrompt,
-  claimBatchDrainedQueue,
-  claimFailuresAreFatal,
-  minimumClaimWindowMs,
   normalizeSkillSpectorAnalysis,
   processJob,
   resolveSkillSpectorScanInput,
   resolveSkillSpectorScanInputs,
-  shouldClaimSecurityScanBatch,
+  runContinuouslyRefilledWorkerPool,
+  runClawScanShadow,
   writeArtifactWorkspace,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
@@ -63,115 +60,155 @@ function unsafeFixtureLabels() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
-  it("treats transient claim failures as fatal only when no jobs were claimed", () => {
-    expect(claimFailuresAreFatal(0, 0)).toBe(false);
-    expect(claimFailuresAreFatal(1, 0)).toBe(true);
-    expect(claimFailuresAreFatal(1, 3)).toBe(false);
+  it("refills a free slot without waiting for the slowest active job", async () => {
+    const started: string[] = [];
+    let releaseSlowJob: (() => void) | undefined;
+    const slowJob = new Promise<void>((resolve) => {
+      releaseSlowJob = resolve;
+    });
+    const jobs = ["slow", "fast", "next"];
+    const claimJobs = vi.fn(async (limit: number) => {
+      const claimedJobs = jobs.splice(0, limit).map((id) => ({ id }));
+      return { claimedCount: claimedJobs.length, jobs: claimedJobs };
+    });
+    const processClaimedJob = vi.fn(async (job: { id: string }) => {
+      started.push(job.id);
+      if (job.id === "slow") await slowJob;
+      return {
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      };
+    });
+
+    const run = runContinuouslyRefilledWorkerPool({
+      concurrency: 2,
+      maxJobs: undefined,
+      canClaim: () => true,
+      claimJobs,
+      processClaimedJob,
+    });
+
+    await vi.waitFor(() => expect(started).toEqual(["slow", "fast", "next"]));
+    expect(releaseSlowJob).toBeTypeOf("function");
+    releaseSlowJob?.();
+
+    await expect(run).resolves.toMatchObject({
+      totalClaimed: 3,
+      totalCompleted: 3,
+      totalClaimFailures: 0,
+    });
+    expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 1, 1]);
   });
 
-  it("keeps claiming after partial transient claim failures", () => {
-    expect(claimBatchDrainedQueue(0, 0, 4)).toBe(true);
-    expect(claimBatchDrainedQueue(0, 3, 4)).toBe(true);
-    expect(claimBatchDrainedQueue(1, 3, 4)).toBe(false);
-    expect(claimBatchDrainedQueue(0, 4, 4)).toBe(false);
-  });
-
-  it("keeps enough wall-clock room for one Codex scan plus cleanup before claiming", () => {
-    expect(minimumClaimWindowMs(8 * 60_000, 4 * 60_000)).toBe(7 * 60_000);
-    expect(minimumClaimWindowMs(5 * 60_000, 4 * 60_000)).toBe(5 * 60_000);
-  });
-
-  it("always allows the first claim even when the configured runtime is short", () => {
-    expect(shouldClaimSecurityScanBatch(0, 1, 5 * 60_000)).toBe(true);
-    expect(shouldClaimSecurityScanBatch(1, 1, 5 * 60_000)).toBe(false);
-    expect(shouldClaimSecurityScanBatch(1, 5 * 60_000, 5 * 60_000)).toBe(true);
-  });
-
-  it("keeps successful claims when a parallel claim request fails", async () => {
-    const claimCodexScanJobBatch = (
-      codexScanWorker as typeof codexScanWorker & {
-        claimCodexScanJobBatch?: (
-          claimLimit: number,
-          claimOne: () => Promise<
-            Array<{
-              job: {
-                _id: string;
-                leaseToken: string;
-                targetKind: "skillVersion";
-                source: string;
-                hasMaliciousSignal: boolean;
-                waitForVtUntil: number;
-              };
-              target: Record<string, unknown>;
-            }>
-          >,
-        ) => Promise<{ claimFailures: number; jobs: Array<{ job: { _id: string } }> }>;
-      }
-    ).claimCodexScanJobBatch;
-    expect(claimCodexScanJobBatch).toBeTypeOf("function");
-    if (!claimCodexScanJobBatch) return;
-
-    const claimOne = vi
+  it("keeps refilling after a full lease batch has no hydratable jobs", async () => {
+    const claimJobs = vi
       .fn()
-      .mockResolvedValueOnce([
-        {
-          job: {
-            _id: "securityScanJobs:1",
-            leaseToken: "lease",
-            targetKind: "skillVersion",
-            source: "publish",
-            hasMaliciousSignal: false,
-            waitForVtUntil: 0,
-          },
-          target: {},
-        },
-      ])
-      .mockRejectedValueOnce(
-        new Error(
-          "temporary claim failure https://signed.example.invalid/file?token=claim-secret OPENAI_API_KEY=claim-process-secret",
-        ),
-      )
-      .mockResolvedValueOnce([]);
-    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      .mockResolvedValueOnce({ claimedCount: 2, jobs: [] })
+      .mockResolvedValueOnce({
+        claimedCount: 2,
+        jobs: [{ id: "next-1" }, { id: "next-2" }],
+      })
+      .mockResolvedValue({ claimedCount: 0, jobs: [] });
+    const processClaimedJob = vi.fn(async () => ({
+      completed: true,
+      hardFailed: false,
+      retryableFailed: false,
+    }));
 
-    await expect(claimCodexScanJobBatch(3, claimOne)).resolves.toMatchObject({
-      claimFailures: 1,
-      jobs: [{ job: { _id: "securityScanJobs:1" } }],
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 2,
+        maxJobs: undefined,
+        canClaim: () => true,
+        claimJobs,
+        processClaimedJob,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 4,
+      totalCompleted: 2,
+      totalClaimFailures: 0,
     });
-    expect(claimOne).toHaveBeenCalledTimes(3);
-    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
-    expect(logged).toContain("security_scan_claim_failed");
-    expect(logged).toContain("temporary claim failure");
-    expect(logged).not.toContain("https://signed.example.invalid");
-    expect(logged).not.toContain("claim-secret");
-    expect(logged).not.toContain("claim-process-secret");
-    stdoutWrite.mockRestore();
+    expect(claimJobs.mock.calls.map(([limit]) => limit)).toEqual([2, 2, 1]);
+    expect(processClaimedJob).toHaveBeenCalledTimes(2);
   });
 
-  it("counts total claim failures even when no jobs are claimed", async () => {
-    const claimCodexScanJobBatch = (
-      codexScanWorker as typeof codexScanWorker & {
-        claimCodexScanJobBatch?: (
-          claimLimit: number,
-          claimOne: () => Promise<never[]>,
-        ) => Promise<{ claimFailures: number; jobs: Array<{ job: { _id: string } }> }>;
-      }
-    ).claimCodexScanJobBatch;
-    expect(claimCodexScanJobBatch).toBeTypeOf("function");
-    if (!claimCodexScanJobBatch) return;
-
-    const claimOne = vi.fn().mockRejectedValue(new Error("claim outage"));
-    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-
-    await expect(claimCodexScanJobBatch(2, claimOne)).resolves.toMatchObject({
-      claimFailures: 2,
-      jobs: [],
+  it("counts one failed batch lease request without multiplying it by slot count", async () => {
+    const claimJobs = vi.fn(async () => {
+      throw new Error("claim outage");
     });
-    expect(claimOne).toHaveBeenCalledTimes(2);
-    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
-    expect(logged).toContain("security_scan_claim_failed");
-    expect(logged).toContain("claim outage");
-    stdoutWrite.mockRestore();
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: undefined,
+        canClaim: () => true,
+        claimJobs,
+        processClaimedJob: vi.fn(),
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 0,
+      totalClaimFailures: 1,
+      totalFailed: 1,
+    });
+    expect(claimJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the priority lane alive after processing a partial batch", async () => {
+    let canClaim = true;
+    const sleep = vi.fn(async () => {
+      canClaim = false;
+    });
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: undefined,
+        canClaim: () => canClaim,
+        claimJobs: vi.fn(async () => ({
+          claimedCount: 1,
+          jobs: [{ id: "publish" }],
+        })),
+        processClaimedJob: vi.fn(async () => ({
+          completed: true,
+          hardFailed: false,
+          retryableFailed: false,
+        })),
+        idlePollMs: 15_000,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 1,
+      totalCompleted: 1,
+    });
+    expect(sleep).toHaveBeenCalledWith(15_000);
+  });
+
+  it("exits a priority worker after reaching its explicit max-jobs cap", async () => {
+    const sleep = vi.fn();
+
+    await expect(
+      runContinuouslyRefilledWorkerPool({
+        concurrency: 4,
+        maxJobs: 1,
+        canClaim: () => true,
+        claimJobs: vi.fn(async () => ({
+          claimedCount: 1,
+          jobs: [{ id: "publish" }],
+        })),
+        processClaimedJob: vi.fn(async () => ({
+          completed: true,
+          hardFailed: false,
+          retryableFailed: false,
+        })),
+        idlePollMs: 15_000,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      totalClaimed: 1,
+      totalCompleted: 1,
+    });
+    expect(sleep).not.toHaveBeenCalled();
   });
 
   it("blocks direct local Codex security worker runs without opt-in", () => {
@@ -838,6 +875,409 @@ describe("run-codex-scan-worker diagnostics", () => {
     else process.env.GITHUB_ACTIONS = previousGitHubActions;
   });
 
+  it("runs OSS ClawScan shadow mode with recorded VirusTotal evidence", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high"}}}
+JSON
+echo "targets: 1"
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "docker";
+
+    const shadow = await runClawScanShadow(
+      {
+        job: {
+          _id: "securityScanJobs:shadow",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "vt-update",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {
+          version: {
+            vtAnalysis: {
+              status: "clean",
+              engineStats: { malicious: 0, suspicious: 0 },
+            },
+          },
+        },
+      },
+      workspace,
+      {
+        checkedAt: 123,
+        confidence: "medium",
+        status: "clean",
+        verdict: "benign",
+      },
+    );
+
+    expect(shadow).toMatchObject({
+      prod: { confidence: "medium", status: "clean", verdict: "benign" },
+      shadow: {
+        confidence: "high",
+        judgeStatus: "completed",
+        profile: "clawhub",
+        scannerStatuses: {
+          "clawscan-static": "completed",
+          skillspector: "completed",
+          virustotal: "completed",
+        },
+        status: "clean",
+        verdict: "benign",
+      },
+      status: "completed",
+    });
+    expect(shadow.command).toEqual(
+      expect.arrayContaining([
+        fakeClawScan,
+        "./artifact",
+        "--profile",
+        "clawhub",
+        "--scanner-result",
+        expect.stringMatching(/^virustotal=/),
+        "--sandbox",
+        "docker",
+        "--sandbox-image",
+        expect.stringContaining("@sha256:"),
+      ]),
+    );
+    expect(shadow.vtFixturePath).toBeDefined();
+    const vtFixture = JSON.parse(await readFile(String(shadow.vtFixturePath), "utf8"));
+    expect(vtFixture).toMatchObject({ status: "clean" });
+
+    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
+    if (previousCommand === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
+    if (previousSandbox === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
+  });
+
+  it("runs OSS ClawScan shadow mode for skill scan request jobs", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Pending publish\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+target="$1"
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [[ "$target" != "./artifact" ]]; then
+  echo "unexpected target: $target" >&2
+  exit 9
+fi
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"suspicious","confidence":"medium"}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
+
+    const shadow = await runClawScanShadow(
+      {
+        job: {
+          _id: "securityScanJobs:shadow-scan-request",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillScanRequest",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      workspace,
+      {
+        checkedAt: 123,
+        confidence: "medium",
+        status: "suspicious",
+        verdict: "suspicious",
+      },
+    );
+
+    expect(shadow).toMatchObject({
+      prod: { confidence: "medium", status: "suspicious", verdict: "suspicious" },
+      shadow: {
+        confidence: "medium",
+        judgeStatus: "completed",
+        profile: "clawhub",
+        scannerStatuses: {
+          "clawscan-static": "completed",
+          skillspector: "completed",
+          virustotal: "completed",
+        },
+        status: "suspicious",
+        verdict: "suspicious",
+      },
+      status: "completed",
+    });
+    expect(shadow.command).toEqual(
+      expect.arrayContaining([
+        fakeClawScan,
+        "./artifact",
+        "--profile",
+        "clawhub",
+        "--scanner-result",
+        expect.stringMatching(/^virustotal=/),
+      ]),
+    );
+    expect(JSON.parse(await readFile(String(shadow.vtFixturePath), "utf8"))).toBeNull();
+
+    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
+    if (previousCommand === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
+    if (previousSandbox === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
+  });
+
+  it("marks OSS ClawScan shadow mode failed when the judge fails", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"failed","error":"schema mismatch"}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
+
+    const shadow = await runClawScanShadow(
+      {
+        job: {
+          _id: "securityScanJobs:shadow-failed",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      workspace,
+      {
+        checkedAt: 123,
+        confidence: "medium",
+        status: "clean",
+        verdict: "benign",
+      },
+    );
+
+    expect(shadow).toMatchObject({
+      error: "ClawScan judge status was failed",
+      shadow: {
+        judgeStatus: "failed",
+        profile: "clawhub",
+        scannerStatuses: {
+          "clawscan-static": "completed",
+          skillspector: "completed",
+          virustotal: "completed",
+        },
+      },
+      status: "failed",
+    });
+
+    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
+    if (previousCommand === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
+    if (previousSandbox === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
+  });
+
+  it("marks OSS ClawScan shadow mode failed when an expected scanner fails", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"failed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high"}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
+
+    const shadow = await runClawScanShadow(
+      {
+        job: {
+          _id: "securityScanJobs:shadow-scanner-failed",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      workspace,
+      {
+        checkedAt: 123,
+        confidence: "medium",
+        status: "clean",
+        verdict: "benign",
+      },
+    );
+
+    expect(shadow).toMatchObject({
+      error: "ClawScan scanner skillspector status was failed",
+      shadow: {
+        judgeStatus: "completed",
+        scannerStatuses: {
+          "clawscan-static": "completed",
+          skillspector: "failed",
+          virustotal: "completed",
+        },
+        verdict: "benign",
+      },
+      status: "failed",
+    });
+
+    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
+    if (previousCommand === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
+    if (previousSandbox === undefined)
+      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
+  });
+
+  it("skips OSS ClawScan shadow mode for unsupported parity contexts", async () => {
+    const workspace = await tempDir();
+    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
+
+    const shadow = await runClawScanShadow(
+      {
+        job: {
+          _id: "securityScanJobs:shadow-skipped",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "packageRelease",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      workspace,
+      {
+        checkedAt: 123,
+        confidence: "medium",
+        status: "clean",
+        verdict: "benign",
+      },
+    );
+
+    expect(shadow).toMatchObject({
+      error:
+        "ClawScan shadow parity is only enabled for skillVersion or skillScanRequest jobs, got packageRelease",
+      status: "skipped",
+    });
+
+    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
+    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
+  });
+
   it("writes redacted Codex diagnostics without copying submitted artifact files or signed URLs", async () => {
     const diagnosticsRoot = await tempDir();
     const artifactWorkspace = await tempDir();
@@ -884,6 +1324,24 @@ describe("run-codex-scan-worker diagnostics", () => {
         },
       },
       llmAnalysis: { confidence: "low", status: "clean", verdict: "benign" },
+      clawscanShadow: {
+        command: ["clawscan", "./artifact", "--profile", "clawhub"],
+        prod: { confidence: "low", status: "clean", verdict: "benign" },
+        shadow: {
+          confidence: "high",
+          judgeStatus: "completed",
+          profile: "clawhub",
+          scannerStatuses: {
+            "clawscan-static": "completed",
+            skillspector: "completed",
+            virustotal: "completed",
+          },
+          schemaVersion: "clawscan-run-v1",
+          status: "clean",
+          verdict: "benign",
+        },
+        status: "completed",
+      },
       skillSpectorAnalysis: {
         status: "suspicious",
         issueCount: 1,
@@ -961,6 +1419,22 @@ describe("run-codex-scan-worker diagnostics", () => {
       status: "failed",
     });
     expect(diagnostic.job.leaseToken).toBeUndefined();
+    expect(diagnostic.clawscanShadow).toMatchObject({
+      prod: { confidence: "low", status: "clean", verdict: "benign" },
+      shadow: {
+        confidence: "high",
+        judgeStatus: "completed",
+        profile: "clawhub",
+        scannerStatuses: {
+          "clawscan-static": "completed",
+          skillspector: "completed",
+          virustotal: "completed",
+        },
+        status: "clean",
+        verdict: "benign",
+      },
+      status: "completed",
+    });
     expect(diagnostic.error).toBe(
       "Codex result did not match ClawScan schema: [redacted result body]",
     );
@@ -981,6 +1455,57 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(allDiagnosticText).not.toContain("sk-short-fixture");
     expect(allDiagnosticText).not.toContain("quoted artifact payload");
     expect(allDiagnosticText).not.toContain("SkillSpector artifact payload");
+    const comparison = JSON.parse(
+      await readFile(join(jobDir, "clawscan-shadow-comparison.json"), "utf8"),
+    );
+    expect(comparison).toMatchObject({
+      prod: { status: "clean", verdict: "benign" },
+      shadow: { status: "clean", verdict: "benign" },
+      status: "completed",
+    });
     expect(await readdir(jobDir)).not.toContain("artifact");
+  });
+
+  it("preserves sanitized ClawScan shadow failure reasons in comparison artifacts", async () => {
+    const diagnosticsRoot = await tempDir();
+
+    await writeJobDiagnostic({
+      completedAt: 2,
+      diagnosticsRoot,
+      job: {
+        job: {
+          _id: "job-shadow-failed",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      clawscanShadow: {
+        error: "clawscan timed out with api_key=sk-shadow-secret",
+        status: "failed",
+        stderr: "provider stderr token=shadow-secret",
+      },
+      startedAt: 1,
+      status: "completed",
+    });
+
+    const comparison = JSON.parse(
+      await readFile(
+        join(diagnosticsRoot, "job-shadow-failed", "clawscan-shadow-comparison.json"),
+        "utf8",
+      ),
+    );
+
+    expect(comparison).toMatchObject({
+      error: expect.stringContaining("clawscan timed out"),
+      status: "failed",
+      stderr: expect.stringMatching(/^\[redacted \d+ chars\]$/),
+    });
+    const comparisonText = JSON.stringify(comparison);
+    expect(comparisonText).not.toContain("sk-shadow-secret");
+    expect(comparisonText).not.toContain("shadow-secret");
   });
 });

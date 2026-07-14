@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+# layout-pack: Compute non-overlapping {i,x,y,w,h} layout entries for an
+# ordered list of chart IDs, packed row-major into the 12-column dashboard
+# grid.
+#
+# The agent supplies the *order* (which it cares about) and either an
+# explicit size or just a chart type (which carries a sensible default).
+# Layout coordinates — the part that's mechanical, error-prone, and easy
+# to get wrong by hand — fall out of the row-major pack.
+#
+# Usage:
+#   layout-pack <id-spec> [<id-spec> ...]
+#
+# Each <id-spec> is "id:Type" or "id:WxH":
+#   id:Type   — use the type's default size from the table below
+#   id:WxH    — explicit width × height, both positive integers, w in 1..12
+#
+# Default sizes by type:
+#   Note         12 x 2   (full-width header)
+#   Statistic     3 x 3   (KPI tile, 4 fit per row)
+#   TimeSeries    6 x 4   (half-width chart, 2 per row)
+#   Heatmap       6 x 4
+#   Table         6 x 5
+#   Pie           4 x 4   (3 per row)
+#   LogStream    12 x 6   (full-width evidence pane)
+#   MonitorList   6 x 4
+#   SmartFilter  12 x 1   (filter bar)
+#
+# Packing rule: row-major, left-to-right. When the next chart would push
+# past column 12, start a new row whose y-offset equals the tallest chart
+# in the previous row. This preserves the agent's intended order and keeps
+# rows aligned without overlap.
+#
+# Output: a JSON array of {i,x,y,w,h} entries on stdout. `minH`/`minW` are
+# omitted — `dashboard-validate` auto-fills them on deploy.
+#
+# Examples:
+#   # Type-only — agent doesn't think about sizes at all
+#   layout-pack header:Note a:Statistic b:Statistic c:Statistic d:Statistic
+#
+#   # Mixed — explicit override for one chart
+#   layout-pack header:Note rps:TimeSeries errors:6x3 latency:TimeSeries
+#
+#   # Full dashboard skeleton
+#   layout-pack notice:Note \
+#               avail:Statistic budget:8x3 \
+#               read-avail:Statistic read-rps:TimeSeries read-err:TimeSeries read-lat:TimeSeries \
+#               cpu:TimeSeries mem:TimeSeries goroutines:TimeSeries
+#
+# Composing with chart-add:
+#   chart-add --type Note --id intro --name "..." --text "..."  > /tmp/c-intro.json
+#   chart-add --type Statistic --id avail --name "..." --mpl '...' --dataset ds --unit "%" > /tmp/c-avail.json
+#   CHARTS=$(jq -s '.' /tmp/c-intro.json /tmp/c-avail.json)
+#   LAYOUT=$(layout-pack intro:Note avail:Statistic)
+#   jq -n --argjson c "$CHARTS" --argjson l "$LAYOUT" \
+#       '{name:"...",owner:"X-AXIOM-EVERYONE",datasets:["ds"],refreshTime:60,
+#         schemaVersion:2,timeWindowStart:"qr-now-1h",timeWindowEnd:"qr-now",
+#         charts:$c, layout:$l}' \
+#     > dashboard.json
+
+set -euo pipefail
+
+GRID_WIDTH=12
+
+usage() {
+    sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \?//' | sed '$d'
+    exit "${1:-1}"
+}
+
+if [[ $# -eq 0 ]]; then
+    echo "Error: at least one <id-spec> is required" >&2
+    usage
+fi
+
+for a in "$@"; do
+    [[ "$a" == "-h" || "$a" == "--help" ]] && usage 0
+done
+
+# Default size table — keep in sync with the docstring above.
+default_size() {
+    case "$1" in
+        Note)         echo "12 2" ;;
+        Statistic)    echo "3 3" ;;
+        TimeSeries)   echo "6 4" ;;
+        Heatmap)      echo "6 4" ;;
+        Table)        echo "6 5" ;;
+        Pie)          echo "4 4" ;;
+        LogStream)    echo "12 6" ;;
+        MonitorList)  echo "6 4" ;;
+        SmartFilter)  echo "12 1" ;;
+        *) return 1 ;;
+    esac
+}
+
+# Parse "id:spec" → echoes "id<TAB>w<TAB>h"; non-zero on bad input.
+parse_spec() {
+    local arg="$1"
+    if [[ "$arg" != *:* ]]; then
+        echo "Error: '$arg' must be of the form 'id:Type' or 'id:WxH'" >&2
+        return 1
+    fi
+    local id="${arg%%:*}"
+    local spec="${arg#*:}"
+    if [[ -z "$id" ]]; then
+        echo "Error: empty id in '$arg'" >&2
+        return 1
+    fi
+    local w h
+    if [[ "$spec" =~ ^([0-9]+)x([0-9]+)$ ]]; then
+        w="${BASH_REMATCH[1]}"
+        h="${BASH_REMATCH[2]}"
+    else
+        local pair
+        if ! pair=$(default_size "$spec"); then
+            echo "Error: '$spec' (in '$arg') is neither WxH nor a known chart type" >&2
+            return 1
+        fi
+        w="${pair% *}"
+        h="${pair#* }"
+    fi
+    if (( w < 1 )) || (( w > GRID_WIDTH )); then
+        echo "Error: width $w (in '$arg') out of range 1..$GRID_WIDTH" >&2
+        return 1
+    fi
+    if (( h < 1 )); then
+        echo "Error: height $h (in '$arg') must be ≥ 1" >&2
+        return 1
+    fi
+    printf '%s\t%s\t%s\n' "$id" "$w" "$h"
+}
+
+# Pack row-major.
+cursor_x=0
+cursor_y=0
+row_max_h=0
+seen_ids=()
+entries=()
+
+for arg in "$@"; do
+    parsed=$(parse_spec "$arg") || exit 1
+    id=$(printf '%s' "$parsed" | cut -f1)
+    w=$(printf '%s' "$parsed" | cut -f2)
+    h=$(printf '%s' "$parsed" | cut -f3)
+
+    # Reject duplicate ids — they corrupt the dashboard layout silently.
+    for prev in "${seen_ids[@]:-}"; do
+        if [[ -n "$prev" && "$prev" == "$id" ]]; then
+            echo "Error: duplicate id '$id'" >&2
+            exit 1
+        fi
+    done
+    seen_ids+=("$id")
+
+    # Wrap to next row if this chart would overflow the grid.
+    if (( cursor_x + w > GRID_WIDTH )); then
+        cursor_x=0
+        cursor_y=$((cursor_y + row_max_h))
+        row_max_h=0
+    fi
+
+    entries+=("$(jq -nc \
+        --arg i "$id" \
+        --argjson x "$cursor_x" \
+        --argjson y "$cursor_y" \
+        --argjson w "$w" \
+        --argjson h "$h" \
+        '{i: $i, x: $x, y: $y, w: $w, h: $h}')")
+
+    cursor_x=$((cursor_x + w))
+    if (( h > row_max_h )); then
+        row_max_h=$h
+    fi
+done
+
+printf '%s\n' "${entries[@]}" | jq -s '.'

@@ -185,6 +185,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
 ];
 
 export const FOOTER_PLATFORM_LINKS = [
+  { label: "Status", href: "https://clawhub.betteruptime.com" },
   { label: "Deployed on Vercel", href: "https://vercel.com" },
   { label: "Powered by Convex", href: "https://www.convex.dev" },
 ] as const;

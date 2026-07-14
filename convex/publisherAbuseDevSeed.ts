@@ -25,6 +25,7 @@ const DEMO_OWNER_KEY_PREFIX = "user:demo-";
 const TEMPORAL_DEMO_HANDLE = `${DEMO_HANDLE_PREFIX}temporal-cohort`;
 const TEMPORAL_DEMO_OWNER_KEY = `${DEMO_OWNER_KEY_PREFIX}temporal-cohort`;
 const TEMPORAL_DEMO_SKILL_SLUG = "demo-temporal-download-burst";
+const TEMPORAL_DEMO_RATIO_SKILL_SLUG = "demo-temporal-install-ratio";
 const CLEAR_SEED_BATCH_SIZE = 100;
 
 type TriageStatus =
@@ -52,9 +53,9 @@ type SeedPublisher = {
 
 // Prod-scale synthetic distribution so every dashboard tab renders with realistic
 // volume: 15 potential-ban candidates and 124 review nominations (both pending),
-// plus a small resolved/pass set for the Resolved tab. Counts mirror the reported
-// production review queue. Rows are deterministic (no randomness) so tests can
-// assert the distribution and clearSeed stays reproducible.
+// plus one temporal review nomination and a small resolved/pass set. Rows are
+// deterministic (no randomness) so tests can assert the distribution and
+// clearSeed stays reproducible.
 const BAN_CANDIDATE_COUNT = 15;
 const REVIEW_PENDING_COUNT = 124;
 
@@ -240,6 +241,7 @@ type ClearSeedResult = {
   scores: number;
   nominations: number;
   events: number;
+  signals: number;
   users: number;
   hasMore: boolean;
 };
@@ -451,6 +453,30 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     createdAt: now - DAY_MS,
     updatedAt: now - HOUR_MS,
   });
+  const ratioSkillId = await ctx.db.insert("skills", {
+    slug: TEMPORAL_DEMO_RATIO_SKILL_SLUG,
+    displayName: "Demo Temporal Install Ratio",
+    summary: "Synthetic fixture: unusually high installs relative to downloads.",
+    ownerUserId: temporalUserId,
+    ownerPublisherId: temporalPublisherId,
+    tags: {},
+    badges: {},
+    moderationStatus: "active",
+    statsDownloads: 2_400,
+    statsStars: 0,
+    statsInstallsCurrent: 288,
+    statsInstallsAllTime: 288,
+    stats: {
+      downloads: 2_400,
+      installsCurrent: 288,
+      installsAllTime: 288,
+      stars: 0,
+      versions: 1,
+      comments: 0,
+    },
+    createdAt: now - DAY_MS,
+    updatedAt: now - HOUR_MS,
+  });
   for (let offset = 59; offset >= 30; offset -= 1) {
     await ctx.db.insert("skillDailyStats", {
       skillId: temporalSkillId,
@@ -486,8 +512,8 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     finalizedScores: 1,
     nominatedPublishers: 1,
     passCount: 0,
-    reviewCount: 0,
-    potentialBanCandidateCount: 1,
+    reviewCount: 1,
+    potentialBanCandidateCount: 0,
     sumLogPressure: 0,
     sumSquaredLogPressure: 0,
     meanLogPressure: 0,
@@ -501,11 +527,11 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     ownerUserId: temporalUserId,
     handleSnapshot: TEMPORAL_DEMO_HANDLE,
     modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
-    label: "potential_ban_candidate",
+    label: "review",
     rank: 1,
     pressure: 18,
     logPressure: Math.log10(18),
-    zScore: 3.13,
+    zScore: 2.14,
     publishedSkills: 1,
     totalInstalls: 0,
     totalStars: 0,
@@ -553,12 +579,62 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     handleSnapshot: TEMPORAL_DEMO_HANDLE,
     latestScoreId: temporalScoreId,
     modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
-    label: "potential_ban_candidate",
+    label: "review",
     status: "pending",
     openedAt: temporalCompletedAt,
     openedByRunId: temporalRunId,
     lastScoredAt: temporalCompletedAt,
     updatedAt: temporalCompletedAt,
+  });
+  await ctx.db.insert("publisherAbuseSignals", {
+    signalType: "sustained_downloads_flat_installs",
+    ownerKey: TEMPORAL_DEMO_OWNER_KEY,
+    ownerPublisherId: temporalPublisherId,
+    ownerUserId: temporalUserId,
+    handleSnapshot: TEMPORAL_DEMO_HANDLE,
+    skillId: temporalSkillId,
+    skillSlug: TEMPORAL_DEMO_SKILL_SLUG,
+    skillDisplayName: "Demo Temporal Download Burst",
+    latestRunId: temporalRunId,
+    latestScoreId: temporalScoreId,
+    firstSeenAt: temporalCompletedAt,
+    lastSeenAt: temporalCompletedAt,
+    seenCount: 1,
+    recent7Downloads: 3_780,
+    recent7Installs: 0,
+    recent7InstallDownloadRatio: 0,
+    recent30Downloads: 16_200,
+    recent30Installs: 0,
+    recent30InstallDownloadRatio: 0,
+    allTimeDownloads: 16_200,
+    allTimeInstalls: 0,
+    allTimeInstallDownloadRatio: 0,
+    reviewStatus: "open",
+  });
+  await ctx.db.insert("publisherAbuseSignals", {
+    signalType: "high_install_download_ratio",
+    ownerKey: TEMPORAL_DEMO_OWNER_KEY,
+    ownerPublisherId: temporalPublisherId,
+    ownerUserId: temporalUserId,
+    handleSnapshot: TEMPORAL_DEMO_HANDLE,
+    skillId: ratioSkillId,
+    skillSlug: TEMPORAL_DEMO_RATIO_SKILL_SLUG,
+    skillDisplayName: "Demo Temporal Install Ratio",
+    latestRunId: temporalRunId,
+    latestScoreId: temporalScoreId,
+    firstSeenAt: temporalCompletedAt - 7 * 60_000,
+    lastSeenAt: temporalCompletedAt,
+    seenCount: 2,
+    recent7Downloads: 800,
+    recent7Installs: 96,
+    recent7InstallDownloadRatio: 0.12,
+    recent30Downloads: 2_400,
+    recent30Installs: 288,
+    recent30InstallDownloadRatio: 0.12,
+    allTimeDownloads: 2_400,
+    allTimeInstalls: 288,
+    allTimeInstallDownloadRatio: 0.12,
+    reviewStatus: "open",
   });
 }
 
@@ -567,6 +643,7 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
   let scores = 0;
   let nominations = 0;
   let events = 0;
+  let signals = 0;
   let users = 0;
   let hasMore = false;
 
@@ -605,7 +682,7 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
     }
   }
 
-  await clearTemporalDemoSkillRows(ctx);
+  signals += await clearTemporalDemoSkillRows(ctx);
   await clearTemporalDemoPublisherRows(ctx);
 
   for (const runId of demoRunIds) {
@@ -625,24 +702,52 @@ async function clearDemoRows(ctx: ClearSeedCtx): Promise<ClearSeedResult> {
     }
   }
 
-  return { runs, scores, nominations, events, users, hasMore };
+  return { runs, scores, nominations, events, signals, users, hasMore };
 }
 
 async function clearTemporalDemoSkillRows(ctx: ClearSeedCtx) {
-  const rows = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", TEMPORAL_DEMO_SKILL_SLUG))
-    .take(CLEAR_SEED_BATCH_SIZE);
-  for (const skill of rows) {
-    const dailyStats = await ctx.db
-      .query("skillDailyStats")
-      .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id))
+  let signals = 0;
+  for (const slug of [TEMPORAL_DEMO_SKILL_SLUG, TEMPORAL_DEMO_RATIO_SKILL_SLUG]) {
+    const rows = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
       .take(CLEAR_SEED_BATCH_SIZE);
-    for (const stat of dailyStats) {
-      await ctx.db.delete(stat._id);
+    for (const skill of rows) {
+      signals += await clearTemporalDemoSignalsForSkill(ctx, skill._id);
+      const dailyStats = await ctx.db
+        .query("skillDailyStats")
+        .withIndex("by_skill_day", (q) => q.eq("skillId", skill._id))
+        .take(CLEAR_SEED_BATCH_SIZE);
+      for (const stat of dailyStats) {
+        await ctx.db.delete(stat._id);
+      }
+      await ctx.db.delete(skill._id);
     }
-    await ctx.db.delete(skill._id);
   }
+  return signals;
+}
+
+async function clearTemporalDemoSignalsForSkill(
+  ctx: ClearSeedCtx,
+  skillId: Id<"skills">,
+): Promise<number> {
+  let deleted = 0;
+  for (const signalType of [
+    "high_install_download_ratio",
+    "sustained_downloads_flat_installs",
+  ] as const) {
+    const rows = await ctx.db
+      .query("publisherAbuseSignals")
+      .withIndex("by_skill_and_signal_type", (q) =>
+        q.eq("skillId", skillId).eq("signalType", signalType),
+      )
+      .take(CLEAR_SEED_BATCH_SIZE);
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+      deleted += 1;
+    }
+  }
+  return deleted;
 }
 
 async function clearTemporalDemoPublisherRows(ctx: ClearSeedCtx) {

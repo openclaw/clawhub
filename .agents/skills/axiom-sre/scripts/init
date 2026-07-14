@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+# Gilfoyle Initialization & Discovery
+# Usage: scripts/init [--migrate]
+#
+# The one script to rule them all.
+#
+# First run:
+#   - Creates ~/.config/axiom-sre/ and memory directories
+#   - Writes example config.toml (or migrates legacy configs with --migrate)
+#   - Checks for missing dependencies (curl, jq, timeout)
+#   - Guides user through configuration
+#
+# Every run:
+#   - Syncs shared memory
+#   - Reports which tools are configured (config-only, no network calls)
+#   - Checks for memory bloat
+#
+# Migrates from (--migrate):
+#   ~/.axiom.toml, ~/.grafana.toml, ~/.pyroscope.toml, ~/.slack.conf
+
+set -euo pipefail
+umask 077  # Secrets never written world-readable. Not even briefly.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Colors
+BOLD='\033[1m'
+NC='\033[0m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+CONFIG_FILE="$CONFIG_DIR/config.toml"
+MEMORY_DIR="$CONFIG_DIR/memory/kb"
+
+MIGRATE="${1:-}"
+FIRST_RUN=false
+
+# Refuse to write through symlinks
+if [[ -L "$CONFIG_FILE" ]]; then
+    echo "Error: $CONFIG_FILE is a symlink. Refusing to write." >&2
+    exit 1
+fi
+
+# ─── First-Run Setup ─────────────────────────────────────────────────
+
+if [[ ! -d "$CONFIG_DIR" ]] || [[ ! -f "$CONFIG_FILE" ]]; then
+    FIRST_RUN=true
+
+    echo -e "${BOLD}First Run — Setting Up${NC}"
+    echo "======================"
+    echo ""
+
+    # Create directories
+    mkdir -p "$CONFIG_DIR"
+    mkdir -p "$MEMORY_DIR"
+    chmod 700 "$CONFIG_DIR"
+
+    echo "Created: $CONFIG_DIR"
+    echo "Created: $MEMORY_DIR"
+    echo ""
+fi
+
+# Ensure memory files exist (idempotent)
+mkdir -p "$MEMORY_DIR"
+for kb_file in facts.md patterns.md queries.md incidents.md integrations.md; do
+    if [[ ! -f "$MEMORY_DIR/$kb_file" ]]; then
+        echo "# ${kb_file%.md}" > "$MEMORY_DIR/$kb_file"
+        echo "" >> "$MEMORY_DIR/$kb_file"
+    fi
+done
+
+# Check prerequisites
+MISSING_DEPS=""
+for dep in curl jq; do
+    if ! command -v "$dep" >/dev/null 2>&1; then
+        MISSING_DEPS+="$dep "
+    fi
+done
+if ! command -v timeout >/dev/null 2>&1 && ! command -v gtimeout >/dev/null 2>&1; then
+    MISSING_DEPS+="coreutils(timeout) "
+fi
+
+if [[ -n "$MISSING_DEPS" ]]; then
+    echo -e "${YELLOW}Missing dependencies: ${MISSING_DEPS}${NC}"
+    echo "  macOS: brew install coreutils curl jq"
+    echo "  Linux: apt install coreutils curl jq"
+    echo ""
+fi
+
+# ─── Config Creation / Migration ─────────────────────────────────────
+
+if [[ "$MIGRATE" == "--migrate" ]] && [[ -f "$CONFIG_FILE" ]]; then
+    echo "Error: $CONFIG_FILE already exists. Won't overwrite." >&2
+    echo "  Delete it first, or edit it manually." >&2
+    exit 1
+fi
+
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    CONFIG_CONTENT=""
+
+    # Migrate legacy configs only with --migrate
+    if [[ "$MIGRATE" == "--migrate" ]] && [[ -f "$HOME/.axiom.toml" ]]; then
+        echo "Found: ~/.axiom.toml"
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^\[deployments\.([^\]]+)\] ]]; then
+                deployment="${BASH_REMATCH[1]}"
+                CONFIG_CONTENT+="
+[axiom.deployments.$deployment]"
+            elif [[ "$line" =~ ^url[[:space:]]*=[[:space:]]*\"?([^\"]+)\"? ]]; then
+                CONFIG_CONTENT+="
+url = \"${BASH_REMATCH[1]}\""
+            elif [[ "$line" =~ ^token[[:space:]]*=[[:space:]]*\"?([^\"]+)\"? ]]; then
+                CONFIG_CONTENT+="
+token = \"${BASH_REMATCH[1]}\""
+            elif [[ "$line" =~ ^org_id[[:space:]]*=[[:space:]]*\"?([^\"]+)\"? ]]; then
+                CONFIG_CONTENT+="
+org_id = \"${BASH_REMATCH[1]}\""
+            fi
+        done < "$HOME/.axiom.toml"
+        echo "  → Migrated Axiom deployments"
+    fi
+
+    # Migrate ~/.grafana.toml
+    if [[ "$MIGRATE" == "--migrate" ]] && [[ -f "$HOME/.grafana.toml" ]]; then
+        echo "Found: ~/.grafana.toml"
+        current_deployment=""
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^\[deployments\.([^\]]+)\] ]]; then
+                current_deployment="${BASH_REMATCH[1]}"
+                CONFIG_CONTENT+="
+
+[grafana.deployments.$current_deployment]"
+            elif [[ -n "$current_deployment" ]]; then
+                if [[ "$line" =~ ^url[[:space:]]*=[[:space:]]*\"?([^\"]+)\"? ]]; then
+                    CONFIG_CONTENT+="
+url = \"${BASH_REMATCH[1]}\"
+access_command = \"cloudflared access curl\""
+                fi
+            fi
+        done < "$HOME/.grafana.toml"
+        echo "  → Migrated Grafana deployments (with cloudflared access)"
+    fi
+
+    # Migrate ~/.pyroscope.toml
+    if [[ "$MIGRATE" == "--migrate" ]] && [[ -f "$HOME/.pyroscope.toml" ]]; then
+        echo "Found: ~/.pyroscope.toml"
+        current_deployment=""
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            if [[ "$line" =~ ^\[deployments\.([^\]]+)\] ]]; then
+                current_deployment="${BASH_REMATCH[1]}"
+                CONFIG_CONTENT+="
+
+[pyroscope.deployments.$current_deployment]"
+            elif [[ -n "$current_deployment" ]]; then
+                if [[ "$line" =~ ^url[[:space:]]*=[[:space:]]*\"?([^\"]+)\"? ]]; then
+                    CONFIG_CONTENT+="
+url = \"${BASH_REMATCH[1]}\"
+access_command = \"cloudflared access curl\""
+                fi
+            fi
+        done < "$HOME/.pyroscope.toml"
+        echo "  → Migrated Pyroscope deployments (with cloudflared access)"
+    fi
+
+    # Migrate ~/.slack.conf
+    if [[ "$MIGRATE" == "--migrate" ]] && [[ -f "$HOME/.slack.conf" ]]; then
+        echo "Found: ~/.slack.conf"
+        current_workspace=""
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            if [[ "$line" =~ ^\[([^\]]+)\] ]]; then
+                current_workspace="${BASH_REMATCH[1]}"
+                CONFIG_CONTENT+="
+
+[slack.workspaces.$current_workspace]"
+            elif [[ -n "$current_workspace" && "$line" =~ ^[[:space:]]*token[[:space:]]*=[[:space:]]*(.+) ]]; then
+                token=$(echo "${BASH_REMATCH[1]}" | tr -d '"'"'" | xargs)
+                CONFIG_CONTENT+="
+token = \"$token\""
+            fi
+        done < "$HOME/.slack.conf"
+        echo "  → Migrated Slack workspaces"
+    fi
+
+    # Write config
+    if [[ -n "$CONFIG_CONTENT" ]]; then
+        cat > "$CONFIG_FILE" << 'EOF'
+# Gilfoyle Configuration
+# ======================
+# Unified config for all observability tools.
+#
+# Auth options per deployment:
+#   token          - Bearer token (Grafana Cloud, API keys)
+#   access_command - Custom wrapper (e.g., "cloudflared access curl")
+#   username/password - Basic auth (on-prem)
+
+EOF
+        echo "$CONFIG_CONTENT" >> "$CONFIG_FILE"
+        chmod 600 "$CONFIG_FILE"
+        echo ""
+        echo "Config created: $CONFIG_FILE (migrated)"
+    else
+        # No legacy configs found — write example
+        cat > "$CONFIG_FILE" << 'EOF'
+# Gilfoyle Configuration
+# ======================
+# Unified config for all observability tools.
+#
+# Auth options per deployment:
+#   token          - Bearer token (Grafana Cloud, API keys)
+#   access_command - Custom wrapper (e.g., "cloudflared access curl")
+#   username/password - Basic auth (on-prem)
+
+# Example Axiom configuration
+# [axiom.deployments.prod]
+# url = "https://api.axiom.co"
+# token = "xapt-xxx"
+# org_id = "my-org"
+
+# Example Grafana with API token (cloud)
+# [grafana.deployments.cloud]
+# url = "https://myorg.grafana.net"
+# token = "glsa_xxx"
+
+# Example Grafana with cloudflared (internal)
+# [grafana.deployments.internal]
+# url = "https://grafana.internal.example.com"
+# access_command = "cloudflared access curl"
+
+# Example Pyroscope
+# [pyroscope.deployments.prod]
+# url = "https://pyroscope.example.com"
+# token = "xxx"
+
+# Example Slack
+# [slack.workspaces.work]
+# token = "xoxb-xxx"
+EOF
+        chmod 600 "$CONFIG_FILE"
+        echo ""
+        echo "Config created: $CONFIG_FILE"
+    fi
+
+    echo ""
+fi
+
+# Warn if config has no active deployments
+# Match actual deployment/workspace sections, not random [ lines or comments
+if [[ -f "$CONFIG_FILE" ]] && ! grep -qE '^[[:space:]]*\[(axiom|grafana|pyroscope|sentry)\.deployments\.|^[[:space:]]*\[slack\.workspaces\.' "$CONFIG_FILE"; then
+    echo -e "${YELLOW}⚠️  No deployments configured.${NC}"
+    echo ""
+    echo "   Edit $CONFIG_FILE and add at least one:"
+    echo ""
+    echo "     [axiom.deployments.prod]"
+    echo "     url = \"https://api.axiom.co\""
+    echo "     token = \"xapt-xxx\""
+    echo "     org_id = \"your-org\""
+    echo ""
+    echo "     [grafana.deployments.prod]"
+    echo "     url = \"https://your-org.grafana.net\""
+    echo "     token = \"glsa_xxx\""
+    echo ""
+    echo "     [sentry.deployments.prod]"
+    echo "     url = \"https://your-org.sentry.io\""
+    echo "     token = \"sntryu_xxx\""
+    echo "     organization_slug = \"your-org\""
+    echo ""
+    echo "     [slack.workspaces.work]"
+    echo "     token = \"xoxb-xxx\""
+    echo ""
+    echo "   Then re-run: scripts/init"
+    echo ""
+
+    if [[ "$FIRST_RUN" == true ]]; then
+        # No point running discovery with an empty config
+        exit 0
+    fi
+fi
+
+# ─── Environment Discovery ───────────────────────────────────────────
+
+echo -e "${BOLD}Gilfoyle Environment Discovery${NC}"
+echo "=============================="
+
+# Sync shared memory first
+"$SCRIPT_DIR/mem-sync"
+echo ""
+
+echo "Configured tools:"
+for tool in axiom grafana pyroscope sentry slack; do
+    deployments=$("$SCRIPT_DIR/config" --list "$tool" 2>/dev/null || true)
+    if [[ -z "$deployments" || "$deployments" == "(none configured)" ]]; then
+        echo "  ${tool}: (not configured)"
+    else
+        names=$(echo "$deployments" | paste -sd',' - | sed 's/,/, /g')
+        echo "  ${tool}: ${names} ✓"
+    fi
+done
+
+echo ""
+echo "Run scripts/discover-<tool> to see available assets before querying."
+
+# ─── Org Memory ──────────────────────────────────────────────────────
+
+ORGS_DIR="$CONFIG_DIR/memory/orgs"
+if [[ -d "$ORGS_DIR" ]] && [[ -n "$(ls -A "$ORGS_DIR" 2>/dev/null)" ]]; then
+    echo ""
+    echo "Org memory (read with: find $ORGS_DIR -path '*/kb/*.md' -type f -exec cat {} +):"
+    for org_dir in "$ORGS_DIR"/*/; do
+        [[ -d "$org_dir" ]] || continue
+        org_name=$(basename "$org_dir")
+        org_kb_dir="${org_dir%/}/kb"
+        if [[ -d "$org_kb_dir" ]]; then
+            file_count=$(find "$org_kb_dir" -name "*.md" -type f 2>/dev/null | wc -l | tr -d ' ')
+            echo "  ${org_name}: ${file_count} files (${org_kb_dir})"
+        fi
+    done
+fi
+
+echo ""
+echo -e "${BOLD}Discovery Complete.${NC}"
+echo "Context loaded. You may now formulate hypotheses based on these actual assets."

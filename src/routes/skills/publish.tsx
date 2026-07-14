@@ -154,7 +154,7 @@ export function Upload() {
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const isSubmitting = status !== null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | PublisherOwnerMembership[]
@@ -591,8 +591,12 @@ export function Upload() {
     return false;
   });
   const hasFilePanelFooter = Boolean(ignoredLocalMetadataNote || visibleFileIssues.length > 0);
+  const hasPublished =
+    status?.startsWith("Published.") || status?.startsWith("Publish received.") || false;
+  const isPublishDisabled = !validation.ready || isSubmitting || hasPublished;
   const publishBlockerSummary =
     !validation.ready && !isSubmitting ? summarizePublishBlockers(validation.issues) : null;
+  const isNewSkillPublishEmpty = files.length === 0 && !updateSlug;
 
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
@@ -679,6 +683,7 @@ export function Upload() {
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setHasAttempted(true);
+    if (hasPublished) return;
     if (!validation.ready) {
       const message = validation.issues[0] ?? "Fix validation issues to continue.";
       setError(message);
@@ -715,36 +720,36 @@ export function Upload() {
       toast.error(msg);
       return;
     }
+    setIsSubmitting(true);
     setStatus("Uploading files…");
-
-    const uploaded = [] as Array<{
-      path: string;
-      size: number;
-      storageId: string;
-      sha256: string;
-      contentType?: string;
-    }>;
-
-    for (const file of files) {
-      const uploadUrl = await generateUploadUrl();
-      const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
-      const path =
-        stripRoot && rawPath.startsWith(`${stripRoot}/`)
-          ? rawPath.slice(stripRoot.length + 1)
-          : rawPath;
-      const sha256 = await hashFile(file);
-      const storageId = await uploadFile(uploadUrl, file);
-      uploaded.push({
-        path,
-        size: file.size,
-        storageId,
-        sha256,
-        contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
-      });
-    }
-
-    setStatus("Publishing…");
     try {
+      const uploaded = [] as Array<{
+        path: string;
+        size: number;
+        storageId: string;
+        sha256: string;
+        contentType?: string;
+      }>;
+
+      for (const file of files) {
+        const uploadUrl = await generateUploadUrl();
+        const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
+        const path =
+          stripRoot && rawPath.startsWith(`${stripRoot}/`)
+            ? rawPath.slice(stripRoot.length + 1)
+            : rawPath;
+        const sha256 = await hashFile(file);
+        const storageId = await uploadFile(uploadUrl, file);
+        uploaded.push({
+          path,
+          size: file.size,
+          storageId,
+          sha256,
+          contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
+        });
+      }
+
+      setStatus("Publishing…");
       const result = await publishVersion({
         ownerHandle: ownerHandle || undefined,
         sourceOwnerHandle:
@@ -773,6 +778,11 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
+        if (typeof result === "object" && "status" in result && result.status === "pending") {
+          setStatus("Publish received. Running TruffleHog and ClawScan before public listing.");
+          toast.success("Publish received. Security checks are running.");
+          return;
+        }
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         const didSetPostPublishFlash = setPostPublishFlash(ownerParam, trimmedSlug);
         if (!didSetPostPublishFlash) {
@@ -789,36 +799,66 @@ export function Upload() {
       const message = formatPublishError(publishError);
       setError(message);
       toast.error(message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   return (
-    <main className="py-10">
-      <Container size="narrow">
-        <header className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <main className={isNewSkillPublishEmpty ? "publish-empty-main" : "py-10"}>
+      <Container
+        size="narrow"
+        className={isNewSkillPublishEmpty ? "publish-empty-container" : undefined}
+      >
+        <header
+          className={
+            isNewSkillPublishEmpty
+              ? "publish-empty-header"
+              : "mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+          }
+        >
+          <div className={isNewSkillPublishEmpty ? "publish-empty-heading" : undefined}>
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-              Publish a skill
+              {isNewSkillPublishEmpty ? "Publish Skill" : "Publish a skill"}
             </h1>
-            <p className="text-sm text-[color:var(--ink-soft)]">Drop or select a skill folder</p>
+            <p className="text-sm text-[color:var(--ink-soft)]">
+              {isNewSkillPublishEmpty
+                ? "Publish your skill to ClawHub so others can discover and install it."
+                : "Review the detected skill details before publishing."}
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm" className="w-fit">
-              <Link to="/import" search={{ ownerHandle: undefined }}>
-                <GitHubLogo className="h-3.5 w-3.5" />
-                Import from GitHub
-              </Link>
-            </Button>
+          <div
+            className={
+              isNewSkillPublishEmpty
+                ? "publish-empty-actions flex flex-wrap items-center gap-2"
+                : "flex flex-wrap items-center gap-2"
+            }
+          >
+            {isNewSkillPublishEmpty ? (
+              <Button asChild variant="outline" size="sm" className="w-fit">
+                <Link to="/import" search={{ ownerHandle: undefined }}>
+                  <GitHubLogo className="h-3.5 w-3.5" />
+                  Import from GitHub
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm" className="w-fit">
               <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-                Skill publishing guide
+                {isNewSkillPublishEmpty ? "Skill docs" : "Skill publishing guide"}
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             </Button>
           </div>
         </header>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+        <form
+          onSubmit={handleSubmit}
+          className={
+            isNewSkillPublishEmpty
+              ? "publish-empty-skill-form flex flex-col gap-6"
+              : "flex flex-col gap-6"
+          }
+        >
           {/* File upload panel */}
           <input
             ref={setFileInputRef}
@@ -998,10 +1038,15 @@ export function Upload() {
               </div>
             </div>
           ) : (
-            <Card>
-              <CardContent>
+            <Card className={isNewSkillPublishEmpty ? "publish-empty-upload-card" : undefined}>
+              <CardContent
+                className={isNewSkillPublishEmpty ? "publish-empty-upload-content" : undefined}
+              >
                 <div
-                  className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
+                  data-dragging={isDragging ? "true" : undefined}
+                  className={`${
+                    isNewSkillPublishEmpty ? "publish-empty-dropzone text-center" : "p-8"
+                  } relative flex flex-col items-center overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed transition-colors ${
                     isDragging
                       ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
                       : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -1014,15 +1059,19 @@ export function Upload() {
                   onDrop={handleFilesDrop}
                 >
                   <UploadDropzoneDecor active={isDragging} kind="skill" />
-                  <div className="relative z-[1] flex flex-col items-center gap-2 text-center">
+                  <div className="relative z-[1] flex flex-col items-center gap-3">
                     <div className="flex items-center gap-3">
-                      <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                      <strong>Drop a skill folder</strong>
+                      <UploadIcon
+                        className="h-4 w-4 text-[color:var(--ink-soft)]"
+                        aria-hidden="true"
+                      />
+                      <strong className="text-[color:var(--ink)]">Upload skill first</strong>
                     </div>
-                    <span className="text-xs text-[color:var(--ink-soft)]">
-                      We keep inner paths and remove the top-level folder automatically.
+                    <span className="max-w-[520px] text-sm text-[color:var(--ink-soft)]">
+                      Drop a skill folder here.
                     </span>
                     <Button
+                      className="mt-2"
                       variant="outline"
                       size="sm"
                       type="button"
@@ -1300,7 +1349,7 @@ export function Upload() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
               {error ? (
-                <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                <div className="text-sm font-medium text-status-error-fg" role="alert">
                   {error}
                 </div>
               ) : null}
@@ -1315,7 +1364,7 @@ export function Upload() {
               variant="primary"
               size="lg"
               type="submit"
-              disabled={!validation.ready || isSubmitting}
+              disabled={isPublishDisabled}
               loading={isSubmitting}
             >
               {!validation.ready && !isSubmitting ? (
@@ -1333,7 +1382,7 @@ export function Upload() {
 function InlineValidationMessage(props: { id: string; message?: string }) {
   if (!props.message) return null;
   return (
-    <p id={props.id} className="text-sm font-medium text-red-600 dark:text-red-400">
+    <p id={props.id} className="text-sm font-medium text-status-error-fg">
       {props.message}
     </p>
   );

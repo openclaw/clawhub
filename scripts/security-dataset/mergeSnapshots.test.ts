@@ -90,6 +90,19 @@ describe("security dataset snapshot merge CLI", () => {
       await expect(
         readFile(join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"), "utf8"),
       ).resolves.not.toContain('"split":"train"');
+      const latestContents = await readFile(
+        join(summary.snapshotDir, "hf-dataset", "data", "latest.jsonl"),
+        "utf8",
+      );
+      const latestRows = latestContents
+        .split(/\r?\n/)
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const mergedSkillContent = latestRows.find((row) => row.id === "row-a")
+        ?.skill_md_content as string;
+      expect(mergedSkillContent).toBe(
+        "Use this skill.\nskill [REDACTED_SECRET]\nKeep this line intact.",
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -126,7 +139,8 @@ async function writeShardSnapshot(
         id: index === 0 ? input.rowId : `${input.rowId}-${index}`,
         split,
         skill_slug: "owner/sk-abcdefghijklmnopqrstuvwxyz",
-        skill_md_content: "Use this skill. skill secret: supersecretvalue123",
+        skill_md_content:
+          "Use this skill.\nskill secret: supersecretvalue123\nKeep this line intact.",
         skill_bundle_content: [
           {
             path: "config/sk-abcdefghijklmnopqrstuvwxyz/settings.json",

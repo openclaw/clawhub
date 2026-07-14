@@ -306,6 +306,38 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("officialFirst")).toBe("true");
   });
 
+  it("omits viewer credentials from anonymous plugin catalog requests", async () => {
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    getRequestHeadersMock.mockReturnValue(
+      new Headers({
+        authorization: "Bearer private-token",
+        cookie: "session=private",
+        "x-forwarded-for": "203.0.113.9",
+      }),
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPluginCatalog({ limit: 12, viewerMode: "anonymous" });
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestInit).toEqual(
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+          "x-forwarded-for": "203.0.113.9",
+        }),
+      }),
+    );
+    expect(requestInit?.headers).not.toHaveProperty("authorization");
+    expect(requestInit?.headers).not.toHaveProperty("cookie");
+  });
+
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi

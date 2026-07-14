@@ -161,6 +161,7 @@ export type ApiV1SkillInstallResolveResponse =
 export const CliTelemetryInstallRequestSchema = type({
   event: '"install"',
   slug: "string",
+  ownerHandle: "string?",
   version: "string?",
   // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",
@@ -471,6 +472,26 @@ export const ApiV1SkillModerationResponseSchema = type({
     }).array(),
   }).or("null"),
 });
+
+export const SkillVersionRevokeRequestSchema = type({
+  state: '"revoked"',
+  reason: "string",
+  ownerHandle: "string?",
+});
+export type SkillVersionRevokeRequest = (typeof SkillVersionRevokeRequestSchema)[inferred];
+
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  versionId: "string",
+  alreadyRevoked: "boolean",
+  replacementVersion: "string|null",
+  skillHidden: "boolean",
+});
+export type ApiV1SkillVersionRevokeResponse =
+  (typeof ApiV1SkillVersionRevokeResponseSchema)[inferred];
 
 export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
@@ -947,6 +968,42 @@ export const ApiV1ReclassifyBanResponseSchema = type({
 export const ApiV1SetRoleResponseSchema = type({
   ok: "true",
   role: '"admin"|"moderator"|"user"',
+});
+
+export const ApiV1PromotionModelSchema = type({
+  modelRef: "string",
+  alias: "string?",
+  suggestedDefault: "boolean?",
+});
+
+export const ApiV1PromotionSchema = type({
+  slug: "string",
+  title: "string",
+  blurb: "string",
+  sponsor: "string?",
+  status: '"draft"|"active"|"ended"',
+  active: "boolean",
+  startsAt: "number",
+  endsAt: "number",
+  provider: "string?",
+  authChoiceId: "string?",
+  pluginNames: "string[]?",
+  models: ApiV1PromotionModelSchema.array(),
+  signupUrl: "string?",
+  docsUrl: "string?",
+  launchPageUrl: "string?",
+});
+export type ApiV1Promotion = (typeof ApiV1PromotionSchema)[inferred];
+
+export const ApiV1PromotionsListResponseSchema = type({
+  promotions: ApiV1PromotionSchema.array(),
+  "nextCursor?": "string|null",
+});
+
+export const ApiV1PromotionWriteResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  status: '"draft"|"active"|"ended"',
 });
 
 export const ApiV1StarResponseSchema = type({

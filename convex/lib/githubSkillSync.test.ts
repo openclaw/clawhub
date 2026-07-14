@@ -182,6 +182,20 @@ describe("buildGitHubSkillSourceSnapshot", () => {
     expect(snapshot.skills[0]?.displayName).toBe("AIQ Deploy");
   });
 
+  it("preserves long frontmatter display names from compatible GitHub sources", async () => {
+    const displayName = "A".repeat(120);
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "1".repeat(40),
+      entries: repoEntries({
+        "skills/long-name/SKILL.md": `---\nname: ${displayName}\n---\n# Long name\n`,
+      }),
+    });
+
+    expect(snapshot.skills[0]?.displayName).toBe(displayName);
+  });
+
   it("rejects oversized cached markdown before writing Convex content docs", async () => {
     await expect(
       buildGitHubSkillSourceSnapshot({

@@ -18,9 +18,25 @@ Local fixture seeding is command-driven by default:
   the documented first-run local setup path.
 - CLI seeding (`bun run seed:dev`) runs the same seed path manually without starting the preview and
   bypasses the first-run sentinel.
+- `bun run seed` is the shared seed pipeline used after local setup and by disposable PR previews.
+  It installs the same moderation fixtures and committed public corpus, then refreshes global stats.
+  Without `--preview-name` it accepts only a local Convex deployment; remote use requires an
+  explicit preview name plus a Convex Preview deploy key. Vercel recreates that preview deployment
+  before invoking the shared seed, so the corpus import does not perform a destructive reset.
 - `bun run seed:public-corpus` is the lower-level corpus-only import command. Use it for corpus
-  fixture work, not as the default local setup command.
+  fixture work, not as the default local setup command. The importer keeps each dummy owner's
+  batches serialized while running different owners concurrently, so owner creation remains
+  deterministic without paying one network round trip per corpus row.
 - `bun run validate:public-corpus` validates the committed public corpus fixture without seeding.
+- `bun run seed:test` targets only the permanent `academic-chihuahua-392` ClawHub Test deployment.
+  It applies the deterministic moderation fixture overlay without importing the local/public corpus,
+  cloning a current user, or resetting production-derived staging rows. The Convex action also
+  requires `CLAWHUB_ENV=test`, `CLAWHUB_DISABLE_CRONS=1`, and
+  `CLAWHUB_DEPLOYMENT_NAME=academic-chihuahua-392`.
+- `bun run seed:test:import-snapshot -- --snapshot <sanitized.zip>` is the destructive one-time
+  baseline restore. It validates the archive, refuses every deployment except
+  `academic-chihuahua-392`, and uses Convex `--replace-all` so cross-project table IDs restore
+  correctly.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
 
@@ -34,5 +50,5 @@ should not be exposed as a first-run dashboard button unless the UX and ownershi
 intentionally revisited.
 
 Without `OPENAI_API_KEY`, public corpus import may use zero vectors. That is
-acceptable for local setup and layout QA, but semantic search quality will be weaker than an
-embedding-backed local database.
+acceptable for local setup, disposable PR previews, and layout QA, but semantic search quality will
+be weaker than an embedding-backed database.

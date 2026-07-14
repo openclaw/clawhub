@@ -255,6 +255,9 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
+  const latestVersionId = latestVersion?._id ?? null;
+  const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
+  const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
   const relatedCategories = useMemo(
@@ -282,7 +285,9 @@ export function SkillDetailPage({
 
   const versions = useQuery(
     api.skills.listVersions,
-    skill ? { skillId: skill._id, limit: 50 } : "skip",
+    skill && !isGitHubBackedSkill
+      ? { skillId: skill._id, limit: activeTab === "versions" ? 50 : 2 }
+      : "skip",
   ) as Doc<"skillVersions">[] | undefined;
   const shouldLoadDiffVersions = Boolean(
     skill && (activeTab === "compare" || shouldPrefetchCompare),
@@ -454,8 +459,6 @@ export function SkillDetailPage({
       })
     : null;
 
-  const latestVersionId = latestVersion?._id ?? null;
-
   const clawdis = (latestVersion?.parsed as { clawdis?: ClawdisSkillMetadata } | undefined)
     ?.clawdis;
   const osLabels = useMemo(() => formatOsList(clawdis?.os), [clawdis?.os]);
@@ -467,8 +470,6 @@ export function SkillDetailPage({
     : null;
   const cliHelp = clawdis?.cliHelp;
   const hasPluginBundle = Boolean(nixSnippet || configRequirements || cliHelp);
-  const githubBackedFields = skill as GitHubBackedSkillFields | null | undefined;
-  const isGitHubBackedSkill = githubBackedFields?.installKind === "github" && !latestVersionId;
   const githubReadme = useQuery(
     api.skills.getGitHubSkillContent,
     isGitHubBackedSkill && skill ? { skillId: skill._id, kind: "readme" } : "skip",

@@ -8,6 +8,7 @@ export * from "./openclawContract.js";
 export * from "./openClawExtensionSlugs.js";
 export * from "./packages.js";
 export * from "./pluginCategories.js";
+export * from "./promotionsFeed.js";
 export { ApiRoutes, LegacyApiRoutes } from "./routes.js";
 export * from "./schemas.js";
 export * from "./textFiles.js";

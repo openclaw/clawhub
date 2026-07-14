@@ -85,7 +85,7 @@ Examples:
   rollout
 
 When correctness depends on handling old and new states during a rollout,
-consult `skills/convex-migration-helper/SKILL.md` for the migration workflow.
+consult the `convex-migration-helper` skill for the migration workflow.
 
 ## Workflow
 

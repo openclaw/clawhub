@@ -20,10 +20,70 @@ import {
   ApiV1SkillScanBatchStatusResponseSchema,
   ApiV1SkillScanSubmitResponseSchema,
   ApiV1SkillRepairVtPendingResponseSchema,
+  ApiV1SkillVersionRevokeResponseSchema,
   ApiV1UnbanUserResponseSchema,
   ApiV1UserSearchResponseSchema,
   parseArk,
 } from "../../../clawhub/src/schema/index.js";
+
+export async function cmdRevokeSkillVersion(
+  opts: GlobalOpts,
+  slugArg: string,
+  options: {
+    version?: string;
+    reason?: string;
+    owner?: string;
+    yes?: boolean;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  const slug = slugArg.trim().toLowerCase();
+  if (!slug) fail("Skill slug required");
+  const version = options.version?.trim();
+  if (!version) fail("--version required");
+  const reason = options.reason?.trim();
+  if (!reason) fail("--reason required");
+  const ownerHandle = options.owner?.trim().replace(/^@+/, "") || undefined;
+
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+  if (!options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(`Revoke ${slug}@${version}? This version cannot be restored.`);
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json ? null : createCrabLoader(`Revoking ${slug}@${version}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}/moderation`,
+        token,
+        body: { state: "revoked", reason, ...(ownerHandle ? { ownerHandle } : {}) },
+      },
+      ApiV1SkillVersionRevokeResponseSchema,
+    );
+    const parsed = parseArk(
+      ApiV1SkillVersionRevokeResponseSchema,
+      result,
+      "Skill version revocation response",
+    );
+    spinner?.succeed(
+      parsed.alreadyRevoked
+        ? `OK. ${slug}@${version} was already revoked`
+        : `OK. Revoked ${slug}@${version}`,
+    );
+    if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
 
 export async function cmdBanUser(
   opts: GlobalOpts,

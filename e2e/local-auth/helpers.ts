@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import convexBrowser from "convex/browser";
+import { api } from "../../convex/_generated/api";
 import { buildPublisherProfileHref, buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import {
   buildPluginDetailHref,
@@ -10,6 +12,8 @@ import {
 import { waitForHydration } from "../helpers/runtimeErrors";
 
 type DevPersona = "owner" | "user" | "admin" | "abusePublisher";
+const WORKER_TOKEN = process.env.SECURITY_SCAN_WORKER_TOKEN ?? "local-e2e-worker-token";
+const { ConvexHttpClient } = convexBrowser;
 
 // The quality gate fingerprints line shape, so vary local-auth fixtures by slug.
 const FINGERPRINT_SALT_LINES = [
@@ -67,6 +71,8 @@ async function fillPublishSkillForm(
   },
   skillDir: string,
 ) {
+  await page.getByTestId("upload-input").setInputFiles(skillDir, { timeout: 15_000 });
+  await waitForPublishSkillMetadataForm(page);
   await selectOwnerHandle(page, "#ownerHandle", args.ownerHandle);
   await page.locator("#slug").fill(args.slug, { timeout: 15_000 });
   await page.locator("#displayName").fill(args.displayName, { timeout: 15_000 });
@@ -77,7 +83,6 @@ async function fillPublishSkillForm(
     await changelog.fill(args.changelog, { timeout: 15_000 });
   }
   await page.getByLabel(/i have the rights to publish this skill/i).check({ timeout: 15_000 });
-  await page.getByTestId("upload-input").setInputFiles(skillDir, { timeout: 15_000 });
 }
 
 async function hasDuplicateVersionAlert(page: Page, version: string) {
@@ -90,7 +95,7 @@ function skillDetailPath(ownerHandle: string, slug: string) {
   return buildSkillDetailHref(ownerHandle, slug);
 }
 
-async function publishedSkillVersionExists(
+export async function publishedSkillVersionExists(
   page: Page,
   args: {
     ownerHandle: string;
@@ -107,6 +112,72 @@ async function publishedSkillVersionExists(
     version?: { version?: unknown };
   } | null;
   return body?.version?.version === args.version;
+}
+
+function convexClient() {
+  const convexUrl = process.env.VITE_CONVEX_URL;
+  if (!convexUrl) throw new Error("VITE_CONVEX_URL is required");
+  return new ConvexHttpClient(convexUrl);
+}
+
+export async function completeMockPrePublicationChecks(args: {
+  kind: "skill" | "package";
+  slug: string;
+  version: string;
+  trufflehog?: "clean" | "blocked";
+  clawscan?: "clean" | "suspicious" | "malicious" | "failed";
+}) {
+  const claim = (await convexClient().action(api.publishAttempts.claimPrePublicationChecks, {
+    token: WORKER_TOKEN,
+    kind: args.kind,
+    slug: args.slug,
+    version: args.version,
+  })) as null | {
+    attemptId: string;
+    claimId: string;
+    artifactFingerprint: string;
+  };
+  if (!claim) {
+    throw new Error(`No pending ${args.kind} publish attempt for ${args.slug}@${args.version}`);
+  }
+
+  const clawscan = args.clawscan ?? "clean";
+  const clawscanBlocked = clawscan === "malicious";
+  const clawscanFailed = clawscan === "failed";
+  const clawscanAnalysis =
+    clawscan === "suspicious" || clawscan === "malicious"
+      ? {
+          status: "completed",
+          verdict: clawscan,
+          confidence: "high",
+          summary: `Mock ClawScan marked the local e2e fixture ${clawscan}.`,
+          model: "mock-local-e2e",
+          checkedAt: Date.now(),
+        }
+      : undefined;
+  return await convexClient().action(api.publishAttempts.completePrePublicationChecks, {
+    token: WORKER_TOKEN,
+    attemptId: claim.attemptId,
+    claimId: claim.claimId,
+    artifactFingerprint: claim.artifactFingerprint,
+    trufflehog: {
+      status: args.trufflehog ?? "clean",
+      summary:
+        args.trufflehog === "blocked"
+          ? "Mock TruffleHog found a redacted secret in the local e2e fixture."
+          : "Mock TruffleHog found no secrets in the local e2e fixture.",
+      redactedFindings: args.trufflehog === "blocked" ? ["redacted-secret"] : undefined,
+    },
+    clawscan: {
+      status: clawscanBlocked ? "blocked" : clawscanFailed ? "failed" : "clean",
+      summary: "Mock ClawScan completed for the local e2e fixture.",
+      redactedFindings:
+        clawscan === "suspicious" || clawscan === "malicious"
+          ? [`status=completed; verdict=${clawscan}`]
+          : undefined,
+    },
+    clawscanAnalysis,
+  });
 }
 
 function devPersonaHeaderPattern(persona: DevPersona, expectedHandle: string) {
@@ -246,15 +317,29 @@ function parseOwnerHandle(text: string) {
 async function isNativeOwnerSelect(page: Page, selector: string) {
   const ownerControl = page.locator(selector);
   await ownerControl.waitFor({ state: "attached" });
-  return await ownerControl.evaluate((node) => node.tagName.toLowerCase() === "select");
+  return await ownerControl.evaluate(
+    (node) => node.tagName.toLowerCase() === "select" && node.checkVisibility(),
+  );
 }
 
 async function getSelectedOwnerHandle(page: Page, selector: string) {
-  const ownerControl = page.locator(selector);
+  const ownerControl = page.locator(selector).first();
   if (await isNativeOwnerSelect(page, selector)) {
-    return await ownerControl.inputValue();
+    const value = await ownerControl.inputValue();
+    if (value) return value;
   }
-  return parseOwnerHandle(await ownerControl.innerText());
+  // Empty publish states keep the owner control mounted but visually hidden until upload.
+  const directText = (await ownerControl.textContent().catch(() => "")) ?? "";
+  const directHandle = parseOwnerHandle(directText);
+  if (directHandle) return directHandle;
+
+  const visibleComboboxText = await page
+    .getByRole("combobox", { name: "Publishing as" })
+    .filter({ hasText: /@/ })
+    .first()
+    .innerText({ timeout: 500 })
+    .catch(() => "");
+  return parseOwnerHandle(visibleComboboxText);
 }
 
 export async function expectOwnerHandleSelected(
@@ -291,20 +376,14 @@ export async function selectOwnerHandle(page: Page, selector: string, ownerHandl
 }
 
 async function waitForPublishSkillForm(page: Page) {
-  const heading = page.getByRole("heading", { name: "Publish a skill" });
+  const heading = page.getByRole("heading", { name: /Publish(?: a skill| Skill)/ });
   const retryButton = page.getByRole("button", { name: "Try again" });
-  const rightsCheckbox = page.getByLabel(/i have the rights to publish this skill/i);
-  const requiredControls = ["#ownerHandle", "#slug", "#displayName", "#version", "#tags"] as const;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await waitForHydration(page).catch(() => {});
     if (await heading.isVisible({ timeout: 5_000 }).catch(() => false)) {
       try {
-        for (const selector of requiredControls) {
-          await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
-        }
-        await expect(rightsCheckbox).toBeVisible({ timeout: 15_000 });
         await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
         return;
       } catch (error) {
@@ -319,14 +398,21 @@ async function waitForPublishSkillForm(page: Page) {
   }
 
   await expect(heading).toBeVisible({ timeout: 15_000 });
-  for (const selector of requiredControls) {
-    await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
-  }
-  await expect(rightsCheckbox)
-    .toBeVisible({ timeout: 15_000 })
+  await page
+    .getByTestId("upload-input")
+    .waitFor({ state: "attached", timeout: 15_000 })
     .catch((error) => {
       throw lastError ?? error;
     });
+}
+
+async function waitForPublishSkillMetadataForm(page: Page) {
+  const requiredControls = ["#ownerHandle", "#slug", "#displayName", "#version", "#tags"] as const;
+  const rightsCheckbox = page.getByLabel(/i have the rights to publish this skill/i);
+  for (const selector of requiredControls) {
+    await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
+  }
+  await expect(rightsCheckbox).toBeVisible({ timeout: 15_000 });
   await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
 }
 
@@ -362,17 +448,20 @@ export async function publishSkillVersion(
     versionLabel: string;
     changelog: string;
     versionExists?: () => Promise<boolean>;
+    skillMarkdown?: string;
+    completeChecks?: boolean;
   },
 ) {
   const skillDir = testInfo.outputPath(`${args.slug}-${args.version}`);
   await mkdir(skillDir, { recursive: true });
   await writeFile(
     join(skillDir, "SKILL.md"),
-    skillMd({
-      slug: args.slug,
-      displayName: args.displayName,
-      versionLabel: args.versionLabel,
-    }),
+    args.skillMarkdown ??
+      skillMd({
+        slug: args.slug,
+        displayName: args.displayName,
+        versionLabel: args.versionLabel,
+      }),
     "utf8",
   );
 
@@ -388,11 +477,15 @@ export async function publishSkillVersion(
       await expect(publishButton).toBeEnabled({ timeout: 30_000 });
       publishUrl = page.url();
       await publishButton.click({ timeout: 15_000 });
+      const pendingChecks = page.getByText("Running TruffleHog and ClawScan", { exact: false });
       await expect
         .poll(
           async () => {
             if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
             if (await versionExists()) return "published";
+            if (await pendingChecks.isVisible({ timeout: 500 }).catch(() => false)) {
+              return "pending";
+            }
             if (!args.versionExists && detailUrlPattern.test(new URL(page.url()).pathname)) {
               return "detail";
             }
@@ -401,6 +494,19 @@ export async function publishSkillVersion(
           { timeout: 60_000, intervals: [500, 1_000, 2_000] },
         )
         .not.toBe("");
+      if (await pendingChecks.isVisible({ timeout: 500 }).catch(() => false)) {
+        if (args.completeChecks === false) {
+          return args.ownerHandle;
+        }
+        await completeMockPrePublicationChecks({
+          kind: "skill",
+          slug: args.slug,
+          version: args.version,
+        });
+        await expect
+          .poll(versionExists, { timeout: 60_000, intervals: [500, 1_000, 2_000] })
+          .toBe(true);
+      }
       if (detailUrlPattern.test(new URL(page.url()).pathname)) break;
       await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
         waitUntil: "domcontentloaded",

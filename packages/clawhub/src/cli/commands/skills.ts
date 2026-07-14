@@ -328,6 +328,8 @@ export async function cmdInstall(
     const resolvedOwnerHandle = normalizeOwnerHandle(
       requested.ownerHandle ?? skillMeta.owner?.handle,
     );
+    const canonicalOwnerHandle =
+      normalizeOwnerHandle(skillMeta.owner?.handle) ?? resolvedOwnerHandle;
     const resolvedSlug = normalizeSkillSlugForRemote(skillMeta.skill?.slug) ?? trimmed;
     const remoteSlug = requested.ownerHandle ? trimmed : resolvedSlug;
 
@@ -426,6 +428,7 @@ export async function cmdInstall(
       token,
       registry,
       slug: skillMeta.skill?.slug ?? trimmed,
+      ownerHandle: canonicalOwnerHandle,
       version: resolvedVersion,
     });
     spinner.succeed(

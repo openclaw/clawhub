@@ -127,12 +127,13 @@ const TEMPORAL_SUSTAINED_DAYS = 30;
 const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
-const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 1_000;
-const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 2_000;
-const TEMPORAL_MIN_NEAR_CONVERSION_INSTALLS = 500;
+const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
+const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 1_000;
+const TEMPORAL_MIN_NEAR_CONVERSION_7_INSTALLS = 50;
+const TEMPORAL_MIN_NEAR_CONVERSION_30_INSTALLS = 100;
 const TEMPORAL_EXPECTED_INSTALL_DOWNLOAD_RATIO = 0.012;
-const TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO = 0.5;
-const TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE = 50;
+const TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO = 0.1;
+const TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE = 10;
 
 export function labelForPublisherAbuseZScore(
   zScore: number,
@@ -402,9 +403,6 @@ export function labelForTemporalPublisherAbuse(input: {
   highTemporalSkillCount: number;
   p99TemporalSkillCount?: number;
 }): PublisherAbuseLabel {
-  if ((input.p99TemporalSkillCount ?? 0) >= 1 || input.highTemporalSkillCount >= 2) {
-    return "potential_ban_candidate";
-  }
   if (input.highTemporalSkillCount >= 1) return "review";
   return "pass";
 }
@@ -547,12 +545,12 @@ function computeSkillTemporalAbuseScoreForWindows(input: {
   });
   const nearConversion7 =
     recent7.downloads >= TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS &&
-    recent7.installs >= TEMPORAL_MIN_NEAR_CONVERSION_INSTALLS &&
+    recent7.installs >= TEMPORAL_MIN_NEAR_CONVERSION_7_INSTALLS &&
     installDownloadRatio7 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO &&
     installDownloadExcessZScore7 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE;
   const nearConversion30 =
     recent30.downloads >= TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS &&
-    recent30.installs >= TEMPORAL_MIN_NEAR_CONVERSION_INSTALLS &&
+    recent30.installs >= TEMPORAL_MIN_NEAR_CONVERSION_30_INSTALLS &&
     installDownloadRatio30 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_RATIO &&
     installDownloadExcessZScore30 >= TEMPORAL_MIN_INSTALL_DOWNLOAD_EXCESS_Z_SCORE;
   const nearConversion = nearConversion7 || nearConversion30;

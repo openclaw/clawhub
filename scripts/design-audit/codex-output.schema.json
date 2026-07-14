@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings", "changedFiles", "deferredSuggestions"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "severity",
+          "kind",
+          "file",
+          "line",
+          "message",
+          "remediation",
+          "reference"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "severity": { "enum": ["error", "warning", "info"] },
+          "kind": { "enum": ["mechanical", "judgment"] },
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer", "minimum": 1 },
+          "message": { "type": "string", "minLength": 1 },
+          "remediation": { "type": "string", "minLength": 1 },
+          "reference": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "deferredSuggestions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

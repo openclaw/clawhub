@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DEPLOYMENT="${1:-}"
+ID="${2:-}"
+FILE="${3:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "$DEPLOYMENT" || -z "$ID" || -z "$FILE" ]]; then
+  echo "Usage: notifier-update <deployment> <id> <json-file>" >&2
+  exit 1
+fi
+BODY="$(cat "$FILE")"
+"$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" PUT "/notifiers/$ID" "$BODY"

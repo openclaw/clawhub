@@ -54,6 +54,17 @@ const MAX_PUBLISH_SUMMARY_LENGTH = 300;
 type FingerprintFile = { path: string; sha256: string };
 type SafePublishFile = PublishVersionArgs["files"][number] & { path: string };
 type PublishFileBlob = { file: SafePublishFile; blob: Blob };
+type DeferredAiEnrichment = {
+  summary: {
+    mode: "generate" | "literal";
+    literal?: string;
+    currentSummary?: string;
+  };
+  changelog: {
+    source: "auto" | "user";
+    supplied: string;
+  };
+};
 
 function normalizeStoredSkillCategoryOverride(categories: readonly string[] | undefined) {
   if (categories === undefined) return undefined;
@@ -69,6 +80,23 @@ export type PublishResult = {
   versionId: Id<"skillVersions">;
   embeddingId: Id<"skillEmbeddings">;
 };
+
+export type PendingPublishResult = {
+  status: "pending";
+  attemptId: Id<"publishAttempts">;
+  slug: string;
+  version: string;
+};
+
+type SkillPublishFollowup = {
+  skipWebhook?: boolean;
+  ownerHandle?: string;
+  slug: string;
+  version: string;
+  displayName: string;
+};
+
+export type SkillPublishResult = PublishResult | PendingPublishResult;
 
 export type PublishVersionArgs = {
   slug: string;
@@ -112,14 +140,46 @@ export type PublishOptions = {
   // publishes (including older CLIs that never pass this flag) can never
   // accidentally transfer ownership.
   migrateOwner?: boolean;
+  stagePrePublicationChecks?: boolean;
 };
+
+type InternalPublishOptions = PublishOptions;
 
 export async function publishVersionForUser(
   ctx: ActionCtx,
   userId: Id<"users">,
   args: PublishVersionArgs,
   options: PublishOptions = {},
-): Promise<PublishResult> {
+): Promise<SkillPublishResult> {
+  return await publishVersionForUserInternal(ctx, userId, args, {
+    ...options,
+    stagePrePublicationChecks:
+      options.stagePrePublicationChecks ?? stagedPrePublicationPublishesEnabled(),
+  });
+}
+
+export async function stageSkillPublishAttemptForUser(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  args: PublishVersionArgs,
+  options: PublishOptions & { stagePrePublicationChecks?: boolean } = {},
+): Promise<SkillPublishResult> {
+  return await publishVersionForUserInternal(ctx, userId, args, {
+    ...options,
+    stagePrePublicationChecks: options.stagePrePublicationChecks ?? true,
+  });
+}
+
+function stagedPrePublicationPublishesEnabled() {
+  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
+}
+
+async function publishVersionForUserInternal(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  args: PublishVersionArgs,
+  options: InternalPublishOptions,
+): Promise<SkillPublishResult> {
   const version = args.version.trim();
   // Normalize first so we can look up the existing skill before deciding
   // how strictly to validate. The reserved-word blocklist and length floor
@@ -145,6 +205,20 @@ export async function publishVersionForUser(
     sourceOwnerPublisherId: options.sourceOwnerPublisherId,
     migrateOwner: options.migrateOwner,
   })) as Doc<"skills"> | null;
+  if (options.stagePrePublicationChecks && existingSkill && !existingSkill.softDeletedAt) {
+    const existingVersion = (await ctx.runQuery(
+      internal.skills.getVersionBySkillAndVersionInternal,
+      {
+        skillId: existingSkill._id,
+        version,
+      },
+    )) as Doc<"skillVersions"> | null;
+    if (existingVersion) {
+      throw new ConvexError(
+        `Version ${version} already exists. Increment the version number and try again.`,
+      );
+    }
+  }
   const isNewSkill = !existingSkill;
 
   // For new skills, enforce the full write-path rules (length, pattern,
@@ -208,14 +282,17 @@ export async function publishVersionForUser(
   if (explicitSummary && explicitSummary.length > MAX_PUBLISH_SUMMARY_LENGTH) {
     throw new ConvexError(`Summary must be ${MAX_PUBLISH_SUMMARY_LENGTH} characters or less`);
   }
+  const shouldDeferAiEnrichment = options.stagePrePublicationChecks === true;
   const summary =
     explicitSummary ||
-    (await generateSkillSummary({
-      slug,
-      displayName,
-      readmeText,
-      currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
-    }));
+    (shouldDeferAiEnrichment
+      ? (summaryFromFrontmatter ?? existingSkill?.summary ?? "")
+      : await generateSkillSummary({
+          slug,
+          displayName,
+          readmeText,
+          currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
+        }));
 
   let qualityAssessment: QualityAssessment | null = null;
   if (isNewSkill && !options.bypassQualityGate) {
@@ -310,7 +387,7 @@ export async function publishVersionForUser(
   );
 
   const changelogPromise =
-    changelogSource === "user"
+    changelogSource === "user" || shouldDeferAiEnrichment
       ? Promise.resolve(suppliedChangelog)
       : generateChangelogForPublish(ctx, {
           slug,
@@ -319,7 +396,9 @@ export async function publishVersionForUser(
           files: publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
         });
 
-  const embeddingPromise = generateEmbedding(embeddingText);
+  const embeddingPromise = shouldDeferAiEnrichment
+    ? Promise.resolve([] as number[])
+    : generateEmbedding(embeddingText);
 
   const [fingerprint, changelogText, embedding] = await Promise.all([
     fingerprintPromise,
@@ -329,7 +408,7 @@ export async function publishVersionForUser(
     }),
   ]);
 
-  const publishResult = (await ctx.runMutation(internal.skills.insertVersion, {
+  const skillInsertArgs = {
     userId,
     ownerPublisherId: options.ownerPublisherId,
     sourceOwnerPublisherId: options.sourceOwnerPublisherId,
@@ -365,6 +444,20 @@ export async function publishVersionForUser(
     summary,
     staticScan,
     embedding,
+    deferredAiEnrichment: shouldDeferAiEnrichment
+      ? ({
+          summary: explicitSummary
+            ? { mode: "literal", literal: explicitSummary }
+            : {
+                mode: "generate",
+                currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
+              },
+          changelog: {
+            source: changelogSource,
+            supplied: suppliedChangelog,
+          },
+        } satisfies DeferredAiEnrichment)
+      : undefined,
     qualityAssessment: qualityAssessment
       ? {
           decision: qualityAssessment.decision,
@@ -375,8 +468,246 @@ export async function publishVersionForUser(
           signals: qualityAssessment.signals,
         }
       : undefined,
-  })) as PublishResult;
+  };
 
+  let ownerHandle = options.ownerHandle;
+  if (!ownerHandle && options.ownerPublisherId !== undefined) {
+    const targetPublisher = (await ctx.runQuery(internal.publishers.getByIdInternal, {
+      publisherId: options.ownerPublisherId,
+    })) as Doc<"publishers"> | null;
+    ownerHandle = targetPublisher?.handle;
+  }
+  ownerHandle ??= owner?.handle ?? owner?.displayName ?? owner?.name;
+
+  const followup = {
+    skipWebhook: options.skipWebhook || undefined,
+    ownerHandle,
+    slug,
+    version,
+    displayName,
+  };
+
+  if (!options.stagePrePublicationChecks) {
+    const publishResult = (await ctx.runMutation(
+      internal.skills.insertVersion,
+      skillInsertArgs,
+    )) as PublishResult;
+    await scheduleSkillPublishFollowups(ctx, publishResult, followup);
+    return publishResult;
+  }
+
+  const staged = (await ctx.runMutation(
+    internal.publishAttempts.createSkillPublishAttemptInternal,
+    {
+      userId,
+      ownerPublisherId: options.ownerPublisherId,
+      sourceOwnerPublisherId: options.sourceOwnerPublisherId,
+      slug,
+      displayName,
+      version,
+      idempotencyKey: buildSkillPublishAttemptIdempotencyKey({
+        userId,
+        ownerPublisherId: options.ownerPublisherId,
+        slug,
+        version,
+        fingerprint,
+      }),
+      artifactFingerprint: fingerprint,
+      files: publishFiles.map((file) => ({
+        ...file,
+        path: file.path,
+      })),
+      skillInsertArgs: stripUndefinedForStoredAttempt(skillInsertArgs),
+      followup: {
+        skipWebhook: followup.skipWebhook,
+        ownerHandle,
+      },
+    },
+  )) as {
+    attemptId: Id<"publishAttempts">;
+    status: string;
+    result?: PublishResult;
+  };
+
+  if (staged.status === "finalized" && staged.result) {
+    return staged.result;
+  }
+
+  return { status: "pending", attemptId: staged.attemptId, slug, version };
+}
+
+export async function finalizeSkillPublishAttempt(
+  ctx: ActionCtx,
+  attemptId: Id<"publishAttempts">,
+): Promise<PublishResult> {
+  const claimId = buildFinalizationClaimId();
+  const claim = (await ctx.runMutation(
+    internal.publishAttempts.claimSkillPublishAttemptForFinalizationInternal,
+    { attemptId, claimId },
+  )) as
+    | {
+        status: "claimed";
+        attemptId: Id<"publishAttempts">;
+        createdAt: number;
+        skillInsertArgs: unknown;
+        followup: SkillPublishFollowup;
+      }
+    | {
+        status: "finalized";
+        attemptId: Id<"publishAttempts">;
+        result: PublishResult;
+        followup: SkillPublishFollowup;
+      };
+
+  if (claim.status === "finalized") {
+    return claim.result;
+  }
+
+  let publishResult: PublishResult;
+  try {
+    const skillInsertArgs = await prepareSkillInsertArgsForFinalization(ctx, claim.skillInsertArgs);
+    publishResult = (await ctx.runMutation(
+      internal.skills.insertVersion,
+      skillInsertArgs as never,
+    )) as PublishResult;
+  } catch (error) {
+    const existingResult = (await ctx.runQuery(
+      internal.publishAttempts.findSkillPublishAttemptPublicResultInternal,
+      { attemptId: claim.attemptId },
+    )) as PublishResult | null;
+    if (!existingResult) {
+      await releaseSkillPublishAttemptFinalizationClaim(ctx, claim.attemptId, claimId, error);
+      throw error;
+    }
+    publishResult = existingResult;
+  }
+
+  try {
+    await scheduleSkillPublishFollowups(ctx, publishResult, claim.followup);
+
+    await ctx.runMutation(internal.publishAttempts.recordSkillPublishAttemptFinalizedInternal, {
+      attemptId: claim.attemptId,
+      claimId,
+      result: publishResult,
+    });
+  } catch (error) {
+    await releaseSkillPublishAttemptFinalizationClaim(ctx, claim.attemptId, claimId, error);
+    throw error;
+  }
+
+  return publishResult;
+}
+
+async function prepareSkillInsertArgsForFinalization(
+  ctx: ActionCtx,
+  rawInsertArgs: unknown,
+): Promise<unknown> {
+  if (!rawInsertArgs || typeof rawInsertArgs !== "object" || Array.isArray(rawInsertArgs)) {
+    return rawInsertArgs;
+  }
+  const insertArgs = rawInsertArgs as Record<string, unknown>;
+  const deferred = insertArgs.deferredAiEnrichment as DeferredAiEnrichment | undefined;
+  if (!deferred) return rawInsertArgs;
+
+  const { deferredAiEnrichment: _deferredAiEnrichment, ...prepared } = insertArgs;
+  const files = Array.isArray(prepared.files)
+    ? (prepared.files as Array<{
+        path?: unknown;
+        storageId?: unknown;
+        contentType?: unknown;
+        sha256?: unknown;
+      }>)
+    : [];
+  const readmeFile = files.find((file) => {
+    const path = typeof file.path === "string" ? file.path.toLowerCase() : "";
+    return path === "skill.md" || path === "skills.md";
+  });
+  if (!readmeFile?.storageId || typeof readmeFile.storageId !== "string") {
+    throw new ConvexError("SKILL.md is required");
+  }
+
+  const readmeText = await fetchText(ctx, readmeFile.storageId as Id<"_storage">);
+  const frontmatter = parseFrontmatter(readmeText);
+  const otherFiles: Array<{ path: string; content: string }> = [];
+  for (const file of files) {
+    if (file === readmeFile || typeof file.path !== "string") continue;
+    if (
+      !isTextFile(file.path, typeof file.contentType === "string" ? file.contentType : undefined)
+    ) {
+      continue;
+    }
+    if (!file.storageId || typeof file.storageId !== "string") continue;
+    const content = await fetchText(ctx, file.storageId as Id<"_storage">);
+    otherFiles.push({ path: file.path, content });
+    if (otherFiles.length >= MAX_FILES_FOR_EMBEDDING) break;
+  }
+
+  const summary =
+    deferred.summary.mode === "literal"
+      ? (deferred.summary.literal ?? "")
+      : await generateSkillSummary({
+          slug: stringField(prepared, "slug"),
+          displayName: stringField(prepared, "displayName"),
+          readmeText,
+          currentSummary: deferred.summary.currentSummary,
+        });
+  const changelog =
+    deferred.changelog.source === "user"
+      ? deferred.changelog.supplied
+      : await generateChangelogForPublish(ctx, {
+          slug: stringField(prepared, "slug"),
+          version: stringField(prepared, "version"),
+          readmeText,
+          files: files
+            .filter(
+              (file): file is { path: string; sha256: string } =>
+                typeof file.path === "string" && typeof file.sha256 === "string",
+            )
+            .map((file) => ({ path: file.path, sha256: file.sha256 })),
+        });
+  const embeddingText = buildEmbeddingText({
+    frontmatter,
+    readme: readmeText,
+    otherFiles,
+  });
+  const embedding = await generateEmbedding(embeddingText).catch((error) => {
+    throw new ConvexError(formatEmbeddingError(error));
+  });
+
+  return {
+    ...prepared,
+    summary,
+    changelog,
+    embedding,
+  };
+}
+
+function stringField(record: Record<string, unknown>, field: string) {
+  const value = record[field];
+  return typeof value === "string" ? value : "";
+}
+
+async function releaseSkillPublishAttemptFinalizationClaim(
+  ctx: ActionCtx,
+  attemptId: Id<"publishAttempts">,
+  claimId: string,
+  error: unknown,
+) {
+  await ctx.runMutation(
+    internal.publishAttempts.releaseSkillPublishAttemptFinalizationClaimInternal,
+    {
+      attemptId,
+      claimId,
+      error: formatPublishAttemptFinalizationError(error),
+    },
+  );
+}
+
+async function scheduleSkillPublishFollowups(
+  ctx: ActionCtx,
+  publishResult: PublishResult,
+  followup: SkillPublishFollowup,
+) {
   await ctx.scheduler.runAfter(0, internal.vt.scanWithVirusTotal, {
     versionId: publishResult.versionId,
   });
@@ -402,24 +733,14 @@ export async function publishVersionForUser(
     },
   );
 
-  if (!options.skipWebhook && getWebhookConfig().url) {
-    let ownerHandle = options.ownerHandle;
-    if (!ownerHandle && options.ownerPublisherId !== undefined) {
-      const targetPublisher = (await ctx.runQuery(internal.publishers.getByIdInternal, {
-        publisherId: options.ownerPublisherId,
-      })) as Doc<"publishers"> | null;
-      ownerHandle = targetPublisher?.handle;
-    }
-    ownerHandle ??= owner?.handle ?? owner?.displayName ?? owner?.name;
+  if (!followup.skipWebhook && getWebhookConfig().url) {
     void schedulePublishWebhook(ctx, {
-      slug,
-      version,
-      displayName,
-      ownerHandle,
+      slug: followup.slug,
+      version: followup.version,
+      displayName: followup.displayName,
+      ownerHandle: followup.ownerHandle,
     });
   }
-
-  return publishResult;
 }
 
 function mergeSourceIntoMetadata(
@@ -459,6 +780,36 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined;
 }
 
+function buildSkillPublishAttemptIdempotencyKey(args: {
+  userId: Id<"users">;
+  ownerPublisherId?: Id<"publishers">;
+  slug: string;
+  version: string;
+  fingerprint: string;
+}) {
+  const ownerScope = args.ownerPublisherId
+    ? `publisher:${args.ownerPublisherId}`
+    : `user:${args.userId}`;
+  return ["skill", ownerScope, args.slug, args.version, args.fingerprint].join(":");
+}
+
+function stripUndefinedForStoredAttempt(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stripUndefinedForStoredAttempt);
+  if (!value || typeof value !== "object") return value;
+
+  const result: Record<string, unknown> = {};
+  for (const [key, nested] of Object.entries(value)) {
+    if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
+  }
+  return result;
+}
+
+function buildFinalizationClaimId() {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}:${Math.random().toString(16).slice(2)}`;
+}
+
 async function buildPublishSourceFingerprint(files: FingerprintFile[]) {
   return await hashSkillFiles(files.filter((file) => !isSkillCardPath(file.path)));
 }
@@ -470,6 +821,7 @@ export const __test = {
   evaluateQuality,
   toStructuralFingerprint,
   derivePublishFilesFromStorage,
+  buildSkillPublishAttemptIdempotencyKey,
 };
 
 export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"skills">) {
@@ -587,6 +939,11 @@ function formatEmbeddingError(error: unknown) {
     }
   }
   return "Embedding failed. Please try again.";
+}
+
+function formatPublishAttemptFinalizationError(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 500);
+  return String(error).slice(0, 500);
 }
 
 async function schedulePublishWebhook(

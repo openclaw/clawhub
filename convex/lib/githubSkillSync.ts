@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import {
   shouldPreserveSecurityScanStateForUnchangedContent,
   type SourceBackedSkillScanStatus,
@@ -512,13 +513,13 @@ function sameLatestVersionSummary(
 
 function assertStoredMarkdownSize(path: string, bytes: Uint8Array) {
   if (bytes.byteLength > MAX_STORED_MARKDOWN_BYTES) {
-    throw new Error(`GitHub skill markdown file is too large to cache: ${path}`);
+    throw new ConvexError(`GitHub skill markdown file is too large to cache: ${path}`);
   }
 }
 
 function assertStoredSkillContentSize(totalBytes: number) {
   if (totalBytes > MAX_STORED_SKILL_CONTENT_BYTES) {
-    throw new Error("GitHub skill cached markdown is too large");
+    throw new ConvexError("GitHub skill cached markdown is too large");
   }
 }
 
@@ -566,11 +567,9 @@ function discoverSkillPaths(entries: Record<string, Uint8Array>) {
       continue;
     }
 
-    const canonicalPath = `skills/${slug}/${SKILL_MARKDOWN_BASENAME}`;
-    const exactTopLevelMatches = paths.filter((path) => path.toLowerCase() === canonicalPath);
-    const topLevelSkillMatches = paths.filter((path) => path.toLowerCase().startsWith("skills/"));
-    if (exactTopLevelMatches.length === 1 && topLevelSkillMatches.length === 1) {
-      selected.push(exactTopLevelMatches[0] as string);
+    const catalogSkillMatches = paths.filter((path) => path.toLowerCase().startsWith("skills/"));
+    if (catalogSkillMatches.length === 1) {
+      selected.push(catalogSkillMatches[0] as string);
       continue;
     }
 
@@ -585,7 +584,7 @@ function discoverSkillPaths(entries: Record<string, Uint8Array>) {
 }
 
 function duplicateSkillSlugError(slug: string, firstPath: string, secondPath: string) {
-  return new Error(
+  return new ConvexError(
     `GitHub skill source has duplicate normalized slug "${slug}" at ${firstPath} and ${secondPath}`,
   );
 }

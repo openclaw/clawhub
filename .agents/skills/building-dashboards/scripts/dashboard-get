@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# dashboard-get: Get a dashboard by ID
+#
+# Usage: dashboard-get <deployment> <id>
+#
+# Examples:
+#   dashboard-get prod abc123
+#   dashboard-get prod abc123 > dashboard.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+ID="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$ID" ]]; then
+    echo "Usage: dashboard-get <deployment> <id>" >&2
+    exit 1
+fi
+
+"$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "/dashboards/uid/$ID" | jq '.dashboard'

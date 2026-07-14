@@ -80,6 +80,21 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
   - Nix plugins are different from regular skills; they bundle the skill pack, the CLI binary, and config flags/requirements together.
   - `metadata` in frontmatter is YAML (object) preferred; legacy JSON-string accepted.
 
+### Skill name compatibility
+
+- The Agent Skills `name` field is a portable identifier: 1–64 lowercase
+  alphanumeric or hyphen characters, matching the parent directory.
+- ClawHub routes skills by `slug` and stores `displayName` as the user-facing
+  catalog label. Publishing, importing, and GitHub sync must preserve that label
+  instead of applying a catalog-preview limit as write validation.
+- Clients should tolerate non-conforming legacy names when they can load them
+  safely. ClawHub follows that compatibility model rather than blocking or
+  silently renaming existing ecosystem content.
+- Public catalog cards and rows may preview normalized names up to 70 characters
+  and then show an ellipsis. The full stored label remains available on the
+  detail page and as hover text; 70 is a presentation rule, not a storage,
+  publish, API, or sync constraint.
+
 ### Star
 
 - `skillId`, `userId`, `createdAt`

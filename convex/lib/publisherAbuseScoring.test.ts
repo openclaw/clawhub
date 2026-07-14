@@ -121,12 +121,12 @@ describe("publisher abuse scoring", () => {
     expect(potentialBan).toBeGreaterThan(review);
   });
 
-  it("escalates one P99 temporal hit as a potential ban candidate", () => {
+  it("keeps P99 temporal hits as review-only signals", () => {
     expect(
       labelForTemporalPublisherAbuse({ highTemporalSkillCount: 1, p99TemporalSkillCount: 1 }),
-    ).toBe("potential_ban_candidate");
+    ).toBe("review");
     expect(
-      labelForTemporalPublisherAbuse({ highTemporalSkillCount: 1, p99TemporalSkillCount: 0 }),
+      labelForTemporalPublisherAbuse({ highTemporalSkillCount: 2, p99TemporalSkillCount: 2 }),
     ).toBe("review");
   });
 
@@ -485,6 +485,20 @@ describe("publisher abuse scoring", () => {
     expect(score.reasonCodes).toContain("temporal_installs_track_downloads");
   });
 
+  it("flags recent install/download ratios at least twice the observed high end", () => {
+    const todayDay = 100;
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay,
+      dailyStats: dailyRange(94, 7, { downloads: 100, installs: 10 }),
+    });
+
+    expect(score.recent7Downloads).toBe(700);
+    expect(score.recent7Installs).toBe(70);
+    expect(score.installDownloadRatio7).toBeCloseTo(0.1);
+    expect(score.nearConversion).toBe(true);
+    expect(score.reasonCodes).toContain("temporal_installs_track_downloads");
+  });
+
   it("keeps low-volume one-to-one install traffic below close-ratio thresholds", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
@@ -510,7 +524,7 @@ describe("publisher abuse scoring", () => {
     expect(score.reasonCodes).not.toContain("temporal_installs_track_downloads");
   });
 
-  it("requires installs to be close to downloads, not just statistically elevated", () => {
+  it("requires installs to clear the doubled observed high-end ratio", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
@@ -529,12 +543,15 @@ describe("publisher abuse scoring", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
-      dailyStats: dailyRange(71, 30, { downloads: 100, installs: 80 }),
+      dailyStats: [
+        ...dailyRange(71, 23, { downloads: 100, installs: 13 }),
+        ...dailyRange(94, 7, { downloads: 100, installs: 3 }),
+      ],
     });
 
     expect(score.nearConversion).toBe(true);
-    expect(score.installDownloadRatio7).toBeCloseTo(0.8);
-    expect(score.installDownloadRatio30).toBeCloseTo(0.8);
+    expect(score.installDownloadRatio7).toBeCloseTo(0.03);
+    expect(score.installDownloadRatio30).toBeCloseTo(0.1067, 4);
     expect(score.nearConversionWindowStartDay).toBe(71);
     expect(score.nearConversionWindowEndDay).toBe(100);
   });

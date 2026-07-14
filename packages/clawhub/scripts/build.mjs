@@ -10,7 +10,7 @@ const distDir = resolve(packageRoot, "dist");
 
 await rm(distDir, { recursive: true, force: true });
 
-const tscBin = require.resolve("typescript/bin/tsc");
+const tscBin = resolve(dirname(require.resolve("@typescript/native/package.json")), "bin/tsc");
 const result = spawnSync(process.execPath, [tscBin, "-p", "tsconfig.json"], {
   cwd: packageRoot,
   stdio: "inherit",

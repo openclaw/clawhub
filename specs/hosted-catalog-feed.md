@@ -1,16 +1,17 @@
 ---
-summary: "ClawHub publication contract for the OpenClaw hosted plugin catalog feed."
+summary: "ClawHub publication contract for the OpenClaw hosted plugin, skill, and promotions feeds."
 read_when:
-  - Publishing the OpenClaw hosted plugin catalog feed
+  - Publishing an OpenClaw hosted feed
   - Changing feed entries, cache headers, or publication workflow
   - Wiring registry.openclaw.ai to ClawHub
 ---
 
-# Hosted Catalog Feed
+# Hosted Feeds
 
 ClawHub is the canonical producer for the initial OpenClaw plugin and skill
-feeds. The feeds are projections of the existing public package, release, and
-skill records; they are not second catalogs.
+feeds and the runtime promotions feed. The feeds are projections of existing
+public package, release, skill, and promotion records; they are not second
+catalogs.
 
 ## Contract
 
@@ -65,6 +66,30 @@ Until the skills feed has pagination or sharding, it publishes at most 1000
 eligible entries per snapshot so a large skills corpus does not block the plugin
 feed publication path.
 
+The promotions feed uses id `clawhub-promotions`, schema version `1`, and the
+`/v1/feeds/promotions` route. Entries are declarative promotion records, not
+commands or executable content. They may identify providers, auth choices,
+plugins, models, and HTTPS signup/docs/launch URLs. Only promotions with
+`status: "active"` whose launch window has started are published. The active
+set is capped at 50 records by the promotions write path, which also bounds each
+snapshot. Public slug lookups keep ended promotions readable only when they
+actually crossed their launch boundary; promotions canceled before launch stay
+private permanently, even if their scheduled window or other fields are edited.
+Expired drafts cannot be activated, and unlaunched active promotions cannot be
+rescheduled wholly into an expired window. Model references and aliases are
+single-line fields so management form serialization remains lossless.
+
+The write path also enforces the OpenClaw consumer's authoring grammars so a
+promotion can never publish in a shape clients reject or silently degrade on:
+model refs, provider, and auth choice id are restricted to shell-safe
+identifier characters because the CLI echoes them into copy-paste commands
+and refuses anything else; aliases must be typed identifiers (letters,
+digits, `._:-`, no spaces) because the CLI skips aliases it cannot register;
+plugin names use the package registry's canonical npm-safe grammar (scoped
+`@scope/name` allowed); and when a provider is declared, every model ref must
+start with `<provider>/`, matching the CLI's refusal to configure models
+outside the promotion's declared provider.
+
 ## Publication
 
 `convex/catalogFeed.ts` builds both feeds from indexed package/skill queries and
@@ -78,10 +103,20 @@ hours and can be run manually. It requires the existing `Production` environment
 envelopes require a separate production key-management decision and must not be
 advertised to OpenClaw clients until the signing key and trust root are deployed.
 
+`convex/promotionsFeed.ts` builds the promotions snapshot from the bounded active
+set and stores it in the same publication table. Production backend deploys
+publish an initial snapshot before contract verification. Promotion updates and
+status changes schedule an immediate refresh. Active promotions also schedule
+refreshes at `startsAt` and at `endsAt + 1ms`: both window endpoints are
+inclusive, so the expiry refresh must run after the final active millisecond. A
+six-hour cron is the backstop for long-running or empty feeds, keeping every
+snapshot inside its 24-hour `expiresAt` horizon.
+
 ## Edge delivery
 
-The HTTP endpoints are `/api/v1/feeds/plugins` and `/api/v1/feeds/skills`. Each
-returns its stored bytes unchanged and provides:
+The HTTP endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`, and
+`/api/v1/feeds/promotions`. Each returns its stored bytes unchanged and
+provides:
 
 - `ETag: "sha256:<payload hash>"`
 - `Last-Modified`
@@ -89,18 +124,18 @@ returns its stored bytes unchanged and provides:
 - `Surrogate-Control: max-age=300, stale-while-revalidate=86400`
 - `304 Not Modified` for matching `If-None-Match` or `If-Modified-Since`
 
-`vercel.json` exposes both `/v1/feeds/plugins` and `/v1/feeds/skills` as
-edge-friendly rewrites to the Convex endpoints. The unversioned `/feeds/*`
-paths permanently redirect to their versioned paths. The
-`registry.openclaw.ai` custom domain must point at the same Vercel project
-before the public RFC URLs are enabled.
+Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
+`/v1/feeds/promotions` through the same environment-aware Convex proxy used for
+`/api/*`. The unversioned `/feeds/*` paths permanently redirect to their
+versioned paths. The `registry.openclaw.ai` custom domain must point at the same
+Vercel project before the public RFC URLs are enabled.
 
 The serialized payload uses stable object-key ordering and deterministic entry
 and install-candidate ordering. Additive fields may be introduced within a
 major version; incompatible wire changes require a new versioned route and
 schema version.
 
-`/.well-known/openclaw-registry.json` advertises both versioned feeds.
+`/.well-known/openclaw-registry.json` advertises the plugin and skill feeds.
 `/.well-known/clawhub.json` remains the ClawHub API discovery document.
 
 Do not make the feed request-time dynamic. Refresh the stored publication first,

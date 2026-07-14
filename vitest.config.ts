@@ -34,6 +34,7 @@ export default defineConfig({
     hookTimeout: 15_000,
     exclude: [
       "**/node_modules/**",
+      "**/.artifacts/**",
       "**/.vercel/output/**",
       "**/.output/**",
       "**/.nitro/**",
@@ -41,6 +42,7 @@ export default defineConfig({
       "**/coverage/**",
       "**/convex/_generated/**",
       "packages/clawhub/**",
+      "packages/clawhub-admin/test-artifact/**",
       "e2e/**",
       "**/*.e2e.test.ts",
     ],
@@ -63,6 +65,7 @@ export default defineConfig({
       ],
       exclude: [
         "node_modules/",
+        ".artifacts/",
         ".vercel/output/",
         ".output/",
         ".nitro/",

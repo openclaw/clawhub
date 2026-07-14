@@ -19,12 +19,21 @@ export type ManagementUserSummary = NonNullable<NonNullable<SkillBySlugResult>["
 export type PublisherAbuseReviewDashboard = FunctionReturnType<
   typeof api.publisherAbuse.listReviewDashboard
 >;
+export type PublisherAbuseSignalEntry = FunctionReturnType<
+  typeof api.publisherAbuse.listSignalsPage
+>["page"][number];
 export type PublisherAbuseReviewDetail = FunctionReturnType<
   typeof api.publisherAbuse.getReviewNominationDetail
 >;
 export type PublisherAbuseReviewItem = NonNullable<PublisherAbuseReviewDetail>["item"];
 export type PublisherAbuseReviewScore = NonNullable<PublisherAbuseReviewItem["latestScore"]>;
-export type PublisherAbuseTab = "potential_ban_candidate" | "review" | "all_pending" | "resolved";
+export type PublisherAbuseTab =
+  | "potential_ban_candidate"
+  | "review"
+  | "all_pending"
+  | "resolved"
+  | "signals";
+export type PublisherAbuseSignalStatus = "open" | "snoozed" | "dismissed";
 
 export type ManagementView =
   | "overview"
@@ -34,11 +43,25 @@ export type ManagementView =
   | "publishers"
   | "skills"
   | "plugins"
+  | "promotions"
   | "duplicates"
   | "recent"
   | "audit"
   | "system"
   | "settings";
+
+export type PromotionEntry = FunctionReturnType<typeof api.promotions.listForStaff>["page"][number];
+export type PromotionStatus = PromotionEntry["status"];
+export type PromotionInput = Omit<
+  PromotionEntry,
+  | "_id"
+  | "_creationTime"
+  | "status"
+  | "createdByUserId"
+  | "updatedByUserId"
+  | "createdAt"
+  | "updatedAt"
+>;
 
 export type ManagementOwnerOption = {
   userId: Id<"users">;
@@ -75,6 +98,15 @@ export function formatRatio(value: number | null | undefined) {
   return new Intl.NumberFormat(undefined, {
     maximumFractionDigits: value < 1 ? 2 : 1,
     minimumFractionDigits: value < 1 ? 2 : 0,
+  }).format(value);
+}
+
+export function formatPercent(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  return new Intl.NumberFormat(undefined, {
+    style: "percent",
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 0,
   }).format(value);
 }
 

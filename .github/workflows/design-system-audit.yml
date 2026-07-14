@@ -1,0 +1,271 @@
+name: Weekly Design System Audit
+
+on:
+  schedule:
+    # Monday at 08:17 Pacific during daylight saving time. GitHub cron uses UTC.
+    - cron: "17 15 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: clawhub-design-system-audit
+  cancel-in-progress: false
+
+env:
+  AUDIT_BRANCH: automation/design-system-audit
+  ARTIFACT_DIRECTORY: artifacts/design-audit
+  BUN_VERSION: "1.3.11"
+  CODEX_VERSION: "0.142.3"
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Resolve installed design-system release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release="v$(node -p "require('./node_modules/@openclaw/design-system/package.json').version")"
+          [[ "$release" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          gh api "repos/openclaw/design-system/releases/tags/${release}" >/dev/null
+          echo "tag=$release" >> "$GITHUB_OUTPUT"
+          mkdir -p "$ARTIFACT_DIRECTORY"
+          git clone \
+            --branch "$release" \
+            --depth 1 \
+            https://github.com/openclaw/design-system.git \
+            "$ARTIFACT_DIRECTORY/design-system"
+
+      - name: Record audit commits
+        id: commits
+        run: |
+          set -euo pipefail
+          consumer_sha="$(git rev-parse HEAD)"
+          base_sha="$(git rev-list -1 --before='8 days ago' origin/main || true)"
+          if [[ -z "$base_sha" ]]; then
+            base_sha="$(git rev-list --max-parents=0 HEAD | tail -n 1)"
+          fi
+          echo "consumer_sha=$consumer_sha" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Design audit inputs"
+            echo
+            echo "- ClawHub SHA: \`$consumer_sha\`"
+            echo "- Comparison base: \`$base_sha\`"
+            echo "- Design system: \`${{ steps.release.outputs.tag }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run deterministic source checks
+        run: |
+          mkdir -p "$ARTIFACT_DIRECTORY"
+          bun scripts/design-audit/source-check.ts \
+            --base "${{ steps.commits.outputs.base_sha }}" \
+            --design-system-styles "$ARTIFACT_DIRECTORY/design-system/styles" \
+            --output "$ARTIFACT_DIRECTORY/deterministic.json"
+
+      - name: Build ClawHub
+        env:
+          VITE_CONVEX_SITE_URL: https://wry-manatee-359.convex.site
+          VITE_CONVEX_URL: https://wry-manatee-359.convex.cloud
+        run: bun run build
+
+      - name: Capture real-browser evidence
+        env:
+          VITE_CONVEX_SITE_URL: https://wry-manatee-359.convex.site
+          VITE_CONVEX_URL: https://wry-manatee-359.convex.cloud
+        run: |
+          set -euo pipefail
+          HOST=127.0.0.1 PORT=4173 bun .output/server/index.mjs \
+            > "$ARTIFACT_DIRECTORY/preview.log" 2>&1 &
+          preview_pid=$!
+          trap 'kill "$preview_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:4173/favicon.ico >/dev/null; then
+              break
+            fi
+            if [[ "$attempt" == "60" ]]; then
+              cat "$ARTIFACT_DIRECTORY/preview.log"
+              exit 1
+            fi
+            sleep 1
+          done
+          bun scripts/design-audit/browser-check.ts \
+            --base-url http://127.0.0.1:4173 \
+            --output "$ARTIFACT_DIRECTORY/browser-evidence.json" \
+            --screenshots "$ARTIFACT_DIRECTORY/screenshots"
+
+      - name: Install Codex CLI
+        run: |
+          set -euo pipefail
+          npm install -g "@openai/codex@${CODEX_VERSION}"
+          codex --version
+
+      - name: Authenticate Codex CLI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+
+      - name: Run judgment audit and safe fixes
+        id: codex
+        continue-on-error: true
+        run: |
+          bun scripts/design-audit/run-codex.ts \
+            --deterministic "$ARTIFACT_DIRECTORY/deterministic.json" \
+            --browser "$ARTIFACT_DIRECTORY/browser-evidence.json" \
+            --screenshots "$ARTIFACT_DIRECTORY/screenshots" \
+            --design-system "$ARTIFACT_DIRECTORY/design-system" \
+            --output "$ARTIFACT_DIRECTORY/codex-report.json" \
+            --events "$ARTIFACT_DIRECTORY/codex-events.jsonl"
+
+      - name: Validate agent change boundary
+        id: change_boundary
+        if: steps.codex.outcome == 'success'
+        continue-on-error: true
+        run: bun scripts/design-audit/validate-changes.ts
+
+      - name: Re-run deterministic checks on agent patch
+        id: post_source
+        if: steps.codex.outcome == 'success' && steps.change_boundary.outcome == 'success'
+        continue-on-error: true
+        run: |
+          bun scripts/design-audit/source-check.ts \
+            --working-tree \
+            --fail-on-findings \
+            --design-system-styles "$ARTIFACT_DIRECTORY/design-system/styles" \
+            --output "$ARTIFACT_DIRECTORY/post-agent-deterministic.json"
+
+      - name: Validate proposed source fixes
+        id: validation
+        if: steps.codex.outcome == 'success' && steps.change_boundary.outcome == 'success' && steps.post_source.outcome == 'success'
+        continue-on-error: true
+        env:
+          VITE_CONVEX_SITE_URL: https://wry-manatee-359.convex.site
+          VITE_CONVEX_URL: https://wry-manatee-359.convex.cloud
+        run: |
+          set -euo pipefail
+          {
+            bun run test:ui-contract
+            bun run ci:static
+            bun run ci:unit
+            bun run ci:types-build
+            bun run ci:playwright-smoke
+          } 2>&1 | tee "$ARTIFACT_DIRECTORY/validation.log"
+
+      - name: Finalize reports
+        id: finalize
+        if: steps.codex.outcome == 'success' && steps.change_boundary.outcome == 'success' && steps.post_source.outcome == 'success' && !cancelled()
+        run: |
+          bun scripts/design-audit/finalize.ts \
+            --deterministic "$ARTIFACT_DIRECTORY/deterministic.json" \
+            --codex "$ARTIFACT_DIRECTORY/codex-report.json" \
+            --browser "$ARTIFACT_DIRECTORY/browser-evidence.json" \
+            --output-directory "$ARTIFACT_DIRECTORY" \
+            --release "${{ steps.release.outputs.tag }}" \
+            --base-sha "${{ steps.commits.outputs.base_sha }}" \
+            --consumer-sha "${{ steps.commits.outputs.consumer_sha }}" \
+            --validation-passed "${{ steps.validation.outcome == 'success' }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Commit audit branch
+        if: steps.finalize.outputs.open_pr == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$AUDIT_BRANCH"
+          git add src design-audits/latest
+          git commit -m "chore: apply weekly design audit"
+          git push --force-with-lease origin "HEAD:$AUDIT_BRANCH"
+
+      - name: Open or update draft pull request
+        if: steps.finalize.outputs.open_pr == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          open_pr="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --head "$AUDIT_BRANCH" \
+              --base main \
+              --json number \
+              --jq '.[0].number'
+          )"
+          title="[automation] Weekly design audit $(date -u +%F)"
+          if [[ -n "$open_pr" ]]; then
+            gh pr edit "$open_pr" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$title" \
+              --body-file "$ARTIFACT_DIRECTORY/pull-request-body.md"
+            gh pr ready "$open_pr" --repo "$GITHUB_REPOSITORY" --undo || true
+          else
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base main \
+              --head "$AUDIT_BRANCH" \
+              --title "$title" \
+              --body-file "$ARTIFACT_DIRECTORY/pull-request-body.md" \
+              --draft
+          fi
+
+      - name: Close obsolete clean audit pull request
+        if: steps.validation.outcome == 'success' && steps.finalize.outputs.open_pr != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          open_pr="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --head "$AUDIT_BRANCH" \
+              --base main \
+              --json number \
+              --jq '.[0].number'
+          )"
+          if [[ -n "$open_pr" ]]; then
+            gh pr close "$open_pr" \
+              --repo "$GITHUB_REPOSITORY" \
+              --comment "Closing without merge: the latest validated audit found no significant drift."
+          fi
+
+      - name: Upload audit artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: design-system-audit-${{ github.run_id }}
+          path: ${{ env.ARTIFACT_DIRECTORY }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail unsuccessful audit
+        if: steps.codex.outcome == 'failure' || steps.change_boundary.outcome == 'failure' || steps.post_source.outcome == 'failure' || steps.validation.outcome == 'failure'
+        run: |
+          echo "The audit or validation failed. Artifacts were preserved and no PR was created." >&2
+          exit 1

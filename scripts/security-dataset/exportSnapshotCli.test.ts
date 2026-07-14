@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
+import { hashString } from "./normalize";
 
 const execFileAsync = promisify(execFile);
 
@@ -67,14 +68,21 @@ describe("security dataset snapshot CLI", () => {
         .split(/\r?\n/)
         .filter((line) => line.length > 0)
         .map((line) => JSON.parse(line) as Record<string, unknown>);
+      const expectedSkillMdContent = "# Stored Skill\n\nUse [REDACTED_SECRET]\nKeep this line.";
 
       expect(flatRows).toEqual([
         expect.objectContaining({
           id: "a".repeat(64),
           skill_slug: "owner/stored-skill",
           skill_version: "1.0.0",
-          skill_md_content: "Stored SKILL.md [REDACTED_SECRET]",
+          skill_md_content: expectedSkillMdContent,
           skill_bundle_content: [
+            {
+              path: "SKILL.md",
+              content: expectedSkillMdContent,
+              sha256: hashString(expectedSkillMdContent),
+              sizeBytes: Buffer.byteLength(expectedSkillMdContent, "utf8"),
+            },
             expect.objectContaining({
               path: "scripts/run.sh",
               content: "echo [REDACTED_SECRET]\n",
@@ -82,6 +90,11 @@ describe("security dataset snapshot CLI", () => {
           ],
         }),
       ]);
+      expect((flatRows[0]?.skill_md_content as string).split("\n")).toHaveLength(4);
+      const skillBundleContent = flatRows[0]?.skill_bundle_content as Array<{
+        path: string;
+      }>;
+      expect(skillBundleContent.filter((file) => file.path === "SKILL.md")).toHaveLength(1);
       const serializedRows = JSON.stringify(flatRows);
       expect(serializedRows).not.toContain("storageId");
       expect(serializedRows).not.toContain("skillVersions:1");
@@ -154,6 +167,8 @@ describe("security dataset snapshot CLI", () => {
 });
 
 function buildTinyConvexSnapshotZip() {
+  const skillMdContent = "# Stored Skill\n\nUse token=supersecret123\nKeep this line.";
+  const scriptContent = "echo password=scriptsecret123\n";
   return zipSync({
     "skills/documents.jsonl": strToU8(
       `${JSON.stringify({
@@ -173,16 +188,16 @@ function buildTinyConvexSnapshotZip() {
         files: [
           {
             path: "SKILL.md",
-            size: 31,
+            size: Buffer.byteLength(skillMdContent, "utf8"),
             sha256: "skill-md-sha",
-            content: "Stored SKILL.md token=supersecret123",
+            content: skillMdContent,
             contentType: "text/markdown",
           },
           {
             path: "scripts/run.sh",
-            size: 35,
+            size: Buffer.byteLength(scriptContent, "utf8"),
             sha256: "script-sha",
-            content: "echo password=scriptsecret123\n",
+            content: scriptContent,
             contentType: "text/x-shellscript",
           },
         ],

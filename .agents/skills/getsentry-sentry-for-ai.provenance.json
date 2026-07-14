@@ -1,0 +1,12 @@
+{
+  "repository": "https://github.com/getsentry/sentry-for-ai",
+  "resolvedCommit": "f1c59c05261a944fec3f3c549ae167f12779ef82",
+  "repositoryLicense": "MIT",
+  "skillDeclaredLicense": "Apache-2.0",
+  "skills": {
+    "sentry-fix-issues": {
+      "installSelector": "sentry-fix-issues",
+      "sourcePath": "skills-legacy/sentry-fix-issues"
+    }
+  }
+}

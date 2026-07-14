@@ -126,6 +126,12 @@ import {
   reserveSlugForHardDeleteFinalize,
   upsertReservedSlugForRightfulOwner,
 } from "./lib/reservedSlugs";
+import {
+  compareRankedSearchKeys,
+  isDemotedExactMatch,
+  rankedSearchKey,
+  type SearchTrustSignals,
+} from "./lib/searchRanking";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import {
   selectGeneratedSkillCardFile,
@@ -135,9 +141,9 @@ import {
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
 import {
   fetchText,
-  type PublishResult,
-  publishVersionForUser,
   queueHighlightedWebhook,
+  stageSkillPublishAttemptForUser,
+  type SkillPublishResult,
 } from "./lib/skillPublish";
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
@@ -201,15 +207,13 @@ const HARD_DELETE_LEADERBOARD_BATCH_SIZE = 25;
 const BAN_USER_SKILLS_BATCH_SIZE = 25;
 const MAX_REPORT_REASON_SAMPLE = 5;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
-const RATE_LIMIT_HOUR_MS = 60 * 60 * 1000;
-const RATE_LIMIT_DAY_MS = 24 * RATE_LIMIT_HOUR_MS;
+const RATE_LIMIT_DAY_MS = 24 * 60 * 60 * 1000;
 const SLUG_RESERVATION_DAYS = 90;
 const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
 const UNPUBLISHED_SLUG_RESERVATION_DAYS = 30;
 const UNPUBLISHED_SLUG_RESERVATION_MS = UNPUBLISHED_SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
 const MAX_SKILL_SLUG_ALIASES_PER_SKILL = 5;
 const MAX_SKILL_SLUG_ALIASES_PER_OWNER = 25;
-const LOW_TRUST_ACCOUNT_AGE_MS = 30 * RATE_LIMIT_DAY_MS;
 const MAX_MANUAL_OVERRIDE_NOTE_LENGTH = 1200;
 const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
@@ -592,13 +596,11 @@ type SkillVersionOwnerDeleteAvailability = Pick<
   | "skillId"
   | "softDeletedAt"
   | "ownerDeletedAt"
+  | "manualRevocation"
   | "staticScan"
   | "vtAnalysis"
   | "llmAnalysis"
-> & {
-  // Exact-version moderator revocation lands separately; stay compatible before its schema does.
-  manualRevocation?: unknown;
-};
+>;
 
 function isSkillVersionAvailableForOwnerDeleteSafety(
   version: SkillVersionOwnerDeleteAvailability | null | undefined,
@@ -640,10 +642,100 @@ async function findReplacementLatestSkillVersion(
         (candidate) =>
           candidate._id !== quarantinedVersionId &&
           !candidate.softDeletedAt &&
+          !candidate.manualRevocation &&
           !isKnownMaliciousSkillVersion(candidate),
       )
       .sort(compareSkillVersionsForRestore)[0] ?? null
   );
+}
+
+type SkillVersionRevocationSkill = Pick<
+  Doc<"skills">,
+  | "_id"
+  | "slug"
+  | "displayName"
+  | "summary"
+  | "icon"
+  | "latestVersionId"
+  | "latestVersionSummary"
+  | "tags"
+>;
+
+type SkillVersionRevocationVersion = Pick<
+  Doc<"skillVersions">,
+  "_id" | "skillId" | "version" | "createdAt" | "changelog" | "changelogSource" | "parsed" | "icon"
+>;
+
+export function buildSkillVersionRevocationPlan(params: {
+  actorUserId: Id<"users">;
+  skill: SkillVersionRevocationSkill;
+  target: SkillVersionRevocationVersion;
+  replacement: SkillVersionRevocationVersion | null;
+  reason: string;
+  now: number;
+}) {
+  const versionPatch: Partial<Doc<"skillVersions">> = {
+    softDeletedAt: params.now,
+    manualRevocation: {
+      reason: params.reason,
+      reviewerUserId: params.actorUserId,
+      revokedAt: params.now,
+    },
+  };
+  const isLatest =
+    params.skill.latestVersionId === params.target._id ||
+    params.skill.tags.latest === params.target._id ||
+    params.skill.latestVersionSummary?.version === params.target.version;
+  const nextTags = Object.fromEntries(
+    Object.entries(params.skill.tags).filter(([, versionId]) => versionId !== params.target._id),
+  ) as Doc<"skills">["tags"];
+
+  if (!isLatest) {
+    return {
+      versionPatch,
+      skillPatch: {
+        tags: nextTags,
+        updatedAt: params.now,
+      } satisfies Partial<Doc<"skills">>,
+      isLatest,
+    };
+  }
+
+  if (params.replacement) {
+    nextTags.latest = params.replacement._id;
+    return {
+      versionPatch,
+      skillPatch: {
+        displayName: skillDisplayNameFromSkillVersion(params.replacement) ?? params.skill.slug,
+        summary: skillSummaryFromSkillVersion(params.replacement),
+        icon: skillIconFromSkillVersion(params.replacement) ?? params.skill.icon,
+        latestVersionId: params.replacement._id,
+        latestVersionSummary: latestVersionSummaryFromSkillVersion(params.replacement),
+        tags: nextTags,
+        updatedAt: params.now,
+      } satisfies Partial<Doc<"skills">>,
+      isLatest,
+    };
+  }
+
+  return {
+    versionPatch,
+    skillPatch: {
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: nextTags,
+      softDeletedAt: params.now,
+      moderationStatus: "hidden",
+      moderationReason: "manual.version_revoked",
+      moderationNotes: params.reason,
+      hiddenAt: params.now,
+      hiddenBy: params.actorUserId,
+      manualOverride: undefined,
+      lastReviewedAt: params.now,
+      updatedAt: params.now,
+    } satisfies Partial<Doc<"skills">>,
+    isLatest,
+  };
 }
 
 async function clearSkillEmbeddingsLatestVersion(
@@ -853,13 +945,8 @@ export const previewLatestSkillModerationInternal = internalQuery({
     };
   },
 });
-const TRUSTED_PUBLISHER_SKILL_THRESHOLD = 10;
-const LOW_TRUST_BURST_THRESHOLD_PER_HOUR = 8;
 const OWNER_ACTIVITY_SCAN_LIMIT = 500;
-const NEW_SKILL_RATE_LIMITS = {
-  lowTrust: { perHour: 5, perDay: 20 },
-  trusted: { perHour: 20, perDay: 80 },
-} as const;
+const NEW_SKILL_DAILY_LIMIT = 200;
 
 const SORT_INDEXES = {
   recommended: "by_active_recommended_score",
@@ -906,9 +993,7 @@ function isUserId(value: Id<"users"> | null | undefined): value is Id<"users"> {
   return typeof value === "string" && value.length > 0;
 }
 
-type OwnerTrustSignals = {
-  isLowTrust: boolean;
-  skillsLastHour: number;
+type OwnerPublishActivity = {
   skillsLastDay: number;
 };
 
@@ -1462,53 +1547,33 @@ async function adjustGlobalPublicCountForSkillChange(
   await adjustGlobalPublicSkillsCount(ctx, delta);
 }
 
-async function getOwnerTrustSignals(
+async function getOwnerPublishActivity(
   ctx: QueryCtx | MutationCtx,
-  owner: Doc<"users">,
+  ownerUserId: Id<"users">,
   now: number,
-): Promise<OwnerTrustSignals> {
+): Promise<OwnerPublishActivity> {
   const ownerSkills = await ctx.db
     .query("skills")
-    .withIndex("by_owner", (q) => q.eq("ownerUserId", owner._id))
+    .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
     .order("desc")
     .take(OWNER_ACTIVITY_SCAN_LIMIT);
 
-  const hourThreshold = now - RATE_LIMIT_HOUR_MS;
   const dayThreshold = now - RATE_LIMIT_DAY_MS;
-  let skillsLastHour = 0;
   let skillsLastDay = 0;
 
   for (const skill of ownerSkills) {
     if (skill.createdAt >= dayThreshold) {
       skillsLastDay += 1;
-      if (skill.createdAt >= hourThreshold) {
-        skillsLastHour += 1;
-      }
     }
   }
 
-  const accountCreatedAt = owner.createdAt ?? owner._creationTime;
-  const accountAgeMs = Math.max(0, now - accountCreatedAt);
-  const isLowTrust =
-    accountAgeMs < LOW_TRUST_ACCOUNT_AGE_MS ||
-    ownerSkills.length < TRUSTED_PUBLISHER_SKILL_THRESHOLD ||
-    skillsLastHour >= LOW_TRUST_BURST_THRESHOLD_PER_HOUR;
-
-  return { isLowTrust, skillsLastHour, skillsLastDay };
+  return { skillsLastDay };
 }
 
-function enforceNewSkillRateLimit(signals: OwnerTrustSignals) {
-  const limits = signals.isLowTrust
-    ? NEW_SKILL_RATE_LIMITS.lowTrust
-    : NEW_SKILL_RATE_LIMITS.trusted;
-  if (signals.skillsLastHour >= limits.perHour) {
+function enforceNewSkillRateLimit(activity: OwnerPublishActivity) {
+  if (activity.skillsLastDay >= NEW_SKILL_DAILY_LIMIT) {
     throw new ConvexError(
-      `Rate limit: max ${limits.perHour} new skills per hour. Please wait before publishing more.`,
-    );
-  }
-  if (signals.skillsLastDay >= limits.perDay) {
-    throw new ConvexError(
-      `Rate limit: max ${limits.perDay} new skills per 24 hours. Please wait before publishing more.`,
+      `Rate limit: max ${NEW_SKILL_DAILY_LIMIT} new skills per 24 hours. Please wait before publishing more.`,
     );
   }
 }
@@ -3893,40 +3958,26 @@ export const listDashboardPaginated = query({
           ? (ownerPublisher.linkedUserId ?? (isOwnDashboard ? userId : undefined))
           : undefined;
       const shouldIncludeLegacyPersonalSkills = Boolean(legacyPersonalOwnerUserId);
-      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
-        shouldIncludeLegacyPersonalSkills
-          ? await ctx.db
-              .query("skills")
-              .withIndex("by_owner_active_updated", (q) =>
-                q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
-              )
-              .order("desc")
-              .paginate(paginationOpts)
-          : await ctx.db
-              .query("skills")
-              .withIndex("by_owner_publisher_active_updated", (q) =>
-                q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
-              )
-              .order("desc")
-              .paginate(paginationOpts);
-      let result = await paginateOwnerSkills(args.paginationOpts);
-      const scopePersonalDashboardPage = (page: Doc<"skills">[]) =>
-        shouldIncludeLegacyPersonalSkills
-          ? page.filter(
-              (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+      const result = shouldIncludeLegacyPersonalSkills
+        ? await ctx.db
+            .query("skills")
+            .withIndex("by_owner_active_updated", (q) =>
+              q.eq("ownerUserId", legacyPersonalOwnerUserId!).eq("softDeletedAt", undefined),
             )
-          : page;
-      const scopedPage = scopePersonalDashboardPage(result.page);
-      if (shouldIncludeLegacyPersonalSkills) {
-        while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
-          result = await paginateOwnerSkills({
-            ...args.paginationOpts,
-            cursor: result.continueCursor,
-            numItems: args.paginationOpts.numItems - scopedPage.length,
-          });
-          scopedPage.push(...scopePersonalDashboardPage(result.page));
-        }
-      }
+            .order("desc")
+            .paginate(args.paginationOpts)
+        : await ctx.db
+            .query("skills")
+            .withIndex("by_owner_publisher_active_updated", (q) =>
+              q.eq("ownerPublisherId", ownerPublisherId).eq("softDeletedAt", undefined),
+            )
+            .order("desc")
+            .paginate(args.paginationOpts);
+      const scopedPage = shouldIncludeLegacyPersonalSkills
+        ? result.page.filter(
+            (skill) => !skill.ownerPublisherId || skill.ownerPublisherId === ownerPublisherId,
+          )
+        : result.page;
       const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
@@ -3935,26 +3986,14 @@ export const listDashboardPaginated = query({
     if (ownerUserId) {
       const userId = await getOptionalActiveAuthUserId(ctx);
       const isOwnDashboard = Boolean(userId && userId === ownerUserId);
-      const paginateOwnerSkills = async (paginationOpts: typeof args.paginationOpts) =>
-        await ctx.db
-          .query("skills")
-          .withIndex("by_owner_active_updated", (q) =>
-            q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
-          )
-          .order("desc")
-          .paginate(paginationOpts);
-      let result = await paginateOwnerSkills(args.paginationOpts);
+      const result = await ctx.db
+        .query("skills")
+        .withIndex("by_owner_active_updated", (q) =>
+          q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate(args.paginationOpts);
       const scopedPage = await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId);
-      while (!result.isDone && scopedPage.length < args.paginationOpts.numItems) {
-        result = await paginateOwnerSkills({
-          ...args.paginationOpts,
-          cursor: result.continueCursor,
-          numItems: args.paginationOpts.numItems - scopedPage.length,
-        });
-        scopedPage.push(
-          ...(await filterSkillsForOwnerUserDashboard(ctx, result.page, ownerUserId)),
-        );
-      }
       const page = await mapDashboardSkillPage(ctx, scopedPage, isOwnDashboard);
       return { ...result, page };
     }
@@ -6056,12 +6095,18 @@ async function loadPublicLatestVersionForDigest(
     | "skillId"
     | "latestVersionId"
     | "latestVersionSkillId"
+    | "publicVersion"
     | "moderationReason"
     | "moderationFlags"
     | "stats"
     | "installKind"
   >,
 ) {
+  if (digest.publicVersion?.status === "unavailable") return null;
+  if (digest.publicVersion?.status === "available") {
+    const version = await ctx.db.get(digest.publicVersion.versionId);
+    return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
+  }
   if (!digest.latestVersionId) return null;
   if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
     return null;
@@ -6085,13 +6130,17 @@ async function resolveDigestLatestVersionForSkill(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
 ) {
+  if (digest.publicVersion?.status === "unavailable") return null;
+  const publicVersionId =
+    digest.publicVersion?.status === "available" ? digest.publicVersion.versionId : undefined;
   const needsApprovedSnapshot =
     isHostedSkillPendingPublicReview(digest) && hostedSkillMayHavePriorApprovedVersion(digest);
 
   if (
-    !needsApprovedSnapshot &&
+    (!needsApprovedSnapshot || publicVersionId === digest.latestVersionId) &&
     digest.latestVersionSummary &&
     digest.latestVersionId &&
+    (!publicVersionId || publicVersionId === digest.latestVersionId) &&
     (digest.latestVersionSkillId === undefined || digest.latestVersionSkillId === digest.skillId)
   ) {
     return toPublicSkillListVersionFromSummary(
@@ -6593,14 +6642,28 @@ function skillCatalogSearchMatch(
   return { rankTier, score };
 }
 
+// Skills have no verification tiers, so official flag + adoption are the
+// only trust signals feeding the shared squat gate.
+function skillTrustSignals(
+  pkg: Pick<PublicSkillCatalogItem, "isOfficial" | "stats">,
+): SearchTrustSignals {
+  return {
+    isOfficial: pkg.isOfficial,
+    downloads: pkg.stats.downloads,
+    installs: pkg.stats.installs,
+  };
+}
+
 function compareSkillCatalogSearchMatches<
   T extends SkillCatalogSearchMatch & {
-    package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt">;
+    package: Pick<PublicSkillCatalogItem, "isOfficial" | "updatedAt" | "stats">;
   },
 >(a: T, b: T) {
   return (
-    a.rankTier - b.rankTier ||
-    b.score - a.score ||
+    compareRankedSearchKeys(
+      rankedSearchKey(a, skillTrustSignals(a.package)),
+      rankedSearchKey(b, skillTrustSignals(b.package)),
+    ) ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
     b.package.updatedAt - a.package.updatedAt
   );
@@ -6790,7 +6853,13 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
     }
   }
 
-  if (!topic && matches.length < targetCount) {
+  // Demoted exact hits never satisfy the collection quota: the fallback scans
+  // must still gather the adopted lexical alternatives they are ranked against
+  // (top-1 queries would otherwise return a slug squat unchallenged).
+  const authoritativeMatchCount = () =>
+    matches.filter((entry) => !isDemotedExactMatch(entry, skillTrustSignals(entry.package))).length;
+
+  if (!topic && authoritativeMatchCount() < targetCount) {
     const directTopic = normalizeCatalogTopic(queryText);
     if (directTopic) {
       const exactTopicDigests = await ctx.db
@@ -6832,12 +6901,12 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
           ...match,
           package: catalogItem,
         });
-        if (matches.length >= targetCount) break;
+        if (authoritativeMatchCount() >= targetCount) break;
       }
     }
   }
 
-  if (matches.length < targetCount) {
+  if (authoritativeMatchCount() < targetCount) {
     const pageSize = Math.min(MAX_SKILL_CATALOG_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
     const candidateDigests: Doc<"skillSearchDigest">[] = [];
     if (topic) {
@@ -8489,13 +8558,14 @@ async function setSkillEmbeddingsLatestVersion(
   skillId: Id<"skills">,
   latestVersionId: Id<"skillVersions">,
   now: number,
+  skillHidden = false,
 ) {
   const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId);
   for (const embedding of embeddings) {
     const isLatest = embedding.versionId === latestVersionId;
     await ctx.db.patch(embedding._id, {
       isLatest,
-      visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
+      visibility: skillHidden ? "deleted" : embeddingVisibilityFor(isLatest, embedding.isApproved),
       updatedAt: now,
     });
   }
@@ -9660,6 +9730,155 @@ export const deleteOwnedVersionForUserInternal = internalMutation({
   },
 });
 
+export async function revokeSkillVersionForUser(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    slug: string;
+    version: string;
+    reason: string;
+    ownerHandle?: string;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+  assertModerator(actor);
+
+  const slug = args.slug.trim().toLowerCase();
+  if (!slug) throw new ConvexError("Slug required");
+  const versionName = args.version.trim();
+  if (!versionName) throw new ConvexError("Version required");
+  const reason = trimManualOverrideNote(args.reason);
+  const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+
+  const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle, {
+    includeSoftDeleted: true,
+  });
+  if (resolved.ambiguous) {
+    throw new ConvexError("Slug is used by multiple publishers. Pass an owner handle.");
+  }
+  const skill = resolved.skill;
+  if (!skill) throw new ConvexError("Skill not found");
+
+  const version = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", versionName))
+    .unique();
+  if (!version) throw new ConvexError("Skill version not found");
+
+  if (version.manualRevocation) {
+    return {
+      ok: true as const,
+      slug: skill.slug,
+      version: version.version,
+      skillId: skill._id,
+      versionId: version._id,
+      alreadyRevoked: true,
+      replacementVersion:
+        skill.latestVersionId === version._id
+          ? null
+          : (skill.latestVersionSummary?.version ?? null),
+      skillHidden: Boolean(skill.softDeletedAt),
+    };
+  }
+
+  const isLatest =
+    skill.latestVersionId === version._id ||
+    skill.tags.latest === version._id ||
+    skill.latestVersionSummary?.version === version.version;
+  const replacement = isLatest
+    ? await findReplacementLatestSkillVersion(ctx, skill._id, version._id)
+    : null;
+  const now = Date.now();
+  const plan = buildSkillVersionRevocationPlan({
+    actorUserId: actor._id,
+    skill,
+    target: version,
+    replacement,
+    reason,
+    now,
+  });
+
+  if (replacement && !shouldPreserveExistingModerationLock(skill)) {
+    const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+    Object.assign(
+      plan.skillPatch,
+      applySkillManualOverrideToSkillPatch({
+        skill,
+        basePatch: buildScannerModerationPatchFromVersion({
+          owner,
+          version: replacement,
+          now,
+        }),
+        now,
+        stripUpdatedAt: true,
+      }),
+    );
+  }
+
+  await ctx.db.patch(version._id, plan.versionPatch);
+  const nextSkill = { ...skill, ...plan.skillPatch };
+  await ctx.db.patch(skill._id, plan.skillPatch);
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+
+  if (plan.isLatest) {
+    if (replacement) {
+      await setSkillEmbeddingsLatestVersion(
+        ctx,
+        skill._id,
+        replacement._id,
+        now,
+        Boolean(nextSkill.softDeletedAt),
+      );
+    } else {
+      await clearSkillEmbeddingsLatestVersion(ctx, skill._id, now);
+      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, true, now);
+    }
+  }
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "skill.version.revoke",
+    targetType: "skillVersion",
+    targetId: version._id,
+    metadata: {
+      skillId: skill._id,
+      slug: skill.slug,
+      version: version.version,
+      reason,
+      replacementVersion: replacement?.version ?? null,
+      skillHidden: Boolean(nextSkill.softDeletedAt),
+    },
+    createdAt: now,
+  });
+
+  return {
+    ok: true as const,
+    slug: skill.slug,
+    version: version.version,
+    skillId: skill._id,
+    versionId: version._id,
+    alreadyRevoked: false,
+    replacementVersion: replacement?.version ?? null,
+    skillHidden: Boolean(nextSkill.softDeletedAt),
+  };
+}
+
+export const revokeSkillVersionForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+    reason: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await revokeSkillVersionForUser(ctx, args);
+  },
+});
+
 export const deleteOwnedVersion = mutation({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args) => {
@@ -9705,7 +9924,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       }),
     ),
   },
-  handler: async (ctx, args): Promise<PublishResult> => {
+  handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
       throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
     }
@@ -9728,14 +9947,19 @@ export const publishVersion: ReturnType<typeof action> = action({
           })) as { publisherId: Id<"publishers"> })
         : null;
     const { icon: _legacyIcon, ...publishArgs } = args;
-    return publishVersionForUser(ctx, userId, publishArgs, {
+    return stageSkillPublishAttemptForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
+      stagePrePublicationChecks: stagedPrePublicationPublishesEnabled(),
     });
   },
 });
+
+function stagedPrePublicationPublishesEnabled() {
+  return process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES === "1";
+}
 
 export const generateChangelogPreview = action({
   args: {
@@ -11739,6 +11963,7 @@ export const insertVersion = internalMutation({
       engineVersion: v.string(),
       checkedAt: v.number(),
     }),
+    llmAnalysis: v.optional(v.any()),
     embedding: v.array(v.number()),
   },
   handler: async (ctx, args) => {
@@ -12091,8 +12316,8 @@ export const insertVersion = internalMutation({
       });
 
       if (!args.bypassNewSkillRateLimit) {
-        const ownerTrustSignals = await getOwnerTrustSignals(ctx, user, now);
-        enforceNewSkillRateLimit(ownerTrustSignals);
+        const ownerPublishActivity = await getOwnerPublishActivity(ctx, user._id, now);
+        enforceNewSkillRateLimit(ownerPublishActivity);
       }
 
       const forkOfSlug = args.forkOf?.slug.trim().toLowerCase() || "";
@@ -12238,6 +12463,7 @@ export const insertVersion = internalMutation({
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
+      llmAnalysis: args.llmAnalysis,
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -12301,6 +12527,19 @@ export const insertVersion = internalMutation({
     const nextFlags = Array.from(
       new Set([...(derivedFlags ?? []), ...(moderationSnapshot.legacyFlags ?? [])]),
     );
+    const scannerModerationPatch =
+      args.llmAnalysis && !isQualityQuarantine && !isPublisherUnderModeration
+        ? buildScannerModerationPatchFromVersion({
+            owner: null,
+            version: {
+              _id: versionId,
+              staticScan: args.staticScan,
+              vtAnalysis: undefined,
+              llmAnalysis: args.llmAnalysis,
+            },
+            now,
+          })
+        : {};
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
@@ -12360,6 +12599,7 @@ export const insertVersion = internalMutation({
       unpublishedSlugReleasedAt: undefined,
       unpublishedOriginalSlug: undefined,
       updatedAt: now,
+      ...scannerModerationPatch,
     };
     const patch = applySkillManualOverrideToSkillPatch({
       skill,

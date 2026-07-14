@@ -1,0 +1,359 @@
+#!/bin/bash
+# Create 3 cost control monitors using hybrid threshold + statistical approach
+#
+# Monitors:
+#   1. Total Ingest Guard (threshold + trend) - catches overspend and gradual growth
+#   2. Per-Dataset Spike (robust z-score) - statistical attribution of which dataset changed
+#   3. Query Cost Spike (robust z-score) - statistical detection of query cost changes
+#
+# Usage: create-monitors -d <deployment> -a <audit-dataset> -c <contract-bytes> [options]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AXIOM_API="${AXIOM_API:-$HOME/.config/agents/skills/sre/scripts/axiom-api}"
+
+# Source shared utilities
+source "$SCRIPT_DIR/lib/format-bytes.sh"
+
+# Defaults
+DEPLOYMENT=""
+AUDIT_DATASET=""
+NOTIFIER_ID=""
+CONTRACT_BYTES=""
+FORCE=false
+
+# Robust z-score thresholds (used for both ingest and query cost spike detection)
+ZSCORE_THRESHOLD="3"            # Standard anomaly threshold (~0.1% false positive rate)
+SPIKE_HOURS_THRESHOLD="2"       # Require sustained anomaly (not transient)
+
+# Query cost spike thresholds (hardened: 30d baseline, 5d exclusion gap)
+QCOST_MEDIAN_Z_THRESHOLD="3"     # Median z-score threshold (persistence gate)
+QCOST_P25_Z_THRESHOLD="2.5"      # P25 z-score threshold (ensures ENTIRE current window is anomalous)
+QCOST_CURRENT_HOURS="4"          # Require 4+ hours in current window
+QCOST_BASELINE_HOURS="168"       # Require 168+ hours (7d) of baseline data
+QCOST_FLOOR_GBMS="100000000"     # Floor: ignore datasets with median < 100M GB·ms
+
+# Total Ingest Guard thresholds
+OVER_CONTRACT_MULTIPLIER="1.2"  # Alert if today > contract * 1.2
+GROWTH_THRESHOLD="15"           # Alert if 7d avg > 23d baseline by 15%+
+MIN_BASELINE_DAYS="14"          # Require 14+ days of baseline data for growth detection
+
+usage() {
+    cat << 'EOF'
+Usage: create-monitors -d <deployment> -a <audit-dataset> -c <contract> [options]
+
+Create 3 cost control monitors.
+
+Required:
+  -d, --deployment NAME    Axiom deployment name
+  -a, --audit-dataset NAME Audit dataset name (e.g., axiom-audit)
+  -c, --contract BYTES     Daily contract limit in bytes (e.g., 167000000000000)
+                           Also accepts units: 167TB, 5PB, 500GB
+
+Optional:
+  -n, --notifier ID        Notifier ID for alerts (omit for no alerts)
+  --force                  Delete existing monitors and recreate
+
+Example:
+  create-monitors -d prod -a axiom-audit -c 167TB -n "abc123"
+  create-monitors -d dev -a axiom-audit -c 500000000000  # 500 GB in bytes
+EOF
+    exit 1
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -d|--deployment)
+            DEPLOYMENT="$2"
+            shift 2
+            ;;
+        -a|--audit-dataset)
+            AUDIT_DATASET="$2"
+            shift 2
+            ;;
+        -n|--notifier)
+            NOTIFIER_ID="$2"
+            shift 2
+            ;;
+        -c|--contract)
+            CONTRACT_BYTES=$(parse_bytes "$2")
+            shift 2
+            ;;
+        --force)
+            FORCE=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option $1" >&2
+            usage
+            ;;
+    esac
+done
+
+# Validate required args
+[[ -z "$DEPLOYMENT" ]] && { echo "Error: -d/--deployment required" >&2; usage; }
+[[ -z "$AUDIT_DATASET" ]] && { echo "Error: -a/--audit-dataset required" >&2; usage; }
+[[ -z "$CONTRACT_BYTES" || "$CONTRACT_BYTES" == "0" ]] && { echo "Error: -c/--contract required" >&2; usage; }
+
+# Validate dependencies
+command -v jq >/dev/null 2>&1 || { echo "Error: jq required" >&2; exit 1; }
+[[ -x "$AXIOM_API" ]] || { echo "Error: axiom-api not found at $AXIOM_API" >&2; exit 1; }
+
+# Calculate thresholds
+OVER_CONTRACT_BYTES=$(awk -v c="$CONTRACT_BYTES" -v m="$OVER_CONTRACT_MULTIPLIER" 'BEGIN { printf "%.0f", c * m }')
+
+# Build notifier array
+if [[ -n "$NOTIFIER_ID" ]]; then
+    NOTIFIER_JSON="[\"$NOTIFIER_ID\"]"
+else
+    NOTIFIER_JSON="[]"
+fi
+
+echo "=== Creating Cost Control Monitors ==="
+echo "Deployment: $DEPLOYMENT"
+echo "Audit dataset: $AUDIT_DATASET"
+echo "Contract: $(format_bytes_rate "$CONTRACT_BYTES")"
+echo "Over-contract threshold: $(format_bytes_rate "$OVER_CONTRACT_BYTES") (${OVER_CONTRACT_MULTIPLIER}x)"
+echo "Growth threshold: ${GROWTH_THRESHOLD}% (7d vs 23d baseline, requires ${MIN_BASELINE_DAYS}+ days)"
+echo "Per-dataset spike: robust z-score > $ZSCORE_THRESHOLD, sustained $SPIKE_HOURS_THRESHOLD+ hours"
+echo "Query cost spike: 30d baseline (5d exclusion gap), median_z > $QCOST_MEDIAN_Z_THRESHOLD, p25_z > $QCOST_P25_Z_THRESHOLD, ${QCOST_CURRENT_HOURS}+ hours"
+echo "Notifier: ${NOTIFIER_ID:-none}"
+echo ""
+
+# Check for existing monitors
+echo "Checking for existing Cost Control monitors..."
+EXISTING_IDS=$($AXIOM_API "$DEPLOYMENT" GET "/v2/monitors" 2>/dev/null | \
+    jq -r '.[] | select(.name | startswith("Cost Control:")) | .id' 2>/dev/null || true)
+
+if [[ -n "$EXISTING_IDS" ]]; then
+    EXISTING_COUNT=$(echo "$EXISTING_IDS" | wc -l | tr -d ' ')
+    
+    if [[ "$FORCE" == "true" ]]; then
+        echo "Found $EXISTING_COUNT existing monitors. Deleting (--force)..."
+        echo "$EXISTING_IDS" | while read -r id; do
+            echo "  Deleting $id..."
+            $AXIOM_API "$DEPLOYMENT" DELETE "/v2/monitors/$id" >/dev/null 2>&1 || true
+        done
+        echo "Deleted. Proceeding with creation..."
+        echo ""
+    else
+        EXISTING_NAMES=$($AXIOM_API "$DEPLOYMENT" GET "/v2/monitors" 2>/dev/null | \
+            jq -r '.[] | select(.name | startswith("Cost Control:")) | .name' 2>/dev/null || true)
+        echo ""
+        echo "BLOCKER: MONITORS_ALREADY_EXIST"
+        echo ""
+        echo "Found $EXISTING_COUNT existing Cost Control monitors:"
+        echo "$EXISTING_NAMES" | sed 's/^/  - /'
+        echo ""
+        echo "NEXT: scripts/create-monitors -d $DEPLOYMENT -a $AUDIT_DATASET -c $CONTRACT_BYTES --force"
+        exit 1
+    fi
+else
+    echo "No existing monitors found. Creating..."
+    echo ""
+fi
+
+# =============================================================================
+# MONITOR 1: TOTAL INGEST GUARD (Threshold + Trend)
+# Catches overspend (today > 1.2x contract) OR gradual growth (7d avg > 23d baseline by 15%+)
+# =============================================================================
+
+INGEST_GUARD_QUERY="['$AUDIT_DATASET']
+| where _time >= ago(30d) and action == \"usageCalculated\"
+| extend bytes = toreal(['properties.hourly_ingest_bytes'])
+| summarize daily_bytes = sum(bytes) by day = bin(_time, 1d)
+| summarize 
+    today = sumif(daily_bytes, day >= ago(24h)),
+    recent_7d = avgif(daily_bytes, day >= ago(7d)),
+    baseline_23d = avgif(daily_bytes, day < ago(7d)),
+    baseline_days = countif(day < ago(7d))
+| extend growth_pct = iff(isfinite(baseline_23d) and baseline_23d > 0, (recent_7d - baseline_23d) / baseline_23d * 100, 0)
+| extend over_contract = today > $OVER_CONTRACT_BYTES
+| extend growing = growth_pct > $GROWTH_THRESHOLD and baseline_days >= $MIN_BASELINE_DAYS
+| where over_contract or growing
+| summarize alert_count = count()"
+
+INGEST_GUARD_QUERY_JSON=$(echo "$INGEST_GUARD_QUERY" | jq -Rs '.')
+
+echo "1/3: Creating Total Ingest Guard (>${OVER_CONTRACT_MULTIPLIER}x contract OR >${GROWTH_THRESHOLD}% growth)..."
+$AXIOM_API "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
+{
+  "name": "Cost Control: Total Ingest Guard",
+  "description": "Alerts when daily ingest exceeds $(format_bytes_rate "$OVER_CONTRACT_BYTES") (${OVER_CONTRACT_MULTIPLIER}x contract) OR when 7-day average grows >${GROWTH_THRESHOLD}% vs prior 23-day baseline.",
+  "type": "Threshold",
+  "aplQuery": $INGEST_GUARD_QUERY_JSON,
+  "operator": "AboveOrEqual",
+  "threshold": 1,
+  "intervalMinutes": 60,
+  "rangeMinutes": 43200,
+  "notifierIds": $NOTIFIER_JSON,
+  "notifyByGroup": false,
+  "triggerFromNRuns": 2
+}
+EOF
+)"
+
+echo ""
+
+# =============================================================================
+# MONITOR 2: PER-DATASET SPIKE (Robust z-score)
+# Statistical attribution: detects which dataset's ingest pattern changed
+# Uses log-transform + IQR-based sigma, dual gate (z>3 AND >p99), 2+ hours sustained
+#
+# NOTE: notifyByGroup:true works because the query ends with `summarize ... by dataset`.
+# Axiom infers the group key from the by clause at runtime—no explicit groupByKeys needed.
+# Each dataset that crosses the threshold fires a separate alert with dataset in .GroupValues.
+# =============================================================================
+
+# Build the robust z-score APL query with single-pass approach (no joins)
+# Single-pass is more efficient and reliable than complex joins with multiple summarize operations
+# Uses conditional aggregation with is_current/is_baseline flags
+ZSCORE_QUERY="['$AUDIT_DATASET']
+| where _time >= ago(15d) and action == \"usageCalculated\"
+| extend bytes = toreal(['properties.hourly_ingest_bytes']), dataset = tostring(['properties.dataset'])
+| where isfinite(bytes) and bytes >= 0
+| extend is_current = _time >= ago(4h) and _time < bin(now(), 1h)
+| extend is_baseline = _time < ago(1h)
+| summarize hourly_bytes = sum(bytes) by bucket = bin(_time, 1h), dataset, is_current, is_baseline
+| extend hourly_y = log(hourly_bytes + 1)
+| summarize 
+    current_hours = countif(is_current),
+    baseline_hours = countif(is_baseline),
+    baseline_y_p25 = percentileif(hourly_y, 25, is_baseline),
+    baseline_y_p50 = percentileif(hourly_y, 50, is_baseline),
+    baseline_y_p75 = percentileif(hourly_y, 75, is_baseline),
+    baseline_bytes_p99 = percentileif(hourly_bytes, 99, is_baseline),
+    baseline_bytes_p50 = percentileif(hourly_bytes, 50, is_baseline),
+    current_max_y = maxif(hourly_y, is_current),
+    current_max_bytes = maxif(hourly_bytes, is_current)
+  by dataset
+| where baseline_hours >= 72 and current_hours >= $SPIKE_HOURS_THRESHOLD
+| extend iqr = baseline_y_p75 - baseline_y_p25
+| extend sigma_y = iff(iqr / 1.349 > 0.1, iqr / 1.349, 0.1)
+| extend max_z = (current_max_y - baseline_y_p50) / sigma_y
+| where max_z > $ZSCORE_THRESHOLD and current_max_bytes > baseline_bytes_p99
+| extend excess_bytes = current_max_bytes - baseline_bytes_p50
+| where excess_bytes > 0"
+
+# Escape for JSON
+ZSCORE_QUERY_JSON=$(echo "$ZSCORE_QUERY" | jq -Rs '.')
+
+echo "2/3: Creating Per-Dataset Spike Detection (robust z-score > $ZSCORE_THRESHOLD, $SPIKE_HOURS_THRESHOLD+ hours)..."
+$AXIOM_API "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
+{
+  "name": "Cost Control: Per-Dataset Spike",
+  "description": "Robust z-score detection of dataset ingest spikes. Uses log-transform + IQR-based sigma. Alerts per dataset when z > $ZSCORE_THRESHOLD AND bytes > p99 for $SPIKE_HOURS_THRESHOLD+ hours.",
+  "type": "Threshold",
+  "aplQuery": $ZSCORE_QUERY_JSON,
+  "operator": "Above",
+  "threshold": 0,
+  "intervalMinutes": 60,
+  "rangeMinutes": 10080,
+  "notifierIds": $NOTIFIER_JSON,
+  "notifyByGroup": true,
+  "triggerFromNRuns": 1
+}
+EOF
+)"
+
+echo ""
+
+# =============================================================================
+# MONITOR 3: QUERY COST SPIKE (Hardened robust z-score, per-dataset)
+# Statistical detection of query cost changes (different cost driver than ingest)
+#
+# Hardened approach from production investigation:
+# - 30d baseline with 5d exclusion gap (prevents sustained spikes from poisoning baseline)
+# - Persistence-based gating: median_z > 3 AND p25_z > 2.5 (entire window must be anomalous)
+# - Uses percentiles of current window instead of max (resistant to single-hour outliers)
+# - Floor filter: current_p50_gbms > 100M (ignores low-usage noise)
+#
+# NOTE: Same notifyByGroup behavior as Monitor 2—Axiom infers dataset from the by clause.
+# =============================================================================
+
+# Build the hardened query cost spike APL query
+# Uses 30d baseline with 5d exclusion gap and persistence-based gating
+QCOST_ZSCORE_QUERY="['$AUDIT_DATASET']
+| where _time >= ago(30d) and action == \"usageCalculated\"
+| extend gbms = toreal(['properties.hourly_billable_query_gbms']), dataset = tostring(['properties.dataset'])
+| where isfinite(gbms) and gbms >= 0
+| extend is_current = _time >= ago(6h) and _time < bin(now(), 1h)
+| extend is_baseline = _time < ago(5d)
+| summarize hourly_gbms = sum(gbms) by bucket = bin(_time, 1h), dataset, is_current, is_baseline
+| extend hourly_y = log(hourly_gbms + 1)
+| summarize 
+    current_hours = countif(is_current),
+    baseline_hours = countif(is_baseline),
+    baseline_y_p50 = percentileif(hourly_y, 50, is_baseline),
+    baseline_y_p25 = percentileif(hourly_y, 25, is_baseline),
+    baseline_y_p75 = percentileif(hourly_y, 75, is_baseline),
+    baseline_gbms_p50 = percentileif(hourly_gbms, 50, is_baseline),
+    current_p50_y = percentileif(hourly_y, 50, is_current),
+    current_p25_y = percentileif(hourly_y, 25, is_current),
+    current_p50_gbms = percentileif(hourly_gbms, 50, is_current)
+  by dataset
+| where baseline_hours >= $QCOST_BASELINE_HOURS and current_hours >= $QCOST_CURRENT_HOURS
+| extend iqr = baseline_y_p75 - baseline_y_p25
+| where iqr > 0
+| extend sigma_y = iqr / 1.349
+| extend median_z = (current_p50_y - baseline_y_p50) / sigma_y
+| extend p25_z = (current_p25_y - baseline_y_p50) / sigma_y
+| extend excess_gbms = current_p50_gbms - baseline_gbms_p50
+| where median_z > $QCOST_MEDIAN_Z_THRESHOLD and p25_z > $QCOST_P25_Z_THRESHOLD and excess_gbms > 0 and current_p50_gbms > $QCOST_FLOOR_GBMS
+| project dataset, median_z, p25_z, current_p50_gbms, baseline_gbms_p50, excess_gbms
+| order by median_z desc"
+
+# Escape for JSON
+QCOST_ZSCORE_QUERY_JSON=$(echo "$QCOST_ZSCORE_QUERY" | jq -Rs '.')
+
+echo "3/3: Creating Query Cost Spike Detection (30d baseline, 5d gap, median_z > $QCOST_MEDIAN_Z_THRESHOLD, p25_z > $QCOST_P25_Z_THRESHOLD)..."
+$AXIOM_API "$DEPLOYMENT" POST "/v2/monitors" "$(cat <<EOF
+{
+  "name": "Cost Control: Query Cost Spike",
+  "description": "Hardened query cost spike detection. 30d baseline with 5d exclusion gap prevents sustained spikes from poisoning baseline. Persistence-based gating: median_z > $QCOST_MEDIAN_Z_THRESHOLD AND p25_z > $QCOST_P25_Z_THRESHOLD. Requires ${QCOST_CURRENT_HOURS}+ current hours, ${QCOST_BASELINE_HOURS}+ baseline hours. Floor: ${QCOST_FLOOR_GBMS} GB·ms.",
+  "type": "Threshold",
+  "aplQuery": $QCOST_ZSCORE_QUERY_JSON,
+  "operator": "Above",
+  "threshold": 0,
+  "intervalMinutes": 60,
+  "rangeMinutes": 43200,
+  "notifierIds": $NOTIFIER_JSON,
+  "notifyByGroup": true,
+  "triggerFromNRuns": 1
+}
+EOF
+)"
+
+echo ""
+echo "=============================================="
+echo "Done! Created 3 cost control monitors."
+echo "=============================================="
+echo ""
+echo "TOTAL INGEST GUARD:"
+echo "  1. Total Ingest Guard"
+echo "     - Over contract: today > $(format_bytes "$OVER_CONTRACT_BYTES") (${OVER_CONTRACT_MULTIPLIER}x)"
+echo "     - Growth trend: 7d avg > 23d baseline by ${GROWTH_THRESHOLD}%+"
+echo ""
+echo "STATISTICAL ATTRIBUTION:"
+echo "  2. Per-Dataset Ingest Spike (robust z-score > $ZSCORE_THRESHOLD, $SPIKE_HOURS_THRESHOLD+ hours)"
+echo "     Log-transform + IQR-based sigma; dual gate (z > 3 AND bytes > p99)"
+echo "  3. Per-Dataset Query Cost Spike (30d baseline, 5d gap, median_z > $QCOST_MEDIAN_Z_THRESHOLD, p25_z > $QCOST_P25_Z_THRESHOLD)"
+echo "     Hardened: persistence-based gating, ${QCOST_CURRENT_HOURS}+ hours, floor ${QCOST_FLOOR_GBMS} GB·ms"
+echo ""
+
+# Get org_id for URL (best-effort)
+CONFIG_FILE="$HOME/.axiom.toml"
+if [[ -f "$CONFIG_FILE" ]]; then
+    ORG_ID=$(awk -v deployment="$DEPLOYMENT" '
+        /^\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment && $1 == "org_id" { gsub(/[" ]/, "", $3); print $3; exit }
+    ' "$CONFIG_FILE" || true)
+    if [[ -n "${ORG_ID:-}" ]]; then
+        echo "View at: https://app.axiom.co/${ORG_ID}/monitors"
+    fi
+fi
