@@ -265,9 +265,13 @@ export function Settings() {
     | undefined;
   const createToken = useMutation(api.tokens.create);
   const revokeToken = useMutation(api.tokens.revoke);
+  // Deploy-skew safety: `includePublishedItems` only exists on newer backend
+  // deployments, and Convex rejects unknown args — sending it while an older
+  // backend is live breaks all of /settings ("Server Error"). Omit it until
+  // the arg has been in production long enough to be assumed everywhere.
   const publisherMemberships = useQuery(
     api.publishers.listMine,
-    shouldLoadAccountScopedQueries ? { includePublishedItems: false } : "skip",
+    shouldLoadAccountScopedQueries ? {} : "skip",
   ) as Array<PublisherMembership> | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);

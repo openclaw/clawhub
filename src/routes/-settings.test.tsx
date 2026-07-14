@@ -365,7 +365,7 @@ describe("Settings", () => {
     render(<Settings />);
 
     expect(getLastQueryArgs("tokens:listMine")).toEqual({});
-    expect(getLastQueryArgs("publishers:listMine")).toEqual({ includePublishedItems: false });
+    expect(getLastQueryArgs("publishers:listMine")).toEqual({});
     expect(getLastQueryArgs("publishers:getDeletionInventory")).toBe("skip");
     useQueryMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
