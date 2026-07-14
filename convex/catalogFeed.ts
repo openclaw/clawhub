@@ -5,6 +5,7 @@ import {
   CATALOG_FEED_SOURCE_REF,
   CATALOG_SKILLS_FEED_DESCRIPTION,
   CATALOG_SKILLS_FEED_ID,
+  PROMOTIONS_FEED_ID,
   serializeCatalogFeed,
   type CatalogFeedEntry,
   type CatalogFeedSkillEntry,
@@ -485,7 +486,11 @@ export const publish = internalAction({
 
 export const getLatestPublication = internalQuery({
   args: {
-    feedId: v.union(v.literal(CATALOG_FEED_ID), v.literal(CATALOG_SKILLS_FEED_ID)),
+    feedId: v.union(
+      v.literal(CATALOG_FEED_ID),
+      v.literal(CATALOG_SKILLS_FEED_ID),
+      v.literal(PROMOTIONS_FEED_ID),
+    ),
   },
   handler: async (ctx, args) =>
     await ctx.db

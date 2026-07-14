@@ -32,6 +32,7 @@ import {
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
+  cmdRevokeSkillVersion,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -60,6 +61,12 @@ import {
   cmdTransferPackageOwner,
   cmdUpsertPackageMigration,
 } from "./commands/packages.js";
+import {
+  cmdCreatePromotion,
+  cmdListPromotions,
+  cmdSetPromotionStatus,
+  cmdUpdatePromotion,
+} from "./commands/promotions.js";
 
 const program = new Command()
   .name("clawhub-admin")
@@ -331,6 +338,13 @@ const skills = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const promotions = program
+  .command("promotions")
+  .alias("promotion")
+  .description("Platform promotion records (admin only)")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 registerPluginOperations(plugins);
 registerPluginModerationCommands(plugins);
 registerPluginGovernanceCommands(plugins);
@@ -342,6 +356,51 @@ registerOrgCommands(org);
 registerEmailCommands(email);
 registerContentRightsCommands(contentRights);
 registerSkillModerationCommands(skills);
+registerPromotionCommands(promotions);
+
+function registerPromotionCommands(command: Command) {
+  command
+    .command("list")
+    .description("List promotions (active by default)")
+    .option("--all", "Include drafts and ended promotions (admin token required)")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListPromotions(opts, options);
+    });
+
+  command
+    .command("create")
+    .description("Create a promotion (starts as draft) from a JSON file")
+    .argument("<file>", "JSON file with the promotion payload")
+    .option("--json", "Output JSON")
+    .action(async (file, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdCreatePromotion(opts, file, options);
+    });
+
+  command
+    .command("update")
+    .description("Replace a promotion's fields from a JSON file (status unchanged)")
+    .argument("<slug>", "Promotion slug")
+    .argument("<file>", "JSON file with the promotion payload")
+    .option("--json", "Output JSON")
+    .action(async (slug, file, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdUpdatePromotion(opts, slug, file, options);
+    });
+
+  command
+    .command("set-status")
+    .description("Set a promotion's status (draft|active|ended)")
+    .argument("<slug>", "Promotion slug")
+    .argument("<status>", "draft, active, or ended")
+    .option("--json", "Output JSON")
+    .action(async (slug, status, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdSetPromotionStatus(opts, slug, status, options);
+    });
+}
 
 function collectOption(value: string, previous: string[]) {
   return [...previous, value];
@@ -714,6 +773,20 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  command
+    .command("revoke-version")
+    .description("Permanently remove one skill version from public access")
+    .argument("<slug>", "Skill slug")
+    .requiredOption("--version <version>", "Exact version to revoke")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--owner <handle>", "Owner handle when the slug is shared")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRevokeSkillVersion(opts, slug, options, isInputAllowed());
+    });
+
   command
     .command("unhide")
     .description("Manually restore a hidden skill after moderator review")

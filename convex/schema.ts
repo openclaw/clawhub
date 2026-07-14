@@ -448,6 +448,16 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const publicBrowseVersionStateValidator = v.union(
+  v.object({
+    status: v.literal("available"),
+    versionId: v.id("skillVersions"),
+  }),
+  v.object({
+    status: v.literal("unavailable"),
+  }),
+);
+
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -1016,6 +1026,13 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   ownerDeletedAt: v.optional(v.number()),
   ownerDeletedBy: v.optional(v.id("users")),
+  manualRevocation: v.optional(
+    v.object({
+      reason: v.string(),
+      reviewerUserId: v.id("users"),
+      revokedAt: v.number(),
+    }),
+  ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -1078,6 +1095,77 @@ const skillVersions = defineTable({
   .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
+
+const publishAttemptStatusValidator = v.union(
+  v.literal("pending_checks"),
+  v.literal("ready_to_finalize"),
+  v.literal("finalizing"),
+  v.literal("finalized"),
+  v.literal("blocked"),
+  v.literal("failed"),
+  v.literal("expired"),
+);
+
+const publishAttemptCheckStateValidator = v.object({
+  status: v.union(
+    v.literal("pending"),
+    v.literal("clean"),
+    v.literal("blocked"),
+    v.literal("failed"),
+  ),
+  checkedAt: v.optional(v.number()),
+  summary: v.optional(v.string()),
+  redactedFindings: v.optional(v.array(v.string())),
+});
+
+const publishAttempts = defineTable({
+  kind: v.union(v.literal("skill"), v.literal("package")),
+  status: publishAttemptStatusValidator,
+  userId: v.id("users"),
+  ownerUserId: v.optional(v.id("users")),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  sourceOwnerPublisherId: v.optional(v.id("publishers")),
+  slug: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  idempotencyKey: v.string(),
+  artifactFingerprint: v.string(),
+  files: packageFilesValidator,
+  checks: v.object({
+    trufflehog: publishAttemptCheckStateValidator,
+    clawscan: publishAttemptCheckStateValidator,
+  }),
+  skillInsertArgs: v.optional(v.any()),
+  packageInsertArgs: v.optional(v.any()),
+  followup: v.optional(
+    v.object({
+      skipWebhook: v.optional(v.boolean()),
+      ownerHandle: v.optional(v.string()),
+    }),
+  ),
+  packageFollowup: v.optional(v.any()),
+  checkClaimId: v.optional(v.string()),
+  checkClaimedAt: v.optional(v.number()),
+  checkClaimExpiresAt: v.optional(v.number()),
+  checkClaimLastError: v.optional(v.string()),
+  finalizationClaimId: v.optional(v.string()),
+  finalizationClaimedAt: v.optional(v.number()),
+  finalizationClaimExpiresAt: v.optional(v.number()),
+  finalizationLastError: v.optional(v.string()),
+  result: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+  finalizedAt: v.optional(v.number()),
+  blockedAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+})
+  .index("by_idempotency_key", ["idempotencyKey"])
+  .index("by_status_and_created", ["status", "createdAt"])
+  .index("by_expires_at", ["expiresAt"])
+  .index("by_kind_status_slug_version_created", ["kind", "status", "slug", "version", "createdAt"])
+  .index("by_user_status_created", ["userId", "status", "createdAt"])
+  .index("by_owner_publisher_status_created", ["ownerPublisherId", "status", "createdAt"]);
 
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
@@ -1170,6 +1258,9 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  // Missing means the rollout backfill has not reached this row. New writes
+  // always store an explicit available or unavailable public-version state.
+  publicVersion: v.optional(publicBrowseVersionStateValidator),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
@@ -1756,6 +1847,20 @@ const securityScanJobs = defineTable({
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
   .index("by_skill_scan_request", ["skillScanRequestId"]);
+
+const securityScanDispatchState = defineTable({
+  key: v.string(),
+  scheduledToken: v.optional(v.string()),
+  scheduledAt: v.optional(v.number()),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  lastDispatchAt: v.optional(v.number()),
+  lastDispatchStatus: v.optional(
+    v.union(v.literal("succeeded"), v.literal("failed"), v.literal("unknown")),
+  ),
+  lastError: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
 
 const skillScanRequests = defineTable({
   actorUserId: v.id("users"),
@@ -2546,6 +2651,45 @@ const stars = defineTable({
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
 
+const promotionStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("active"),
+  v.literal("ended"),
+);
+
+// Declarative activation payload consumed by the OpenClaw CLI. The CLI
+// validates authChoiceId/pluginNames against its local provider catalog and
+// never executes anything from these records.
+const promotionModelValidator = v.object({
+  modelRef: v.string(),
+  alias: v.optional(v.string()),
+  suggestedDefault: v.optional(v.boolean()),
+});
+
+const promotions = defineTable({
+  slug: v.string(),
+  title: v.string(),
+  blurb: v.string(),
+  sponsor: v.optional(v.string()),
+  status: promotionStatusValidator,
+  startsAt: v.number(),
+  endsAt: v.number(),
+  provider: v.optional(v.string()),
+  authChoiceId: v.optional(v.string()),
+  pluginNames: v.optional(v.array(v.string())),
+  models: v.array(promotionModelValidator),
+  signupUrl: v.optional(v.string()),
+  docsUrl: v.optional(v.string()),
+  launchPageUrl: v.optional(v.string()),
+  launchedAt: v.optional(v.number()),
+  createdByUserId: v.id("users"),
+  updatedByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_slug", ["slug"])
+  .index("by_status_endsAt", ["status", "endsAt"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -3079,6 +3223,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   securityScanJobs,
+  securityScanDispatchState,
   skillScanRequests,
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
@@ -3093,6 +3238,7 @@ export default defineSchema({
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
+  publishAttempts,
   skillVersionFingerprints,
   skillBadges,
   skillEmbeddings,
@@ -3116,6 +3262,7 @@ export default defineSchema({
   officialPluginMigrations,
   catalogFeedPublications,
   stars,
+  promotions,
   auditLogs,
   systemSettings,
   publisherAbuseScoreRuns,

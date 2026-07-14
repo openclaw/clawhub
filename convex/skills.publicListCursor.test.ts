@@ -1243,6 +1243,49 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
+  it("loads the approved digest version directly for a pending update", async () => {
+    const get = vi.fn(async (id: string) =>
+      id === "skillVersions:approved"
+        ? {
+            _id: id,
+            skillId: "skills:demo",
+            version: "1.0.0",
+            createdAt: 8,
+            changelog: "approved",
+            softDeletedAt: undefined,
+          }
+        : null,
+    );
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          moderationReason: "pending.scan",
+          stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
+          latestVersionId: "skillVersions:pending",
+          publicVersion: {
+            status: "available",
+            versionId: "skillVersions:approved",
+          },
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({ db: { get } } as never, {
+      numItems: 10,
+      sort: "updated",
+    });
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("skillVersions:approved");
+    expect(result.items[0]).toMatchObject({
+      latestVersion: {
+        version: "1.0.0",
+      },
+    });
+  });
+
   it("carries topics through the public API list projection", async () => {
     getPageMock.mockResolvedValueOnce({
       page: [

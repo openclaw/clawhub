@@ -97,10 +97,10 @@ describe("Upload route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("links to the skill publishing guide", () => {
+  it("links to the skill docs", () => {
     render(<Upload />);
 
-    const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
+    const guideLink = screen.getByRole("link", { name: /Skill docs/i });
     expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
@@ -981,6 +981,49 @@ describe("Upload route", () => {
       .find((call) => Array.isArray(call.files));
     expect(args).not.toBeUndefined();
     expect(Object.hasOwn(args!, "icon")).toBe(false);
+  });
+
+  it("keeps publish disabled after staged skill publish is accepted", async () => {
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValueOnce({
+      status: "pending",
+      attemptId: "publishAttempts:1",
+      slug: "pending-skill",
+      version: "1.0.0",
+    });
+    render(<Upload />);
+
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "pending-skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("My skill"), {
+      target: { value: "Pending Skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
+      target: { value: "1.0.0" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
+      target: { value: "latest" },
+    });
+    fireEvent.change(screen.getByTestId("upload-input"), {
+      target: { files: [new File(["hello"], "SKILL.md", { type: "text/markdown" })] },
+    });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i have the rights to publish this skill under mit-0/i,
+      }),
+    );
+
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
+
+    expect(
+      await screen.findByText(/Running TruffleHog and ClawScan before public listing\./i),
+    ).toBeTruthy();
+    expect(publishButton.getAttribute("disabled")).not.toBeNull();
   });
 
   it("omits icon when republishing a skill that still has a stored legacy icon", async () => {

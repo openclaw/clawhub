@@ -56,6 +56,7 @@ skills|skill
 
 ```text
 unhide <slug>
+revoke-version <slug>
 rescan <slug>
 reports
 triage-report <report-id>
@@ -65,10 +66,13 @@ Examples:
 
 ```sh
 bun run admin -- skills unhide <slug> --reason "<reason>" --yes
+bun run admin -- skills revoke-version <slug> --version <version> --reason "<reason>" --yes
 bun run admin -- skills rescan <slug> --reason "<reason>" --yes
 bun run admin -- skills reports --status open
 bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
+
+Pass `--owner <handle>` to `revoke-version` when more than one publisher uses the same slug.
 
 ### Users
 
@@ -201,6 +205,9 @@ only after admin auth succeeds.
 - `skills unhide` is a moderator manual restore. It clears skill hidden state,
   applies a clean manual override to top-level moderation fields, preserves
   version-level scanner records, updates public stats, and writes audit logs.
+- `skills revoke-version` permanently removes one exact version, records staff
+  evidence, advances latest pointers to a safe survivor when one exists, and
+  keeps the skill independently hidden when no usable version remains.
 - There is no standalone `skills hide` command in `clawhub-admin`; use report
   triage with `--action hide` when resolving a report that should hide a skill.
 - `users ban` is disruptive: it revokes API tokens, marks the user deleted,

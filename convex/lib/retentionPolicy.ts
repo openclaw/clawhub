@@ -109,6 +109,16 @@ export const RETENTION_POLICIES = {
   skillSlugAliases: permanent("Historical slug routing aliases."),
   packages: permanent("Canonical package records."),
   packageReleases: permanent("Canonical package release records."),
+  publishAttempts: ephemeral(
+    "Private staged publish workflow state expires unless later retained by moderation policy.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "future publishAttempts cleanup in CLAW-467 staged-publish follow-up",
+      retention:
+        "Pending/finalized attempt TTL; later secret and moderation slices refine blocked retention.",
+    },
+  ),
   catalogClassificationResults: derived(
     "Catalog classification output can be recomputed from package and skill metadata.",
     "skills/packages",
@@ -119,6 +129,7 @@ export const RETENTION_POLICIES = {
   ),
   packageInspectorScanCursors: permanent("Package inspector scan progress cursor."),
   securityScanJobs: permanent("Security scan job history and current processing state."),
+  securityScanDispatchState: permanent("Security scan worker dispatch coordination state."),
   skillScanRequests: ephemeral(
     "Uploaded or GitHub scan requests expire and delete temporary blobs.",
     {
@@ -197,6 +208,7 @@ export const RETENTION_POLICIES = {
   officialPluginMigrations: permanent("Official plugin migration state."),
   catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
   stars: permanent("User star records."),
+  promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),

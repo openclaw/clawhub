@@ -14,7 +14,7 @@ type WrappedHandler<TArgs, TResult> = {
 const touchHttpKeyHandler = (
   touchHttpRateLimitKeyInternal as unknown as WrappedHandler<
     { name: string; key: string; shard?: number; now?: number; ttlMs?: number },
-    { action: "inserted" | "updated"; expiresAt: number; shard: number }
+    { action: "inserted" | "retained" | "updated"; expiresAt: number; shard: number }
   >
 )._handler;
 const consumeHttpKeyHandler = (
@@ -29,9 +29,6 @@ const consumeHttpKeyHandler = (
         start?: number;
         shards?: number;
       };
-      now?: number;
-      ttlMs?: number;
-      shard?: number;
     },
     { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
   >
@@ -60,38 +57,23 @@ function makeDb(overrides: { query: ReturnType<typeof vi.fn>; delete: ReturnType
 }
 
 describe("component HTTP rate limit key metadata", () => {
-  it("consumes a component bucket and refreshes sharded metadata in one mutation", async () => {
-    const take = vi.fn(async () => []);
-    const insert = vi.fn();
+  it("consumes a component bucket without coupling retention metadata writes", async () => {
     const runMutation = vi.fn(async () => ({ ok: true }));
-    const eqShard = vi.fn();
-    const eqKey = vi.fn(() => ({ eq: eqShard }));
-    const eqName = vi.fn(() => ({ eq: eqKey }));
-    const withIndex = vi.fn((_index, builder) => {
-      builder({ eq: eqName });
-      return { take };
-    });
     const ctx = {
       runMutation,
       db: makeDb({
-        query: vi.fn(() => ({
-          withIndex,
-        })),
+        query: vi.fn(),
         delete: vi.fn(),
       }),
       scheduler: {
         runAfter: vi.fn(),
       },
     };
-    ctx.db.insert = insert;
 
     const result = await consumeHttpKeyHandler(ctx, {
       name: "downloadIp",
       key: "ip:203.0.113.1:download",
       config: { kind: "fixed window", rate: 1200, period: 60_000, start: 0, shards: 16 },
-      now: 10_000,
-      ttlMs: 60_000,
-      shard: 7,
     });
 
     expect(result).toEqual({ ok: true });
@@ -100,17 +82,7 @@ describe("component HTTP rate limit key metadata", () => {
       key: "ip:203.0.113.1:download",
       config: { kind: "fixed window", rate: 1200, period: 60_000, start: 0, shards: 16 },
     });
-    expect(withIndex).toHaveBeenCalledWith("by_name_and_key_and_shard", expect.any(Function));
-    expect(eqName).toHaveBeenCalledWith("name", "downloadIp");
-    expect(eqKey).toHaveBeenCalledWith("key", "ip:203.0.113.1:download");
-    expect(eqShard).toHaveBeenCalledWith("shard", 7);
-    expect(insert).toHaveBeenCalledWith("httpRateLimitKeys", {
-      name: "downloadIp",
-      key: "ip:203.0.113.1:download",
-      shard: 7,
-      lastTouchedAt: 10_000,
-      expiresAt: 70_000,
-    });
+    expect(ctx.db.query).not.toHaveBeenCalled();
   });
 
   it("inserts sharded metadata for a newly observed component key", async () => {
@@ -164,7 +136,7 @@ describe("component HTTP rate limit key metadata", () => {
       key: "user:users_123:read",
       shard: 11,
       lastTouchedAt: 1_000,
-      expiresAt: 61_000,
+      expiresAt: 49_000,
     };
     const ctx = {
       db: makeDb({
@@ -192,6 +164,41 @@ describe("component HTTP rate limit key metadata", () => {
       expiresAt: 80_000,
     });
     expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
+  it("retains fresh metadata without another write", async () => {
+    const existing = {
+      _id: "httpRateLimitKeys:1",
+      name: "readKey",
+      key: "user:users_123:read",
+      shard: 11,
+      lastTouchedAt: 10_000,
+      expiresAt: 70_000,
+    };
+    const ctx = {
+      db: makeDb({
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ take: vi.fn(async () => [existing]) })),
+        })),
+        delete: vi.fn(),
+      }),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+    };
+
+    const result = await touchHttpKeyHandler(ctx, {
+      name: "readKey",
+      key: "user:users_123:read",
+      shard: 11,
+      now: 20_000,
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ action: "retained", expiresAt: 70_000, shard: 11 });
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.delete).not.toHaveBeenCalled();
   });
 
   it("repairs duplicate metadata rows while refreshing a component key shard", async () => {

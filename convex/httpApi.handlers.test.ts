@@ -18,7 +18,22 @@ const { __handlers } = await import("./httpApi");
 const { hashSkillFiles } = await import("./lib/skills");
 
 function makeCtx(partial: Record<string, unknown>) {
-  return partial as unknown as import("./_generated/server").ActionCtx;
+  const partialRunMutation =
+    typeof partial.runMutation === "function"
+      ? (partial.runMutation as (mutation: unknown, args: Record<string, unknown>) => unknown)
+      : null;
+  const runMutation = vi.fn(async (mutation: unknown, args: Record<string, unknown>) => {
+    if (
+      typeof args.name === "string" &&
+      typeof args.key === "string" &&
+      typeof args.ttlMs === "number" &&
+      !("config" in args)
+    ) {
+      return { action: "retained" };
+    }
+    return partialRunMutation ? await partialRunMutation(mutation, args) : null;
+  });
+  return { ...partial, runMutation } as unknown as import("./_generated/server").ActionCtx;
 }
 
 describe("httpApi handlers", () => {
@@ -311,6 +326,7 @@ describe("httpApi handlers", () => {
         body: JSON.stringify({
           event: "install",
           slug: "weather",
+          ownerHandle: "openclaw",
           version: "1.0.0",
           rootId: "abc",
           rootLabel: "~/skills",
@@ -322,6 +338,7 @@ describe("httpApi handlers", () => {
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       userId: "users:1",
       slug: "weather",
+      ownerHandle: "openclaw",
       version: "1.0.0",
     });
   });
@@ -340,7 +357,7 @@ describe("httpApi handlers", () => {
               rootId: "abc",
               label: "~/skills",
               skills: [
-                { slug: "weather", ownerHandle: "openclaw", version: "1.0.0" },
+                { slug: "weather", version: "1.0.0" },
                 { slug: "calendar", version: null },
               ],
             },

@@ -8,6 +8,7 @@ const DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 const MAX_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE = 1_000;
 const HTTP_RATE_LIMIT_KEY_METADATA_SHARDS = 64;
+const HTTP_RATE_LIMIT_KEY_METADATA_REFRESH_FRACTION = 0.5;
 const MAX_EXPIRED_HTTP_RATE_LIMIT_KEY_ROWS_PER_KEY = HTTP_RATE_LIMIT_KEY_METADATA_SHARDS * 2;
 const fixedWindowRateLimitConfigValidator = v.object({
   kind: v.literal("fixed window"),
@@ -78,6 +79,10 @@ async function touchHttpRateLimitKey(
   const [existing, ...duplicates] = matches;
 
   if (existing) {
+    const refreshAfter = now + Math.floor(ttlMs * HTTP_RATE_LIMIT_KEY_METADATA_REFRESH_FRACTION);
+    if (duplicates.length === 0 && existing.expiresAt > refreshAfter) {
+      return { action: "retained" as const, expiresAt: existing.expiresAt, shard };
+    }
     await ctx.db.patch(existing._id, { lastTouchedAt: now, expiresAt });
     for (const duplicate of duplicates) {
       await ctx.db.delete(duplicate._id);
@@ -100,19 +105,14 @@ export const consumeHttpRateLimitKeyInternal = internalMutation({
     name: v.string(),
     key: v.string(),
     config: fixedWindowRateLimitConfigValidator,
-    now: v.optional(v.number()),
-    ttlMs: v.optional(v.number()),
-    shard: v.optional(v.number()),
   },
   returns: rateLimitStatusValidator,
   handler: async (ctx, args) => {
-    const status = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
       name: args.name,
       key: args.key,
       config: args.config,
     });
-    await touchHttpRateLimitKey(ctx, args);
-    return status;
   },
 });
 

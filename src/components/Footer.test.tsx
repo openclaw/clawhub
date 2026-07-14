@@ -76,12 +76,32 @@ describe("Footer", () => {
         .getAttribute("href"),
     ).toBe("https://openclaw.ai");
     expect(within(community as HTMLElement).queryByRole("link", { name: "About" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Status" }).getAttribute("href")).toBe(
+      "https://clawhub.betteruptime.com",
+    );
     expect(screen.getByRole("link", { name: "Deployed on Vercel" }).getAttribute("href")).toBe(
       "https://vercel.com",
     );
     expect(screen.getByRole("link", { name: "Powered by Convex" }).getAttribute("href")).toBe(
       "https://www.convex.dev",
     );
+  });
+
+  it("keeps offscreen imagery lazy and dimensioned", () => {
+    const { container } = render(<Footer />);
+    const images = Array.from(container.querySelectorAll("img"));
+
+    expect(images.length).toBeGreaterThan(0);
+    for (const image of images) {
+      expect(image.getAttribute("loading")).toBe("lazy");
+      expect(image.getAttribute("decoding")).toBe("async");
+      expect(image.width).toBeGreaterThan(0);
+      expect(image.height).toBeGreaterThan(0);
+    }
+    expect(container.querySelector(".footer-v2-brand-mark")?.getAttribute("src")).toBe(
+      "/logo-transparent.png",
+    );
+    expect(container.querySelector('img[src="/og-clawhub-watermark.png"]')).toBeNull();
   });
 
   it("collapses footer sections by heading until toggled open", async () => {

@@ -29,7 +29,6 @@ import { components } from "./_generated/api.js";
 import { DataModel } from "./_generated/dataModel.js";
 
 export const migrations = new Migrations<DataModel>(components.migrations);
-export const run = migrations.runner();
 ```
 
 The `DataModel` type parameter is optional but provides type safety for
@@ -66,11 +65,25 @@ export const clearDeprecatedField = migrations.define({
 From the CLI:
 
 ```bash
-# Define a one-off runner in convex/migrations.ts:
-#   export const runIt = migrations.runner(internal.migrations.addDefaultRole);
-npx convex run migrations:runIt
+npx convex run migrations:addDefaultRole
 
-# Or use the general-purpose runner
+# Pass --prod to run in production.
+npx convex run migrations:addDefaultRole --prod
+```
+
+The migration exported by `migrations.define` is directly callable from the CLI
+or dashboard. You do not need a separate one-off runner for normal single
+migrations.
+
+If you want a general-purpose runner that accepts a migration name, define one:
+
+```typescript
+export const run = migrations.runner();
+```
+
+Then call it with the full function name:
+
+```bash
 npx convex run migrations:run '{"fn": "migrations:addDefaultRole"}'
 ```
 
@@ -81,6 +94,14 @@ await migrations.runOne(ctx, internal.migrations.addDefaultRole);
 ```
 
 ## Run Multiple Migrations in Order
+
+For a short ad hoc series, pass `next` when starting the first migration:
+
+```bash
+npx convex run migrations:addDefaultRole '{"next":["migrations:clearDeprecatedField","migrations:normalizeEmails"]}'
+```
+
+For a reusable series, define a runner:
 
 ```typescript
 export const runAll = migrations.runner([
@@ -97,16 +118,37 @@ npx convex run migrations:runAll
 If one fails, it stops and will not continue to the next. Call it again to retry
 from where it left off. Completed migrations are skipped automatically.
 
+Programmatically from another Convex function:
+
+```typescript
+await migrations.runSerially(ctx, [
+  internal.migrations.addDefaultRole,
+  internal.migrations.clearDeprecatedField,
+  internal.migrations.normalizeEmails,
+]);
+```
+
 ## Dry Run
 
 Test a migration before committing changes:
 
 ```bash
-npx convex run migrations:runIt '{"dryRun": true}'
+npx convex run migrations:addDefaultRole '{"dryRun": true}'
 ```
 
 This runs one batch and then rolls back, so you can see what it would do without
 changing any data.
+
+## Restart a Migration
+
+Pass `reset: true` to restart a migration from the beginning:
+
+```bash
+npx convex run migrations:addDefaultRole '{"reset": true}'
+```
+
+If you specify `next` or run a defined series, `reset: true` resets the cursor
+for all migrations in the group.
 
 ## Check Migration Status
 

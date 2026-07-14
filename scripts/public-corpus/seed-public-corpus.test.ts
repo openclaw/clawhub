@@ -1,12 +1,138 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_BATCH_BYTES,
+  DEFAULT_SEED_CONCURRENCY,
+  MAX_CONVEX_RUN_ARG_BYTES,
   buildSeedCorpusRow,
+  chunkRowsByOwner,
   isRetryableConvexSeedBatchOutput,
+  runSeedCorpusBatches,
   runConvexSeedBatchWithRetry,
   type SeedBatchRunOnce,
+  type SeedCorpusRow,
+  serializeConvexSeedArgs,
 } from "./seed-public-corpus";
 
 describe("public corpus seed runner", () => {
+  it("uses portable owner-isolated batches", () => {
+    const owner = {
+      handle: "dummy-owner",
+      displayName: "Dummy Owner",
+      image: "https://example.invalid/avatar.png",
+    };
+    const rows = Array.from({ length: 4 }, (_, index) =>
+      buildSeedCorpusRow(
+        {
+          kind: "skill",
+          slug: `skill-${index}`,
+          displayName: `Skill ${index}`,
+          version: "1.0.0",
+          skillMd: "x".repeat(50_000),
+        },
+        owner,
+      ),
+    );
+
+    expect(DEFAULT_BATCH_BYTES).toBeGreaterThan(96_000);
+    expect(DEFAULT_SEED_CONCURRENCY).toBe(24);
+    expect(chunkRowsByOwner(rows, DEFAULT_BATCH_BYTES)).toEqual([rows.slice(0, 2), rows.slice(2)]);
+  });
+
+  it("rejects batch arguments above the portable process limit", () => {
+    expect(() =>
+      serializeConvexSeedArgs({
+        rows: [{ skillMd: "x".repeat(MAX_CONVEX_RUN_ARG_BYTES) }],
+      }),
+    ).toThrow("Public corpus batch argument is");
+  });
+
+  it("runs different owners concurrently while serializing each owner", async () => {
+    const buildRow = (ownerHandle: string, index: number) =>
+      buildSeedCorpusRow(
+        {
+          kind: "skill",
+          slug: `${ownerHandle}-${index}`,
+          displayName: `${ownerHandle} ${index}`,
+          version: "1.0.0",
+          skillMd: "# Fixture",
+        },
+        {
+          handle: ownerHandle,
+          displayName: ownerHandle,
+          image: "https://example.invalid/avatar.png",
+        },
+      );
+    const batches = [
+      [buildRow("owner-a", 1)],
+      [buildRow("owner-b", 1)],
+      [buildRow("owner-a", 2)],
+      [buildRow("owner-c", 1)],
+    ];
+    const activeOwners = new Set<string>();
+    let active = 0;
+    let maxActive = 0;
+    const runOnce = vi.fn(async (args: unknown) => {
+      const rows = (args as { rows: (typeof batches)[number] }).rows;
+      const ownerHandle = rows[0]!.dummyOwner.handle;
+      expect(activeOwners.has(ownerHandle)).toBe(false);
+      activeOwners.add(ownerHandle);
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      activeOwners.delete(ownerHandle);
+      return { status: 0, output: "" };
+    });
+
+    await runSeedCorpusBatches(batches, {
+      concurrency: 2,
+      runOnce,
+      log: vi.fn(),
+    });
+
+    expect(runOnce).toHaveBeenCalledTimes(4);
+    expect(maxActive).toBe(2);
+  });
+
+  it("waits for active owners and stops scheduling after a batch fails", async () => {
+    const buildRow = (ownerHandle: string) =>
+      buildSeedCorpusRow(
+        {
+          kind: "skill",
+          slug: ownerHandle,
+          displayName: ownerHandle,
+          version: "1.0.0",
+          skillMd: "# Fixture",
+        },
+        {
+          handle: ownerHandle,
+          displayName: ownerHandle,
+          image: "https://example.invalid/avatar.png",
+        },
+      );
+    const completedOwners: string[] = [];
+    const runOnce = vi.fn(async (args: unknown) => {
+      const rows = (args as { rows: SeedCorpusRow[] }).rows;
+      const ownerHandle = rows[0]!.dummyOwner.handle;
+      await new Promise((resolve) => setTimeout(resolve, ownerHandle === "owner-a" ? 5 : 20));
+      completedOwners.push(ownerHandle);
+      return ownerHandle === "owner-a"
+        ? { status: 1, output: "failed" }
+        : { status: 0, output: "" };
+    });
+
+    await expect(
+      runSeedCorpusBatches([[buildRow("owner-a")], [buildRow("owner-b")], [buildRow("owner-c")]], {
+        concurrency: 2,
+        runOnce,
+        log: vi.fn(),
+      }),
+    ).rejects.toThrow("Public corpus batch 1/3 failed");
+
+    expect(completedOwners).toEqual(["owner-a", "owner-b"]);
+    expect(runOnce).toHaveBeenCalledTimes(2);
+  });
+
   it("strips retired capability metadata before sending rows to Convex", () => {
     const owner = {
       handle: "dummy-owner",

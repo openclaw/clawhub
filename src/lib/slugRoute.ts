@@ -2,7 +2,7 @@ import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { getOpenClawExtensionPackageName } from "./openClawExtensionSlugs";
 import { buildPluginDetailHref } from "./pluginRoutes";
-import type { PublicPublisherListItem } from "./publicUser";
+import type { PublicPublisherProfileItem } from "./publicUser";
 
 const OPENCLAW_HANDLE = "openclaw";
 
@@ -15,7 +15,7 @@ type PluginSlugRouteTarget = {
 type TopLevelSlugRouteTarget = {
   kind: "publisher";
   handle: string;
-  publisher: PublicPublisherListItem;
+  publisher: PublicPublisherProfileItem;
 };
 
 function normalizeSlug(slug: string) {
@@ -63,7 +63,7 @@ async function resolvePublisherHandle(handle: string) {
   try {
     return (await convexHttp.query(api.publishers.getProfileByHandle, {
       handle: normalized,
-    })) as PublicPublisherListItem | null;
+    })) as PublicPublisherProfileItem | null;
   } catch {
     return null;
   }

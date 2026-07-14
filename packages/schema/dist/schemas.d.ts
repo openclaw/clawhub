@@ -158,6 +158,7 @@ export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveR
 export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     event: "install";
     slug: string;
+    ownerHandle?: string | undefined;
     version?: string | undefined;
     rootId?: string | undefined;
     rootLabel?: string | undefined;
@@ -346,6 +347,23 @@ export declare const ApiV1SkillModerationResponseSchema: import("arktype/interna
         legacyReason?: string | null | undefined;
     } | null;
 }, {}>;
+export declare const SkillVersionRevokeRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    state: "revoked";
+    reason: string;
+    ownerHandle?: string | undefined;
+}, {}>;
+export type SkillVersionRevokeRequest = (typeof SkillVersionRevokeRequestSchema)[inferred];
+export declare const ApiV1SkillVersionRevokeResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    version: string;
+    skillId: string;
+    versionId: string;
+    alreadyRevoked: boolean;
+    replacementVersion: string | null;
+    skillHidden: boolean;
+}, {}>;
+export type ApiV1SkillVersionRevokeResponse = (typeof ApiV1SkillVersionRevokeResponseSchema)[inferred];
 export declare const SkillReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed", {}>;
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
 export declare const SkillReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "hide", {}>;
@@ -672,7 +690,7 @@ export declare const ApiV1SkillVersionListResponseSchema: import("arktype/intern
     nextCursor: string | null;
 }, {}>;
 export declare const SecurityStatusSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+    status: "error" | "clean" | "suspicious" | "malicious" | "pending";
     hasWarnings: boolean;
     checkedAt: number | null;
     model: string | null;
@@ -686,7 +704,7 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         license?: "MIT-0" | null | undefined;
         files?: unknown;
         security?: {
-            status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+            status: "error" | "clean" | "suspicious" | "malicious" | "pending";
             hasWarnings: boolean;
             checkedAt: number | null;
             model: string | null;

@@ -1,0 +1,46 @@
+#!/bin/bash
+# Search dashboards in Grafana
+# Usage: grafana-dashboards <deployment> [search]
+#
+# Examples:
+#   grafana-dashboards prod
+#   grafana-dashboards prod "axiom-db"
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+search="${2:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: grafana-dashboards <deployment> [search]" >&2
+    echo "" >&2
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "$SCRIPT_DIR/grafana-config" 2>&1 | tail -n +3
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" grafana "$DEPLOYMENT")"
+
+url="${GRAFANA_URL}/api/search?type=dash-db"
+if [[ -n "$search" ]]; then
+    url="${url}&query=$(printf '%s' "$search" | jq -sRr @uri)"
+fi
+
+result=$("$SCRIPT_DIR/curl-auth" grafana "$DEPLOYMENT" "$url")
+
+if command -v jq &>/dev/null; then
+    echo "Dashboards in $DEPLOYMENT:"
+    if [[ -n "$search" ]]; then
+        echo "Search: $search"
+    fi
+    echo ""
+    
+    num=$(echo "$result" | jq 'length')
+    echo "Found: $num"
+    echo ""
+    
+    echo "$result" | jq -r '.[] | "  \(.title)\n    URL: '"${GRAFANA_URL}"'/d/\(.uid)\n    Folder: \(.folderTitle // "General")\n"'
+else
+    echo "$result"
+fi

@@ -6,6 +6,7 @@ import {
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
+import { type PublicBrowseVersionState, resolvePublicBrowseVersionState } from "./publicBrowse";
 import { getOwnerPublisher } from "./publishers";
 import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import { tokenize } from "./searchText";
@@ -71,6 +72,7 @@ export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[n
   ownerImage?: string;
   recommendedScore?: number;
   recommendedScoreVersion?: number;
+  publicVersion?: PublicBrowseVersionState;
 };
 
 /** Pick the subset of fields from a full skill doc needed for the digest. */
@@ -119,15 +121,19 @@ export async function extractValidatedDigestFields(
 ): Promise<SkillSearchDigestFields> {
   const fields = extractDigestFields(skill);
   const version = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
+  const publicVersion = await resolvePublicBrowseVersionState(ctx, skill, {
+    latestVersion: version,
+  });
   if (!version || version.softDeletedAt || version.skillId !== skill._id) {
     return {
       ...fields,
       latestVersionId: undefined,
       latestVersionSkillId: undefined,
       latestVersionSummary: undefined,
+      publicVersion,
     };
   }
-  return { ...fields, latestVersionSkillId: version.skillId };
+  return { ...fields, latestVersionSkillId: version.skillId, publicVersion };
 }
 
 export function normalizeSkillSearchText(value: string) {

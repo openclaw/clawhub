@@ -26,6 +26,25 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Restore pages only clear the exact `softDeletedAt` timestamp from the ban
   being lifted and only for skills hidden with `moderationReason = "user.banned"`.
 
+## Exact-version revocation
+
+- Staff can permanently revoke one hosted skill version without deleting the
+  publisher account or preventing a later corrected version.
+- Revocation soft-deletes the `skillVersions` row and records
+  `manualRevocation` evidence with the reason, reviewer, and timestamp. Revoked
+  versions must remain unavailable from exact-version metadata, raw-file, and
+  ZIP download paths.
+- If the revoked version is current, `latestVersionId`, `latest` tags, card
+  metadata, embeddings, and search state move to the highest remaining
+  non-revoked, non-malicious version.
+- If no usable version remains, the skill gets its own
+  `moderationReason = "manual.version_revoked"` hold and no latest pointer.
+  This hold is intentionally independent from `user.banned`, so account unban
+  cannot re-expose the revoked skill history.
+- Publishing a new version may make that corrected version current and clear
+  the skill-level hold. It must never clear `manualRevocation` or
+  `softDeletedAt` from older revoked versions.
+
 ## Account and publisher deletion
 
 - User and org deletion are soft-delete flows. They must not hard-delete users,
@@ -244,6 +263,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   workspace with static and VT signals as context.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
+- Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
+  Successful completion requests another dispatch while queued work remains; a
+  five-minute Convex cron is only a recovery watchdog for lost dispatch signals.
+  Convex emits the narrowly typed `clawhub-security-scan`
+  `repository_dispatch` event using the production GitHub App. Event-driven
+  dispatch stays disabled until that installation is verified to have Contents
+  write permission.
+- Queue source priority is `manual`, `backfill`, `publish`, `vt-update`, then
+  `bulk-rescan`. A later VirusTotal update may make a waiting publish job
+  claimable immediately, but it must not demote that job from publish priority.
+- Bulk rescans stay lowest priority and use the bounded operator campaign flow,
+  which enqueues one page at a time and waits for that page before continuing.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
@@ -276,6 +307,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hold applies. Codex malicious verdicts block the candidate version. On updates,
   the previous clean/current public version remains live; on first versions,
   nothing public is promoted.
+- `skillSearchDigest.publicVersion` is a derived public-browse cache, not a
+  moderation source of truth. `available` points to the exact approved public
+  `skillVersions` row and `unavailable` fails closed; a missing value exists only
+  during rollout/backfill and uses the legacy resolver. Skill visibility changes
+  and version scan-status changes must refresh the cache so hot browse/search
+  queries never need to walk version history.
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.

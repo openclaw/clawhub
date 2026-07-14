@@ -36,8 +36,17 @@ describe("security-scan-codex workflow", () => {
         "codex-security-scan": {
           env?: Record<string, unknown>;
           steps: WorkflowStep[];
+          strategy?: {
+            "max-parallel"?: number;
+            matrix?: { include?: Array<{ lane?: string; shard?: string }> };
+          };
           "timeout-minutes"?: number;
         };
+      };
+      on?: {
+        repository_dispatch?: { types?: string[] };
+        schedule?: Array<{ cron?: string }>;
+        workflow_dispatch?: unknown;
       };
     };
     const steps = workflow.jobs["codex-security-scan"].steps;
@@ -62,20 +71,49 @@ describe("security-scan-codex workflow", () => {
       "${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}",
     );
     expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
-    expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(20);
+    expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(40);
+    expect(workflow.on?.workflow_dispatch).toBeDefined();
+    expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);
+    expect(workflow.on?.schedule).toBeUndefined();
+    expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(10);
+    expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.include).toEqual([
+      { lane: "priority", shard: "priority-0" },
+      { lane: "shared", shard: "shared-0" },
+      { lane: "shared", shard: "shared-1" },
+      { lane: "shared", shard: "shared-2" },
+      { lane: "shared", shard: "shared-3" },
+      { lane: "shared", shard: "shared-4" },
+      { lane: "shared", shard: "shared-5" },
+      { lane: "shared", shard: "shared-6" },
+      { lane: "shared", shard: "shared-7" },
+      { lane: "shared", shard: "shared-8" },
+    ]);
+    expect(jobEnv.CODEX_SECURITY_SCAN_LANE).toBe("${{ matrix.lane }}");
+    expect(jobEnv.CODEX_SECURITY_SCAN_LIMIT).toBe(
+      "${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}",
+    );
+    expect(jobEnv.CODEX_SECURITY_SCAN_MAX_JOBS).toBe(
+      "${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}",
+    );
     expect(jobEnv.CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES).toBe(
-      "${{ inputs['max-runtime-minutes'] || '8' }}",
+      "${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}",
     );
     expect(jobEnv.CODEX_SECURITY_SCAN_TIMEOUT_MS).toBe(
       "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",
     );
+    expect(jobEnv.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN).toBe(
+      "${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN || '0' }}",
+    );
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
+    expect(jobEnv).not.toHaveProperty("CODEX_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expectSecretStepAllowlist(steps, "CODEX_API_KEY", ["Run Codex security worker"]);
     expectSecretStepAllowlist(steps, "OPENAI_API_KEY", [
       "Authenticate Codex CLI",
       "Run Codex security worker",
     ]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
+    expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();
@@ -86,6 +124,7 @@ describe("security-scan-codex workflow", () => {
     expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
     expect(skillspectorInstall).not.toContain("git+https://github.com/NVIDIA/skillspector.git'");
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({
+      CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
     });

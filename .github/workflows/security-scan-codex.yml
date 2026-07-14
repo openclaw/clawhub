@@ -1,6 +1,8 @@
 name: Security Scan Codex Worker
 
 on:
+  repository_dispatch:
+    types: [clawhub-security-scan]
   workflow_dispatch:
     inputs:
       limit:
@@ -16,12 +18,9 @@ on:
         required: false
         default: ""
       max-runtime-minutes:
-        description: "Stop claiming new batches after this many minutes"
+        description: "Stop claiming new jobs after this many minutes"
         required: true
-        default: "8"
-  schedule:
-    - cron: "*/5 * * * *"
-
+        default: "12"
 permissions:
   contents: read
 
@@ -31,21 +30,46 @@ concurrency:
 
 jobs:
   codex-security-scan:
-    name: Codex security scan shard ${{ matrix.shard }}
+    name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 20
+    timeout-minutes: 40
     environment: Production
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 10
       matrix:
-        shard: [0, 1, 2, 3]
+        include:
+          - lane: priority
+            shard: priority-0
+          - lane: shared
+            shard: shared-0
+          - lane: shared
+            shard: shared-1
+          - lane: shared
+            shard: shared-2
+          - lane: shared
+            shard: shared-3
+          - lane: shared
+            shard: shared-4
+          - lane: shared
+            shard: shared-5
+          - lane: shared
+            shard: shared-6
+          - lane: shared
+            shard: shared-7
+          - lane: shared
+            shard: shared-8
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '4' }}
-      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
-      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
+      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
+      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
+      CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
       CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
+      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN || '0' }}
+      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX || 'docker' }}
+      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE || 'ghcr.io/openclaw/clawscan-runtime@sha256:d85bfe671fe597edc6802f9d6a07dd91b59c69cec4faa6e8f89778037507dc3b' }}
+      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS || '300000' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
       CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
@@ -68,6 +92,12 @@ jobs:
           fi
           codex --version
 
+      - name: Install ClawScan CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openclaw/clawscan@0.1.1
+          clawscan --version
+
       - name: Install SkillSpector
         run: |
           set -euo pipefail
@@ -85,11 +115,13 @@ jobs:
 
       - name: Run Codex security worker
         env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
         run: |
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
+            --lane "$CODEX_SECURITY_SCAN_LANE" \
             --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
             --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
             --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"

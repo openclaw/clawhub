@@ -17,7 +17,31 @@ Search ranking should be lexicographic before it is numeric:
 3. category or topic match;
 4. summary match;
 
-Numeric scores, trust state, popularity, and recency may order results inside those broad tiers, but must not move a weaker tier above a stronger tier.
+Numeric scores, trust state, popularity, and recency may order results inside those broad tiers, but must not make a weaker-evidence match eligible for a stronger tier.
+
+## Exact-Match Squat Gate
+
+The exact-match tier is authority, and authority must be earned (issue #3054). An exact full-field
+match claims tier 1 only when the item carries at least one signal that is expensive to fake:
+
+- the curated `official` flag,
+- provenance or rebuild verification (self-serve tiers such as structural or source-linked do not
+  qualify), or
+- measurable adoption (identity-deduped downloads plus installs).
+
+An exact match with none of those signals is ranked with the lexical tier instead. Without this
+gate, one unverified publish whose name equals a popular generic query headlines that query above
+long-adopted alternatives; display names are not even unique. Demoted items still rank by text
+score inside the lexical tier, so fresh legitimate packages stay discoverable while they earn
+signal.
+
+Within a tier, a log-scale adoption bucket orders results before the raw text-match score, then the
+existing tie-breakers apply (official, verification tier, stars, installs, downloads, recency).
+Log-scale bucketing rewards magnitude, not vanity deltas, and identity-deduped download metering
+(`specs/download-metering.md`) keeps buckets costly to inflate.
+
+The shared implementation lives in `convex/lib/searchRanking.ts` and must stay the single ranking
+seam for both package and skill-as-package catalog search.
 
 The same contract applies across `/search`, the header typeahead, package/plugin catalog search, and skill-as-package catalog search.
 

@@ -66,6 +66,7 @@ export function AbusePage({
   onChangeTab,
   onClose,
   onDismissSignal,
+  onMarkReviewed,
   onLoadMore,
   onRefresh,
   onReopenSignal,
@@ -102,6 +103,7 @@ export function AbusePage({
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
   onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
+  onMarkReviewed: (item: PublisherAbuseReviewItem) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
   onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
@@ -133,16 +135,21 @@ export function AbusePage({
   const selectedPublisher = selectedItem?.publisher ?? null;
   const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId);
   const visiblePending = dashboard ? getPublisherAbuseVisiblePendingItems(dashboard) : [];
-  const potentialBan = Math.max(
-    dashboard?.latestRun?.potentialBanCandidateCount ?? 0,
-    visiblePending.filter((item) => item.nomination.label === "potential_ban_candidate").length,
-  );
-  const review = Math.max(
-    dashboard?.latestRun?.reviewCount ?? 0,
-    visiblePending.filter((item) => item.nomination.label === "review").length,
-  );
-  const totalPending = Math.max(potentialBan + review, visiblePending.length);
-  const resolved = tab === "resolved" ? items.length : (dashboard?.recentResolvedItems.length ?? 0);
+  const visiblePotentialBan = visiblePending.filter(
+    (item) => item.nomination.label === "potential_ban_candidate",
+  ).length;
+  const visibleReview = visiblePending.filter((item) => item.nomination.label === "review").length;
+  const potentialBan =
+    dashboard?.pendingPotentialBanCandidateCount ??
+    Math.max(dashboard?.latestRun?.potentialBanCandidateCount ?? 0, visiblePotentialBan);
+  const review =
+    dashboard?.pendingReviewCount ??
+    Math.max(dashboard?.latestRun?.reviewCount ?? 0, visibleReview);
+  const totalPending =
+    dashboard?.pendingCount ?? Math.max(potentialBan + review, visiblePending.length);
+  const resolvedVisibleCount = dashboard?.recentResolvedItems.length ?? 0;
+  const resolved =
+    tab === "resolved" ? Math.max(items.length, resolvedVisibleCount) : resolvedVisibleCount;
   const dashboardLoaded = dashboard !== undefined;
   const nominationPageLoaded = pageStatus !== "LoadingFirstPage";
   const loaded = dashboardLoaded && nominationPageLoaded;
@@ -160,16 +167,30 @@ export function AbusePage({
             : totalPending;
   const totalForTab = loaded ? Math.max(latestRunTotalForTab, items.length) : latestRunTotalForTab;
   const currentPageTotalForTab = loaded ? totalForTab : 0;
+  const canLoadMore = pageStatus === "CanLoadMore";
+  const loadingMore = pageStatus === "LoadingMore";
+  const nominationPageHasMore = canLoadMore || loadingMore;
   const potentialBanTabCount = Math.max(
     potentialBan,
     tab === "potential_ban_candidate" ? currentPageTotalForTab : 0,
   );
+  const potentialBanTabHasMore =
+    dashboard?.pendingPotentialBanCandidateCountHasMore ||
+    (tab === "potential_ban_candidate" && nominationPageHasMore);
   const reviewTabCount = Math.max(review, tab === "review" ? currentPageTotalForTab : 0);
+  const reviewTabHasMore =
+    dashboard?.pendingReviewCountHasMore || (tab === "review" && nominationPageHasMore);
   const allPendingTabCount = Math.max(
     totalPending,
     tab === "all_pending" ? currentPageTotalForTab : 0,
     potentialBanTabCount + reviewTabCount,
   );
+  const allPendingTabHasMore =
+    dashboard?.pendingCountHasMore ||
+    potentialBanTabHasMore ||
+    reviewTabHasMore ||
+    (tab === "all_pending" && nominationPageHasMore);
+  const resolvedTabHasMore = tab === "resolved" && nominationPageHasMore;
   const signalTabCount = Math.max(
     signalDashboardCount,
     tab === "signals" && signalsLoaded ? signalLoadedCount : 0,
@@ -182,13 +203,29 @@ export function AbusePage({
     signalTabHasMore && signalTabCount > 0
       ? `${formatWholeNumber(signalTabCount)}+`
       : formatWholeNumber(signalTabCount);
-  const canLoadMore = pageStatus === "CanLoadMore";
-  const loadingMore = pageStatus === "LoadingMore";
+  const potentialBanTabCountLabel = formatAbuseTabCountLabel(
+    potentialBanTabCount,
+    potentialBanTabHasMore,
+  );
+  const reviewTabCountLabel = formatAbuseTabCountLabel(reviewTabCount, reviewTabHasMore);
+  const allPendingTabCountLabel = formatAbuseTabCountLabel(
+    allPendingTabCount,
+    allPendingTabHasMore,
+  );
+  const resolvedTabCountLabel = formatAbuseTabCountLabel(resolved, resolvedTabHasMore);
   const signalsCanLoadMore = signalPageStatus === "CanLoadMore";
   const signalsLoadingMore = signalPageStatus === "LoadingMore";
+  const activeNominationHasMore =
+    tab === "potential_ban_candidate"
+      ? potentialBanTabHasMore
+      : tab === "review"
+        ? reviewTabHasMore
+        : tab === "resolved"
+          ? resolvedTabHasMore
+          : allPendingTabHasMore;
   const nominationCountLabel =
-    loaded && (canLoadMore || loadingMore)
-      ? `Showing ${formatWholeNumber(items.length)}+ nominations`
+    loaded && (nominationPageHasMore || activeNominationHasMore)
+      ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)}+ nominations`
       : loaded
         ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
         : "Loading…";
@@ -283,6 +320,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "potential_ban_candidate"}
           count={dashboardLoaded ? potentialBanTabCount : undefined}
+          countLabel={dashboardLoaded ? potentialBanTabCountLabel : undefined}
           label="Potential ban"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("potential_ban_candidate")}
@@ -290,6 +328,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "review"}
           count={dashboardLoaded ? reviewTabCount : undefined}
+          countLabel={dashboardLoaded ? reviewTabCountLabel : undefined}
           label="On the brink"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("review")}
@@ -297,6 +336,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "all_pending"}
           count={dashboardLoaded ? allPendingTabCount : undefined}
+          countLabel={dashboardLoaded ? allPendingTabCountLabel : undefined}
           label="All flagged"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("all_pending")}
@@ -304,6 +344,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "resolved"}
           count={dashboardLoaded ? resolved : undefined}
+          countLabel={dashboardLoaded ? resolvedTabCountLabel : undefined}
           label="Resolved"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("resolved")}
@@ -637,6 +678,15 @@ export function AbusePage({
                     <div className="pa-actions">
                       <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onMarkReviewed(selectedItem)}
+                      >
+                        <XCircle size={14} />
+                        Mark reviewed
+                      </Button>
+                      <Button
+                        type="button"
                         variant="destructive"
                         size="sm"
                         className="pa-ban"
@@ -715,6 +765,10 @@ function PublisherAbuseTabButton({
       )}
     </button>
   );
+}
+
+function formatAbuseTabCountLabel(count: number, hasMore: boolean | undefined) {
+  return hasMore && count > 0 ? `${formatWholeNumber(count)}+` : formatWholeNumber(count);
 }
 
 function PublisherAbuseTableSkeletonRows({

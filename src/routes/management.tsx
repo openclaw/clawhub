@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ClipboardList,
   GitBranch,
+  Megaphone,
   PackageSearch,
   Plug,
   UserRound,
@@ -52,12 +53,16 @@ import {
   type PublisherAbuseReviewItem,
   type PublisherAbuseSignalStatus,
   type PublisherAbuseTab,
+  type PromotionEntry,
+  type PromotionInput,
+  type PromotionStatus,
   type RecentVersionEntry,
   type ReportedSkillEntry,
   type SkillBySlugResult,
   USER_BAN_REASON_MAX_LENGTH,
 } from "./-management/managementShared";
 import { PluginsPage } from "./-management/PluginsPage";
+import { PromotionsPage } from "./-management/PromotionsPage";
 import { RecentPushesPage } from "./-management/RecentPushesPage";
 import { ReportsPage } from "./-management/ReportsPage";
 import { SkillsPage } from "./-management/SkillsPage";
@@ -71,6 +76,7 @@ const MANAGEMENT_VIEWS = new Set<string>([
   "publishers",
   "skills",
   "plugins",
+  "promotions",
   "duplicates",
   "recent",
   "audit",
@@ -243,6 +249,20 @@ export function Management() {
     staff && abuseViewActive ? {} : "skip",
   );
 
+  const {
+    results: promotionResults,
+    status: promotionPageStatus,
+    loadMore: loadMorePromotions,
+  } = usePaginatedQuery(
+    api.promotions.listForStaff,
+    admin && activeView === "promotions" ? {} : "skip",
+    { initialNumItems: 25 },
+  );
+  const promotions =
+    promotionPageStatus === "LoadingFirstPage" ? undefined : (promotionResults as PromotionEntry[]);
+  const createPromotion = useMutation(api.promotions.create);
+  const updatePromotion = useMutation(api.promotions.update);
+  const setPromotionStatus = useMutation(api.promotions.setStatus);
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
   const unbanUser = useMutation(api.users.unbanUser);
@@ -257,6 +277,9 @@ export function Management() {
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
   const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
+  const markPublisherAbuseNominationReviewed = useMutation(
+    api.publisherAbuse.markPublisherAbuseNominationReviewed,
+  );
   const setPublisherAbuseAutobanEnabled = useMutation(
     api.publisherAbuse.setPublisherAbuseAutobanEnabled,
   );
@@ -656,6 +679,30 @@ export function Management() {
     });
   };
 
+  const requestMarkPublisherAbuseNominationReviewed = (item: PublisherAbuseReviewItem) => {
+    const label = item.nomination.handleSnapshot;
+    const note = publisherAbuseNotes.trim() || undefined;
+    setConfirmRequest({
+      title: `Mark ${label} reviewed?`,
+      body: "Removes this nomination from the active abuse queue without banning the user. The score and review note stay in the resolved history.",
+      confirmLabel: "Mark reviewed",
+      onConfirm: () => {
+        void markPublisherAbuseNominationReviewed({
+          nominationId: item.nomination._id,
+          expectedLatestScoreId: item.nomination.latestScoreId,
+          expectedUpdatedAt: item.nomination.updatedAt,
+          note,
+        })
+          .then(() => {
+            toast.success("Nomination marked reviewed.");
+            setPublisherAbuseNotes("");
+            setSelectedPublisherAbuseNominationId(null);
+          })
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
   const requestDismissPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Dismiss ${item.signal.skillDisplayName}?`,
@@ -689,6 +736,46 @@ export function Management() {
           .catch((error) => toast.error(formatMutationError(error)));
       },
     });
+  };
+
+  const handleCreatePromotion = (input: PromotionInput) =>
+    createPromotion(input)
+      .then(() => {
+        toast.success("Promotion created as draft.");
+        return true;
+      })
+      .catch((error) => {
+        toast.error(formatMutationError(error));
+        return false;
+      });
+
+  const handleUpdatePromotion = (targetSlug: string, input: PromotionInput) =>
+    updatePromotion({ targetSlug, ...input })
+      .then(() => {
+        toast.success("Promotion updated.");
+        return true;
+      })
+      .catch((error) => {
+        toast.error(formatMutationError(error));
+        return false;
+      });
+
+  const handleSetPromotionStatus = (slug: string, status: PromotionStatus) => {
+    const apply = () => {
+      void setPromotionStatus({ slug, status })
+        .then(() => toast.success(`Promotion "${slug}" is now ${status}.`))
+        .catch((error) => toast.error(formatMutationError(error)));
+    };
+    if (status === "active") {
+      setConfirmRequest({
+        title: `Activate "${slug}"?`,
+        body: "Active promotions inside their window are served publicly to every OpenClaw CLI.",
+        confirmLabel: "Activate promotion",
+        onConfirm: apply,
+      });
+      return;
+    }
+    apply();
   };
 
   const requestTogglePublisherAbuseAutoban = () => {
@@ -773,6 +860,7 @@ export function Management() {
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
             onDismissSignal={requestDismissPublisherAbuseSignal}
+            onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {
                 loadMorePublisherAbuseSignals(25);
@@ -909,6 +997,22 @@ export function Management() {
             description="User administration is available to admins."
           />
         ) : null}
+        {admin && activeView === "promotions" ? (
+          <PromotionsPage
+            promotions={promotions}
+            pageStatus={promotionPageStatus}
+            onCreate={handleCreatePromotion}
+            onLoadMore={() => loadMorePromotions(25)}
+            onUpdate={handleUpdatePromotion}
+            onSetStatus={handleSetPromotionStatus}
+          />
+        ) : null}
+        {!admin && activeView === "promotions" ? (
+          <ManagementPlaceholder
+            title="Promotions"
+            description="Promotion administration is available to admins."
+          />
+        ) : null}
         {activeView === "overview" ? (
           <ManagementPlaceholder
             title="Overview"
@@ -1034,6 +1138,14 @@ function ManagementSidebar({
             label="Plugins"
             view="plugins"
           />
+          {admin ? (
+            <ManagementSidebarLink
+              active={activeView === "promotions"}
+              icon={<Megaphone size={15} />}
+              label="Promotions"
+              view="promotions"
+            />
+          ) : null}
         </div>
       </nav>
     </aside>
@@ -1084,6 +1196,7 @@ const MANAGEMENT_VIEW_LABELS: Record<ManagementView, string> = {
   publishers: "Publishers",
   skills: "Skills",
   plugins: "Plugins",
+  promotions: "Promotions",
   duplicates: "Duplicate candidates",
   recent: "Recent pushes",
   audit: "Audit log",

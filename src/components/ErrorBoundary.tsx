@@ -73,7 +73,7 @@ function extractErrorMessage(error: unknown): string {
 function ErrorFallback({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-10 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[rgba(255,107,74,0.12)]">
+      <div className="flex h-12 w-12 items-center justify-center rounded-[var(--oc-radius-inset)] bg-[color:var(--oc-surface-accent-soft)]">
         <AlertTriangle className="h-6 w-6 text-[color:var(--accent)]" />
       </div>
       <div className="flex flex-col gap-1">

@@ -103,7 +103,12 @@ export function CatalogMetadataFields({
           <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
           {categoryToolbar}
         </div>
-        <DropdownMenu>
+        {/* modal={false}: a modal dropdown disables pointer events on the rest
+            of the page, so the click that dismisses it targets <body> — which a
+            parent Dialog counts as an outside interaction and closes too,
+            losing unsaved selections. Non-modal keeps the dialog interactive so
+            only the dropdown dismisses. */}
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               id={`${fieldIdPrefix}Categories`}
