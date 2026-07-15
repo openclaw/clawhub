@@ -68,7 +68,7 @@ jobs:
       CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
       CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN || '0' }}
       CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX || 'docker' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE || 'ghcr.io/openclaw/clawscan-runtime@sha256:d85bfe671fe597edc6802f9d6a07dd91b59c69cec4faa6e8f89778037507dc3b' }}
+      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE || 'ghcr.io/openclaw/clawscan-runtime@sha256:012f045c77e5adce3ff9d00ed37fe04ed020fdb555ebdcebab0e0dca48e19d7a' }}
       CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS || '300000' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
@@ -95,7 +95,7 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.1
+          npm install -g @openclaw/clawscan@0.1.3
           clawscan --version
 
       - name: Install SkillSpector
