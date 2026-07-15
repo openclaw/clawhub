@@ -208,7 +208,7 @@ JSON`,
     },
   );
 
-  it("accepts a skipped VirusTotal scanner status from ClawScan", async () => {
+  it("fails the job when VirusTotal scanner status is skipped", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     await writeFakeClawScanCommand(
@@ -235,7 +235,10 @@ JSON`,
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
     try {
       const client = {
-        action: vi.fn(async (..._args: unknown[]) => ({})),
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: false } : {};
+        }),
       };
       const result = await processJob(
         client,
@@ -246,13 +249,13 @@ JSON`,
       );
 
       expect(result).toEqual({
-        completed: true,
-        hardFailed: false,
+        completed: false,
+        hardFailed: true,
         retryableFailed: false,
       });
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        llmAnalysis: { status: "clean", verdict: "benign" },
+        error: "ClawScan scanner virustotal status was skipped",
       });
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

@@ -1352,7 +1352,7 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const allowedScannerStatuses: Record<string, Set<string>> = {
     "clawscan-static": new Set(["completed"]),
     skillspector: new Set(["completed"]),
-    virustotal: new Set(["completed", "skipped"]),
+    virustotal: new Set(["completed"]),
   };
   for (const [scanner, status] of Object.entries(scannerStatuses)) {
     const allowed = allowedScannerStatuses[scanner] ?? new Set(["completed"]);
