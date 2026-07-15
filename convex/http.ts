@@ -51,7 +51,6 @@ import {
   listPromotionsV1Http,
   promotionsGetRouterV1Http,
   promotionsPostRouterV1Http,
-  catalogFeedV1Http,
   catalogSkillsFeedV1Http,
   promotionsFeedV1Http,
   usersGetRouterV1Http,
@@ -61,6 +60,7 @@ import {
   whoamiV1Http,
   contentRightsV1Http,
 } from "./httpApiV1";
+import { signedCatalogFeedV1Http } from "./httpApiV1/catalogFeedSigning";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import {
@@ -166,7 +166,7 @@ http.route({
 http.route({
   path: ApiRoutes.catalogFeed,
   method: "GET",
-  handler: catalogFeedV1Http,
+  handler: signedCatalogFeedV1Http,
 });
 
 http.route({
