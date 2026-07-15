@@ -118,6 +118,7 @@ describe("user profile route", () => {
       if ("publisherHandle" in args) return { publisher, members: [] };
       if ("publisherId" in args) return false;
       if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) return [];
       return publisher;
     });
     unfollowPublisherMock.mockReset();
@@ -225,6 +226,7 @@ describe("user profile route", () => {
       if ("publisherHandle" in args) return { publisher, members: [] };
       if ("publisherId" in args) return true;
       if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) return [];
       return publisher;
     });
     const route = await loadRoute();

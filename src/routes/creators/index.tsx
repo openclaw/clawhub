@@ -89,6 +89,26 @@ type FollowedPublisherPage = {
   items: FollowedPublisherItem[];
 };
 
+function followedPublisherItemsEqual(
+  left: FollowedPublisherItem[],
+  right: FollowedPublisherItem[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        item.publisher._id === other.publisher._id &&
+        item.publisher.handle === other.publisher.handle &&
+        item.publisher.displayName === other.publisher.displayName &&
+        item.publisher.kind === other.publisher.kind &&
+        item.publisher.image === other.publisher.image
+      );
+    })
+  );
+}
+
 function normalizePublisherKind(value: unknown): PublisherKindSearch | undefined {
   if (value === "orgs") return "orgs";
   if (value === "people" || value === "builders" || value === "individuals") return "people";
@@ -247,6 +267,13 @@ function PublishersIndex() {
       const nextPage = { cursorKey, items: followedPublishersResult.items };
       const existingIndex = previous.findIndex((page) => page.cursorKey === cursorKey);
       if (existingIndex >= 0) {
+        const existingPage = previous[existingIndex];
+        if (
+          existingPage &&
+          followedPublisherItemsEqual(existingPage.items, followedPublishersResult.items)
+        ) {
+          return previous;
+        }
         return previous.map((page, index) => (index === existingIndex ? nextPage : page));
       }
       return followedCursorRequest ? [...previous, nextPage] : [nextPage];
