@@ -49,6 +49,11 @@ Follow and unfollow operations must be idempotent. Client retries should not
 duplicate rows, emit duplicate notification state, or fail because a prior
 attempt already succeeded.
 
+Omitting a notification preference on an idempotent follow retry preserves the
+existing preference. It must not silently unmute a follow. Follow-list reads
+are private to the authenticated user, cursor-paginated, and bounded even when
+inactive publishers or search filtering make the result sparse.
+
 Publisher rename, handle change, profile URL change, or ownership change must
 not silently transfer a follow to an unrelated identity. If ownership changes
 materially, ClawHub should preserve the stable id and emit a material-change

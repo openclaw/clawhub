@@ -2,13 +2,7 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import {
-  json,
-  parseJsonPayload,
-  requireApiTokenUserOrResponse,
-  text,
-  toOptionalNumber,
-} from "./shared";
+import { json, parseJsonPayload, requireApiTokenUserOrResponse, text } from "./shared";
 
 const publisherFollowInternalRefs = internal as unknown as {
   publisherFollows: {
@@ -40,6 +34,34 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function parseListParams(url: URL, headers: HeadersInit) {
+  const limitValue = url.searchParams.get("limit");
+  if (limitValue !== null && !/^[1-9]\d*$/.test(limitValue)) {
+    return { response: text("Invalid follow list limit", 400, headers) } as const;
+  }
+  const limit = limitValue === null ? undefined : Number(limitValue);
+  if (limit !== undefined && !Number.isSafeInteger(limit)) {
+    return { response: text("Invalid follow list limit", 400, headers) } as const;
+  }
+
+  const cursor = url.searchParams.get("cursor");
+  if (url.searchParams.has("cursor") && !cursor) {
+    return { response: text("Invalid cursor format", 400, headers) } as const;
+  }
+  const query = url.searchParams.get("q")?.trim();
+  if (query && query.length > 200) {
+    return { response: text("Follow list query is too long", 400, headers) } as const;
+  }
+
+  return {
+    args: {
+      ...(cursor ? { cursor } : {}),
+      ...(limit === undefined ? {} : { limit }),
+      ...(query ? { query } : {}),
+    },
+  } as const;
+}
+
 export async function publisherFollowsGetV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -48,12 +70,20 @@ export async function publisherFollowsGetV1Handler(ctx: ActionCtx, request: Requ
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
-  const limit = toOptionalNumber(url.searchParams.get("limit"));
-  const result = await ctx.runQuery(
-    publisherFollowInternalRefs.publisherFollows.listFollowedPublishersInternal as never,
-    { followerUserId: auth.userId, ...(limit ? { limit } : {}) } as never,
-  );
-  return json(result, 200, rate.headers);
+  const params = parseListParams(url, rate.headers);
+  if ("response" in params) return params.response;
+  try {
+    const result = await ctx.runQuery(
+      publisherFollowInternalRefs.publisherFollows.listFollowedPublishersInternal as never,
+      { followerUserId: auth.userId, ...params.args } as never,
+    );
+    return json(result, 200, rate.headers);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("Invalid cursor format")) {
+      return text("Invalid cursor format", 400, rate.headers);
+    }
+    throw error;
+  }
 }
 
 export async function publisherFollowsPostV1Handler(ctx: ActionCtx, request: Request) {

@@ -10,6 +10,7 @@ const DEFAULT_NOTIFICATION_PREFERENCE = "all" as const;
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 100;
 const LIST_SCAN_BATCH_SIZE = 100;
+const MAX_LIST_SCAN_PAGES = 4;
 
 type NotificationPreference = "all" | "none";
 
@@ -66,8 +67,9 @@ async function followPublisherForUser(
   },
 ) {
   const publisher = await requireActivePublisher(ctx, args.publisherId);
-  const notifications = args.notifications ?? DEFAULT_NOTIFICATION_PREFERENCE;
   const existing = await getExistingFollow(ctx, args.followerUserId, args.publisherId);
+  const notifications =
+    args.notifications ?? existing?.notifications ?? DEFAULT_NOTIFICATION_PREFERENCE;
   const now = Date.now();
 
   if (existing) {
@@ -149,23 +151,33 @@ async function unfollowPublisherForUser(
 
 async function listPublisherFollowsForUser(
   ctx: QueryCtx,
-  args: { followerUserId: Id<"users">; limit?: number },
+  args: { followerUserId: Id<"users">; cursor?: string | null; limit?: number; query?: string },
 ) {
   const limit = clampListLimit(args.limit);
+  const normalizedQuery = args.query?.trim().toLowerCase();
   const items = [];
-  let cursor: string | null = null;
+  let cursor = args.cursor ?? null;
   let isDone = false;
+  let scannedPages = 0;
 
-  while (items.length < limit && !isDone) {
+  while (items.length < limit && !isDone && scannedPages < MAX_LIST_SCAN_PAGES) {
+    const remaining = Math.min(limit - items.length, LIST_SCAN_BATCH_SIZE);
     const page = await ctx.db
       .query("publisherFollows")
       .withIndex("by_follower", (q) => q.eq("followerUserId", args.followerUserId))
       .order("desc")
-      .paginate({ cursor, numItems: LIST_SCAN_BATCH_SIZE });
+      .paginate({ cursor, numItems: remaining });
 
     for (const follow of page.page) {
       const publisher = await ctx.db.get(follow.publisherId);
       if (!publisher || !isPublisherActive(publisher)) continue;
+      if (
+        normalizedQuery &&
+        !publisher.displayName.toLowerCase().includes(normalizedQuery) &&
+        !publisher.handle.toLowerCase().includes(normalizedQuery)
+      ) {
+        continue;
+      }
       items.push({
         ...toFollowResult(follow),
         publisher: {
@@ -181,9 +193,10 @@ async function listPublisherFollowsForUser(
 
     cursor = page.continueCursor;
     isDone = page.isDone;
+    scannedPages += 1;
   }
 
-  return { ok: true as const, items };
+  return { ok: true as const, items, continueCursor: isDone ? "" : cursor, isDone };
 }
 
 export const isFollowingPublisher = query({
@@ -224,10 +237,19 @@ export const unfollowPublisher = mutation({
 });
 
 export const listFollowedPublishers = query({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    query: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
-    return await listPublisherFollowsForUser(ctx, { followerUserId: userId, limit: args.limit });
+    return await listPublisherFollowsForUser(ctx, {
+      followerUserId: userId,
+      cursor: args.cursor,
+      limit: args.limit,
+      query: args.query,
+    });
   },
 });
 
@@ -246,6 +268,11 @@ export const unfollowPublisherInternal = internalMutation({
 });
 
 export const listFollowedPublishersInternal = internalQuery({
-  args: { followerUserId: v.id("users"), limit: v.optional(v.number()) },
+  args: {
+    followerUserId: v.id("users"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    query: v.optional(v.string()),
+  },
   handler: async (ctx, args) => await listPublisherFollowsForUser(ctx, args),
 });

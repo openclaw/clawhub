@@ -35,8 +35,12 @@ const unfollowPublisherInternalHandler = (
 )._handler;
 const listFollowedPublishersInternalHandler = (
   listFollowedPublishersInternal as unknown as WrappedHandler<
-    { followerUserId: string; limit?: number },
-    { items: Array<{ publisher: { handle: string }; notifications: "all" | "none" }> }
+    { followerUserId: string; cursor?: string | null; limit?: number; query?: string },
+    {
+      items: Array<{ publisher: { handle: string }; notifications: "all" | "none" }>;
+      continueCursor: string;
+      isDone: boolean;
+    }
   >
 )._handler;
 
@@ -71,6 +75,16 @@ function makeCtx(params: {
   const insert = vi.fn(async (table: string) => `${table}:new`);
   const patch = vi.fn();
   const deleteDoc = vi.fn();
+  const paginate = vi.fn(async (_opts: { cursor: string | null; numItems: number }) => {
+    const pages = params.listPages ?? [params.listRows ?? []];
+    const page = pages[pageIndex] ?? [];
+    pageIndex += 1;
+    return {
+      page,
+      isDone: pageIndex >= pages.length,
+      continueCursor: pageIndex >= pages.length ? "" : `cursor:${pageIndex}`,
+    };
+  });
   const query = vi.fn((table: string) => {
     if (table !== "publisherFollows") throw new Error(`unexpected table ${table}`);
     return {
@@ -82,16 +96,7 @@ function makeCtx(params: {
           unique: async () => params.existingFollow ?? null,
           order: () => ({
             take: async () => params.listRows ?? [],
-            paginate: async () => {
-              const pages = params.listPages ?? [params.listRows ?? []];
-              const page = pages[pageIndex] ?? [];
-              pageIndex += 1;
-              return {
-                page,
-                isDone: pageIndex >= pages.length,
-                continueCursor: pageIndex >= pages.length ? "" : `cursor:${pageIndex}`,
-              };
-            },
+            paginate,
           }),
         };
       },
@@ -99,7 +104,7 @@ function makeCtx(params: {
   });
   return {
     ctx: { db: { get, insert, patch, delete: deleteDoc, query } },
-    db: { get, insert, patch, deleteDoc, query },
+    db: { get, insert, patch, deleteDoc, paginate, query },
   };
 }
 
@@ -161,6 +166,26 @@ describe("publisher follows", () => {
       updatedAt: expect.any(Number),
     });
     expect(db.insert).not.toHaveBeenCalledWith("publisherFollows", expect.anything());
+  });
+
+  it("preserves an existing notification preference when a retry omits it", async () => {
+    const existingFollow = {
+      _id: "publisherFollows:1",
+      followerUserId: "users:viewer",
+      publisherId: "publishers:1",
+      notifications: "none",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const { ctx, db } = makeCtx({ existingFollow });
+
+    const result = await followPublisherInternalHandler(ctx, {
+      followerUserId: "users:viewer",
+      publisherId: "publishers:1",
+    });
+
+    expect(result).toMatchObject({ following: true, notifications: "none" });
+    expect(db.patch).not.toHaveBeenCalled();
   });
 
   it("unfollow is idempotent and audits only real deletes", async () => {
@@ -259,7 +284,7 @@ describe("publisher follows", () => {
   });
 
   it("continues scanning until active follows fill the requested list", async () => {
-    const { ctx } = makeCtx({
+    const { ctx, db } = makeCtx({
       listPages: [
         [
           {
@@ -295,5 +320,104 @@ describe("publisher follows", () => {
         publisher: expect.objectContaining({ handle: "active-2" }),
       }),
     ]);
+    expect(result).toMatchObject({ continueCursor: "", isDone: true });
+    expect(db.paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 1 });
+    expect(db.paginate).toHaveBeenNthCalledWith(2, { cursor: "cursor:1", numItems: 1 });
+  });
+
+  it("starts the followed publisher list from a supplied cursor", async () => {
+    const { ctx, db } = makeCtx({
+      listPages: [
+        [
+          {
+            _id: "publisherFollows:2",
+            followerUserId: "users:viewer",
+            publisherId: "publishers:2",
+            notifications: "all",
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+      ],
+    });
+
+    const result = await listFollowedPublishersInternalHandler(ctx, {
+      followerUserId: "users:viewer",
+      cursor: "cursor:older",
+      limit: 25,
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result).toMatchObject({ continueCursor: "", isDone: true });
+    expect(db.paginate).toHaveBeenCalledWith({ cursor: "cursor:older", numItems: 25 });
+  });
+
+  it("filters followed publishers by handle or display name while scanning", async () => {
+    const { ctx } = makeCtx({
+      listPages: [
+        [
+          {
+            _id: "publisherFollows:1",
+            followerUserId: "users:viewer",
+            publisherId: "publishers:1",
+            notifications: "all",
+            createdAt: 1,
+            updatedAt: 3,
+          },
+        ],
+        [
+          {
+            _id: "publisherFollows:2",
+            followerUserId: "users:viewer",
+            publisherId: "publishers:2",
+            notifications: "all",
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+      ],
+    });
+
+    const result = await listFollowedPublishersInternalHandler(ctx, {
+      followerUserId: "users:viewer",
+      limit: 1,
+      query: "active",
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({
+        publisherId: "publishers:2",
+        publisher: expect.objectContaining({ handle: "active-2" }),
+      }),
+    ]);
+  });
+
+  it("returns a cursor instead of exhausting sparse followed publisher searches", async () => {
+    const page = [
+      {
+        _id: "publisherFollows:1",
+        followerUserId: "users:viewer",
+        publisherId: "publishers:1",
+        notifications: "all",
+        createdAt: 1,
+        updatedAt: 3,
+      },
+    ];
+    const { ctx, db } = makeCtx({
+      listPages: [page, page, page, page, page],
+    });
+
+    const result = await listFollowedPublishersInternalHandler(ctx, {
+      followerUserId: "users:viewer",
+      limit: 1,
+      query: "no-match",
+    });
+
+    expect(result).toMatchObject({
+      items: [],
+      continueCursor: "cursor:4",
+      isDone: false,
+    });
+    expect(db.paginate).toHaveBeenCalledTimes(4);
   });
 });
