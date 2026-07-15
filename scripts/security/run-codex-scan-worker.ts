@@ -1304,10 +1304,6 @@ function clawScanShadowEnabled() {
 
 type ScanImplementation = "codex" | "clawscan";
 
-export function selectScanImplementation(job: ClaimedJob): ScanImplementation {
-  return job.job.targetKind === "skillVersion" ? "clawscan" : "codex";
-}
-
 function artifactCompletedAtMs(artifact: Record<string, unknown>) {
   const completedAt = readString(artifact, ["completedAt"]);
   const parsed = completedAt ? Date.parse(completedAt) : Number.NaN;
@@ -1353,8 +1349,14 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   }
 
   const scannerStatuses = readClawScanScannerStatuses(artifact);
+  const allowedScannerStatuses: Record<string, Set<string>> = {
+    "clawscan-static": new Set(["completed"]),
+    skillspector: new Set(["completed"]),
+    virustotal: new Set(["completed", "skipped"]),
+  };
   for (const [scanner, status] of Object.entries(scannerStatuses)) {
-    if (status !== "completed") {
+    const allowed = allowedScannerStatuses[scanner] ?? new Set(["completed"]);
+    if (!allowed.has(status)) {
       throw new Error(`ClawScan scanner ${scanner} status was ${status}`);
     }
   }
@@ -1695,10 +1697,11 @@ export async function processJob(
   token: string,
   job: ClaimedJob,
   diagnosticsRoot: string | undefined,
+  implementation: ScanImplementation = "codex",
 ): Promise<ProcessJobResult> {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
-  const scanImplementation = selectScanImplementation(job);
+  const scanImplementation = implementation;
   const clawscan: ClawScanCommandDiagnostic = {};
   const codex: CodexCommandDiagnostic = {};
   const skillSpector: CodexCommandDiagnostic = {};

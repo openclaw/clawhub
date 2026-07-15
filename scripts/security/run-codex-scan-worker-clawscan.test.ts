@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaimedJob } from "./run-codex-scan-worker";
-import { processJob, selectScanImplementation } from "./run-codex-scan-worker";
+import { processJob } from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
 
@@ -45,36 +45,93 @@ function skillVersionJob(jobId: string): ClaimedJob {
   };
 }
 
-function withTargetKind(job: ClaimedJob, targetKind: ClaimedJob["job"]["targetKind"]): ClaimedJob {
-  return {
-    ...job,
-    job: {
-      ...job.job,
-      targetKind,
-    },
-  };
-}
-
 async function writeFakeClawScanCommand(path: string, body: string) {
   await writeFile(path, `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`);
   await chmod(path, 0o755);
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
-  it("selects ClawScan authority only for skillVersion jobs", () => {
-    expect(selectScanImplementation(skillVersionJob("securityScanJobs:impl-skill"))).toBe(
-      "clawscan",
+  it("defaults skillVersion jobs to the legacy codex path unless clawscan is explicitly selected", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const clawscanMarker = join(workspace, "clawscan-called.log");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `echo "called" > ${JSON.stringify(clawscanMarker)}
+exit 0`,
     );
-    expect(
-      selectScanImplementation(
-        withTargetKind(skillVersionJob("securityScanJobs:impl-package"), "packageRelease"),
-      ),
-    ).toBe("codex");
-    expect(
-      selectScanImplementation(
-        withTargetKind(skillVersionJob("securityScanJobs:impl-request"), "skillScanRequest"),
-      ),
-    ).toBe("codex");
+
+    const binDir = await tempDir();
+    const legacyMarker = join(workspace, "legacy-called.log");
+    await writeFakeClawScanCommand(
+      join(binDir, "skillspector"),
+      `echo "skillspector" >> ${JSON.stringify(legacyMarker)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"status":"clean","issue_count":0,"issues":[]}
+JSON`,
+    );
+    await writeFakeClawScanCommand(
+      join(binDir, "codex"),
+      `echo "codex" >> ${JSON.stringify(legacyMarker)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-last-message)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"verdict":"benign","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance"}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    const previousPath = process.env.PATH;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+    try {
+      const client = {
+        action: vi.fn(async (..._args: unknown[]) => ({})),
+      };
+      const result = await processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:default-legacy"),
+        undefined,
+      );
+
+      expect(result).toEqual({
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      });
+      expect(await readFile(legacyMarker, "utf8")).toContain("codex");
+      await expect(readFile(clawscanMarker, "utf8")).rejects.toThrow();
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
   });
 
   it.each([
@@ -119,6 +176,7 @@ JSON`,
           "worker-auth",
           skillVersionJob(`securityScanJobs:${verdict}`),
           undefined,
+          "clawscan",
         );
 
         expect(result).toEqual({
@@ -149,6 +207,58 @@ JSON`,
       }
     },
   );
+
+  it("accepts a skipped VirusTotal scanner status from ClawScan", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","completedAt":"2026-07-15T00:00:00Z","scanners":{"skillspector":{"status":"completed","raw":{"issues":[]}},"virustotal":{"status":"skipped","raw":{"reason":"directory target"}},"clawscan-static":{"status":"completed","raw":{"status":"clean"}}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance","model":"gpt-5.5"}}}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    try {
+      const client = {
+        action: vi.fn(async (..._args: unknown[]) => ({})),
+      };
+      const result = await processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:vt-skipped"),
+        undefined,
+        "clawscan",
+      );
+
+      expect(result).toEqual({
+        completed: true,
+        hardFailed: false,
+        retryableFailed: false,
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        llmAnalysis: { status: "clean", verdict: "benign" },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
 
   it("fails the job when the ClawScan artifact is malformed", async () => {
     const workspace = await tempDir();
@@ -186,6 +296,7 @@ echo "not json" > "$out"`,
         "worker-auth",
         skillVersionJob("securityScanJobs:malformed"),
         undefined,
+        "clawscan",
       );
 
       expect(result).toEqual({
@@ -196,6 +307,62 @@ echo "not json" > "$out"`,
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
         error: "ClawScan did not emit a valid JSON artifact",
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("fails the job when a required ClawScan scanner reports failed", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"failed","raw":{"error":"boom"}},"virustotal":{"status":"completed","raw":{"status":"clean"}},"clawscan-static":{"status":"completed","raw":{"status":"clean"}}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance","model":"gpt-5.5"}}}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: false } : {};
+        }),
+      };
+
+      const result = await processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:scanner-failed"),
+        undefined,
+        "clawscan",
+      );
+
+      expect(result).toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        error: "ClawScan scanner skillspector status was failed",
       });
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
@@ -229,6 +396,7 @@ echo "this should never complete"`,
         "worker-auth",
         skillVersionJob("securityScanJobs:timeout"),
         undefined,
+        "clawscan",
       );
 
       expect(result).toEqual({
@@ -286,6 +454,7 @@ exit 0`,
         "worker-auth",
         skillVersionJob("securityScanJobs:no-fallback"),
         undefined,
+        "clawscan",
       );
 
       expect(result).toEqual({
