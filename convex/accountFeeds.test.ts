@@ -105,6 +105,46 @@ describe("account feed projection", () => {
     expect(result.nextCursor).toBeNull();
   });
 
+  it("uses stable entry identity to break equal timestamp ties", async () => {
+    const publisher = makePublisher();
+    const packages = [
+      {
+        _id: doc<"packages">("packages:z"),
+        family: "code-plugin",
+        channel: "community",
+        scanStatus: "clean",
+        name: "@alice/aaa",
+        displayName: "A",
+        summary: null,
+        updatedAt: 10,
+      },
+      {
+        _id: doc<"packages">("packages:a"),
+        family: "code-plugin",
+        channel: "community",
+        scanStatus: "clean",
+        name: "@alice/zzz",
+        displayName: "Z",
+        summary: null,
+        updatedAt: 10,
+      },
+    ];
+    const get = vi.fn(async (id: string) => (id === publisher._id ? publisher : null));
+    const normalizeId = vi.fn((table: string, id: string) =>
+      table === "publishers" && id.startsWith("publishers:") ? doc<"publishers">(id) : null,
+    );
+    const query = vi.fn((table: string) =>
+      table === "packages" ? makeQuery(packages) : makeQuery([]),
+    );
+
+    const result = (await getPublisherFeedHandler(
+      { db: { get, normalizeId, query } },
+      { publisherId: String(publisher._id), limit: 10 },
+    )) as { entries: Array<{ id: string }> };
+
+    expect(result.entries.map((entry) => entry.id)).toEqual(["packages:a", "packages:z"]);
+  });
+
   it("continues past filtered package rows to find older public entries", async () => {
     const publisher = makePublisher();
     const privatePackage = {

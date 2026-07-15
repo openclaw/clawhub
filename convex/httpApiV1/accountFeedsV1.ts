@@ -3,7 +3,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { getPathSegments, json, text, toOptionalNumber } from "./shared";
+import { getPathSegments, json, text } from "./shared";
 
 const accountFeedRefs = internal as unknown as {
   accountFeeds: {
@@ -22,12 +22,21 @@ async function runQueryRef<T>(
   return (await ctx.runQuery(ref as never, args as never)) as T;
 }
 
-function parseFeedReadParams(request: Request) {
+function parseFeedReadParams(request: Request, rateHeaders: HeadersInit) {
   const url = new URL(request.url);
-  const limitRaw = toOptionalNumber(url.searchParams.get("limit"));
-  const limit =
-    limitRaw === undefined ? undefined : Math.min(Math.max(limitRaw, 1), ACCOUNT_FEED_MAX_LIMIT);
-  return { limit };
+  if (url.searchParams.has("cursor")) {
+    return { response: text("Cursor pagination is not available", 400, rateHeaders) } as const;
+  }
+  const limitValue = url.searchParams.get("limit");
+  if (limitValue === null) return { args: {} } as const;
+  if (!/^[1-9]\d*$/.test(limitValue)) {
+    return { response: text("Invalid feed limit", 400, rateHeaders) } as const;
+  }
+  const parsedLimit = Number(limitValue);
+  if (!Number.isSafeInteger(parsedLimit)) {
+    return { response: text("Invalid feed limit", 400, rateHeaders) } as const;
+  }
+  return { args: { limit: Math.min(parsedLimit, ACCOUNT_FEED_MAX_LIMIT) } } as const;
 }
 
 const PUBLIC_FEED_HEADERS = {
@@ -68,9 +77,11 @@ export async function accountsGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(detail, 200, rate.headers);
   }
 
+  const params = parseFeedReadParams(request, rate.headers);
+  if ("response" in params) return params.response;
   const feed = await runQueryRef(ctx, accountFeedRefs.accountFeeds.getAccountFeed, {
     accountId,
-    ...parseFeedReadParams(request),
+    ...params.args,
   });
   if (!feed) return text("Account feed not found", 404, rate.headers);
   return json(feed, 200, feedHeaders(rate.headers));
@@ -96,9 +107,11 @@ export async function publishersGetRouterV1Handler(ctx: ActionCtx, request: Requ
     return json(detail, 200, rate.headers);
   }
 
+  const params = parseFeedReadParams(request, rate.headers);
+  if ("response" in params) return params.response;
   const feed = await runQueryRef(ctx, accountFeedRefs.accountFeeds.getPublisherFeed, {
     publisherId,
-    ...parseFeedReadParams(request),
+    ...params.args,
   });
   if (!feed) return text("Publisher feed not found", 404, rate.headers);
   return json(feed, 200, feedHeaders(rate.headers));

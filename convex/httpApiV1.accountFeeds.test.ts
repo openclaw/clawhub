@@ -90,12 +90,29 @@ describe("account feed HTTP routes", () => {
 
     const response = await accountsGetRouterV1Handler(
       makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?limit=500&cursor=next"),
+      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?limit=500"),
     );
 
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toContain("s-maxage=300");
     expect(await response.json()).not.toHaveProperty("official");
+  });
+
+  it("rejects unsupported cursors and malformed limits", async () => {
+    const ctx = makeCtx({});
+    const cursorResponse = await accountsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?cursor=next"),
+    );
+    expect(cursorResponse.status).toBe(400);
+    expect(await cursorResponse.text()).toBe("Cursor pagination is not available");
+
+    const limitResponse = await accountsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?limit=10items"),
+    );
+    expect(limitResponse.status).toBe(400);
+    expect(await limitResponse.text()).toBe("Invalid feed limit");
   });
 
   it("does not double-decode account path ids", async () => {

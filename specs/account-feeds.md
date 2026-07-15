@@ -80,6 +80,15 @@ Required stable fields:
 - `entries`: ordered public entries.
 - `nextCursor`: reserved for future pagination; `null` in the first API slice.
 
+Entry `url` values are either absolute HTTPS URLs or origin-relative URL
+references resolved against the feed request origin. `updatedAt` values are
+finite, non-negative Unix epoch times in milliseconds. Entries are newest
+first, with stable kind and object identity tie-breakers for equal timestamps.
+
+The first API slice rejects a supplied `cursor` with `400` rather than silently
+restarting at the first page. It clamps valid positive integer limits to the
+server maximum and rejects malformed limits.
+
 The feed body should not include credentials, private source URLs, bootstrap
 trust keys, unpublished package metadata, or reviewer-only moderation details.
 
