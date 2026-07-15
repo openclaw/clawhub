@@ -1723,15 +1723,10 @@ export async function runClawScan(
   workspace: string,
   onDiagnostic: (diagnostic: Partial<ClawScanCommandDiagnostic>) => void,
 ) {
-  if (job.job.targetKind !== "skillVersion") {
-    throw new Error(
-      `ClawScan authoritative worker path currently supports skillVersion jobs only, got ${job.job.targetKind}`,
-    );
-  }
-
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
-  const args = ["./artifact", "--profile", "clawhub", "--output", artifactPath];
+  const target = await resolveClawScanTarget(workspace, job);
+  const args = [target, "--profile", "clawhub", "--output", artifactPath];
   onDiagnostic({ args: [command, ...args], artifactPath });
 
   try {
@@ -1848,7 +1843,7 @@ function targetVirusTotalAnalysis(job: ClaimedJob) {
   );
 }
 
-async function resolveClawScanShadowTarget(workspace: string, job: ClaimedJob) {
+async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
   if (job.job.targetKind === "packageRelease") {
     const packageRoot = join(workspace, "artifact", "package");
     if (await fileExists(join(packageRoot, "package.json"))) return "./artifact/package";
@@ -1948,7 +1943,7 @@ export async function runClawScanShadow(
     const vtFixturePath = join(shadowDir, "virustotal-prod.json");
     const artifactPath = join(shadowDir, "artifact.json");
     await writeFile(vtFixturePath, `${JSON.stringify(targetVirusTotalAnalysis(job), null, 2)}\n`);
-    const target = await resolveClawScanShadowTarget(workspace, job);
+    const target = await resolveClawScanTarget(workspace, job);
     const command = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND ?? "clawscan";
     const sandboxMode = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX ?? "docker";
     const sandboxImage =

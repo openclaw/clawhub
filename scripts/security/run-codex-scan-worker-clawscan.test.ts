@@ -1,12 +1,15 @@
 /* @vitest-environment node */
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaimedJob } from "./run-codex-scan-worker";
 import { processJob } from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
+const execFileAsync = promisify(execFile);
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -42,6 +45,54 @@ function skillVersionJob(jobId: string): ClaimedJob {
         },
       ],
     },
+  };
+}
+
+function claimedJob(input: {
+  jobId: string;
+  source: string;
+  target: ClaimedJob["target"];
+  targetKind: ClaimedJob["job"]["targetKind"];
+}): ClaimedJob {
+  const leaseField = `lease${"Token"}`;
+  const job = {
+    _id: input.jobId,
+    hasMaliciousSignal: false,
+    source: input.source,
+    targetKind: input.targetKind,
+    waitForVtUntil: 0,
+    [leaseField]: "lease-fixture",
+  } as ClaimedJob["job"];
+  return {
+    job,
+    target: input.target,
+  };
+}
+
+function fileTarget(path: string, content: string): ClaimedJob["target"] {
+  return {
+    files: [
+      {
+        path,
+        sha256: "artifact-sha",
+        size: Buffer.byteLength(content),
+        url: `data:text/plain,${encodeURIComponent(content)}`,
+      },
+    ],
+  };
+}
+
+async function clawPackTarget(): Promise<ClaimedJob["target"]> {
+  const sourceDir = await tempDir();
+  const packageDir = join(sourceDir, "package");
+  const archivePath = join(sourceDir, "artifact.tgz");
+  await mkdir(packageDir, { recursive: true });
+  await writeFile(join(packageDir, "package.json"), '{"name":"matrix-plugin","version":"1.0.0"}\n');
+  await writeFile(join(packageDir, "openclaw.plugin.json"), '{"id":"matrix-plugin"}\n');
+  await execFileAsync("tar", ["-czf", archivePath, "-C", sourceDir, "package"]);
+  const archive = await readFile(archivePath);
+  return {
+    clawpackUrl: `data:application/gzip;base64,${archive.toString("base64")}`,
   };
 }
 
@@ -300,6 +351,197 @@ JSON`,
         expect(invocationArgs).toContain("clawhub");
         expect(invocationArgs).not.toContain("--context");
         expect(invocationArgs).not.toContain("--scanner-result");
+      } finally {
+        if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+        else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      }
+    },
+  );
+
+  it.each([
+    {
+      name: "skill-version publish",
+      source: "publish",
+      targetKind: "skillVersion" as const,
+      expectedTarget: "./artifact",
+      expectedFile: "./artifact/SKILL.md",
+      target: async () => fileTarget("SKILL.md", "# Published skill\n"),
+    },
+    {
+      name: "package-release publish",
+      source: "publish",
+      targetKind: "packageRelease" as const,
+      expectedTarget: "./artifact/package",
+      expectedFile: "./artifact/package/package.json",
+      target: clawPackTarget,
+    },
+    {
+      name: "skill-scan-request manual",
+      source: "manual",
+      targetKind: "skillScanRequest" as const,
+      expectedTarget: "./artifact",
+      expectedFile: "./artifact/SKILL.md",
+      target: async () => fileTarget("SKILL.md", "# Uploaded skill\n"),
+    },
+    {
+      name: "skill-version VirusTotal update",
+      source: "vt-update",
+      targetKind: "skillVersion" as const,
+      expectedTarget: "./artifact",
+      expectedFile: "./artifact/SKILL.md",
+      target: async () => fileTarget("SKILL.md", "# VT update\n"),
+    },
+    {
+      name: "package-release backfill",
+      source: "backfill",
+      targetKind: "packageRelease" as const,
+      expectedTarget: "./artifact",
+      expectedFile: "./artifact/package.json",
+      target: async () => fileTarget("package.json", '{"name":"backfill-plugin"}\n'),
+    },
+    {
+      name: "skill-version bulk rescan",
+      source: "bulk-rescan",
+      targetKind: "skillVersion" as const,
+      expectedTarget: "./artifact",
+      expectedFile: "./artifact/SKILL.md",
+      target: async () => fileTarget("SKILL.md", "# Bulk rescan\n"),
+    },
+  ])(
+    "routes $name through the same artifact-only ClawScan persistence adapter",
+    async ({ source, targetKind, expectedTarget, expectedFile, target }) => {
+      const workspace = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      const argsLog = join(workspace, "clawscan-args.log");
+      const filesLog = join(workspace, "clawscan-files.log");
+      await writeFakeClawScanCommand(
+        fakeClawScan,
+        `target="$1"
+printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
+find "$target" -type f -print | sort > ${JSON.stringify(filesLog)}
+out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${clawScanArtifactJson()}
+JSON`,
+      );
+
+      const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+      try {
+        const client = {
+          action: vi.fn(async (..._args: unknown[]) => ({})),
+        };
+        const result = await processJob(
+          client,
+          "worker-auth",
+          claimedJob({
+            jobId: `securityScanJobs:${targetKind}-${source}`,
+            source,
+            target: await target(),
+            targetKind,
+          }),
+          undefined,
+          "clawscan",
+        );
+
+        expect(result).toEqual({
+          completed: true,
+          hardFailed: false,
+          retryableFailed: false,
+        });
+        expect(client.action).toHaveBeenCalledTimes(1);
+        expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+          llmAnalysis: {
+            status: "clean",
+            verdict: "benign",
+          },
+          skillSpectorAnalysis: {
+            issueCount: 1,
+            status: "suspicious",
+          },
+        });
+
+        const invocationArgs = (await readFile(argsLog, "utf8")).trim().split("\n");
+        expect(invocationArgs[0]).toBe(expectedTarget);
+        expect(invocationArgs).toEqual(
+          expect.arrayContaining(["--profile", "clawhub", "--output"]),
+        );
+        expect(invocationArgs).not.toContain("--context");
+        expect(invocationArgs).not.toContain("--scanner-result");
+        expect((await readFile(filesLog, "utf8")).trim().split("\n")).toContain(expectedFile);
+      } finally {
+        if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+        else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      }
+    },
+  );
+
+  it.each([
+    {
+      source: "bulk-rescan",
+      targetKind: "skillVersion" as const,
+      target: async () => fileTarget("SKILL.md", "# Failed skill\n"),
+    },
+    {
+      source: "vt-update",
+      targetKind: "packageRelease" as const,
+      target: async () => fileTarget("package.json", '{"name":"failed-plugin"}\n'),
+    },
+    {
+      source: "manual",
+      targetKind: "skillScanRequest" as const,
+      target: async () => fileTarget("SKILL.md", "# Failed upload\n"),
+    },
+  ])(
+    "uses the existing retry lifecycle when $targetKind/$source ClawScan execution fails",
+    async ({ source, targetKind, target }) => {
+      const workspace = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      await writeFakeClawScanCommand(fakeClawScan, 'echo "matrix failure" >&2\nexit 17');
+
+      const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+      try {
+        const client = {
+          action: vi.fn(async (...args: unknown[]) => {
+            const payload = args[1] as { error?: string } | undefined;
+            return payload?.error ? { retry: true } : {};
+          }),
+        };
+        const result = await processJob(
+          client,
+          "worker-auth",
+          claimedJob({
+            jobId: `securityScanJobs:failed-${targetKind}-${source}`,
+            source,
+            target: await target(),
+            targetKind,
+          }),
+          undefined,
+          "clawscan",
+        );
+
+        expect(result).toEqual({
+          completed: false,
+          hardFailed: false,
+          retryableFailed: true,
+        });
+        expect(client.action).toHaveBeenCalledTimes(1);
+        expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+          error: expect.stringContaining("exited 17"),
+        });
       } finally {
         if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
         else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
