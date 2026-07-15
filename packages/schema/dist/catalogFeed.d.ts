@@ -28,6 +28,7 @@ export declare const CatalogFeedPluginEntrySchema: import("arktype/internal/vari
     title: string;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    featured?: boolean | undefined;
     publisher: {
         id: string;
         trust: "community" | "official";
@@ -54,6 +55,7 @@ export declare const CatalogFeedSkillEntrySchema: import("arktype/internal/varia
     title: string;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    featured?: boolean | undefined;
     publisher: {
         id: string;
         trust: "community" | "official";
@@ -80,6 +82,7 @@ export declare const CatalogFeedEntrySchema: import("arktype/internal/variants/o
     title: string;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    featured?: boolean | undefined;
     publisher: {
         id: string;
         trust: "community" | "official";
@@ -104,6 +107,7 @@ export declare const CatalogFeedEntrySchema: import("arktype/internal/variants/o
     title: string;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    featured?: boolean | undefined;
     publisher: {
         id: string;
         trust: "community" | "official";
@@ -137,6 +141,7 @@ export declare const CatalogFeedSchema: import("arktype/internal/variants/object
         title: string;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+        featured?: boolean | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -161,6 +166,7 @@ export declare const CatalogFeedSchema: import("arktype/internal/variants/object
         title: string;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+        featured?: boolean | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";

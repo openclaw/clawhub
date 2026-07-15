@@ -15,6 +15,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -61,6 +62,7 @@ const catalogFeedEntryFields = {
     v.literal("blocked"),
     v.literal("deprecated"),
   ),
+  featured: v.optional(v.boolean()),
   publisher: v.object({
     id: v.string(),
     trust: v.union(v.literal("official"), v.literal("community")),
@@ -117,6 +119,10 @@ async function buildEntry(
   const title = pkg.displayName.trim() || packageName;
   const version = release.version.trim();
   if (!packageName || !id || !title || !version) return null;
+  const highlighted = await ctx.db
+    .query("packageBadges")
+    .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
+    .unique();
 
   return {
     type: "plugin",
@@ -124,6 +130,7 @@ async function buildEntry(
     title,
     version,
     state: "available",
+    featured: Boolean(highlighted),
     publisher: {
       id: publisherId,
       trust: "official",
@@ -225,6 +232,7 @@ async function buildSkillEntry(
       title,
       version: commit,
       state: "available",
+      featured: isSkillHighlighted(skill),
       publisher: {
         id: publisherId,
         trust: "official",
@@ -269,6 +277,7 @@ async function buildSkillEntry(
     title,
     version: versionName,
     state: "available",
+    featured: isSkillHighlighted(skill),
     publisher: {
       id: publisherId,
       trust: "official",

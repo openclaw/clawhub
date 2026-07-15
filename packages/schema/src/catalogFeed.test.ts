@@ -146,6 +146,22 @@ describe("catalog feed schema", () => {
     expect(parseCatalogFeed(feed).entries[0]?.type).toBe("skill");
   });
 
+  it("round-trips optional featured state without changing schema version 1", () => {
+    const feed = makeFeed({
+      entries: makeFeed().entries.map((entry, index) => ({
+        ...entry,
+        featured: index === 0,
+      })),
+    });
+
+    const parsed = parseCatalogFeed(JSON.parse(serializeCatalogFeed(feed)));
+
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.entries.find((entry) => entry.id === "zeta")?.featured).toBe(true);
+    expect(parsed.entries.find((entry) => entry.id === "alpha")?.featured).toBe(false);
+    expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("featured");
+  });
+
   it("preserves public GitHub source identity on skill candidates", () => {
     const feed = makeFeed({
       id: CATALOG_SKILLS_FEED_ID,
