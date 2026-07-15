@@ -34,7 +34,11 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function parseListParams(url: URL, headers: HeadersInit) {
+type ParsedListParams =
+  | { response: Response }
+  | { args: { cursor?: string; limit?: number; query?: string } };
+
+function parseListParams(url: URL, headers: HeadersInit): ParsedListParams {
   const limitValue = url.searchParams.get("limit");
   if (limitValue !== null && !/^[1-9]\d*$/.test(limitValue)) {
     return { response: text("Invalid follow list limit", 400, headers) } as const;
