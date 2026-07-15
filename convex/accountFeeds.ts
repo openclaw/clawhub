@@ -59,25 +59,26 @@ function skillEntry(publisher: Doc<"publishers">, skill: Doc<"skills">): Account
     name: skill.slug,
     displayName: skill.displayName,
     summary: skill.summary ?? null,
-    url: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
+    url: `/${encodeURIComponent(publisher.handle)}/skills/${encodeURIComponent(skill.slug)}`,
     updatedAt: skill.updatedAt,
   };
 }
 
-function pluginPath(name: string) {
+function pluginPath(publisher: Doc<"publishers">, name: string) {
   const trimmed = name.trim();
-  if (!trimmed.startsWith("@")) return `/plugins/${encodeURIComponent(trimmed)}`;
+  if (!trimmed.startsWith("@")) {
+    return `/${encodeURIComponent(publisher.handle)}/plugins/${encodeURIComponent(trimmed)}`;
+  }
   const slashIndex = trimmed.indexOf("/");
   if (slashIndex <= 1 || slashIndex === trimmed.length - 1) {
     return `/plugins/${encodeURIComponent(trimmed)}`;
   }
-  const scope = trimmed.slice(1, slashIndex);
   const packageName = trimmed.slice(slashIndex + 1);
   if (packageName.includes("/")) return `/plugins/${encodeURIComponent(trimmed)}`;
-  return `/plugins/@${encodeURIComponent(scope)}/${encodeURIComponent(packageName)}`;
+  return `/${encodeURIComponent(publisher.handle)}/plugins/${encodeURIComponent(packageName)}`;
 }
 
-function packageEntry(pkg: Doc<"packages">): AccountFeedEntry | null {
+function packageEntry(publisher: Doc<"publishers">, pkg: Doc<"packages">): AccountFeedEntry | null {
   if (
     pkg.family === "skill" ||
     pkg.channel === "private" ||
@@ -91,7 +92,7 @@ function packageEntry(pkg: Doc<"packages">): AccountFeedEntry | null {
     name: pkg.name,
     displayName: pkg.displayName,
     summary: pkg.summary ?? null,
-    url: pluginPath(pkg.name),
+    url: pluginPath(publisher, pkg.name),
     updatedAt: pkg.updatedAt,
   };
 }
@@ -165,7 +166,7 @@ async function collectPackageEntries(ctx: QueryCtx, publisher: Doc<"publishers">
     pagesRead += 1;
 
     for (const pkg of page.page) {
-      const entry = packageEntry(pkg);
+      const entry = packageEntry(publisher, pkg);
       if (entry) entries.push(entry);
       if (entries.length >= limit) break;
     }
@@ -210,7 +211,7 @@ export const getAccountDetail = internalQuery({
       : null;
     return {
       account: toPublicUser(user),
-      publisher: toPublicPublisher(publisher),
+      publisher: toPublicPublisher(isActivePublisher(publisher) ? publisher : null),
       feedUrl: `/api/v1/accounts/${encodeURIComponent(String(user._id))}/feed`,
     };
   },
@@ -226,7 +227,7 @@ export const getPublisherDetail = internalQuery({
       : null;
     return {
       publisher: toPublicPublisher(publisher),
-      account: toPublicUser(user),
+      account: toPublicUser(isActiveUser(user) ? user : null),
       feedUrl: `/api/v1/publishers/${encodeURIComponent(String(publisher._id))}/feed`,
     };
   },

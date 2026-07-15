@@ -1,10 +1,12 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
-import { getAccountDetail, getPublisherFeed } from "./accountFeeds";
+import { getAccountDetail, getPublisherDetail, getPublisherFeed } from "./accountFeeds";
 
 type InternalHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
 
 const getAccountDetailHandler = (getAccountDetail as unknown as { _handler: InternalHandler })
+  ._handler;
+const getPublisherDetailHandler = (getPublisherDetail as unknown as { _handler: InternalHandler })
   ._handler;
 const getPublisherFeedHandler = (getPublisherFeed as unknown as { _handler: InternalHandler })
   ._handler;
@@ -60,6 +62,52 @@ describe("account feed projection", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("does not expose inactive linked identities in public detail responses", async () => {
+    const user = {
+      _id: doc<"users">("users:alice"),
+      _creationTime: 1,
+      handle: "alice",
+      name: "Alice",
+      displayName: "Alice",
+      personalPublisherId: doc<"publishers">("publishers:alice"),
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const publisher = {
+      ...makePublisher(),
+      linkedUserId: user._id,
+      deactivatedAt: 10,
+    };
+    const get = vi.fn(async (id: string): Promise<Record<string, unknown> | null> => {
+      if (id === user._id) return user;
+      if (id === publisher._id) return publisher;
+      return null;
+    });
+    const normalizeId = vi.fn((table: string, id: string) => {
+      if (table === "users" && id === user._id) return user._id;
+      if (table === "publishers" && id === publisher._id) return publisher._id;
+      return null;
+    });
+
+    const accountDetail = (await getAccountDetailHandler(
+      { db: { get, normalizeId } },
+      { accountId: String(user._id) },
+    )) as { publisher: unknown };
+    expect(accountDetail.publisher).toBeNull();
+
+    const activePublisher = { ...publisher, deactivatedAt: undefined };
+    get.mockImplementation(async (id: string) => {
+      if (id === user._id) return { ...user, deactivatedAt: 10 };
+      if (id === activePublisher._id) return activePublisher;
+      return null;
+    });
+    const publisherDetail = (await getPublisherDetailHandler(
+      { db: { get, normalizeId } },
+      { publisherId: String(activePublisher._id) },
+    )) as { account: unknown };
+    expect(publisherDetail.account).toBeNull();
+  });
+
   it("filters skill-family package rows from publisher feeds", async () => {
     const publisher = makePublisher();
     const skillPackage = {
@@ -100,9 +148,39 @@ describe("account feed projection", () => {
         kind: "plugin",
         id: "packages:plugin",
         name: "@alice/plugin",
+        url: "/alice/plugins/plugin",
       }),
     ]);
     expect(result.nextCursor).toBeNull();
+  });
+
+  it("uses canonical publisher routes for skill entries", async () => {
+    const publisher = makePublisher();
+    const skill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo",
+      summary: null,
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+      moderationVerdict: "clean",
+      updatedAt: 10,
+    };
+    const get = vi.fn(async (id: string) => (id === publisher._id ? publisher : null));
+    const normalizeId = vi.fn((table: string, id: string) =>
+      table === "publishers" && id.startsWith("publishers:") ? doc<"publishers">(id) : null,
+    );
+    const query = vi.fn((table: string) =>
+      table === "skills" ? makeQuery([skill]) : makeQuery([]),
+    );
+
+    const result = (await getPublisherFeedHandler(
+      { db: { get, normalizeId, query } },
+      { publisherId: String(publisher._id), limit: 10 },
+    )) as { entries: Array<{ url: string }> };
+
+    expect(result.entries).toEqual([expect.objectContaining({ url: "/alice/skills/demo" })]);
   });
 
   it("uses stable entry identity to break equal timestamp ties", async () => {
