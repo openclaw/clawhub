@@ -1,11 +1,13 @@
 name: Preview Proof
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       preview_url:
         description: "Vercel preview URL to verify"
-        required: true
+        required: false
         type: string
       expected_sha:
         description: "Expected git SHA for this proof run"
@@ -14,22 +16,28 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   preview-proof:
     name: preview-proof
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     environment:
       name: Test
-      url: ${{ inputs.preview_url }}
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.ref }}
 
       - name: Verify checked-out revision
         env:
-          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          EXPECTED_SHA: ${{ inputs.expected_sha || github.event.pull_request.head.sha || '' }}
         run: |
           set -euo pipefail
           actual_sha="$(git rev-parse HEAD)"
@@ -41,9 +49,52 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Resolve Vercel preview URL
+        id: preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PREVIEW_URL: ${{ inputs.preview_url }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [[ -n "${INPUT_PREVIEW_URL:-}" ]]; then
+            echo "url=$INPUT_PREVIEW_URL" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ -z "${PR_NUMBER:-}" ]]; then
+            echo "::error::preview_url is required for workflow_dispatch runs"
+            exit 1
+          fi
+
+          preview_url=""
+          for attempt in {1..60}; do
+            comments="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate)"
+            preview_url="$(
+              jq -r '
+                [.[] | select(.user.login == "vercel[bot]") | .body]
+                | reverse
+                | map(
+                    select(test("\\!\\[Ready\\]"))
+                    | (try (match("\\[Preview\\]\\((https://[^)]+)\\)") | .captures[0].string) catch empty)
+                  )
+                | .[]
+                | select(length > 0)
+              ' <<< "$comments" | head -n 1
+            )"
+            if [[ -n "$preview_url" && "$preview_url" != "null" ]]; then
+              echo "url=$preview_url" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::Timed out waiting for a ready Vercel preview URL on PR #${PR_NUMBER}"
+          exit 1
+
       - name: Verify protected preview public routes
         env:
-          PREVIEW_URL: ${{ inputs.preview_url }}
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
           VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
         run: |
           set -euo pipefail
@@ -106,7 +157,7 @@ jobs:
 
       - name: Write proof summary
         env:
-          PREVIEW_URL: ${{ inputs.preview_url }}
+          PREVIEW_URL: ${{ steps.preview.outputs.url }}
         run: |
           {
             echo "## Preview proof"
