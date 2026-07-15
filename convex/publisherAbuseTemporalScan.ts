@@ -17,7 +17,8 @@ import {
   type TemporalSkillCandidate,
 } from "./publisherAbuse";
 
-const SOURCE_PAGE_SIZE = 100;
+// Leave room for up to 37 daily-stat rows plus publisher exclusion reads per skill.
+const SOURCE_PAGE_SIZE = 50;
 const PERCENTILE_PAGE_SIZE = 500;
 const CANDIDATE_PAGE_SIZE = 100;
 const TEMPORAL_SCAN_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;

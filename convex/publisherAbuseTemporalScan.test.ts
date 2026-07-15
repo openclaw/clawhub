@@ -179,6 +179,35 @@ describe("scheduled temporal publisher abuse scan", () => {
     );
   });
 
+  it("keeps source pages below the dense daily-stat read budget", async () => {
+    const run = temporalRun();
+    const runQuery = vi.fn().mockResolvedValueOnce(run).mockResolvedValueOnce({
+      benchmarkScores: [],
+      candidates: [],
+      cursor: "next-page",
+      isDone: false,
+      scannedSkills: 0,
+    });
+    const runMutation = vi.fn(async () => ({ applied: true }));
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const handler = runScheduledTemporalPublisherAbuseScanInternalHandler as unknown as (
+      ctx: {
+        runQuery: typeof runQuery;
+        runMutation: typeof runMutation;
+        scheduler: typeof scheduler;
+      },
+      args: { runId?: Id<"publisherAbuseScoreRuns"> },
+    ) => Promise<unknown>;
+
+    await handler({ runQuery, runMutation, scheduler }, { runId: run._id });
+
+    expect(runQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({ batchSize: 50 }),
+    );
+  });
+
   it("archives classified candidates with the completed full-platform benchmark", async () => {
     const benchmark = {
       scope: "all_active_skills" as const,
