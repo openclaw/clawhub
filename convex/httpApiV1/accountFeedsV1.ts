@@ -22,7 +22,9 @@ async function runQueryRef<T>(
   return (await ctx.runQuery(ref as never, args as never)) as T;
 }
 
-function parseFeedReadParams(request: Request, rateHeaders: HeadersInit) {
+type ParsedFeedReadParams = { response: Response } | { args: { limit?: number } };
+
+function parseFeedReadParams(request: Request, rateHeaders: HeadersInit): ParsedFeedReadParams {
   const url = new URL(request.url);
   if (url.searchParams.has("cursor")) {
     return { response: text("Cursor pagination is not available", 400, rateHeaders) } as const;
