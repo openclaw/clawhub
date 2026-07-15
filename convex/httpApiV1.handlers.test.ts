@@ -8708,6 +8708,35 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("publisher follows list rejects malformed query parameters before reading follows", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const ctx = makeCtx({ runQuery, runMutation });
+
+    const invalidLimit = await __handlers.publisherFollowsGetV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/publisher-follows?limit=10items", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(invalidLimit.status).toBe(400);
+    expect(await invalidLimit.text()).toBe("Invalid follow list limit");
+
+    const emptyCursor = await __handlers.publisherFollowsGetV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/publisher-follows?cursor=", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(emptyCursor.status).toBe(400);
+    expect(await emptyCursor.text()).toBe("Invalid cursor format");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("publisher follows delete is idempotent", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
