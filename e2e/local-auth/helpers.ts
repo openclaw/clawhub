@@ -120,6 +120,17 @@ function convexClient() {
   return new ConvexHttpClient(convexUrl);
 }
 
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type MockPrePublicationClaim = {
+  attemptId: string;
+  claimId: string;
+  artifactFingerprint: string;
+  files?: Array<{ path: string; storageId?: string; url?: string | null }>;
+};
+
 export async function completeMockPrePublicationChecks(args: {
   kind: "skill" | "package";
   slug: string;
@@ -127,19 +138,36 @@ export async function completeMockPrePublicationChecks(args: {
   trufflehog?: "clean" | "blocked";
   clawscan?: "clean" | "suspicious" | "malicious" | "failed";
 }) {
-  const claim = (await convexClient().action(api.publishAttempts.claimPrePublicationChecks, {
-    token: WORKER_TOKEN,
-    kind: args.kind,
-    slug: args.slug,
-    version: args.version,
-  })) as null | {
-    attemptId: string;
-    claimId: string;
-    artifactFingerprint: string;
-    files?: Array<{ path: string; storageId?: string; url?: string | null }>;
-  };
+  let lastClaimError: unknown;
+  let claim: MockPrePublicationClaim | null = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const claimed = (await convexClient()
+      .action(api.publishAttempts.claimPrePublicationChecks, {
+        token: WORKER_TOKEN,
+        kind: args.kind,
+        slug: args.slug,
+        version: args.version,
+      })
+      .catch((error: unknown) => {
+        lastClaimError = error;
+        return null;
+      })) as MockPrePublicationClaim | null;
+    if (claimed) {
+      claim = claimed;
+      break;
+    }
+    await wait(Math.min(500 * attempt, 2_000));
+  }
   if (!claim) {
-    throw new Error(`No pending ${args.kind} publish attempt for ${args.slug}@${args.version}`);
+    const detail =
+      lastClaimError instanceof Error
+        ? ` Last claim error: ${lastClaimError.message}`
+        : lastClaimError
+          ? ` Last claim error: ${String(lastClaimError)}`
+          : "";
+    throw new Error(
+      `No pending ${args.kind} publish attempt for ${args.slug}@${args.version}.${detail}`,
+    );
   }
 
   const clawscan = args.clawscan ?? "clean";
@@ -480,6 +508,19 @@ export async function publishSkillVersion(
   const detailUrlPattern = new RegExp(`/[^/]+/(?:skills/)?${escapeRegExp(args.slug)}$`);
   const versionExists = async () =>
     args.versionExists ? await args.versionExists() : await publishedSkillVersionExists(page, args);
+  type PublishState = "duplicate" | "pending" | "private-detail" | "published" | "";
+  const readPublishState = async (): Promise<PublishState> => {
+    if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
+    if (await versionExists()) return "published";
+    const pendingChecks = page.getByText("Running TruffleHog and ClawScan", { exact: false });
+    if (await pendingChecks.isVisible({ timeout: 500 }).catch(() => false)) {
+      return "pending";
+    }
+    if (!args.versionExists && detailUrlPattern.test(new URL(page.url()).pathname)) {
+      return "private-detail";
+    }
+    return "";
+  };
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     let publishUrl = page.url();
     try {
@@ -487,24 +528,11 @@ export async function publishSkillVersion(
       await expect(publishButton).toBeEnabled({ timeout: 30_000 });
       publishUrl = page.url();
       await publishButton.click({ timeout: 15_000 });
-      const pendingChecks = page.getByText("Running TruffleHog and ClawScan", { exact: false });
       await expect
-        .poll(
-          async () => {
-            if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
-            if (await versionExists()) return "published";
-            if (await pendingChecks.isVisible({ timeout: 500 }).catch(() => false)) {
-              return "pending";
-            }
-            if (!args.versionExists && detailUrlPattern.test(new URL(page.url()).pathname)) {
-              return "detail";
-            }
-            return "";
-          },
-          { timeout: 60_000, intervals: [500, 1_000, 2_000] },
-        )
+        .poll(readPublishState, { timeout: 60_000, intervals: [500, 1_000, 2_000] })
         .not.toBe("");
-      if (await pendingChecks.isVisible({ timeout: 500 }).catch(() => false)) {
+      const observedPublishState = await readPublishState();
+      if (observedPublishState !== "published" && !(await versionExists())) {
         if (args.completeChecks === false) {
           return args.ownerHandle;
         }
