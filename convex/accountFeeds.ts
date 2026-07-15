@@ -190,7 +190,10 @@ async function buildPublisherFeed(
   ]);
 
   const sortedCandidates = [...skillEntries, ...packageEntries].sort(
-    (left, right) => right.updatedAt - left.updatedAt || left.name.localeCompare(right.name),
+    (left, right) =>
+      right.updatedAt - left.updatedAt ||
+      left.kind.localeCompare(right.kind) ||
+      left.id.localeCompare(right.id),
   );
   const entries = sortedCandidates.slice(0, limit);
 

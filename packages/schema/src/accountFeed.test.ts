@@ -57,4 +57,29 @@ describe("account feed schema", () => {
       ),
     ).toThrow();
   });
+
+  it("binds feed identity to its scope", () => {
+    expect(() => parseAccountFeed(makeFeed({ publisherId: null }))).toThrow(
+      "publisher feed must include its stable identity",
+    );
+    expect(() => parseAccountFeed(makeFeed({ feedId: "clawhub.publisher.other" }))).toThrow(
+      "feed id does not match",
+    );
+  });
+
+  it("validates entry timestamps and URL references", () => {
+    const entry = makeFeed().entries[0]!;
+    expect(() =>
+      parseAccountFeed(makeFeed({ entries: [{ ...entry, updatedAt: Number.NaN }] })),
+    ).toThrow("updatedAt");
+    expect(() =>
+      parseAccountFeed(makeFeed({ entries: [{ ...entry, url: "//evil.example/skill" }] })),
+    ).toThrow("protocol-relative");
+    expect(() =>
+      parseAccountFeed(makeFeed({ entries: [{ ...entry, url: "http://example.com/skill" }] })),
+    ).toThrow("absolute HTTPS");
+    expect(
+      parseAccountFeed(makeFeed({ entries: [{ ...entry, url: "https://example.com/skill" }] })),
+    ).toBeDefined();
+  });
 });
