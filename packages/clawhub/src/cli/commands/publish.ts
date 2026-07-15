@@ -18,7 +18,7 @@ import { normalizeGitHubRepo } from "./github.js";
 
 type SkillPublishResult = {
   ok: true;
-  status: "unchanged" | "would-publish" | "published";
+  status: "unchanged" | "would-publish" | "published" | "pending-publication";
   slug: string;
   displayName: string;
   folder: string;
@@ -27,6 +27,8 @@ type SkillPublishResult = {
   fileCount: number;
   fingerprint: string;
   versionId?: string;
+  publicationStatus?: "pending" | "published";
+  attemptId?: string;
 };
 
 export async function cmdPublish(
@@ -198,8 +200,9 @@ export async function cmdPublish(
       ApiV1PublishResponseSchema,
     );
 
+    const isPendingPublication = result.publicationStatus === "pending";
     const publishResult = buildPublishResult({
-      status: "published",
+      status: isPendingPublication ? "pending-publication" : "published",
       slug,
       displayName,
       folder,
@@ -208,8 +211,14 @@ export async function cmdPublish(
       fileCount: filesOnDisk.length,
       fingerprint: hashed.fingerprint,
       versionId: result.versionId,
+      publicationStatus: result.publicationStatus,
+      attemptId: result.attemptId,
     });
-    spinner?.succeed(`OK. Published ${slug}@${version} (${result.versionId})`);
+    spinner?.succeed(
+      isPendingPublication
+        ? `OK. Uploaded ${slug}@${version}; security checks are pending before it becomes public (${result.versionId})`
+        : `OK. Published ${slug}@${version} (${result.versionId})`,
+    );
     writePublishJsonIfRequested(options.json, publishResult);
     return publishResult;
   } catch (error) {

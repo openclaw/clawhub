@@ -132,6 +132,41 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("reports pending security checks for staged publish responses", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "pending-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockRejectedValueOnce(
+        new Error("Skill not found or unavailable to this account."),
+      );
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_pending",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "pending-skill", {});
+
+      expect(result).toMatchObject({
+        status: "pending-publication",
+        slug: "pending-skill",
+        version: "1.0.0",
+        versionId: "ver_pending",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "OK. Uploaded pending-skill@1.0.0; security checks are pending before it becomes public (ver_pending)",
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("defaults a changed skill to the next patch version", async () => {
     const workdir = await makeTmpWorkdir();
     try {

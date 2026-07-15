@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
+import { ApiV1PackagePublishResponseSchema } from "./packages";
 import {
   ApiV1SearchResponseSchema,
   ApiV1SkillRescanResponseSchema,
@@ -56,6 +57,24 @@ describe("packages/clawhub skill metadata schema", () => {
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
     expect(parsed.results[0]?.downloads).toBe(42);
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
+  });
+
+  it("parses pending package publish responses with legacy IDs", () => {
+    const parsed = parseArk(
+      ApiV1PackagePublishResponseSchema,
+      {
+        ok: true,
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        publicationStatus: "pending",
+        attemptId: "publishAttempts:demo",
+      },
+      "Package publish response",
+    );
+
+    expect(parsed.releaseId).toBe("packageReleases:demo");
+    expect(parsed.publicationStatus).toBe("pending");
+    expect(parsed.attemptId).toBe("publishAttempts:demo");
   });
 
   it("parses flattened skill verification envelopes", () => {

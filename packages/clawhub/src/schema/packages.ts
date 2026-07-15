@@ -861,6 +861,8 @@ export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",
   releaseId: "string",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
   inspectorFindings: type({
     findingKind: '"warning"|"error"',
     code: "string",

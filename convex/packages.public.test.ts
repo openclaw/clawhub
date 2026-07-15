@@ -40,6 +40,7 @@ import {
   getVersionByName,
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
+  publishPendingReleaseInternal,
   findPackagePublishResultInternal,
   listPackageModerationQueueInternal,
   listPluginExportPageInternal,
@@ -219,6 +220,7 @@ const insertReleaseInternalHandler = (
       displayName: string;
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
+      publicationStatus?: "pending" | "published";
       changelog: string;
       icon?: string;
       tags: string[];
@@ -271,6 +273,14 @@ const findPackagePublishResultInternalHandler = (
       ownerPublisherId?: string;
     },
     { ok: true; packageId: string; releaseId: string } | null
+  >
+)._handler;
+const publishPendingReleaseInternalHandler = (
+  publishPendingReleaseInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+    },
+    unknown
   >
 )._handler;
 const reservePackageNameInternalHandler = (
@@ -6942,6 +6952,125 @@ describe("packages public queries", () => {
     );
   });
 
+  it("creates pending package releases without updating public latest pointers", async () => {
+    const existingPackage = makePackageDoc({
+      latestReleaseId: "packageReleases:old",
+      latestVersionSummary: { version: "1.0.0" },
+      tags: { latest: "packageReleases:old" },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    });
+    const priorRelease = makeReleaseDoc({
+      _id: "packageReleases:old",
+      version: "1.0.0",
+      distTags: ["latest"],
+    });
+    const ctx = makeInsertReleaseCtx(existingPackage, [priorRelease]);
+
+    await expect(
+      insertReleaseInternalHandler(ctx, {
+        actorUserId: "users:owner",
+        ownerUserId: "users:owner",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        family: "code-plugin",
+        version: "2.0.0",
+        publicationStatus: "pending",
+        changelog: "next",
+        tags: ["latest"],
+        summary: "pending summary",
+        files: [],
+        integritySha256: "pending-sha",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:new",
+      publicationStatus: "pending",
+      createdNewParent: false,
+    });
+
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packageReleases",
+      expect.objectContaining({
+        publicationStatus: "pending",
+        pendingPublication: expect.objectContaining({
+          tags: ["latest"],
+          displayName: "Demo Plugin",
+        }),
+      }),
+    );
+    expect(ctx.patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+    expect(ctx.patch).not.toHaveBeenCalledWith("packageReleases:old", expect.anything());
+  });
+
+  it("publishes a pending package release by promoting the existing row", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const existingPackage = makePackageDoc({
+      latestReleaseId: "packageReleases:old",
+      latestVersionSummary: { version: "1.0.0" },
+      tags: { latest: "packageReleases:old" },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    });
+    const priorRelease = makeReleaseDoc({
+      _id: "packageReleases:old",
+      version: "1.0.0",
+      distTags: ["latest"],
+      publicationStatus: "published",
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      version: "2.0.0",
+      publicationStatus: "pending",
+      pendingPublication: {
+        displayName: "Demo Plugin",
+        tags: ["latest"],
+        channel: "community",
+        isOfficial: false,
+      },
+      distTags: ["latest"],
+      summary: "pending summary",
+      changelog: "next",
+      integritySha256: "pending-sha",
+      verification: { scanStatus: "pending" },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 1_700_000_000_000,
+      },
+    });
+    const ctx = makeInsertReleaseCtx(existingPackage, [priorRelease, pendingRelease], {
+      "packageReleases:pending": pendingRelease,
+      "packages:demo": existingPackage,
+    });
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, {
+        releaseId: "packageReleases:pending",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:pending",
+    });
+
+    expect(ctx.patch).toHaveBeenCalledWith("packageReleases:pending", {
+      publicationStatus: "published",
+      pendingPublication: undefined,
+      verification: { scanStatus: "clean" },
+    });
+    expect(ctx.patch).toHaveBeenCalledWith("packageReleases:old", { distTags: [] });
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:pending",
+        latestVersionSummary: expect.objectContaining({ version: "2.0.0" }),
+        tags: { latest: "packageReleases:pending" },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
+        scanStatus: "clean",
+      }),
+    );
+  });
+
   it("recovers idempotent package publish results for the same owner", async () => {
     const release = makeReleaseDoc({ integritySha256: "abc123" });
     const ctx = {
@@ -8473,6 +8602,7 @@ describe("packages public queries", () => {
         .mockResolvedValueOnce(trustedPublisher)
         .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
         .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null),
       runMutation,
       runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
@@ -8512,7 +8642,21 @@ describe("packages public queries", () => {
       if (
         typeof args === "object" &&
         args !== null &&
-        "packageInsertArgs" in args &&
+        "publicationStatus" in args &&
+        (args as { publicationStatus?: string }).publicationStatus === "pending"
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+          publicationStatus: "pending",
+          createdNewParent: false,
+        };
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "packageReleaseId" in args &&
         "packageFollowup" in args
       ) {
         return {
@@ -8581,6 +8725,9 @@ describe("packages public queries", () => {
       ).resolves.toMatchObject({
         ok: true,
         status: "pending",
+        packageId: "packages:demo",
+        releaseId: "packageReleases:pending",
+        publicationStatus: "pending",
         attemptId: "publishAttempts:demo",
         packageName: "demo-plugin",
         version: "1.0.0",
@@ -8594,6 +8741,124 @@ describe("packages public queries", () => {
     }
 
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      tokenId: "packagePublishTokens:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        packageId: "packages:demo",
+        packageReleaseId: "packageReleases:pending",
+        scanContext: expect.any(Object),
+      }),
+    );
+  });
+
+  it("cleans up pending package releases when staged publish attempt creation fails", async () => {
+    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
+    const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "publicationStatus" in args &&
+        (args as { publicationStatus?: string }).publicationStatus === "pending"
+      ) {
+        return {
+          ok: true,
+          packageId: "packages:demo",
+          releaseId: "packageReleases:pending",
+          publicationStatus: "pending",
+          createdNewParent: false,
+        };
+      }
+      if (typeof args === "object" && args !== null && "packageReleaseId" in args) {
+        throw new Error("attempt creation outage");
+      }
+      if (
+        typeof args === "object" &&
+        args !== null &&
+        "releaseId" in args &&
+        "createdNewParent" in args
+      ) {
+        return { deleted: true, parentDeleted: true };
+      }
+      return null;
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null),
+      runMutation,
+      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: makePackageManifestStorage(),
+    };
+
+    try {
+      await expect(
+        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+          publishTokenId: "packagePublishTokens:1",
+          payload: {
+            name: "demo-plugin",
+            family: "bundle-plugin",
+            version: "1.0.0",
+            changelog: "init",
+            bundle: { hostTargets: ["desktop"] },
+            files: [packageManifestFile],
+          },
+        }),
+      ).rejects.toThrow("attempt creation outage");
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+      } else {
+        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
+      }
+    }
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        packageId: "packages:demo",
+        releaseId: "packageReleases:pending",
+        createdNewParent: false,
+      }),
+    );
+    expect(runMutation).not.toHaveBeenCalledWith(expect.anything(), {
       tokenId: "packagePublishTokens:1",
     });
   });
@@ -8643,6 +8908,86 @@ describe("packages public queries", () => {
             integritySha256: "different-existing-artifact",
           }),
         ),
+      runMutation,
+      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: makePackageManifestStorage(),
+    };
+
+    try {
+      await expect(
+        publishPackageForTrustedPublisherInternalHandler(ctx as never, {
+          publishTokenId: "packagePublishTokens:1",
+          payload: {
+            name: "demo-plugin",
+            family: "bundle-plugin",
+            version: "1.0.0",
+            changelog: "duplicate",
+            bundle: { hostTargets: ["desktop"] },
+            files: [packageManifestFile],
+          },
+        }),
+      ).rejects.toThrow(
+        "Version 1.0.0 already exists. Increment the version number and try again.",
+      );
+    } finally {
+      if (previousFlag === undefined) {
+        delete process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+      } else {
+        process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = previousFlag;
+      }
+    }
+
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("rejects staged package releases reserved by a retained publish attempt", async () => {
+    const previousFlag = process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES;
+    process.env.CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES = "1";
+    const runMutation = vi.fn(async () => {
+      throw new Error("duplicate publish should not create an attempt");
+    });
+    const trustedPublisher = {
+      _id: "packageTrustedPublishers:1",
+      packageId: "packages:demo",
+      provider: "github-actions",
+      repository: "openclaw/openclaw",
+      repositoryId: "1",
+      repositoryOwner: "openclaw",
+      repositoryOwnerId: "2",
+      workflowFilename: "plugin-clawhub-release.yml",
+      environment: "clawhub-release",
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "packagePublishTokens:1",
+          packageId: "packages:demo",
+          provider: "github-actions",
+          repository: "openclaw/openclaw",
+          repositoryId: "1",
+          repositoryOwner: "openclaw",
+          repositoryOwnerId: "2",
+          workflowFilename: "plugin-clawhub-release.yml",
+          environment: "clawhub-release",
+          version: "1.0.0",
+          sha: "abc123",
+          ref: "refs/heads/main",
+          runId: "100",
+          runAttempt: "1",
+          expiresAt: Date.now() + 60_000,
+        })
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin" }))
+        .mockResolvedValueOnce(trustedPublisher)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          attemptId: "publishAttempts:secret-blocked",
+          status: "blocked",
+        }),
       runMutation,
       runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
       scheduler: {
