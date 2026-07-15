@@ -426,15 +426,15 @@ describe("public skill version queries", () => {
     } as never)) as Array<{ version: string }>;
 
     expect(result.map((item) => item.version)).toEqual(["1.0.0"]);
-    expect(paginated.indexNames).toEqual(["by_skill_active_created", "by_skill_active_created"]);
+    expect(paginated.indexNames).toEqual(["by_skill_active_created"]);
     expect(paginated.filters).toEqual(
       new Map<string, unknown>([
         ["skillId", "skills:1"],
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(paginated.paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 1 });
-    expect(paginated.paginate).toHaveBeenNthCalledWith(2, { cursor: "1", numItems: 1 });
+    expect(paginated.paginate).toHaveBeenCalledOnce();
+    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 12 });
   });
 
   it("bounds public version pagination over hidden pending versions", async () => {
@@ -465,8 +465,8 @@ describe("public skill version queries", () => {
     } as never)) as { items: Array<{ version: string }>; nextCursor: string | null };
 
     expect(result).toEqual({ items: [], nextCursor: "12" });
-    expect(paginated.paginate).toHaveBeenCalledTimes(12);
-    expect(paginated.paginate).toHaveBeenLastCalledWith({ cursor: "11", numItems: 1 });
+    expect(paginated.paginate).toHaveBeenCalledOnce();
+    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 12 });
   });
 
   it.each(["admin", "moderator"] as const)(
@@ -558,7 +558,7 @@ describe("public skill version queries", () => {
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 1 });
+    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 12 });
   });
 
   it("paginates public version history over active skill versions", async () => {
@@ -623,7 +623,7 @@ describe("public skill version queries", () => {
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(paginate).toHaveBeenCalledWith({ cursor: "active-page", numItems: 1 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "active-page", numItems: 12 });
   });
 
   it("recovers public version pagination from stale pre-active-index cursors", async () => {
@@ -654,7 +654,7 @@ describe("public skill version queries", () => {
 
     expect(result).toEqual({ items: [], nextCursor: null });
     expect(paginate).toHaveBeenCalledTimes(1);
-    expect(paginate).toHaveBeenCalledWith({ cursor: "legacy-by-skill-cursor", numItems: 1 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "legacy-by-skill-cursor", numItems: 12 });
   });
 
   it("sanitizes latestVersion in listWithLatest", async () => {

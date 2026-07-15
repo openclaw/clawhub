@@ -7572,39 +7572,24 @@ async function paginatePublicSkillVersions(
   initialCursor: string | null,
   limit: number,
 ) {
-  const items: Doc<"skillVersions">[] = [];
-  let cursor = initialCursor;
-  let isDone = false;
-  let remainingRows = Math.max(
+  const scanLimit = Math.max(
     limit,
     Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, limit * MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES),
   );
+  const runPaginate = (pageCursor: string | null) =>
+    ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", skillId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ cursor: pageCursor, numItems: scanLimit });
+  const page = await paginateWithStaleCursorRecovery(runPaginate, initialCursor);
+  const items = page.page
+    .filter((version) => isPublicSkillVersionAvailableForSkill(version, skillId))
+    .slice(0, limit);
 
-  for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
-    if (items.length >= limit || isDone || remainingRows <= 0) break;
-    const batchSize = Math.min(remainingRows, limit - items.length);
-    const runPaginate = (pageCursor: string | null) =>
-      ctx.db
-        .query("skillVersions")
-        .withIndex("by_skill_active_created", (q) =>
-          q.eq("skillId", skillId).eq("softDeletedAt", undefined),
-        )
-        .order("desc")
-        .paginate({ cursor: pageCursor, numItems: batchSize });
-    const page = await paginateWithStaleCursorRecovery(runPaginate, cursor);
-    remainingRows -= batchSize;
-    for (const version of page.page) {
-      if (isPublicSkillVersionAvailableForSkill(version, skillId)) {
-        items.push(version);
-        if (items.length >= limit) break;
-      }
-    }
-    cursor = page.continueCursor;
-    isDone = page.isDone;
-    if (page.page.length === 0) break;
-  }
-
-  return { items, nextCursor: isDone ? null : cursor };
+  return { items, nextCursor: page.isDone ? null : page.continueCursor };
 }
 
 export const countPublicSkills = query({
