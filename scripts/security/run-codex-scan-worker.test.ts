@@ -40,7 +40,7 @@ function skillVersionJob(jobId: string) {
     job: {
       _id: jobId,
       hasMaliciousSignal: false,
-      leaseToken: "lease-secret",
+      leaseToken: "lease-fixture",
       source: "publish",
       targetKind: "skillVersion" as const,
       waitForVtUntil: 0,
@@ -482,7 +482,7 @@ describe("run-codex-scan-worker diagnostics", () => {
         job: {
           _id: "securityScanJobs:impl-package",
           hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
+          leaseToken: "lease-fixture",
           source: "publish",
           targetKind: "packageRelease",
           waitForVtUntil: 0,
@@ -495,7 +495,7 @@ describe("run-codex-scan-worker diagnostics", () => {
         job: {
           _id: "securityScanJobs:impl-request",
           hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
+          leaseToken: "lease-fixture",
           source: "publish",
           targetKind: "skillScanRequest",
           waitForVtUntil: 0,
@@ -544,7 +544,7 @@ JSON`,
         };
         const result = await processJob(
           client,
-          "worker-token",
+          "worker-auth",
           skillVersionJob(`securityScanJobs:${verdict}`),
           undefined,
         );
@@ -611,7 +611,7 @@ echo "not json" > "$out"`,
 
       const result = await processJob(
         client,
-        "worker-token",
+        "worker-auth",
         skillVersionJob("securityScanJobs:malformed"),
         undefined,
       );
@@ -654,7 +654,7 @@ echo "this should never complete"`,
 
       const result = await processJob(
         client,
-        "worker-token",
+        "worker-auth",
         skillVersionJob("securityScanJobs:timeout"),
         undefined,
       );
@@ -711,7 +711,7 @@ exit 0`,
 
       const result = await processJob(
         client,
-        "worker-token",
+        "worker-auth",
         skillVersionJob("securityScanJobs:no-fallback"),
         undefined,
       );
