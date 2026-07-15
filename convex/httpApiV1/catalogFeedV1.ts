@@ -3,7 +3,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 
-function matchesEtag(request: Request, etag: string) {
+export function matchesEtag(request: Request, etag: string) {
   const header = request.headers.get("if-none-match");
   if (!header) return false;
   return header
@@ -16,12 +16,54 @@ function matchesEtag(request: Request, etag: string) {
     });
 }
 
-function matchesLastModified(request: Request, publishedAt: number) {
+export function matchesLastModified(request: Request, publishedAt: number) {
   const header = request.headers.get("if-modified-since");
   if (!header) return false;
   const since = Date.parse(header);
   if (!Number.isFinite(since)) return false;
   return Math.floor(publishedAt / 1000) * 1000 <= since;
+}
+
+export function catalogFeedUnavailableResponse(message = "Catalog feed is not published") {
+  return new Response(message, {
+    status: 503,
+    headers: mergeHeaders(
+      {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+      corsHeaders(),
+    ),
+  });
+}
+
+export function catalogFeedResponseHeaders(
+  publication: {
+    sequence: number;
+    payloadSha256: string;
+    publishedAt: number;
+  },
+  options?: {
+    representationSha256?: string;
+    additionalHeaders?: Record<string, string>;
+  },
+) {
+  const representationSha256 = options?.representationSha256 ?? publication.payloadSha256;
+  return mergeHeaders(
+    {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400",
+      "Surrogate-Control": "max-age=300, stale-while-revalidate=86400",
+      ETag: `"sha256:${representationSha256}"`,
+      "Last-Modified": new Date(publication.publishedAt).toUTCString(),
+      "X-Catalog-Feed-Sequence": String(publication.sequence),
+      "X-Content-SHA256": representationSha256,
+      "X-Content-Type-Options": "nosniff",
+      Vary: "Accept-Encoding",
+      ...options?.additionalHeaders,
+    },
+    corsHeaders(),
+  );
 }
 
 export async function catalogFeedV1Handler(
@@ -34,33 +76,11 @@ export async function catalogFeedV1Handler(
 ) {
   const publication = await ctx.runQuery(internal.catalogFeed.getLatestPublication, { feedId });
   if (!publication) {
-    return new Response("Catalog feed is not published", {
-      status: 503,
-      headers: mergeHeaders(
-        {
-          "Content-Type": "text/plain; charset=utf-8",
-          "Cache-Control": "no-store",
-        },
-        corsHeaders(),
-      ),
-    });
+    return catalogFeedUnavailableResponse();
   }
 
   const etag = `"sha256:${publication.payloadSha256}"`;
-  const headers = mergeHeaders(
-    {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400",
-      "Surrogate-Control": "max-age=300, stale-while-revalidate=86400",
-      ETag: etag,
-      "Last-Modified": new Date(publication.publishedAt).toUTCString(),
-      "X-Catalog-Feed-Sequence": String(publication.sequence),
-      "X-Content-SHA256": publication.payloadSha256,
-      "X-Content-Type-Options": "nosniff",
-      Vary: "Accept-Encoding",
-    },
-    corsHeaders(),
-  );
+  const headers = catalogFeedResponseHeaders(publication);
 
   if (
     matchesEtag(request, etag) ||
