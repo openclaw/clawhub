@@ -359,6 +359,7 @@ const internalRefs = internal as unknown as {
     submitSkillAppealForUserInternal: unknown;
     listSkillAppealsInternal: unknown;
     resolveSkillAppealForUserInternal: unknown;
+    setSkillFeaturedForUserInternal: unknown;
   };
 };
 
@@ -3144,6 +3145,39 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         400,
         rate.headers,
       );
+    }
+  }
+
+  if (segments.length === 2 && action === "featured") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = await readOptionalJson(request);
+      const featured =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>).featured
+          : undefined;
+      if (typeof featured !== "boolean") {
+        return text("featured must be a boolean", 400, rate.headers);
+      }
+      const ownerHandle =
+        optionalStringField(body, "ownerHandle") ?? getOwnerHandleParam(new URL(request.url));
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.setSkillFeaturedForUserInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+          ...(ownerHandle ? { ownerHandle } : {}),
+          featured,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillRescanErrorToResponse(error, rate.headers);
     }
   }
 

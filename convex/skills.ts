@@ -10498,34 +10498,78 @@ export const setBatch = mutation({
     assertModerator(user);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) throw new Error("Skill not found");
-    const existingBadges = await getSkillBadgeMap(ctx, skill._id);
-    const previousHighlighted = isSkillHighlighted({ badges: existingBadges });
     const nextBatch = args.batch?.trim() || undefined;
-    const nextHighlighted = nextBatch === "highlighted";
-    const now = Date.now();
+    await setSkillFeaturedForActor(ctx, user, skill, nextBatch);
+  },
+});
 
-    if (nextHighlighted) {
-      await upsertSkillBadge(ctx, skill._id, "highlighted", user._id, now);
-    } else {
-      await removeSkillBadge(ctx, skill._id, "highlighted");
+async function setSkillFeaturedForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  skill: Doc<"skills">,
+  nextBatch: string | undefined,
+) {
+  const existingBadges = await getSkillBadgeMap(ctx, skill._id);
+  const previousHighlighted = isSkillHighlighted({ badges: existingBadges });
+  const featured = nextBatch === "highlighted";
+  const now = Date.now();
+
+  if (featured) {
+    await upsertSkillBadge(ctx, skill._id, "highlighted", actor._id, now);
+  } else {
+    await removeSkillBadge(ctx, skill._id, "highlighted");
+  }
+
+  await ctx.db.patch(skill._id, {
+    batch: nextBatch,
+    updatedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "badge.highlighted",
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: { highlighted: featured },
+    createdAt: now,
+  });
+
+  if (featured && !previousHighlighted) {
+    void queueHighlightedWebhook(ctx, skill._id);
+  }
+
+  return { ok: true as const, featured, skillId: skill._id, slug: skill.slug };
+}
+
+export const setSkillFeaturedForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    ownerHandle: v.optional(v.string()),
+    featured: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    if (resolved.ambiguous) {
+      throw new ConvexError(
+        "Slug is used by multiple publishers. Use an owner-qualified skill URL.",
+      );
+    }
+    const skill = resolved.skill;
+    if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
+      throw new ConvexError("Skill not found");
     }
 
-    await ctx.db.patch(skill._id, {
-      batch: nextBatch,
-      updatedAt: now,
-    });
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "badge.highlighted",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: { highlighted: nextHighlighted },
-      createdAt: now,
-    });
-
-    if (nextHighlighted && !previousHighlighted) {
-      void queueHighlightedWebhook(ctx, skill._id);
-    }
+    const result = await setSkillFeaturedForActor(
+      ctx,
+      actor,
+      skill,
+      args.featured ? "highlighted" : undefined,
+    );
+    return { ...result, ownerHandle: args.ownerHandle ?? null };
   },
 });
 
