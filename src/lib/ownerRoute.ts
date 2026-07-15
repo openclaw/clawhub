@@ -29,6 +29,10 @@ export function buildPublisherProfileHref(handle: string) {
     : `/${routeSegment(handle)}`;
 }
 
+export function buildPublisherApiFeedHref(publisherId: string) {
+  return `/api/v1/publishers/${encodeURIComponent(publisherId.trim())}/feed`;
+}
+
 export function isLegacyPublisherProfileHandle(handle: string) {
   return Boolean(getOpenClawExtensionPackageName(handle));
 }

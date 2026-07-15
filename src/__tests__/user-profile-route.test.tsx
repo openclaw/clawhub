@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { buildPublisherApiFeedHref } from "../lib/ownerRoute";
 import {
   buildPublisherCatalogCategoryOptions,
   buildPublisherGroupTabOptions,
@@ -125,6 +126,9 @@ describe("user profile route", () => {
     expect(screen.queryByRole("button", { name: "Follow" })).toBeNull();
     expect(screen.getByRole("button", { name: "Profile actions" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /github/i })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /^feed$/i }).getAttribute("href")).toBe(
+      buildPublisherApiFeedHref("publishers:nvidia"),
+    );
   });
 
   it("shows edit profile instead of report on the viewer's own publisher page", async () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPublisherApiFeedHref,
   buildPublisherProfileHref,
   isOwnerRouteHandleOrIdSegment,
   isOwnerRouteHandleSegment,
@@ -10,6 +11,12 @@ describe("owner route segments", () => {
   it("uses the legacy profile route for official alias collisions", () => {
     expect(buildPublisherProfileHref("tencent")).toBe("/user/tencent");
     expect(buildPublisherProfileHref("steipete")).toBe("/steipete");
+  });
+
+  it("builds a stable publisher API feed URL", () => {
+    expect(buildPublisherApiFeedHref("publishers:alice/example")).toBe(
+      "/api/v1/publishers/publishers%3Aalice%2Fexample/feed",
+    );
   });
 
   it("accepts npm-compatible publisher handle characters", () => {

@@ -16,6 +16,7 @@ import {
   Flag,
   MoreHorizontal,
   Plus,
+  Rss,
   Search,
   Star,
   type LucideIcon,
@@ -65,7 +66,11 @@ import {
 } from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
-import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../../lib/ownerRoute";
+import {
+  buildPublisherApiFeedHref,
+  buildPublisherProfileHref,
+  isLegacyPublisherProfileHandle,
+} from "../../lib/ownerRoute";
 import type { PackageListItem } from "../../lib/packageApi";
 import { packageNameFromPublisherPluginRoute } from "../../lib/pluginRoutes";
 import type {
@@ -846,6 +851,13 @@ export function PublisherProfilePage({
                           size={12}
                           aria-hidden="true"
                         />
+                      </a>
+                      <a
+                        className="publisher-profile-meta-link"
+                        href={buildPublisherApiFeedHref(String(publisher._id))}
+                      >
+                        <Rss size={14} aria-hidden="true" />
+                        Feed
                       </a>
                     </div>
                   </section>
