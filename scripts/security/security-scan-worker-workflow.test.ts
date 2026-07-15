@@ -113,9 +113,12 @@ describe("security-scan-codex workflow", () => {
       "Run Codex security worker",
     ]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
+    expectSecretStepAllowlist(steps, "VT_API_KEY", ["Run Codex security worker"]);
     expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expect(scanStep?.env ?? {}).not.toHaveProperty("VIRUSTOTAL_API_KEY");
+    expect(uploadStep?.env ?? {}).not.toHaveProperty("VIRUSTOTAL_API_KEY");
     expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();
     const codexInstall = steps.find((step) => step.name === "Install Codex CLI")?.run;
     const clawScanInstall = steps.find((step) => step.name === "Install ClawScan CLI")?.run;
@@ -130,6 +133,7 @@ describe("security-scan-codex workflow", () => {
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
+      VIRUSTOTAL_API_KEY: "${{ secrets.VT_API_KEY }}",
     });
   });
 });

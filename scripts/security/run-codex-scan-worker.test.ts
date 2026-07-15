@@ -1466,6 +1466,192 @@ JSON
     expect(await readdir(jobDir)).not.toContain("artifact");
   });
 
+  it("retains full ClawScan artifact and scanner outputs with secret-safe redaction", async () => {
+    const diagnosticsRoot = await tempDir();
+    const workspace = await tempDir();
+    const scannerOutputRoot = join(workspace, "clawscan-artifact", "scanner-results");
+    await mkdir(scannerOutputRoot, { recursive: true });
+
+    const artifactLongText = `ARTIFACT-BEGIN-${"a".repeat(25_050)}-ARTIFACT-END`;
+    const scannerLongText = `SCANNER-BEGIN-${"b".repeat(25_050)}-SCANNER-END`;
+    const artifactPath = join(workspace, "clawscan-artifact.json");
+
+    const skillspectorOutputPath = join(scannerOutputRoot, "skillspector.json");
+    const virustotalOutputPath = join(scannerOutputRoot, "virustotal.log");
+    await writeFile(
+      skillspectorOutputPath,
+      `${JSON.stringify(
+        {
+          api_key: "example",
+          evidence: scannerLongText,
+          signedUrl: "https://signed.example.invalid/skillspector?token=placeholder",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      virustotalOutputPath,
+      `Authorization: Bearer placeholder\n${scannerLongText}\nhttps://signed.example.invalid/virustotal?token=placeholder\n`,
+    );
+
+    const clawscanArtifact = {
+      schemaVersion: "clawscan-run-v1",
+      profile: "clawhub",
+      scanners: {
+        skillspector: {
+          status: "completed",
+          outputPath: "clawscan-artifact/scanner-results/skillspector.json",
+          raw: {
+            details: artifactLongText,
+          },
+        },
+        virustotal: {
+          status: "completed",
+          outputPath: "clawscan-artifact/scanner-results/virustotal.log",
+          raw: {
+            summary: "https://signed.example.invalid/vt?token=placeholder",
+          },
+        },
+        "clawscan-static": {
+          status: "completed",
+          raw: { status: "clean" },
+        },
+      },
+      judge: {
+        status: "completed",
+        result: {
+          verdict: "benign",
+          confidence: "high",
+          summary: artifactLongText,
+          dimensions: {
+            purpose_capability: {
+              status: "ok",
+              detail: "ok",
+            },
+          },
+          scan_findings_in_context: [],
+          user_guidance: "guidance",
+          metadata: {
+            api_key: "example",
+          },
+        },
+      },
+    };
+    await writeFile(artifactPath, `${JSON.stringify(clawscanArtifact)}\n`);
+
+    await writeJobDiagnostic({
+      clawscan: {
+        args: ["clawscan", "./artifact", "--profile", "clawhub"],
+        artifactPath,
+        exitCode: 0,
+        rawArtifact: JSON.stringify(clawscanArtifact),
+      },
+      completedAt: 2000,
+      diagnosticsRoot,
+      job: {
+        job: {
+          _id: "job-clawscan-evidence",
+          hasMaliciousSignal: false,
+          leaseToken: "placeholder",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      startedAt: 1000,
+      status: "completed",
+    });
+
+    await rm(workspace, { recursive: true, force: true });
+
+    const jobDir = join(diagnosticsRoot, "job-clawscan-evidence");
+    const artifactText = await readFile(join(jobDir, "clawscan-artifact.redacted.json"), "utf8");
+    const artifactJson = JSON.parse(artifactText) as {
+      judge?: {
+        result?: {
+          metadata?: {
+            api_key?: string;
+          };
+          summary?: string;
+        };
+      };
+      scanners?: {
+        skillspector?: {
+          raw?: {
+            details?: string;
+          };
+        };
+        virustotal?: {
+          raw?: {
+            summary?: string;
+          };
+        };
+      };
+    };
+    expect(artifactText).toContain("ARTIFACT-END");
+    expect(artifactText).not.toContain("...[truncated ");
+    expect(artifactText).toContain(artifactLongText);
+    expect(artifactJson.judge?.result?.metadata?.api_key).toBe("[redacted-secret]");
+    expect(artifactText).not.toContain('"api_key":"example"');
+    expect(String(artifactJson.scanners?.virustotal?.raw?.summary)).toContain("[redacted-url]");
+    expect(artifactText).not.toContain("signed.example.invalid");
+    expect(artifactJson.scanners?.skillspector?.raw?.details).toContain(artifactLongText);
+
+    const skillspectorCopiedPath = join(
+      jobDir,
+      "clawscan-scanner-outputs",
+      "clawscan-artifact",
+      "scanner-results",
+      "skillspector.json",
+    );
+    const virustotalCopiedPath = join(
+      jobDir,
+      "clawscan-scanner-outputs",
+      "clawscan-artifact",
+      "scanner-results",
+      "virustotal.log",
+    );
+    const skillspectorCopiedText = await readFile(skillspectorCopiedPath, "utf8");
+    const skillspectorCopiedJson = JSON.parse(skillspectorCopiedText) as {
+      api_key?: string;
+      evidence?: string;
+      signedUrl?: string;
+    };
+    const virustotalCopiedText = await readFile(virustotalCopiedPath, "utf8");
+    expect(skillspectorCopiedJson.evidence).toContain("SCANNER-END");
+    expect(skillspectorCopiedJson.evidence).toContain(scannerLongText);
+    expect(skillspectorCopiedText).not.toContain('"api_key":"example"');
+    expect(skillspectorCopiedJson.api_key).toBe("[redacted-secret]");
+    expect(String(skillspectorCopiedJson.signedUrl)).toContain("[redacted-url]");
+    expect(skillspectorCopiedText).not.toContain("signed.example.invalid");
+    expect(skillspectorCopiedText).not.toContain("...[truncated ");
+    expect(virustotalCopiedText).toContain("SCANNER-END");
+    expect(virustotalCopiedText).toContain(scannerLongText);
+    expect(virustotalCopiedText).not.toContain("Bearer placeholder");
+    expect(virustotalCopiedText).toContain("[redacted-secret]");
+    expect(virustotalCopiedText).toContain("[redacted-url]");
+    expect(virustotalCopiedText).not.toContain("signed.example.invalid");
+
+    const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
+    expect(diagnostic.clawscanResult.scannerOutputFiles).toEqual([
+      {
+        diagnosticPath:
+          "clawscan-scanner-outputs/clawscan-artifact/scanner-results/skillspector.json",
+        outputPath: "clawscan-artifact/scanner-results/skillspector.json",
+        scanner: "skillspector",
+        status: "copied",
+      },
+      {
+        diagnosticPath: "clawscan-scanner-outputs/clawscan-artifact/scanner-results/virustotal.log",
+        outputPath: "clawscan-artifact/scanner-results/virustotal.log",
+        scanner: "virustotal",
+        status: "copied",
+      },
+    ]);
+  });
+
   it("preserves sanitized ClawScan shadow failure reasons in comparison artifacts", async () => {
     const diagnosticsRoot = await tempDir();
 

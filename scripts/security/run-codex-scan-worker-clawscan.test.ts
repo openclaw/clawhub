@@ -50,6 +50,100 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
+type ClawScanVerdict = "benign" | "suspicious" | "malicious";
+
+function completeJudgeDimensions() {
+  return {
+    purpose_capability: {
+      status: "ok",
+      detail: "purpose capability is proportional",
+    },
+    instruction_scope: {
+      status: "ok",
+      detail: "instruction scope is bounded",
+    },
+    install_mechanism: {
+      status: "ok",
+      detail: "install mechanism is expected for this artifact",
+    },
+    environment_proportionality: {
+      status: "ok",
+      detail: "environment permissions are proportional",
+    },
+    persistence_privilege: {
+      status: "ok",
+      detail: "persistence/privilege behavior is expected",
+    },
+  };
+}
+
+function completeJudgeResult(verdict: ClawScanVerdict) {
+  return {
+    verdict,
+    confidence: "high",
+    summary: "summary",
+    dimensions: completeJudgeDimensions(),
+    scan_findings_in_context: [],
+    user_guidance: "guidance",
+  };
+}
+
+function clawScanArtifactJson(options?: {
+  completedAt?: string;
+  includeCompletedAt?: boolean;
+  judgeResult?: Record<string, unknown>;
+  scannerStatuses?: Partial<Record<"clawscan-static" | "skillspector" | "virustotal", string>>;
+  verdict?: ClawScanVerdict;
+}) {
+  const verdict = options?.verdict ?? "benign";
+  const scannerStatuses = {
+    "clawscan-static": "completed",
+    skillspector: "completed",
+    virustotal: "completed",
+    ...options?.scannerStatuses,
+  };
+  const artifact: Record<string, unknown> = {
+    schemaVersion: "clawscan-run-v1",
+    profile: "clawhub",
+    scanners: {
+      skillspector: {
+        status: scannerStatuses.skillspector,
+        raw: {
+          risk_assessment: {
+            score: 55,
+            severity: "HIGH",
+            recommendation: "DO_NOT_INSTALL",
+          },
+          issues: [{ id: "SDI-1", severity: "HIGH", explanation: "test finding" }],
+        },
+      },
+      virustotal: {
+        status: scannerStatuses.virustotal,
+        raw: {
+          status: scannerStatuses.virustotal === "skipped" ? "skipped" : "clean",
+        },
+      },
+      "clawscan-static": {
+        status: scannerStatuses["clawscan-static"],
+        raw: {
+          status: scannerStatuses["clawscan-static"] === "completed" ? "clean" : "failed",
+        },
+      },
+    },
+    judge: {
+      status: "completed",
+      promptSha256: "prompt-sha-1",
+      outputSchemaSha256: "schema-sha-1",
+      result: options?.judgeResult ?? completeJudgeResult(verdict),
+    },
+  };
+  if (options?.includeCompletedAt === false) {
+    return JSON.stringify(artifact);
+  }
+  artifact.completedAt = options?.completedAt ?? "2026-07-15T00:00:00Z";
+  return JSON.stringify(artifact);
+}
+
 describe("run-codex-scan-worker clawscan authority", () => {
   it("defaults skillVersion jobs to the legacy codex path unless clawscan is explicitly selected", async () => {
     const workspace = await tempDir();
@@ -138,12 +232,13 @@ JSON`,
     { verdict: "benign", expectedStatus: "clean" },
     { verdict: "suspicious", expectedStatus: "suspicious" },
     { verdict: "malicious", expectedStatus: "malicious" },
-  ])(
+  ] satisfies Array<{ expectedStatus: string; verdict: ClawScanVerdict }>)(
     "persists %s ClawScan verdicts through the existing completion shape",
     async ({ verdict, expectedStatus }) => {
       const workspace = await tempDir();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
+      const artifactJson = clawScanArtifactJson({ verdict });
       await writeFakeClawScanCommand(
         fakeClawScan,
         `printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
@@ -161,7 +256,7 @@ while [[ $# -gt 0 ]]; do
 done
 mkdir -p "$(dirname "$out")"
 cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","completedAt":"2026-07-15T00:00:00Z","scanners":{"skillspector":{"status":"completed","raw":{"risk_assessment":{"score":55,"severity":"HIGH","recommendation":"DO_NOT_INSTALL"},"issues":[{"id":"SDI-1","severity":"HIGH","explanation":"test finding"}]}},"virustotal":{"status":"completed","raw":{"status":"clean"}},"clawscan-static":{"status":"completed","raw":{"status":"clean"}}},"judge":{"status":"completed","promptSha256":"prompt-sha-1","outputSchemaSha256":"schema-sha-1","result":{"verdict":"${verdict}","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance","model":"gpt-5.5"}}}
+${artifactJson}
 JSON`,
       );
 
@@ -195,6 +290,10 @@ JSON`,
             status: "suspicious",
           },
         });
+        const payload = client.action.mock.calls[0]?.[1] as
+          | { llmAnalysis?: { model?: string } }
+          | undefined;
+        expect(payload?.llmAnalysis?.model).toBeUndefined();
 
         const invocationArgs = await readFile(argsLog, "utf8");
         expect(invocationArgs).toContain("--profile");
@@ -211,6 +310,9 @@ JSON`,
   it("fails the job when VirusTotal scanner status is skipped", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
+    const artifactJson = clawScanArtifactJson({
+      scannerStatuses: { virustotal: "skipped" },
+    });
     await writeFakeClawScanCommand(
       fakeClawScan,
       `out=""
@@ -227,7 +329,7 @@ while [[ $# -gt 0 ]]; do
 done
 mkdir -p "$(dirname "$out")"
 cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","completedAt":"2026-07-15T00:00:00Z","scanners":{"skillspector":{"status":"completed","raw":{"issues":[]}},"virustotal":{"status":"skipped","raw":{"reason":"directory target"}},"clawscan-static":{"status":"completed","raw":{"status":"clean"}}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance","model":"gpt-5.5"}}}
+${artifactJson}
 JSON`,
     );
 
@@ -317,9 +419,24 @@ echo "not json" > "$out"`,
     }
   });
 
-  it("fails the job when a required ClawScan scanner reports failed", async () => {
+  it("fails the job when the ClawScan judge result is missing required dimensions", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
+    const artifactJson = clawScanArtifactJson({
+      judgeResult: {
+        verdict: "benign",
+        confidence: "high",
+        summary: "summary",
+        dimensions: {
+          purpose_capability: {
+            status: "ok",
+            detail: "only one dimension",
+          },
+        },
+        scan_findings_in_context: [],
+        user_guidance: "guidance",
+      },
+    });
     await writeFakeClawScanCommand(
       fakeClawScan,
       `out=""
@@ -336,7 +453,135 @@ while [[ $# -gt 0 ]]; do
 done
 mkdir -p "$(dirname "$out")"
 cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"failed","raw":{"error":"boom"}},"virustotal":{"status":"completed","raw":{"status":"clean"}},"clawscan-static":{"status":"completed","raw":{"status":"clean"}}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance","model":"gpt-5.5"}}}
+${artifactJson}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: false } : {};
+        }),
+      };
+
+      const result = await processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:judge-incomplete"),
+        undefined,
+        "clawscan",
+      );
+
+      expect(result).toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      const payload = client.action.mock.calls[0]?.[1] as { error?: string } | undefined;
+      expect(payload?.error).toContain("ClawScan judge dimensions missing required field(s)");
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it.each([
+    {
+      artifactJson: clawScanArtifactJson({ includeCompletedAt: false }),
+      expectedError: "ClawScan artifact completedAt was missing",
+      name: "missing",
+    },
+    {
+      artifactJson: clawScanArtifactJson({ completedAt: "not-a-date" }),
+      expectedError: "ClawScan artifact completedAt was not-a-date",
+      name: "invalid",
+    },
+  ])(
+    "fails the job when ClawScan artifact completedAt is $name",
+    async ({ artifactJson, expectedError, name }) => {
+      const workspace = await tempDir();
+      const fakeClawScan = join(workspace, "fake-clawscan");
+      await writeFakeClawScanCommand(
+        fakeClawScan,
+        `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${artifactJson}
+JSON`,
+      );
+
+      const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+      try {
+        const client = {
+          action: vi.fn(async (...args: unknown[]) => {
+            const payload = args[1] as { error?: string } | undefined;
+            return payload?.error ? { retry: false } : {};
+          }),
+        };
+
+        const result = await processJob(
+          client,
+          "worker-auth",
+          skillVersionJob(`securityScanJobs:completed-at-${name}`),
+          undefined,
+          "clawscan",
+        );
+
+        expect(result).toEqual({
+          completed: false,
+          hardFailed: true,
+          retryableFailed: false,
+        });
+        expect(client.action).toHaveBeenCalledTimes(1);
+        expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+          error: expectedError,
+        });
+      } finally {
+        if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+        else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      }
+    },
+  );
+
+  it("fails the job when a required ClawScan scanner reports failed", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const artifactJson = clawScanArtifactJson({
+      scannerStatuses: { skillspector: "failed" },
+    });
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${artifactJson}
 JSON`,
     );
 
