@@ -29,14 +29,13 @@ import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib
 import {
   filterHomePluginsByTab as filterPluginsByTab,
   filterHomeSkillsByTab as filterSkillsByTab,
+  fetchHomeFeaturedAvailability as fetchFeaturedAvailability,
   fetchHomePluginListing as fetchPluginListing,
   fetchHomeSkillListing as fetchSkillListing,
   HOME_LISTING_PAGE_SIZE,
   homeListingCacheKey as listingCacheKey,
-  isNewHomeSkillEligible as isNewSkillEligible,
   itemMatchesAnyHomeCategory as itemMatchesAnyCategory,
   skillMatchesAnyHomeCategory as skillMatchesAnyCategory,
-  sortHomeSkillEntries as sortSkillEntries,
   uniqueHomePlugins as uniquePlugins,
   uniqueHomeSkillEntries as uniqueSkillEntries,
   type HomeListingCacheEntry,
@@ -58,15 +57,15 @@ import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
 type ListingView = "list" | "grid";
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
+  { id: "featured", label: "Featured" },
   { id: "popular", label: "Top" },
   { id: "trending", label: "Trending" },
-  { id: "new", label: "New" },
 ];
 
 const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
+  { id: "featured", label: "Featured" },
   { id: "officials", label: "Verified" },
   { id: "popular", label: "Top" },
-  { id: "new", label: "New" },
 ];
 
 const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
@@ -229,7 +228,13 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   return (
     <Link to={pluginHref} className="home-v2-listing-row">
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon kind="plugin" label={name} size="sm" />
+        <MarketplaceIcon
+          kind="plugin"
+          label={name}
+          imageUrl={plugin.icon}
+          categorySlug={plugin.categories?.[0]}
+          size="sm"
+        />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
@@ -304,7 +309,13 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
     <Link to={pluginHref} className="home-v2-listing-card oc-card oc-card-interactive">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon kind="plugin" label={name} size="sm" />
+          <MarketplaceIcon
+            kind="plugin"
+            label={name}
+            imageUrl={plugin.icon}
+            categorySlug={plugin.categories?.[0]}
+            size="sm"
+          />
         </span>
         <div className="home-v2-listing-card-id">
           <span className="home-v2-listing-card-name" title={name}>
@@ -345,11 +356,17 @@ function createInitialListingCache(initialListing: HomeListingInitialData | null
       categorySlugs: initialListing.categorySlugs,
       fetchLimit: initialListing.fetchLimit,
     }),
-    {
-      kind: "skills",
-      items: initialListing.items,
-      hasMore: initialListing.hasMore,
-    },
+    initialListing.kind === "skills"
+      ? {
+          kind: "skills",
+          items: initialListing.items,
+          hasMore: initialListing.hasMore,
+        }
+      : {
+          kind: "plugins",
+          items: initialListing.items,
+          hasMore: initialListing.hasMore,
+        },
   );
   return cache;
 }
@@ -361,14 +378,26 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   listingCacheRef.current ??= createInitialListingCache(initialListing);
   const listingCache = listingCacheRef.current;
 
-  const [kind, setKind] = useState<ListingKind>("skills");
-  const [tab, setTab] = useState<ListingTab>("popular");
-  const [view, setView] = useState<ListingView>("list");
+  const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "plugins");
+  const [tab, setTab] = useState<ListingTab>(initialListing?.tab ?? "featured");
+  const [view, setView] = useState<ListingView>("grid");
   const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);
-  const [skills, setSkills] = useState<SkillPageEntry[]>(initialListing?.items ?? []);
-  const [plugins, setPlugins] = useState<PackageListItem[]>([]);
+  const [skills, setSkills] = useState<SkillPageEntry[]>(
+    initialListing?.kind === "skills" ? initialListing.items : [],
+  );
+  const [plugins, setPlugins] = useState<PackageListItem[]>(
+    initialListing?.kind === "plugins" ? initialListing.items : [],
+  );
+  const [featuredAvailability, setFeaturedAvailability] = useState<
+    Record<ListingKind, boolean | null>
+  >(
+    initialListing?.featuredAvailability ?? {
+      plugins: null,
+      skills: null,
+    },
+  );
   const [status, setStatus] = useState<"loading" | "idle" | "error">(
     initialListing ? "idle" : "loading",
   );
@@ -400,7 +429,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     () => filterPluginsByTab(searchPlugins, tab),
     [searchPlugins, tab],
   );
-  const visibleTabs = kind === "skills" ? SKILL_LISTING_TABS : PLUGIN_LISTING_TABS;
+  const visibleTabs = (kind === "skills" ? SKILL_LISTING_TABS : PLUGIN_LISTING_TABS).filter(
+    (item) => item.id !== "featured" || featuredAvailability[kind] === true,
+  );
 
   const activeItems = isSearchMode
     ? kind === "skills"
@@ -447,6 +478,30 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [searchOpen, trimmedSearch]);
+
+  useEffect(() => {
+    if (featuredAvailability[kind] !== null) return undefined;
+    const controller = new AbortController();
+    fetchFeaturedAvailability(kind, controller.signal)
+      .then((available) => {
+        if (controller.signal.aborted) return;
+        setFeaturedAvailability((current) => ({ ...current, [kind]: available }));
+        if (!available) {
+          setTab((current) =>
+            current === "featured" ? (kind === "plugins" ? "officials" : "popular") : current,
+          );
+        }
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setFeaturedAvailability((current) => ({ ...current, [kind]: false }));
+        setTab((current) =>
+          current === "featured" ? (kind === "plugins" ? "officials" : "popular") : current,
+        );
+      });
+
+    return () => controller.abort();
+  }, [featuredAvailability, kind]);
 
   useEffect(() => {
     if (isSearchMode) return undefined;
@@ -546,7 +601,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 convexHttp.action(api.search.searchSkills, {
                   query: trimmedSearch,
                   limit: fetchLimit,
-                  ...(tab === "new" ? { nonSuspiciousOnly: true, excludePendingScan: true } : {}),
+                  highlightedOnly: tab === "featured" ? true : undefined,
                   ...(categorySlug ? { categorySlug } : {}),
                 }),
               ),
@@ -560,17 +615,12 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                       ownerHandle: hit.ownerHandle,
                       owner: hit.owner,
                     }))
-                    .filter(
-                      (entry) =>
-                        skillMatchesAnyCategory(entry.skill, categorySlugs) &&
-                        (tab !== "new" || isNewSkillEligible(entry.skill)),
-                    ),
+                    .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs)),
                 ),
               );
-              const sortedRows = tab === "new" ? sortSkillEntries(rows, tab) : rows;
-              const items = sortedRows.slice(0, fetchLimit);
+              const items = rows.slice(0, fetchLimit);
               const hasMore =
-                sortedRows.length > fetchLimit ||
+                rows.length > fetchLimit ||
                 results.some((hits) => (hits as SkillSearchHit[]).length >= fetchLimit);
               setSearchSkills(items);
               setListingHasMore(hasMore);
@@ -582,8 +632,8 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                   q: trimmedSearch,
                   category: categorySlug ?? undefined,
                   isOfficial: tab === "officials" ? true : undefined,
-                  excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
-                  sort: tab === "new" ? "updated" : "downloads",
+                  featured: tab === "featured" ? true : undefined,
+                  sort: "downloads",
                   limit: fetchLimit,
                   signal: controller.signal,
                 }),
@@ -595,12 +645,10 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                   result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
                 ),
               );
-              const sortedItems =
-                tab === "new" ? [...items].sort((a, b) => b.updatedAt - a.updatedAt) : items;
               const hasMore = results.some(
                 (result) => result.nextCursor != null || result.items.length >= fetchLimit,
               );
-              setSearchPlugins(sortedItems);
+              setSearchPlugins(items);
               setListingHasMore(hasMore);
               setSearchStatus("idle");
             });
@@ -661,8 +709,14 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     if (nextKind === kind) return;
     setKind(nextKind);
     setCategorySlugs([]);
-    if (nextKind === "plugins") setTab("officials");
-    else if (tab === "officials") setTab("popular");
+    const nextFeaturedAvailability = featuredAvailability[nextKind];
+    setTab(
+      nextFeaturedAvailability === false
+        ? nextKind === "plugins"
+          ? "officials"
+          : "popular"
+        : "featured",
+    );
   };
 
   const removeCategory = (slug: string) => {
