@@ -7,8 +7,12 @@ on:
         description: "Vercel preview URL to verify"
         required: true
         type: string
+      checkout_ref:
+        description: "Optional git ref or SHA to check out; use this when dispatching from main for a PR preview"
+        required: false
+        type: string
       expected_sha:
-        description: "Expected git SHA for this proof run"
+        description: "Expected git SHA after checkout"
         required: false
         type: string
 
@@ -16,8 +20,34 @@ permissions:
   contents: read
 
 jobs:
+  dispatch-info:
+    name: preview-proof-dispatch-info
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize dispatch
+        env:
+          CHECKOUT_REF: ${{ inputs.checkout_ref }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          PREVIEW_URL: ${{ inputs.preview_url }}
+        run: |
+          {
+            echo "## Preview proof dispatch"
+            echo
+            echo "- Workflow ref: \`${GITHUB_REF}\`"
+            echo "- Workflow SHA: \`${GITHUB_SHA}\`"
+            echo "- Checkout ref: \`${CHECKOUT_REF:-$GITHUB_SHA}\`"
+            echo "- Expected SHA: \`${EXPECTED_SHA:-not supplied}\`"
+            echo "- Preview URL: ${PREVIEW_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::notice::Protected preview proof only runs from refs/heads/main. Re-run from main with checkout_ref set to the PR SHA."
+          fi
+
   preview-proof:
     name: preview-proof
+    needs: dispatch-info
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -25,6 +55,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
 
       - name: Verify checked-out revision
         env:
