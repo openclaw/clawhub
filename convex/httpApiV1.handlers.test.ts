@@ -8688,7 +8688,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.publisherFollowsGetV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/publisher-follows?limit=10", {
+      new Request("https://example.com/api/v1/publisher-follows?limit=10&cursor=older&q=open", {
         method: "GET",
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -8703,7 +8703,9 @@ describe("httpApiV1 handlers", () => {
       internal.publisherFollows.listFollowedPublishersInternal,
       {
         followerUserId: "users:1",
+        cursor: "older",
         limit: 10,
+        query: "open",
       },
     );
   });
@@ -8735,6 +8737,25 @@ describe("httpApiV1 handlers", () => {
     expect(emptyCursor.status).toBe(400);
     expect(await emptyCursor.text()).toBe("Invalid cursor format");
     expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("publisher follows list rejects malformed cursors as client errors", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runQuery = vi.fn().mockRejectedValue(new Error("Invalid cursor format"));
+
+    const response = await __handlers.publisherFollowsGetV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/publisher-follows?cursor=bad", {
+        method: "GET",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.text()).resolves.toBe("Invalid cursor format");
   });
 
   it("publisher follows delete is idempotent", async () => {
