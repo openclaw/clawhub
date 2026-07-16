@@ -291,6 +291,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Authoritative ClawScan failures use the existing failure/retry lifecycle and
   never trigger per-job legacy fallback. Rollback is a manual whole-system mode
   change to `legacy`.
+- Every worker run publishes a GitHub Actions summary and uploads a structured
+  summary with its secret-scanned diagnostics. The summary reports authoritative
+  completions, failures, timeouts, scanner-stage and judge-stage failures,
+  duration, throughput, queue health, and verdict totals. `shadow` and
+  `clawscan` additionally report authoritative/secondary verdict pairs, exact
+  matches, secondary failures, and disagreement direction. Queue-health lookup
+  failures are diagnostic-only and must not change authoritative persistence,
+  retries, or the worker exit result.
+- Retained worker diagnostics preserve every redacted Codex/legacy output
+  record plus complete redacted ClawScan artifacts, per-scanner outputs, and
+  comparison records without per-file or aggregate-size truncation. Bounded
+  metadata/error fields may remain capped. Artifact upload still requires the
+  existing verified-secret scan to pass.
 - Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
   Successful completion requests another dispatch while queued work remains; a
   five-minute Convex cron is only a recovery watchdog for lost dispatch signals.

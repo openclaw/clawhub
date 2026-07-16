@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -22,6 +22,16 @@ import {
   redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
+import {
+  calculateSecurityScanWorkerHealthSummary,
+  renderSecurityScanWorkerSummaryMarkdown,
+  type SecurityScanComparisonOutcome,
+  type SecurityScanJobHealth,
+  type SecurityScanMode,
+  type SecurityScanQueueHealth,
+} from "./security-scan-worker-summary";
+
+export type { SecurityScanMode } from "./security-scan-worker-summary";
 
 export type ClaimedJob = {
   job: {
@@ -93,6 +103,7 @@ type CodexCommandDiagnostic = {
   rawResult?: string;
   stderr?: string;
   stdout?: string;
+  timedOut?: boolean;
 };
 
 type ClawScanCommandDiagnostic = {
@@ -102,6 +113,7 @@ type ClawScanCommandDiagnostic = {
   rawArtifact?: string;
   stderr?: string;
   stdout?: string;
+  timedOut?: boolean;
   mapping?: {
     judge?: {
       outputSchemaSha256?: string;
@@ -119,8 +131,6 @@ type ClawScanCommandDiagnostic = {
 
 type ScanImplementation = "legacy" | "clawscan";
 
-export type SecurityScanMode = "legacy" | "shadow" | "clawscan";
-
 type SecondaryScanDiagnostic = {
   authoritative: {
     confidence?: string;
@@ -131,6 +141,9 @@ type SecondaryScanDiagnostic = {
   completedAt?: number;
   durationMs?: number;
   error?: string;
+  failureStage?: "scanner" | "judge" | "unclassified";
+  judgeStageFailed: boolean;
+  scannerStageFailed: boolean;
   secondary: {
     confidence?: string;
     implementation: ScanImplementation;
@@ -139,6 +152,7 @@ type SecondaryScanDiagnostic = {
   };
   startedAt?: number;
   status: "completed" | "failed";
+  timedOut: boolean;
 };
 
 type JobDiagnosticInput = {
@@ -500,13 +514,13 @@ function redactDiagnosticValue(value: unknown, path: string[] = []): unknown {
   );
 }
 
-function redactStructuredDiagnosticText(value: string, rootKey: string) {
+function redactCompleteDiagnosticText(value: string, rootKey: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
   try {
     return JSON.stringify(redactDiagnosticValue(JSON.parse(trimmed), [rootKey]), null, 2);
   } catch {
-    // Codex --json writes JSONL. Redact parseable lines structurally, then fall back to text redaction.
+    // Codex --json writes JSONL. Preserve every line while applying the same secret redaction.
     const lines = value.split("\n");
     if (lines.some((line) => line.trim().startsWith("{"))) {
       return lines
@@ -515,12 +529,12 @@ function redactStructuredDiagnosticText(value: string, rootKey: string) {
           try {
             return JSON.stringify(redactDiagnosticValue(JSON.parse(line), [rootKey]));
           } catch {
-            return redactDiagnosticText(line, 2_000);
+            return redactDiagnosticTextUncapped(line);
           }
         })
         .join("\n");
     }
-    return redactDiagnosticText(value);
+    return redactDiagnosticTextUncapped(value);
   }
 }
 
@@ -690,7 +704,7 @@ async function writeDiagnosticText(
       ? value
       : options?.structured === false
         ? redactDiagnosticText(value, options.maxChars)
-        : redactStructuredDiagnosticText(value, rootKey);
+        : redactCompleteDiagnosticText(value, rootKey);
   await writeFile(join(jobDir, fileName), redacted.endsWith("\n") ? redacted : `${redacted}\n`);
   return fileName;
 }
@@ -1091,6 +1105,7 @@ export async function runSkillSpector(
           rawResult,
           stderr: error.stderr,
           stdout: error.stdout,
+          timedOut: error.timedOut,
         });
         if (rawResult) {
           try {
@@ -1192,13 +1207,21 @@ class CommandFailure extends Error {
   exitCode: number | null;
   stderr: string;
   stdout: string;
+  timedOut: boolean;
 
-  constructor(message: string, exitCode: number | null, stdout: string, stderr: string) {
+  constructor(
+    message: string,
+    exitCode: number | null,
+    stdout: string,
+    stderr: string,
+    timedOut: boolean,
+  ) {
     super(message);
     this.name = "CommandFailure";
     this.exitCode = exitCode;
     this.stdout = stdout;
     this.stderr = stderr;
+    this.timedOut = timedOut;
   }
 }
 
@@ -1241,6 +1264,7 @@ async function runCommand(
             code,
             stdout,
             stderr,
+            timedOut,
           ),
         );
       }
@@ -1640,6 +1664,25 @@ function readClawScanScannerStatuses(
   return scannerStatuses;
 }
 
+function clawScanDiagnosticMapping(artifact: Record<string, unknown>) {
+  const judge = asRecord(artifact.judge);
+  const result = asRecord(judge?.result);
+  const scannerStatuses = readClawScanScannerStatuses(artifact);
+  return {
+    judge: {
+      outputSchemaSha256: readString(judge ?? {}, ["outputSchemaSha256", "outputSchemaSHA"]),
+      promptSha256: readString(judge ?? {}, ["promptSha256", "promptSHA"]),
+      status: readString(judge ?? {}, ["status"]),
+      verdict: readString(result ?? {}, ["verdict"]),
+    },
+    scanners: {
+      skillspectorStatus: scannerStatuses.skillspector,
+      staticStatus: scannerStatuses["clawscan-static"],
+      virustotalStatus: scannerStatuses.virustotal,
+    },
+  };
+}
+
 function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unknown>) {
   const schemaVersion = readString(artifact, ["schemaVersion"]);
   if (schemaVersion !== "clawscan-run-v1") {
@@ -1648,6 +1691,19 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const profile = readString(artifact, ["profile"]);
   if (profile !== "clawhub") {
     throw new Error(`ClawScan artifact profile was ${profile ?? "missing"}`);
+  }
+
+  const scannerStatuses = readClawScanScannerStatuses(artifact);
+  const allowedScannerStatuses: Record<string, Set<string>> = {
+    "clawscan-static": new Set(["completed"]),
+    skillspector: new Set(["completed"]),
+    virustotal: new Set(["completed"]),
+  };
+  for (const [scanner, status] of Object.entries(scannerStatuses)) {
+    const allowed = allowedScannerStatuses[scanner] ?? new Set(["completed"]);
+    if (!allowed.has(status)) {
+      throw new Error(`ClawScan scanner ${scanner} status was ${status}`);
+    }
   }
 
   const judge = asRecord(artifact.judge);
@@ -1666,19 +1722,6 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
     throw new Error("ClawScan judge result did not match the ClawHub output schema");
   }
 
-  const scannerStatuses = readClawScanScannerStatuses(artifact);
-  const allowedScannerStatuses: Record<string, Set<string>> = {
-    "clawscan-static": new Set(["completed"]),
-    skillspector: new Set(["completed"]),
-    virustotal: new Set(["completed"]),
-  };
-  for (const [scanner, status] of Object.entries(scannerStatuses)) {
-    const allowed = allowedScannerStatuses[scanner] ?? new Set(["completed"]);
-    if (!allowed.has(status)) {
-      throw new Error(`ClawScan scanner ${scanner} status was ${status}`);
-    }
-  }
-
   const scanners = asRecord(artifact.scanners);
   const skillSpector = asRecord(scanners?.skillspector);
   if (!skillSpector || skillSpector.raw === undefined) {
@@ -1691,19 +1734,7 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
 
   return {
     llmAnalysis: toStoredLlmAnalysis(parsed, { checkedAt, omitModel: true }),
-    mapping: {
-      judge: {
-        outputSchemaSha256: readString(judge, ["outputSchemaSha256", "outputSchemaSHA"]),
-        promptSha256: readString(judge, ["promptSha256", "promptSHA"]),
-        status: judgeStatus ?? undefined,
-        verdict: parsed.verdict,
-      },
-      scanners: {
-        skillspectorStatus: scannerStatuses.skillspector,
-        staticStatus: scannerStatuses["clawscan-static"],
-        virustotalStatus: scannerStatuses.virustotal,
-      },
-    },
+    mapping: clawScanDiagnosticMapping(artifact),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
   };
 }
@@ -1718,6 +1749,21 @@ export async function runClawScan(
   const target = await resolveClawScanTarget(workspace, job);
   const args = [target, "--profile", "clawhub", "--output", artifactPath];
   onDiagnostic({ args: [command, ...args], artifactPath });
+
+  const captureArtifact = async () => {
+    if (!(await fileExists(artifactPath))) return undefined;
+    const rawArtifact = await readFile(artifactPath, "utf8");
+    onDiagnostic({ rawArtifact });
+    let parsedArtifact: unknown;
+    try {
+      parsedArtifact = JSON.parse(rawArtifact);
+    } catch {
+      return undefined;
+    }
+    const artifact = asRecord(parsedArtifact);
+    if (artifact) onDiagnostic({ mapping: clawScanDiagnosticMapping(artifact) });
+    return artifact;
+  };
 
   try {
     const output = await runCommand(command, args, {
@@ -1735,24 +1781,15 @@ export async function runClawScan(
         exitCode: error.exitCode,
         stderr: error.stderr,
         stdout: error.stdout,
+        timedOut: error.timedOut,
       });
     }
+    await captureArtifact();
     throw error;
   }
 
-  const rawArtifact = await readFile(artifactPath, "utf8");
-  onDiagnostic({ rawArtifact });
-
-  let parsedArtifact: unknown;
-  try {
-    parsedArtifact = JSON.parse(rawArtifact);
-  } catch {
-    throw new Error("ClawScan did not emit a valid JSON artifact");
-  }
-  const artifact = asRecord(parsedArtifact);
-  if (!artifact) {
-    throw new Error("ClawScan artifact root must be a JSON object");
-  }
+  const artifact = await captureArtifact();
+  if (!artifact) throw new Error("ClawScan did not emit a valid JSON artifact");
 
   const mapped = validateClawScanArtifactForClawHubProfile(artifact);
   onDiagnostic({ mapping: mapped.mapping });
@@ -1811,6 +1848,7 @@ export async function runCodex(
         exitCode: error.exitCode,
         stderr: error.stderr,
         stdout: error.stdout,
+        timedOut: error.timedOut,
       });
     }
     throw error;
@@ -1852,6 +1890,61 @@ async function runLegacyScan(
   return { llmAnalysis, skillSpectorAnalysis };
 }
 
+function scanHealthClassification(input: {
+  clawscan: ClawScanCommandDiagnostic;
+  codex: CodexCommandDiagnostic;
+  errorMessage?: string;
+  implementation: ScanImplementation;
+  skillSpector: CodexCommandDiagnostic;
+  skillSpectorAnalysis?: SkillSpectorAnalysis;
+  status: "completed" | "failed";
+}) {
+  const timedOut = Boolean(
+    input.clawscan.timedOut || input.codex.timedOut || input.skillSpector.timedOut,
+  );
+  let scannerStageFailed = false;
+  let judgeStageFailed = false;
+
+  if (input.implementation === "legacy") {
+    scannerStageFailed =
+      input.skillSpector.timedOut === true ||
+      (input.skillSpector.exitCode !== undefined && input.skillSpector.exitCode !== 0) ||
+      input.skillSpectorAnalysis?.status === "error" ||
+      input.skillSpectorAnalysis?.status === "failed";
+    judgeStageFailed =
+      input.status === "failed" &&
+      (input.codex.args !== undefined ||
+        input.codex.exitCode !== undefined ||
+        input.codex.timedOut === true);
+  } else {
+    const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
+      (status): status is string => Boolean(status),
+    );
+    scannerStageFailed = scannerStatuses.some(
+      (status) => status !== "completed" && status !== "missing",
+    );
+    const judgeStatus = input.clawscan.mapping?.judge?.status;
+    judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
+    scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
+    judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
+  }
+
+  const failureStage =
+    input.status === "failed"
+      ? scannerStageFailed
+        ? "scanner"
+        : judgeStageFailed
+          ? "judge"
+          : "unclassified"
+      : undefined;
+  return {
+    failureStage,
+    judgeStageFailed,
+    scannerStageFailed,
+    timedOut,
+  } as const;
+}
+
 async function runSecondaryScan(input: {
   authoritativeAnalysis: StoredLlmAnalysis;
   authoritativeImplementation: ScanImplementation;
@@ -1870,11 +1963,14 @@ async function runSecondaryScan(input: {
       status: input.authoritativeAnalysis.status,
       verdict: input.authoritativeAnalysis.verdict,
     },
+    judgeStageFailed: false,
+    scannerStageFailed: false,
     secondary: {
       implementation: input.secondaryImplementation,
     },
     startedAt,
     status: "failed",
+    timedOut: false,
   };
 
   try {
@@ -1890,10 +1986,19 @@ async function runSecondaryScan(input: {
             input.skillSpectorDiagnostic,
           );
     const completedAt = Date.now();
+    const health = scanHealthClassification({
+      clawscan: input.clawscanDiagnostic,
+      codex: input.codexDiagnostic,
+      implementation: input.secondaryImplementation,
+      skillSpector: input.skillSpectorDiagnostic,
+      skillSpectorAnalysis: result.skillSpectorAnalysis,
+      status: "completed",
+    });
     return {
       ...diagnostic,
       completedAt,
       durationMs: completedAt - startedAt,
+      ...health,
       secondary: {
         confidence: result.llmAnalysis.confidence,
         implementation: input.secondaryImplementation,
@@ -1904,14 +2009,41 @@ async function runSecondaryScan(input: {
     };
   } catch (error) {
     const completedAt = Date.now();
+    const errorMessage = sanitizeWorkerErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
+    const health = scanHealthClassification({
+      clawscan: input.clawscanDiagnostic,
+      codex: input.codexDiagnostic,
+      errorMessage,
+      implementation: input.secondaryImplementation,
+      skillSpector: input.skillSpectorDiagnostic,
+      status: "failed",
+    });
     return {
       ...diagnostic,
       completedAt,
       durationMs: completedAt - startedAt,
-      error: sanitizeWorkerErrorMessage(error instanceof Error ? error.message : String(error)),
+      error: errorMessage,
+      ...health,
       status: "failed",
     };
   }
+}
+
+function comparisonHealth(
+  secondaryScan: SecondaryScanDiagnostic | undefined,
+): SecurityScanComparisonOutcome | undefined {
+  if (!secondaryScan) return undefined;
+  return {
+    authoritativeVerdict: secondaryScan.authoritative.verdict,
+    secondaryFailureStage: secondaryScan.failureStage,
+    secondaryJudgeStageFailed: secondaryScan.judgeStageFailed,
+    secondaryScannerStageFailed: secondaryScan.scannerStageFailed,
+    secondaryStatus: secondaryScan.status,
+    secondaryTimedOut: secondaryScan.timedOut,
+    secondaryVerdict: secondaryScan.secondary.verdict,
+  };
 }
 
 export async function processJob(
@@ -1920,6 +2052,7 @@ export async function processJob(
   job: ClaimedJob,
   diagnosticsRoot: string | undefined,
   mode: SecurityScanMode = "legacy",
+  onHealth?: (health: SecurityScanJobHealth) => void,
 ): Promise<ProcessJobResult> {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
@@ -1933,6 +2066,7 @@ export async function processJob(
   const codex: CodexCommandDiagnostic = {};
   const skillSpector: CodexCommandDiagnostic = {};
   let errorMessage: string | undefined;
+  let authoritativeCompletedAt: number | undefined;
   let llmAnalysis: StoredLlmAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
   let secondaryScan: SecondaryScanDiagnostic | undefined;
@@ -1962,6 +2096,7 @@ export async function processJob(
       skillSpectorAnalysis,
       runId: process.env.GITHUB_RUN_ID,
     });
+    authoritativeCompletedAt = Date.now();
     status = "completed";
     if (secondaryImplementation) {
       secondaryScan = await runSecondaryScan({
@@ -2005,6 +2140,21 @@ export async function processJob(
       },
       "security scan job completed",
     );
+    const health = scanHealthClassification({
+      clawscan,
+      codex,
+      implementation: authoritativeImplementation,
+      skillSpector,
+      skillSpectorAnalysis,
+      status: "completed",
+    });
+    onHealth?.({
+      authoritativeVerdict: llmAnalysis.verdict,
+      comparison: comparisonHealth(secondaryScan),
+      completed: true,
+      durationMs: (authoritativeCompletedAt ?? Date.now()) - startedAt,
+      ...health,
+    });
     return { completed: true, hardFailed: false, retryableFailed: false };
   } catch (error) {
     errorMessage = sanitizeWorkerErrorMessage(
@@ -2028,6 +2178,22 @@ export async function processJob(
       },
       "security scan job failed",
     );
+    const completedAt = Date.now();
+    const health = scanHealthClassification({
+      clawscan,
+      codex,
+      errorMessage,
+      implementation: authoritativeImplementation,
+      skillSpector,
+      skillSpectorAnalysis,
+      status: "failed",
+    });
+    onHealth?.({
+      comparison: comparisonHealth(secondaryScan),
+      completed: false,
+      durationMs: completedAt - startedAt,
+      ...health,
+    });
     return {
       completed: false,
       hardFailed: !failResult?.retry,
@@ -2175,6 +2341,21 @@ export async function runContinuouslyRefilledWorkerPool<TJob>(options: {
   };
 }
 
+export async function publishWorkerHealthSummary(
+  diagnosticsRoot: string,
+  summary: ReturnType<typeof calculateSecurityScanWorkerHealthSummary>,
+) {
+  await mkdir(diagnosticsRoot, { recursive: true });
+  await writeFile(
+    join(diagnosticsRoot, "worker-summary.json"),
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
+  const stepSummaryPath = process.env.GITHUB_STEP_SUMMARY?.trim();
+  if (stepSummaryPath) {
+    await appendFile(stepSummaryPath, renderSecurityScanWorkerSummaryMarkdown(summary));
+  }
+}
+
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, lane, diagnosticsRoot } = parseArgs();
   const mode = resolveSecurityScanMode();
@@ -2191,6 +2372,7 @@ async function main() {
     }:${process.env.CODEX_SECURITY_SCAN_SHARD ?? process.env.GITHUB_JOB ?? "0"}`;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
+  const outcomes: SecurityScanJobHealth[] = [];
 
   logger.info(
     { diagnosticsRoot, event: "security_scan_diagnostics_directory", lane, mode, workerId },
@@ -2270,9 +2452,61 @@ async function main() {
       );
       return { claimedCount: leases.length, jobs };
     },
-    processClaimedJob: (job) => processJob(client, token, job, diagnosticsRoot, mode),
+    processClaimedJob: async (job) => {
+      const processStartedAt = Date.now();
+      let reported = false;
+      try {
+        const result = await processJob(client, token, job, diagnosticsRoot, mode, (health) => {
+          reported = true;
+          outcomes.push(health);
+        });
+        if (!reported) {
+          outcomes.push({
+            completed: result.completed,
+            durationMs: Date.now() - processStartedAt,
+            failureStage: result.completed ? undefined : "unclassified",
+            judgeStageFailed: false,
+            scannerStageFailed: false,
+            timedOut: false,
+          });
+        }
+        return result;
+      } catch (error) {
+        if (!reported) {
+          outcomes.push({
+            completed: false,
+            durationMs: Date.now() - processStartedAt,
+            failureStage: "unclassified",
+            judgeStageFailed: false,
+            scannerStageFailed: false,
+            timedOut: false,
+          });
+        }
+        throw error;
+      }
+    },
     idlePollMs: lane === "priority" ? 15_000 : undefined,
   });
+
+  let queueHealth: SecurityScanQueueHealth | undefined;
+  let queueHealthError: string | undefined;
+  try {
+    queueHealth = (await client.action(api.securityScan.getCodexScanQueueHealth, {
+      token,
+    })) as SecurityScanQueueHealth;
+  } catch (error) {
+    queueHealthError = sanitizeWorkerErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
+    logger.error(
+      {
+        event: "security_scan_queue_health_failed",
+        publicReason: queueHealthError,
+        workerId,
+      },
+      "failed to read security scan queue health",
+    );
+  }
 
   const remainingRuntimeMs = claimDeadline - Date.now();
   if (remainingRuntimeMs <= 0) {
@@ -2296,6 +2530,16 @@ async function main() {
     },
     "security scan worker summary",
   );
+  const summary = calculateSecurityScanWorkerHealthSummary({
+    durationMs: Date.now() - startedAt,
+    mode,
+    outcomes,
+    pool: stats,
+    queueHealth,
+    queueHealthError,
+    workerId,
+  });
+  await publishWorkerHealthSummary(diagnosticsRoot, summary);
   if (stats.totalFailed > 0) {
     process.exitCode = 1;
   }
