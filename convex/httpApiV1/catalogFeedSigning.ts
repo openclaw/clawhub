@@ -11,14 +11,14 @@ import {
 export const OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE =
   "openclaw.official-external-plugin-catalog-feed.v1";
 
-type FeedSigningConfig = {
+export type FeedSigningConfig = {
   keyId: string;
   privateKey: CryptoKey;
 };
 
 type SignedFeedEnvelope = {
   schemaVersion: 1;
-  payloadType: typeof OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE;
+  payloadType: string;
   payload: string;
   signatures: readonly {
     keyId: string;
@@ -116,7 +116,8 @@ function toHex(bytes: Uint8Array) {
   return result;
 }
 
-export async function signCatalogFeedPayload(
+export async function signFeedPayload(
+  payloadType: string,
   payload: string,
   config: FeedSigningConfig,
 ): Promise<{ envelope: SignedFeedEnvelope; body: string; sha256: string }> {
@@ -125,12 +126,12 @@ export async function signCatalogFeedPayload(
     await crypto.subtle.sign(
       { name: "Ed25519" },
       config.privateKey,
-      dssePreAuthenticationEncoding(OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE, payloadBytes),
+      dssePreAuthenticationEncoding(payloadType, payloadBytes),
     ),
   );
   const envelope: SignedFeedEnvelope = {
     schemaVersion: 1,
-    payloadType: OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE,
+    payloadType,
     payload: base64UrlEncode(payloadBytes),
     signatures: [
       {
@@ -147,6 +148,10 @@ export async function signCatalogFeedPayload(
     body,
     sha256: toHex(new Uint8Array(digest)),
   };
+}
+
+export async function signCatalogFeedPayload(payload: string, config: FeedSigningConfig) {
+  return await signFeedPayload(OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE, payload, config);
 }
 
 export async function signedCatalogFeedV1Handler(
