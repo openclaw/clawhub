@@ -1,5 +1,3 @@
-export type SecurityScanMode = "legacy" | "shadow" | "clawscan";
-
 export type SecurityScanQueueHealth = {
   snapshotAt: number;
   queueDepth: number;
@@ -10,25 +8,14 @@ export type SecurityScanQueueHealth = {
   oldestReadyJobNextRunAt: number | null;
 };
 
-export type SecurityScanComparisonOutcome = {
-  authoritativeVerdict?: string;
-  secondaryFailureStage?: "scanner" | "judge" | "unclassified";
-  secondaryScannerStageFailed: boolean;
-  secondaryJudgeStageFailed: boolean;
-  secondaryStatus: "completed" | "failed";
-  secondaryTimedOut: boolean;
-  secondaryVerdict?: string;
-};
-
 export type SecurityScanJobHealth = {
-  authoritativeVerdict?: string;
-  comparison?: SecurityScanComparisonOutcome;
   completed: boolean;
   durationMs: number;
   failureStage?: "scanner" | "judge" | "unclassified";
   judgeStageFailed: boolean;
   scannerStageFailed: boolean;
   timedOut: boolean;
+  verdict?: string;
 };
 
 export type SecurityScanWorkerPoolStats = {
@@ -47,7 +34,7 @@ type VerdictTotals = {
 };
 
 export type SecurityScanWorkerHealthSummary = {
-  authoritative: {
+  clawscan: {
     averageDurationMs: number;
     completed: number;
     failed: number;
@@ -58,21 +45,7 @@ export type SecurityScanWorkerHealthSummary = {
     verdicts: VerdictTotals;
   };
   claimFailures: number;
-  comparison?: {
-    authoritativeMoreSevere: number;
-    completedPairs: number;
-    exactMatchRate: number | null;
-    exactMatches: number;
-    pairs: Record<string, number>;
-    secondaryFailures: number;
-    secondaryJudgeStageFailures: number;
-    secondaryMoreSevere: number;
-    secondaryScannerStageFailures: number;
-    secondaryTimedOut: number;
-    unknownDirection: number;
-  };
   durationMs: number;
-  mode: SecurityScanMode;
   queueHealth?: SecurityScanQueueHealth;
   queueHealthError?: string;
   throughputPerMinute: number;
@@ -94,17 +67,8 @@ function incrementVerdict(totals: VerdictTotals, verdict: string | undefined) {
   }
 }
 
-function verdictSeverity(verdict: string | undefined) {
-  const normalized = normalizedVerdict(verdict);
-  if (normalized === "benign") return 0;
-  if (normalized === "suspicious") return 1;
-  if (normalized === "malicious") return 2;
-  return undefined;
-}
-
 export function calculateSecurityScanWorkerHealthSummary(input: {
   durationMs: number;
-  mode: SecurityScanMode;
   outcomes: SecurityScanJobHealth[];
   pool: SecurityScanWorkerPoolStats;
   queueHealth?: SecurityScanQueueHealth;
@@ -121,11 +85,11 @@ export function calculateSecurityScanWorkerHealthSummary(input: {
     unknown: 0,
   };
   for (const outcome of input.outcomes) {
-    if (outcome.completed) incrementVerdict(verdicts, outcome.authoritativeVerdict);
+    if (outcome.completed) incrementVerdict(verdicts, outcome.verdict);
   }
 
-  const summary: SecurityScanWorkerHealthSummary = {
-    authoritative: {
+  return {
+    clawscan: {
       averageDurationMs:
         input.outcomes.length > 0 ? Math.round(durationTotal / input.outcomes.length) : 0,
       completed,
@@ -140,7 +104,6 @@ export function calculateSecurityScanWorkerHealthSummary(input: {
     },
     claimFailures: input.pool.totalClaimFailures,
     durationMs: input.durationMs,
-    mode: input.mode,
     queueHealth: input.queueHealth,
     queueHealthError: input.queueHealthError,
     throughputPerMinute:
@@ -148,66 +111,6 @@ export function calculateSecurityScanWorkerHealthSummary(input: {
     totalClaimed: input.pool.totalClaimed,
     workerId: input.workerId,
   };
-
-  if (input.mode === "legacy") return summary;
-
-  const comparisons = input.outcomes
-    .map((outcome) => outcome.comparison)
-    .filter((comparison): comparison is SecurityScanComparisonOutcome => Boolean(comparison));
-  const pairs: Record<string, number> = {};
-  let exactMatches = 0;
-  let authoritativeMoreSevere = 0;
-  let secondaryMoreSevere = 0;
-  let unknownDirection = 0;
-  const completedPairs = comparisons.filter(
-    (comparison) =>
-      comparison.secondaryStatus === "completed" &&
-      Boolean(normalizedVerdict(comparison.authoritativeVerdict)) &&
-      Boolean(normalizedVerdict(comparison.secondaryVerdict)),
-  );
-
-  for (const comparison of completedPairs) {
-    const authoritative = normalizedVerdict(comparison.authoritativeVerdict) ?? "unknown";
-    const secondary = normalizedVerdict(comparison.secondaryVerdict) ?? "unknown";
-    const pair = `${authoritative} -> ${secondary}`;
-    pairs[pair] = (pairs[pair] ?? 0) + 1;
-    if (authoritative === secondary) {
-      exactMatches += 1;
-      continue;
-    }
-    const authoritativeSeverity = verdictSeverity(authoritative);
-    const secondarySeverity = verdictSeverity(secondary);
-    if (authoritativeSeverity === undefined || secondarySeverity === undefined) {
-      unknownDirection += 1;
-    } else if (authoritativeSeverity > secondarySeverity) {
-      authoritativeMoreSevere += 1;
-    } else {
-      secondaryMoreSevere += 1;
-    }
-  }
-
-  summary.comparison = {
-    authoritativeMoreSevere,
-    completedPairs: completedPairs.length,
-    exactMatchRate:
-      completedPairs.length > 0
-        ? Math.round((exactMatches / completedPairs.length) * 10_000) / 100
-        : null,
-    exactMatches,
-    pairs,
-    secondaryFailures: comparisons.filter((comparison) => comparison.secondaryStatus === "failed")
-      .length,
-    secondaryJudgeStageFailures: comparisons.filter(
-      (comparison) => comparison.secondaryJudgeStageFailed,
-    ).length,
-    secondaryMoreSevere,
-    secondaryScannerStageFailures: comparisons.filter(
-      (comparison) => comparison.secondaryScannerStageFailed,
-    ).length,
-    secondaryTimedOut: comparisons.filter((comparison) => comparison.secondaryTimedOut).length,
-    unknownDirection,
-  };
-  return summary;
 }
 
 function formatDuration(durationMs: number) {
@@ -224,28 +127,28 @@ export function renderSecurityScanWorkerSummaryMarkdown(summary: SecurityScanWor
   const lines = [
     "## Security scan worker health",
     "",
-    `**Mode:** \`${summary.mode}\`  `,
+    `**Scanner:** \`clawscan\`  `,
     `**Worker:** \`${summary.workerId}\`  `,
     `**Run duration:** ${formatDuration(summary.durationMs)}  `,
     `**Throughput:** ${summary.throughputPerMinute.toFixed(2)} scans/min`,
     "",
-    "| Authoritative scans | Count |",
+    "| ClawScan scans | Count |",
     "| --- | ---: |",
-    `| Completed | ${summary.authoritative.completed} |`,
-    `| Failed | ${summary.authoritative.failed} |`,
-    `| Timed out | ${summary.authoritative.timedOut} |`,
-    `| Scanner-stage failures | ${summary.authoritative.scannerStageFailures} |`,
-    `| Judge-stage failures | ${summary.authoritative.judgeStageFailures} |`,
-    `| Unclassified failures | ${summary.authoritative.unclassifiedFailures} |`,
-    `| Average duration | ${formatDuration(summary.authoritative.averageDurationMs)} |`,
+    `| Completed | ${summary.clawscan.completed} |`,
+    `| Failed | ${summary.clawscan.failed} |`,
+    `| Timed out | ${summary.clawscan.timedOut} |`,
+    `| Scanner-stage failures | ${summary.clawscan.scannerStageFailures} |`,
+    `| Judge-stage failures | ${summary.clawscan.judgeStageFailures} |`,
+    `| Unclassified failures | ${summary.clawscan.unclassifiedFailures} |`,
+    `| Average duration | ${formatDuration(summary.clawscan.averageDurationMs)} |`,
     `| Claim failures | ${summary.claimFailures} |`,
     "",
-    "| Authoritative verdict | Count |",
+    "| ClawScan verdict | Count |",
     "| --- | ---: |",
-    `| Benign | ${summary.authoritative.verdicts.benign} |`,
-    `| Suspicious | ${summary.authoritative.verdicts.suspicious} |`,
-    `| Malicious | ${summary.authoritative.verdicts.malicious} |`,
-    `| Unknown | ${summary.authoritative.verdicts.unknown} |`,
+    `| Benign | ${summary.clawscan.verdicts.benign} |`,
+    `| Suspicious | ${summary.clawscan.verdicts.suspicious} |`,
+    `| Malicious | ${summary.clawscan.verdicts.malicious} |`,
+    `| Unknown | ${summary.clawscan.verdicts.unknown} |`,
   ];
 
   if (summary.queueHealth) {
@@ -259,38 +162,6 @@ export function renderSecurityScanWorkerSummaryMarkdown(summary: SecurityScanWor
     );
   } else if (summary.queueHealthError) {
     lines.push("", "### Queue health", "", `- Unavailable: ${summary.queueHealthError}`);
-  }
-
-  if (summary.comparison) {
-    const rate =
-      summary.comparison.exactMatchRate === null
-        ? "n/a"
-        : `${summary.comparison.exactMatchRate.toFixed(2)}%`;
-    lines.push(
-      "",
-      "### Authoritative vs secondary",
-      "",
-      `- Completed pairs: ${summary.comparison.completedPairs}`,
-      `- Exact matches: ${summary.comparison.exactMatches} (${rate})`,
-      `- Secondary failures: ${summary.comparison.secondaryFailures}`,
-      `- Secondary timeouts: ${summary.comparison.secondaryTimedOut}`,
-      `- Secondary scanner-stage failures: ${summary.comparison.secondaryScannerStageFailures}`,
-      `- Secondary judge-stage failures: ${summary.comparison.secondaryJudgeStageFailures}`,
-      `- Authoritative more severe: ${summary.comparison.authoritativeMoreSevere}`,
-      `- Secondary more severe: ${summary.comparison.secondaryMoreSevere}`,
-      `- Unknown disagreement direction: ${summary.comparison.unknownDirection}`,
-      "",
-      "| Verdict pair | Count |",
-      "| --- | ---: |",
-    );
-    const pairs = Object.entries(summary.comparison.pairs).sort(([left], [right]) =>
-      left.localeCompare(right),
-    );
-    if (pairs.length === 0) {
-      lines.push("| No completed pairs | 0 |");
-    } else {
-      for (const [pair, count] of pairs) lines.push(`| \`${pair}\` | ${count} |`);
-    }
   }
 
   return `${lines.join("\n")}\n`;

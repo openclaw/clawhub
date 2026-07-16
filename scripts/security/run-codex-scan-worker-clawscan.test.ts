@@ -113,57 +113,6 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
-async function withFakeLegacySecondary<T>(run: () => Promise<T>) {
-  const binDir = await tempDir();
-  await writeFakeClawScanCommand(
-    join(binDir, "skillspector"),
-    `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"status":"clean","issue_count":0,"issues":[]}
-JSON`,
-  );
-  await writeFakeClawScanCommand(
-    join(binDir, "codex"),
-    `out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output-last-message)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"verdict":"benign","confidence":"high","summary":"legacy diagnostic","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance"}
-JSON`,
-  );
-
-  const previousPath = process.env.PATH;
-  process.env.PATH = `${binDir}:${previousPath ?? ""}`;
-  try {
-    return await run();
-  } finally {
-    if (previousPath === undefined) delete process.env.PATH;
-    else process.env.PATH = previousPath;
-  }
-}
-
 type ClawScanVerdict = "benign" | "suspicious" | "malicious";
 
 function completeJudgeDimensions() {
@@ -265,21 +214,13 @@ function clawScanArtifactJson(options?: {
 }
 
 describe("run-codex-scan-worker clawscan authority", () => {
-  it("defaults skillVersion jobs to the legacy codex path unless clawscan is explicitly selected", async () => {
+  it("uses ClawScan as the only skillVersion scan implementation", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const clawscanMarker = join(workspace, "clawscan-called.log");
     await writeFakeClawScanCommand(
       fakeClawScan,
       `echo "called" > ${JSON.stringify(clawscanMarker)}
-exit 0`,
-    );
-
-    const binDir = await tempDir();
-    const legacyMarker = join(workspace, "legacy-called.log");
-    await writeFakeClawScanCommand(
-      join(binDir, "skillspector"),
-      `echo "skillspector" >> ${JSON.stringify(legacyMarker)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -294,34 +235,12 @@ while [[ $# -gt 0 ]]; do
 done
 mkdir -p "$(dirname "$out")"
 cat > "$out" <<'JSON'
-{"status":"clean","issue_count":0,"issues":[]}
-JSON`,
-    );
-    await writeFakeClawScanCommand(
-      join(binDir, "codex"),
-      `echo "codex" >> ${JSON.stringify(legacyMarker)}
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output-last-message)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"verdict":"benign","confidence":"high","summary":"summary","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance"}
+${clawScanArtifactJson({ verdict: "benign" })}
 JSON`,
     );
 
     const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    const previousPath = process.env.PATH;
     process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.PATH = `${binDir}:${previousPath ?? ""}`;
     try {
       const client = {
         action: vi.fn(async (..._args: unknown[]) => ({})),
@@ -329,7 +248,7 @@ JSON`,
       const result = await processJob(
         client,
         "worker-auth",
-        skillVersionJob("securityScanJobs:default-legacy"),
+        skillVersionJob("securityScanJobs:clawscan-only"),
         undefined,
       );
 
@@ -338,13 +257,13 @@ JSON`,
         hardFailed: false,
         retryableFailed: false,
       });
-      expect(await readFile(legacyMarker, "utf8")).toContain("codex");
-      await expect(readFile(clawscanMarker, "utf8")).rejects.toThrow();
+      expect(await readFile(clawscanMarker, "utf8")).toContain("called");
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        llmAnalysis: { status: "clean", verdict: "benign" },
+      });
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
-      if (previousPath === undefined) delete process.env.PATH;
-      else process.env.PATH = previousPath;
     }
   });
 
@@ -397,14 +316,11 @@ JSON`,
         const client = {
           action: vi.fn(async (..._args: unknown[]) => ({})),
         };
-        const result = await withFakeLegacySecondary(async () =>
-          processJob(
-            client,
-            "worker-auth",
-            skillVersionJob(`securityScanJobs:${verdict}`),
-            undefined,
-            "clawscan",
-          ),
+        const result = await processJob(
+          client,
+          "worker-auth",
+          skillVersionJob(`securityScanJobs:${verdict}`),
+          undefined,
         );
 
         expect(result).toEqual({
@@ -540,23 +456,20 @@ JSON`,
         const client = {
           action: vi.fn(async (..._args: unknown[]) => ({})),
         };
-        const result = await withFakeLegacySecondary(async () =>
-          processJob(
-            client,
-            "worker-auth",
-            claimedJob({
-              jobId: `securityScanJobs:${targetKind}-${source}`,
-              source,
-              target: await target(),
-              targetKind,
-              vtAnalysis: {
-                status: "completed",
-                source: `${targetKind}-${source}`,
-              },
-            }),
-            undefined,
-            "clawscan",
-          ),
+        const result = await processJob(
+          client,
+          "worker-auth",
+          claimedJob({
+            jobId: `securityScanJobs:${targetKind}-${source}`,
+            source,
+            target: await target(),
+            targetKind,
+            vtAnalysis: {
+              status: "completed",
+              source: `${targetKind}-${source}`,
+            },
+          }),
+          undefined,
         );
 
         expect(result).toEqual({
@@ -634,19 +547,16 @@ JSON`,
       const client = {
         action: vi.fn(async (..._args: unknown[]) => ({})),
       };
-      const result = await withFakeLegacySecondary(async () =>
-        processJob(
-          client,
-          "worker-auth",
-          claimedJob({
-            jobId: "securityScanJobs:no-cached-vt",
-            source: "manual",
-            target: fileTarget("SKILL.md", "# Uploaded skill\n"),
-            targetKind: "skillScanRequest",
-          }),
-          undefined,
-          "clawscan",
-        ),
+      const result = await processJob(
+        client,
+        "worker-auth",
+        claimedJob({
+          jobId: "securityScanJobs:no-cached-vt",
+          source: "manual",
+          target: fileTarget("SKILL.md", "# Uploaded skill\n"),
+          targetKind: "skillScanRequest",
+        }),
+        undefined,
       );
 
       expect(result).toEqual({
@@ -706,7 +616,6 @@ JSON`,
             targetKind,
           }),
           undefined,
-          "clawscan",
         );
 
         expect(result).toEqual({
@@ -765,7 +674,6 @@ JSON`,
         "worker-auth",
         skillVersionJob("securityScanJobs:vt-skipped"),
         undefined,
-        "clawscan",
       );
 
       expect(result).toEqual({
@@ -820,7 +728,6 @@ echo "not json" > "$out"`,
         "worker-auth",
         skillVersionJob("securityScanJobs:malformed"),
         undefined,
-        "clawscan",
         onHealth,
       );
 
@@ -878,7 +785,6 @@ JSON`,
         "worker-auth",
         skillVersionJob("securityScanJobs:judge-no-inspection"),
         undefined,
-        "clawscan",
       );
 
       expect(result).toEqual({
@@ -956,7 +862,6 @@ JSON`,
         "worker-auth",
         skillVersionJob("securityScanJobs:judge-incomplete"),
         undefined,
-        "clawscan",
         onHealth,
       );
 
@@ -1032,7 +937,6 @@ JSON`,
           "worker-auth",
           skillVersionJob(`securityScanJobs:completed-at-${name}`),
           undefined,
-          "clawscan",
         );
 
         expect(result).toEqual({
@@ -1093,7 +997,6 @@ JSON`,
         "worker-auth",
         skillVersionJob("securityScanJobs:scanner-failed"),
         undefined,
-        "clawscan",
         onHealth,
       );
 
@@ -1146,7 +1049,6 @@ echo "this should never complete"`,
         "worker-auth",
         skillVersionJob("securityScanJobs:timeout"),
         undefined,
-        "clawscan",
         onHealth,
       );
 
@@ -1170,62 +1072,6 @@ echo "this should never complete"`,
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
       if (previousTimeout === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = previousTimeout;
-    }
-  });
-
-  it("does not fall back to legacy Codex/SkillSpector commands when ClawScan fails", async () => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `echo "clawscan failed intentionally" >&2
-exit 7`,
-    );
-
-    const binDir = await tempDir();
-    const markerPath = join(binDir, "legacy-commands-called.log");
-    await writeFakeClawScanCommand(
-      join(binDir, "codex"),
-      `echo codex >> ${JSON.stringify(markerPath)}
-exit 0`,
-    );
-    await writeFakeClawScanCommand(
-      join(binDir, "skillspector"),
-      `echo skillspector >> ${JSON.stringify(markerPath)}
-exit 0`,
-    );
-
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    const previousPath = process.env.PATH;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.PATH = `${binDir}:${previousPath ?? ""}`;
-    try {
-      const client = {
-        action: vi.fn(async (...args: unknown[]) => {
-          const payload = args[1] as { error?: string } | undefined;
-          return payload?.error ? { retry: false } : {};
-        }),
-      };
-
-      const result = await processJob(
-        client,
-        "worker-auth",
-        skillVersionJob("securityScanJobs:no-fallback"),
-        undefined,
-        "clawscan",
-      );
-
-      expect(result).toEqual({
-        completed: false,
-        hardFailed: true,
-        retryableFailed: false,
-      });
-      await expect(readFile(markerPath, "utf8")).rejects.toThrow();
-    } finally {
-      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
-      if (previousPath === undefined) delete process.env.PATH;
-      else process.env.PATH = previousPath;
     }
   });
 });

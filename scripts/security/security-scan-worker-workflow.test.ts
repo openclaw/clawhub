@@ -104,15 +104,11 @@ describe("security-scan-codex workflow", () => {
     expect(jobEnv.CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES).toBe(
       "${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}",
     );
-    expect(jobEnv.CODEX_SECURITY_SCAN_TIMEOUT_MS).toBe(
-      "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",
-    );
-    expect(jobEnv.CODEX_SECURITY_SCAN_MODE).toBe(
-      "${{ vars.CODEX_SECURITY_SCAN_MODE || 'legacy' }}",
-    );
     expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS).toBe(
       "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '240000' }}",
     );
+    expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_MODE");
+    expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
     expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(jobEnv).not.toHaveProperty("CODEX_API_KEY");

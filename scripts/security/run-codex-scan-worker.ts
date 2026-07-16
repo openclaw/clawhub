@@ -1,18 +1,13 @@
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import {
-  detectInjectionPatterns,
-  parseLlmEvalResponse,
-  type LlmEvalDimension,
-  SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
-} from "../../convex/lib/securityPrompt";
+import { parseLlmEvalResponse, type LlmEvalDimension } from "../../convex/lib/securityPrompt";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
@@ -25,13 +20,9 @@ import {
 import {
   calculateSecurityScanWorkerHealthSummary,
   renderSecurityScanWorkerSummaryMarkdown,
-  type SecurityScanComparisonOutcome,
   type SecurityScanJobHealth,
-  type SecurityScanMode,
   type SecurityScanQueueHealth,
 } from "./security-scan-worker-summary";
-
-export type { SecurityScanMode } from "./security-scan-worker-summary";
 
 export type ClaimedJob = {
   job: {
@@ -97,15 +88,6 @@ export type SkillSpectorAnalysis = {
   checkedAt: number;
 };
 
-type CodexCommandDiagnostic = {
-  args?: string[];
-  exitCode?: number | null;
-  rawResult?: string;
-  stderr?: string;
-  stdout?: string;
-  timedOut?: boolean;
-};
-
 type ClawScanCommandDiagnostic = {
   args?: string[];
   artifactPath?: string;
@@ -129,44 +111,14 @@ type ClawScanCommandDiagnostic = {
   };
 };
 
-type ScanImplementation = "legacy" | "clawscan";
-
-type SecondaryScanDiagnostic = {
-  authoritative: {
-    confidence?: string;
-    implementation: ScanImplementation;
-    status?: string;
-    verdict?: string;
-  };
-  completedAt?: number;
-  durationMs?: number;
-  error?: string;
-  failureStage?: "scanner" | "judge" | "unclassified";
-  judgeStageFailed: boolean;
-  scannerStageFailed: boolean;
-  secondary: {
-    confidence?: string;
-    implementation: ScanImplementation;
-    status?: string;
-    verdict?: string;
-  };
-  startedAt?: number;
-  status: "completed" | "failed";
-  timedOut: boolean;
-};
-
 type JobDiagnosticInput = {
   clawscan?: ClawScanCommandDiagnostic;
-  codex?: CodexCommandDiagnostic;
   completedAt: number;
   diagnosticsRoot?: string;
   error?: string;
   job: ClaimedJob;
   llmAnalysis?: unknown;
-  mode?: SecurityScanMode;
   runId?: string;
-  secondaryScan?: SecondaryScanDiagnostic;
-  skillSpector?: CodexCommandDiagnostic;
   skillSpectorAnalysis?: unknown;
   startedAt: number;
   status: "completed" | "failed";
@@ -182,7 +134,6 @@ type ProcessJobResult = {
 
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
-const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const DEFAULT_CLAWSCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector", "virustotal"];
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
@@ -200,24 +151,6 @@ const DEFAULT_DIAGNOSTICS_ROOT = join(
   process.env.GITHUB_RUN_ID ?? `local-${process.pid}`,
 );
 const LOCAL_CODEX_HOME = join(root, ".codex/runtime/codex-workers/security-scan");
-const ARTIFACT_SIGNAL_FILE_EXTENSIONS = new Set([
-  ".cjs",
-  ".css",
-  ".html",
-  ".js",
-  ".json",
-  ".jsx",
-  ".md",
-  ".mjs",
-  ".sh",
-  ".toml",
-  ".ts",
-  ".tsx",
-  ".txt",
-  ".xml",
-  ".yaml",
-  ".yml",
-]);
 
 type ClawHubOutputSchemaContract = {
   allowedConfidence: Set<string>;
@@ -289,16 +222,6 @@ function loadClawHubOutputSchemaContract(path: string): ClawHubOutputSchemaContr
 }
 
 const CLAWHUB_OUTPUT_SCHEMA_CONTRACT = loadClawHubOutputSchemaContract(schemaPath);
-
-export function resolveSecurityScanMode(
-  value = process.env.CODEX_SECURITY_SCAN_MODE,
-): SecurityScanMode {
-  if (value === undefined || value === "") return "legacy";
-  if (value === "legacy" || value === "shadow" || value === "clawscan") return value;
-  throw new Error(
-    `CODEX_SECURITY_SCAN_MODE must be one of legacy, shadow, or clawscan; received ${JSON.stringify(value)}`,
-  );
-}
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -440,23 +363,9 @@ const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
   "clawscanmapping.scanners.skillspectorstatus",
   "clawscanmapping.scanners.virustotalstatus",
   "clawscanmapping.scanners.staticstatus",
-  "codexresult.verdict",
-  "codexstdout.item.id",
-  "codexstdout.item.type",
-  "codexstdout.status",
-  "codexstdout.type",
   "llmanalysis.confidence",
   "llmanalysis.status",
   "llmanalysis.verdict",
-  "secondaryscan.authoritative.confidence",
-  "secondaryscan.authoritative.implementation",
-  "secondaryscan.authoritative.status",
-  "secondaryscan.authoritative.verdict",
-  "secondaryscan.secondary.confidence",
-  "secondaryscan.secondary.implementation",
-  "secondaryscan.secondary.status",
-  "secondaryscan.secondary.verdict",
-  "secondaryscan.status",
   "skillspectoranalysis.issues.*.issueid",
   "skillspectoranalysis.issues.*.severity",
   "skillspectoranalysis.recommendation",
@@ -486,7 +395,6 @@ function isDiagnosticSecretPath(path: string[]) {
 
 function shouldPreserveDiagnosticText(path: string[], original: string, redacted: string) {
   const key = diagnosticPathKey(path);
-  if (key === "secondaryscan.error") return true;
   return (
     original === redacted &&
     (DIAGNOSTIC_PUBLIC_TEXT_PATHS.has(key) || key.startsWith("clawscanartifact.env.")) &&
@@ -714,42 +622,6 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
   const jobDir = join(input.diagnosticsRoot, safeDiagnosticPathSegment(input.job.job._id));
   await mkdir(jobDir, { recursive: true });
 
-  const stdoutPath = await writeDiagnosticText(
-    jobDir,
-    "codex.stdout.redacted.jsonl",
-    input.codex?.stdout,
-    "codexStdout",
-  );
-  const stderrPath = await writeDiagnosticText(
-    jobDir,
-    "codex.stderr.redacted.log",
-    input.codex?.stderr,
-    "codexStderr",
-  );
-  const rawResultPath = await writeDiagnosticText(
-    jobDir,
-    "codex-result.redacted.json",
-    input.codex?.rawResult,
-    "codexResult",
-  );
-  const skillSpectorStdoutPath = await writeDiagnosticText(
-    jobDir,
-    "skillspector.stdout.redacted.log",
-    input.skillSpector?.stdout,
-    "skillSpectorStdout",
-  );
-  const skillSpectorStderrPath = await writeDiagnosticText(
-    jobDir,
-    "skillspector.stderr.redacted.log",
-    input.skillSpector?.stderr,
-    "skillSpectorStderr",
-  );
-  const skillSpectorRawResultPath = await writeDiagnosticText(
-    jobDir,
-    "skillspector-result.redacted.json",
-    input.skillSpector?.rawResult,
-    "skillSpectorResult",
-  );
   const clawscanStdoutPath = await writeDiagnosticText(
     jobDir,
     "clawscan.stdout.redacted.log",
@@ -797,7 +669,6 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       waitForVtUntil: input.job.job.waitForVtUntil,
     },
     llmAnalysis: redactDiagnosticValue(input.llmAnalysis, ["llmAnalysis"]),
-    mode: input.mode,
     runId: input.runId,
     clawscan: input.clawscan
       ? {
@@ -807,29 +678,12 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
             : undefined,
         }
       : undefined,
-    secondaryScan: input.secondaryScan
-      ? redactDiagnosticValue(input.secondaryScan, ["secondaryScan"])
-      : undefined,
     skillSpectorAnalysis: redactDiagnosticValue(input.skillSpectorAnalysis, [
       "skillSpectorAnalysis",
     ]),
     startedAt: input.startedAt,
     status: input.status,
     target: sanitizedTargetForDiagnostic(input.job.target),
-    codex: {
-      args: input.codex?.args,
-      exitCode: input.codex?.exitCode,
-      rawResultPath,
-      stderrPath,
-      stdoutPath,
-    },
-    skillSpector: {
-      args: input.skillSpector?.args,
-      exitCode: input.skillSpector?.exitCode,
-      rawResultPath: skillSpectorRawResultPath,
-      stderrPath: skillSpectorStderrPath,
-      stdoutPath: skillSpectorStdoutPath,
-    },
     clawscanResult: {
       args: input.clawscan?.args,
       exitCode: input.clawscan?.exitCode,
@@ -844,13 +698,6 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
   };
 
   await writeFile(join(jobDir, "diagnostic.json"), `${JSON.stringify(diagnostic, null, 2)}\n`);
-
-  if (input.secondaryScan) {
-    await writeFile(
-      join(jobDir, "scan-comparison.json"),
-      `${JSON.stringify(redactDiagnosticValue(input.secondaryScan, ["secondaryScan"]), null, 2)}\n`,
-    );
-  }
 }
 
 function safeOutputPath(workspace: string, artifactPath: string) {
@@ -933,37 +780,6 @@ export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string)
   }
 }
 
-function shouldReadArtifactSignalFile(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith("/skill.md") || lower.endsWith("/package.json")) return true;
-  return ARTIFACT_SIGNAL_FILE_EXTENSIONS.has(lower.slice(lower.lastIndexOf(".")));
-}
-
-async function collectArtifactSignalText(dir: string, maxBytes = 1_000_000) {
-  let remaining = maxBytes;
-  const chunks: string[] = [];
-
-  async function visit(current: string) {
-    if (remaining <= 0) return;
-    for (const entry of await readdir(current, { withFileTypes: true })) {
-      if (remaining <= 0) return;
-      const path = join(current, entry.name);
-      if (entry.isDirectory()) {
-        await visit(path);
-        continue;
-      }
-      if (!entry.isFile() || !shouldReadArtifactSignalFile(path)) continue;
-      const bytes = await readFile(path);
-      const slice = bytes.subarray(0, Math.min(bytes.byteLength, remaining));
-      chunks.push(slice.toString("utf8"));
-      remaining -= slice.byteLength;
-    }
-  }
-
-  await visit(dir);
-  return chunks.join("\n");
-}
-
 async function fileExists(path: string) {
   try {
     await readFile(path);
@@ -971,219 +787,6 @@ async function fileExists(path: string) {
   } catch {
     return false;
   }
-}
-
-export async function resolveSkillSpectorScanInput(workspace: string) {
-  const extractedPackageRoot = join(workspace, "artifact", "package");
-  const hasClawPackExtraction =
-    (await fileExists(join(workspace, "artifact.tgz"))) &&
-    (await fileExists(join(extractedPackageRoot, "package.json")));
-  return hasClawPackExtraction ? "artifact/package" : "artifact";
-}
-
-function normalizedBundledSkillRoot(value: unknown) {
-  if (typeof value !== "string") return null;
-  const normalized = value
-    .trim()
-    .replaceAll("\\", "/")
-    .replace(/^\.\/+/, "")
-    .replace(/\/+$/, "");
-  if (
-    !normalized ||
-    normalized === "." ||
-    normalized.startsWith("/") ||
-    normalized.split("/").some((segment) => segment === "..")
-  ) {
-    return null;
-  }
-  return normalized;
-}
-
-function bundledSkillRootsForJob(job: ClaimedJob) {
-  if (job.job.targetKind !== "packageRelease") return [];
-  const release = asRecord(job.target.release);
-  const pluginManifestSummary = asRecord(release?.pluginManifestSummary);
-  const bundledSkills = pluginManifestSummary?.bundledSkills;
-  if (!Array.isArray(bundledSkills)) return [];
-  return bundledSkills
-    .map((skill) => normalizedBundledSkillRoot(asRecord(skill)?.rootPath))
-    .filter((rootPath): rootPath is string => Boolean(rootPath));
-}
-
-export async function resolveSkillSpectorScanInputs(workspace: string, job: ClaimedJob) {
-  const bundledSkillRoots = bundledSkillRootsForJob(job);
-  if (job.job.targetKind !== "packageRelease") {
-    return [await resolveSkillSpectorScanInput(workspace)];
-  }
-  if (bundledSkillRoots.length === 0) return [];
-
-  const packageRoot = await resolveSkillSpectorScanInput(workspace);
-  const artifactRoot = resolve(workspace, packageRoot);
-  return bundledSkillRoots
-    .map((rootPath) => {
-      const skillRoot = resolve(artifactRoot, rootPath);
-      return skillRoot.startsWith(`${artifactRoot}/`) ? join(packageRoot, rootPath) : null;
-    })
-    .filter((path): path is string => Boolean(path));
-}
-
-function aggregateSkillSpectorAnalyses(analyses: SkillSpectorAnalysis[]) {
-  if (analyses.length === 1) return analyses[0];
-  const statuses = analyses.map((analysis) => analysis.status);
-  const status = statuses.some((value) => value === "error" || value === "failed")
-    ? "error"
-    : statuses.includes("malicious")
-      ? "malicious"
-      : statuses.includes("suspicious")
-        ? "suspicious"
-        : "clean";
-  const severityRank = ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
-  const severity = analyses
-    .map((analysis) => analysis.severity?.toUpperCase())
-    .filter((value): value is string => Boolean(value))
-    .sort((left, right) => severityRank.indexOf(right) - severityRank.indexOf(left))[0];
-  const recommendations = [
-    ...new Set(analyses.map((analysis) => analysis.recommendation).filter(Boolean)),
-  ];
-  const scannerVersions = [
-    ...new Set(analyses.map((analysis) => analysis.scannerVersion).filter(Boolean)),
-  ];
-  const summaries = analyses.map((analysis) => analysis.summary).filter(Boolean);
-  const errors = analyses.map((analysis) => analysis.error).filter(Boolean);
-  return {
-    status,
-    score: Math.max(...analyses.map((analysis) => analysis.score ?? 0)),
-    severity,
-    recommendation: recommendations.length > 0 ? recommendations.join("; ") : undefined,
-    issueCount: analyses.reduce((total, analysis) => total + analysis.issueCount, 0),
-    issues: analyses
-      .flatMap((analysis) => analysis.issues)
-      .slice(0, MAX_STORED_SKILLSPECTOR_ISSUES),
-    scannerVersion: scannerVersions.length > 0 ? scannerVersions.join(", ") : undefined,
-    summary:
-      summaries.length > 0
-        ? `Scanned ${analyses.length} bundled skills. ${summaries.join(" ")}`
-        : `Scanned ${analyses.length} bundled skills.`,
-    error: errors.length > 0 ? errors.join("; ") : undefined,
-    checkedAt: Math.max(...analyses.map((analysis) => analysis.checkedAt)),
-  } satisfies SkillSpectorAnalysis;
-}
-
-export async function runSkillSpector(
-  workspace: string,
-  scanInputs: string[],
-  onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
-) {
-  const analyses: SkillSpectorAnalysis[] = [];
-  for (const [index, scanInput] of scanInputs.entries()) {
-    const resultPath = join(workspace, `skillspector-report-${index}.json`);
-    const args = ["scan", scanInput, "--format", "json", "--output", resultPath];
-    onDiagnostic({ args });
-    try {
-      const output = await runCommand("skillspector", args, {
-        cwd: workspace,
-        timeoutMs: codexScanTimeoutMs(),
-      });
-      const raw = await readFile(resultPath, "utf8");
-      onDiagnostic({
-        exitCode: 0,
-        rawResult: raw,
-        stderr: output.stderr,
-        stdout: output.stdout,
-      });
-      analyses.push(normalizeSkillSpectorAnalysis(raw));
-    } catch (error) {
-      if (error instanceof CommandFailure) {
-        let rawResult: string | undefined;
-        try {
-          rawResult = await readFile(resultPath, "utf8");
-        } catch {
-          rawResult = undefined;
-        }
-        onDiagnostic({
-          exitCode: error.exitCode,
-          rawResult,
-          stderr: error.stderr,
-          stdout: error.stdout,
-          timedOut: error.timedOut,
-        });
-        if (rawResult) {
-          try {
-            analyses.push(normalizeSkillSpectorAnalysis(rawResult));
-            continue;
-          } catch {
-            // Fall through to an error-shaped analysis; diagnostics keep the raw report.
-          }
-        }
-      }
-      analyses.push(skillSpectorFailureAnalysis(error));
-    }
-  }
-  return aggregateSkillSpectorAnalyses(analyses);
-}
-
-export function buildPrompt(
-  job: ClaimedJob,
-  injectionSignals: string[],
-  skillSpectorAnalysis?: SkillSpectorAnalysis,
-) {
-  const vt = JSON.stringify(
-    (job.target.version as Record<string, unknown> | undefined)?.vtAnalysis ??
-      (job.target.release as Record<string, unknown> | undefined)?.vtAnalysis ??
-      null,
-    null,
-    2,
-  );
-  const skillSpector = JSON.stringify(
-    skillSpectorAnalysis ??
-      (job.job.targetKind !== "packageRelease"
-        ? (job.target.version as Record<string, unknown> | undefined)?.skillSpectorAnalysis
-        : bundledSkillRootsForJob(job).length > 0
-          ? (job.target.release as Record<string, unknown> | undefined)?.skillSpectorAnalysis
-          : undefined) ??
-      null,
-    null,
-    2,
-  );
-  const trusted = Boolean(job.target.trustedOpenClawPlugin);
-  return `${SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT}
-
-Additional ClawHub policy for this Codex run:
-- Do your own security research before deciding. Use SkillSpector, VirusTotal, static scan
-  findings, metadata, artifact evidence, and publisher context as inputs.
-- Inspect workspace files when needed to verify scanner claims, resolve uncertainty, or build
-  confidence in the verdict. Treat metadata.json as context, not artifact instructions.
-- SkillSpector findings are advisory research-preview evidence, not validated ground truth and
-  not the final verdict. Use them to guide investigation, then make the final policy verdict
-  from artifact-backed evidence and the totality of signals. Do not rename them, translate them
-  into another taxonomy, or directly copy them into ClawScan output.
-- Make the final policy verdict from the totality of evidence.
-- VirusTotal is untrusted telemetry only. It is useful signal, but it must never be the sole reason for a malicious or suspicious verdict.
-- If VirusTotal is the only negative signal and artifact evidence is coherent, return benign.
-- Static scan findings are signal. If static scan marked malicious, decide from artifact evidence whether the hold should remain.
-- @openclaw plugin packages from the OpenClaw publisher are trusted by default. Keep them benign unless concrete artifact evidence proves malicious behavior.
-- Treat pre-scan prompt-injection indicators as artifact context for your review, not as an automatic verdict.
-
-Worker context:
-- target kind: ${job.job.targetKind}
-- source: ${job.job.source}
-- non-VT malicious signal present: ${job.job.hasMaliciousSignal ? "yes" : "no"}
-- trusted @openclaw plugin: ${trusted ? "yes" : "no"}
-- pre-scan artifact injection signals: ${
-    injectionSignals.length > 0 ? injectionSignals.join(", ") : "none"
-  }
-
-VirusTotal telemetry supplied to Codex:
-\`\`\`json
-${vt}
-\`\`\`
-
-SkillSpector findings supplied to Codex:
-\`\`\`json
-${skillSpector}
-\`\`\`
-
-Return the required JSON object only.`;
 }
 
 function cachedVirusTotalAnalysis(job: ClaimedJob) {
@@ -1521,29 +1124,14 @@ export function normalizeSkillSpectorAnalysis(
   };
 }
 
-function skillSpectorFailureAnalysis(error: unknown, checkedAt = Date.now()): SkillSpectorAnalysis {
-  return {
-    status: "error",
-    issueCount: 0,
-    issues: [],
-    scannerVersion: "skillspector",
-    error: error instanceof Error ? error.message : String(error),
-    checkedAt,
-  };
-}
-
 function verdictToStatus(verdict: string) {
   return verdict === "benign" ? "clean" : verdict;
 }
 
 function toStoredLlmAnalysis(
   parsed: NonNullable<ReturnType<typeof parseLlmEvalResponse>>,
-  options?: { checkedAt?: number; model?: string; omitModel?: boolean },
+  checkedAt = Date.now(),
 ) {
-  const model =
-    options?.omitModel === true
-      ? undefined
-      : (options?.model ?? process.env.CODEX_SECURITY_SCAN_MODEL ?? "gpt-5.5");
   return {
     status: verdictToStatus(parsed.verdict),
     verdict: parsed.verdict,
@@ -1552,14 +1140,8 @@ function toStoredLlmAnalysis(
     dimensions: parsed.dimensions,
     guidance: parsed.guidance,
     findings: parsed.findings || undefined,
-    ...(model ? { model } : {}),
-    checkedAt: options?.checkedAt ?? Date.now(),
+    checkedAt,
   };
-}
-
-function codexScanTimeoutMs() {
-  const parsed = Number(process.env.CODEX_SECURITY_SCAN_TIMEOUT_MS);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CODEX_SCAN_TIMEOUT_MS;
 }
 
 function clawScanTimeoutMs() {
@@ -1782,7 +1364,7 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const checkedAt = artifactCompletedAtMs(artifact);
 
   return {
-    llmAnalysis: toStoredLlmAnalysis(parsed, { checkedAt, omitModel: true }),
+    llmAnalysis: toStoredLlmAnalysis(parsed, checkedAt),
     mapping: clawScanDiagnosticMapping(artifact),
     skillSpectorAnalysis: normalizeSkillSpectorAnalysis(rawSkillSpector, checkedAt),
   };
@@ -1860,73 +1442,6 @@ export async function runClawScan(
   return mapped;
 }
 
-export async function runCodex(
-  job: ClaimedJob,
-  workspace: string,
-  skillSpectorAnalysis: SkillSpectorAnalysis | undefined,
-  onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
-) {
-  const resultPath = join(workspace, "codex-result.json");
-  const args = [
-    "exec",
-    "--cd",
-    workspace,
-    "--model",
-    process.env.CODEX_SECURITY_SCAN_MODEL ?? "gpt-5.5",
-    "--sandbox",
-    "read-only",
-    "--skip-git-repo-check",
-    "--ignore-user-config",
-    "-c",
-    "approval_policy=never",
-    "-c",
-    `model_reasoning_effort=${process.env.CODEX_SECURITY_SCAN_REASONING_EFFORT ?? "high"}`,
-    "-c",
-    `service_tier=${process.env.CODEX_SECURITY_SCAN_SERVICE_TIER ?? "fast"}`,
-    "-c",
-    'shell_environment_policy.inherit="core"',
-    "-c",
-    "shell_environment_policy.ignore_default_excludes=false",
-    "--output-schema",
-    schemaPath,
-    "--output-last-message",
-    resultPath,
-    "--ephemeral",
-    "--json",
-    "-",
-  ];
-  const artifactSignalText = await collectArtifactSignalText(join(workspace, "artifact"));
-  const injectionSignals = detectInjectionPatterns(artifactSignalText);
-  const prompt = buildPrompt(job, injectionSignals, skillSpectorAnalysis);
-  onDiagnostic({ args });
-  try {
-    const output = await runCommand("codex", args, {
-      cwd: workspace,
-      input: prompt,
-      timeoutMs: codexScanTimeoutMs(),
-    });
-    onDiagnostic({ exitCode: 0, stderr: output.stderr, stdout: output.stdout });
-  } catch (error) {
-    if (error instanceof CommandFailure) {
-      onDiagnostic({
-        exitCode: error.exitCode,
-        stderr: error.stderr,
-        stdout: error.stdout,
-        timedOut: error.timedOut,
-      });
-    }
-    throw error;
-  }
-
-  const raw = await readFile(resultPath, "utf8");
-  onDiagnostic({ rawResult: raw });
-  const parsed = parseLlmEvalResponse(raw);
-  if (!parsed) {
-    throw new Error(`Codex result did not match ClawScan schema (${raw.length} chars)`);
-  }
-  return toStoredLlmAnalysis(parsed);
-}
-
 async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
   if (job.job.targetKind === "packageRelease") {
     const packageRoot = join(workspace, "artifact", "package");
@@ -1935,94 +1450,22 @@ async function resolveClawScanTarget(workspace: string, job: ClaimedJob) {
   return "./artifact";
 }
 
-async function runLegacyScan(
-  job: ClaimedJob,
-  workspace: string,
-  codexDiagnostic: CodexCommandDiagnostic,
-  skillSpectorDiagnostic: CodexCommandDiagnostic,
-) {
-  const skillSpectorInputs = await resolveSkillSpectorScanInputs(workspace, job);
-  const skillSpectorAnalysis =
-    skillSpectorInputs.length > 0
-      ? await runSkillSpector(workspace, skillSpectorInputs, (next) => {
-          Object.assign(skillSpectorDiagnostic, next);
-        })
-      : undefined;
-  const llmAnalysis = await runCodex(job, workspace, skillSpectorAnalysis, (next) => {
-    Object.assign(codexDiagnostic, next);
-  });
-  return { llmAnalysis, skillSpectorAnalysis };
-}
-
 export function scanHealthClassification(input: {
   clawscan: ClawScanCommandDiagnostic;
-  codex: CodexCommandDiagnostic;
   errorMessage?: string;
-  implementation: ScanImplementation;
-  skillSpector: CodexCommandDiagnostic;
-  skillSpectorAnalysis?: SkillSpectorAnalysis;
   status: "completed" | "failed";
 }) {
-  const timedOut = Boolean(
-    input.clawscan.timedOut || input.codex.timedOut || input.skillSpector.timedOut,
+  const timedOut = Boolean(input.clawscan.timedOut);
+  const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
+    (status): status is string => Boolean(status),
   );
-  let scannerStageFailed = false;
-  let judgeStageFailed = false;
-
-  if (input.implementation === "legacy") {
-    let skillSpectorStatus = input.skillSpectorAnalysis?.status;
-    let skillSpectorIssueCount = input.skillSpectorAnalysis?.issueCount;
-    let skillSpectorParsedIssueCount = input.skillSpectorAnalysis?.issues.length;
-    if (skillSpectorStatus === undefined && input.skillSpector.rawResult !== undefined) {
-      try {
-        const parsedReport = normalizeSkillSpectorAnalysis(input.skillSpector.rawResult);
-        skillSpectorStatus = parsedReport.status;
-        skillSpectorIssueCount = parsedReport.issueCount;
-        skillSpectorParsedIssueCount = parsedReport.issues.length;
-      } catch {
-        skillSpectorStatus = "error";
-        skillSpectorIssueCount = 0;
-        skillSpectorParsedIssueCount = 0;
-      }
-    }
-    const skillSpectorRan =
-      input.skillSpector.args !== undefined ||
-      input.skillSpector.exitCode !== undefined ||
-      input.skillSpector.timedOut === true;
-    const validFindingsExit =
-      input.skillSpector.exitCode === 1 &&
-      (skillSpectorStatus === "suspicious" || skillSpectorStatus === "malicious") &&
-      (skillSpectorIssueCount ?? 0) > 0 &&
-      (skillSpectorParsedIssueCount ?? 0) > 0;
-    const missingExitStatus = skillSpectorRan && input.skillSpector.exitCode === undefined;
-    const unexpectedExit =
-      input.skillSpector.exitCode !== undefined &&
-      input.skillSpector.exitCode !== 0 &&
-      !validFindingsExit;
-    scannerStageFailed =
-      input.skillSpector.timedOut === true ||
-      (skillSpectorRan && skillSpectorStatus === undefined) ||
-      missingExitStatus ||
-      unexpectedExit ||
-      skillSpectorStatus === "error" ||
-      skillSpectorStatus === "failed";
-    judgeStageFailed =
-      input.status === "failed" &&
-      (input.codex.args !== undefined ||
-        input.codex.exitCode !== undefined ||
-        input.codex.timedOut === true);
-  } else {
-    const scannerStatuses = Object.values(input.clawscan.mapping?.scanners ?? {}).filter(
-      (status): status is string => Boolean(status),
-    );
-    scannerStageFailed = scannerStatuses.some(
-      (status) => status !== "completed" && status !== "missing",
-    );
-    const judgeStatus = input.clawscan.mapping?.judge?.status;
-    judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
-    scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
-    judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
-  }
+  let scannerStageFailed = scannerStatuses.some(
+    (status) => status !== "completed" && status !== "missing",
+  );
+  const judgeStatus = input.clawscan.mapping?.judge?.status;
+  let judgeStageFailed = Boolean(judgeStatus && judgeStatus !== "completed");
+  scannerStageFailed ||= /ClawScan scanner/i.test(input.errorMessage ?? "");
+  judgeStageFailed ||= /ClawScan (artifact )?judge|output schema/i.test(input.errorMessage ?? "");
 
   const failureStage =
     input.status === "failed"
@@ -2040,148 +1483,28 @@ export function scanHealthClassification(input: {
   } as const;
 }
 
-async function runSecondaryScan(input: {
-  authoritativeAnalysis: StoredLlmAnalysis;
-  authoritativeImplementation: ScanImplementation;
-  clawscanDiagnostic: ClawScanCommandDiagnostic;
-  codexDiagnostic: CodexCommandDiagnostic;
-  job: ClaimedJob;
-  secondaryImplementation: ScanImplementation;
-  skillSpectorDiagnostic: CodexCommandDiagnostic;
-  workspace: string;
-}): Promise<SecondaryScanDiagnostic> {
-  const startedAt = Date.now();
-  const diagnostic: SecondaryScanDiagnostic = {
-    authoritative: {
-      confidence: input.authoritativeAnalysis.confidence,
-      implementation: input.authoritativeImplementation,
-      status: input.authoritativeAnalysis.status,
-      verdict: input.authoritativeAnalysis.verdict,
-    },
-    judgeStageFailed: false,
-    scannerStageFailed: false,
-    secondary: {
-      implementation: input.secondaryImplementation,
-    },
-    startedAt,
-    status: "failed",
-    timedOut: false,
-  };
-
-  try {
-    const result =
-      input.secondaryImplementation === "clawscan"
-        ? await runClawScan(input.job, input.workspace, (next) => {
-            Object.assign(input.clawscanDiagnostic, next);
-          })
-        : await runLegacyScan(
-            input.job,
-            input.workspace,
-            input.codexDiagnostic,
-            input.skillSpectorDiagnostic,
-          );
-    const completedAt = Date.now();
-    const health = scanHealthClassification({
-      clawscan: input.clawscanDiagnostic,
-      codex: input.codexDiagnostic,
-      implementation: input.secondaryImplementation,
-      skillSpector: input.skillSpectorDiagnostic,
-      skillSpectorAnalysis: result.skillSpectorAnalysis,
-      status: "completed",
-    });
-    return {
-      ...diagnostic,
-      completedAt,
-      durationMs: completedAt - startedAt,
-      ...health,
-      secondary: {
-        confidence: result.llmAnalysis.confidence,
-        implementation: input.secondaryImplementation,
-        status: result.llmAnalysis.status,
-        verdict: result.llmAnalysis.verdict,
-      },
-      status: "completed",
-    };
-  } catch (error) {
-    const completedAt = Date.now();
-    const errorMessage = sanitizeWorkerErrorMessage(
-      error instanceof Error ? error.message : String(error),
-    );
-    const health = scanHealthClassification({
-      clawscan: input.clawscanDiagnostic,
-      codex: input.codexDiagnostic,
-      errorMessage,
-      implementation: input.secondaryImplementation,
-      skillSpector: input.skillSpectorDiagnostic,
-      status: "failed",
-    });
-    return {
-      ...diagnostic,
-      completedAt,
-      durationMs: completedAt - startedAt,
-      error: errorMessage,
-      ...health,
-      status: "failed",
-    };
-  }
-}
-
-function comparisonHealth(
-  secondaryScan: SecondaryScanDiagnostic | undefined,
-): SecurityScanComparisonOutcome | undefined {
-  if (!secondaryScan) return undefined;
-  return {
-    authoritativeVerdict: secondaryScan.authoritative.verdict,
-    secondaryFailureStage: secondaryScan.failureStage,
-    secondaryJudgeStageFailed: secondaryScan.judgeStageFailed,
-    secondaryScannerStageFailed: secondaryScan.scannerStageFailed,
-    secondaryStatus: secondaryScan.status,
-    secondaryTimedOut: secondaryScan.timedOut,
-    secondaryVerdict: secondaryScan.secondary.verdict,
-  };
-}
-
 export async function processJob(
   client: CodexScanWorkerClient,
   token: string,
   job: ClaimedJob,
   diagnosticsRoot: string | undefined,
-  mode: SecurityScanMode = "legacy",
   onHealth?: (health: SecurityScanJobHealth) => void,
 ): Promise<ProcessJobResult> {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
-  // Authority is global: private trust metadata cannot create a per-job legacy exception
-  // to the artifact-only ClawScan contract.
-  const authoritativeImplementation: ScanImplementation =
-    mode === "clawscan" ? "clawscan" : "legacy";
-  const secondaryImplementation: ScanImplementation | undefined =
-    mode === "shadow" ? "clawscan" : mode === "clawscan" ? "legacy" : undefined;
   const clawscan: ClawScanCommandDiagnostic = {};
-  const codex: CodexCommandDiagnostic = {};
-  const skillSpector: CodexCommandDiagnostic = {};
   let errorMessage: string | undefined;
-  let authoritativeCompletedAt: number | undefined;
+  let scanCompletedAt: number | undefined;
   let llmAnalysis: StoredLlmAnalysis | undefined;
   let skillSpectorAnalysis: SkillSpectorAnalysis | undefined;
-  let secondaryScan: SecondaryScanDiagnostic | undefined;
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
-    if (authoritativeImplementation === "clawscan") {
-      const mapped = await runClawScan(job, workspace, (next) => {
-        Object.assign(clawscan, next);
-      });
-      llmAnalysis = mapped.llmAnalysis;
-      skillSpectorAnalysis = mapped.skillSpectorAnalysis;
-    } else {
-      ({ llmAnalysis, skillSpectorAnalysis } = await runLegacyScan(
-        job,
-        workspace,
-        codex,
-        skillSpector,
-      ));
-    }
+    const mapped = await runClawScan(job, workspace, (next) => {
+      Object.assign(clawscan, next);
+    });
+    llmAnalysis = mapped.llmAnalysis;
+    skillSpectorAnalysis = mapped.skillSpectorAnalysis;
     if (!llmAnalysis) throw new Error("Security scan did not produce llmAnalysis");
     await client.action(api.securityScan.completeCodexScanJob, {
       token,
@@ -2191,44 +1514,14 @@ export async function processJob(
       skillSpectorAnalysis,
       runId: process.env.GITHUB_RUN_ID,
     });
-    authoritativeCompletedAt = Date.now();
+    scanCompletedAt = Date.now();
     status = "completed";
-    if (secondaryImplementation) {
-      secondaryScan = await runSecondaryScan({
-        authoritativeAnalysis: llmAnalysis,
-        authoritativeImplementation,
-        clawscanDiagnostic: clawscan,
-        codexDiagnostic: codex,
-        job,
-        secondaryImplementation,
-        skillSpectorDiagnostic: skillSpector,
-        workspace,
-      });
-      logger.info(
-        {
-          authoritativeImplementation,
-          authoritativeStatus: llmAnalysis.status,
-          authoritativeVerdict: llmAnalysis.verdict,
-          durationMs: secondaryScan.durationMs,
-          event: "security_scan_secondary_completed",
-          jobId: job.job._id,
-          mode,
-          secondaryImplementation,
-          secondaryRunStatus: secondaryScan.status,
-          secondaryStatus: secondaryScan.secondary.status,
-          secondaryVerdict: secondaryScan.secondary.verdict,
-          targetKind: job.job.targetKind,
-        },
-        "secondary security scan completed",
-      );
-    }
     logger.info(
       {
         durationMs: Date.now() - startedAt,
         event: "security_scan_job_completed",
-        implementation: authoritativeImplementation,
+        implementation: "clawscan",
         jobId: job.job._id,
-        mode,
         scannerPhase: "complete",
         status: llmAnalysis.status,
         targetKind: job.job.targetKind,
@@ -2237,17 +1530,12 @@ export async function processJob(
     );
     const health = scanHealthClassification({
       clawscan,
-      codex,
-      implementation: authoritativeImplementation,
-      skillSpector,
-      skillSpectorAnalysis,
       status: "completed",
     });
     onHealth?.({
-      authoritativeVerdict: llmAnalysis.verdict,
-      comparison: comparisonHealth(secondaryScan),
+      verdict: llmAnalysis.verdict,
       completed: true,
-      durationMs: (authoritativeCompletedAt ?? Date.now()) - startedAt,
+      durationMs: (scanCompletedAt ?? Date.now()) - startedAt,
       ...health,
     });
     return { completed: true, hardFailed: false, retryableFailed: false };
@@ -2276,15 +1564,10 @@ export async function processJob(
     const completedAt = Date.now();
     const health = scanHealthClassification({
       clawscan,
-      codex,
       errorMessage,
-      implementation: authoritativeImplementation,
-      skillSpector,
-      skillSpectorAnalysis,
       status: "failed",
     });
     onHealth?.({
-      comparison: comparisonHealth(secondaryScan),
       completed: false,
       durationMs: completedAt - startedAt,
       ...health,
@@ -2297,17 +1580,13 @@ export async function processJob(
   } finally {
     try {
       await writeJobDiagnostic({
-        codex,
         completedAt: Date.now(),
         clawscan,
         diagnosticsRoot,
         error: errorMessage,
         job,
         llmAnalysis,
-        mode,
         runId: process.env.GITHUB_RUN_ID,
-        secondaryScan,
-        skillSpector,
         skillSpectorAnalysis,
         startedAt,
         status,
@@ -2453,7 +1732,6 @@ export async function publishWorkerHealthSummary(
 
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, lane, diagnosticsRoot } = parseArgs();
-  const mode = resolveSecurityScanMode();
   assertCodexWorkerExecutionAllowed(process.env);
   maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
@@ -2470,7 +1748,7 @@ async function main() {
   const outcomes: SecurityScanJobHealth[] = [];
 
   logger.info(
-    { diagnosticsRoot, event: "security_scan_diagnostics_directory", lane, mode, workerId },
+    { diagnosticsRoot, event: "security_scan_diagnostics_directory", lane, workerId },
     "security scan diagnostics directory",
   );
 
@@ -2551,7 +1829,7 @@ async function main() {
       const processStartedAt = Date.now();
       let reported = false;
       try {
-        const result = await processJob(client, token, job, diagnosticsRoot, mode, (health) => {
+        const result = await processJob(client, token, job, diagnosticsRoot, (health) => {
           reported = true;
           outcomes.push(health);
         });
@@ -2627,7 +1905,6 @@ async function main() {
   );
   const summary = calculateSecurityScanWorkerHealthSummary({
     durationMs: Date.now() - startedAt,
-    mode,
     outcomes,
     pool: stats,
     queueHealth,

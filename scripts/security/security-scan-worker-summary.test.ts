@@ -8,35 +8,34 @@ import {
 
 function outcome(overrides: Partial<SecurityScanJobHealth> = {}): SecurityScanJobHealth {
   return {
-    authoritativeVerdict: "benign",
     completed: true,
     durationMs: 30_000,
     judgeStageFailed: false,
     scannerStageFailed: false,
     timedOut: false,
+    verdict: "benign",
     ...overrides,
   };
 }
 
 describe("security scan worker summary", () => {
-  it("calculates authoritative health, throughput, queue age, and verdict totals", () => {
+  it("calculates ClawScan health, throughput, queue age, and verdict totals", () => {
     const summary = calculateSecurityScanWorkerHealthSummary({
       durationMs: 120_000,
-      mode: "legacy",
       outcomes: [
         outcome(),
         outcome({
-          authoritativeVerdict: "suspicious",
           durationMs: 60_000,
           scannerStageFailed: true,
+          verdict: "suspicious",
         }),
         outcome({
-          authoritativeVerdict: undefined,
           completed: false,
           durationMs: 90_000,
           failureStage: "judge",
           judgeStageFailed: true,
           timedOut: true,
+          verdict: undefined,
         }),
       ],
       pool: {
@@ -59,7 +58,7 @@ describe("security scan worker summary", () => {
     });
 
     expect(summary).toMatchObject({
-      authoritative: {
+      clawscan: {
         averageDurationMs: 60_000,
         completed: 2,
         failed: 1,
@@ -77,99 +76,17 @@ describe("security scan worker summary", () => {
       throughputPerMinute: 1.5,
     });
     const markdown = renderSecurityScanWorkerSummaryMarkdown(summary);
+    expect(markdown).toContain("**Scanner:** `clawscan`");
     expect(markdown).toContain("| Completed | 2 |");
     expect(markdown).toContain("| Timed out | 1 |");
     expect(markdown).toContain("- Queued: >=512");
     expect(markdown).toContain("- Oldest ready job age: 15.0 min");
-  });
-
-  it("calculates verdict pairs, exact match rate, failures, and disagreement direction", () => {
-    const summary = calculateSecurityScanWorkerHealthSummary({
-      durationMs: 60_000,
-      mode: "clawscan",
-      outcomes: [
-        outcome({
-          authoritativeVerdict: "benign",
-          comparison: {
-            authoritativeVerdict: "benign",
-            secondaryJudgeStageFailed: false,
-            secondaryScannerStageFailed: false,
-            secondaryStatus: "completed",
-            secondaryTimedOut: false,
-            secondaryVerdict: "benign",
-          },
-        }),
-        outcome({
-          authoritativeVerdict: "malicious",
-          comparison: {
-            authoritativeVerdict: "malicious",
-            secondaryJudgeStageFailed: false,
-            secondaryScannerStageFailed: false,
-            secondaryStatus: "completed",
-            secondaryTimedOut: false,
-            secondaryVerdict: "suspicious",
-          },
-        }),
-        outcome({
-          authoritativeVerdict: "suspicious",
-          comparison: {
-            authoritativeVerdict: "suspicious",
-            secondaryJudgeStageFailed: false,
-            secondaryScannerStageFailed: false,
-            secondaryStatus: "completed",
-            secondaryTimedOut: false,
-            secondaryVerdict: "malicious",
-          },
-        }),
-        outcome({
-          authoritativeVerdict: "benign",
-          comparison: {
-            authoritativeVerdict: "benign",
-            secondaryFailureStage: "scanner",
-            secondaryJudgeStageFailed: false,
-            secondaryScannerStageFailed: true,
-            secondaryStatus: "failed",
-            secondaryTimedOut: true,
-          },
-        }),
-      ],
-      pool: {
-        totalClaimed: 4,
-        totalClaimFailures: 0,
-        totalCompleted: 4,
-        totalFailed: 0,
-        totalRetryableFailed: 0,
-      },
-      workerId: "fixture-worker",
-    });
-
-    expect(summary.comparison).toEqual({
-      authoritativeMoreSevere: 1,
-      completedPairs: 3,
-      exactMatchRate: 33.33,
-      exactMatches: 1,
-      pairs: {
-        "benign -> benign": 1,
-        "malicious -> suspicious": 1,
-        "suspicious -> malicious": 1,
-      },
-      secondaryFailures: 1,
-      secondaryJudgeStageFailures: 0,
-      secondaryMoreSevere: 1,
-      secondaryScannerStageFailures: 1,
-      secondaryTimedOut: 1,
-      unknownDirection: 0,
-    });
-    const markdown = renderSecurityScanWorkerSummaryMarkdown(summary);
-    expect(markdown).toContain("Exact matches: 1 (33.33%)");
-    expect(markdown).toContain("| `malicious -> suspicious` | 1 |");
-    expect(markdown).toContain("Secondary scanner-stage failures: 1");
+    expect(markdown).not.toContain("secondary");
   });
 
   it("reports unavailable queue diagnostics without changing scan health", () => {
     const summary = calculateSecurityScanWorkerHealthSummary({
       durationMs: 60_000,
-      mode: "clawscan",
       outcomes: [outcome()],
       pool: {
         totalClaimed: 1,
@@ -182,7 +99,7 @@ describe("security scan worker summary", () => {
       workerId: "fixture-worker",
     });
 
-    expect(summary.authoritative).toMatchObject({ completed: 1, failed: 0 });
+    expect(summary.clawscan).toMatchObject({ completed: 1, failed: 0 });
     expect(renderSecurityScanWorkerSummaryMarkdown(summary)).toContain(
       "- Unavailable: queue health request failed",
     );
