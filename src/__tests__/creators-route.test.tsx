@@ -300,8 +300,7 @@ describe("creators route", () => {
           },
         },
       ],
-      continueCursor: "",
-      isDone: true,
+      nextCursor: null,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -311,6 +310,19 @@ describe("creators route", () => {
     expect(await screen.findByText("@demo")).toBeTruthy();
     expect(screen.getByText("Followed publisher")).toBeTruthy();
     expect(screen.queryByText("No publishers found")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+  });
+
+  it("does not flash the signed-out following state while auth loads", async () => {
+    searchMock.mockReturnValue({ following: true });
+    authStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: true, me: null });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText("Loading followed publishers...")).toBeTruthy();
+    expect(screen.queryByText("Sign in to see publishers you follow")).toBeNull();
   });
 
   it("loads older followed publishers through the follow cursor", async () => {
@@ -331,8 +343,7 @@ describe("creators route", () => {
               },
             },
           ],
-          continueCursor: "",
-          isDone: true,
+          nextCursor: null,
         };
       }
       return {
@@ -347,8 +358,7 @@ describe("creators route", () => {
             },
           },
         ],
-        continueCursor: "next",
-        isDone: false,
+        nextCursor: "next",
       };
     });
     const route = await loadRoute();
@@ -368,8 +378,7 @@ describe("creators route", () => {
     authStatusMock.mockReturnValue({ isAuthenticated: true, isLoading: false, me: {} });
     useQueryMock.mockReturnValue({
       items: [],
-      continueCursor: "",
-      isDone: true,
+      nextCursor: null,
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

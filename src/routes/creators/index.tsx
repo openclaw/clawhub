@@ -80,8 +80,7 @@ type FollowedPublisherItem = {
 
 type FollowedPublishersResult = {
   items: FollowedPublisherItem[];
-  continueCursor: string;
-  isDone: boolean;
+  nextCursor: string | null;
 };
 
 type FollowedPublisherPage = {
@@ -196,7 +195,7 @@ function PublishersIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const result = Route.useLoaderData() as PublishersLoaderResult;
-  const { isAuthenticated } = useAuthStatus();
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuthStatus();
   const [query, setQuery] = useState(search.q ?? "");
   const [publishers, setPublishers] = useState(result.page);
   const [nextCursor, setNextCursor] = useState<string | null>(
@@ -278,9 +277,7 @@ function PublishersIndex() {
       }
       return followedCursorRequest ? [...previous, nextPage] : [nextPage];
     });
-    setFollowedNextCursor(
-      followedPublishersResult.isDone ? null : followedPublishersResult.continueCursor,
-    );
+    setFollowedNextCursor(followedPublishersResult.nextCursor);
     setIsLoadingMoreFollowed(false);
   }, [followedCursorRequest, followedPublishersResult, followingOnly]);
 
@@ -370,6 +367,7 @@ function PublishersIndex() {
         kind: undefined,
         official: undefined,
         following: true,
+        view: undefined,
       }),
       replace: true,
     });
@@ -471,7 +469,9 @@ function PublishersIndex() {
               onOpen={browseSearch.openSearch}
               label="Search publishers"
             />
-            <BrowseViewToggle view={activeView} onToggle={handleToggleView} />
+            {followingOnly ? null : (
+              <BrowseViewToggle view={activeView} onToggle={handleToggleView} />
+            )}
           </BrowseActions>
         </BrowseControlsRow>
         <BrowseSearchPanel open={browseSearch.open}>
@@ -493,6 +493,7 @@ function PublishersIndex() {
           {followingOnly ? (
             <FollowedPublisherDiscovery
               authenticated={isAuthenticated}
+              authLoading={isAuthLoading}
               loading={
                 isAuthenticated &&
                 followedPublishers.length === 0 &&
@@ -562,15 +563,25 @@ function PublishersIndex() {
 
 function FollowedPublisherDiscovery({
   authenticated,
+  authLoading,
   loading,
   publishers,
   query,
 }: {
   authenticated: boolean;
+  authLoading: boolean;
   loading: boolean;
   publishers: FollowedPublisherItem[];
   query?: string;
 }) {
+  if (authLoading) {
+    return (
+      <div className="empty-state">
+        <p className="empty-state-title">Loading followed publishers...</p>
+      </div>
+    );
+  }
+
   if (!authenticated) {
     return (
       <div className="empty-state">

@@ -153,19 +153,25 @@ describe("user profile route", () => {
     const personalPublisher = {
       ...publisher,
       kind: "user" as const,
+      linkedUserId: "users:nvidia",
     };
     loaderDataMock.mockReturnValue({ publisher: personalPublisher });
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      me: { handle: "nvidia" },
+      me: { _id: "users:nvidia", handle: "nvidia" },
     });
     queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
       if (args === "skip") return undefined;
       if ("publisherHandle" in args) return { publisher: personalPublisher, members: [] };
       if ("kind" in args) return null;
       if (Object.keys(args).length === 0) {
-        return [{ publisher: { handle: "nvidia", kind: "user" }, role: "owner" }];
+        return [
+          {
+            publisher: { _id: "publishers:nvidia", handle: "nvidia", kind: "user" },
+            role: "owner",
+          },
+        ];
       }
       return personalPublisher;
     });
@@ -240,10 +246,23 @@ describe("user profile route", () => {
   });
 
   it("does not render follow controls on the viewer's own profile", async () => {
+    const personalPublisher = {
+      ...publisher,
+      kind: "user" as const,
+      linkedUserId: "users:nvidia",
+    };
+    loaderDataMock.mockReturnValue({ publisher: personalPublisher });
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:nvidia", handle: "nvidia", role: "user" },
+    });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: personalPublisher, members: [] };
+      if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) return [];
+      return personalPublisher;
     });
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;

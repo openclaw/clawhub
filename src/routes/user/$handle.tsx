@@ -478,6 +478,7 @@ function PublisherProfileChromeActions({
 }
 
 function PublisherFollowControl({
+  authLoading,
   isAuthenticated,
   isFollowing,
   isLoading,
@@ -485,6 +486,7 @@ function PublisherFollowControl({
   onToggle,
   requireSignIn,
 }: {
+  authLoading: boolean;
   isAuthenticated: boolean;
   isFollowing: boolean;
   isLoading: boolean;
@@ -500,7 +502,7 @@ function PublisherFollowControl({
       type="button"
       size="sm"
       variant={isFollowing ? "secondary" : "primary"}
-      loading={isPending || isLoading}
+      loading={authLoading || isPending || isLoading}
       aria-pressed={isFollowing}
       aria-describedby="publisher-follow-help"
       onClick={() => {
@@ -514,8 +516,8 @@ function PublisherFollowControl({
       <Icon size={15} aria-hidden="true" />
       {label}
       <span id="publisher-follow-help" className="sr-only">
-        Following a publisher only changes discovery and notifications. It does not mark packages
-        official, reviewed, or installable.
+        Following a publisher changes discovery only. It does not mark packages official, reviewed,
+        or installable.
       </span>
     </Button>
   );
@@ -559,7 +561,7 @@ export function PublisherProfilePage({
   handle: string;
   loaderPublisher: PublicPublisherProfileItem;
 }) {
-  const { isAuthenticated, me } = useAuthStatus();
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const { signIn } = useAuthActions();
   const followPublisher = useMutation(api.publisherFollows.followPublisher);
   const unfollowPublisher = useMutation(api.publisherFollows.unfollowPublisher);
@@ -613,7 +615,12 @@ export function PublisherProfilePage({
   const myPublisherMemberships = useQuery(
     api.publishers.listMine,
     isAuthenticated ? {} : "skip",
-  ) as Array<{ publisher: { handle: string; kind: "user" | "org" }; role: string }> | undefined;
+  ) as
+    | Array<{
+        publisher: { _id: string; handle: string; kind: "user" | "org" };
+        role: string;
+      }>
+    | undefined;
 
   const viewerCanSeeMemberRoles = useMemo(() => {
     if (!myPublisherMemberships) return false;
@@ -632,7 +639,14 @@ export function PublisherProfilePage({
     publisher?.kind === "user" &&
     (viewerCanAddToPublisher || (me?.handle != null && me.handle === handle));
   const viewerCanSeeOrgRoles = isAdmin(me) || (me?.handle != null && me.handle === handle);
-  const viewerIsPublisher = me?.handle != null && me.handle === publisher?.handle;
+  const viewerIsPublisher = Boolean(
+    publisher &&
+    me?._id &&
+    (publisher.linkedUserId === me._id ||
+      myPublisherMemberships?.some(
+        (entry) => entry.publisher._id === publisher._id && entry.role === "owner",
+      )),
+  );
   const followPublisherId = publisher?._id as Id<"publishers"> | undefined;
   const followPublisherHandle = publisher?.handle ?? handle;
   const isFollowingPublisher = useQuery(
@@ -836,6 +850,7 @@ export function PublisherProfilePage({
                 followControl={
                   viewerIsPublisher ? undefined : (
                     <PublisherFollowControl
+                      authLoading={isAuthLoading}
                       isAuthenticated={isAuthenticated}
                       isFollowing={Boolean(isFollowingPublisher)}
                       isLoading={isAuthenticated && isFollowingPublisher === undefined}
