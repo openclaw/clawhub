@@ -1,0 +1,32 @@
+{
+  "candidate": "b34668acb89423e6d0e892b7b9c9b48aa1bc4ef7",
+  "generatedAt": "2026-07-16T19:11:25Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "b34668acb89423e6d0e892b7b9c9b48aa1bc4ef7",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Desktop homepage hero at 1440x900",
+          "screenshot": "screenshots/desktop-1440x900.png",
+          "slug": "desktop-1440x900",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Mobile homepage hero at 390x844",
+          "screenshot": "screenshots/mobile-390x844.png",
+          "slug": "mobile-390x844",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": "/Users/patrickerichsen/.codex/visualizations/2026/07/16/019f6beb-106a-7063-b927-aa212529d3d6/static-hero-proof",
+  "provider": "codex-iab",
+  "scenario": "manual responsive homepage hero verification",
+  "status": "pass"
+}
