@@ -364,7 +364,7 @@ describe("restored UI design contract", () => {
     expect(publishersSource).toContain("Official creators");
     expect(publishersSource).toContain("Explore skills and plugins from official creators.");
     expect(cssRule(css, ".home-v2-popular-publishers-track")).toContain(
-      "grid-template-columns: repeat(8, minmax(0, 1fr))",
+      "grid-template-columns: repeat(6, minmax(0, 1fr))",
     );
     expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
     expect(homeSource).not.toContain("Unleash.");

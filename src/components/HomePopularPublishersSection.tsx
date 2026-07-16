@@ -7,7 +7,7 @@ import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisherSummary } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
-const HOME_OFFICIAL_CREATOR_LIMIT = 16;
+const HOME_OFFICIAL_CREATOR_LIMIT = 12;
 
 function OfficialCreatorCard({ publisher }: { publisher: PublicPublisherSummary }) {
   const name = publisher.displayName.trim() || publisher.handle;

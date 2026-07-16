@@ -82,9 +82,9 @@ describe("HomePopularPublishersSection", () => {
     });
   };
 
-  it("loads the top sixteen official creators once when the section nears the viewport", async () => {
+  it("loads the top twelve official creators once when the section nears the viewport", async () => {
     convexActionMock.mockResolvedValue(
-      Array.from({ length: 16 }, (_, index) => ({
+      Array.from({ length: 12 }, (_, index) => ({
         _id: `publishers:org-${index}`,
         _creationTime: index,
         handle: `org-${index}`,
@@ -93,7 +93,7 @@ describe("HomePopularPublishersSection", () => {
         stats: {
           skills: 2,
           packages: 1,
-          installs: 16 - index,
+          installs: 12 - index,
           downloads: 4,
           stars: 5,
         },
@@ -112,17 +112,17 @@ describe("HomePopularPublishersSection", () => {
     await enterPublisherSection();
     await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(1));
     expect(convexActionMock).toHaveBeenCalledWith("publishers:getHomeOfficialCreatorSummaries", {
-      limit: 16,
+      limit: 12,
     });
-    expect(screen.getAllByRole("link", { name: /Official Org/ })).toHaveLength(16);
-    expect(screen.getByText("16 installs")).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: /Official Org/ })).toHaveLength(12);
+    expect(screen.getByText("12 installs")).toBeTruthy();
     expect(screen.getByText("1 install")).toBeTruthy();
-    expect(document.querySelectorAll(".home-v2-popular-publisher-card")).toHaveLength(16);
+    expect(document.querySelectorAll(".home-v2-popular-publisher-card")).toHaveLength(12);
     expect(
       Array.from(document.querySelectorAll(".home-v2-popular-publisher-card"), (card) =>
         card.getAttribute("aria-label"),
       ),
-    ).toEqual(Array.from({ length: 16 }, (_, index) => `Official Org ${index}, @org-${index}`));
+    ).toEqual(Array.from({ length: 12 }, (_, index) => `Official Org ${index}, @org-${index}`));
 
     await enterPublisherSection();
     expect(convexActionMock).toHaveBeenCalledTimes(1);
