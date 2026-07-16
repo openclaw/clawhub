@@ -91,6 +91,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(runStep?.env).toEqual({
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
+      VIRUSTOTAL_API_KEY: "${{ secrets.VT_API_KEY }}",
     });
 
     for (const step of steps) {
@@ -99,6 +100,9 @@ describe("pre-publication publish worker workflow", () => {
         stepName === "Run pre-publication publish worker",
       );
       expect(stepUsesSecret(step, "OPENAI_API_KEY"), stepName).toBe(
+        stepName === "Run pre-publication publish worker",
+      );
+      expect(stepUsesSecret(step, "VT_API_KEY"), stepName).toBe(
         stepName === "Run pre-publication publish worker",
       );
     }
