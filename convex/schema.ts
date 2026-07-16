@@ -1857,6 +1857,7 @@ const securityScanJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_status_source_created_at", ["status", "source", "createdAt"])
   .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])

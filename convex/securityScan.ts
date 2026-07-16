@@ -30,6 +30,9 @@ const MAX_ATTEMPTS = 3;
 const DEFAULT_CODEX_SCAN_CLAIM_LIMIT = 64;
 const MAX_CODEX_SCAN_CLAIM_LIMIT = 512;
 const MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES = 512;
+const DEFAULT_FAILED_SCAN_RECOVERY_LIMIT = 250;
+const MAX_FAILED_SCAN_RECOVERY_LIMIT = 1000;
+const FAILED_SCAN_RECOVERY_SAMPLE_LIMIT = 20;
 const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
@@ -2468,6 +2471,72 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
     }
     if (jobs.length > 0) await requestSecurityScanDispatch(ctx);
     return { requeued: jobs.length };
+  },
+});
+
+export const requeueFailedSecurityScanJobsInternal = internalMutation({
+  args: {
+    failedAfter: v.number(),
+    dryRun: v.boolean(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.max(
+      1,
+      Math.min(
+        Math.floor(args.limit ?? DEFAULT_FAILED_SCAN_RECOVERY_LIMIT),
+        MAX_FAILED_SCAN_RECOVERY_LIMIT,
+      ),
+    );
+    const jobs = await ctx.db
+      .query("securityScanJobs")
+      .withIndex("by_status_and_updated_at", (q) =>
+        q.eq("status", "failed").gte("updatedAt", args.failedAfter),
+      )
+      .order("asc")
+      .take(limit + 1);
+    const matched = jobs.slice(0, limit);
+    const bySource: Partial<Record<SecurityScanJobSource, number>> = {};
+    const byTargetKind: Partial<Record<Doc<"securityScanJobs">["targetKind"], number>> = {};
+
+    for (const job of matched) {
+      bySource[job.source] = (bySource[job.source] ?? 0) + 1;
+      byTargetKind[job.targetKind] = (byTargetKind[job.targetKind] ?? 0) + 1;
+      if (args.dryRun) continue;
+
+      const now = Date.now();
+      await ctx.db.patch(job._id, {
+        status: "queued",
+        attempts: 0,
+        lastError: undefined,
+        runId: undefined,
+        completedAt: undefined,
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        workerId: undefined,
+        nextRunAt: now,
+        updatedAt: now,
+      });
+      if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+        await ctx.db.patch(job.skillScanRequestId, {
+          status: "queued",
+          lastError: undefined,
+          completedAt: undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
+    if (!args.dryRun && matched.length > 0) await requestSecurityScanDispatch(ctx);
+    return {
+      dryRun: args.dryRun,
+      matched: matched.length,
+      requeued: args.dryRun ? 0 : matched.length,
+      hasMore: jobs.length > limit,
+      bySource,
+      byTargetKind,
+      sampleJobIds: matched.slice(0, FAILED_SCAN_RECOVERY_SAMPLE_LIMIT).map((job) => job._id),
+    };
   },
 });
 
