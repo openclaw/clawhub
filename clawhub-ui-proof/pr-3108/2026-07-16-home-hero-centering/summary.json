@@ -1,0 +1,82 @@
+{
+  "baseline": "clawhub.ai (PR #3106)",
+  "candidate": "4b5d5a8e",
+  "generatedAt": "2026-07-16T14:35:00.000Z",
+  "lanes": [
+    {
+      "name": "baseline",
+      "ref": "https://clawhub.ai",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "baseline",
+          "name": "Desktop dark - production baseline",
+          "screenshot": "screenshots/desktop-dark.png",
+          "slug": "desktop-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Desktop light - production baseline",
+          "screenshot": "screenshots/desktop-light.png",
+          "slug": "desktop-light",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Mobile dark - production baseline",
+          "screenshot": "screenshots/mobile-dark.png",
+          "slug": "mobile-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "baseline",
+          "name": "Mobile light - production baseline",
+          "screenshot": "screenshots/mobile-light.png",
+          "slug": "mobile-light",
+          "status": "pass"
+        }
+      ]
+    },
+    {
+      "name": "candidate",
+      "ref": "4b5d5a8e",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Desktop dark - proposed fix",
+          "screenshot": "screenshots/desktop-dark.png",
+          "slug": "desktop-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Desktop light - proposed fix",
+          "screenshot": "screenshots/desktop-light.png",
+          "slug": "desktop-light",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Mobile dark - proposed fix",
+          "screenshot": "screenshots/mobile-dark.png",
+          "slug": "mobile-dark",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Mobile light - proposed fix",
+          "screenshot": "screenshots/mobile-light.png",
+          "slug": "mobile-light",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "before-after",
+  "outputDir": ".artifacts/clawhub-ui-proof/2026-07-16-home-hero-centering",
+  "provider": "local Chromium",
+  "scenario": "home hero centering",
+  "status": "pass"
+}
