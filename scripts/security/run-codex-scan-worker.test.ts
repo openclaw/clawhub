@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -12,11 +12,12 @@ import {
 import {
   buildPrompt,
   normalizeSkillSpectorAnalysis,
+  publishWorkerHealthSummary,
   processJob,
   resolveSkillSpectorScanInput,
   resolveSkillSpectorScanInputs,
   runContinuouslyRefilledWorkerPool,
-  runClawScanShadow,
+  scanHealthClassification,
   writeArtifactWorkspace,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
@@ -60,6 +61,246 @@ function unsafeFixtureLabels() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
+  describe("legacy SkillSpector health classification", () => {
+    const baseInput = {
+      clawscan: {},
+      codex: {},
+      implementation: "legacy" as const,
+      skillSpector: {
+        args: ["scan", "./artifact", "--format", "json"],
+        exitCode: 1,
+      },
+      status: "completed" as const,
+    };
+
+    it("does not treat exit 1 with a valid suspicious report as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            score: 93,
+            issueCount: 1,
+            issues: [
+              {
+                issueId: "SDI-1",
+                severity: "HIGH",
+                explanation: "Detected suspicious behavior.",
+              },
+            ],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: false,
+        timedOut: false,
+      });
+    });
+
+    it("recognizes a valid captured report when a later stage prevents returning the analysis", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            rawResult: JSON.stringify({
+              status: "suspicious",
+              issue_count: 1,
+              issues: [
+                {
+                  id: "SDI-1",
+                  severity: "HIGH",
+                  explanation: "Detected suspicious behavior.",
+                },
+              ],
+            }),
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: false,
+      });
+    });
+
+    it.each(["error", "failed"] as const)(
+      "treats a parsed %s report as a scanner failure",
+      (status) => {
+        expect(
+          scanHealthClassification({
+            ...baseInput,
+            skillSpectorAnalysis: {
+              status,
+              issueCount: 0,
+              issues: [],
+              checkedAt: 1,
+            },
+          }),
+        ).toMatchObject({
+          scannerStageFailed: true,
+        });
+      },
+    );
+
+    it("treats other nonzero exits as failures even with a parseable report", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            exitCode: 2,
+          },
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            issueCount: 1,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
+    it("treats a positive issue count without parsed findings as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            issueCount: 1,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
+    it("treats exit 1 with a clean zero-findings report as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpectorAnalysis: {
+            status: "clean",
+            issueCount: 0,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
+    it("treats a missing process exit status as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            exitCode: undefined,
+            rawResult: JSON.stringify({
+              status: "suspicious",
+              issue_count: 1,
+              issues: [],
+            }),
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
+    it.each([undefined, "{malformed"])(
+      "treats a nonzero exit with %s captured output as a scanner failure",
+      (rawResult) => {
+        expect(
+          scanHealthClassification({
+            ...baseInput,
+            skillSpector: {
+              ...baseInput.skillSpector,
+              rawResult,
+            },
+          }),
+        ).toMatchObject({
+          scannerStageFailed: true,
+        });
+      },
+    );
+
+    it("treats a SkillSpector timeout as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            timedOut: true,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+        timedOut: true,
+      });
+    });
+  });
+
+  it("publishes the worker report to the Actions summary and diagnostics artifact", async () => {
+    const diagnosticsRoot = await tempDir();
+    const stepSummaryPath = join(await tempDir(), "step-summary.md");
+    await writeFile(stepSummaryPath, "");
+    const previousStepSummary = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = stepSummaryPath;
+    try {
+      await publishWorkerHealthSummary(diagnosticsRoot, {
+        authoritative: {
+          averageDurationMs: 30_000,
+          completed: 1,
+          failed: 0,
+          judgeStageFailures: 0,
+          scannerStageFailures: 0,
+          timedOut: 0,
+          unclassifiedFailures: 0,
+          verdicts: {
+            benign: 1,
+            malicious: 0,
+            suspicious: 0,
+            unknown: 0,
+          },
+        },
+        claimFailures: 0,
+        durationMs: 30_000,
+        mode: "clawscan",
+        queueHealth: {
+          snapshotAt: 1,
+          queueDepth: 2,
+          queueDepthIsEstimate: false,
+          readyQueueDepth: 1,
+          readyQueueDepthIsEstimate: false,
+          oldestReadyJobAgeSeconds: 60,
+          oldestReadyJobNextRunAt: 0,
+        },
+        throughputPerMinute: 2,
+        totalClaimed: 1,
+        workerId: "fixture-worker",
+      });
+    } finally {
+      if (previousStepSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = previousStepSummary;
+    }
+
+    const markdown = await readFile(stepSummaryPath, "utf8");
+    expect(markdown).toContain("## Security scan worker health");
+    expect(markdown).toContain("| Completed | 1 |");
+    const artifact = JSON.parse(
+      await readFile(join(diagnosticsRoot, "worker-summary.json"), "utf8"),
+    );
+    expect(artifact).toMatchObject({
+      mode: "clawscan",
+      workerId: "fixture-worker",
+      queueHealth: { queueDepth: 2 },
+    });
+  });
+
   it("refills a free slot without waiting for the slowest active job", async () => {
     const started: string[] = [];
     let releaseSlowJob: (() => void) | undefined;
@@ -875,409 +1116,6 @@ describe("run-codex-scan-worker diagnostics", () => {
     else process.env.GITHUB_ACTIONS = previousGitHubActions;
   });
 
-  it("runs OSS ClawScan shadow mode with recorded VirusTotal evidence", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high"}}}
-JSON
-echo "targets: 1"
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "docker";
-
-    const shadow = await runClawScanShadow(
-      {
-        job: {
-          _id: "securityScanJobs:shadow",
-          hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
-          source: "vt-update",
-          targetKind: "skillVersion",
-          waitForVtUntil: 0,
-        },
-        target: {
-          version: {
-            vtAnalysis: {
-              status: "clean",
-              engineStats: { malicious: 0, suspicious: 0 },
-            },
-          },
-        },
-      },
-      workspace,
-      {
-        checkedAt: 123,
-        confidence: "medium",
-        status: "clean",
-        verdict: "benign",
-      },
-    );
-
-    expect(shadow).toMatchObject({
-      prod: { confidence: "medium", status: "clean", verdict: "benign" },
-      shadow: {
-        confidence: "high",
-        judgeStatus: "completed",
-        profile: "clawhub",
-        scannerStatuses: {
-          "clawscan-static": "completed",
-          skillspector: "completed",
-          virustotal: "completed",
-        },
-        status: "clean",
-        verdict: "benign",
-      },
-      status: "completed",
-    });
-    expect(shadow.command).toEqual(
-      expect.arrayContaining([
-        fakeClawScan,
-        "./artifact",
-        "--profile",
-        "clawhub",
-        "--scanner-result",
-        expect.stringMatching(/^virustotal=/),
-        "--sandbox",
-        "docker",
-        "--sandbox-image",
-        expect.stringContaining("@sha256:"),
-      ]),
-    );
-    expect(shadow.vtFixturePath).toBeDefined();
-    const vtFixture = JSON.parse(await readFile(String(shadow.vtFixturePath), "utf8"));
-    expect(vtFixture).toMatchObject({ status: "clean" });
-
-    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
-    if (previousCommand === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
-    if (previousSandbox === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
-  });
-
-  it("runs OSS ClawScan shadow mode for skill scan request jobs", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Pending publish\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-target="$1"
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-if [[ "$target" != "./artifact" ]]; then
-  echo "unexpected target: $target" >&2
-  exit 9
-fi
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"suspicious","confidence":"medium"}}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
-
-    const shadow = await runClawScanShadow(
-      {
-        job: {
-          _id: "securityScanJobs:shadow-scan-request",
-          hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
-          source: "publish",
-          targetKind: "skillScanRequest",
-          waitForVtUntil: 0,
-        },
-        target: {},
-      },
-      workspace,
-      {
-        checkedAt: 123,
-        confidence: "medium",
-        status: "suspicious",
-        verdict: "suspicious",
-      },
-    );
-
-    expect(shadow).toMatchObject({
-      prod: { confidence: "medium", status: "suspicious", verdict: "suspicious" },
-      shadow: {
-        confidence: "medium",
-        judgeStatus: "completed",
-        profile: "clawhub",
-        scannerStatuses: {
-          "clawscan-static": "completed",
-          skillspector: "completed",
-          virustotal: "completed",
-        },
-        status: "suspicious",
-        verdict: "suspicious",
-      },
-      status: "completed",
-    });
-    expect(shadow.command).toEqual(
-      expect.arrayContaining([
-        fakeClawScan,
-        "./artifact",
-        "--profile",
-        "clawhub",
-        "--scanner-result",
-        expect.stringMatching(/^virustotal=/),
-      ]),
-    );
-    expect(JSON.parse(await readFile(String(shadow.vtFixturePath), "utf8"))).toBeNull();
-
-    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
-    if (previousCommand === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
-    if (previousSandbox === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
-  });
-
-  it("marks OSS ClawScan shadow mode failed when the judge fails", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"completed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"failed","error":"schema mismatch"}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
-
-    const shadow = await runClawScanShadow(
-      {
-        job: {
-          _id: "securityScanJobs:shadow-failed",
-          hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
-          source: "publish",
-          targetKind: "skillVersion",
-          waitForVtUntil: 0,
-        },
-        target: {},
-      },
-      workspace,
-      {
-        checkedAt: 123,
-        confidence: "medium",
-        status: "clean",
-        verdict: "benign",
-      },
-    );
-
-    expect(shadow).toMatchObject({
-      error: "ClawScan judge status was failed",
-      shadow: {
-        judgeStatus: "failed",
-        profile: "clawhub",
-        scannerStatuses: {
-          "clawscan-static": "completed",
-          skillspector: "completed",
-          virustotal: "completed",
-        },
-      },
-      status: "failed",
-    });
-
-    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
-    if (previousCommand === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
-    if (previousSandbox === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
-  });
-
-  it("marks OSS ClawScan shadow mode failed when an expected scanner fails", async () => {
-    const workspace = await tempDir();
-    await mkdir(join(workspace, "artifact"), { recursive: true });
-    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    await writeFile(
-      fakeClawScan,
-      `#!/usr/bin/env bash
-set -euo pipefail
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"skillspector":{"status":"failed"},"virustotal":{"status":"completed"},"clawscan-static":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high"}}}
-JSON
-`,
-    );
-    await chmod(fakeClawScan, 0o755);
-    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    const previousSandbox = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = fakeClawScan;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = "off";
-
-    const shadow = await runClawScanShadow(
-      {
-        job: {
-          _id: "securityScanJobs:shadow-scanner-failed",
-          hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
-          source: "publish",
-          targetKind: "skillVersion",
-          waitForVtUntil: 0,
-        },
-        target: {},
-      },
-      workspace,
-      {
-        checkedAt: 123,
-        confidence: "medium",
-        status: "clean",
-        verdict: "benign",
-      },
-    );
-
-    expect(shadow).toMatchObject({
-      error: "ClawScan scanner skillspector status was failed",
-      shadow: {
-        judgeStatus: "completed",
-        scannerStatuses: {
-          "clawscan-static": "completed",
-          skillspector: "failed",
-          virustotal: "completed",
-        },
-        verdict: "benign",
-      },
-      status: "failed",
-    });
-
-    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
-    if (previousCommand === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_COMMAND = previousCommand;
-    if (previousSandbox === undefined)
-      delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX = previousSandbox;
-  });
-
-  it("skips OSS ClawScan shadow mode for unsupported parity contexts", async () => {
-    const workspace = await tempDir();
-    const previousEnabled = process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = "1";
-
-    const shadow = await runClawScanShadow(
-      {
-        job: {
-          _id: "securityScanJobs:shadow-skipped",
-          hasMaliciousSignal: false,
-          leaseToken: "lease-secret",
-          source: "publish",
-          targetKind: "packageRelease",
-          waitForVtUntil: 0,
-        },
-        target: {},
-      },
-      workspace,
-      {
-        checkedAt: 123,
-        confidence: "medium",
-        status: "clean",
-        verdict: "benign",
-      },
-    );
-
-    expect(shadow).toMatchObject({
-      error:
-        "ClawScan shadow parity is only enabled for skillVersion or skillScanRequest jobs, got packageRelease",
-      status: "skipped",
-    });
-
-    if (previousEnabled === undefined) delete process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN;
-    else process.env.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN = previousEnabled;
-  });
-
   it("writes redacted Codex diagnostics without copying submitted artifact files or signed URLs", async () => {
     const diagnosticsRoot = await tempDir();
     const artifactWorkspace = await tempDir();
@@ -1324,23 +1162,23 @@ JSON
         },
       },
       llmAnalysis: { confidence: "low", status: "clean", verdict: "benign" },
-      clawscanShadow: {
-        command: ["clawscan", "./artifact", "--profile", "clawhub"],
-        prod: { confidence: "low", status: "clean", verdict: "benign" },
-        shadow: {
+      secondaryScan: {
+        authoritative: {
+          confidence: "low",
+          implementation: "legacy",
+          status: "clean",
+          verdict: "benign",
+        },
+        judgeStageFailed: false,
+        scannerStageFailed: false,
+        secondary: {
           confidence: "high",
-          judgeStatus: "completed",
-          profile: "clawhub",
-          scannerStatuses: {
-            "clawscan-static": "completed",
-            skillspector: "completed",
-            virustotal: "completed",
-          },
-          schemaVersion: "clawscan-run-v1",
+          implementation: "clawscan",
           status: "clean",
           verdict: "benign",
         },
         status: "completed",
+        timedOut: false,
       },
       skillSpectorAnalysis: {
         status: "suspicious",
@@ -1419,17 +1257,16 @@ JSON
       status: "failed",
     });
     expect(diagnostic.job.leaseToken).toBeUndefined();
-    expect(diagnostic.clawscanShadow).toMatchObject({
-      prod: { confidence: "low", status: "clean", verdict: "benign" },
-      shadow: {
+    expect(diagnostic.secondaryScan).toMatchObject({
+      authoritative: {
+        confidence: "low",
+        implementation: "legacy",
+        status: "clean",
+        verdict: "benign",
+      },
+      secondary: {
         confidence: "high",
-        judgeStatus: "completed",
-        profile: "clawhub",
-        scannerStatuses: {
-          "clawscan-static": "completed",
-          skillspector: "completed",
-          virustotal: "completed",
-        },
+        implementation: "clawscan",
         status: "clean",
         verdict: "benign",
       },
@@ -1455,19 +1292,254 @@ JSON
     expect(allDiagnosticText).not.toContain("sk-short-fixture");
     expect(allDiagnosticText).not.toContain("quoted artifact payload");
     expect(allDiagnosticText).not.toContain("SkillSpector artifact payload");
-    const comparison = JSON.parse(
-      await readFile(join(jobDir, "clawscan-shadow-comparison.json"), "utf8"),
-    );
+    const comparison = JSON.parse(await readFile(join(jobDir, "scan-comparison.json"), "utf8"));
     expect(comparison).toMatchObject({
-      prod: { status: "clean", verdict: "benign" },
-      shadow: { status: "clean", verdict: "benign" },
+      authoritative: { implementation: "legacy", status: "clean", verdict: "benign" },
+      secondary: { implementation: "clawscan", status: "clean", verdict: "benign" },
       status: "completed",
     });
     expect(await readdir(jobDir)).not.toContain("artifact");
   });
 
-  it("preserves sanitized ClawScan shadow failure reasons in comparison artifacts", async () => {
+  it("retains complete redacted legacy diagnostics beyond the former file and bundle caps", async () => {
     const diagnosticsRoot = await tempDir();
+    const jsonl = Array.from({ length: 4_000 }, (_, index) =>
+      JSON.stringify({
+        item: { id: `item-${index}`, type: "agent_message" },
+        status: "completed",
+        type: "item.completed",
+      }),
+    ).join("\n");
+    const stderr = `STDERR-BEGIN-${"a".repeat(70_000)}-STDERR-END`;
+
+    await writeJobDiagnostic({
+      codex: {
+        exitCode: 0,
+        stderr,
+        stdout: jsonl,
+      },
+      completedAt: 2,
+      diagnosticsRoot,
+      job: {
+        job: {
+          _id: "job-complete-legacy-diagnostics",
+          hasMaliciousSignal: false,
+          leaseToken: "fixture",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      startedAt: 1,
+      status: "completed",
+    });
+
+    const jobDir = join(diagnosticsRoot, "job-complete-legacy-diagnostics");
+    const stdout = await readFile(join(jobDir, "codex.stdout.redacted.jsonl"), "utf8");
+    const retainedLines = stdout.trim().split("\n");
+    expect(Buffer.byteLength(stdout)).toBeGreaterThan(256 * 1_024);
+    expect(retainedLines).toHaveLength(4_000);
+    expect(retainedLines[0]).toContain("item-0");
+    expect(retainedLines.at(-1)).toContain("item-3999");
+    expect(stdout).not.toContain("...[truncated ");
+
+    const retainedStderr = await readFile(join(jobDir, "codex.stderr.redacted.log"), "utf8");
+    expect(Buffer.byteLength(retainedStderr)).toBeGreaterThan(64 * 1_024);
+    expect(retainedStderr).toContain("STDERR-BEGIN");
+    expect(retainedStderr).toContain("STDERR-END");
+    expect(retainedStderr).not.toContain("...[truncated ");
+  });
+
+  it("retains full ClawScan artifact and scanner outputs with secret-safe redaction", async () => {
+    const diagnosticsRoot = await tempDir();
+    const workspace = await tempDir();
+    const scannerOutputRoot = join(workspace, "clawscan-artifact", "scanner-results");
+    await mkdir(scannerOutputRoot, { recursive: true });
+
+    const artifactLongText = `ARTIFACT-BEGIN-${"a".repeat(25_050)}-ARTIFACT-END`;
+    const scannerLongText = `SCANNER-BEGIN-${"b".repeat(25_050)}-SCANNER-END`;
+    const artifactPath = join(workspace, "clawscan-artifact.json");
+
+    const skillspectorOutputPath = join(scannerOutputRoot, "skillspector.json");
+    const virustotalOutputPath = join(scannerOutputRoot, "virustotal.log");
+    await writeFile(
+      skillspectorOutputPath,
+      `${JSON.stringify(
+        {
+          api_key: "example",
+          evidence: scannerLongText,
+          signedUrl: "https://signed.example.invalid/skillspector?token=placeholder",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeFile(
+      virustotalOutputPath,
+      `Authorization: Bearer placeholder\n${scannerLongText}\nhttps://signed.example.invalid/virustotal?token=placeholder\n`,
+    );
+
+    const clawscanArtifact = {
+      schemaVersion: "clawscan-run-v1",
+      profile: "clawhub",
+      scanners: {
+        skillspector: {
+          status: "completed",
+          outputPath: "clawscan-artifact/scanner-results/skillspector.json",
+          raw: {
+            details: artifactLongText,
+          },
+        },
+        virustotal: {
+          status: "completed",
+          outputPath: "clawscan-artifact/scanner-results/virustotal.log",
+          raw: {
+            summary: "https://signed.example.invalid/vt?token=placeholder",
+          },
+        },
+        "clawscan-static": {
+          status: "completed",
+          raw: { status: "clean" },
+        },
+      },
+      judge: {
+        status: "completed",
+        result: {
+          verdict: "benign",
+          confidence: "high",
+          summary: artifactLongText,
+          dimensions: {
+            purpose_capability: {
+              status: "ok",
+              detail: "ok",
+            },
+          },
+          scan_findings_in_context: [],
+          user_guidance: "guidance",
+          metadata: {
+            api_key: "example",
+          },
+        },
+      },
+    };
+    await writeFile(artifactPath, `${JSON.stringify(clawscanArtifact)}\n`);
+
+    await writeJobDiagnostic({
+      clawscan: {
+        args: ["clawscan", "./artifact", "--profile", "clawhub"],
+        artifactPath,
+        exitCode: 0,
+        rawArtifact: JSON.stringify(clawscanArtifact),
+      },
+      completedAt: 2000,
+      diagnosticsRoot,
+      job: {
+        job: {
+          _id: "job-clawscan-evidence",
+          hasMaliciousSignal: false,
+          leaseToken: "placeholder",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      startedAt: 1000,
+      status: "completed",
+    });
+
+    await rm(workspace, { recursive: true, force: true });
+
+    const jobDir = join(diagnosticsRoot, "job-clawscan-evidence");
+    const artifactText = await readFile(join(jobDir, "clawscan-artifact.redacted.json"), "utf8");
+    const artifactJson = JSON.parse(artifactText) as {
+      judge?: {
+        result?: {
+          metadata?: {
+            api_key?: string;
+          };
+          summary?: string;
+        };
+      };
+      scanners?: {
+        skillspector?: {
+          raw?: {
+            details?: string;
+          };
+        };
+        virustotal?: {
+          raw?: {
+            summary?: string;
+          };
+        };
+      };
+    };
+    expect(artifactText).toContain("ARTIFACT-END");
+    expect(artifactText).not.toContain("...[truncated ");
+    expect(artifactText).toContain(artifactLongText);
+    expect(artifactJson.judge?.result?.metadata?.api_key).toBe("[redacted-secret]");
+    expect(artifactText).not.toContain('"api_key":"example"');
+    expect(String(artifactJson.scanners?.virustotal?.raw?.summary)).toContain("[redacted-url]");
+    expect(artifactText).not.toContain("signed.example.invalid");
+    expect(artifactJson.scanners?.skillspector?.raw?.details).toContain(artifactLongText);
+
+    const skillspectorCopiedPath = join(
+      jobDir,
+      "clawscan-scanner-outputs",
+      "clawscan-artifact",
+      "scanner-results",
+      "skillspector.json",
+    );
+    const virustotalCopiedPath = join(
+      jobDir,
+      "clawscan-scanner-outputs",
+      "clawscan-artifact",
+      "scanner-results",
+      "virustotal.log",
+    );
+    const skillspectorCopiedText = await readFile(skillspectorCopiedPath, "utf8");
+    const skillspectorCopiedJson = JSON.parse(skillspectorCopiedText) as {
+      api_key?: string;
+      evidence?: string;
+      signedUrl?: string;
+    };
+    const virustotalCopiedText = await readFile(virustotalCopiedPath, "utf8");
+    expect(skillspectorCopiedJson.evidence).toContain("SCANNER-END");
+    expect(skillspectorCopiedJson.evidence).toContain(scannerLongText);
+    expect(skillspectorCopiedText).not.toContain('"api_key":"example"');
+    expect(skillspectorCopiedJson.api_key).toBe("[redacted-secret]");
+    expect(String(skillspectorCopiedJson.signedUrl)).toContain("[redacted-url]");
+    expect(skillspectorCopiedText).not.toContain("signed.example.invalid");
+    expect(skillspectorCopiedText).not.toContain("...[truncated ");
+    expect(virustotalCopiedText).toContain("SCANNER-END");
+    expect(virustotalCopiedText).toContain(scannerLongText);
+    expect(virustotalCopiedText).not.toContain("Bearer placeholder");
+    expect(virustotalCopiedText).toContain("[redacted-secret]");
+    expect(virustotalCopiedText).toContain("[redacted-url]");
+    expect(virustotalCopiedText).not.toContain("signed.example.invalid");
+
+    const diagnostic = JSON.parse(await readFile(join(jobDir, "diagnostic.json"), "utf8"));
+    expect(diagnostic.clawscanResult.scannerOutputFiles).toEqual([
+      {
+        diagnosticPath:
+          "clawscan-scanner-outputs/clawscan-artifact/scanner-results/skillspector.json",
+        outputPath: "clawscan-artifact/scanner-results/skillspector.json",
+        scanner: "skillspector",
+        status: "copied",
+      },
+      {
+        diagnosticPath: "clawscan-scanner-outputs/clawscan-artifact/scanner-results/virustotal.log",
+        outputPath: "clawscan-artifact/scanner-results/virustotal.log",
+        scanner: "virustotal",
+        status: "copied",
+      },
+    ]);
+  });
+
+  it("preserves sanitized secondary failure reasons in comparison artifacts", async () => {
+    const diagnosticsRoot = await tempDir();
+    const redactionFixture = "sk-short-fixture";
 
     await writeJobDiagnostic({
       completedAt: 2,
@@ -1483,29 +1555,35 @@ JSON
         },
         target: {},
       },
-      clawscanShadow: {
-        error: "clawscan timed out with api_key=sk-shadow-secret",
+      secondaryScan: {
+        authoritative: {
+          implementation: "legacy",
+          status: "clean",
+          verdict: "benign",
+        },
+        error: `clawscan timed out with api_key=${redactionFixture}`,
+        failureStage: "unclassified",
+        judgeStageFailed: false,
+        scannerStageFailed: false,
+        secondary: {
+          implementation: "clawscan",
+        },
         status: "failed",
-        stderr: "provider stderr token=shadow-secret",
+        timedOut: true,
       },
       startedAt: 1,
       status: "completed",
     });
 
     const comparison = JSON.parse(
-      await readFile(
-        join(diagnosticsRoot, "job-shadow-failed", "clawscan-shadow-comparison.json"),
-        "utf8",
-      ),
+      await readFile(join(diagnosticsRoot, "job-shadow-failed", "scan-comparison.json"), "utf8"),
     );
 
     expect(comparison).toMatchObject({
       error: expect.stringContaining("clawscan timed out"),
       status: "failed",
-      stderr: expect.stringMatching(/^\[redacted \d+ chars\]$/),
     });
     const comparisonText = JSON.stringify(comparison);
-    expect(comparisonText).not.toContain("sk-shadow-secret");
-    expect(comparisonText).not.toContain("shadow-secret");
+    expect(comparisonText).not.toContain(redactionFixture);
   });
 });

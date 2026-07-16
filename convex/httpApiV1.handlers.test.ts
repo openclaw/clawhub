@@ -7412,6 +7412,68 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("sets featured status for an owner-qualified skill through the moderator mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        featured: true,
+        skillId: "skills:1",
+        slug: "demo",
+        ownerHandle: "openclaw",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/featured", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ featured: true, ownerHandle: "openclaw" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, featured: true });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .setSkillFeaturedForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        slug: "demo",
+        ownerHandle: "openclaw",
+        featured: true,
+      },
+    );
+  });
+
+  it("maps forbidden featured-skill mutations to a 403 response", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:user",
+      user: { _id: "users:user", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("Forbidden");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/featured", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ featured: true }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Forbidden");
+  });
+
   it("skill rescan rejects malformed JSON", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
@@ -7667,6 +7729,66 @@ describe("httpApiV1 handlers", () => {
         version: "1.2.3",
       },
     );
+  });
+
+  it("sets featured status for a plugin through the moderator mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        featured: false,
+        packageId: "packages:1",
+        name: "@openclaw/demo-plugin",
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/featured", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ featured: false }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ok: true, featured: false });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { packages: Record<string, unknown> }).packages
+        .setPackageFeaturedForUserInternal,
+      {
+        actorUserId: "users:moderator",
+        name: "@openclaw/demo-plugin",
+        featured: false,
+      },
+    );
+  });
+
+  it("maps forbidden featured-plugin mutations to a 403 response", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:user",
+      user: { _id: "users:user", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("Forbidden");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/featured", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ featured: true }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Forbidden");
   });
 
   it("package rescan rejects malformed JSON", async () => {

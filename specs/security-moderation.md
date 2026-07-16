@@ -276,6 +276,44 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   workspace with static and VT signals as context.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
+- The worker's explicit artifact-only OSS ClawScan route accepts every claimed
+  target kind and source through the same completion/failure contract. Skill
+  versions and scan requests use the isolated `artifact` root; extracted
+  ClawPack releases use `artifact/package`.
+- The temporary whole-system rollout mode accepts exactly `legacy`, `shadow`,
+  and `clawscan`, with `legacy` as the safe default until the production
+  cutover is explicitly approved. `legacy` runs only the legacy implementation.
+  `shadow` persists legacy authoritatively, then runs ClawScan diagnostically
+  against the same isolated artifact. `clawscan` persists ClawScan
+  authoritatively, then runs legacy diagnostically against that same artifact
+  during the soak. Secondary execution cannot change stored verdicts,
+  publication or moderation behavior, retries, or authoritative job success.
+  Authoritative ClawScan failures use the existing failure/retry lifecycle and
+  never trigger per-job legacy fallback. Rollback is a manual whole-system mode
+  change to `legacy`.
+- An authoritative ClawScan judge result is complete only when ClawScan verifies
+  a workspace-only inspection challenge and the SHA-256 of a required artifact
+  file. Missing or mismatched inspection receipts fail the judge and use the
+  normal scan failure/retry lifecycle; a low-confidence verdict cannot replace
+  successful artifact inspection.
+- Every worker run publishes a GitHub Actions summary and uploads a structured
+  summary with its secret-scanned diagnostics. The summary reports authoritative
+  completions, failures, timeouts, scanner-stage and judge-stage failures,
+  duration, throughput, queue health, and verdict totals. `shadow` and
+  `clawscan` additionally report authoritative/secondary verdict pairs, exact
+  matches, secondary failures, and disagreement direction. Queue-health lookup
+  failures are diagnostic-only and must not change authoritative persistence,
+  retries, or the worker exit result. A valid parsed scanner report with
+  findings is a completed scanner stage when SkillSpector uses exit code `1`
+  with a `suspicious` or `malicious` report containing a positive normalized
+  issue count and at least one parsed finding. Other nonzero exits remain
+  failures. Scanner-stage failures also include a timeout, missing process exit
+  status, missing or unparseable report, or parsed `error`/`failed` status.
+- Retained worker diagnostics preserve every redacted Codex/legacy output
+  record plus complete redacted ClawScan artifacts, per-scanner outputs, and
+  comparison records without per-file or aggregate-size truncation. Bounded
+  metadata/error fields may remain capped. Artifact upload still requires the
+  existing verified-secret scan to pass.
 - Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
   Successful completion requests another dispatch while queued work remains; a
   five-minute Convex cron is only a recovery watchdog for lost dispatch signals.

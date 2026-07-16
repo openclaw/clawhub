@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
@@ -61,6 +61,10 @@ const PUBLISHER_OG_AFFILIATION_LIMIT = 5;
 const PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE = 64;
 const PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT = 512;
 const MAX_HOME_PUBLISHER_SUMMARIES = 10;
+const MAX_HOME_OFFICIAL_CREATOR_SUMMARIES = 16;
+const HOME_OFFICIAL_CREATOR_PAGE_SIZE = 32;
+// Official status is staff-curated. Keep the set bounded so public home/browse reads stay predictable.
+const MAX_OFFICIAL_PUBLISHER_COUNT = 128;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -2428,6 +2432,72 @@ export const getHomePublisherSummaries = query({
   },
 });
 
+export const getHomeOfficialCreatorSummariesPageInternal = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .paginate({ cursor: args.cursor, numItems: HOME_OFFICIAL_CREATOR_PAGE_SIZE });
+    const summaries = (
+      await Promise.all(
+        page.page.map(async (row) =>
+          toHomePublisherSummary(ctx, await ctx.db.get(row.publisherId)),
+        ),
+      )
+    ).filter(
+      (summary): summary is NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>> =>
+        Boolean(
+          summary && summary.kind === "org" && summary.stats.skills + summary.stats.packages > 0,
+        ),
+    );
+
+    return {
+      summaries,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const getHomeOfficialCreatorSummaries: ReturnType<typeof action> = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = clampInt(
+      args.limit ?? MAX_HOME_OFFICIAL_CREATOR_SUMMARIES,
+      1,
+      MAX_HOME_OFFICIAL_CREATOR_SUMMARIES,
+    );
+    const summaries: Array<NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>>> = [];
+    let cursor: string | null = null;
+    let scanned = 0;
+
+    while (scanned < MAX_OFFICIAL_PUBLISHER_COUNT) {
+      const page: {
+        summaries: Array<NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>>>;
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(internal.publishers.getHomeOfficialCreatorSummariesPageInternal, {
+        cursor,
+      });
+      summaries.push(...page.summaries);
+      scanned += HOME_OFFICIAL_CREATOR_PAGE_SIZE;
+      if (page.isDone || page.continueCursor === cursor) break;
+      if (scanned >= MAX_OFFICIAL_PUBLISHER_COUNT) {
+        throw new ConvexError("Official publisher limit exceeded");
+      }
+      cursor = page.continueCursor;
+    }
+
+    return summaries
+      .sort(
+        (left, right) =>
+          right.stats.installs - left.stats.installs || left.handle.localeCompare(right.handle),
+      )
+      .slice(0, limit);
+  },
+});
+
 export const getOgMetaByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
@@ -3530,6 +3600,14 @@ export const addOfficialPublisherInternal = internalMutation({
         handle: publisher.handle,
         officialPublisherId: existing._id,
       };
+    }
+
+    const officialPublisherLimitProbe = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .take(MAX_OFFICIAL_PUBLISHER_COUNT);
+    if (officialPublisherLimitProbe.length >= MAX_OFFICIAL_PUBLISHER_COUNT) {
+      throw new ConvexError(`Official publisher limit reached (${MAX_OFFICIAL_PUBLISHER_COUNT})`);
     }
 
     const now = Date.now();

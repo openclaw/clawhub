@@ -17,6 +17,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Footer } from "../components/Footer";
 import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
 import Header from "../components/Header";
+import { PromotionsBar } from "../components/PromotionsBar";
 import {
   BANNED_ACCOUNT_PATH,
   isBannedAccountAuthError,
@@ -194,6 +195,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <AppProviders>
           <div className="app-shell">
+            <PromotionsBar />
             <Header />
             <ClientOnly>
               <DeploymentDriftBanner />

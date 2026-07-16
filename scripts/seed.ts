@@ -47,6 +47,10 @@ export function buildSeedSteps(options: SeedOptions): SeedStep[] {
       args: ["scripts/public-corpus/seed-public-corpus.ts", ...corpusTargetArgs],
     },
     {
+      command: "bun",
+      args: ["scripts/public-corpus/seed-catalog-presentation.ts", ...corpusTargetArgs],
+    },
+    {
       command: "bunx",
       args: ["convex", "run", ...convexTargetArgs, "statsMaintenance:updateGlobalStatsAction"],
     },

@@ -43,6 +43,21 @@ async function getSeedFixture(request: APIRequestContext, path: string) {
   return lastResponse!;
 }
 
+async function expectHomeHeroBackgroundCentered(page: Page) {
+  const metrics = await page.locator(".home-v2-hero-bg").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      backgroundCenter: rect.left + rect.width / 2,
+      backgroundWidth: rect.width,
+      viewportCenter: window.innerWidth / 2,
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(metrics.backgroundWidth).toBeGreaterThanOrEqual(metrics.viewportWidth - 20);
+  expect(Math.abs(metrics.backgroundCenter - metrics.viewportCenter)).toBeLessThanOrEqual(10);
+}
+
 async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtures> {
   const skillPath = "/api/v1/skills/gifgrep";
   const skillResponse = await getSeedFixture(request, skillPath);
@@ -93,6 +108,7 @@ function publicRouteCases(): PublicRouteCase[] {
       path: () => "/",
       assert: async (page) => {
         await expect(page.locator("body")).toContainText("ClawHub");
+        await expectHomeHeroBackgroundCentered(page);
       },
     },
     {

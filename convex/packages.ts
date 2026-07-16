@@ -10621,23 +10621,52 @@ export const setBatch = mutation({
       throw new ConvexError("Plugin not found");
     }
     const nextBatch = args.batch?.trim() || undefined;
-    const nextHighlighted = nextBatch === "highlighted";
-    const now = Date.now();
+    await setPackageFeaturedForActor(ctx, user, pkg, nextBatch === "highlighted");
+  },
+});
 
-    if (nextHighlighted) {
-      await upsertPackageBadge(ctx, pkg._id, "highlighted", user._id, now);
-    } else {
-      await removePackageBadge(ctx, pkg._id, "highlighted");
+async function setPackageFeaturedForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  pkg: Doc<"packages">,
+  featured: boolean,
+) {
+  const now = Date.now();
+  if (featured) {
+    await upsertPackageBadge(ctx, pkg._id, "highlighted", actor._id, now);
+  } else {
+    await removePackageBadge(ctx, pkg._id, "highlighted");
+  }
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "package.badge.highlighted",
+    targetType: "package",
+    targetId: pkg._id,
+    metadata: { highlighted: featured },
+    createdAt: now,
+  });
+
+  return { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
+}
+
+export const setPackageFeaturedForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    featured: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Plugin not found");
     }
 
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "package.badge.highlighted",
-      targetType: "package",
-      targetId: pkg._id,
-      metadata: { highlighted: nextHighlighted },
-      createdAt: now,
-    });
+    return await setPackageFeaturedForActor(ctx, actor, pkg, args.featured);
   },
 });
 

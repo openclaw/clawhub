@@ -111,9 +111,7 @@ describe("restored UI design contract", () => {
     ]) {
       expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-control)");
     }
-    expect(cssRule(css, ".home-v2-promotion-title-icon")).toContain(
-      "border-radius: var(--oc-radius-inset)",
-    );
+    expect(cssRule(css, ".promotion-bar-icon")).toContain("border-radius: var(--oc-radius-inset)");
     expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
       "border-radius: var(--oc-radius-surface)",
     );
@@ -347,12 +345,24 @@ describe("restored UI design contract", () => {
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
     expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
-    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented");
+    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item",
+    );
+    expect(listingSource).toContain("home-v2-listing-view clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item",
+    );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
     expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
     expect(publishersSource).toContain(
       "home-v2-popular-publisher-card oc-card oc-card-interactive",
+    );
+    expect(publishersSource).toContain("Official creators");
+    expect(publishersSource).toContain("Explore skills and plugins from official creators.");
+    expect(cssRule(css, ".home-v2-popular-publishers-track")).toContain(
+      "grid-template-columns: repeat(6, minmax(0, 1fr))",
     );
     expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
     expect(homeSource).not.toContain("Unleash.");
@@ -462,12 +472,15 @@ describe("restored UI design contract", () => {
     );
   });
 
-  it("keeps promotion cards within narrow mobile viewports", () => {
+  it("keeps the promotion bar thin and horizontally bounded", () => {
+    const rootSource = rootRoute();
     const css = styles();
 
-    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 56px");
-    expect(cssRule(css, ".home-v2-promotions-track")).toContain("display: grid");
-    expect(css).toContain("padding: 0 20px 48px");
+    expect(rootSource.indexOf("<PromotionsBar />")).toBeLessThan(rootSource.indexOf("<Header />"));
+    expect(cssRule(css, ".promotion-bar-track")).toContain("min-height: 36px");
+    expect(cssRule(css, ".promotion-bar-track")).toContain("overflow-x: auto");
+    expect(cssRule(css, ".promotion-bar-item")).toContain("min-width: min(100%, 520px)");
+    expect(css).toContain("min-width: 100%");
   });
 
   it("keeps typeahead creator avatars round for users and square for orgs", () => {

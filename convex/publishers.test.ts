@@ -15,6 +15,8 @@ import {
   listMine,
   getDeletionInventory,
   getMyProfileHandle,
+  getHomeOfficialCreatorSummaries,
+  getHomeOfficialCreatorSummariesPageInternal,
   getHomePublisherSummaries,
   getProfileByHandle,
   createMemberInvite,
@@ -318,6 +320,16 @@ const getProfileByHandleHandler = (
 
 const getHomePublisherSummariesHandler = (
   getHomePublisherSummaries as unknown as WrappedHandler<{ handles: string[] }>
+)._handler;
+
+const getHomeOfficialCreatorSummariesHandler = (
+  getHomeOfficialCreatorSummaries as unknown as WrappedHandler<{ limit?: number }>
+)._handler;
+
+const getHomeOfficialCreatorSummariesPageInternalHandler = (
+  getHomeOfficialCreatorSummariesPageInternal as unknown as WrappedHandler<{
+    cursor: string | null;
+  }>
 )._handler;
 
 const getOgMetaByHandleHandler = (
@@ -933,6 +945,109 @@ describe("home publisher summaries", () => {
     ).resolves.toEqual([]);
     expect(query).toHaveBeenCalledTimes(8);
     expect(get).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("home official creator summaries", () => {
+  it("pages the official publisher index and returns only active organizations with content", async () => {
+    const publishers = [
+      makeHomeSummaryPublisher("high", { totalInstalls: 100 }),
+      makeHomeSummaryPublisher("person", {
+        kind: "user",
+        linkedUserId: "users:person",
+        totalInstalls: 80,
+      }),
+      makeHomeSummaryPublisher("empty", {
+        publishedSkills: 0,
+        publishedPackages: 0,
+        totalInstalls: 70,
+      }),
+      makeHomeSummaryPublisher("inactive", { deactivatedAt: 2, totalInstalls: 50 }),
+    ];
+    const officialRows = publishers.map((publisher, index) => ({
+      _id: `officialPublishers:${index}`,
+      publisherId: publisher._id,
+      createdAt: index,
+      updatedAt: index,
+    }));
+    const query = vi.fn((table: string) => {
+      if (table === "officialPublishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            expect(indexName).toBe("by_created");
+            return indexedRows(officialRows);
+          }),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:person") return { _id: id, displayName: "Person" };
+      return publishers.find((publisher) => publisher._id === id) ?? null;
+    });
+
+    const result = (await getHomeOfficialCreatorSummariesPageInternalHandler(
+      { db: { query, get } } as never,
+      { cursor: null },
+    )) as {
+      summaries: Array<{ handle: string; kind: string }>;
+      isDone: boolean;
+      continueCursor: string;
+    };
+
+    expect(result.summaries.map((summary) => summary.handle)).toEqual(["high"]);
+    expect(result.summaries.every((summary) => summary.kind === "org")).toBe(true);
+    expect(result.isDone).toBe(true);
+  });
+
+  it("collects every official page, orders by installs, and clamps the result to sixteen", async () => {
+    const makeSummary = (index: number, installs: number) => ({
+      ...makeHomeSummaryPublisher(`org-${index}`, { totalInstalls: installs }),
+      stats: { skills: 2, packages: 1, installs, downloads: installs, stars: 5 },
+    });
+    const firstPage = Array.from({ length: 12 }, (_, index) => makeSummary(index, 20 - index));
+    const secondPage = Array.from({ length: 8 }, (_, index) =>
+      makeSummary(index + 12, 100 - index),
+    );
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        summaries: firstPage,
+        continueCursor: "page-2",
+        isDone: false,
+      })
+      .mockResolvedValueOnce({
+        summaries: secondPage,
+        continueCursor: "",
+        isDone: true,
+      });
+
+    const summaries = (await getHomeOfficialCreatorSummariesHandler({ runQuery } as never, {
+      limit: 99,
+    })) as Array<{ handle: string; stats: { installs: number } }>;
+
+    expect(summaries).toHaveLength(16);
+    expect(summaries.map((summary) => summary.stats.installs)).toEqual([
+      100, 99, 98, 97, 96, 95, 94, 93, 20, 19, 18, 17, 16, 15, 14, 13,
+    ]);
+    expect(runQuery).toHaveBeenNthCalledWith(1, expect.anything(), { cursor: null });
+    expect(runQuery).toHaveBeenNthCalledWith(2, expect.anything(), { cursor: "page-2" });
+  });
+
+  it("fails closed when legacy official rows exceed the bounded curation limit", async () => {
+    const runQuery = vi.fn();
+    for (let page = 0; page < 4; page += 1) {
+      runQuery.mockResolvedValueOnce({
+        summaries: [],
+        continueCursor: `page-${page + 1}`,
+        isDone: false,
+      });
+    }
+
+    await expect(getHomeOfficialCreatorSummariesHandler({ runQuery } as never, {})).rejects.toThrow(
+      "Official publisher limit exceeded",
+    );
+    expect(runQuery).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -6599,6 +6714,9 @@ describe("official publisher administration", () => {
           }
           if (table === "officialPublishers" && indexName === "by_publisher") {
             return { unique: vi.fn(async () => null) };
+          }
+          if (table === "officialPublishers" && indexName === "by_created") {
+            return { take: vi.fn(async () => []) };
           }
           throw new Error(`unexpected ${table} index ${indexName}`);
         },

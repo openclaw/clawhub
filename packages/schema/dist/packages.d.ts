@@ -1,4 +1,5 @@
 import { type inferred } from "arktype";
+export declare const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
 export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
 export declare function inferPackageNameScope(name: string): string | undefined;
 export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {

@@ -4,7 +4,6 @@ import { HomeAppsSection } from "../components/HomeAppsSection";
 import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
-import { HomePromotionsSection } from "../components/HomePromotionsSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
@@ -312,13 +311,7 @@ function SkillsHome() {
 
       {/* ═══ HERO ═══ */}
       <section className="home-v2-hero oc-hero">
-        <div className="home-v2-hero-bg">
-          <div className="home-v2-glow" />
-          <div className="home-v2-dots" />
-          <div className="home-v2-ring home-v2-ring-1" />
-          <div className="home-v2-ring home-v2-ring-2" />
-          <div className="home-v2-ring home-v2-ring-3" />
-        </div>
+        <div className="home-v2-hero-bg" aria-hidden="true" />
 
         {slotState ? (
           <h1
@@ -383,7 +376,6 @@ function SkillsHome() {
         <p className="home-v2-sub oc-hero-lede">Discover skills and plugins from top creators</p>
       </section>
 
-      <HomePromotionsSection />
       <HomeListingSection initialListing={initialListing} />
       <HomePopularPublishersSection />
       <HomeAppsSection />

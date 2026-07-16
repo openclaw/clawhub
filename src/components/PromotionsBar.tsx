@@ -7,7 +7,6 @@ type PublicPromotion = {
   slug: string;
   title: string;
   blurb: string;
-  sponsor?: string;
   endsAt: number;
   signupUrl?: string;
   docsUrl?: string;
@@ -15,7 +14,6 @@ type PublicPromotion = {
 };
 
 const PROMOTIONS_POLL_INTERVAL_MS = 60_000;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) {
   return promotions.reduce(
@@ -33,28 +31,8 @@ function formatPromotionDate(endsAt: number) {
   }).format(new Date(endsAt));
 }
 
-function formatDaysRemaining(endsAt: number) {
-  const days = Math.max(0, Math.ceil((endsAt - Date.now()) / DAY_MS));
-  return `${days} ${days === 1 ? "day" : "days"} left`;
-}
-
 function isTencentHyPromotion(title: string) {
   return /tencent hy3/i.test(title);
-}
-
-function promotionDisplayTitle(title: string) {
-  const match = /^(.*?)\s+is free on\s+(.*?)$/i.exec(title);
-  if (!match) {
-    return <span className="home-v2-promotion-title-brand">{title}</span>;
-  }
-
-  return (
-    <>
-      <span className="home-v2-promotion-title-brand">{match[1]}</span>
-      <span className="home-v2-promotion-title-muted"> is free on </span>
-      <span className="home-v2-promotion-title-muted">{match[2]}</span>
-    </>
-  );
 }
 
 function promotionCtaUrl(promotion: PublicPromotion) {
@@ -63,66 +41,49 @@ function promotionCtaUrl(promotion: PublicPromotion) {
 
 function promotionMetaCopy(promotion: PublicPromotion) {
   if (isTencentHyPromotion(promotion.title)) {
-    return `Tencent's latest model, free until ${formatPromotionDate(promotion.endsAt)}.`;
+    return `Tencent's latest model, free until ${formatPromotionDate(promotion.endsAt)}`;
   }
 
   return promotion.blurb;
 }
 
-function PromotionCard({ promotion }: { promotion: PublicPromotion }) {
+function PromotionBarItem({ promotion }: { promotion: PublicPromotion }) {
   const ctaUrl = promotionCtaUrl(promotion);
-  const daysRemainingLabel = formatDaysRemaining(promotion.endsAt);
   const isTencentPromotion = isTencentHyPromotion(promotion.title);
 
   return (
-    <article className="home-v2-promotion-card oc-card">
-      <div className="home-v2-promotion-content">
-        <div className="home-v2-promotion-stack">
-          <h3 className="home-v2-promotion-title">
-            {isTencentPromotion ? (
-              <img
-                src="/tencent-hy-favicon.png"
-                alt=""
-                aria-hidden="true"
-                className="home-v2-promotion-title-icon"
-              />
-            ) : (
-              <Gift
-                size={20}
-                aria-hidden="true"
-                className="home-v2-promotion-title-icon home-v2-promotion-title-icon-fallback"
-              />
-            )}
-            <span className="home-v2-promotion-title-copy">
-              {promotionDisplayTitle(promotion.title)}
-            </span>
-          </h3>
-          <p className="home-v2-promotion-meta">{promotionMetaCopy(promotion)}</p>
-        </div>
+    <article className="promotion-bar-item">
+      <div className="promotion-bar-copy">
+        <h3 className="promotion-bar-title">
+          {isTencentPromotion ? (
+            <img
+              src="/tencent-hy-favicon.png"
+              alt=""
+              aria-hidden="true"
+              className="promotion-bar-icon"
+            />
+          ) : (
+            <Gift
+              size={14}
+              aria-hidden="true"
+              className="promotion-bar-icon promotion-bar-icon-fallback"
+            />
+          )}
+          <span className="promotion-bar-title-copy">{promotion.title}</span>
+        </h3>
+        <span className="promotion-bar-separator" aria-hidden="true" />
+        <span className="promotion-bar-meta">{promotionMetaCopy(promotion)}</span>
       </div>
-      {/* No CLI claim snippet yet: the openclaw `promos claim` command ships
-          separately; advertise it here once that CLI flow exists. */}
-      <div className="home-v2-promotion-actions">
-        <span className="home-v2-promotion-days">
-          <Gift size={14} aria-hidden="true" />
-          <span>{daysRemainingLabel}</span>
-        </span>
-        {ctaUrl ? (
-          <a
-            className="home-v2-promotion-link oc-action oc-action-primary"
-            href={ctaUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Try it free <ArrowUpRight size={15} aria-hidden="true" />
-          </a>
-        ) : null}
-      </div>
+      {ctaUrl ? (
+        <a className="promotion-bar-link" href={ctaUrl} target="_blank" rel="noopener noreferrer">
+          Try it free <ArrowUpRight size={15} aria-hidden="true" />
+        </a>
+      ) : null}
     </article>
   );
 }
 
-export function HomePromotionsSection() {
+export function PromotionsBar() {
   const [promotions, setPromotions] = useState<PublicPromotion[]>([]);
 
   useEffect(() => {
@@ -152,7 +113,7 @@ export function HomePromotionsSection() {
         setPromotions(active);
         scheduleRefresh(active);
       } catch {
-        // Promotions are decorative on the homepage; render nothing on failure.
+        // Promotions are optional header content; render nothing on failure.
         if (!cancelled) scheduleRefresh([]);
       }
     }
@@ -167,13 +128,13 @@ export function HomePromotionsSection() {
   if (promotions.length === 0) return null;
 
   return (
-    <section className="home-v2-promotions oc-section" aria-labelledby="home-promotions-title">
-      <h2 id="home-promotions-title" className="sr-only">
+    <section className="promotion-bar" aria-labelledby="active-promotions-title">
+      <h2 id="active-promotions-title" className="sr-only">
         Active promotions
       </h2>
-      <div className="home-v2-promotions-track">
+      <div className="promotion-bar-track">
         {promotions.map((promotion) => (
-          <PromotionCard key={promotion.slug} promotion={promotion} />
+          <PromotionBarItem key={promotion.slug} promotion={promotion} />
         ))}
       </div>
     </section>
