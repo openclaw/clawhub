@@ -116,7 +116,6 @@ jobs:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-          VIRUSTOTAL_API_KEY: ${{ secrets.VT_API_KEY }}
         run: |
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \

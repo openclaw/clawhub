@@ -1186,6 +1186,14 @@ ${skillSpector}
 Return the required JSON object only.`;
 }
 
+function cachedVirusTotalAnalysis(job: ClaimedJob) {
+  return (
+    (job.target.version as Record<string, unknown> | undefined)?.vtAnalysis ??
+    (job.target.release as Record<string, unknown> | undefined)?.vtAnalysis ??
+    null
+  );
+}
+
 function codexEnv() {
   const env = { ...process.env };
   const codexHome = resolveCodexWorkerHome(process.env, LOCAL_CODEX_HOME);
@@ -1785,8 +1793,22 @@ export async function runClawScan(
 ) {
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
+  const virusTotalResultPath = join(workspace, "clawscan-virustotal.json");
+  await writeFile(
+    virusTotalResultPath,
+    `${JSON.stringify(cachedVirusTotalAnalysis(job), null, 2)}\n`,
+    "utf8",
+  );
   const target = await resolveClawScanTarget(workspace, job);
-  const args = [target, "--profile", "clawhub", "--output", artifactPath];
+  const args = [
+    target,
+    "--profile",
+    "clawhub",
+    "--scanner-result",
+    `virustotal=${virusTotalResultPath}`,
+    "--output",
+    artifactPath,
+  ];
   onDiagnostic({ args: [command, ...args], artifactPath });
 
   const captureArtifact = async () => {
