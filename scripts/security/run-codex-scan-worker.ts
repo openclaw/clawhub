@@ -1890,7 +1890,7 @@ async function runLegacyScan(
   return { llmAnalysis, skillSpectorAnalysis };
 }
 
-function scanHealthClassification(input: {
+export function scanHealthClassification(input: {
   clawscan: ClawScanCommandDiagnostic;
   codex: CodexCommandDiagnostic;
   errorMessage?: string;
@@ -1906,11 +1906,33 @@ function scanHealthClassification(input: {
   let judgeStageFailed = false;
 
   if (input.implementation === "legacy") {
+    let skillSpectorStatus = input.skillSpectorAnalysis?.status;
+    if (skillSpectorStatus === undefined && input.skillSpector.rawResult !== undefined) {
+      try {
+        skillSpectorStatus = normalizeSkillSpectorAnalysis(input.skillSpector.rawResult).status;
+      } catch {
+        skillSpectorStatus = "error";
+      }
+    }
+    const skillSpectorRan =
+      input.skillSpector.args !== undefined ||
+      input.skillSpector.exitCode !== undefined ||
+      input.skillSpector.timedOut === true;
+    const validParsedReport =
+      skillSpectorStatus !== undefined &&
+      skillSpectorStatus !== "error" &&
+      skillSpectorStatus !== "failed";
+    const validFindingsExit = input.skillSpector.exitCode === 1 && validParsedReport;
+    const unexpectedExit =
+      input.skillSpector.exitCode !== undefined &&
+      input.skillSpector.exitCode !== 0 &&
+      !validFindingsExit;
     scannerStageFailed =
       input.skillSpector.timedOut === true ||
-      (input.skillSpector.exitCode !== undefined && input.skillSpector.exitCode !== 0) ||
-      input.skillSpectorAnalysis?.status === "error" ||
-      input.skillSpectorAnalysis?.status === "failed";
+      (skillSpectorRan && skillSpectorStatus === undefined) ||
+      unexpectedExit ||
+      skillSpectorStatus === "error" ||
+      skillSpectorStatus === "failed";
     judgeStageFailed =
       input.status === "failed" &&
       (input.codex.args !== undefined ||

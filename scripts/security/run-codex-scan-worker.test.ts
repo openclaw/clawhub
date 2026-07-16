@@ -17,6 +17,7 @@ import {
   resolveSkillSpectorScanInput,
   resolveSkillSpectorScanInputs,
   runContinuouslyRefilledWorkerPool,
+  scanHealthClassification,
   writeArtifactWorkspace,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
@@ -60,6 +61,126 @@ function unsafeFixtureLabels() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
+  describe("legacy SkillSpector health classification", () => {
+    const baseInput = {
+      clawscan: {},
+      codex: {},
+      implementation: "legacy" as const,
+      skillSpector: {
+        args: ["scan", "./artifact", "--format", "json"],
+        exitCode: 1,
+      },
+      status: "completed" as const,
+    };
+
+    it("does not treat exit 1 with a valid suspicious report as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            score: 93,
+            issueCount: 1,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: false,
+        timedOut: false,
+      });
+    });
+
+    it("recognizes a valid captured report when a later stage prevents returning the analysis", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            rawResult: JSON.stringify({
+              status: "suspicious",
+              issue_count: 1,
+              issues: [],
+            }),
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: false,
+      });
+    });
+
+    it.each(["error", "failed"] as const)(
+      "treats a parsed %s report as a scanner failure",
+      (status) => {
+        expect(
+          scanHealthClassification({
+            ...baseInput,
+            skillSpectorAnalysis: {
+              status,
+              issueCount: 0,
+              issues: [],
+              checkedAt: 1,
+            },
+          }),
+        ).toMatchObject({
+          scannerStageFailed: true,
+        });
+      },
+    );
+
+    it("treats other nonzero exits as failures even with a parseable report", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            exitCode: 2,
+          },
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            issueCount: 1,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
+    it.each([undefined, "{malformed"])(
+      "treats a nonzero exit with %s captured output as a scanner failure",
+      (rawResult) => {
+        expect(
+          scanHealthClassification({
+            ...baseInput,
+            skillSpector: {
+              ...baseInput.skillSpector,
+              rawResult,
+            },
+          }),
+        ).toMatchObject({
+          scannerStageFailed: true,
+        });
+      },
+    );
+
+    it("treats a SkillSpector timeout as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            timedOut: true,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+        timedOut: true,
+      });
+    });
+  });
+
   it("publishes the worker report to the Actions summary and diagnostics artifact", async () => {
     const diagnosticsRoot = await tempDir();
     const stepSummaryPath = join(await tempDir(), "step-summary.md");
