@@ -342,6 +342,7 @@ describe("security scan rollout modes", () => {
       const client = {
         action: vi.fn(async (..._args: unknown[]) => ({})),
       };
+      const onHealth = vi.fn();
 
       const result = await withCommands(commands, () =>
         processJob(
@@ -350,6 +351,7 @@ describe("security scan rollout modes", () => {
           claimedJob(`${mode}-secondary-failed`),
           diagnosticsRoot,
           mode,
+          onHealth,
         ),
       );
 
@@ -374,6 +376,15 @@ describe("security scan rollout modes", () => {
         status: "failed",
         error: expect.stringContaining(mode === "shadow" ? "exited 17" : "exited 19"),
       });
+      expect(onHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          completed: true,
+          comparison: expect.objectContaining({
+            secondaryFailureStage: mode === "shadow" ? "unclassified" : "judge",
+            secondaryStatus: "failed",
+          }),
+        }),
+      );
     },
   );
 

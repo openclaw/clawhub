@@ -14,6 +14,7 @@ import {
   failCodexScanJob,
   failJobInternal,
   finalizeGitHubSkillScanRequestInternal,
+  getCodexScanQueueHealth,
   getCodexScanQueueHealthInternal,
   getJobTargetInternal,
   getBulkSkillRescanBatchStatusForAdminInternal,
@@ -117,6 +118,21 @@ const failJobInternalHandler = (
 const getCodexScanQueueHealthInternalHandler = (
   getCodexScanQueueHealthInternal as unknown as WrappedHandler<
     Record<string, never>,
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
+  >
+)._handler;
+
+const getCodexScanQueueHealthHandler = (
+  getCodexScanQueueHealth as unknown as WrappedHandler<
+    { token: string },
     {
       snapshotAt: number;
       queueDepth: number;
@@ -1249,6 +1265,30 @@ describe("securityScan", () => {
       }),
     );
     log.mockRestore();
+  });
+
+  it("exposes queue health to the authenticated security worker", async () => {
+    const workerAuth = "fixture";
+    const rejectedAuth = "rejected-fixture";
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", workerAuth);
+    const snapshot = {
+      snapshotAt: 1_000_000,
+      queueDepth: 4,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 901,
+      oldestReadyJobNextRunAt: 99_000,
+    };
+    const runQuery = vi.fn(async () => snapshot);
+
+    await expect(
+      getCodexScanQueueHealthHandler({ runQuery }, { token: workerAuth }),
+    ).resolves.toEqual(snapshot);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {});
+    await expect(
+      getCodexScanQueueHealthHandler({ runQuery }, { ["token"]: rejectedAuth }),
+    ).rejects.toThrow("Unauthorized");
   });
 
   it("does not enqueue a duplicate publish scan after the backup delay if the first scan already finished", async () => {
