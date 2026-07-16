@@ -92,6 +92,12 @@ function completeClawScanArtifact(verdict: "benign" | "suspicious" | "malicious"
         },
         scan_findings_in_context: [],
         user_guidance: "guidance",
+        artifact_inspection: {
+          status: "completed",
+          challenge: "inspection-challenge",
+          required_file_sha256: "a".repeat(64),
+          files_inspected: ["artifact/SKILL.md"],
+        },
       },
     },
   });

@@ -1557,11 +1557,20 @@ function clawScanTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CLAWSCAN_TIMEOUT_MS;
 }
 
-const REQUIRED_CLAWHUB_RESULT_KEYS = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredResultKeys;
+const REQUIRED_CLAWHUB_RESULT_KEYS = [
+  ...CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredResultKeys,
+  "artifact_inspection",
+];
 const REQUIRED_CLAWHUB_DIMENSION_KEYS = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredDimensionKeys;
 const REQUIRED_CLAWHUB_DIMENSION_FIELD_KEYS =
   CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredDimensionFieldKeys;
 const REQUIRED_CLAWHUB_FINDING_KEYS = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.requiredFindingKeys;
+const REQUIRED_CLAWHUB_ARTIFACT_INSPECTION_KEYS = [
+  "status",
+  "challenge",
+  "required_file_sha256",
+  "files_inspected",
+];
 const ALLOWED_CLAWHUB_DIMENSION_STATUSES = CLAWHUB_OUTPUT_SCHEMA_CONTRACT.allowedDimensionStatus;
 
 function assertExactObjectKeys(
@@ -1595,6 +1604,36 @@ function validateClawScanJudgeResultShape(result: Record<string, unknown>) {
   }
   if (typeof result.user_guidance !== "string") {
     throw new Error("ClawScan judge result user_guidance was missing");
+  }
+
+  const artifactInspection = asRecord(result.artifact_inspection);
+  if (!artifactInspection) {
+    throw new Error("ClawScan judge result artifact_inspection was missing");
+  }
+  assertExactObjectKeys(
+    artifactInspection,
+    REQUIRED_CLAWHUB_ARTIFACT_INSPECTION_KEYS,
+    "ClawScan artifact inspection",
+  );
+  const inspectionStatus = readString(artifactInspection, ["status"]);
+  if (inspectionStatus !== "completed") {
+    throw new Error(`ClawScan artifact inspection status was ${inspectionStatus ?? "missing"}`);
+  }
+  const inspectionChallenge = readString(artifactInspection, ["challenge"]);
+  if (!inspectionChallenge) {
+    throw new Error("ClawScan artifact inspection challenge was missing");
+  }
+  const requiredFileSha256 = readString(artifactInspection, ["required_file_sha256"]);
+  if (!requiredFileSha256 || !/^[a-f0-9]{64}$/.test(requiredFileSha256)) {
+    throw new Error("ClawScan artifact inspection required_file_sha256 was invalid");
+  }
+  const inspectedFiles = artifactInspection.files_inspected;
+  if (
+    !Array.isArray(inspectedFiles) ||
+    inspectedFiles.length === 0 ||
+    inspectedFiles.some((file) => typeof file !== "string" || !file.startsWith("artifact/"))
+  ) {
+    throw new Error("ClawScan artifact inspection files_inspected was invalid");
   }
 
   const dimensions = asRecord(result.dimensions);

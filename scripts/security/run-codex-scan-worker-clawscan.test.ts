@@ -187,6 +187,12 @@ function completeJudgeResult(verdict: ClawScanVerdict) {
     dimensions: completeJudgeDimensions(),
     scan_findings_in_context: [],
     user_guidance: "guidance",
+    artifact_inspection: {
+      status: "completed",
+      challenge: "inspection-challenge",
+      required_file_sha256: "a".repeat(64),
+      files_inspected: ["artifact/SKILL.md"],
+    },
   };
 }
 
@@ -718,6 +724,63 @@ echo "not json" > "$out"`,
     }
   });
 
+  it("fails the job when the ClawScan judge omits artifact inspection proof", async () => {
+    const workspace = await tempDir();
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    const { artifact_inspection: _inspection, ...judgeResult } = completeJudgeResult("benign");
+    const artifactJson = clawScanArtifactJson({ judgeResult });
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+${artifactJson}
+JSON`,
+    );
+
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    try {
+      const client = {
+        action: vi.fn(async (...args: unknown[]) => {
+          const payload = args[1] as { error?: string } | undefined;
+          return payload?.error ? { retry: false } : {};
+        }),
+      };
+      const result = await processJob(
+        client,
+        "worker-auth",
+        skillVersionJob("securityScanJobs:judge-no-inspection"),
+        undefined,
+        "clawscan",
+      );
+
+      expect(result).toEqual({
+        completed: false,
+        hardFailed: true,
+        retryableFailed: false,
+      });
+      expect(client.action).toHaveBeenCalledTimes(1);
+      expect(client.action.mock.calls[0]?.[1]).toMatchObject({
+        error: "ClawScan judge result missing required field(s): artifact_inspection",
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
   it("fails the job when the ClawScan judge result is missing required dimensions", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
@@ -734,6 +797,12 @@ echo "not json" > "$out"`,
         },
         scan_findings_in_context: [],
         user_guidance: "guidance",
+        artifact_inspection: {
+          status: "completed",
+          challenge: "inspection-challenge",
+          required_file_sha256: "a".repeat(64),
+          files_inspected: ["artifact/SKILL.md"],
+        },
       },
     });
     await writeFakeClawScanCommand(

@@ -291,6 +291,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Authoritative ClawScan failures use the existing failure/retry lifecycle and
   never trigger per-job legacy fallback. Rollback is a manual whole-system mode
   change to `legacy`.
+- An authoritative ClawScan judge result is complete only when ClawScan verifies
+  a workspace-only inspection challenge and the SHA-256 of a required artifact
+  file. Missing or mismatched inspection receipts fail the judge and use the
+  normal scan failure/retry lifecycle; a low-confidence verdict cannot replace
+  successful artifact inspection.
 - Every worker run publishes a GitHub Actions summary and uploads a structured
   summary with its secret-scanned diagnostics. The summary reports authoritative
   completions, failures, timeouts, scanner-stage and judge-stage failures,
