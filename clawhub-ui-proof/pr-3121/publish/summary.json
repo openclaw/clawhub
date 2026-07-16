@@ -1,10 +1,10 @@
 {
-  "candidate": "cd0e490f735e5f6115705fce7593f6d23c53becd",
+  "candidate": "395bdd36472a2399bc2625bf3302f7bde3cf064a",
   "generatedAt": "2026-07-16T19:24:00.000Z",
   "lanes": [
     {
       "name": "candidate",
-      "ref": "cd0e490f735e5f6115705fce7593f6d23c53becd",
+      "ref": "395bdd36472a2399bc2625bf3302f7bde3cf064a",
       "status": "pass",
       "steps": [
         {

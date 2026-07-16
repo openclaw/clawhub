@@ -2,7 +2,7 @@
 
 Status: pass
 
-- Candidate: `cd0e490f735e5f6115705fce7593f6d23c53becd`
+- Candidate: `395bdd36472a2399bc2625bf3302f7bde3cf064a`
 - Browser: Codex in-app browser
 - Local URL: `http://127.0.0.1:3018/?dismiss-proof=4`
 - Desktop: active promotion shows an accessible dismiss control
