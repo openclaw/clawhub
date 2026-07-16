@@ -12,7 +12,7 @@ const HOME_OFFICIAL_CREATOR_LIMIT = 12;
 function OfficialCreatorCard({ publisher }: { publisher: PublicPublisherSummary }) {
   const name = publisher.displayName.trim() || publisher.handle;
   const bio = publisher.bio?.trim() || "Official creator on ClawHub.";
-  const installs = publisher.stats.installs;
+  const downloads = publisher.stats.downloads;
 
   return (
     <Link
@@ -34,7 +34,7 @@ function OfficialCreatorCard({ publisher }: { publisher: PublicPublisherSummary 
       <div className="home-v2-popular-publisher-copy">
         <p className="home-v2-popular-publisher-bio">{bio}</p>
         <span className="home-v2-popular-publisher-stats">
-          {formatCompactStat(installs)} {installs === 1 ? "install" : "installs"}
+          {formatCompactStat(downloads)} {downloads === 1 ? "download" : "downloads"}
           <ArrowRight size={13} aria-hidden="true" />
         </span>
       </div>
@@ -63,11 +63,13 @@ export function HomePopularPublishersSection() {
     requestedPublishersRef.current = true;
     setLoadFailed(false);
     try {
-      const result = (await convexHttp.action(api.publishers.getHomeOfficialCreatorSummaries, {
-        limit: HOME_OFFICIAL_CREATOR_LIMIT,
-      })) as PublicPublisherSummary[];
+      const result = (await convexHttp.query(api.publishers.listPublicPage, {
+        kind: "org",
+        official: true,
+        paginationOpts: { cursor: null, numItems: HOME_OFFICIAL_CREATOR_LIMIT },
+      })) as { page: PublicPublisherSummary[] };
       if (!mountedRef.current) return;
-      setPublishers(result);
+      setPublishers(result.page);
     } catch {
       requestedPublishersRef.current = false;
       if (!mountedRef.current) return;
