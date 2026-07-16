@@ -936,10 +936,10 @@ const skills = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"])
-  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_downloads", [
     "ownerPublisherId",
@@ -1598,6 +1598,7 @@ const packages = defineTable({
 })
   .index("by_name", ["normalizedName"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_downloads", [
@@ -2681,6 +2682,28 @@ const catalogFeedPublications = defineTable({
   publishedAt: v.number(),
 }).index("by_feed", ["feedId"]);
 
+const publisherFeedPublications = defineTable({
+  publisherId: v.id("publishers"),
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  handle: v.union(v.string(), v.null()),
+  displayName: v.string(),
+  entries: v.array(
+    v.object({
+      kind: v.union(v.literal("skill"), v.literal("plugin")),
+      id: v.string(),
+      name: v.string(),
+      displayName: v.string(),
+      summary: v.union(v.string(), v.null()),
+      url: v.string(),
+      updatedAt: v.number(),
+    }),
+  ),
+  contentKey: v.string(),
+  publishedAt: v.number(),
+}).index("by_publisher", ["publisherId"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -3407,6 +3430,7 @@ export default defineSchema({
   packageModerationEventLogs,
   officialPluginMigrations,
   catalogFeedPublications,
+  publisherFeedPublications,
   stars,
   promotions,
   auditLogs,

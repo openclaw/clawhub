@@ -1474,46 +1474,7 @@
           }
         }
       },
-      "AccountFeedPublicUser": {
-        "type": "object",
-        "additionalProperties": true,
-        "properties": {
-          "_id": {
-            "type": "string"
-          },
-          "handle": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "displayName": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "name": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "image": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "bio": {
-            "type": [
-              "string",
-              "null"
-            ]
-          }
-        }
-      },
-      "AccountFeedPublicPublisher": {
+      "PublisherFeedPublicPublisher": {
         "type": "object",
         "additionalProperties": true,
         "properties": {
@@ -1544,48 +1505,26 @@
               "string",
               "null"
             ]
-          },
-          "linkedUserId": {
-            "type": [
-              "string",
-              "null"
-            ]
           }
         }
       },
-      "AccountFeedDetailResponse": {
+      "PublisherFeedDetailResponse": {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "publisher",
           "feedUrl"
         ],
         "properties": {
-          "account": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AccountFeedPublicUser"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "publisher": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AccountFeedPublicPublisher"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "$ref": "#/components/schemas/PublisherFeedPublicPublisher"
           },
           "feedUrl": {
             "type": "string"
           }
         }
       },
-      "AccountFeedEntry": {
+      "PublisherFeedEntry": {
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -1628,14 +1567,12 @@
           }
         }
       },
-      "AccountFeed": {
+      "PublisherFeed": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "schemaVersion",
           "feedId",
-          "scope",
-          "accountId",
           "publisherId",
           "handle",
           "displayName",
@@ -1654,24 +1591,8 @@
           "feedId": {
             "type": "string"
           },
-          "scope": {
-            "type": "string",
-            "enum": [
-              "account",
-              "publisher"
-            ]
-          },
-          "accountId": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "publisherId": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "handle": {
             "type": [
@@ -1693,7 +1614,7 @@
           "entries": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/AccountFeedEntry"
+              "$ref": "#/components/schemas/PublisherFeedEntry"
             }
           },
           "nextCursor": {
@@ -1701,100 +1622,13 @@
               "string",
               "null"
             ],
-            "description": "Reserved for future pagination; null in the first account-feed API slice."
+            "description": "Opaque continuation cursor; null only when the coherent publisher projection is complete."
           }
         }
       }
     }
   },
   "paths": {
-    "/api/v1/accounts/{accountId}": {
-      "get": {
-        "summary": "Get account feed identity",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "description": "Stable ClawHub account id.",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Account feed identity",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountFeedDetailResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlainTextError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/accounts/{accountId}/feed": {
-      "get": {
-        "summary": "Get account feed",
-        "parameters": [
-          {
-            "name": "accountId",
-            "in": "path",
-            "required": true,
-            "description": "Stable ClawHub account id.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Account feed",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccountFeed"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not found",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlainTextError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/bundle-plugins": {
       "get": {
         "summary": "List bundle plugin catalog packages",
@@ -3024,7 +2858,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccountFeedDetailResponse"
+                  "$ref": "#/components/schemas/PublisherFeedDetailResponse"
                 }
               }
             }
@@ -3065,6 +2899,15 @@
               "maximum": 100,
               "default": 50
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque cursor bound to one immutable publisher-feed sequence.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -3073,13 +2916,43 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AccountFeed"
+                  "$ref": "#/components/schemas/PublisherFeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed or mismatched cursor or limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
                 }
               }
             }
           },
           "404": {
             "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor sequence is stale; restart from the first page",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Publisher snapshot exceeds the current bounded publication capacity",
             "content": {
               "text/plain": {
                 "schema": {

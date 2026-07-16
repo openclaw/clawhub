@@ -1,37 +1,38 @@
 import {
-  ACCOUNT_FEED_DEFAULT_LIMIT,
-  ACCOUNT_FEED_MAX_LIMIT,
-  ACCOUNT_FEED_SCHEMA_VERSION,
-  accountFeedId,
-  type AccountFeed,
-  type AccountFeedEntry,
+  PUBLISHER_FEED_SCHEMA_VERSION,
+  publisherFeedId,
+  type PublisherFeed,
+  type PublisherFeedEntry,
 } from "clawhub-schema";
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel";
-import type { QueryCtx } from "./_generated/server";
-import { internalQuery } from "./functions";
+import type { Doc, Id } from "./_generated/dataModel";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
+import { internalMutation, internalQuery } from "./functions";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
-import { toPublicPublisher, toPublicUser } from "./lib/public";
+import { getPublicPublisherVisibility } from "./lib/publishers";
 
-const ACCOUNT_FEED_MAX_SOURCE_PAGES = 3;
+const PUBLISHER_FEED_MAX_SOURCE_PAGES = 3;
+const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
+const PUBLISHER_FEED_SUMMARY_MAX_CHARS = 500;
+type PublisherFeedReadCtx = Pick<QueryCtx | MutationCtx, "db">;
 
-function clampLimit(limit: number | undefined) {
-  const value = Number.isFinite(limit) ? Math.trunc(limit as number) : ACCOUNT_FEED_DEFAULT_LIMIT;
-  return Math.min(Math.max(value, 1), ACCOUNT_FEED_MAX_LIMIT);
+function boundedSummary(value: string | null | undefined) {
+  if (value == null) return null;
+  if (value.length <= PUBLISHER_FEED_SUMMARY_MAX_CHARS) return value;
+  let bounded = value.slice(0, PUBLISHER_FEED_SUMMARY_MAX_CHARS);
+  const finalCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  if (finalCodeUnit >= 0xd800 && finalCodeUnit <= 0xdbff) bounded = bounded.slice(0, -1);
+  return bounded;
 }
 
-async function safeGetUser(ctx: Pick<QueryCtx, "db">, id: string) {
-  const userId = ctx.db.normalizeId("users", id);
-  if (!userId) return null;
-  try {
-    return await ctx.db.get(userId);
-  } catch {
-    return null;
-  }
+async function sha256Hex(value: string) {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  );
+  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
-
-async function safeGetPublisher(ctx: Pick<QueryCtx, "db">, id: string) {
+async function safeGetPublisher(ctx: PublisherFeedReadCtx, id: string) {
   const publisherId = ctx.db.normalizeId("publishers", id);
   if (!publisherId) return null;
   try {
@@ -41,24 +42,14 @@ async function safeGetPublisher(ctx: Pick<QueryCtx, "db">, id: string) {
   }
 }
 
-function isActiveUser(user: Doc<"users"> | null | undefined): user is Doc<"users"> {
-  return Boolean(user && !user.deletedAt && !user.deactivatedAt);
-}
-
-function isActivePublisher(
-  publisher: Doc<"publishers"> | null | undefined,
-): publisher is Doc<"publishers"> {
-  return Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt);
-}
-
-function skillEntry(publisher: Doc<"publishers">, skill: Doc<"skills">): AccountFeedEntry | null {
+function skillEntry(publisher: Doc<"publishers">, skill: Doc<"skills">): PublisherFeedEntry | null {
   if (!isPublicSkillDoc(skill)) return null;
   return {
     kind: "skill",
     id: String(skill._id),
     name: skill.slug,
     displayName: skill.displayName,
-    summary: skill.summary ?? null,
+    summary: boundedSummary(skill.summary),
     url: `/${encodeURIComponent(publisher.handle)}/skills/${encodeURIComponent(skill.slug)}`,
     updatedAt: skill.updatedAt,
   };
@@ -78,7 +69,10 @@ function pluginPath(publisher: Doc<"publishers">, name: string) {
   return `/${encodeURIComponent(publisher.handle)}/plugins/${encodeURIComponent(packageName)}`;
 }
 
-function packageEntry(publisher: Doc<"publishers">, pkg: Doc<"packages">): AccountFeedEntry | null {
+function packageEntry(
+  publisher: Doc<"publishers">,
+  pkg: Doc<"packages">,
+): PublisherFeedEntry | null {
   if (
     pkg.family === "skill" ||
     pkg.channel === "private" ||
@@ -91,187 +85,346 @@ function packageEntry(publisher: Doc<"publishers">, pkg: Doc<"packages">): Accou
     id: String(pkg._id),
     name: pkg.name,
     displayName: pkg.displayName,
-    summary: pkg.summary ?? null,
+    summary: boundedSummary(pkg.summary),
     url: pluginPath(publisher, pkg.name),
     updatedAt: pkg.updatedAt,
   };
 }
 
 function buildFeed(params: {
-  scope: "account" | "publisher";
-  stableId: string;
-  user: Doc<"users"> | null;
-  publisher: Doc<"publishers">;
-  entries: AccountFeedEntry[];
-  nextCursor: string | null;
-}): AccountFeed {
+  publisherId: string;
+  feedId: string;
+  handle: string | null;
+  displayName: string;
+  entries: PublisherFeedEntry[];
+  generatedAt: string;
+  sequence: number;
+}): PublisherFeed {
   return {
-    schemaVersion: ACCOUNT_FEED_SCHEMA_VERSION,
-    feedId: accountFeedId(params.scope, params.stableId),
-    scope: params.scope,
-    accountId: params.user ? String(params.user._id) : null,
-    publisherId: String(params.publisher._id),
-    handle: params.publisher.handle ?? params.user?.handle ?? null,
-    displayName:
-      params.publisher.displayName || params.user?.displayName || params.user?.name || "",
-    generatedAt: new Date().toISOString(),
-    sequence: 0,
+    schemaVersion: PUBLISHER_FEED_SCHEMA_VERSION,
+    feedId: params.feedId,
+    publisherId: params.publisherId,
+    handle: params.handle,
+    displayName: params.displayName,
+    generatedAt: params.generatedAt,
+    sequence: params.sequence,
     entries: params.entries,
-    nextCursor: params.nextCursor,
+    nextCursor: null,
   };
 }
 
-async function collectSkillEntries(ctx: QueryCtx, publisher: Doc<"publishers">, limit: number) {
-  const entries: AccountFeedEntry[] = [];
+type CollectedEntries = {
+  entries: PublisherFeedEntry[];
+  exhausted: boolean;
+};
+
+async function collectSkillEntries(
+  ctx: PublisherFeedReadCtx,
+  publisher: Doc<"publishers">,
+  limit: number,
+): Promise<CollectedEntries> {
+  const entries: PublisherFeedEntry[] = [];
   let cursor: string | null = null;
   let isDone = false;
   let pagesRead = 0;
 
-  while (!isDone && pagesRead < ACCOUNT_FEED_MAX_SOURCE_PAGES && entries.length < limit) {
+  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
     const page = await ctx.db
       .query("skills")
       .withIndex("by_owner_publisher_active_updated", (q) =>
         q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .paginate({ cursor, numItems: limit });
+      .paginate({ cursor, numItems: limit + 1 });
     pagesRead += 1;
 
     for (const skill of page.page) {
       const entry = skillEntry(publisher, skill);
       if (entry) entries.push(entry);
-      if (entries.length >= limit) break;
+      if (entries.length > limit) break;
     }
     isDone = page.isDone;
     cursor = page.isDone ? null : page.continueCursor;
   }
 
-  return entries;
+  return { entries, exhausted: isDone };
 }
 
-async function collectPackageEntries(ctx: QueryCtx, publisher: Doc<"publishers">, limit: number) {
-  const entries: AccountFeedEntry[] = [];
+async function collectPackageEntries(
+  ctx: PublisherFeedReadCtx,
+  publisher: Doc<"publishers">,
+  limit: number,
+): Promise<CollectedEntries> {
+  const entries: PublisherFeedEntry[] = [];
   let cursor: string | null = null;
   let isDone = false;
   let pagesRead = 0;
 
-  while (!isDone && pagesRead < ACCOUNT_FEED_MAX_SOURCE_PAGES && entries.length < limit) {
+  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
     const page = await ctx.db
       .query("packages")
       .withIndex("by_owner_publisher_active_updated", (q) =>
         q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
       )
       .order("desc")
-      .paginate({ cursor, numItems: limit });
+      .paginate({ cursor, numItems: limit + 1 });
     pagesRead += 1;
 
     for (const pkg of page.page) {
       const entry = packageEntry(publisher, pkg);
       if (entry) entries.push(entry);
-      if (entries.length >= limit) break;
+      if (entries.length > limit) break;
     }
     isDone = page.isDone;
     cursor = page.isDone ? null : page.continueCursor;
   }
 
-  return entries;
+  return { entries, exhausted: isDone };
+}
+
+async function collectLegacySkillEntries(
+  ctx: PublisherFeedReadCtx,
+  publisher: Doc<"publishers">,
+  ownerUserId: Doc<"users">["_id"],
+  limit: number,
+): Promise<CollectedEntries> {
+  const entries: PublisherFeedEntry[] = [];
+  let cursor: string | null = null;
+  let isDone = false;
+  let pagesRead = 0;
+
+  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
+    const page = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_active_updated", (q) =>
+        q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: limit + 1 });
+    pagesRead += 1;
+    for (const skill of page.page) {
+      if (skill.ownerPublisherId && skill.ownerPublisherId !== publisher._id) continue;
+      const entry = skillEntry(publisher, skill);
+      if (entry) entries.push(entry);
+      if (entries.length > limit) break;
+    }
+    isDone = page.isDone;
+    cursor = page.isDone ? null : page.continueCursor;
+  }
+  return { entries, exhausted: isDone };
+}
+
+async function collectLegacyPackageEntries(
+  ctx: PublisherFeedReadCtx,
+  publisher: Doc<"publishers">,
+  ownerUserId: Doc<"users">["_id"],
+  limit: number,
+): Promise<CollectedEntries> {
+  const entries: PublisherFeedEntry[] = [];
+  let cursor: string | null = null;
+  let isDone = false;
+  let pagesRead = 0;
+
+  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_owner_active_updated", (q) =>
+        q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: limit + 1 });
+    pagesRead += 1;
+    for (const pkg of page.page) {
+      if (pkg.ownerPublisherId && pkg.ownerPublisherId !== publisher._id) continue;
+      const entry = packageEntry(publisher, pkg);
+      if (entry) entries.push(entry);
+      if (entries.length > limit) break;
+    }
+    isDone = page.isDone;
+    cursor = page.isDone ? null : page.continueCursor;
+  }
+  return { entries, exhausted: isDone };
 }
 
 async function buildPublisherFeed(
-  ctx: QueryCtx,
+  ctx: PublisherFeedReadCtx,
   publisher: Doc<"publishers">,
-  user: Doc<"users"> | null,
-  scope: "account" | "publisher",
-  stableId: string,
+  legacyOwnerUserId: Doc<"users">["_id"] | null,
   limit: number,
 ) {
-  const [skillEntries, packageEntries] = await Promise.all([
-    collectSkillEntries(ctx, publisher, limit),
-    collectPackageEntries(ctx, publisher, limit),
-  ]);
+  const [skillEntries, packageEntries, legacySkillEntries, legacyPackageEntries] =
+    await Promise.all([
+      collectSkillEntries(ctx, publisher, limit),
+      collectPackageEntries(ctx, publisher, limit),
+      legacyOwnerUserId
+        ? collectLegacySkillEntries(ctx, publisher, legacyOwnerUserId, limit)
+        : Promise.resolve({ entries: [], exhausted: true }),
+      legacyOwnerUserId
+        ? collectLegacyPackageEntries(ctx, publisher, legacyOwnerUserId, limit)
+        : Promise.resolve({ entries: [], exhausted: true }),
+    ]);
 
-  const sortedCandidates = [...skillEntries, ...packageEntries].sort(
+  const deduped = new Map<string, PublisherFeedEntry>();
+  for (const entry of [
+    ...skillEntries.entries,
+    ...packageEntries.entries,
+    ...legacySkillEntries.entries,
+    ...legacyPackageEntries.entries,
+  ]) {
+    deduped.set(`${entry.kind}:${entry.id}`, entry);
+  }
+  const sortedCandidates = [...deduped.values()].sort(
     (left, right) =>
       right.updatedAt - left.updatedAt ||
       left.kind.localeCompare(right.kind) ||
       left.id.localeCompare(right.id),
   );
-  const entries = sortedCandidates.slice(0, limit);
+  const exhausted =
+    skillEntries.exhausted &&
+    packageEntries.exhausted &&
+    legacySkillEntries.exhausted &&
+    legacyPackageEntries.exhausted;
+  if (!exhausted || sortedCandidates.length > limit) {
+    return { status: "capacity-exceeded" as const };
+  }
 
-  return buildFeed({ scope, stableId, user, publisher, entries, nextCursor: null });
+  return {
+    status: "complete" as const,
+    publisherId: publisher._id,
+    feedId: publisherFeedId(String(publisher._id)),
+    handle: publisher.handle ?? null,
+    displayName: publisher.displayName || publisher.handle || "",
+    entries: sortedCandidates,
+  };
 }
-
-export const getAccountDetail = internalQuery({
-  args: { accountId: v.string() },
-  handler: async (ctx, args) => {
-    const user = await safeGetUser(ctx, args.accountId);
-    if (!isActiveUser(user)) return null;
-    const publisher = user.personalPublisherId
-      ? await safeGetPublisher(ctx, String(user.personalPublisherId))
-      : null;
-    return {
-      account: toPublicUser(user),
-      publisher: toPublicPublisher(isActivePublisher(publisher) ? publisher : null),
-      feedUrl: `/api/v1/accounts/${encodeURIComponent(String(user._id))}/feed`,
-    };
-  },
-});
 
 export const getPublisherDetail = internalQuery({
   args: { publisherId: v.string() },
   handler: async (ctx, args) => {
     const publisher = await safeGetPublisher(ctx, args.publisherId);
-    if (!isActivePublisher(publisher)) return null;
-    const user = publisher.linkedUserId
-      ? await safeGetUser(ctx, String(publisher.linkedUserId))
-      : null;
+    const visibility = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visibility) return null;
     return {
-      publisher: toPublicPublisher(publisher),
-      account: toPublicUser(isActiveUser(user) ? user : null),
-      feedUrl: `/api/v1/publishers/${encodeURIComponent(String(publisher._id))}/feed`,
+      publisher: {
+        _id: visibility.publisher._id,
+        kind: visibility.publisher.kind,
+        handle: visibility.publisher.handle,
+        displayName: visibility.publisher.displayName,
+        image: visibility.publisher.image ?? null,
+        bio: visibility.publisher.bio ?? null,
+      },
+      feedUrl: `/api/v1/publishers/${encodeURIComponent(String(visibility.publisher._id))}/feed`,
     };
   },
 });
 
-export const getAccountFeed = internalQuery({
-  args: {
-    accountId: v.string(),
-    limit: v.optional(v.number()),
-  },
+export const getPublisherFeedPublication = internalQuery({
+  args: { publisherId: v.string() },
   handler: async (ctx, args) => {
-    const user = await safeGetUser(ctx, args.accountId);
-    if (!isActiveUser(user) || !user.personalPublisherId) return null;
-    const publisher = await safeGetPublisher(ctx, String(user.personalPublisherId));
-    if (!isActivePublisher(publisher)) return null;
-    return await buildPublisherFeed(
-      ctx,
-      publisher,
-      user,
-      "account",
-      String(user._id),
-      clampLimit(args.limit),
-    );
+    const publisher = await safeGetPublisher(ctx, args.publisherId);
+    const visibility = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visibility) return null;
+    return await ctx.db
+      .query("publisherFeedPublications")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", visibility.publisher._id))
+      .unique();
   },
 });
 
-export const getPublisherFeed = internalQuery({
-  args: {
-    publisherId: v.string(),
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const publisher = await safeGetPublisher(ctx, args.publisherId);
-    if (!isActivePublisher(publisher)) return null;
-    const user = publisher.linkedUserId
-      ? await safeGetUser(ctx, String(publisher.linkedUserId))
-      : null;
-    return await buildPublisherFeed(
-      ctx,
-      publisher,
-      isActiveUser(user) ? user : null,
-      "publisher",
-      String(publisher._id),
-      clampLimit(args.limit),
-    );
-  },
+type PublishPublisherFeedRevisionArgs = {
+  publisherId: Id<"publishers">;
+  feedId: string;
+  handle: string | null;
+  displayName: string;
+  entries: PublisherFeedEntry[];
+};
+
+export async function publishPublisherFeedRevisionImpl(
+  ctx: Pick<MutationCtx, "db">,
+  args: PublishPublisherFeedRevisionArgs,
+) {
+  const publisher = await ctx.db.get(args.publisherId);
+  const visibility = await getPublicPublisherVisibility(ctx, publisher);
+  if (!visibility || publisherFeedId(String(args.publisherId)) !== args.feedId) return null;
+
+  const contentKey = await sha256Hex(
+    JSON.stringify({
+      publisherId: String(args.publisherId),
+      handle: args.handle,
+      displayName: args.displayName,
+      entries: args.entries,
+    }),
+  );
+  const existing = await ctx.db
+    .query("publisherFeedPublications")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", args.publisherId))
+    .unique();
+  if (existing?.contentKey === contentKey) {
+    return buildFeed({
+      publisherId: String(args.publisherId),
+      feedId: args.feedId,
+      handle: args.handle,
+      displayName: args.displayName,
+      entries: args.entries,
+      generatedAt: existing.generatedAt,
+      sequence: existing.sequence,
+    });
+  }
+
+  const generatedAt = new Date().toISOString();
+  const sequence = (existing?.sequence ?? 0) + 1;
+  const publication = {
+    publisherId: args.publisherId,
+    feedId: args.feedId,
+    sequence,
+    generatedAt,
+    handle: args.handle,
+    displayName: args.displayName,
+    entries: args.entries,
+    contentKey,
+    publishedAt: Date.now(),
+  };
+  if (existing) {
+    await ctx.db.patch(existing._id, publication);
+  } else {
+    await ctx.db.insert("publisherFeedPublications", publication);
+  }
+  return buildFeed({
+    publisherId: String(args.publisherId),
+    feedId: args.feedId,
+    handle: args.handle,
+    displayName: args.displayName,
+    entries: args.entries,
+    generatedAt,
+    sequence,
+  });
+}
+
+export async function refreshPublisherFeedImpl(
+  ctx: Pick<MutationCtx, "db">,
+  args: { publisherId: string },
+) {
+  const projection = await buildPublisherFeedProjectionImpl(ctx, args);
+  if (!projection || projection.status !== "complete") return projection;
+  return await publishPublisherFeedRevisionImpl(ctx, projection);
+}
+
+export async function buildPublisherFeedProjectionImpl(
+  ctx: PublisherFeedReadCtx,
+  args: { publisherId: string },
+) {
+  const publisher = await safeGetPublisher(ctx, args.publisherId);
+  const visibility = await getPublicPublisherVisibility(ctx, publisher);
+  if (!visibility) return null;
+  return await buildPublisherFeed(
+    ctx,
+    visibility.publisher,
+    visibility.linkedUser?._id ?? null,
+    PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES,
+  );
+}
+
+export const refreshPublisherFeed = internalMutation({
+  args: { publisherId: v.string() },
+  handler: refreshPublisherFeedImpl,
 });

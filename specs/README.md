@@ -19,7 +19,7 @@ into `docs/` and leave only the design record here.
 
 - `spec.md`: product + implementation spec for the original registry model.
 - `orgs.md`: org, publisher membership, and scoped identity plan.
-- `account-feeds.md`: account and publisher feed model for OpenClaw discovery.
+- `account-feeds.md`: publisher feed model for OpenClaw discovery (historical filename).
 - `github-import.md`: GitHub import feature spec.
 - `github-backed-skills.md`: source-backed GitHub skills catalog and install invariants.
 - `diffing.md`: skill version diffing UI/API design.

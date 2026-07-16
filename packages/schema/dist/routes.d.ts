@@ -26,7 +26,6 @@ export declare const ApiRoutes: {
     readonly catalogFeed: "/api/v1/feeds/plugins";
     readonly catalogSkillsFeed: "/api/v1/feeds/skills";
     readonly promotionsFeed: "/api/v1/feeds/promotions";
-    readonly accounts: "/api/v1/accounts";
     readonly stars: "/api/v1/stars";
     readonly transfers: "/api/v1/transfers";
     readonly publishers: "/api/v1/publishers";
