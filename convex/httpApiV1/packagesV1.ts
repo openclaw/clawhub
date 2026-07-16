@@ -650,6 +650,7 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
   return {
     kind: "legacy-zip" as const,
     ...(sha256 ? { sha256 } : {}),
+    ...(release.clawpackSize !== undefined ? { size: release.clawpackSize } : {}),
     format: "zip",
     source: "clawhub" as const,
     artifactKind: "legacy-zip" as const,
@@ -4137,16 +4138,29 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
-    const entries: Array<{ path: string; bytes: Uint8Array }> = [];
-    for (const file of release.files) {
-      const blob = await ctx.storage.get(file.storageId);
-      if (!blob) return text(`Missing stored file: ${file.path}`, 500, rate.headers);
-      entries.push({
-        path: file.path,
-        bytes: new Uint8Array(await blob.arrayBuffer()),
-      });
+    const storedZip =
+      release.artifactKind === "legacy-zip" && release.clawpackStorageId
+        ? await ctx.storage.get(release.clawpackStorageId)
+        : null;
+    if (release.artifactKind === "legacy-zip" && release.clawpackStorageId && !storedZip) {
+      return text("Missing stored package artifact", 500, rate.headers);
     }
-    const zip = buildDeterministicPackageZip(entries);
+    let zip: Uint8Array;
+    if (storedZip) {
+      zip = new Uint8Array(await storedZip.arrayBuffer());
+    } else {
+      // Historical legacy releases and npm packs need a compatibility ZIP projection.
+      const entries: Array<{ path: string; bytes: Uint8Array }> = [];
+      for (const file of release.files) {
+        const blob = await ctx.storage.get(file.storageId);
+        if (!blob) return text(`Missing stored file: ${file.path}`, 500, rate.headers);
+        entries.push({
+          path: file.path,
+          bytes: new Uint8Array(await blob.arrayBuffer()),
+        });
+      }
+      zip = buildDeterministicPackageZip(entries);
+    }
     const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
       const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
@@ -4164,7 +4178,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
-    return new Response(new Blob([zip], { type: "application/zip" }), {
+    const zipBody = zip.buffer.slice(
+      zip.byteOffset,
+      zip.byteOffset + zip.byteLength,
+    ) as ArrayBuffer;
+    return new Response(new Blob([zipBody], { type: "application/zip" }), {
       status: 200,
       headers: mergeHeaders(
         rate.headers,
