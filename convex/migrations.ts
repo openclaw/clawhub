@@ -36,6 +36,7 @@ const APPLY_SKILL_INSTALL_BACKFILL_CONFIRM = "apply-skill-install-backfill";
 const APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM = "apply-nvidia-github-download-backfill";
 const BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM = "backfill-plugin-manifest-summaries";
 const RECOVER_SUSPICIOUS_PUBLISH_ATTEMPTS_CONFIRM = "recover-suspicious-publish-attempts";
+const CLEAN_STALE_TEST_PREPUBLICATION_CONFIRM = "clean-stale-test-prepublication";
 const SKILL_STAT_EVENTS_CURSOR_KEY = "skill_stat_events";
 const MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL = 1_000;
 const PLUGIN_PACKAGE_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
@@ -80,6 +81,159 @@ const nvidiaGitHubDownloadBackfillPreviewValidator = v.object({
 export const migrations = new Migrations(components.migrations, {
   schema,
   defaultBatchSize: 25,
+});
+
+type StaleTestPrepublicationPreview = {
+  skillVersions: string[];
+  packageReleases: string[];
+  publishAttempts: string[];
+};
+
+const STALE_TEST_PREPUBLICATION_SKILL_VERSION_IDS = [
+  "k9744ms64hqgt2gsbrqecgyan18an1sy",
+  "k977n0780pgddbyq4amzm2c7qs8anp42",
+] as const;
+const STALE_TEST_PREPUBLICATION_PACKAGE_RELEASE_IDS = ["rd73d4smq092bxqtdzw4wbpx6d8anphq"] as const;
+const STALE_TEST_PREPUBLICATION_PUBLISH_ATTEMPT_IDS = [
+  "qd7fe83x22dtevcserrr5yvp698anerg",
+  "qd786d4wehvdz29htqwnh289g98am4tm",
+  "qd792fjf2ndphp0357j51bxvp98amkeb",
+] as const;
+const staleTestPrepublicationSkillVersionIds = new Set<string>(
+  STALE_TEST_PREPUBLICATION_SKILL_VERSION_IDS,
+);
+const staleTestPrepublicationPackageReleaseIds = new Set<string>(
+  STALE_TEST_PREPUBLICATION_PACKAGE_RELEASE_IDS,
+);
+const staleTestPrepublicationPublishAttemptIds = new Set<string>(
+  STALE_TEST_PREPUBLICATION_PUBLISH_ATTEMPT_IDS,
+);
+
+export const cleanupStaleTestPrepublicationSkillVersions = migrations.define({
+  table: "skillVersions",
+  batchSize: 200,
+  migrateOne: async (ctx, version) => {
+    if (
+      !staleTestPrepublicationSkillVersionIds.has(version._id) ||
+      (version.publicationStatus === undefined &&
+        version.publishAttemptId === undefined &&
+        version.pendingPublication === undefined)
+    ) {
+      return;
+    }
+    await ctx.db.patch(version._id, {
+      publicationStatus: undefined,
+      publishAttemptId: undefined,
+      pendingPublication: undefined,
+    });
+  },
+});
+
+export const cleanupStaleTestPrepublicationPackageReleases = migrations.define({
+  table: "packageReleases",
+  batchSize: 200,
+  migrateOne: async (ctx, release) => {
+    if (
+      !staleTestPrepublicationPackageReleaseIds.has(release._id) ||
+      (release.publicationStatus === undefined &&
+        release.publishAttemptId === undefined &&
+        release.pendingPublication === undefined)
+    ) {
+      return;
+    }
+    await ctx.db.patch(release._id, {
+      publicationStatus: undefined,
+      publishAttemptId: undefined,
+      pendingPublication: undefined,
+    });
+  },
+});
+
+export const cleanupStaleTestPrepublicationPublishAttempts = migrations.define({
+  table: "publishAttempts",
+  batchSize: 200,
+  migrateOne: async (ctx, attempt) => {
+    if (
+      !staleTestPrepublicationPublishAttemptIds.has(attempt._id) ||
+      (attempt.skillId === undefined &&
+        attempt.skillVersionId === undefined &&
+        attempt.packageId === undefined &&
+        attempt.packageReleaseId === undefined &&
+        attempt.createdNewParent === undefined &&
+        attempt.clawpackStorageId === undefined &&
+        attempt.scanContext === undefined)
+    ) {
+      return;
+    }
+    await ctx.db.patch(attempt._id, {
+      skillId: undefined,
+      skillVersionId: undefined,
+      packageId: undefined,
+      packageReleaseId: undefined,
+      createdNewParent: undefined,
+      clawpackStorageId: undefined,
+      scanContext: undefined,
+    });
+  },
+});
+
+export const previewStaleTestPrepublicationInternal = internalQuery({
+  args: {},
+  returns: v.object({
+    skillVersions: v.array(v.string()),
+    packageReleases: v.array(v.string()),
+    publishAttempts: v.array(v.string()),
+  }),
+  handler: async (ctx): Promise<StaleTestPrepublicationPreview> => {
+    const skillVersions = await Promise.all(
+      STALE_TEST_PREPUBLICATION_SKILL_VERSION_IDS.map((id) =>
+        ctx.db.get(id as Id<"skillVersions">),
+      ),
+    );
+    const packageReleases = await Promise.all(
+      STALE_TEST_PREPUBLICATION_PACKAGE_RELEASE_IDS.map((id) =>
+        ctx.db.get(id as Id<"packageReleases">),
+      ),
+    );
+    const publishAttempts = await Promise.all(
+      STALE_TEST_PREPUBLICATION_PUBLISH_ATTEMPT_IDS.map((id) =>
+        ctx.db.get(id as Id<"publishAttempts">),
+      ),
+    );
+    return {
+      skillVersions: skillVersions
+        .filter(
+          (version): version is Doc<"skillVersions"> =>
+            version !== null &&
+            (version.publicationStatus !== undefined ||
+              version.publishAttemptId !== undefined ||
+              version.pendingPublication !== undefined),
+        )
+        .map((version) => version._id),
+      packageReleases: packageReleases
+        .filter(
+          (release): release is Doc<"packageReleases"> =>
+            release !== null &&
+            (release.publicationStatus !== undefined ||
+              release.publishAttemptId !== undefined ||
+              release.pendingPublication !== undefined),
+        )
+        .map((release) => release._id),
+      publishAttempts: publishAttempts
+        .filter(
+          (attempt): attempt is Doc<"publishAttempts"> =>
+            attempt !== null &&
+            (attempt.skillId !== undefined ||
+              attempt.skillVersionId !== undefined ||
+              attempt.packageId !== undefined ||
+              attempt.packageReleaseId !== undefined ||
+              attempt.createdNewParent !== undefined ||
+              attempt.clawpackStorageId !== undefined ||
+              attempt.scanContext !== undefined),
+        )
+        .map((attempt) => attempt._id),
+    };
+  },
 });
 
 type SuspiciousPublishAttemptRecoveryClassification =
@@ -1351,6 +1505,61 @@ export const runSuspiciousPublishAttemptRecovery: ReturnType<typeof internalActi
       };
     },
   });
+
+export const runStaleTestPrepublicationCleanup: ReturnType<typeof internalAction> = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    dryRun: v.boolean(),
+    confirmRequired: v.optional(v.string()),
+    before: v.object({
+      skillVersions: v.array(v.string()),
+      packageReleases: v.array(v.string()),
+      publishAttempts: v.array(v.string()),
+    }),
+    after: v.object({
+      skillVersions: v.array(v.string()),
+      packageReleases: v.array(v.string()),
+      publishAttempts: v.array(v.string()),
+    }),
+  }),
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== CLEAN_STALE_TEST_PREPUBLICATION_CONFIRM) {
+      throw new ConvexError(`Pass confirm="${CLEAN_STALE_TEST_PREPUBLICATION_CONFIRM}" to apply.`);
+    }
+    const before: StaleTestPrepublicationPreview = await ctx.runQuery(
+      internal.migrations.previewStaleTestPrepublicationInternal,
+      {},
+    );
+    const migrationFunctions = [
+      internal.migrations.cleanupStaleTestPrepublicationSkillVersions,
+      internal.migrations.cleanupStaleTestPrepublicationPackageReleases,
+      internal.migrations.cleanupStaleTestPrepublicationPublishAttempts,
+    ] as const;
+    if (!dryRun) {
+      for (const fn of migrationFunctions) {
+        await runToCompletion(ctx, components.migrations, fn, {
+          cursor: null,
+          batchSize: 200,
+        });
+      }
+    }
+    const after: StaleTestPrepublicationPreview = dryRun
+      ? before
+      : await ctx.runQuery(internal.migrations.previewStaleTestPrepublicationInternal, {});
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? CLEAN_STALE_TEST_PREPUBLICATION_CONFIRM : undefined,
+      before,
+      after,
+    };
+  },
+});
 
 export const runCatalogMetadataCanonicalization = internalAction({
   args: {
