@@ -131,12 +131,10 @@ type MockPrePublicationClaim = {
   files?: Array<{ path: string; storageId?: string; url?: string | null }>;
 };
 
-export async function completeMockPrePublicationChecks(args: {
+async function claimMockPrePublicationChecks(args: {
   kind: "skill" | "package";
   slug: string;
   version: string;
-  trufflehog?: "clean" | "blocked";
-  clawscan?: "clean" | "suspicious" | "malicious" | "failed";
 }) {
   let lastClaimError: unknown;
   let claim: MockPrePublicationClaim | null = null;
@@ -169,7 +167,39 @@ export async function completeMockPrePublicationChecks(args: {
       `No pending ${args.kind} publish attempt for ${args.slug}@${args.version}.${detail}`,
     );
   }
+  return claim;
+}
 
+export async function expectSingleMockPrePublicationCheckRejected(args: {
+  kind: "skill" | "package";
+  slug: string;
+  version: string;
+}) {
+  const claim = await claimMockPrePublicationChecks(args);
+  await expect(
+    convexClient().action(api.publishAttempts.completePrePublicationChecks, {
+      token: WORKER_TOKEN,
+      attemptId: claim.attemptId,
+      claimId: claim.claimId,
+      artifactFingerprint: claim.artifactFingerprint,
+      trufflehog: {
+        status: "clean",
+        summary: "Mock TruffleHog found no secrets in the local e2e fixture.",
+      },
+    } as never),
+  ).rejects.toThrow();
+  return claim;
+}
+
+export async function completeMockPrePublicationChecks(args: {
+  kind: "skill" | "package";
+  slug: string;
+  version: string;
+  claim?: MockPrePublicationClaim;
+  trufflehog?: "clean" | "blocked";
+  clawscan?: "clean" | "suspicious" | "malicious" | "failed";
+}) {
+  const claim = args.claim ?? (await claimMockPrePublicationChecks(args));
   const clawscan = args.clawscan ?? "clean";
   const clawscanBlocked = clawscan === "malicious";
   const clawscanFailed = clawscan === "failed";

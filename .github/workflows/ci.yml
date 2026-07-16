@@ -179,6 +179,8 @@ jobs:
           - name: publish-new-version
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: skill publishers can create a skill
+          - name: old-cli-publish
+            specs: e2e/local-auth/old-cli-publish-compat.pw.test.ts
 
     steps:
       - uses: actions/checkout@v7
