@@ -19,7 +19,8 @@ metadata and must not identify an edge.
 
 Follow and unfollow operations are idempotent. A user cannot follow their own
 personal publisher. A publisher must pass ClawHub's canonical public visibility
-check before it can be followed or returned by a list.
+check before it can be followed or returned by a list. Each user may follow up
+to 100 publishers so discovery and activity reads remain bounded.
 
 The stored follower user id is private. Public follower and following APIs
 return visible publisher identities only:

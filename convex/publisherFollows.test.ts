@@ -192,6 +192,25 @@ describe("publisher follows", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
+  it("bounds the publisher set used by discovery and timelines", async () => {
+    const listRows = Array.from({ length: 100 }, (_, index) => ({
+      _id: `publisherFollows:${index}`,
+      followerUserId: "users:viewer",
+      publisherId: `publishers:${index}`,
+      createdAt: index,
+      updatedAt: index,
+    }));
+    const { ctx, db } = makeCtx({ existingFollow: null, listRows });
+
+    await expect(
+      followPublisherInternalHandler(ctx, {
+        followerUserId: "users:viewer",
+        publisherId: "publishers:1",
+      }),
+    ).rejects.toThrow("follow up to 100 publishers");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it("unfollow is idempotent and audits only real deletes", async () => {
     const missing = makeCtx({ existingFollow: null });
     await expect(
