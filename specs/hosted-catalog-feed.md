@@ -124,14 +124,18 @@ The HTTP endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`, and
 `/api/v1/feeds/promotions`. Each representation provides:
 
 - `ETag: "sha256:<payload hash>"`
-- `Last-Modified`
 - `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=86400`
 - `Surrogate-Control: max-age=300, stale-while-revalidate=86400`
-- `304 Not Modified` for matching `If-None-Match` or `If-Modified-Since`
+- `304 Not Modified` for matching `If-None-Match`
 
-The plugin feed route requires `CLAWHUB_FEED_SIGNING_KEY_ID` and
-`CLAWHUB_FEED_SIGNING_PRIVATE_KEY`. It returns `503` with `Cache-Control:
-no-store` when either value is absent, incomplete, or invalid. Its ETag and
+Unsigned skills and promotions also expose `Last-Modified` and accept
+`If-Modified-Since`. The signed plugin representation intentionally does not:
+rotating its signer changes the envelope without changing the underlying
+publication time, so only its representation ETag is a valid cache validator.
+
+The plugin feed route requires one atomic `CLAWHUB_FEED_SIGNING_CONFIG` JSON
+secret containing exactly `keyId` and `privateKey`. It returns `503` with
+`Cache-Control: no-store` when the value is absent or invalid. Its ETag and
 `X-Content-SHA256` describe the signed envelope representation;
 `X-Catalog-Payload-SHA256` preserves the stored publication payload digest.
 Skills and promotions remain on their existing unsigned representations until
@@ -173,15 +177,18 @@ bootstrap endpoint from the same origin as the feed.
 2. Choose a stable, non-secret key id such as `clawhub-feed-2026-q3`. Record the
    owner, creation time, intended deployment, and rotation contact in the
    operator secret inventory.
-3. Store the private PEM in each intended Convex deployment without placing it
-   in shell history. For production, use the Convex dashboard or pipe the value
-   to the CLI:
+3. Store the key id and private PEM as one atomic JSON value in each intended
+   Convex deployment. Do not create separate mutable variables for the pair: a
+   partially rotated pair can publish an unverifiable cacheable envelope. For
+   production, use the Convex dashboard or pipe compact JSON to the CLI without
+   placing the private key in shell history:
 
    ```powershell
-   Get-Content -Raw .\clawhub-feed-private.pem |
-     bunx convex env set CLAWHUB_FEED_SIGNING_PRIVATE_KEY --prod
-   "clawhub-feed-2026-q3" |
-     bunx convex env set CLAWHUB_FEED_SIGNING_KEY_ID --prod
+   @{
+     keyId = "clawhub-feed-2026-q3"
+     privateKey = Get-Content -Raw .\clawhub-feed-private.pem
+   } | ConvertTo-Json -Compress |
+     bunx convex env set CLAWHUB_FEED_SIGNING_CONFIG --prod
    ```
 
 4. Confirm only the variable names, not their values:
@@ -207,8 +214,9 @@ bootstrap endpoint from the same origin as the feed.
 
 1. Generate a new dedicated key and key id.
 2. Bundle the new public key in OpenClaw while the old key remains trusted.
-3. After that trust update is available, update the two Convex signing variables
-   together and deploy.
+3. After that trust update is available, replace
+   `CLAWHUB_FEED_SIGNING_CONFIG` once with JSON containing the new matched pair,
+   then deploy. Never stage key id and private key separately.
 4. Verify a higher-sequence publication under the new key before retiring the
    old private key.
 5. Remove the old public key in a later OpenClaw release after the supported
@@ -220,8 +228,8 @@ multi-key signer support before beginning that rotation.
 
 ### Emergency revocation
 
-Remove or replace the compromised private key in Convex immediately. Leaving
-signing configuration incomplete intentionally makes the plugin feed return
+Remove `CLAWHUB_FEED_SIGNING_CONFIG` or replace it with a new matched pair in
+Convex immediately. An absent signing configuration makes the plugin feed return
 `503 no-store`. Notify OpenClaw maintainers to remove the compromised public key
 through the authenticated release channel. Do not recover by advertising a new
 public key from a feed-adjacent endpoint.

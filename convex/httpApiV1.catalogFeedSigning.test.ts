@@ -29,8 +29,10 @@ async function signingFixture() {
     publicKeyEncoding: { type: "spki", format: "pem" },
   });
   const env = {
-    CLAWHUB_FEED_SIGNING_KEY_ID: "clawhub-feed-2026-q3",
-    CLAWHUB_FEED_SIGNING_PRIVATE_KEY: privateKey,
+    CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({
+      keyId: "clawhub-feed-2026-q3",
+      privateKey,
+    }),
   };
   const config = await resolveFeedSigningConfig(env);
   if (!config) throw new Error("expected signing config");
@@ -97,6 +99,7 @@ describe("signed catalog feed", () => {
     expect(first.headers.get("x-content-sha256")).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.headers.get("x-catalog-payload-sha256")).toBe(publication.payloadSha256);
     expect(first.headers.get("x-openclaw-feed-signing-key-id")).toBe("clawhub-feed-2026-q3");
+    expect(first.headers.get("last-modified")).toBeNull();
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.catalogFeed.getLatestPublication, {
       feedId: "clawhub-official",
     });
@@ -119,19 +122,34 @@ describe("signed catalog feed", () => {
     );
     expect(await repeated.text()).toBe(body);
     expect(repeated.headers.get("etag")).toBe(etag);
+
+    const ignoredLastModified = await signedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins", {
+        headers: { "If-Modified-Since": "Wed, 31 Dec 2098 23:59:59 GMT" },
+      }),
+      env,
+    );
+    expect(ignoredLastModified.status).toBe(200);
   });
 
   it.each([
     {},
-    { CLAWHUB_FEED_SIGNING_KEY_ID: "clawhub-feed-2026-q3" },
-    { CLAWHUB_FEED_SIGNING_PRIVATE_KEY: "not-a-private-key" },
+    { CLAWHUB_FEED_SIGNING_CONFIG: "not-json" },
+    { CLAWHUB_FEED_SIGNING_CONFIG: "[]" },
+    { CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({ keyId: "clawhub-feed-2026-q3" }) },
     {
-      CLAWHUB_FEED_SIGNING_KEY_ID: "clawhub-feed-2026-q3",
-      CLAWHUB_FEED_SIGNING_PRIVATE_KEY: "not-a-private-key",
+      CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({
+        keyId: "clawhub-feed-2026-q3",
+        privateKey: "not-a-private-key",
+      }),
     },
     {
-      CLAWHUB_FEED_SIGNING_KEY_ID: "invalid key id\r\nheader",
-      CLAWHUB_FEED_SIGNING_PRIVATE_KEY: "not-a-private-key",
+      CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({
+        keyId: "invalid key id\r\nheader",
+        privateKey: "not-a-private-key",
+        unexpected: true,
+      }),
     },
   ])("fails closed before reading a publication when signing config is invalid", async (env) => {
     const response = await signedCatalogFeedV1Handler(
