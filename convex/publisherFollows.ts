@@ -3,7 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
-import { isPublisherActive } from "./lib/publishers";
+import { isPublisherActive, MAX_FOLLOWED_PUBLISHERS } from "./lib/publishers";
 
 const notificationPreferenceValidator = v.union(v.literal("all"), v.literal("none"));
 const DEFAULT_NOTIFICATION_PREFERENCE = "all" as const;
@@ -12,7 +12,6 @@ const MAX_LIST_LIMIT = 100;
 const LIST_SCAN_BATCH_SIZE = 100;
 const MAX_LIST_SCAN_PAGES = 4;
 const DELETE_BATCH_SIZE = 200;
-export const MAX_FOLLOWED_PUBLISHERS = 100;
 
 type NotificationPreference = "all" | "none";
 

@@ -649,3 +649,4 @@ export async function getOwnerPublisher(
   if (!user || user.deletedAt || user.deactivatedAt) return null;
   return await getPersonalPublisherForUserOrFallback(ctx, user);
 }
+export const MAX_FOLLOWED_PUBLISHERS = 100;
