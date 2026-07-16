@@ -2,9 +2,8 @@
 
 Status: pass
 
-- Candidate: `395bdd36472a2399bc2625bf3302f7bde3cf064a`
+- Candidate: `93b63f26`
 - Browser: Codex in-app browser
-- Local URL: `http://127.0.0.1:3018/?dismiss-proof=4`
-- Desktop: active promotion shows an accessible dismiss control
-- Mobile: dismiss control remains visible without overlapping banner content
-- Persistence: dismissed promotion remains hidden after reload
+- Local URL: `http://127.0.0.1:3018/?dismiss-proof=5`
+- Desktop: dismiss control right edge matches the promotion item right edge
+- Mobile: dismiss control remains 12px from the viewport edge without overlapping title or CTA

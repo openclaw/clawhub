@@ -1,39 +1,32 @@
 {
-  "candidate": "395bdd36472a2399bc2625bf3302f7bde3cf064a",
-  "generatedAt": "2026-07-16T19:24:00.000Z",
+  "candidate": "93b63f26",
+  "generatedAt": "2026-07-16T22:19:00.000Z",
   "lanes": [
     {
       "name": "candidate",
-      "ref": "395bdd36472a2399bc2625bf3302f7bde3cf064a",
+      "ref": "93b63f26",
       "status": "pass",
       "steps": [
         {
           "lane": "candidate",
-          "name": "Promotion banner with dismiss control on desktop",
-          "screenshot": "screenshots/banner-desktop.png",
-          "slug": "banner-desktop",
+          "name": "Dismiss control aligned to the far right on desktop",
+          "screenshot": "screenshots/banner-far-right-desktop.png",
+          "slug": "banner-far-right-desktop",
           "status": "pass"
         },
         {
           "lane": "candidate",
-          "name": "Promotion banner with dismiss control on mobile",
-          "screenshot": "screenshots/banner-mobile.png",
-          "slug": "banner-mobile",
-          "status": "pass"
-        },
-        {
-          "lane": "candidate",
-          "name": "Promotion remains dismissed after reload",
-          "screenshot": "screenshots/dismissed-after-reload.png",
-          "slug": "dismissed-after-reload",
+          "name": "Dismiss control aligned to the far right on mobile",
+          "screenshot": "screenshots/banner-far-right-mobile.png",
+          "slug": "banner-far-right-mobile",
           "status": "pass"
         }
       ]
     }
   ],
   "mode": "feature",
-  "outputDir": "/tmp/clawhub-promotion-dismiss-proof/publish",
+  "outputDir": "/tmp/clawhub-promotion-dismiss-proof/far-right/publish",
   "provider": "Codex in-app browser",
-  "scenario": "Dismiss active promotion and reload",
+  "scenario": "Promotion dismiss control right-edge alignment",
   "status": "pass"
 }
