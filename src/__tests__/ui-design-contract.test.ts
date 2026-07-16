@@ -347,12 +347,24 @@ describe("restored UI design contract", () => {
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
     expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
-    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented");
+    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item",
+    );
+    expect(listingSource).toContain("home-v2-listing-view clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item",
+    );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
     expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
     expect(publishersSource).toContain(
       "home-v2-popular-publisher-card oc-card oc-card-interactive",
+    );
+    expect(publishersSource).toContain("Official creators");
+    expect(publishersSource).toContain("Explore skills and plugins from official creators.");
+    expect(cssRule(css, ".home-v2-popular-publishers-track")).toContain(
+      "grid-template-columns: repeat(6, minmax(0, 1fr))",
     );
     expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
     expect(homeSource).not.toContain("Unleash.");

@@ -4,6 +4,7 @@ import {
   backfillExistingPublicCorpusBatchRows,
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
+  seedCatalogPresentationFixtures,
   seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
@@ -22,6 +23,9 @@ const seedSkillMutationHandler = (
 )._handler;
 const seedFeaturedPluginPackagesHandler = (
   seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedCatalogPresentationFixturesHandler = (
+  seedCatalogPresentationFixtures as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 const seedGitHubBackedSkillSourceHandler = (
   seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
@@ -1502,5 +1506,130 @@ describe("devSeed local fixtures", () => {
     );
     expect(oldPackageDeleteIndex).toBeGreaterThanOrEqual(0);
     expect(oldReleaseDeleteIndex).toBeGreaterThan(oldPackageDeleteIndex);
+  });
+
+  it("seeds repeatable official creator fixtures with featured skills and plugins", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "local-corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const sourcePublisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "local-corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      publishedSkills: 1,
+      publishedPackages: 1,
+      totalInstalls: 12,
+      totalDownloads: 24,
+      totalStars: 6,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 10,
+      skillTotalStars: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+    const skillId = (await db.insert("skills", {
+      slug: "presentation-skill",
+      displayName: "Presentation Skill",
+      ownerUserId: userId,
+      ownerPublisherId: sourcePublisherId,
+      latestVersionId: undefined,
+      tags: {},
+      badges: { highlighted: undefined, redactionApproved: undefined },
+      softDeletedAt: undefined,
+      statsDownloads: 10,
+      statsStars: 2,
+      statsInstallsCurrent: 3,
+      statsInstallsAllTime: 5,
+      stats: {
+        downloads: 10,
+        installsCurrent: 3,
+        installsAllTime: 5,
+        stars: 2,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"skills">;
+    const skillVersionId = (await db.insert("skillVersions", {
+      skillId,
+      version: "1.0.0",
+      changelog: "Presentation fixture.",
+      files: [],
+      parsed: { frontmatter: {}, metadata: {} },
+      createdBy: userId,
+      createdAt: 1,
+      softDeletedAt: undefined,
+    })) as Id<"skillVersions">;
+    await db.patch(skillId, {
+      latestVersionId: skillVersionId,
+      tags: { latest: skillVersionId },
+      stats: {
+        downloads: 10,
+        installsCurrent: 3,
+        installsAllTime: 5,
+        stars: 2,
+        versions: 1,
+        comments: 0,
+      },
+    });
+    const packageId = (await db.insert("packages", {
+      name: "presentation-plugin",
+      normalizedName: "presentation-plugin",
+      displayName: "Presentation Plugin",
+      ownerUserId: userId,
+      ownerPublisherId: sourcePublisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: "presentation-plugin",
+      tags: {},
+      stats: { downloads: 14, installs: 7, stars: 4, versions: 1 },
+      softDeletedAt: undefined,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"packages">;
+    const args = {
+      orgs: [
+        {
+          sourceOwnerHandle: "local-corpus-owner",
+          handle: "catalog-atlas",
+          displayName: "Atlas Automation",
+          bio: "Synthetic official creator.",
+          image: "https://example.invalid/atlas.svg",
+          skillSlug: "presentation-skill",
+          packageName: "presentation-plugin",
+          featured: true,
+        },
+      ],
+    };
+
+    await seedCatalogPresentationFixturesHandler(createMutationCtx(db) as never, args as never);
+    await seedCatalogPresentationFixturesHandler(createMutationCtx(db) as never, args as never);
+
+    const org = tables.publishers?.find((publisher) => publisher.handle === "catalog-atlas");
+    expect(org).toEqual(
+      expect.objectContaining({
+        kind: "org",
+        displayName: "Atlas Automation",
+        publishedSkills: 1,
+        publishedPackages: 1,
+        totalInstalls: 12,
+      }),
+    );
+    expect(tables.officialPublishers).toHaveLength(1);
+    expect(tables.publisherMembers).toHaveLength(1);
+    expect(tables.skills?.find((skill) => skill._id === skillId)?.ownerPublisherId).toBe(org?._id);
+    expect(tables.packages?.find((pkg) => pkg._id === packageId)?.ownerPublisherId).toBe(org?._id);
+    expect(tables.skillBadges).toEqual([expect.objectContaining({ skillId, kind: "highlighted" })]);
+    expect(tables.packageBadges).toEqual([
+      expect.objectContaining({ packageId, kind: "highlighted" }),
+    ]);
   });
 });

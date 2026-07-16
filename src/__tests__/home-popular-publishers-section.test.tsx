@@ -3,14 +3,18 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const convexQueryMock = vi.fn();
+const convexActionMock = vi.fn();
 
 vi.mock("../convex/client", () => ({
-  convexHttp: { query: (...args: unknown[]) => convexQueryMock(...args) },
+  convexHttp: { action: (...args: unknown[]) => convexActionMock(...args) },
 }));
 
 vi.mock("../../convex/_generated/api", () => ({
-  api: { publishers: { getHomePublisherSummaries: "publishers:getHomePublisherSummaries" } },
+  api: {
+    publishers: {
+      getHomeOfficialCreatorSummaries: "publishers:getHomeOfficialCreatorSummaries",
+    },
+  },
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -18,6 +22,7 @@ vi.mock("@tanstack/react-router", () => ({
     children,
     className,
     params,
+    search,
     to: _to,
     ...props
   }: {
@@ -25,11 +30,13 @@ vi.mock("@tanstack/react-router", () => ({
     className?: string;
     params?: { handle?: string; slug?: string };
     to?: string;
+    search?: unknown;
     [key: string]: unknown;
   }) => (
     <a
       {...props}
       className={className}
+      data-search={search ? JSON.stringify(search) : undefined}
       href={
         params?.slug ? `/${params.slug}` : params?.handle ? `/user/${params.handle}` : "/creators"
       }
@@ -45,8 +52,8 @@ describe("HomePopularPublishersSection", () => {
   let intersectionCallback: IntersectionObserverCallback;
 
   beforeEach(() => {
-    convexQueryMock.mockReset();
-    convexQueryMock.mockResolvedValue(null);
+    convexActionMock.mockReset();
+    convexActionMock.mockResolvedValue([]);
     vi.stubGlobal(
       "IntersectionObserver",
       class {
@@ -75,65 +82,95 @@ describe("HomePopularPublishersSection", () => {
     });
   };
 
-  it("loads all pinned publisher summaries once when the section nears the viewport", async () => {
-    convexQueryMock.mockResolvedValue([
+  it("loads the top twelve official creators once when the section nears the viewport", async () => {
+    convexActionMock.mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        _id: `publishers:org-${index}`,
+        _creationTime: index,
+        handle: `org-${index}`,
+        displayName: `Official Org ${index}`,
+        kind: "org",
+        stats: {
+          skills: 2,
+          packages: 1,
+          installs: 12 - index,
+          downloads: 4,
+          stars: 5,
+        },
+      })),
+    );
+
+    render(<HomePopularPublishersSection />);
+
+    expect(convexActionMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Official creators" })).toBeTruthy();
+    expect(screen.getByText("Explore skills and plugins from official creators.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Browse creators" }).dataset.search).toBe(
+      '{"official":true,"kind":"orgs"}',
+    );
+
+    await enterPublisherSection();
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(1));
+    expect(convexActionMock).toHaveBeenCalledWith("publishers:getHomeOfficialCreatorSummaries", {
+      limit: 12,
+    });
+    expect(screen.getAllByRole("link", { name: /Official Org/ })).toHaveLength(12);
+    expect(screen.getByText("12 installs")).toBeTruthy();
+    expect(screen.getByText("1 install")).toBeTruthy();
+    expect(document.querySelectorAll(".home-v2-popular-publisher-card")).toHaveLength(12);
+    expect(
+      Array.from(document.querySelectorAll(".home-v2-popular-publisher-card"), (card) =>
+        card.getAttribute("aria-label"),
+      ),
+    ).toEqual(Array.from({ length: 12 }, (_, index) => `Official Org ${index}, @org-${index}`));
+
+    await enterPublisherSection();
+    expect(convexActionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries a failed official creator request", async () => {
+    convexActionMock.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce([
       {
         _id: "publishers:openclaw",
         _creationTime: 1,
         handle: "openclaw",
-        displayName: "OpenClaw Registry",
+        displayName: "OpenClaw",
         kind: "org",
         stats: { skills: 2, packages: 1, installs: 3, downloads: 4, stars: 5 },
       },
     ]);
 
     render(<HomePopularPublishersSection />);
-
-    expect(convexQueryMock).not.toHaveBeenCalled();
-    expect(screen.getAllByText("Explore creator")).toHaveLength(10);
-
     await enterPublisherSection();
-    await waitFor(() => expect(convexQueryMock).toHaveBeenCalledTimes(1));
-    expect(convexQueryMock).toHaveBeenCalledWith("publishers:getHomePublisherSummaries", {
-      handles: [
-        "openclaw",
-        "nvidia",
-        "steipete",
-        "mvanhorn",
-        "wscats",
-        "ivangdavila",
-        "byungkyu",
-        "pskoett",
-        "1kalin",
-        "spclaudehome",
-      ],
-    });
-    expect(screen.getByRole("link", { name: "OpenClaw Registry, @openclaw" })).toBeTruthy();
-    expect(screen.getByText("Explore 3 items")).toBeTruthy();
 
-    await enterPublisherSection();
-    expect(convexQueryMock).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(1));
+    expect(document.querySelectorAll(".home-v2-popular-publisher-card")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(convexActionMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("link", { name: "OpenClaw, @openclaw" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
-  it("keeps static publisher cards when summary loading fails", async () => {
-    convexQueryMock.mockRejectedValue(new Error("offline"));
-
-    render(<HomePopularPublishersSection />);
-    await enterPublisherSection();
-
-    await waitFor(() => expect(convexQueryMock).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("link", { name: "OpenClaw, @openclaw" })).toBeTruthy();
-    expect(screen.getAllByText("Explore creator")).toHaveLength(10);
-  });
-
-  it("keeps creator cards clickable until the pointer actually drags", () => {
+  it("keeps creator cards clickable until the pointer actually drags", async () => {
+    convexActionMock.mockResolvedValue([
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        kind: "org",
+        stats: { skills: 2, packages: 1, installs: 3, downloads: 4, stars: 5 },
+      },
+    ]);
     const setPointerCapture = vi.fn();
     const hasPointerCapture = vi.fn(() => false);
     const releasePointerCapture = vi.fn();
 
     render(<HomePopularPublishersSection />);
+    await enterPublisherSection();
 
-    const card = screen.getByRole("link", { name: "OpenClaw, @openclaw" });
+    const card = await screen.findByRole("link", { name: "OpenClaw, @openclaw" });
     expect(card.getAttribute("href")).toBe("/openclaw");
     const viewport = document.querySelector(".home-v2-popular-publishers-viewport");
     expect(viewport).toBeTruthy();

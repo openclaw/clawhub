@@ -1,4 +1,5 @@
 import { type inferred } from "arktype";
+export declare const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
 export declare function normalizePackageOwnerHandle(handle: string | null | undefined): string | undefined;
 export declare function inferPackageNameScope(name: string): string | undefined;
 export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: string | null | undefined): {
@@ -77,11 +78,11 @@ export declare const PackageStatsSchema: import("arktype/internal/variants/objec
 export type PackageStats = (typeof PackageStatsSchema)[inferred];
 export declare const PackageArtifactKindSchema: import("arktype/internal/variants/string.ts").StringType<"legacy-zip" | "npm-pack", {}>;
 export type PackageArtifactKind = (typeof PackageArtifactKindSchema)[inferred];
-export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "quarantined" | "revoked", {}>;
+export declare const PackageReleaseModerationStateSchema: import("arktype/internal/variants/string.ts").StringType<"approved" | "revoked" | "quarantined", {}>;
 export type PackageReleaseModerationState = (typeof PackageReleaseModerationStateSchema)[inferred];
 export declare const PackageReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed", {}>;
 export type PackageReportStatus = (typeof PackageReportStatusSchema)[inferred];
-export declare const PackageReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "quarantine" | "revoke", {}>;
+export declare const PackageReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"revoke" | "none" | "quarantine", {}>;
 export type PackageReportFinalAction = (typeof PackageReportFinalActionSchema)[inferred];
 export declare const PackageReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed" | "all", {}>;
 export type PackageReportListStatus = (typeof PackageReportListStatusSchema)[inferred];
@@ -717,12 +718,12 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
         reasons: string[];
         pending: boolean;
         stale: boolean;
-        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationState?: "approved" | "revoked" | "quarantined" | null | undefined;
     };
 }, {}>;
 export type ApiV1PackageSecurityResponse = (typeof ApiV1PackageSecurityResponseSchema)[inferred];
 export declare const PackageReleaseModerationRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    state: "approved" | "quarantined" | "revoked";
+    state: "approved" | "revoked" | "quarantined";
     reason: string;
 }, {}>;
 export type PackageReleaseModerationRequest = (typeof PackageReleaseModerationRequestSchema)[inferred];
@@ -743,7 +744,7 @@ export type ApiV1PackageReportResponse = (typeof ApiV1PackageReportResponseSchem
 export declare const PackageReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     status: "open" | "confirmed" | "dismissed";
     note?: string | undefined;
-    finalAction?: "none" | "quarantine" | "revoke" | undefined;
+    finalAction?: "revoke" | "none" | "quarantine" | undefined;
 }, {}>;
 export type PackageReportTriageRequest = (typeof PackageReportTriageRequestSchema)[inferred];
 export declare const PackageAppealRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -822,7 +823,7 @@ export declare const ApiV1PackageReportListResponseSchema: import("arktype/inter
         triagedAt?: number | null | undefined;
         triagedBy?: string | null | undefined;
         triageNote?: string | null | undefined;
-        actionTaken?: "none" | "quarantine" | "revoke" | null | undefined;
+        actionTaken?: "revoke" | "none" | "quarantine" | null | undefined;
     }[];
     nextCursor: string | null;
     done: boolean;
@@ -834,7 +835,7 @@ export declare const ApiV1PackageReportTriageResponseSchema: import("arktype/int
     packageId: string;
     status: "open" | "confirmed" | "dismissed";
     reportCount: number;
-    actionTaken?: "none" | "quarantine" | "revoke" | undefined;
+    actionTaken?: "revoke" | "none" | "quarantine" | undefined;
 }, {}>;
 export type ApiV1PackageReportTriageResponse = (typeof ApiV1PackageReportTriageResponseSchema)[inferred];
 export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -857,7 +858,7 @@ export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype
         reasons: string[];
         createdAt: number;
         artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
-        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationState?: "approved" | "revoked" | "quarantined" | null | undefined;
         moderationReason?: string | null | undefined;
     } | null;
 }, {}>;
@@ -1092,7 +1093,7 @@ export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/
         reportCount: number;
         reasons: string[];
         artifactKind?: "legacy-zip" | "npm-pack" | null | undefined;
-        moderationState?: "approved" | "quarantined" | "revoked" | null | undefined;
+        moderationState?: "approved" | "revoked" | "quarantined" | null | undefined;
         moderationReason?: string | null | undefined;
         sourceRepo?: string | null | undefined;
         sourceCommit?: string | null | undefined;
@@ -1106,7 +1107,7 @@ export declare const ApiV1PackageReleaseModerationResponseSchema: import("arktyp
     ok: true;
     packageId: string;
     releaseId: string;
-    state: "approved" | "quarantined" | "revoked";
+    state: "approved" | "revoked" | "quarantined";
     scanStatus: "clean" | "malicious";
 }, {}>;
 export type ApiV1PackageReleaseModerationResponse = (typeof ApiV1PackageReleaseModerationResponseSchema)[inferred];

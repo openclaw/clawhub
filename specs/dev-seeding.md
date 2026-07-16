@@ -19,7 +19,10 @@ Local fixture seeding is command-driven by default:
 - CLI seeding (`bun run seed:dev`) runs the same seed path manually without starting the preview and
   bypasses the first-run sentinel.
 - `bun run seed` is the shared seed pipeline used after local setup and by disposable PR previews.
-  It installs the same moderation fixtures and committed public corpus, then refreshes global stats.
+  It installs the same moderation fixtures and committed public corpus, creates deterministic
+  catalog presentation fixtures, then refreshes global stats. The presentation pass creates 16
+  synthetic official organizations with real corpus-backed skills and plugins; the first eight of
+  each type are highlighted so Featured and Official creators render in local and PR previews.
   Without `--preview-name` it accepts only a local Convex deployment; remote use requires an
   explicit preview name plus a Convex Preview deploy key. Vercel recreates that preview deployment
   before invoking the shared seed, so the corpus import does not perform a destructive reset.

@@ -26079,20 +26079,26 @@ a.search-empty-action {
 }
 
 .home-v2-popular-publishers-track {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 10px;
   width: 100%;
   min-width: 100%;
   padding: 4px 2px 12px;
 }
 
+.home-v2-popular-publishers-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+}
+
 .home-v2-popular-publisher-card {
   display: grid;
   grid-template-rows: auto 1fr;
-  flex: 0 0 calc((100% - 40px) / 5);
-  width: calc((100% - 40px) / 5);
   min-width: 0;
-  min-height: 158px;
+  min-height: 150px;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--hv2-border-strong) 88%, transparent);
   border-radius: 10px;
@@ -26118,14 +26124,14 @@ a.search-empty-action {
 .home-v2-popular-publisher-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
-  padding: 14px 14px 10px;
+  padding: 12px 12px 8px;
 }
 
 .home-v2-popular-publisher-card .marketplace-icon {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--oc-radius-inset);
   background: rgb(22 22 24);
   border-color: var(--hv2-border-strong);
@@ -26157,7 +26163,7 @@ a.search-empty-action {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
-  padding: 10px 14px 14px;
+  padding: 8px 12px 12px;
 }
 
 .home-v2-popular-publisher-bio {
@@ -26184,9 +26190,12 @@ a.search-empty-action {
 }
 
 @media (max-width: 1024px) {
-  .home-v2-popular-publisher-card {
-    flex-basis: min(240px, 42vw);
-    width: min(240px, 42vw);
+  .home-v2-popular-publishers-track {
+    grid-auto-flow: column;
+    grid-auto-columns: min(240px, 42vw);
+    grid-template-columns: none;
+    grid-template-rows: repeat(2, minmax(150px, auto));
+    width: max-content;
   }
 }
 
@@ -26202,9 +26211,8 @@ a.search-empty-action {
     gap: 10px;
   }
 
-  .home-v2-popular-publisher-card {
-    flex-basis: min(220px, 76vw);
-    width: min(220px, 76vw);
+  .home-v2-popular-publishers-track {
+    grid-auto-columns: min(220px, 76vw);
   }
 }
 

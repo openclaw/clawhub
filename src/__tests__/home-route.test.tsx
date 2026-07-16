@@ -5,22 +5,26 @@ import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const initialListingFixture = {
-  kind: "skills",
-  tab: "popular",
+  kind: "plugins",
+  tab: "featured",
   categorySlugs: [],
   fetchLimit: 20,
   items: [
     {
-      skill: {
-        _id: "skills:initial",
-        slug: "initial-skill",
-        displayName: "Initial Skill",
-        stats: { installs: 10 },
-      },
-      ownerHandle: "builder",
+      name: "initial-plugin",
+      displayName: "Initial Plugin",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 1,
+      updatedAt: 2,
     },
   ],
   hasMore: false,
+  featuredAvailability: {
+    plugins: true,
+    skills: true,
+  },
 };
 
 const homeListingSectionMock = vi.fn();
