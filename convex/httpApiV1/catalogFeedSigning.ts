@@ -6,7 +6,6 @@ import {
   catalogFeedResponseHeaders,
   catalogFeedUnavailableResponse,
   matchesEtag,
-  matchesLastModified,
 } from "./catalogFeedV1";
 
 export const OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE =
@@ -42,9 +41,31 @@ function decodePkcs8PrivateKey(raw: string) {
 export async function resolveFeedSigningConfig(
   env: Record<string, string | undefined>,
 ): Promise<FeedSigningConfig | null> {
-  const keyId = env.CLAWHUB_FEED_SIGNING_KEY_ID?.trim();
-  const privateKeyValue = env.CLAWHUB_FEED_SIGNING_PRIVATE_KEY?.trim();
-  if (!keyId || !privateKeyValue) return null;
+  const rawConfig = env.CLAWHUB_FEED_SIGNING_CONFIG?.trim();
+  if (!rawConfig) return null;
+  if (rawConfig.length > 32_768) throw new Error("ClawHub feed signing config is too large");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawConfig);
+  } catch {
+    throw new Error("ClawHub feed signing config must be valid JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("ClawHub feed signing config must be an object");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (
+    Object.keys(record).sort().join(",") !== "keyId,privateKey" ||
+    typeof record.keyId !== "string" ||
+    typeof record.privateKey !== "string"
+  ) {
+    throw new Error("ClawHub feed signing config must contain only keyId and privateKey");
+  }
+  const keyId = record.keyId.trim();
+  const privateKeyValue = record.privateKey.trim();
+  if (!keyId || !privateKeyValue) {
+    throw new Error("ClawHub feed signing config fields must not be empty");
+  }
   if (!/^[A-Za-z0-9._:-]{1,128}$/u.test(keyId)) {
     throw new Error("ClawHub feed signing key id is invalid");
   }
@@ -150,17 +171,17 @@ export async function signedCatalogFeedV1Handler(
 
   const signed = await signCatalogFeedPayload(publication.payload, signingConfig);
   const etag = `"sha256:${signed.sha256}"`;
-  const headers = catalogFeedResponseHeaders(publication, {
-    representationSha256: signed.sha256,
-    additionalHeaders: {
-      "X-Catalog-Payload-SHA256": publication.payloadSha256,
-      "X-OpenClaw-Feed-Signing-Key-ID": signingConfig.keyId,
-    },
-  });
-  if (
-    matchesEtag(request, etag) ||
-    (!request.headers.has("if-none-match") && matchesLastModified(request, publication.publishedAt))
-  ) {
+  const headers = new Headers(
+    catalogFeedResponseHeaders(publication, {
+      representationSha256: signed.sha256,
+      additionalHeaders: {
+        "X-Catalog-Payload-SHA256": publication.payloadSha256,
+        "X-OpenClaw-Feed-Signing-Key-ID": signingConfig.keyId,
+      },
+    }),
+  );
+  headers.delete("Last-Modified");
+  if (matchesEtag(request, etag)) {
     return new Response(null, { status: 304, headers });
   }
   return new Response(signed.body, { status: 200, headers });
