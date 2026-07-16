@@ -1,173 +1,63 @@
 ---
-summary: "Follow graph and notification behavior for ClawHub account and publisher feeds."
+summary: "Publisher follow graph and activity timeline behavior for ClawHub."
 read_when:
-  - Adding follow or unfollow behavior for accounts, publishers, or feeds
-  - Adding feed notification events or delivery channels
-  - Changing search or discovery filters for followed publishers
+  - Adding publisher follow or unfollow behavior
+  - Changing public follower or following lists
+  - Adding activity timeline behavior for followed publishers
 ---
 
-# Follow Graph And Notifications
+# Publisher Follow Graph And Activity Timeline
 
-Following a ClawHub account, publisher, or feed is a discovery and notification
-preference. It is not a trust grant, install grant, review decision, scan
-result, or local approval.
-
-This spec defines the follow graph and notification boundaries for future
-account and publisher feeds.
-
-## Product Behavior
-
-ClawHub should allow signed-in users to:
-
-- follow a public account or publisher
-- unfollow a previously followed account or publisher
-- see followed publishers in discovery surfaces
-- filter search or browse results to people and publishers they follow
-- opt into notifications for feed publication and material feed-entry changes
-
-The first implementation should prefer publisher-scoped follows when a public
-publisher identity exists. Account-scoped follows can still be useful for person
-or organization profiles, but install and package discovery should resolve
-through stable publisher ids.
+Following a ClawHub publisher is a discovery preference. It is not a trust
+grant, install grant, review decision, scan result, or local approval.
 
 ## Follow Identity
 
-Follows must be keyed by stable ClawHub ids, not display names, handles, slugs,
-profile URLs, or feed URLs.
+Follows are keyed by stable publisher ids and the authenticated follower user
+id. Handles, display names, profile URLs, and feed URLs are mutable display
+metadata and must not identify an edge.
 
-At minimum, a follow row should preserve:
+Follow and unfollow operations are idempotent. A user cannot follow their own
+personal publisher. A publisher must pass ClawHub's canonical public visibility
+check before it can be followed or returned by a list.
 
-- follower user id
-- followed account id or publisher id
-- followed identity kind
-- creation time
-- last updated time
-- notification preference
-- muted or paused state when supported
+The stored follower user id is private. Public follower and following APIs
+return visible publisher identities only:
 
-Follow and unfollow operations must be idempotent. Client retries should not
-duplicate rows, emit duplicate notification state, or fail because a prior
-attempt already succeeded.
+- `GET /api/v1/publishers/{publisherId}/followers`
+- `GET /api/v1/publishers/{publisherId}/following`
 
-Omitting a notification preference on an idempotent follow retry preserves the
-existing preference. It must not silently unmute a follow. Follow-list reads
-are private to the authenticated user, cursor-paginated, and bounded even when
-inactive publishers or search filtering make the result sparse.
+Both lists use bounded cursor pagination and return `nextCursor: null` at the
+end. Organization publishers can have followers, but do not have a following
+list because follow ownership is currently user-scoped.
 
-Publisher rename, handle change, profile URL change, or ownership change must
-not silently transfer a follow to an unrelated identity. If ownership changes
-materially, ClawHub should preserve the stable id and emit a material-change
-event or require an explicit follow reset, depending on the risk.
+Hard deletion of either the follower account or followed publisher removes the
+corresponding edges in bounded, resumable batches.
 
-## Events
+## Activity Timeline
 
-Suggested event types:
+ClawHub should expose a pull-based activity timeline for followed publishers,
+similar to GitHub's following feed. It should not fan every publish out as an
+unread notification: large publishers can publish hundreds of artifacts and
+would make that model noisy.
 
-- `publisher.feed.published`
-- `publisher.feed.entry.added`
-- `publisher.feed.entry.updated`
-- `publisher.feed.entry.removed`
-- `publisher.official_state.changed`
-- `publisher.claim_state.changed`
-- `publisher.suspended`
-- `publisher.reinstated`
-- `publisher.revoked`
-
-Events should carry stable ids, sequence or revision references, event time, and
-enough public display metadata for notifications. They should not carry private
-review evidence, secrets, raw signing keys, private source URLs, or unpublished
+Timeline events carry stable publisher and artifact ids, immutable event time,
+and enough public metadata to render an update. They must not contain secrets,
+private review evidence, raw signing keys, private source URLs, or unpublished
 package metadata.
 
-## Notification Rules
+OpenClaw may separately notify users about updates to artifacts present in the
+local lockfile. That filtering belongs in OpenClaw because ClawHub does not know
+which artifacts are installed locally.
 
-Notifications should link users back to ClawHub profile, feed, package, skill,
-or review surfaces. They must not auto-install content or imply that a followed
-publisher is safe to install from.
+## Search And Trust
 
-Notification copy must preserve the trust boundary:
+Follow state may power a following filter, break ties among already relevant
+results, or build a personalized timeline. It must not make unrelated results
+eligible, override moderation or visibility, bypass artifact integrity checks,
+or bypass local install policy.
 
-- "followed publisher posted an update" is allowed
-- "official publisher changed status" is allowed when backed by ClawHub state
-- "safe to install" is not allowed based only on a follow
-- "approved for you" is not allowed unless the current local context actually
-  has that approval
-
-Users should be able to pause, mute, or opt out of follow notifications without
-unfollowing the publisher.
-
-## Search And Discovery
-
-Search and browse filters may use follow state to help users find publishers
-they already care about. Follow state may:
-
-- power a "people I follow" or "publishers I follow" filter
-- break ties inside an already relevant result set
-- build a personalized activity feed
-- prioritize notification delivery preferences
-
-Follow state must not:
-
-- make an otherwise unrelated result eligible for a query
-- override moderation, safety, visibility, or deletion state
-- bypass OpenClaw review
-- bypass scans
-- bypass package artifact integrity checks
-- bypass local approval or install policy
-
-## Privacy
-
-Follow lists should be private by default unless ClawHub deliberately ships a
-public social graph.
-
-If public follow lists are introduced later, the design must define:
-
-- opt-in or opt-out behavior
-- profile display rules
-- blocked or suspended publisher behavior
-- export and deletion behavior
-- abuse controls for follower-count manipulation
-
-Private follow state should still be usable for the current user's own search,
-notifications, and profile controls.
-
-## Abuse Controls
-
-The follow and notification system should handle:
-
-- spam publishers posting high-frequency feed updates
-- mass rename or profile churn
-- compromised official or verified publishers
-- follower-count manipulation
-- notification fanout spikes
-- repeated follow/unfollow churn
-- suspended, revoked, hidden, or deleted publishers
-
-Notification fanout should be rate limited, deduplicated, and resumable.
-ClawHub should prefer durable event processing with replay or backfill semantics
-over best-effort notification sends that cannot recover missed changes.
-
-## Replay And Backfill
-
-Clients and notification workers may miss events. The contract should define how
-they recover:
-
-- feed sequence or revision cursor
-- notification event cursor
-- maximum replay window
-- behavior when the cursor is too old
-- idempotent reprocessing behavior
-- dedupe key for each emitted notification
-
-Replay should never create duplicate user-visible notifications for the same
-event and channel.
-
-## Open Questions
-
-- Should the first shipped follow model be publisher-scoped only?
-- Should account-scoped follows later aggregate all publishers controlled by an
-  account or organization?
-- Which notification channel ships first: in-app, email, webhook, RSS-style
-  polling, or OpenClaw client sync?
-- Should users be notified when a followed publisher is suspended, revoked, or
-  reinstated?
-- Should follower counts be public, private, delayed, or omitted?
+Public social graph endpoints need normal rate limits and must omit deleted,
+deactivated, hidden, or otherwise non-public publishers. Follower counts are
+derived from visible identities rather than treated as authorization or trust
+signals.

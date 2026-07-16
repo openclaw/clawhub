@@ -75,6 +75,8 @@ type DeletedAccountCleanupResult = {
   authRefreshTokens: number;
   apiTokens: number;
   personalPublisherDeleted: boolean;
+  publisherFollows: number;
+  publisherFollowsCleanupScheduled: boolean;
 };
 type AccountRecoveryPurgeEligibilityReason =
   | "self_delete_audit"
@@ -361,6 +363,11 @@ async function hardDeleteSelfDeletedAccountState(
     .collect();
   for (const token of tokens) await ctx.db.delete(token._id);
 
+  const deletedFollows = await ctx.runMutation(
+    internal.publisherFollows.deletePublisherFollowsForFollowerInternal,
+    { followerUserId: user._id },
+  );
+
   const personalPublisher = user.personalPublisherId
     ? await ctx.db.get(user.personalPublisherId)
     : await getPersonalPublisherForUser(ctx, user._id);
@@ -405,7 +412,13 @@ async function hardDeleteSelfDeletedAccountState(
   });
   await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: user._id });
   const authState = await purgeAuthStateForUser(ctx, user._id);
-  return { ...authState, apiTokens: tokens.length, personalPublisherDeleted };
+  return {
+    ...authState,
+    apiTokens: tokens.length,
+    personalPublisherDeleted,
+    publisherFollows: deletedFollows.deleted,
+    publisherFollowsCleanupScheduled: deletedFollows.scheduled,
+  };
 }
 
 async function scrubDeletedUserTombstone(ctx: MutationCtx, user: Doc<"users">, deletedAt: number) {

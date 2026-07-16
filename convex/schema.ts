@@ -2716,12 +2716,11 @@ const promotions = defineTable({
 const publisherFollows = defineTable({
   followerUserId: v.id("users"),
   publisherId: v.id("publishers"),
-  notifications: v.union(v.literal("all"), v.literal("none")),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
-  .index("by_follower", ["followerUserId", "updatedAt"])
-  .index("by_publisher", ["publisherId", "updatedAt"])
+  .index("by_follower_and_updatedAt", ["followerUserId", "updatedAt"])
+  .index("by_publisher_and_updatedAt", ["publisherId", "updatedAt"])
   .index("by_follower_publisher", ["followerUserId", "publisherId"]);
 
 const auditLogs = defineTable({

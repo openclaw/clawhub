@@ -23,8 +23,8 @@ type WrappedHandler<TArgs, TResult> = {
 
 const followPublisherInternalHandler = (
   followPublisherInternal as unknown as WrappedHandler<
-    { followerUserId: string; publisherId: string; notifications?: "all" | "none" },
-    { following: boolean; notifications: "all" | "none" }
+    { followerUserId: string; publisherId: string },
+    { following: boolean }
   >
 )._handler;
 const unfollowPublisherInternalHandler = (
@@ -37,9 +37,8 @@ const listFollowedPublishersInternalHandler = (
   listFollowedPublishersInternal as unknown as WrappedHandler<
     { followerUserId: string; cursor?: string | null; limit?: number; query?: string },
     {
-      items: Array<{ publisher: { handle: string }; notifications: "all" | "none" }>;
-      continueCursor: string;
-      isDone: boolean;
+      items: Array<{ publisher: { handle: string } }>;
+      nextCursor: string | null;
     }
   >
 )._handler;
@@ -50,6 +49,7 @@ function makePublisher(overrides: Record<string, unknown> = {}) {
     handle: "demo",
     displayName: "Demo Publisher",
     kind: "user",
+    linkedUserId: "users:owner",
     image: undefined,
     deletedAt: undefined,
     deactivatedAt: undefined,
@@ -62,6 +62,7 @@ function makeCtx(params: {
   existingFollow?: Record<string, unknown> | null;
   listRows?: Array<Record<string, unknown>>;
   listPages?: Array<Array<Record<string, unknown>>>;
+  owner?: Record<string, unknown> | null;
 }) {
   const publisher = params.publisher === undefined ? makePublisher() : params.publisher;
   let pageIndex = 0;
@@ -70,6 +71,9 @@ function makeCtx(params: {
     if (id === "publishers:2") return makePublisher({ _id: id, handle: "active-2" });
     if (id === "publishers:hidden") return makePublisher({ _id: id, deletedAt: Date.now() });
     if (id === "users:viewer") return { _id: id, role: "user" };
+    if (id === "users:owner") {
+      return params.owner === undefined ? { _id: id, role: "user" } : params.owner;
+    }
     return null;
   });
   const insert = vi.fn(async (table: string) => `${table}:new`);
@@ -113,7 +117,7 @@ describe("publisher follows", () => {
     vi.mocked(getAuthUserId).mockReset();
   });
 
-  it("creates a follow row with default notifications and audit log", async () => {
+  it("creates a follow row and audit log", async () => {
     const { ctx, db } = makeCtx({ existingFollow: null });
 
     const result = await followPublisherInternalHandler(ctx, {
@@ -123,13 +127,11 @@ describe("publisher follows", () => {
 
     expect(result).toMatchObject({
       following: true,
-      notifications: "all",
       publisherId: "publishers:1",
     });
     expect(db.insert).toHaveBeenCalledWith("publisherFollows", {
       followerUserId: "users:viewer",
       publisherId: "publishers:1",
-      notifications: "all",
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
     });
@@ -143,12 +145,11 @@ describe("publisher follows", () => {
     );
   });
 
-  it("is idempotent and only patches an existing row when the notification preference changes", async () => {
+  it("is idempotent", async () => {
     const existingFollow = {
       _id: "publisherFollows:1",
       followerUserId: "users:viewer",
       publisherId: "publishers:1",
-      notifications: "none",
       createdAt: 1,
       updatedAt: 1,
     };
@@ -157,35 +158,38 @@ describe("publisher follows", () => {
     const result = await followPublisherInternalHandler(ctx, {
       followerUserId: "users:viewer",
       publisherId: "publishers:1",
-      notifications: "all",
     });
 
-    expect(result).toMatchObject({ following: true, notifications: "all" });
-    expect(db.patch).toHaveBeenCalledWith("publisherFollows:1", {
-      notifications: "all",
-      updatedAt: expect.any(Number),
-    });
+    expect(result).toMatchObject({ following: true });
+    expect(db.patch).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalledWith("publisherFollows", expect.anything());
   });
 
-  it("preserves an existing notification preference when a retry omits it", async () => {
-    const existingFollow = {
-      _id: "publisherFollows:1",
-      followerUserId: "users:viewer",
-      publisherId: "publishers:1",
-      notifications: "none",
-      createdAt: 1,
-      updatedAt: 1,
-    };
-    const { ctx, db } = makeCtx({ existingFollow });
+  it("rejects self-follows using stable publisher ownership", async () => {
+    const { ctx, db } = makeCtx({ existingFollow: null });
 
-    const result = await followPublisherInternalHandler(ctx, {
-      followerUserId: "users:viewer",
-      publisherId: "publishers:1",
+    await expect(
+      followPublisherInternalHandler(ctx, {
+        followerUserId: "users:owner",
+        publisherId: "publishers:1",
+      }),
+    ).rejects.toThrow("cannot follow your own publisher");
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects publishers whose linked owner is inactive", async () => {
+    const { ctx, db } = makeCtx({
+      existingFollow: null,
+      owner: { _id: "users:owner", role: "user", deactivatedAt: 1 },
     });
 
-    expect(result).toMatchObject({ following: true, notifications: "none" });
-    expect(db.patch).not.toHaveBeenCalled();
+    await expect(
+      followPublisherInternalHandler(ctx, {
+        followerUserId: "users:viewer",
+        publisherId: "publishers:1",
+      }),
+    ).rejects.toThrow("Publisher not found");
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("unfollow is idempotent and audits only real deletes", async () => {
@@ -209,7 +213,6 @@ describe("publisher follows", () => {
         _id: "publisherFollows:1",
         followerUserId: "users:viewer",
         publisherId: "publishers:1",
-        notifications: "all",
         createdAt: 1,
         updatedAt: 1,
       },
@@ -234,7 +237,6 @@ describe("publisher follows", () => {
         _id: "publisherFollows:1",
         followerUserId: "users:viewer",
         publisherId: "publishers:1",
-        notifications: "none",
         createdAt: 1,
         updatedAt: 1,
       },
@@ -256,7 +258,6 @@ describe("publisher follows", () => {
           _id: "publisherFollows:1",
           followerUserId: "users:viewer",
           publisherId: "publishers:1",
-          notifications: "all",
           createdAt: 1,
           updatedAt: 2,
         },
@@ -264,7 +265,6 @@ describe("publisher follows", () => {
           _id: "publisherFollows:2",
           followerUserId: "users:viewer",
           publisherId: "publishers:hidden",
-          notifications: "none",
           createdAt: 1,
           updatedAt: 1,
         },
@@ -277,7 +277,6 @@ describe("publisher follows", () => {
 
     expect(result.items).toEqual([
       expect.objectContaining({
-        notifications: "all",
         publisher: expect.objectContaining({ handle: "demo" }),
       }),
     ]);
@@ -291,7 +290,6 @@ describe("publisher follows", () => {
             _id: "publisherFollows:hidden",
             followerUserId: "users:viewer",
             publisherId: "publishers:hidden",
-            notifications: "none",
             createdAt: 1,
             updatedAt: 3,
           },
@@ -301,7 +299,6 @@ describe("publisher follows", () => {
             _id: "publisherFollows:2",
             followerUserId: "users:viewer",
             publisherId: "publishers:2",
-            notifications: "all",
             createdAt: 1,
             updatedAt: 2,
           },
@@ -320,7 +317,7 @@ describe("publisher follows", () => {
         publisher: expect.objectContaining({ handle: "active-2" }),
       }),
     ]);
-    expect(result).toMatchObject({ continueCursor: "", isDone: true });
+    expect(result).toMatchObject({ nextCursor: null });
     expect(db.paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 1 });
     expect(db.paginate).toHaveBeenNthCalledWith(2, { cursor: "cursor:1", numItems: 1 });
   });
@@ -333,7 +330,6 @@ describe("publisher follows", () => {
             _id: "publisherFollows:2",
             followerUserId: "users:viewer",
             publisherId: "publishers:2",
-            notifications: "all",
             createdAt: 1,
             updatedAt: 2,
           },
@@ -348,7 +344,7 @@ describe("publisher follows", () => {
     });
 
     expect(result.items).toHaveLength(1);
-    expect(result).toMatchObject({ continueCursor: "", isDone: true });
+    expect(result).toMatchObject({ nextCursor: null });
     expect(db.paginate).toHaveBeenCalledWith({ cursor: "cursor:older", numItems: 25 });
   });
 
@@ -360,7 +356,6 @@ describe("publisher follows", () => {
             _id: "publisherFollows:1",
             followerUserId: "users:viewer",
             publisherId: "publishers:1",
-            notifications: "all",
             createdAt: 1,
             updatedAt: 3,
           },
@@ -370,7 +365,6 @@ describe("publisher follows", () => {
             _id: "publisherFollows:2",
             followerUserId: "users:viewer",
             publisherId: "publishers:2",
-            notifications: "all",
             createdAt: 1,
             updatedAt: 2,
           },
@@ -398,7 +392,6 @@ describe("publisher follows", () => {
         _id: "publisherFollows:1",
         followerUserId: "users:viewer",
         publisherId: "publishers:1",
-        notifications: "all",
         createdAt: 1,
         updatedAt: 3,
       },
@@ -415,8 +408,7 @@ describe("publisher follows", () => {
 
     expect(result).toMatchObject({
       items: [],
-      continueCursor: "cursor:4",
-      isDone: false,
+      nextCursor: "cursor:4",
     });
     expect(db.paginate).toHaveBeenCalledTimes(4);
   });

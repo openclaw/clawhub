@@ -9,6 +9,7 @@ const publisherFollowInternalRefs = internal as unknown as {
     followPublisherInternal: unknown;
     unfollowPublisherInternal: unknown;
     listFollowedPublishersInternal: unknown;
+    listPublicPublisherConnectionsInternal: unknown;
   };
 };
 
@@ -20,14 +21,6 @@ function publisherIdFromUrl(request: Request) {
 function publisherIdFromPayload(payload: Record<string, unknown>) {
   const value = typeof payload.publisherId === "string" ? payload.publisherId.trim() : "";
   return value ? (value as Id<"publishers">) : undefined;
-}
-
-function notificationsFromPayload(payload: Record<string, unknown>) {
-  const value =
-    typeof payload.notifications === "string" ? payload.notifications.trim() : undefined;
-  if (!value) return undefined;
-  if (value === "all" || value === "none") return value;
-  throw new Error('notifications must be "all" or "none"');
 }
 
 function isJsonObject(value: unknown): value is Record<string, unknown> {
@@ -105,13 +98,11 @@ export async function publisherFollowsPostV1Handler(ctx: ActionCtx, request: Req
   if (!publisherId) return text("Missing publisherId", 400, rate.headers);
 
   try {
-    const notifications = notificationsFromPayload(payload);
     const result = await ctx.runMutation(
       publisherFollowInternalRefs.publisherFollows.followPublisherInternal as never,
       {
         followerUserId: auth.userId,
         publisherId,
-        ...(notifications ? { notifications } : {}),
       } as never,
     );
     return json(result, 200, rate.headers);
@@ -122,6 +113,29 @@ export async function publisherFollowsPostV1Handler(ctx: ActionCtx, request: Req
       rate.headers,
     );
   }
+}
+
+export async function publisherSocialGraphGetV1Response(
+  ctx: ActionCtx,
+  request: Request,
+  args: {
+    publisherId: string;
+    direction: "followers" | "following";
+    headers: HeadersInit;
+  },
+) {
+  const params = parseListParams(new URL(request.url), args.headers);
+  if ("response" in params) return params.response;
+  const result = await ctx.runQuery(
+    publisherFollowInternalRefs.publisherFollows.listPublicPublisherConnectionsInternal as never,
+    {
+      publisherId: args.publisherId as Id<"publishers">,
+      direction: args.direction,
+      cursor: params.args.cursor,
+      limit: params.args.limit,
+    } as never,
+  );
+  return json(result, 200, args.headers);
 }
 
 export async function publisherFollowsDeleteV1Handler(ctx: ActionCtx, request: Request) {

@@ -3,6 +3,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { publisherSocialGraphGetV1Response } from "./publisherFollowsV1";
 import { getPathSegments, json, text } from "./shared";
 
 const publisherFeedRefs = internal as unknown as {
@@ -146,12 +147,24 @@ export async function publishersGetRouterV1Handler(ctx: ActionCtx, request: Requ
   if (!rate.ok) return rate.response;
 
   const segments = safePathSegments(request, "/api/v1/publishers/");
-  if (!segments || (segments.length !== 1 && !(segments.length === 2 && segments[1] === "feed"))) {
+  if (
+    !segments ||
+    (segments.length !== 1 &&
+      !(segments.length === 2 && ["feed", "followers", "following"].includes(segments[1] ?? "")))
+  ) {
     return text("Not found", 404, rate.headers);
   }
 
   const publisherId = (segments[0] ?? "").trim();
   if (!publisherId) return text("Publisher not found", 404, rate.headers);
+
+  if (segments[1] === "followers" || segments[1] === "following") {
+    return await publisherSocialGraphGetV1Response(ctx, request, {
+      publisherId,
+      direction: segments[1],
+      headers: rate.headers,
+    });
+  }
 
   if (segments.length === 1) {
     const detail = await runQueryRef(ctx, publisherFeedRefs.accountFeeds.getPublisherDetail, {

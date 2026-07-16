@@ -115,6 +115,49 @@ describe("publisher feed HTTP routes", () => {
     });
   });
 
+  it.each(["followers", "following"] as const)(
+    "serves the public publisher %s list without account ids",
+    async (direction) => {
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        expect(args).toEqual({
+          publisherId: "publishers:alice",
+          direction,
+          cursor: "older",
+          limit: 25,
+        });
+        return {
+          ok: true,
+          items: [
+            {
+              publisherId: "publishers:bob",
+              handle: "bob",
+              displayName: "Bob",
+              kind: "user",
+              image: null,
+            },
+          ],
+          nextCursor: null,
+        };
+      });
+
+      const response = await publishersGetRouterV1Handler(
+        makeCtx({ runQuery }),
+        new Request(
+          `https://example.com/api/v1/publishers/publishers%3Aalice/${direction}?limit=25&cursor=older`,
+        ),
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body).toMatchObject({
+        items: [{ publisherId: "publishers:bob", handle: "bob" }],
+        nextCursor: null,
+      });
+      expect(JSON.stringify(body)).not.toContain("followerUserId");
+    },
+  );
+
   it("rejects malformed cursors and limits", async () => {
     const ctx = makeCtx({});
     const cursorResponse = await publishersGetRouterV1Handler(

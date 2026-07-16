@@ -1983,8 +1983,25 @@ async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<
   return { sources, sourceContents, members, invites, official, feedPublication };
 }
 
-async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+async function hardDeletePublisherRows(
+  ctx: MutationCtx,
+  publisherId: Id<"publishers">,
+): Promise<{
+  sources: number;
+  sourceContents: number;
+  members: number;
+  invites: number;
+  official: boolean;
+  feedPublication: boolean;
+  publisherFollows: number;
+  publisherFollowsCleanupScheduled: boolean;
+}> {
   const preview = await inspectPublisherHardDeleteRows(ctx, publisherId);
+
+  const deletedFollows = (await ctx.runMutation(
+    internal.publisherFollows.deletePublisherFollowsForPublisherInternal,
+    { publisherId },
+  )) as { deleted: number; scheduled: boolean };
 
   for (const source of preview.sources) {
     const contents = await ctx.db
@@ -2013,6 +2030,8 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     invites: preview.invites.length,
     official: Boolean(preview.official),
     feedPublication: Boolean(preview.feedPublication),
+    publisherFollows: deletedFollows.deleted,
+    publisherFollowsCleanupScheduled: deletedFollows.scheduled,
   };
 }
 

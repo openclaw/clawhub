@@ -8615,10 +8615,8 @@ describe("httpApiV1 handlers", () => {
     } as never);
     const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
       followId: "publisherFollows:1",
-      followerUserId: "users:1",
       publisherId: "publishers:1",
       following: true,
-      notifications: "none",
       createdAt: 1,
       updatedAt: 1,
     });
@@ -8628,21 +8626,19 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/publisher-follows", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ publisherId: "publishers:1", notifications: "none" }),
+        body: JSON.stringify({ publisherId: "publishers:1" }),
       }),
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       following: true,
-      notifications: "none",
     });
     expect(runMutation).toHaveBeenCalledWith(
       internal.publisherFollows.followPublisherInternal,
       expect.objectContaining({
         followerUserId: "users:1",
         publisherId: "publishers:1",
-        notifications: "none",
       }),
     );
   });
@@ -8679,7 +8675,6 @@ describe("httpApiV1 handlers", () => {
         {
           publisherId: "publishers:1",
           following: true,
-          notifications: "all",
           publisher: { handle: "openclaw", displayName: "OpenClaw" },
         },
       ],
