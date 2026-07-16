@@ -8,6 +8,7 @@ import { publishersGetRouterV1Handler } from "./httpApiV1/accountFeedsV1";
 import {
   PUBLISHER_FEED_CHANGES_PAYLOAD_TYPE,
   PUBLISHER_FEED_QUERY_PAYLOAD_TYPE,
+  PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE,
 } from "./httpApiV1/publisherFeedSigning";
 
 type ActionCtx = import("./_generated/server").ActionCtx;
@@ -283,6 +284,85 @@ describe("publisher feed HTTP routes", () => {
     );
   });
 
+  it("serves a complete signed publisher snapshot without changing the paginated route", async () => {
+    const entry = {
+      kind: "skill",
+      id: "skills:cuda",
+      name: "cuda-helper",
+      displayName: "CUDA Helper",
+      summary: "GPU tools",
+      url: "/alice/skills/cuda-helper",
+      updatedAt: 2,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) =>
+      isRateLimitArgs(args)
+        ? okRate()
+        : {
+            publisherId: "publishers:alice",
+            feedId: "clawhub.publisher.publishers:alice",
+            sequence: 7,
+            generatedAt: "2026-07-16T00:00:00.000Z",
+            handle: "alice",
+            displayName: "Alice",
+            entries: [entry],
+          },
+    );
+    const response = await publishersGetRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://clawhub.ai/api/v1/publishers/publishers%3Aalice/feed/snapshot"),
+      signingEnv(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/vnd.dsse+json");
+    expect(
+      await signedPayload<Record<string, unknown>>(response, PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE),
+    ).toMatchObject({
+      feedId: "clawhub.publisher.publishers:alice",
+      publisherId: "publishers:alice",
+      sequence: 7,
+      entries: [entry],
+    });
+  });
+
+  it("rejects signed snapshot parameters before reading publisher state", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) =>
+      isRateLimitArgs(args) ? okRate() : null,
+    );
+    const response = await publishersGetRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://clawhub.ai/api/v1/publishers/publishers%3Aalice/feed/snapshot?cursor=bad",
+      ),
+      signingEnv(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid publisher snapshot parameter");
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publisherId: "publishers:alice" }),
+    );
+  });
+
+  it("fails signed snapshots closed before publisher storage reads", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) =>
+      isRateLimitArgs(args) ? okRate() : null,
+    );
+    const response = await publishersGetRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://clawhub.ai/api/v1/publishers/publishers%3Aalice/feed/snapshot"),
+      {},
+    );
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publisherId: "publishers:alice" }),
+    );
+  });
+
   it("rejects tampered and stale publisher query cursors", async () => {
     const env = signingEnv();
     const projection = {
@@ -409,7 +489,7 @@ describe("publisher feed HTTP routes", () => {
     expect(reset.status).toBe(409);
     expect(await signedPayload(reset, PUBLISHER_FEED_CHANGES_PAYLOAD_TYPE)).toMatchObject({
       resetRequired: true,
-      snapshotUrl: "https://clawhub.ai/api/v1/publishers/publishers%3Aalice/feed",
+      snapshotUrl: "https://clawhub.ai/api/v1/publishers/publishers%3Aalice/feed/snapshot",
     });
   });
 

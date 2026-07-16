@@ -4,6 +4,7 @@ export declare const PUBLISHER_FEED_DEFAULT_LIMIT = 50;
 export declare const PUBLISHER_FEED_MAX_LIMIT = 100;
 export declare const PUBLISHER_FEED_QUERY_MAX_LIMIT = 200;
 export declare const PUBLISHER_FEED_CHANGE_MAX_LIMIT = 500;
+export declare const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
 export declare const PublisherFeedEntryKindSchema: import("arktype/internal/variants/string.ts").StringType<"plugin" | "skill", {}>;
 export type PublisherFeedEntryKind = (typeof PublisherFeedEntryKindSchema)[inferred];
 export declare const PublisherFeedEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -36,6 +37,26 @@ export declare const PublisherFeedSchema: import("arktype/internal/variants/obje
     nextCursor: string | null;
 }, {}>;
 export type PublisherFeed = (typeof PublisherFeedSchema)[inferred];
+export declare const PublisherFeedSnapshotSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schemaVersion: number;
+    feedId: string;
+    publisherId: string;
+    handle: string | null;
+    displayName: string;
+    generatedAt: string;
+    expiresAt: string;
+    sequence: number;
+    entries: {
+        kind: "plugin" | "skill";
+        id: string;
+        name: string;
+        displayName: string;
+        summary: string | null;
+        url: string;
+        updatedAt: number;
+    }[];
+}, {}>;
+export type PublisherFeedSnapshot = (typeof PublisherFeedSnapshotSchema)[inferred];
 export declare const PublisherFeedQuerySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     text?: string | undefined;
     kinds?: ("plugin" | "skill")[] | undefined;
@@ -182,3 +203,4 @@ export type PublisherFeedResetRequired = (typeof PublisherFeedResetRequiredSchem
 export declare function publisherFeedId(publisherId: string): string;
 export declare function normalizePublisherFeedQuery(value: unknown): PublisherFeedQuery;
 export declare function parsePublisherFeed(value: unknown): PublisherFeed;
+export declare function parsePublisherFeedSnapshot(value: unknown): PublisherFeedSnapshot;

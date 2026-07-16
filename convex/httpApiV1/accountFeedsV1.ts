@@ -16,6 +16,7 @@ import { resolveFeedSigningConfig, type FeedSigningConfig } from "./catalogFeedS
 import {
   PUBLISHER_FEED_CHANGES_PAYLOAD_TYPE,
   PUBLISHER_FEED_QUERY_PAYLOAD_TYPE,
+  PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE,
   decodePublisherProjectionCursor,
   encodePublisherProjectionCursor,
   signedPublisherProjectionResponse,
@@ -444,7 +445,7 @@ async function signedPublisherChangesHandler(params: {
   }
   if (projection.status === "reset-required") {
     const snapshotUrl = new URL(
-      `/api/v1/publishers/${encodeURIComponent(params.publisherId)}/feed`,
+      `/api/v1/publishers/${encodeURIComponent(params.publisherId)}/feed/snapshot`,
       params.request.url,
     ).toString();
     return await signedPublisherProjectionResponse(
@@ -508,6 +509,45 @@ async function signedPublisherChangesHandler(params: {
   );
 }
 
+async function signedPublisherSnapshotHandler(params: {
+  ctx: ActionCtx;
+  request: Request;
+  publisherId: string;
+  config: FeedSigningConfig;
+  rateHeaders: HeadersInit;
+}): Promise<Response> {
+  const url = new URL(params.request.url);
+  if ([...url.searchParams].length > 0) {
+    return text("Invalid publisher snapshot parameter", 400, params.rateHeaders);
+  }
+  const refreshed = await refreshPublisherProjection(
+    params.ctx,
+    params.publisherId,
+    params.rateHeaders,
+  );
+  if ("response" in refreshed) return refreshed.response;
+  const expiresAt = new Date(
+    Math.max(Date.now() + SIGNED_PROJECTION_TTL_MS, Date.parse(refreshed.feed.generatedAt) + 1),
+  ).toISOString();
+  return await signedPublisherProjectionResponse(
+    PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE,
+    {
+      schemaVersion: PUBLISHER_FEED_SCHEMA_VERSION,
+      feedId: refreshed.feed.feedId,
+      publisherId: refreshed.feed.publisherId,
+      handle: refreshed.feed.handle,
+      displayName: refreshed.feed.displayName,
+      generatedAt: refreshed.feed.generatedAt,
+      expiresAt,
+      sequence: refreshed.feed.sequence,
+      entries: refreshed.feed.entries,
+    },
+    params.config,
+    200,
+    params.rateHeaders,
+  );
+}
+
 export async function publishersGetRouterV1Handler(
   ctx: ActionCtx,
   request: Request,
@@ -521,7 +561,11 @@ export async function publishersGetRouterV1Handler(
   const projection = segments?.length === 3 && segments[1] === "feed" ? segments[2] : null;
   if (
     !segments ||
-    (segments.length !== 1 && !isFeed && projection !== "query" && projection !== "changes")
+    (segments.length !== 1 &&
+      !isFeed &&
+      projection !== "snapshot" &&
+      projection !== "query" &&
+      projection !== "changes")
   ) {
     return text("Not found", 404, rate.headers);
   }
@@ -537,24 +581,32 @@ export async function publishersGetRouterV1Handler(
     return json(detail, 200, rate.headers);
   }
 
-  if (projection === "query" || projection === "changes") {
+  if (projection === "snapshot" || projection === "query" || projection === "changes") {
     const signing = await resolveProjectionSigningConfig(env, rate.headers);
     if ("response" in signing) return signing.response;
-    return projection === "query"
-      ? await signedPublisherQueryHandler({
+    return projection === "snapshot"
+      ? await signedPublisherSnapshotHandler({
           ctx,
           request,
           publisherId,
           config: signing.config,
           rateHeaders: rate.headers,
         })
-      : await signedPublisherChangesHandler({
-          ctx,
-          request,
-          publisherId,
-          config: signing.config,
-          rateHeaders: rate.headers,
-        });
+      : projection === "query"
+        ? await signedPublisherQueryHandler({
+            ctx,
+            request,
+            publisherId,
+            config: signing.config,
+            rateHeaders: rate.headers,
+          })
+        : await signedPublisherChangesHandler({
+            ctx,
+            request,
+            publisherId,
+            config: signing.config,
+            rateHeaders: rate.headers,
+          });
   }
 
   const params = parseFeedReadParams(request, rate.headers);

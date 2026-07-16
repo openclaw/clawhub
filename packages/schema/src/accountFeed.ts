@@ -5,6 +5,7 @@ export const PUBLISHER_FEED_DEFAULT_LIMIT = 50;
 export const PUBLISHER_FEED_MAX_LIMIT = 100;
 export const PUBLISHER_FEED_QUERY_MAX_LIMIT = 200;
 export const PUBLISHER_FEED_CHANGE_MAX_LIMIT = 500;
+export const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
 
 export const PublisherFeedEntryKindSchema = type('"skill"|"plugin"');
 export type PublisherFeedEntryKind = (typeof PublisherFeedEntryKindSchema)[inferred];
@@ -34,6 +35,20 @@ export const PublisherFeedSchema = type({
   nextCursor: "string|null",
 });
 export type PublisherFeed = (typeof PublisherFeedSchema)[inferred];
+
+export const PublisherFeedSnapshotSchema = type({
+  "+": "reject",
+  schemaVersion: "number",
+  feedId: "string",
+  publisherId: "string",
+  handle: "string|null",
+  displayName: "string",
+  generatedAt: "string",
+  expiresAt: "string",
+  sequence: "number",
+  entries: PublisherFeedEntrySchema.array(),
+});
+export type PublisherFeedSnapshot = (typeof PublisherFeedSnapshotSchema)[inferred];
 
 export const PublisherFeedQuerySchema = type({
   "+": "reject",
@@ -214,4 +229,28 @@ export function parsePublisherFeed(value: unknown): PublisherFeed {
     }
   }
   return feed;
+}
+
+export function parsePublisherFeedSnapshot(value: unknown): PublisherFeedSnapshot {
+  const snapshot = PublisherFeedSnapshotSchema.assert(value);
+  const { expiresAt, ...feed } = snapshot;
+  parsePublisherFeed({ ...feed, nextCursor: null });
+  if (
+    !Number.isFinite(Date.parse(expiresAt)) ||
+    Date.parse(expiresAt) <= Date.parse(snapshot.generatedAt)
+  ) {
+    throw new Error("Publisher feed snapshot expiresAt must be later than generatedAt");
+  }
+  if (snapshot.entries.length > PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES) {
+    throw new Error("Publisher feed snapshot exceeds the entry limit");
+  }
+  const identities = new Set<string>();
+  for (const entry of snapshot.entries) {
+    const identity = `${entry.kind}\0${entry.id}`;
+    if (identities.has(identity)) {
+      throw new Error("Publisher feed snapshot contains duplicate entries");
+    }
+    identities.add(identity);
+  }
+  return snapshot;
 }

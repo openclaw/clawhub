@@ -3,6 +3,7 @@ import {
   PublisherFeedChangePageSchema,
   PublisherFeedQueryPageSchema,
   PublisherFeedResetRequiredSchema,
+  parsePublisherFeed,
   publisherFeedId,
   type PublisherFeedQuery,
 } from "clawhub-schema";
@@ -11,6 +12,7 @@ import { signFeedPayload } from "./catalogFeedSigning";
 
 export const PUBLISHER_FEED_QUERY_PAYLOAD_TYPE = "openclaw.clawhub-publisher-feed-query-results.v1";
 export const PUBLISHER_FEED_CHANGES_PAYLOAD_TYPE = "openclaw.clawhub-publisher-feed-changes.v1";
+export const PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE = "openclaw.clawhub-publisher-feed-snapshot.v1";
 const PUBLISHER_FEED_CURSOR_PAYLOAD_TYPE = "openclaw.clawhub-publisher-feed-cursor.v1";
 
 const CURSOR_MAX_LENGTH = 4096;
@@ -39,6 +41,8 @@ export type PublisherChangesCursor = CursorBase & {
 };
 
 export type PublisherProjectionCursor = PublisherQueryCursor | PublisherChangesCursor;
+
+const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
 
 function base64UrlEncode(bytes: Uint8Array) {
   let binary = "";
@@ -74,6 +78,46 @@ function isSafeNonNegativeInteger(value: unknown): value is number {
 
 function hasExactKeys(record: Record<string, unknown>, keys: string[]) {
   return Object.keys(record).sort().join("\u0000") === [...keys].sort().join("\u0000");
+}
+
+function assertPublisherFeedSnapshot(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Invalid publisher feed snapshot");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    !hasExactKeys(record, [
+      "schemaVersion",
+      "feedId",
+      "publisherId",
+      "handle",
+      "displayName",
+      "generatedAt",
+      "expiresAt",
+      "sequence",
+      "entries",
+    ]) ||
+    typeof record.expiresAt !== "string"
+  ) {
+    throw new Error("Invalid publisher feed snapshot");
+  }
+  const { expiresAt, ...feed } = record;
+  const parsed = parsePublisherFeed({ ...feed, nextCursor: null });
+  if (
+    !Number.isFinite(Date.parse(expiresAt)) ||
+    Date.parse(expiresAt) <= Date.parse(parsed.generatedAt) ||
+    parsed.entries.length > PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES
+  ) {
+    throw new Error("Invalid publisher feed snapshot bounds");
+  }
+  const identities = new Set<string>();
+  for (const entry of parsed.entries) {
+    const identity = `${entry.kind}\0${entry.id}`;
+    if (identities.has(identity)) {
+      throw new Error("Invalid publisher feed snapshot duplicate entry");
+    }
+    identities.add(identity);
+  }
 }
 
 function parseCursorPayload(value: unknown): PublisherProjectionCursor | null {
@@ -177,6 +221,7 @@ export async function decodePublisherProjectionCursor(
 
 export async function signedPublisherProjectionResponse(
   payloadType:
+    | typeof PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE
     | typeof PUBLISHER_FEED_QUERY_PAYLOAD_TYPE
     | typeof PUBLISHER_FEED_CHANGES_PAYLOAD_TYPE,
   payload: unknown,
@@ -184,7 +229,9 @@ export async function signedPublisherProjectionResponse(
   status = 200,
   additionalHeaders?: HeadersInit,
 ) {
-  if (payloadType === PUBLISHER_FEED_QUERY_PAYLOAD_TYPE) {
+  if (payloadType === PUBLISHER_FEED_SNAPSHOT_PAYLOAD_TYPE) {
+    assertPublisherFeedSnapshot(payload);
+  } else if (payloadType === PUBLISHER_FEED_QUERY_PAYLOAD_TYPE) {
     PublisherFeedQueryPageSchema.assert(payload);
   } else if ((payload as { resetRequired?: unknown }).resetRequired === true) {
     PublisherFeedResetRequiredSchema.assert(payload);

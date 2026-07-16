@@ -3,6 +3,7 @@ import {
   normalizePublisherFeedQuery,
   PUBLISHER_FEED_SCHEMA_VERSION,
   parsePublisherFeed,
+  parsePublisherFeedSnapshot,
   publisherFeedId,
   type PublisherFeed,
 } from "./accountFeed";
@@ -79,5 +80,27 @@ describe("publisher feed schema", () => {
       parsePublisherFeed(makeFeed({ entries: [{ ...entry, url: "https://example.com/skill" }] }))
         .entries[0]?.url,
     ).toBe("https://example.com/skill");
+  });
+
+  it("validates complete signed snapshot bounds and identity uniqueness", () => {
+    const feed = makeFeed();
+    const snapshot = {
+      ...feed,
+      expiresAt: "2026-07-16T00:05:00.000Z",
+    };
+    delete (snapshot as Partial<PublisherFeed>).nextCursor;
+    expect(parsePublisherFeedSnapshot(snapshot).sequence).toBe(1);
+    expect(() =>
+      parsePublisherFeedSnapshot({
+        ...snapshot,
+        expiresAt: snapshot.generatedAt,
+      }),
+    ).toThrow("later than generatedAt");
+    expect(() =>
+      parsePublisherFeedSnapshot({
+        ...snapshot,
+        entries: [feed.entries[0], feed.entries[0]],
+      }),
+    ).toThrow("duplicate entries");
   });
 });
