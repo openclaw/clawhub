@@ -21,6 +21,8 @@ before installation.
 ```text
 GET /api/v1/publishers/{publisherId}
 GET /api/v1/publishers/{publisherId}/feed?limit=50&cursor=<opaque>
+GET /api/v1/publishers/{publisherId}/feed/query?q=<text>&kind=<kind>&limit=50
+GET /api/v1/publishers/{publisherId}/feed/changes?fromSequence=<sequence>&limit=100
 ```
 
 The detail route returns bounded public publisher fields and the canonical feed
@@ -79,10 +81,15 @@ Text queries normalize to NFC, trim and collapse the RFC-defined ASCII
 whitespace set, preserve case in the signed query value, and use deterministic
 case-insensitive matching. Query arrays are sorted and deduplicated.
 
-These functions are internal on purpose. A follow-up route must bind their
-offsets to integrity-protected cursors and sign the strict query/change payload
-types with the shared ClawHub feed signer. There is no unsigned public query or
-delta endpoint.
+The query and change routes sign every strict response with the shared ClawHub
+feed signer. Continuation cursors are integrity-protected and bind publisher
+identity, feed revision or change range, normalized query, page position, and
+expiry. Continuations accept only the cursor so callers cannot alter filters or
+ranges between pages. There is no unsigned public query or delta endpoint.
+
+When retained history cannot satisfy a change request, the route returns a
+signed `409` reset instruction pointing to the publisher's complete atomic feed.
+The scalable signed shard-root representation remains a separate follow-up.
 
 ## Durable Change History
 
@@ -121,7 +128,7 @@ notify locally when an update affects content installed in that instance.
 ## Signing Boundary
 
 Publisher query and change pages use distinct payload types and expected
-publisher-feed identity binding. They may use the same dedicated ClawHub
-platform feed-signing key as the public catalog, but the catalog payload type
-must not be reused. Public route wiring remains in the signer-dependent child
-PR.
+publisher-feed identity binding. They use the same dedicated ClawHub platform
+feed-signing key as the public catalog, but the catalog payload type is not
+reused. Missing or malformed atomic signing configuration fails closed before
+publisher projection storage is read.
