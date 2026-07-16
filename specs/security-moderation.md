@@ -302,7 +302,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   findings is a completed scanner stage when SkillSpector uses exit code `1`
   with a `suspicious` or `malicious` report containing at least one finding.
   Other nonzero exits remain failures. Scanner-stage failures also include a
-  timeout, missing or unparseable report, or parsed `error`/`failed` status.
+  timeout, missing process exit status, missing or unparseable report, or
+  parsed `error`/`failed` status.
 - Retained worker diagnostics preserve every redacted Codex/legacy output
   record plus complete redacted ClawScan artifacts, per-scanner outputs, and
   comparison records without per-file or aggregate-size truncation. Bounded

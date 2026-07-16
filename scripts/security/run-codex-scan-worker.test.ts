@@ -164,6 +164,25 @@ describe("run-codex-scan-worker diagnostics", () => {
       });
     });
 
+    it("treats a missing process exit status as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpector: {
+            ...baseInput.skillSpector,
+            exitCode: undefined,
+            rawResult: JSON.stringify({
+              status: "suspicious",
+              issue_count: 1,
+              issues: [],
+            }),
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
     it.each([undefined, "{malformed"])(
       "treats a nonzero exit with %s captured output as a scanner failure",
       (rawResult) => {

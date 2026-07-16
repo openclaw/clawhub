@@ -1926,6 +1926,7 @@ export function scanHealthClassification(input: {
       input.skillSpector.exitCode === 1 &&
       (skillSpectorStatus === "suspicious" || skillSpectorStatus === "malicious") &&
       (skillSpectorIssueCount ?? 0) > 0;
+    const missingExitStatus = skillSpectorRan && input.skillSpector.exitCode === undefined;
     const unexpectedExit =
       input.skillSpector.exitCode !== undefined &&
       input.skillSpector.exitCode !== 0 &&
@@ -1933,6 +1934,7 @@ export function scanHealthClassification(input: {
     scannerStageFailed =
       input.skillSpector.timedOut === true ||
       (skillSpectorRan && skillSpectorStatus === undefined) ||
+      missingExitStatus ||
       unexpectedExit ||
       skillSpectorStatus === "error" ||
       skillSpectorStatus === "failed";
