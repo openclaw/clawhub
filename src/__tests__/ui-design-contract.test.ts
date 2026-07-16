@@ -104,7 +104,6 @@ describe("restored UI design contract", () => {
     const css = styles();
 
     for (const selector of [
-      ".home-v2-headline-trigger",
       ".home-v2-listing-search-bar",
       ".home-v2-listing-search-close",
       ".home-v2-listing-category-trigger",
@@ -335,7 +334,7 @@ describe("restored UI design contract", () => {
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
   });
 
-  it("requires the experiment hero and canonical home catalog without later sections", () => {
+  it("requires the static hero and canonical home catalog without later sections", () => {
     const homeSource = home();
     const listingSource = read("src/components/HomeListingSection.tsx");
     const appsSource = read("src/components/HomeAppsSection.tsx");
@@ -344,6 +343,12 @@ describe("restored UI design contract", () => {
 
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(cssRule(css, ".home-v2-static-headline")).toContain(
+      "color: var(--oc-palette-coral-light-deep)",
+    );
+    expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
+      css.lastIndexOf(".home-v2-action-word"),
+    );
     expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
     expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented oc-segmented");
     expect(listingSource).toContain(
