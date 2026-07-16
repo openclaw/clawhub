@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PromotionsBar } from "./PromotionsBar";
 
@@ -44,10 +44,12 @@ describe("PromotionsBar", () => {
     publicApiUrlMock.mockReset();
     publicApiUrlMock.mockReturnValue(new URL("https://clawhub.test/api/v1/promotions"));
     vi.stubGlobal("fetch", fetchMock);
+    window.localStorage.clear();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -110,5 +112,83 @@ describe("PromotionsBar", () => {
     expect(screen.getByText("Tencent's latest model, free until July 21")).toBeTruthy();
     expect(screen.queryByText(/days left/)).toBeNull();
     expect(container.querySelector('img[src="/tencent-hy-favicon.png"]')).toBeTruthy();
+  });
+
+  it("keeps a dismissed promotion hidden for the same campaign window", async () => {
+    const activePromotion = { ...promotion, endsAt: 200_000 };
+    fetchMock.mockResolvedValue(promotionsResponse([activePromotion]));
+
+    const { unmount } = render(<PromotionsBar />);
+    await flushPromises();
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Dismiss ${activePromotion.title} promotion`,
+      }),
+    );
+
+    expect(screen.queryByText(activePromotion.title)).toBeNull();
+    expect(
+      window.localStorage.getItem(
+        `clawhub.promotion.dismissed.${activePromotion.slug}.${activePromotion.endsAt}`,
+      ),
+    ).toBe("1");
+
+    unmount();
+    render(<PromotionsBar />);
+    await flushPromises();
+
+    expect(screen.queryByText(activePromotion.title)).toBeNull();
+  });
+
+  it("shows a later campaign window after an earlier one was dismissed", async () => {
+    const earlierPromotion = { ...promotion, endsAt: 200_000 };
+    window.localStorage.setItem(
+      `clawhub.promotion.dismissed.${earlierPromotion.slug}.${earlierPromotion.endsAt}`,
+      "1",
+    );
+    fetchMock.mockResolvedValue(promotionsResponse([{ ...earlierPromotion, endsAt: 300_000 }]));
+
+    render(<PromotionsBar />);
+    await flushPromises();
+
+    expect(screen.getByText(earlierPromotion.title)).toBeTruthy();
+  });
+
+  it("renders promotions when storage reads are unavailable", async () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("Storage blocked", "SecurityError");
+    });
+    fetchMock.mockResolvedValue(promotionsResponse([{ ...promotion, endsAt: 200_000 }]));
+
+    render(<PromotionsBar />);
+    await flushPromises();
+
+    expect(screen.getByText(promotion.title)).toBeTruthy();
+  });
+
+  it("dismisses the current promotion when storage writes are unavailable", async () => {
+    const activePromotion = { ...promotion, endsAt: 200_000 };
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage full", "QuotaExceededError");
+    });
+    fetchMock.mockResolvedValue(promotionsResponse([activePromotion]));
+
+    render(<PromotionsBar />);
+    await flushPromises();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Dismiss ${activePromotion.title} promotion`,
+      }),
+    );
+
+    expect(screen.queryByText(activePromotion.title)).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(activePromotion.title)).toBeNull();
   });
 });

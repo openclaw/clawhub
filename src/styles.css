@@ -25675,6 +25675,13 @@ a.search-empty-action {
   text-overflow: ellipsis;
 }
 
+.promotion-bar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
 .promotion-bar-link {
   display: inline-flex;
   align-items: center;
@@ -25702,6 +25709,26 @@ a.search-empty-action {
   height: 12px;
 }
 
+.promotion-bar-dismiss {
+  display: inline-grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--oc-radius-control);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.promotion-bar-dismiss:hover,
+.promotion-bar-dismiss:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
 @media (max-width: 760px) {
   .promotion-bar-track {
     padding: 0;
@@ -25717,6 +25744,10 @@ a.search-empty-action {
 
   .promotion-bar-copy {
     gap: 0;
+  }
+
+  .promotion-bar-actions {
+    gap: 4px;
   }
 
   .promotion-bar-separator,

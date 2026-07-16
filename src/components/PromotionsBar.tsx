@@ -1,6 +1,6 @@
 import { ApiRoutes } from "clawhub-schema/routes";
-import { ArrowUpRight, Gift } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowUpRight, Gift, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { publicApiUrl } from "../lib/publicApiUrl";
 
 type PublicPromotion = {
@@ -14,6 +14,22 @@ type PublicPromotion = {
 };
 
 const PROMOTIONS_POLL_INTERVAL_MS = 60_000;
+const PROMOTION_DISMISSED_KEY_PREFIX = "clawhub.promotion.dismissed";
+
+function promotionDismissedKey(promotion: PublicPromotion) {
+  return `${PROMOTION_DISMISSED_KEY_PREFIX}.${promotion.slug}.${promotion.endsAt}`;
+}
+
+function isPromotionDismissed(promotion: PublicPromotion, dismissedKeys: ReadonlySet<string>) {
+  const key = promotionDismissedKey(promotion);
+  if (dismissedKeys.has(key)) return true;
+
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
 
 function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) {
   return promotions.reduce(
@@ -47,7 +63,13 @@ function promotionMetaCopy(promotion: PublicPromotion) {
   return promotion.blurb;
 }
 
-function PromotionBarItem({ promotion }: { promotion: PublicPromotion }) {
+function PromotionBarItem({
+  promotion,
+  onDismiss,
+}: {
+  promotion: PublicPromotion;
+  onDismiss: (promotion: PublicPromotion) => void;
+}) {
   const ctaUrl = promotionCtaUrl(promotion);
   const isTencentPromotion = isTencentHyPromotion(promotion.title);
 
@@ -74,17 +96,40 @@ function PromotionBarItem({ promotion }: { promotion: PublicPromotion }) {
         <span className="promotion-bar-separator" aria-hidden="true" />
         <span className="promotion-bar-meta">{promotionMetaCopy(promotion)}</span>
       </div>
-      {ctaUrl ? (
-        <a className="promotion-bar-link" href={ctaUrl} target="_blank" rel="noopener noreferrer">
-          Try it free <ArrowUpRight size={15} aria-hidden="true" />
-        </a>
-      ) : null}
+      <div className="promotion-bar-actions">
+        {ctaUrl ? (
+          <a className="promotion-bar-link" href={ctaUrl} target="_blank" rel="noopener noreferrer">
+            Try it free <ArrowUpRight size={15} aria-hidden="true" />
+          </a>
+        ) : null}
+        <button
+          type="button"
+          className="promotion-bar-dismiss"
+          aria-label={`Dismiss ${promotion.title} promotion`}
+          title="Dismiss promotion"
+          onClick={() => onDismiss(promotion)}
+        >
+          <X size={14} aria-hidden="true" />
+        </button>
+      </div>
     </article>
   );
 }
 
 export function PromotionsBar() {
   const [promotions, setPromotions] = useState<PublicPromotion[]>([]);
+  const dismissedKeys = useRef(new Set<string>());
+
+  function dismissPromotion(promotion: PublicPromotion) {
+    const key = promotionDismissedKey(promotion);
+    dismissedKeys.current.add(key);
+    try {
+      window.localStorage.setItem(key, "1");
+    } catch {
+      // Persistence is optional; the current banner should still close.
+    }
+    setPromotions((current) => current.filter((item) => promotionDismissedKey(item) !== key));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +153,9 @@ export function PromotionsBar() {
         if (!response.ok) throw new Error(`Promotions request failed: ${response.status}`);
         const payload = (await response.json()) as { promotions?: PublicPromotion[] };
         if (!Array.isArray(payload.promotions)) throw new Error("Invalid promotions response");
-        const active = payload.promotions;
+        const active = payload.promotions.filter(
+          (promotion) => !isPromotionDismissed(promotion, dismissedKeys.current),
+        );
         if (cancelled) return;
         setPromotions(active);
         scheduleRefresh(active);
@@ -134,7 +181,11 @@ export function PromotionsBar() {
       </h2>
       <div className="promotion-bar-track">
         {promotions.map((promotion) => (
-          <PromotionBarItem key={promotion.slug} promotion={promotion} />
+          <PromotionBarItem
+            key={`${promotion.slug}.${promotion.endsAt}`}
+            promotion={promotion}
+            onDismiss={dismissPromotion}
+          />
         ))}
       </div>
     </section>
