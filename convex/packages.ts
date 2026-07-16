@@ -999,6 +999,7 @@ type PublicPackageDoc = {
   compatibility?: Doc<"packages">["compatibility"];
   verification?: Doc<"packages">["verification"];
   artifact?: PackageArtifactSummary;
+  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   scanStatus?: Doc<"packages">["scanStatus"];
   stats: Doc<"packages">["stats"];
   createdAt: number;
@@ -1204,6 +1205,10 @@ function toPublicPackage(
         : isPublishedPackageRelease(latestRelease)
           ? packageArtifactSummary(latestRelease)
           : undefined,
+    clawManifestSummary:
+      pkg.family === "claw" && latestRelease && !latestRelease.softDeletedAt
+        ? latestRelease.clawManifestSummary
+        : undefined,
     scanStatus,
     stats: pkg.stats,
     createdAt: pkg.createdAt,
@@ -3225,7 +3230,12 @@ export const list = query({
 export const listPublicPage = query({
   args: {
     family: v.optional(
-      v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+      v.union(
+        v.literal("skill"),
+        v.literal("code-plugin"),
+        v.literal("bundle-plugin"),
+        v.literal("claw"),
+      ),
     ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
@@ -3702,7 +3712,12 @@ export const listPluginExportPageInternal = internalQuery({
 export const listPageForViewerInternal = internalQuery({
   args: {
     family: v.optional(
-      v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+      v.union(
+        v.literal("skill"),
+        v.literal("code-plugin"),
+        v.literal("bundle-plugin"),
+        v.literal("claw"),
+      ),
     ),
     families: v.optional(
       v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
@@ -4250,7 +4265,12 @@ export const searchPublic = query({
     query: v.string(),
     limit: v.optional(v.number()),
     family: v.optional(
-      v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+      v.union(
+        v.literal("skill"),
+        v.literal("code-plugin"),
+        v.literal("bundle-plugin"),
+        v.literal("claw"),
+      ),
     ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
@@ -4271,7 +4291,12 @@ export const searchForViewerInternal = internalQuery({
     query: v.string(),
     limit: v.optional(v.number()),
     family: v.optional(
-      v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+      v.union(
+        v.literal("skill"),
+        v.literal("code-plugin"),
+        v.literal("bundle-plugin"),
+        v.literal("claw"),
+      ),
     ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),

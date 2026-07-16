@@ -34,6 +34,7 @@ import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
+import { experimentalClawsEnabled } from "../lib/experimentalClaws";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -312,6 +313,11 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 }
 
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
+const PACKAGE_FAMILY_VALUES_WITH_CLAWS = [...PACKAGE_FAMILY_VALUES, "claw"] as const;
+
+function publicPackageFamilyValues() {
+  return experimentalClawsEnabled() ? PACKAGE_FAMILY_VALUES_WITH_CLAWS : PACKAGE_FAMILY_VALUES;
+}
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = [
@@ -462,7 +468,7 @@ function parsePackageOfficialMigrationPhase(
 }
 
 type PackageListQueryArgs = {
-  family?: "skill" | "code-plugin" | "bundle-plugin";
+  family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
   highlightedOnly?: boolean;
@@ -521,6 +527,7 @@ type ReleaseLike = {
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
   pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
+  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -828,7 +835,7 @@ async function resolvePackageTags(
 type CatalogListItem = {
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
   runtimeId?: string | null;
   channel: "official" | "community" | "private";
   isOfficial: boolean;
@@ -1161,7 +1168,7 @@ async function searchPackageCatalog(
   args: {
     query: string;
     limit: number;
-    family?: "skill" | "code-plugin" | "bundle-plugin";
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
@@ -1549,7 +1556,7 @@ async function listPackages(
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const rawCursor = url.searchParams.get("cursor");
-  const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
+  const familyParam = parseEnumQueryParam(url.searchParams, "family", publicPackageFamilyValues());
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
   if (!channelParam.ok) return text(channelParam.message, 400, rate.headers);
@@ -1585,14 +1592,19 @@ async function listPackages(
       : options?.defaultSort;
   const isLegacyInstallSortRequest = sortParam.value === "installs";
   const effectiveSort = normalizePublicPackageSort(sortParam.value ?? pluginDefaultSort);
-  if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
+  if (
+    category &&
+    (effectiveFamily === "skill" ||
+      effectiveFamily === "claw" ||
+      (!effectiveFamily && includeSkills))
+  ) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
       400,
       rate.headers,
     );
   }
-  if (effectiveSort === "trending" && includeSkills) {
+  if (effectiveSort === "trending" && (includeSkills || effectiveFamily === "claw")) {
     return text(
       "Trending sort is only supported for plugin package endpoints; use /api/v1/skills?sort=trending for skills.",
       400,
@@ -3447,7 +3459,7 @@ async function searchPackages(
   const queryText = url.searchParams.get("q")?.trim() ?? "";
   if (!queryText) return text("Missing q query parameter", 400, rate.headers);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-  const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
+  const familyParam = parseEnumQueryParam(url.searchParams, "family", publicPackageFamilyValues());
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
   if (!channelParam.ok) return text(channelParam.message, 400, rate.headers);
@@ -3470,7 +3482,7 @@ async function searchPackages(
   }
   const family = familyParam.value;
   const includeSkills = options?.includeSkills ?? family === undefined;
-  if (category && (family === "skill" || (!family && includeSkills))) {
+  if (category && (family === "skill" || family === "claw" || (!family && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
       400,
@@ -4036,6 +4048,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           })),
           compatibility: result.version.compatibility ?? null,
           pluginManifestSummary: result.version.pluginManifestSummary ?? null,
+          clawManifestSummary: result.version.clawManifestSummary ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
@@ -4347,7 +4360,7 @@ type PublicPackageDocLike = {
   _id: Id<"packages">;
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
   tags: Record<string, Id<"packageReleases">>;
   latestReleaseId?: Id<"packageReleases">;
   channel: "official" | "community" | "private";
@@ -4370,6 +4383,7 @@ type PublicPackageDocLike = {
     npmUnpackedSize?: number;
     npmFileCount?: number;
   };
+  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;

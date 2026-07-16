@@ -38,7 +38,8 @@ namespaced key or define their own profile-pointer contract.
 2. Add feature-gated authenticated publication, package-content validation,
    CLI authoring support, and authoring docs
    ([PR #3090](https://github.com/openclaw/clawhub/pull/3090)).
-3. Add feature-gated search, detail, and API surfaces.
+3. Add feature-gated search, detail, and API surfaces
+   ([PR #3091](https://github.com/openclaw/clawhub/pull/3091)).
 4. Add hosted feed export and a published-package end-to-end proof through
    OpenClaw `claws add --dry-run`.
 

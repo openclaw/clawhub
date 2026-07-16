@@ -16531,16 +16531,16 @@ describe("restorePackageInternal", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
   });
 
-  it("fails closed on Claw reads and never exposes the extracted manifest", async () => {
+  it("gates Claw named reads and exposes only the safe manifest summary when enabled", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     const clawManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "demo-claw" },
-      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 0 },
-      packages: { skillCount: 0, pluginCount: 0 },
-      mcpServerCount: 0,
-      cronJobCount: 0,
+      agent: { id: "demo-claw", name: "Demo Claw", description: "Triage agent" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
+      packages: { skillCount: 1, pluginCount: 1 },
+      mcpServerCount: 1,
+      cronJobCount: 1,
     };
     const { ctx } = makePackageCtx({
       pkg: makePackageDoc({ family: "claw" }),
@@ -16563,14 +16563,20 @@ describe("restorePackageInternal", () => {
 
       process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
       const detail = await getByNameHandler(ctx, { name: "demo-plugin" });
-      expect(detail?.latestRelease).toMatchObject({ clawManifestSummary });
+      expect(detail).toMatchObject({
+        package: { family: "claw", clawManifestSummary },
+        latestRelease: { clawManifestSummary },
+      });
       expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
 
       const version = await getVersionByNameHandler(ctx, {
         name: "demo-plugin",
         version: "1.0.0",
       });
-      expect(version?.version).toMatchObject({ clawManifestSummary });
+      expect(version).toMatchObject({
+        package: { family: "claw", clawManifestSummary },
+        version: { clawManifestSummary },
+      });
       expect(version?.version).not.toHaveProperty("extractedClawManifest");
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;

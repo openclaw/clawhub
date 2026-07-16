@@ -1,4 +1,5 @@
 import { type inferred, type } from "arktype";
+import { ClawManifestSummarySchema } from "./claws.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
@@ -398,6 +399,7 @@ export const ApiV1PackageResponseSchema = type({
     tags: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+    clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -434,6 +436,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     files: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+    clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.

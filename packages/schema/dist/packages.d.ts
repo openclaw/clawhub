@@ -475,6 +475,24 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
                 size: number;
             }[];
         } | null | undefined;
+        clawManifestSummary?: {
+            schemaVersion: 1;
+            agent: {
+                id: string;
+                name?: string | undefined;
+                description?: string | undefined;
+            };
+            workspace: {
+                bootstrapFiles: string[];
+                fileCount: number;
+            };
+            packages: {
+                skillCount: number;
+                pluginCount: number;
+            };
+            mcpServerCount: number;
+            cronJobCount: number;
+        } | null | undefined;
         verification?: {
             tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
             scope: "artifact-only" | "dependency-graph-aware";
@@ -578,6 +596,24 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
                 sha256: string;
                 size: number;
             }[];
+        } | null | undefined;
+        clawManifestSummary?: {
+            schemaVersion: 1;
+            agent: {
+                id: string;
+                name?: string | undefined;
+                description?: string | undefined;
+            };
+            workspace: {
+                bootstrapFiles: string[];
+                fileCount: number;
+            };
+            packages: {
+                skillCount: number;
+                pluginCount: number;
+            };
+            mcpServerCount: number;
+            cronJobCount: number;
         } | null | undefined;
         verification?: {
             tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";

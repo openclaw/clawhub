@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { ClawManifestSummarySchema } from "./claws.js";
 import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
@@ -325,6 +326,7 @@ export const ApiV1PackageResponseSchema = type({
         tags: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+        clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -359,6 +361,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         files: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+        clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.

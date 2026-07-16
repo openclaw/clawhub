@@ -16628,4 +16628,127 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(403);
     expect(await response.text()).toBe(moderationMessage);
   });
+
+  it("keeps Claw list and search filters unavailable while the gate is disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    try {
+      const ctx = makeCtx({});
+      const listResponse = await __handlers.listPackagesV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages?family=claw"),
+      );
+      const searchResponse = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages/search?q=triage&family=claw"),
+      );
+
+      expect(listResponse.status).toBe(400);
+      await expect(listResponse.text()).resolves.toBe("Invalid family query parameter");
+      expect(searchResponse.status).toBe(400);
+      await expect(searchResponse.text()).resolves.toBe("Invalid family query parameter");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("lists and returns safe Claw details while the gate is enabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const clawManifestSummary = {
+      schemaVersion: 1,
+      agent: { id: "triage", name: "Triage", description: "Triage agent" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
+      packages: { skillCount: 1, pluginCount: 0 },
+      mcpServerCount: 1,
+      cronJobCount: 1,
+    };
+    const packageItem = {
+      _id: "packages:triage",
+      name: "triage-claw",
+      displayName: "Triage Claw",
+      family: "claw",
+      runtimeId: null,
+      channel: "community",
+      isOfficial: false,
+      summary: "Triage agent",
+      icon: null,
+      ownerHandle: "owner",
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersion: "1.0.0",
+      categories: [],
+      topics: [],
+      verificationTier: null,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      tags: {},
+      compatibility: null,
+      verification: null,
+      artifact: null,
+      clawManifestSummary,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("paginationOpts" in args) {
+        return { page: [packageItem], isDone: true, continueCursor: "" };
+      }
+      if ("name" in args) {
+        if ("version" in args) {
+          return {
+            package: packageItem,
+            version: {
+              _id: "packageReleases:triage-1",
+              packageId: "packages:triage",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Initial release",
+              files: [],
+              clawManifestSummary,
+            },
+          };
+        }
+        return {
+          package: packageItem,
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner", displayName: "Owner" },
+        };
+      }
+      if ("releaseIds" in args) return [];
+      return null;
+    });
+
+    try {
+      const ctx = makeCtx({ runQuery });
+      const listResponse = await __handlers.listPackagesV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages?family=claw"),
+      );
+      if (listResponse.status !== 200) throw new Error(await listResponse.text());
+      await expect(listResponse.json()).resolves.toMatchObject({
+        items: [{ name: "triage-claw", family: "claw" }],
+      });
+
+      const detailResponse = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages/triage-claw"),
+      );
+      if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
+      await expect(detailResponse.json()).resolves.toMatchObject({
+        package: { name: "triage-claw", family: "claw", clawManifestSummary },
+      });
+
+      const versionResponse = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
+      );
+      if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
+      await expect(versionResponse.json()).resolves.toMatchObject({
+        package: { name: "triage-claw", family: "claw" },
+        version: { version: "1.0.0", clawManifestSummary },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
 });
