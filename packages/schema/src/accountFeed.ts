@@ -1,15 +1,15 @@
 import { type inferred, type } from "arktype";
 
-export const ACCOUNT_FEED_SCHEMA_VERSION = 1;
-export const ACCOUNT_FEED_DEFAULT_LIMIT = 50;
-export const ACCOUNT_FEED_MAX_LIMIT = 100;
+export const PUBLISHER_FEED_SCHEMA_VERSION = 1;
+export const PUBLISHER_FEED_DEFAULT_LIMIT = 50;
+export const PUBLISHER_FEED_MAX_LIMIT = 100;
 
-export const AccountFeedEntryKindSchema = type('"skill"|"plugin"');
-export type AccountFeedEntryKind = (typeof AccountFeedEntryKindSchema)[inferred];
+export const PublisherFeedEntryKindSchema = type('"skill"|"plugin"');
+export type PublisherFeedEntryKind = (typeof PublisherFeedEntryKindSchema)[inferred];
 
-export const AccountFeedEntrySchema = type({
+export const PublisherFeedEntrySchema = type({
   "+": "reject",
-  kind: AccountFeedEntryKindSchema,
+  kind: PublisherFeedEntryKindSchema,
   id: "string",
   name: "string",
   displayName: "string",
@@ -17,56 +17,62 @@ export const AccountFeedEntrySchema = type({
   url: "string",
   updatedAt: "number",
 });
-export type AccountFeedEntry = (typeof AccountFeedEntrySchema)[inferred];
+export type PublisherFeedEntry = (typeof PublisherFeedEntrySchema)[inferred];
 
-export const AccountFeedSchema = type({
+export const PublisherFeedSchema = type({
   "+": "reject",
   schemaVersion: "number",
   feedId: "string",
-  scope: '"account"|"publisher"',
-  accountId: "string|null",
-  publisherId: "string|null",
+  publisherId: "string",
   handle: "string|null",
   displayName: "string",
   generatedAt: "string",
   sequence: "number",
-  entries: AccountFeedEntrySchema.array(),
+  entries: PublisherFeedEntrySchema.array(),
   nextCursor: "string|null",
 });
-export type AccountFeed = (typeof AccountFeedSchema)[inferred];
+export type PublisherFeed = (typeof PublisherFeedSchema)[inferred];
 
-export function accountFeedId(scope: "account" | "publisher", stableId: string) {
-  return `clawhub.${scope}.${stableId}`;
+export function publisherFeedId(publisherId: string) {
+  return `clawhub.publisher.${publisherId}`;
 }
 
-export function parseAccountFeed(value: unknown): AccountFeed {
-  const feed = AccountFeedSchema.assert(value);
-  if (feed.schemaVersion !== ACCOUNT_FEED_SCHEMA_VERSION) {
-    throw new Error(`Unsupported account feed schema version: ${feed.schemaVersion}`);
+function containsAsciiControlCharacter(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit <= 0x1f || codeUnit === 0x7f) return true;
   }
-  const stableId = feed.scope === "account" ? feed.accountId : feed.publisherId;
-  if (!stableId) {
-    throw new Error(`${feed.scope} feed must include its stable identity`);
+  return false;
+}
+
+export function parsePublisherFeed(value: unknown): PublisherFeed {
+  const feed = PublisherFeedSchema.assert(value);
+  if (feed.schemaVersion !== PUBLISHER_FEED_SCHEMA_VERSION) {
+    throw new Error(`Unsupported publisher feed schema version: ${feed.schemaVersion}`);
   }
-  if (feed.feedId !== accountFeedId(feed.scope, stableId)) {
-    throw new Error("Account feed id does not match its scope and stable identity");
+  if (!feed.publisherId || feed.feedId !== publisherFeedId(feed.publisherId)) {
+    throw new Error("Publisher feed id does not match its stable publisher identity");
   }
   if (feed.sequence < 0 || !Number.isSafeInteger(feed.sequence)) {
-    throw new Error("Account feed sequence must be a non-negative integer");
+    throw new Error("Publisher feed sequence must be a non-negative integer");
   }
   if (!Number.isFinite(Date.parse(feed.generatedAt))) {
-    throw new Error("Account feed generatedAt must be a valid ISO date");
+    throw new Error("Publisher feed generatedAt must be a valid ISO date");
   }
   for (const entry of feed.entries) {
     if (!entry.id || !entry.name || !entry.displayName) {
-      throw new Error("Account feed entry identity fields must be non-empty");
+      throw new Error("Publisher feed entry identity fields must be non-empty");
     }
     if (!Number.isFinite(entry.updatedAt) || entry.updatedAt < 0) {
-      throw new Error("Account feed entry updatedAt must be a non-negative finite number");
+      throw new Error("Publisher feed entry updatedAt must be a non-negative finite number");
     }
     if (entry.url.startsWith("/")) {
-      if (entry.url.startsWith("//")) {
-        throw new Error("Account feed entry URL must not be protocol-relative");
+      if (
+        entry.url.startsWith("//") ||
+        entry.url.includes("\\") ||
+        containsAsciiControlCharacter(entry.url)
+      ) {
+        throw new Error("Publisher feed entry URL must be a safe origin-relative reference");
       }
       continue;
     }
@@ -74,10 +80,10 @@ export function parseAccountFeed(value: unknown): AccountFeed {
     try {
       url = new URL(entry.url);
     } catch {
-      throw new Error("Account feed entry URL must be absolute HTTPS or origin-relative");
+      throw new Error("Publisher feed entry URL must be absolute HTTPS or origin-relative");
     }
     if (url.protocol !== "https:") {
-      throw new Error("Account feed entry URL must be absolute HTTPS or origin-relative");
+      throw new Error("Publisher feed entry URL must be absolute HTTPS or origin-relative");
     }
   }
   return feed;

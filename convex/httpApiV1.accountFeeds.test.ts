@@ -2,10 +2,7 @@
 import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
-import {
-  accountsGetRouterV1Handler,
-  publishersGetRouterV1Handler,
-} from "./httpApiV1/accountFeedsV1";
+import { publishersGetRouterV1Handler } from "./httpApiV1/accountFeedsV1";
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
@@ -30,7 +27,7 @@ function makeCtx(partial: Record<string, unknown>) {
       ? partial.runMutation
       : vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
           if (isRateLimitArgs(args)) return okRate();
-          return okRate();
+          return null;
         });
 
   return { ...partial, runQuery, runMutation } as unknown as ActionCtx;
@@ -40,118 +37,136 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("account feed HTTP routes", () => {
-  it("serves public account detail", async () => {
+describe("publisher feed HTTP routes", () => {
+  it("serves public publisher detail", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
-      expect(args).toEqual({ accountId: "users:alice" });
+      expect(args).toEqual({ publisherId: "publishers:alice" });
       return {
-        account: { _id: "users:alice", handle: "alice" },
         publisher: { _id: "publishers:alice", handle: "alice" },
-        feedUrl: "/api/v1/accounts/users%3Aalice/feed",
+        feedUrl: "/api/v1/publishers/publishers%3Aalice/feed",
       };
     });
 
-    const response = await accountsGetRouterV1Handler(
+    const response = await publishersGetRouterV1Handler(
       makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/accounts/users%3Aalice"),
+      new Request("https://example.com/api/v1/publishers/publishers%3Aalice"),
     );
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
-      account: { _id: "users:alice", handle: "alice" },
-      feedUrl: "/api/v1/accounts/users%3Aalice/feed",
+      publisher: { _id: "publishers:alice", handle: "alice" },
+      feedUrl: "/api/v1/publishers/publishers%3Aalice/feed",
     });
     expect(runQuery).toHaveBeenCalledWith(
-      (internal as unknown as { accountFeeds: { getAccountDetail: unknown } }).accountFeeds
-        .getAccountDetail,
-      { accountId: "users:alice" },
+      (internal as unknown as { accountFeeds: { getPublisherDetail: unknown } }).accountFeeds
+        .getPublisherDetail,
+      { publisherId: "publishers:alice" },
     );
   });
 
-  it("serves bounded account feeds with public cache headers", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+  it("serves coherent publisher feed pages with opaque continuation", async () => {
+    const entries = [
+      { kind: "skill", id: "skills:2", displayName: "Two" },
+      { kind: "skill", id: "skills:1", displayName: "One" },
+    ];
+    const storedFeed = {
+      feedId: "clawhub.publisher.publishers:alice",
+      publisherId: "publishers:alice",
+      handle: "alice",
+      displayName: "Alice",
+      generatedAt: "2026-07-16T00:00:00.000Z",
+      sequence: 7,
+      entries,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
-      expect(args).toEqual({ accountId: "users:alice", limit: 100 });
-      return {
-        schemaVersion: 1,
-        feedId: "clawhub.account.users:alice",
-        scope: "account",
-        accountId: "users:alice",
-        publisherId: "publishers:alice",
-        handle: "alice",
-        displayName: "Alice",
-        generatedAt: "2026-07-02T00:00:00.000Z",
-        sequence: 0,
-        entries: [],
-        nextCursor: null,
-      };
+      return storedFeed;
     });
 
-    const response = await accountsGetRouterV1Handler(
-      makeCtx({ runQuery }),
-      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?limit=500"),
+    const response = await publishersGetRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/publishers/publishers%3Aalice/feed?limit=1"),
     );
 
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toContain("s-maxage=300");
-    expect(await response.json()).not.toHaveProperty("official");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    const first = (await response.json()) as {
+      sequence: number;
+      entries: Array<{ id: string }>;
+      nextCursor: string;
+    };
+    expect(first).toMatchObject({ sequence: 7, entries: [{ id: "skills:2" }] });
+    expect(first.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/u);
+
+    const continuationQuery = vi.fn(async () => storedFeed);
+    const next = await publishersGetRouterV1Handler(
+      makeCtx({ runQuery: continuationQuery }),
+      new Request(
+        `https://example.com/api/v1/publishers/publishers%3Aalice/feed?limit=1&cursor=${first.nextCursor}`,
+      ),
+    );
+    expect(next.status).toBe(200);
+    expect(next.headers.get("cache-control")).toBe("private, no-store");
+    expect(await next.json()).toMatchObject({
+      sequence: 7,
+      entries: [{ id: "skills:1" }],
+      nextCursor: null,
+    });
   });
 
-  it("rejects unsupported cursors and malformed limits", async () => {
+  it("rejects malformed cursors and limits", async () => {
     const ctx = makeCtx({});
-    const cursorResponse = await accountsGetRouterV1Handler(
+    const cursorResponse = await publishersGetRouterV1Handler(
       ctx,
-      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?cursor=next"),
+      new Request("https://example.com/api/v1/publishers/publishers%3Aalice/feed?cursor=next"),
     );
     expect(cursorResponse.status).toBe(400);
-    expect(await cursorResponse.text()).toBe("Cursor pagination is not available");
+    expect(await cursorResponse.text()).toBe("Invalid publisher feed cursor");
 
-    const limitResponse = await accountsGetRouterV1Handler(
+    const limitResponse = await publishersGetRouterV1Handler(
       ctx,
-      new Request("https://example.com/api/v1/accounts/users%3Aalice/feed?limit=10items"),
+      new Request("https://example.com/api/v1/publishers/publishers%3Aalice/feed?limit=10items"),
     );
     expect(limitResponse.status).toBe(400);
     expect(await limitResponse.text()).toBe("Invalid feed limit");
   });
 
-  it("does not double-decode account path ids", async () => {
-    const response = await accountsGetRouterV1Handler(
-      makeCtx({}),
-      new Request("https://example.com/api/v1/accounts/foo%25"),
-    );
-
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe("Account not found");
-  });
-
-  it("maps malformed account path escapes to 404", async () => {
-    const response = await accountsGetRouterV1Handler(
-      makeCtx({}),
-      new Request("https://example.com/api/v1/accounts/%"),
-    );
-
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe("Not found");
-  });
-
-  it("maps missing publisher feeds to 404", async () => {
+  it("rejects cursor offsets outside the stored revision", async () => {
+    const cursor = Buffer.from(
+      JSON.stringify({ publisherId: "publishers:alice", sequence: 7, offset: 2 }),
+    ).toString("base64url");
+    const publication = {
+      publisherId: "publishers:alice",
+      feedId: "clawhub.publisher.publishers:alice",
+      sequence: 7,
+      generatedAt: "2026-07-16T00:00:00.000Z",
+      handle: "alice",
+      displayName: "Alice",
+      entries: [{ id: "skills:one" }],
+    };
     const response = await publishersGetRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(async () => publication) }),
+      new Request(`https://example.com/api/v1/publishers/publishers%3Aalice/feed?cursor=${cursor}`),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Invalid publisher feed cursor offset");
+  });
+
+  it("maps missing and malformed publisher feeds to 404", async () => {
+    const missing = await publishersGetRouterV1Handler(
       makeCtx({}),
       new Request("https://example.com/api/v1/publishers/publishers%3Amissing/feed"),
     );
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toBe("Publisher feed not found");
 
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe("Publisher feed not found");
-  });
-
-  it("maps malformed publisher path escapes to 404", async () => {
-    const response = await publishersGetRouterV1Handler(
+    const malformed = await publishersGetRouterV1Handler(
       makeCtx({}),
       new Request("https://example.com/api/v1/publishers/%/feed"),
     );
-
-    expect(response.status).toBe(404);
-    expect(await response.text()).toBe("Not found");
+    expect(malformed.status).toBe(404);
+    expect(await malformed.text()).toBe("Not found");
   });
 });

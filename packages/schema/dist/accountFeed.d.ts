@@ -1,10 +1,10 @@
 import { type inferred } from "arktype";
-export declare const ACCOUNT_FEED_SCHEMA_VERSION = 1;
-export declare const ACCOUNT_FEED_DEFAULT_LIMIT = 50;
-export declare const ACCOUNT_FEED_MAX_LIMIT = 100;
-export declare const AccountFeedEntryKindSchema: import("arktype/internal/variants/string.ts").StringType<"skill" | "plugin", {}>;
-export type AccountFeedEntryKind = (typeof AccountFeedEntryKindSchema)[inferred];
-export declare const AccountFeedEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export declare const PUBLISHER_FEED_SCHEMA_VERSION = 1;
+export declare const PUBLISHER_FEED_DEFAULT_LIMIT = 50;
+export declare const PUBLISHER_FEED_MAX_LIMIT = 100;
+export declare const PublisherFeedEntryKindSchema: import("arktype/internal/variants/string.ts").StringType<"skill" | "plugin", {}>;
+export type PublisherFeedEntryKind = (typeof PublisherFeedEntryKindSchema)[inferred];
+export declare const PublisherFeedEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "skill" | "plugin";
     id: string;
     name: string;
@@ -13,13 +13,11 @@ export declare const AccountFeedEntrySchema: import("arktype/internal/variants/o
     url: string;
     updatedAt: number;
 }, {}>;
-export type AccountFeedEntry = (typeof AccountFeedEntrySchema)[inferred];
-export declare const AccountFeedSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export type PublisherFeedEntry = (typeof PublisherFeedEntrySchema)[inferred];
+export declare const PublisherFeedSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     schemaVersion: number;
     feedId: string;
-    scope: "account" | "publisher";
-    accountId: string | null;
-    publisherId: string | null;
+    publisherId: string;
     handle: string | null;
     displayName: string;
     generatedAt: string;
@@ -35,6 +33,6 @@ export declare const AccountFeedSchema: import("arktype/internal/variants/object
     }[];
     nextCursor: string | null;
 }, {}>;
-export type AccountFeed = (typeof AccountFeedSchema)[inferred];
-export declare function accountFeedId(scope: "account" | "publisher", stableId: string): string;
-export declare function parseAccountFeed(value: unknown): AccountFeed;
+export type PublisherFeed = (typeof PublisherFeedSchema)[inferred];
+export declare function publisherFeedId(publisherId: string): string;
+export declare function parsePublisherFeed(value: unknown): PublisherFeed;
