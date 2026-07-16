@@ -1,0 +1,39 @@
+{
+  "candidate": "cd0e490f735e5f6115705fce7593f6d23c53becd",
+  "generatedAt": "2026-07-16T19:24:00.000Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "cd0e490f735e5f6115705fce7593f6d23c53becd",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Promotion banner with dismiss control on desktop",
+          "screenshot": "screenshots/banner-desktop.png",
+          "slug": "banner-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Promotion banner with dismiss control on mobile",
+          "screenshot": "screenshots/banner-mobile.png",
+          "slug": "banner-mobile",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Promotion remains dismissed after reload",
+          "screenshot": "screenshots/dismissed-after-reload.png",
+          "slug": "dismissed-after-reload",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": "/tmp/clawhub-promotion-dismiss-proof/publish",
+  "provider": "Codex in-app browser",
+  "scenario": "Dismiss active promotion and reload",
+  "status": "pass"
+}
