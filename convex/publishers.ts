@@ -1995,11 +1995,17 @@ async function hardDeletePublisherRows(
   feedPublication: boolean;
   publisherFollows: number;
   publisherFollowsCleanupScheduled: boolean;
+  publisherActivity: number;
+  publisherActivityCleanupScheduled: boolean;
 }> {
   const preview = await inspectPublisherHardDeleteRows(ctx, publisherId);
 
   const deletedFollows = (await ctx.runMutation(
     internal.publisherFollows.deletePublisherFollowsForPublisherInternal,
+    { publisherId },
+  )) as { deleted: number; scheduled: boolean };
+  const deletedActivity = (await ctx.runMutation(
+    internal.publisherActivity.deletePublisherActivityInternal,
     { publisherId },
   )) as { deleted: number; scheduled: boolean };
 
@@ -2032,6 +2038,8 @@ async function hardDeletePublisherRows(
     feedPublication: Boolean(preview.feedPublication),
     publisherFollows: deletedFollows.deleted,
     publisherFollowsCleanupScheduled: deletedFollows.scheduled,
+    publisherActivity: deletedActivity.deleted,
+    publisherActivityCleanupScheduled: deletedActivity.scheduled,
   };
 }
 

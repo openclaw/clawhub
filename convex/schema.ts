@@ -2723,6 +2723,21 @@ const publisherFollows = defineTable({
   .index("by_publisher_and_updatedAt", ["publisherId", "updatedAt"])
   .index("by_follower_publisher", ["followerUserId", "publisherId"]);
 
+const publisherActivity = defineTable({
+  publisherId: v.id("publishers"),
+  eventType: v.union(v.literal("skill.publish"), v.literal("plugin.publish")),
+  skillId: v.optional(v.id("skills")),
+  packageId: v.optional(v.id("packages")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  version: v.string(),
+  dedupeKey: v.string(),
+  eventAt: v.number(),
+  sortKey: v.string(),
+})
+  .index("by_publisher_and_sortKey", ["publisherId", "sortKey"])
+  .index("by_dedupeKey", ["dedupeKey"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -3398,6 +3413,7 @@ export default defineSchema({
   stars,
   promotions,
   publisherFollows,
+  publisherActivity,
   auditLogs,
   systemSettings,
   publisherAbuseScoreRuns,

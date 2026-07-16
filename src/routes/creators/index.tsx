@@ -21,6 +21,7 @@ import { convexHttp } from "../../convex/client";
 import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import type { PublicPublisherListItem } from "../../lib/publicUser";
 import { getClawHubSiteUrl, SITE_NAME } from "../../lib/site";
+import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PublisherKindSearch = "orgs" | "people";
@@ -88,6 +89,36 @@ type FollowedPublisherPage = {
   items: FollowedPublisherItem[];
 };
 
+type PublisherActivityItem = {
+  activityId: string;
+  eventType: "skill.publish" | "plugin.publish";
+  eventAt: number;
+  version: string;
+  publisher: {
+    publisherId: string;
+    handle: string;
+    displayName: string;
+    kind: "org" | "user";
+    image: string | null;
+  };
+  artifact: {
+    kind: "skill" | "plugin";
+    artifactId: string;
+    displayName: string;
+    href: string;
+  };
+};
+
+type PublisherActivityResult = {
+  items: PublisherActivityItem[];
+  nextCursor: string | null;
+};
+
+type PublisherActivityPage = {
+  cursorKey: string;
+  items: PublisherActivityItem[];
+};
+
 function followedPublisherItemsEqual(
   left: FollowedPublisherItem[],
   right: FollowedPublisherItem[],
@@ -103,6 +134,26 @@ function followedPublisherItemsEqual(
         item.publisher.displayName === other.publisher.displayName &&
         item.publisher.kind === other.publisher.kind &&
         item.publisher.image === other.publisher.image
+      );
+    })
+  );
+}
+
+function publisherActivityItemsEqual(
+  left: PublisherActivityItem[],
+  right: PublisherActivityItem[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        item.activityId === other.activityId &&
+        item.publisher.handle === other.publisher.handle &&
+        item.publisher.displayName === other.publisher.displayName &&
+        item.artifact.displayName === other.artifact.displayName &&
+        item.artifact.href === other.artifact.href
       );
     })
   );
@@ -206,6 +257,10 @@ function PublishersIndex() {
   const [followedPages, setFollowedPages] = useState<FollowedPublisherPage[]>([]);
   const [followedNextCursor, setFollowedNextCursor] = useState<string | null>(null);
   const [isLoadingMoreFollowed, setIsLoadingMoreFollowed] = useState(false);
+  const [activityCursorRequest, setActivityCursorRequest] = useState<string | null>(null);
+  const [activityPages, setActivityPages] = useState<PublisherActivityPage[]>([]);
+  const [activityNextCursor, setActivityNextCursor] = useState<string | null>(null);
+  const [isLoadingMoreActivity, setIsLoadingMoreActivity] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -224,9 +279,22 @@ function PublishersIndex() {
         }
       : "skip",
   ) as FollowedPublishersResult | undefined;
+  const publisherActivityResult = useQuery(
+    api.publisherActivity.listMine,
+    isAuthenticated && followingOnly && !search.q
+      ? {
+          limit: 25,
+          ...(activityCursorRequest ? { cursor: activityCursorRequest } : {}),
+        }
+      : "skip",
+  ) as PublisherActivityResult | undefined;
   const followedPublishers = useMemo(
     () => followedPages.flatMap((page) => page.items),
     [followedPages],
+  );
+  const publisherActivity = useMemo(
+    () => activityPages.flatMap((page) => page.items),
+    [activityPages],
   );
   const canLoadMore = followingOnly ? Boolean(followedNextCursor) : Boolean(nextCursor);
   const hasQuery = Boolean(search.q?.trim());
@@ -259,6 +327,13 @@ function PublishersIndex() {
   }, [followingOnly, isAuthenticated, search.q]);
 
   useEffect(() => {
+    setActivityCursorRequest(null);
+    setActivityPages([]);
+    setActivityNextCursor(null);
+    setIsLoadingMoreActivity(false);
+  }, [followingOnly, isAuthenticated, search.q]);
+
+  useEffect(() => {
     if (!followingOnly || !followedPublishersResult) return;
 
     const cursorKey = followedCursorRequest ?? "";
@@ -280,6 +355,28 @@ function PublishersIndex() {
     setFollowedNextCursor(followedPublishersResult.nextCursor);
     setIsLoadingMoreFollowed(false);
   }, [followedCursorRequest, followedPublishersResult, followingOnly]);
+
+  useEffect(() => {
+    if (!followingOnly || !publisherActivityResult) return;
+    const cursorKey = activityCursorRequest ?? "";
+    setActivityPages((previous) => {
+      const nextPage = { cursorKey, items: publisherActivityResult.items };
+      const existingIndex = previous.findIndex((page) => page.cursorKey === cursorKey);
+      if (existingIndex >= 0) {
+        const existingPage = previous[existingIndex];
+        if (
+          existingPage &&
+          publisherActivityItemsEqual(existingPage.items, publisherActivityResult.items)
+        ) {
+          return previous;
+        }
+        return previous.map((page, index) => (index === existingIndex ? nextPage : page));
+      }
+      return activityCursorRequest ? [...previous, nextPage] : [nextPage];
+    });
+    setActivityNextCursor(publisherActivityResult.nextCursor);
+    setIsLoadingMoreActivity(false);
+  }, [activityCursorRequest, followingOnly, publisherActivityResult]);
 
   useEffect(() => {
     return () => window.clearTimeout(searchNavigateTimer.current);
@@ -433,6 +530,12 @@ function PublishersIndex() {
     search.q,
   ]);
 
+  const loadMoreActivity = useCallback(() => {
+    if (!activityNextCursor || isLoadingMoreActivity) return;
+    setIsLoadingMoreActivity(true);
+    setActivityCursorRequest(activityNextCursor);
+  }, [activityNextCursor, isLoadingMoreActivity]);
+
   useEffect(() => {
     if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
     const target = loadMoreRef.current;
@@ -494,6 +597,16 @@ function PublishersIndex() {
             <FollowedPublisherDiscovery
               authenticated={isAuthenticated}
               authLoading={isAuthLoading}
+              activity={publisherActivity}
+              activityLoading={
+                isAuthenticated &&
+                !search.q &&
+                publisherActivity.length === 0 &&
+                publisherActivityResult === undefined
+              }
+              activityCanLoadMore={Boolean(activityNextCursor)}
+              activityLoadingMore={isLoadingMoreActivity}
+              onLoadMoreActivity={loadMoreActivity}
               loading={
                 isAuthenticated &&
                 followedPublishers.length === 0 &&
@@ -564,12 +677,22 @@ function PublishersIndex() {
 function FollowedPublisherDiscovery({
   authenticated,
   authLoading,
+  activity,
+  activityLoading,
+  activityCanLoadMore,
+  activityLoadingMore,
+  onLoadMoreActivity,
   loading,
   publishers,
   query,
 }: {
   authenticated: boolean;
   authLoading: boolean;
+  activity: PublisherActivityItem[];
+  activityLoading: boolean;
+  activityCanLoadMore: boolean;
+  activityLoadingMore: boolean;
+  onLoadMoreActivity: () => void;
   loading: boolean;
   publishers: FollowedPublisherItem[];
   query?: string;
@@ -590,7 +713,7 @@ function FollowedPublisherDiscovery({
     );
   }
 
-  if (loading) {
+  if (loading || activityLoading) {
     return (
       <div className="empty-state">
         <p className="empty-state-title">Loading followed publishers...</p>
@@ -598,7 +721,7 @@ function FollowedPublisherDiscovery({
     );
   }
 
-  if (publishers.length === 0) {
+  if (publishers.length === 0 && activity.length === 0 && !activityCanLoadMore) {
     return (
       <div className="empty-state">
         <p className="empty-state-title">
@@ -609,42 +732,92 @@ function FollowedPublisherDiscovery({
   }
 
   return (
-    <div className="browse-list-stack">
-      <div className="browse-list-head browse-list-head-publishers" aria-hidden="true">
-        <span className="browse-list-head-label">Creator</span>
-        <span className="browse-list-head-label browse-list-head-stat">Why shown</span>
-      </div>
-      <div className="publisher-directory-list">
-        {publishers.map(({ publisher }) => (
-          <Link
-            key={publisher._id}
-            to={buildPublisherProfileHref(publisher.handle)}
-            className="publisher-card publisher-card-list followed-publisher-card"
-            aria-label={`Followed publisher: ${publisher.displayName}`}
-          >
-            <div className="publisher-card-main">
-              <MarketplaceIcon
-                kind={publisher.kind === "org" ? "org" : "user"}
-                label={publisher.displayName}
-                imageUrl={publisher.image}
-                size="sm"
-              />
-              <div className="publisher-card-copy">
-                <span className="publisher-card-identity">
-                  <span className="publisher-card-title-row">
-                    <span className="publisher-card-name">{publisher.displayName}</span>
-                    {publisher.kind === "org" ? (
-                      <span className="publisher-card-kind">Org</span>
-                    ) : null}
+    <div className="followed-discovery-stack">
+      {activity.length > 0 || activityCanLoadMore ? (
+        <section className="publisher-activity" aria-labelledby="publisher-activity-title">
+          <h2 id="publisher-activity-title" className="publisher-section-title">
+            Latest from publishers you follow
+          </h2>
+          <div className="publisher-activity-list">
+            {activity.map((item) => (
+              <Link
+                key={item.activityId}
+                to={item.artifact.href}
+                className="publisher-activity-row"
+              >
+                <MarketplaceIcon
+                  kind={item.publisher.kind === "org" ? "org" : "user"}
+                  label={item.publisher.displayName}
+                  imageUrl={item.publisher.image}
+                  size="sm"
+                />
+                <span className="publisher-activity-copy">
+                  <span className="publisher-activity-title">
+                    <strong>{item.publisher.displayName}</strong> published{" "}
+                    {item.artifact.displayName}
                   </span>
-                  <span className="publisher-card-handle">@{publisher.handle}</span>
+                  <span className="publisher-activity-meta">
+                    {item.artifact.kind === "skill" ? "Skill" : "Plugin"} {item.version} ·{" "}
+                    {timeAgo(item.eventAt)}
+                  </span>
                 </span>
-              </div>
+              </Link>
+            ))}
+          </div>
+          {activityCanLoadMore ? (
+            <div className="publisher-activity-more">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={onLoadMoreActivity}
+                disabled={activityLoadingMore}
+              >
+                {activityLoadingMore ? "Loading..." : "Load older activity"}
+              </Button>
             </div>
-            <span className="followed-publisher-reason">Followed publisher</span>
-          </Link>
-        ))}
-      </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {publishers.length > 0 ? (
+        <div className="browse-list-stack">
+          <div className="browse-list-head browse-list-head-publishers" aria-hidden="true">
+            <span className="browse-list-head-label">Creator</span>
+            <span className="browse-list-head-label browse-list-head-stat">Why shown</span>
+          </div>
+          <div className="publisher-directory-list">
+            {publishers.map(({ publisher }) => (
+              <Link
+                key={publisher._id}
+                to={buildPublisherProfileHref(publisher.handle)}
+                className="publisher-card publisher-card-list followed-publisher-card"
+                aria-label={`Followed publisher: ${publisher.displayName}`}
+              >
+                <div className="publisher-card-main">
+                  <MarketplaceIcon
+                    kind={publisher.kind === "org" ? "org" : "user"}
+                    label={publisher.displayName}
+                    imageUrl={publisher.image}
+                    size="sm"
+                  />
+                  <div className="publisher-card-copy">
+                    <span className="publisher-card-identity">
+                      <span className="publisher-card-title-row">
+                        <span className="publisher-card-name">{publisher.displayName}</span>
+                        {publisher.kind === "org" ? (
+                          <span className="publisher-card-kind">Org</span>
+                        ) : null}
+                      </span>
+                      <span className="publisher-card-handle">@{publisher.handle}</span>
+                    </span>
+                  </div>
+                </div>
+                <span className="followed-publisher-reason">Followed publisher</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

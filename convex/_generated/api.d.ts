@@ -148,6 +148,7 @@ import type * as publisherAbuse from "../publisherAbuse.js";
 import type * as publisherAbuseDevSeed from "../publisherAbuseDevSeed.js";
 import type * as publisherAbuseTemporalScan from "../publisherAbuseTemporalScan.js";
 import type * as publisherFollows from "../publisherFollows.js";
+import type * as publisherActivity from "../publisherActivity.js";
 import type * as publishers from "../publishers.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as retention from "../retention.js";
@@ -316,6 +317,7 @@ declare const fullApi: ApiFromModules<{
   publisherAbuseDevSeed: typeof publisherAbuseDevSeed;
   publisherAbuseTemporalScan: typeof publisherAbuseTemporalScan;
   publisherFollows: typeof publisherFollows;
+  publisherActivity: typeof publisherActivity;
   publishers: typeof publishers;
   rateLimits: typeof rateLimits;
   retention: typeof retention;

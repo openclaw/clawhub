@@ -63,7 +63,7 @@ import {
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
-import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import { isPublicPluginDoc, readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -126,6 +126,7 @@ import { hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
+import { recordPublisherPublicationActivity } from "./publisherActivity";
 import schema from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
@@ -9590,6 +9591,38 @@ export const insertReleaseInternal = internalMutation({
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
     });
+
+    const activityPublisherId = args.ownerPublisherId ?? pkg.ownerPublisherId;
+    const activityPublisher = activityPublisherId
+      ? (ownerPublisher ?? (await ctx.db.get(activityPublisherId)))
+      : null;
+    if (
+      activityPublisher &&
+      isPublicPluginDoc({
+        softDeletedAt: undefined,
+        family: existingIsReservation ? args.family : pkg.family,
+        channel: nextChannel,
+        scanStatus: releaseVerification?.scanStatus,
+      })
+    ) {
+      try {
+        await recordPublisherPublicationActivity(ctx, {
+          publisherId: activityPublisher._id,
+          eventType: "plugin.publish",
+          packageId: pkgId,
+          packageReleaseId: releaseId,
+          version: args.version,
+          eventAt: now,
+        });
+      } catch (error) {
+        console.warn("Failed to record publisher plugin activity", {
+          publisherId: activityPublisher._id,
+          packageId: pkgId,
+          releaseId,
+          error,
+        });
+      }
+    }
 
     return {
       ok: true as const,
