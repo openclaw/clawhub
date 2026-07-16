@@ -75,43 +75,43 @@ function PromotionBarItem({
 
   return (
     <article className="promotion-bar-item">
-      <div className="promotion-bar-copy">
-        <h3 className="promotion-bar-title">
-          {isTencentPromotion ? (
-            <img
-              src="/tencent-hy-favicon.png"
-              alt=""
-              aria-hidden="true"
-              className="promotion-bar-icon"
-            />
-          ) : (
-            <Gift
-              size={14}
-              aria-hidden="true"
-              className="promotion-bar-icon promotion-bar-icon-fallback"
-            />
-          )}
-          <span className="promotion-bar-title-copy">{promotion.title}</span>
-        </h3>
-        <span className="promotion-bar-separator" aria-hidden="true" />
-        <span className="promotion-bar-meta">{promotionMetaCopy(promotion)}</span>
-      </div>
-      <div className="promotion-bar-actions">
+      <div className="promotion-bar-content">
+        <div className="promotion-bar-copy">
+          <h3 className="promotion-bar-title">
+            {isTencentPromotion ? (
+              <img
+                src="/tencent-hy-favicon.png"
+                alt=""
+                aria-hidden="true"
+                className="promotion-bar-icon"
+              />
+            ) : (
+              <Gift
+                size={14}
+                aria-hidden="true"
+                className="promotion-bar-icon promotion-bar-icon-fallback"
+              />
+            )}
+            <span className="promotion-bar-title-copy">{promotion.title}</span>
+          </h3>
+          <span className="promotion-bar-separator" aria-hidden="true" />
+          <span className="promotion-bar-meta">{promotionMetaCopy(promotion)}</span>
+        </div>
         {ctaUrl ? (
           <a className="promotion-bar-link" href={ctaUrl} target="_blank" rel="noopener noreferrer">
             Try it free <ArrowUpRight size={15} aria-hidden="true" />
           </a>
         ) : null}
-        <button
-          type="button"
-          className="promotion-bar-dismiss"
-          aria-label={`Dismiss ${promotion.title} promotion`}
-          title="Dismiss promotion"
-          onClick={() => onDismiss(promotion)}
-        >
-          <X size={14} aria-hidden="true" />
-        </button>
       </div>
+      <button
+        type="button"
+        className="promotion-bar-dismiss"
+        aria-label={`Dismiss ${promotion.title} promotion`}
+        title="Dismiss promotion"
+        onClick={() => onDismiss(promotion)}
+      >
+        <X size={14} aria-hidden="true" />
+      </button>
     </article>
   );
 }

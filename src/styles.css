@@ -25607,13 +25607,13 @@ a.search-empty-action {
 }
 
 .promotion-bar-item {
+  position: relative;
   display: flex;
   flex: 1 0 auto;
   align-items: center;
   justify-content: center;
-  gap: 18px;
   min-width: min(100%, 520px);
-  padding: 6px 0;
+  padding: 6px 32px;
   scroll-snap-align: start;
 }
 
@@ -25675,11 +25675,12 @@ a.search-empty-action {
   text-overflow: ellipsis;
 }
 
-.promotion-bar-actions {
+.promotion-bar-content {
   display: flex;
-  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 18px;
+  min-width: 0;
 }
 
 .promotion-bar-link {
@@ -25710,10 +25711,12 @@ a.search-empty-action {
 }
 
 .promotion-bar-dismiss {
+  position: absolute;
+  top: 50%;
+  right: 0;
   display: inline-grid;
   width: 24px;
   height: 24px;
-  flex: 0 0 auto;
   place-items: center;
   padding: 0;
   border: 0;
@@ -25721,6 +25724,7 @@ a.search-empty-action {
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
+  transform: translateY(-50%);
 }
 
 .promotion-bar-dismiss:hover,
@@ -25735,19 +25739,23 @@ a.search-empty-action {
   }
 
   .promotion-bar-item {
+    min-width: 100%;
+    padding: 7px 44px 7px 12px;
+    border-left: 0;
+  }
+
+  .promotion-bar-content {
+    width: 100%;
     justify-content: space-between;
     gap: 12px;
-    min-width: 100%;
-    padding: 7px 12px;
-    border-left: 0;
   }
 
   .promotion-bar-copy {
     gap: 0;
   }
 
-  .promotion-bar-actions {
-    gap: 4px;
+  .promotion-bar-dismiss {
+    right: 12px;
   }
 
   .promotion-bar-separator,
