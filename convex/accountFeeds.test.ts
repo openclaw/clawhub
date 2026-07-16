@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildPublisherFeedProjectionImpl,
   getPublisherDetail,
+  getPublisherFeedChanges,
   publishPublisherFeedRevisionImpl,
+  queryPublisherFeedPublicationImpl,
 } from "./accountFeeds";
 
 type InternalHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
@@ -11,6 +13,9 @@ type InternalHandler = (ctx: unknown, args: unknown) => Promise<unknown>;
 const getPublisherDetailHandler = (getPublisherDetail as unknown as { _handler: InternalHandler })
   ._handler;
 const getPublisherFeedHandler = buildPublisherFeedProjectionImpl as InternalHandler;
+const getPublisherFeedChangesHandler = (
+  getPublisherFeedChanges as unknown as { _handler: InternalHandler }
+)._handler;
 
 function doc<T extends "users" | "publishers" | "packages" | "skills">(id: string) {
   return id as unknown as import("./_generated/dataModel").Id<T>;
@@ -403,8 +408,15 @@ describe("publisher feed projection", () => {
     const query = vi.fn(() => ({
       withIndex: vi.fn(() => ({ unique: vi.fn(async () => existing) })),
     }));
-    const insert = vi.fn(async (_table: string, value: Record<string, unknown>) => {
-      existing = { _id: "publisherFeedPublications:1", ...value };
+    const revisions: Record<string, unknown>[] = [];
+    const changes: Record<string, unknown>[] = [];
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      if (table === "publisherFeedPublications") {
+        existing = { _id: "publisherFeedPublications:1", ...value };
+        return;
+      }
+      if (table === "publisherFeedRevisions") revisions.push(value);
+      if (table === "publisherFeedChanges") changes.push(value);
     });
     const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => {
       existing = { ...existing, ...value };
@@ -434,7 +446,245 @@ describe("publisher feed projection", () => {
     expect(first.sequence).toBe(1);
     expect(unchanged).toMatchObject({ sequence: 1, generatedAt: first.generatedAt });
     expect(changed.sequence).toBe(2);
-    expect(insert).toHaveBeenCalledTimes(1);
+    expect(
+      insert.mock.calls.filter(([table]) => table === "publisherFeedPublications"),
+    ).toHaveLength(1);
     expect(patch).toHaveBeenCalledTimes(1);
+    expect(revisions.map((revision) => revision.sequence)).toEqual([1, 2]);
+    expect(changes).toMatchObject([
+      { sequence: 1, changeNumber: 1, operation: "metadata" },
+      { sequence: 2, changeNumber: 2, operation: "metadata" },
+    ]);
+  });
+
+  it("queries a coherent publisher revision with normalized text and kind filters", () => {
+    const publication = {
+      publisherId: doc<"publishers">("publishers:alice"),
+      feedId: "clawhub.publisher.publishers:alice",
+      sequence: 3,
+      generatedAt: "2026-07-16T00:00:00.000Z",
+      handle: "alice",
+      displayName: "Alice",
+      cumulativeChangeCount: 4,
+      entries: [
+        {
+          kind: "skill" as const,
+          id: "skills:cuda",
+          name: "cuda-helper",
+          displayName: "CUDA Helper",
+          summary: "GPU tools",
+          url: "/alice/skills/cuda-helper",
+          updatedAt: 2,
+        },
+        {
+          kind: "plugin" as const,
+          id: "packages:cuda",
+          name: "@alice/cuda-plugin",
+          displayName: "CUDA Plugin",
+          summary: null,
+          url: "/alice/plugins/cuda-plugin",
+          updatedAt: 1,
+        },
+      ],
+    };
+
+    const result = queryPublisherFeedPublicationImpl(
+      publication,
+      { text: "  CUDA\tHelper ", kinds: ["skill", "skill"] },
+      0,
+      20,
+    );
+
+    expect(result).toMatchObject({
+      sequence: 3,
+      query: { text: "CUDA Helper", kinds: ["skill"] },
+      startIndex: 0,
+      resultCount: 1,
+      entries: [{ id: "skills:cuda" }],
+      nextOffset: null,
+    });
+  });
+
+  it("records entry upserts and removal tombstones in deterministic order", async () => {
+    const publisher = { ...makePublisher(), kind: "org" };
+    const oldEntry = {
+      kind: "skill" as const,
+      id: "skills:old",
+      name: "old",
+      displayName: "Old",
+      summary: null,
+      url: "/alice/skills/old",
+      updatedAt: 1,
+    };
+    let publication: Record<string, unknown> | null = {
+      _id: "publisherFeedPublications:1",
+      publisherId: publisher._id,
+      feedId: "clawhub.publisher.publishers:alice",
+      sequence: 4,
+      generatedAt: "2026-07-16T00:00:00.000Z",
+      handle: "alice",
+      displayName: "Alice",
+      entries: [oldEntry],
+      contentKey: "old",
+      cumulativeChangeCount: 7,
+      publishedAt: 1,
+    };
+    const changes: Record<string, unknown>[] = [];
+    const query = vi.fn(() => ({
+      withIndex: vi.fn(() => ({ unique: vi.fn(async () => publication) })),
+    }));
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      if (table === "publisherFeedChanges") changes.push(value);
+    });
+    const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => {
+      publication = { ...publication, ...value };
+    });
+    const get = vi.fn(async (id: string) => (id === publisher._id ? publisher : null));
+    const newEntry = {
+      kind: "plugin" as const,
+      id: "packages:new",
+      name: "@alice/new",
+      displayName: "New",
+      summary: null,
+      url: "/alice/plugins/new",
+      updatedAt: 2,
+    };
+
+    const result = (await publishPublisherFeedRevisionImpl(
+      { db: { get, query, insert, patch } } as never,
+      {
+        publisherId: publisher._id,
+        feedId: "clawhub.publisher.publishers:alice",
+        handle: "alice",
+        displayName: "Alice",
+        entries: [newEntry],
+      },
+    )) as { sequence: number };
+
+    expect(result.sequence).toBe(5);
+    expect(changes).toMatchObject([
+      { sequence: 5, changeNumber: 8, operation: "upsert", entry: { id: "packages:new" } },
+      {
+        sequence: 5,
+        changeNumber: 9,
+        operation: "remove",
+        entryId: "skills:old",
+        entryKind: "skill",
+      },
+    ]);
+  });
+
+  it("returns bounded contiguous changes from a retained revision", async () => {
+    const publisher = { ...makePublisher(), kind: "org" };
+    const publication = {
+      publisherId: publisher._id,
+      feedId: "clawhub.publisher.publishers:alice",
+      sequence: 2,
+      cumulativeChangeCount: 3,
+    };
+    const revisions = new Map([
+      [1, { sequence: 1, cumulativeChangeCount: 1 }],
+      [2, { sequence: 2, cumulativeChangeCount: 3 }],
+    ]);
+    const changes = [
+      {
+        sequence: 2,
+        changeNumber: 2,
+        operation: "upsert",
+        entry: {
+          kind: "skill",
+          id: "skills:new",
+          name: "new",
+          displayName: "New",
+          summary: null,
+          url: "/alice/skills/new",
+          updatedAt: 2,
+        },
+      },
+      {
+        sequence: 2,
+        changeNumber: 3,
+        operation: "remove",
+        entryId: "skills:old",
+        entryKind: "skill",
+      },
+    ];
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn((_name: string, applyIndex: (q: unknown) => unknown) => {
+        const values = new Map<string, unknown>();
+        const q = {
+          eq: vi.fn((field: string, value: unknown) => (values.set(field, value), q)),
+          gte: vi.fn(() => q),
+          lte: vi.fn(() => q),
+        };
+        applyIndex(q);
+        if (table === "publisherFeedPublications") {
+          return { unique: vi.fn(async () => publication) };
+        }
+        if (table === "publisherFeedRevisions") {
+          return { unique: vi.fn(async () => revisions.get(Number(values.get("sequence")))) };
+        }
+        return {
+          order: vi.fn(() => ({ take: vi.fn(async () => changes) })),
+        };
+      }),
+    }));
+    const get = vi.fn(async (id: string) => (id === publisher._id ? publisher : null));
+    const normalizeId = vi.fn((table: string, id: string) =>
+      table === "publishers" && id === publisher._id ? publisher._id : null,
+    );
+
+    const result = await getPublisherFeedChangesHandler(
+      { db: { get, normalizeId, query } },
+      { publisherId: String(publisher._id), fromSequence: 1, offset: 0, limit: 10 },
+    );
+
+    expect(result).toMatchObject({
+      status: "complete",
+      fromSequence: 1,
+      toSequence: 2,
+      startIndex: 0,
+      changeCount: 2,
+      changes: [
+        { operation: "upsert", entry: { id: "skills:new" } },
+        { operation: "remove", entryId: "skills:old" },
+      ],
+      nextOffset: null,
+    });
+  });
+
+  it("requires reset when sequence one is only a legacy zero-change baseline", async () => {
+    const publisher = { ...makePublisher(), kind: "org" };
+    const publication = {
+      publisherId: publisher._id,
+      feedId: "clawhub.publisher.publishers:alice",
+      sequence: 1,
+      cumulativeChangeCount: 0,
+    };
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () =>
+          table === "publisherFeedPublications"
+            ? publication
+            : { sequence: 1, cumulativeChangeCount: 0 },
+        ),
+      })),
+    }));
+    const get = vi.fn(async (id: string) => (id === publisher._id ? publisher : null));
+    const normalizeId = vi.fn((table: string, id: string) =>
+      table === "publishers" && id === publisher._id ? publisher._id : null,
+    );
+
+    const result = await getPublisherFeedChangesHandler(
+      { db: { get, normalizeId, query } },
+      { publisherId: String(publisher._id), fromSequence: 0, offset: 0, limit: 10 },
+    );
+
+    expect(result).toEqual({
+      status: "reset-required",
+      feedId: "clawhub.publisher.publishers:alice",
+      fromSequence: 0,
+      currentSequence: 1,
+    });
   });
 });

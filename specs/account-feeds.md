@@ -62,6 +62,41 @@ projection is complete within those bounds, the first page returns `503
 no-store`; it never publishes a terminal page that silently omits older public
 entries.
 
+## Query And Change Projections
+
+The scalable distribution layer is built from internal projections before any
+public signed route is exposed:
+
+- `queryPublisherFeed` filters one stored coherent revision by normalized text
+  and entry kind, returning a bounded deterministic slice, total count, and next
+  offset;
+- `getPublisherFeedChanges` returns complete changes after an accepted sequence
+  through the current sequence, bounded by a stable global change number;
+- missing revision or change history returns reset-required rather than a
+  partial result.
+
+Text queries normalize to NFC, trim and collapse the RFC-defined ASCII
+whitespace set, preserve case in the signed query value, and use deterministic
+case-insensitive matching. Query arrays are sorted and deduplicated.
+
+These functions are internal on purpose. A follow-up route must bind their
+offsets to integrity-protected cursors and sign the strict query/change payload
+types with the shared ClawHub feed signer. There is no unsigned public query or
+delta endpoint.
+
+## Durable Change History
+
+`publisherFeedPublications` remains the single current snapshot used by normal
+feed reads. `publisherFeedRevisions` stores revision metadata and a cumulative
+change count. `publisherFeedChanges` stores one append-only row per metadata
+replacement, complete entry upsert, or removal tombstone.
+
+Every changed publication increments sequence by exactly one and writes its
+snapshot, revision row, and ordered change rows in one mutation. Existing
+pre-history publications establish their current sequence as a zero-change
+baseline; clients older than that baseline must reset. Delta reads validate
+that every requested global change number is present before returning a page.
+
 ## Entry Shape
 
 Entries contain only:
@@ -83,8 +118,10 @@ pull-based activity timeline belong in the follow stack. ClawHub should not
 send one notification for every publisher upload. OpenClaw or Control UI may
 notify locally when an update affects content installed in that instance.
 
-## Future Signing
+## Signing Boundary
 
-Publisher feeds may later use the same dedicated ClawHub platform feed-signing
-key as the public catalog, but require a distinct publisher-feed payload type
-and expected feed-id binding. The catalog payload type must not be reused.
+Publisher query and change pages use distinct payload types and expected
+publisher-feed identity binding. They may use the same dedicated ClawHub
+platform feed-signing key as the public catalog, but the catalog payload type
+must not be reused. Public route wiring remains in the signer-dependent child
+PR.

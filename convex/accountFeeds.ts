@@ -1,8 +1,14 @@
 import {
   PUBLISHER_FEED_SCHEMA_VERSION,
+  PUBLISHER_FEED_CHANGE_MAX_LIMIT,
+  PUBLISHER_FEED_QUERY_MAX_LIMIT,
+  normalizePublisherFeedQuery,
   publisherFeedId,
   type PublisherFeed,
+  type PublisherFeedChange,
   type PublisherFeedEntry,
+  type PublisherFeedMetadata,
+  type PublisherFeedQuery,
 } from "clawhub-schema";
 import { v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -16,6 +22,75 @@ const PUBLISHER_FEED_MAX_SOURCE_PAGES = 3;
 const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
 const PUBLISHER_FEED_SUMMARY_MAX_CHARS = 500;
 type PublisherFeedReadCtx = Pick<QueryCtx | MutationCtx, "db">;
+
+function publisherMetadata(params: {
+  publisherId: string;
+  handle: string | null;
+  displayName: string;
+}): PublisherFeedMetadata {
+  return {
+    publisherId: params.publisherId,
+    handle: params.handle,
+    displayName: params.displayName,
+  };
+}
+
+function entryKey(entry: Pick<PublisherFeedEntry, "kind" | "id">) {
+  return `${entry.kind}:${entry.id}`;
+}
+
+function entryEquals(left: PublisherFeedEntry, right: PublisherFeedEntry) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function buildRevisionChanges(params: {
+  existing: Pick<
+    Doc<"publisherFeedPublications">,
+    "publisherId" | "handle" | "displayName" | "entries"
+  > | null;
+  publisherId: Id<"publishers">;
+  handle: string | null;
+  displayName: string;
+  entries: PublisherFeedEntry[];
+  sequence: number;
+}): PublisherFeedChange[] {
+  const changes: PublisherFeedChange[] = [];
+  const metadata = publisherMetadata({
+    publisherId: String(params.publisherId),
+    handle: params.handle,
+    displayName: params.displayName,
+  });
+  if (
+    !params.existing ||
+    params.existing.handle !== params.handle ||
+    params.existing.displayName !== params.displayName
+  ) {
+    changes.push({ sequence: params.sequence, operation: "metadata", metadata });
+  }
+
+  const previous = new Map(
+    (params.existing?.entries ?? []).map((entry) => [entryKey(entry), entry] as const),
+  );
+  const current = new Map(params.entries.map((entry) => [entryKey(entry), entry] as const));
+  for (const key of [...current.keys()].sort()) {
+    const entry = current.get(key)!;
+    const oldEntry = previous.get(key);
+    if (!oldEntry || !entryEquals(oldEntry, entry)) {
+      changes.push({ sequence: params.sequence, operation: "upsert", entry });
+    }
+  }
+  for (const key of [...previous.keys()].sort()) {
+    if (current.has(key)) continue;
+    const entry = previous.get(key)!;
+    changes.push({
+      sequence: params.sequence,
+      operation: "remove",
+      entryId: entry.id,
+      entryKind: entry.kind,
+    });
+  }
+  return changes;
+}
 
 function boundedSummary(value: string | null | undefined) {
   if (value == null) return null;
@@ -346,6 +421,219 @@ export const getPublisherFeedPublication = internalQuery({
   },
 });
 
+type StoredPublisherFeed = Pick<
+  Doc<"publisherFeedPublications">,
+  | "publisherId"
+  | "feedId"
+  | "sequence"
+  | "generatedAt"
+  | "handle"
+  | "displayName"
+  | "entries"
+  | "cumulativeChangeCount"
+>;
+
+function normalizedSearchText(value: string) {
+  return value.normalize("NFC").toLowerCase();
+}
+
+export function queryPublisherFeedPublicationImpl(
+  publication: StoredPublisherFeed,
+  rawQuery: PublisherFeedQuery,
+  offset: number,
+  limit: number,
+) {
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid query offset");
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > PUBLISHER_FEED_QUERY_MAX_LIMIT) {
+    throw new Error("Invalid query limit");
+  }
+  const query = normalizePublisherFeedQuery(rawQuery);
+  const kinds = query.kinds ? new Set(query.kinds) : null;
+  const text = query.text ? normalizedSearchText(query.text) : null;
+  const matches = publication.entries.filter((entry) => {
+    if (kinds && !kinds.has(entry.kind)) return false;
+    if (!text) return true;
+    return normalizedSearchText(
+      [entry.name, entry.displayName, entry.summary ?? ""].join("\n"),
+    ).includes(text);
+  });
+  if (offset > matches.length) throw new Error("Invalid query offset");
+  const entries = matches.slice(offset, offset + limit);
+  const nextOffset = offset + entries.length;
+  return {
+    feedId: publication.feedId,
+    sequence: publication.sequence,
+    query,
+    startIndex: offset,
+    resultCount: matches.length,
+    entries,
+    nextOffset: nextOffset < matches.length ? nextOffset : null,
+  };
+}
+
+export const queryPublisherFeed = internalQuery({
+  args: {
+    publisherId: v.string(),
+    query: v.object({
+      text: v.optional(v.string()),
+      kinds: v.optional(v.array(v.union(v.literal("skill"), v.literal("plugin")))),
+    }),
+    offset: v.number(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const publisher = await safeGetPublisher(ctx, args.publisherId);
+    const visibility = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visibility) return null;
+    const publication = await ctx.db
+      .query("publisherFeedPublications")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", visibility.publisher._id))
+      .unique();
+    if (!publication) return null;
+    return queryPublisherFeedPublicationImpl(publication, args.query, args.offset, args.limit);
+  },
+});
+
+function changeDocumentToWire(change: Doc<"publisherFeedChanges">): PublisherFeedChange {
+  if (change.operation === "upsert") {
+    return { sequence: change.sequence, operation: "upsert", entry: change.entry };
+  }
+  if (change.operation === "remove") {
+    return {
+      sequence: change.sequence,
+      operation: "remove",
+      entryId: change.entryId,
+      entryKind: change.entryKind,
+    };
+  }
+  return { sequence: change.sequence, operation: "metadata", metadata: change.metadata };
+}
+
+export const getPublisherFeedChanges = internalQuery({
+  args: {
+    publisherId: v.string(),
+    fromSequence: v.number(),
+    offset: v.number(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (
+      !Number.isSafeInteger(args.fromSequence) ||
+      args.fromSequence < 0 ||
+      !Number.isSafeInteger(args.offset) ||
+      args.offset < 0 ||
+      !Number.isSafeInteger(args.limit) ||
+      args.limit < 1 ||
+      args.limit > PUBLISHER_FEED_CHANGE_MAX_LIMIT
+    ) {
+      return { status: "invalid" as const };
+    }
+    const publisher = await safeGetPublisher(ctx, args.publisherId);
+    const visibility = await getPublicPublisherVisibility(ctx, publisher);
+    if (!visibility) return null;
+    const publication = await ctx.db
+      .query("publisherFeedPublications")
+      .withIndex("by_publisher", (q) => q.eq("publisherId", visibility.publisher._id))
+      .unique();
+    if (!publication) return null;
+    if (args.fromSequence > publication.sequence) return { status: "invalid" as const };
+    if (args.fromSequence === publication.sequence) {
+      if (args.offset !== 0) return { status: "invalid" as const };
+      return {
+        status: "complete" as const,
+        feedId: publication.feedId,
+        fromSequence: args.fromSequence,
+        toSequence: publication.sequence,
+        startIndex: 0,
+        changeCount: 0,
+        changes: [],
+        nextOffset: null,
+      };
+    }
+
+    const targetRevision = await ctx.db
+      .query("publisherFeedRevisions")
+      .withIndex("by_publisher_and_sequence", (q) =>
+        q.eq("publisherId", visibility.publisher._id).eq("sequence", publication.sequence),
+      )
+      .unique();
+    const baseRevision =
+      args.fromSequence === 0
+        ? null
+        : await ctx.db
+            .query("publisherFeedRevisions")
+            .withIndex("by_publisher_and_sequence", (q) =>
+              q.eq("publisherId", visibility.publisher._id).eq("sequence", args.fromSequence),
+            )
+            .unique();
+    const firstRevision =
+      args.fromSequence === 0
+        ? await ctx.db
+            .query("publisherFeedRevisions")
+            .withIndex("by_publisher_and_sequence", (q) =>
+              q.eq("publisherId", visibility.publisher._id).eq("sequence", 1),
+            )
+            .unique()
+        : null;
+    if (
+      !targetRevision ||
+      publication.cumulativeChangeCount === undefined ||
+      (args.fromSequence === 0
+        ? !firstRevision || firstRevision.cumulativeChangeCount === 0
+        : !baseRevision)
+    ) {
+      return {
+        status: "reset-required" as const,
+        feedId: publication.feedId,
+        fromSequence: args.fromSequence,
+        currentSequence: publication.sequence,
+      };
+    }
+
+    const baseChangeCount = baseRevision?.cumulativeChangeCount ?? 0;
+    const changeCount = targetRevision.cumulativeChangeCount - baseChangeCount;
+    if (args.offset > changeCount) return { status: "invalid" as const };
+    const firstChangeNumber = baseChangeCount + args.offset + 1;
+    const rows =
+      args.offset === changeCount
+        ? []
+        : await ctx.db
+            .query("publisherFeedChanges")
+            .withIndex("by_publisher_and_change_number", (q) =>
+              q
+                .eq("publisherId", visibility.publisher._id)
+                .gte("changeNumber", firstChangeNumber)
+                .lte("changeNumber", targetRevision.cumulativeChangeCount),
+            )
+            .order("asc")
+            .take(args.limit);
+    const expectedRows = Math.min(args.limit, changeCount - args.offset);
+    if (
+      rows.length !== expectedRows ||
+      rows.some((row, index) => row.changeNumber !== firstChangeNumber + index)
+    ) {
+      return {
+        status: "reset-required" as const,
+        feedId: publication.feedId,
+        fromSequence: args.fromSequence,
+        currentSequence: publication.sequence,
+      };
+    }
+    const page = rows;
+    const nextOffset = args.offset + page.length;
+    return {
+      status: "complete" as const,
+      feedId: publication.feedId,
+      fromSequence: args.fromSequence,
+      toSequence: publication.sequence,
+      startIndex: args.offset,
+      changeCount,
+      changes: page.map(changeDocumentToWire),
+      nextOffset: nextOffset < changeCount ? nextOffset : null,
+    };
+  },
+});
+
 type PublishPublisherFeedRevisionArgs = {
   publisherId: Id<"publishers">;
   feedId: string;
@@ -353,6 +641,39 @@ type PublishPublisherFeedRevisionArgs = {
   displayName: string;
   entries: PublisherFeedEntry[];
 };
+
+async function ensurePublisherFeedRevisionBaseline(
+  ctx: Pick<MutationCtx, "db">,
+  publication: Doc<"publisherFeedPublications">,
+) {
+  if (publication.cumulativeChangeCount !== undefined) {
+    return publication.cumulativeChangeCount;
+  }
+  const revision = await ctx.db
+    .query("publisherFeedRevisions")
+    .withIndex("by_publisher_and_sequence", (q) =>
+      q.eq("publisherId", publication.publisherId).eq("sequence", publication.sequence),
+    )
+    .unique();
+  if (!revision) {
+    await ctx.db.insert("publisherFeedRevisions", {
+      publisherId: publication.publisherId,
+      feedId: publication.feedId,
+      sequence: publication.sequence,
+      generatedAt: publication.generatedAt,
+      metadata: publisherMetadata({
+        publisherId: String(publication.publisherId),
+        handle: publication.handle,
+        displayName: publication.displayName,
+      }),
+      contentKey: publication.contentKey,
+      cumulativeChangeCount: 0,
+      publishedAt: publication.publishedAt,
+    });
+  }
+  await ctx.db.patch(publication._id, { cumulativeChangeCount: 0 });
+  return 0;
+}
 
 export async function publishPublisherFeedRevisionImpl(
   ctx: Pick<MutationCtx, "db">,
@@ -375,6 +696,7 @@ export async function publishPublisherFeedRevisionImpl(
     .withIndex("by_publisher", (q) => q.eq("publisherId", args.publisherId))
     .unique();
   if (existing?.contentKey === contentKey) {
+    await ensurePublisherFeedRevisionBaseline(ctx, existing);
     return buildFeed({
       publisherId: String(args.publisherId),
       feedId: args.feedId,
@@ -388,6 +710,29 @@ export async function publishPublisherFeedRevisionImpl(
 
   const generatedAt = new Date().toISOString();
   const sequence = (existing?.sequence ?? 0) + 1;
+  const cumulativeChangeCount = existing
+    ? await ensurePublisherFeedRevisionBaseline(ctx, existing)
+    : 0;
+  const changes = buildRevisionChanges({
+    existing,
+    publisherId: args.publisherId,
+    handle: args.handle,
+    displayName: args.displayName,
+    entries: args.entries,
+    sequence,
+  });
+  if (changes.length === 0) {
+    throw new Error("Changed publisher feed revision produced no change records");
+  }
+  for (const [index, change] of changes.entries()) {
+    await ctx.db.insert("publisherFeedChanges", {
+      publisherId: args.publisherId,
+      feedId: args.feedId,
+      changeNumber: cumulativeChangeCount + index + 1,
+      ...change,
+    });
+  }
+  const nextCumulativeChangeCount = cumulativeChangeCount + changes.length;
   const publication = {
     publisherId: args.publisherId,
     feedId: args.feedId,
@@ -397,6 +742,7 @@ export async function publishPublisherFeedRevisionImpl(
     displayName: args.displayName,
     entries: args.entries,
     contentKey,
+    cumulativeChangeCount: nextCumulativeChangeCount,
     publishedAt: Date.now(),
   };
   if (existing) {
@@ -404,6 +750,20 @@ export async function publishPublisherFeedRevisionImpl(
   } else {
     await ctx.db.insert("publisherFeedPublications", publication);
   }
+  await ctx.db.insert("publisherFeedRevisions", {
+    publisherId: args.publisherId,
+    feedId: args.feedId,
+    sequence,
+    generatedAt,
+    metadata: publisherMetadata({
+      publisherId: String(args.publisherId),
+      handle: args.handle,
+      displayName: args.displayName,
+    }),
+    contentKey,
+    cumulativeChangeCount: nextCumulativeChangeCount,
+    publishedAt: publication.publishedAt,
+  });
   return buildFeed({
     publisherId: String(args.publisherId),
     feedId: args.feedId,

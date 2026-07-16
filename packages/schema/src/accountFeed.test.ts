@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizePublisherFeedQuery,
   PUBLISHER_FEED_SCHEMA_VERSION,
   parsePublisherFeed,
   publisherFeedId,
@@ -32,6 +33,18 @@ function makeFeed(overrides: Partial<PublisherFeed> = {}): PublisherFeed {
 }
 
 describe("publisher feed schema", () => {
+  it("normalizes publisher queries with the specified ASCII whitespace rules", () => {
+    expect(
+      normalizePublisherFeedQuery({
+        text: "\tCafe\u0301\r\n tools ",
+        kinds: ["skill", "plugin", "skill"],
+      }),
+    ).toEqual({ text: "Café tools", kinds: ["plugin", "skill"] });
+    expect(() => normalizePublisherFeedQuery({ text: "   " })).toThrow(
+      "between 1 and 256 UTF-8 bytes",
+    );
+    expect(() => normalizePublisherFeedQuery({ kinds: [] })).toThrow("must not be empty");
+  });
   it("binds feed identity to the stable publisher id", () => {
     expect(publisherFeedId("publishers:alice")).toBe("clawhub.publisher.publishers:alice");
     expect(parsePublisherFeed(makeFeed()).entries[0]?.kind).toBe("skill");

@@ -2701,8 +2701,70 @@ const publisherFeedPublications = defineTable({
     }),
   ),
   contentKey: v.string(),
+  cumulativeChangeCount: v.optional(v.number()),
   publishedAt: v.number(),
 }).index("by_publisher", ["publisherId"]);
+
+const publisherFeedEntryValidator = v.object({
+  kind: v.union(v.literal("skill"), v.literal("plugin")),
+  id: v.string(),
+  name: v.string(),
+  displayName: v.string(),
+  summary: v.union(v.string(), v.null()),
+  url: v.string(),
+  updatedAt: v.number(),
+});
+
+const publisherFeedMetadataValidator = v.object({
+  publisherId: v.string(),
+  handle: v.union(v.string(), v.null()),
+  displayName: v.string(),
+});
+
+const publisherFeedRevisions = defineTable({
+  publisherId: v.id("publishers"),
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  metadata: publisherFeedMetadataValidator,
+  contentKey: v.string(),
+  cumulativeChangeCount: v.number(),
+  publishedAt: v.number(),
+})
+  .index("by_publisher_and_sequence", ["publisherId", "sequence"])
+  .index("by_feed_and_sequence", ["feedId", "sequence"]);
+
+const publisherFeedChanges = defineTable(
+  v.union(
+    v.object({
+      publisherId: v.id("publishers"),
+      feedId: v.string(),
+      sequence: v.number(),
+      changeNumber: v.number(),
+      operation: v.literal("upsert"),
+      entry: publisherFeedEntryValidator,
+    }),
+    v.object({
+      publisherId: v.id("publishers"),
+      feedId: v.string(),
+      sequence: v.number(),
+      changeNumber: v.number(),
+      operation: v.literal("remove"),
+      entryId: v.string(),
+      entryKind: v.union(v.literal("skill"), v.literal("plugin")),
+    }),
+    v.object({
+      publisherId: v.id("publishers"),
+      feedId: v.string(),
+      sequence: v.number(),
+      changeNumber: v.number(),
+      operation: v.literal("metadata"),
+      metadata: publisherFeedMetadataValidator,
+    }),
+  ),
+)
+  .index("by_publisher_and_change_number", ["publisherId", "changeNumber"])
+  .index("by_publisher_and_sequence", ["publisherId", "sequence"]);
 
 const stars = defineTable({
   skillId: v.id("skills"),
@@ -3431,6 +3493,8 @@ export default defineSchema({
   officialPluginMigrations,
   catalogFeedPublications,
   publisherFeedPublications,
+  publisherFeedRevisions,
+  publisherFeedChanges,
   stars,
   promotions,
   auditLogs,
