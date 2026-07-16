@@ -81,7 +81,13 @@ describe("run-codex-scan-worker diagnostics", () => {
             status: "suspicious",
             score: 93,
             issueCount: 1,
-            issues: [],
+            issues: [
+              {
+                issueId: "SDI-1",
+                severity: "HIGH",
+                explanation: "Detected suspicious behavior.",
+              },
+            ],
             checkedAt: 1,
           },
         }),
@@ -100,7 +106,13 @@ describe("run-codex-scan-worker diagnostics", () => {
             rawResult: JSON.stringify({
               status: "suspicious",
               issue_count: 1,
-              issues: [],
+              issues: [
+                {
+                  id: "SDI-1",
+                  severity: "HIGH",
+                  explanation: "Detected suspicious behavior.",
+                },
+              ],
             }),
           },
         }),
@@ -136,6 +148,22 @@ describe("run-codex-scan-worker diagnostics", () => {
             ...baseInput.skillSpector,
             exitCode: 2,
           },
+          skillSpectorAnalysis: {
+            status: "suspicious",
+            issueCount: 1,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
+    it("treats a positive issue count without parsed findings as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
           skillSpectorAnalysis: {
             status: "suspicious",
             issueCount: 1,
