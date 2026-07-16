@@ -64,7 +64,11 @@ not silently transfer a follow to an unrelated identity. If ownership changes
 materially, ClawHub should preserve the stable id and emit a material-change
 event or require an explicit follow reset, depending on the risk.
 
-## Events
+## Following Activity
+
+ClawHub exposes pull-based activity for followed publishers. Activity is a
+presentation-neutral substrate for a private inbox first and a chronological
+Following feed later. It must not fan every publish out as a per-user row.
 
 Suggested event types:
 
@@ -82,6 +86,24 @@ Events should carry stable ids, sequence or revision references, event time, and
 enough public display metadata for notifications. They should not carry private
 review evidence, secrets, raw signing keys, private source URLs, or unpublished
 package metadata.
+
+Each eligible public skill or plugin release creates one deduplicated activity
+row, independent of follower count. Publish does not fan out per-user rows,
+or schedule one job per follower. Activity reads apply the
+current follow graph and re-check publisher, artifact, version, moderation, and
+ownership visibility before returning an entry. The authenticated query is
+bounded, cursor-paginated, and returns `nextCursor: null` at completion.
+It reads the user's bounded followed-publisher set and each corresponding
+publisher activity index; unrelated publisher releases do not invalidate or
+rescan a user's activity view.
+
+Activity recording is secondary to publishing: a timeline storage failure is
+reported to operators but does not roll back an otherwise valid artifact
+release. Publisher hard deletion removes its activity rows in resumable batches.
+
+OpenClaw may separately notify users about updates to artifacts present in the
+local lockfile. That filtering belongs in OpenClaw because ClawHub does not know
+which artifacts are installed locally.
 
 ## Notification Rules
 

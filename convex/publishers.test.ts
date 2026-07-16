@@ -1162,7 +1162,7 @@ describe("publishers membership controls", () => {
         deactivatedAt: expect.any(Number),
       }),
     );
-    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(runMutation).toHaveBeenCalledTimes(4);
     expect(runMutation).toHaveBeenLastCalledWith(expect.anything(), {
       publisherId: "publishers:gladia",
     });

@@ -240,6 +240,7 @@ export const RETENTION_POLICIES = {
   stars: permanent("User star records."),
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   publisherFollows: permanent("User publisher follow preference records."),
+  publisherActivity: permanent("Public publisher release activity timeline."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   skillsShCatalogControls: permanent("Durable skills.sh catalog operator controls."),
