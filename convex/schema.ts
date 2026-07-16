@@ -513,6 +513,7 @@ const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
+  v.literal("claw"),
 );
 
 const packageChannelValidator = v.union(
@@ -639,6 +640,25 @@ const pluginManifestSummaryValidator = v.object({
       size: v.number(),
     }),
   ),
+});
+
+const clawManifestSummaryValidator = v.object({
+  schemaVersion: v.literal(1),
+  agent: v.object({
+    id: v.string(),
+    name: v.optional(v.string()),
+    description: v.optional(v.string()),
+  }),
+  workspace: v.object({
+    bootstrapFiles: v.array(v.string()),
+    fileCount: v.number(),
+  }),
+  packages: v.object({
+    skillCount: v.number(),
+    pluginCount: v.number(),
+  }),
+  mcpServerCount: v.number(),
+  cronJobCount: v.number(),
 });
 
 const packageVerificationValidator = v.optional(
@@ -1696,6 +1716,8 @@ const packageReleases = defineTable({
   normalizedBundleManifest: v.optional(v.any()),
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
+  extractedClawManifest: v.optional(v.any()),
+  clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
