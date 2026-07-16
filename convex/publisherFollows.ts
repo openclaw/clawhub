@@ -8,6 +8,7 @@ import {
   getPersonalPublisherForUser,
   getPublicPublisherVisibility,
   isPublisherActive,
+  MAX_FOLLOWED_PUBLISHERS,
 } from "./lib/publishers";
 
 const DEFAULT_LIST_LIMIT = 50;
@@ -15,7 +16,6 @@ const MAX_LIST_LIMIT = 100;
 const LIST_SCAN_BATCH_SIZE = 100;
 const MAX_LIST_SCAN_PAGES = 4;
 const DELETE_BATCH_SIZE = 200;
-export const MAX_FOLLOWED_PUBLISHERS = 100;
 
 function clampListLimit(limit: number | undefined) {
   if (!Number.isFinite(limit ?? DEFAULT_LIST_LIMIT)) return DEFAULT_LIST_LIMIT;
