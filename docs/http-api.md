@@ -122,7 +122,8 @@ Supports `limit` and opaque `cursor` pagination.
 API token required. `GET` lists the current user's followed publishers with
 optional `limit`, `cursor`, and `q`. `POST` accepts `{ "publisherId": "..." }`;
 `DELETE` accepts `publisherId` as a query parameter. Follow and unfollow are
-idempotent, and users cannot follow their own personal publisher.
+idempotent, users cannot follow their own personal publisher, and each user may
+follow up to 100 publishers.
 
 ### `GET /api/v1/search`
 

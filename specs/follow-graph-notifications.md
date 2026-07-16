@@ -35,6 +35,11 @@ through stable publisher ids.
 Follows must be keyed by stable ClawHub ids, not display names, handles, slugs,
 profile URLs, or feed URLs.
 
+Follow and unfollow operations are idempotent. A user cannot follow their own
+personal publisher. A publisher must pass ClawHub's canonical public visibility
+check before it can be followed or returned by a list. Each user may follow up
+to 100 publishers so discovery and activity reads remain bounded.
+
 At minimum, a follow row should preserve:
 
 - follower user id

@@ -11,6 +11,8 @@ const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 100;
 const LIST_SCAN_BATCH_SIZE = 100;
 const MAX_LIST_SCAN_PAGES = 4;
+const DELETE_BATCH_SIZE = 200;
+export const MAX_FOLLOWED_PUBLISHERS = 100;
 
 type NotificationPreference = "all" | "none";
 
@@ -78,6 +80,15 @@ async function followPublisherForUser(
       return toFollowResult({ ...existing, notifications, updatedAt: now });
     }
     return toFollowResult(existing);
+  }
+
+  const followed = await ctx.db
+    .query("publisherFollows")
+    .withIndex("by_follower_and_updatedAt", (q) => q.eq("followerUserId", args.followerUserId))
+    .order("desc")
+    .take(MAX_FOLLOWED_PUBLISHERS);
+  if (followed.length >= MAX_FOLLOWED_PUBLISHERS) {
+    throw new Error(`You can follow up to ${MAX_FOLLOWED_PUBLISHERS} publishers`);
   }
 
   const followId = await ctx.db.insert("publisherFollows", {
