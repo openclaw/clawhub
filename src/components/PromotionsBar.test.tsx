@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HomePromotionsSection } from "./HomePromotionsSection";
+import { PromotionsBar } from "./PromotionsBar";
 
 const { fetchMock, publicApiUrlMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -36,7 +36,7 @@ function promotionsResponse(promotions: Array<typeof promotion>) {
   });
 }
 
-describe("HomePromotionsSection", () => {
+describe("PromotionsBar", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(100_000);
@@ -58,7 +58,7 @@ describe("HomePromotionsSection", () => {
         promotionsResponse([{ ...promotion, startsAt: 120_000, endsAt: 200_000 }]),
       );
 
-    const { container } = render(<HomePromotionsSection />);
+    const { container } = render(<PromotionsBar />);
     await flushPromises();
     expect(screen.queryByText(promotion.title)).toBeNull();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://clawhub.test/api/v1/promotions");
@@ -71,6 +71,7 @@ describe("HomePromotionsSection", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://clawhub.test/api/v1/promotions");
     expect(screen.getByText(promotion.title)).toBeTruthy();
     expect(screen.getByText(promotion.blurb)).toBeTruthy();
+    expect(screen.queryByText("1 day left")).toBeNull();
     expect(container.querySelector('img[src="/tencent-hy-favicon.png"]')).toBeNull();
   });
 
@@ -79,7 +80,7 @@ describe("HomePromotionsSection", () => {
       .mockResolvedValueOnce(promotionsResponse([{ ...promotion, endsAt: 100_500 }]))
       .mockResolvedValueOnce(promotionsResponse([]));
 
-    render(<HomePromotionsSection />);
+    render(<PromotionsBar />);
     await flushPromises();
     expect(screen.getByText(promotion.title)).toBeTruthy();
     expect(screen.getByText(promotion.blurb)).toBeTruthy();
@@ -90,5 +91,24 @@ describe("HomePromotionsSection", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(promotion.title)).toBeNull();
+  });
+
+  it("uses the campaign date instead of a changing countdown for Tencent Hy3", async () => {
+    fetchMock.mockResolvedValueOnce(
+      promotionsResponse([
+        {
+          ...promotion,
+          title: "Tencent Hy3 is free on OpenRouter",
+          endsAt: Date.UTC(2026, 6, 21),
+        },
+      ]),
+    );
+
+    const { container } = render(<PromotionsBar />);
+    await flushPromises();
+
+    expect(screen.getByText("Tencent's latest model, free until July 21")).toBeTruthy();
+    expect(screen.queryByText(/days left/)).toBeNull();
+    expect(container.querySelector('img[src="/tencent-hy-favicon.png"]')).toBeTruthy();
   });
 });

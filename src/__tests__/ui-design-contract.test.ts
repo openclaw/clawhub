@@ -111,9 +111,7 @@ describe("restored UI design contract", () => {
     ]) {
       expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-control)");
     }
-    expect(cssRule(css, ".home-v2-promotion-title-icon")).toContain(
-      "border-radius: var(--oc-radius-inset)",
-    );
+    expect(cssRule(css, ".promotion-bar-icon")).toContain("border-radius: var(--oc-radius-inset)");
     expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
       "border-radius: var(--oc-radius-surface)",
     );
@@ -474,12 +472,15 @@ describe("restored UI design contract", () => {
     );
   });
 
-  it("keeps promotion cards within narrow mobile viewports", () => {
+  it("keeps the promotion bar thin and horizontally bounded", () => {
+    const rootSource = rootRoute();
     const css = styles();
 
-    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 56px");
-    expect(cssRule(css, ".home-v2-promotions-track")).toContain("display: grid");
-    expect(css).toContain("padding: 0 20px 48px");
+    expect(rootSource.indexOf("<PromotionsBar />")).toBeLessThan(rootSource.indexOf("<Header />"));
+    expect(cssRule(css, ".promotion-bar-track")).toContain("min-height: 36px");
+    expect(cssRule(css, ".promotion-bar-track")).toContain("overflow-x: auto");
+    expect(cssRule(css, ".promotion-bar-item")).toContain("min-width: min(100%, 520px)");
+    expect(css).toContain("min-width: 100%");
   });
 
   it("keeps typeahead creator avatars round for users and square for orgs", () => {
