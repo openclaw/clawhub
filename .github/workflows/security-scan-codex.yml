@@ -65,11 +65,9 @@ jobs:
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
+      CODEX_SECURITY_SCAN_MODE: ${{ vars.CODEX_SECURITY_SCAN_MODE || 'legacy' }}
+      CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '240000' }}
       CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN || '0' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX || 'docker' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE || 'ghcr.io/openclaw/clawscan-runtime@sha256:012f045c77e5adce3ff9d00ed37fe04ed020fdb555ebdcebab0e0dca48e19d7a' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS || '300000' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
       CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}

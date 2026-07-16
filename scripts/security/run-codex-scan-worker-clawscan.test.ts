@@ -101,6 +101,57 @@ async function writeFakeClawScanCommand(path: string, body: string) {
   await chmod(path, 0o755);
 }
 
+async function withFakeLegacySecondary<T>(run: () => Promise<T>) {
+  const binDir = await tempDir();
+  await writeFakeClawScanCommand(
+    join(binDir, "skillspector"),
+    `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"status":"clean","issue_count":0,"issues":[]}
+JSON`,
+  );
+  await writeFakeClawScanCommand(
+    join(binDir, "codex"),
+    `out=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --output-last-message)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+mkdir -p "$(dirname "$out")"
+cat > "$out" <<'JSON'
+{"verdict":"benign","confidence":"high","summary":"legacy diagnostic","dimensions":{"purpose_capability":{"status":"ok","detail":"ok"}},"scan_findings_in_context":[],"user_guidance":"guidance"}
+JSON`,
+  );
+
+  const previousPath = process.env.PATH;
+  process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+  try {
+    return await run();
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+  }
+}
+
 type ClawScanVerdict = "benign" | "suspicious" | "malicious";
 
 function completeJudgeDimensions() {
@@ -317,12 +368,14 @@ JSON`,
         const client = {
           action: vi.fn(async (..._args: unknown[]) => ({})),
         };
-        const result = await processJob(
-          client,
-          "worker-auth",
-          skillVersionJob(`securityScanJobs:${verdict}`),
-          undefined,
-          "clawscan",
+        const result = await withFakeLegacySecondary(async () =>
+          processJob(
+            client,
+            "worker-auth",
+            skillVersionJob(`securityScanJobs:${verdict}`),
+            undefined,
+            "clawscan",
+          ),
         );
 
         expect(result).toEqual({
@@ -443,17 +496,19 @@ JSON`,
         const client = {
           action: vi.fn(async (..._args: unknown[]) => ({})),
         };
-        const result = await processJob(
-          client,
-          "worker-auth",
-          claimedJob({
-            jobId: `securityScanJobs:${targetKind}-${source}`,
-            source,
-            target: await target(),
-            targetKind,
-          }),
-          undefined,
-          "clawscan",
+        const result = await withFakeLegacySecondary(async () =>
+          processJob(
+            client,
+            "worker-auth",
+            claimedJob({
+              jobId: `securityScanJobs:${targetKind}-${source}`,
+              source,
+              target: await target(),
+              targetKind,
+            }),
+            undefined,
+            "clawscan",
+          ),
         );
 
         expect(result).toEqual({

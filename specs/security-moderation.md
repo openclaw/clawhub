@@ -279,9 +279,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - The worker's explicit artifact-only OSS ClawScan route accepts every claimed
   target kind and source through the same completion/failure contract. Skill
   versions and scan requests use the isolated `artifact` root; extracted
-  ClawPack releases use `artifact/package`. Production remains on the legacy
-  default until the separate whole-system rollout changes it, and ClawScan
-  failures never trigger per-job legacy fallback.
+  ClawPack releases use `artifact/package`.
+- The temporary whole-system rollout mode accepts exactly `legacy`, `shadow`,
+  and `clawscan`, with `legacy` as the safe default until the production
+  cutover is explicitly approved. `legacy` runs only the legacy implementation.
+  `shadow` persists legacy authoritatively, then runs ClawScan diagnostically
+  against the same isolated artifact. `clawscan` persists ClawScan
+  authoritatively, then runs legacy diagnostically against that same artifact
+  during the soak. Secondary execution cannot change stored verdicts,
+  publication or moderation behavior, retries, or authoritative job success.
+  Authoritative ClawScan failures use the existing failure/retry lifecycle and
+  never trigger per-job legacy fallback. Rollback is a manual whole-system mode
+  change to `legacy`.
 - Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
   Successful completion requests another dispatch while queued work remains; a
   five-minute Convex cron is only a recovery watchdog for lost dispatch signals.
