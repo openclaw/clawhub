@@ -362,7 +362,11 @@ JSON`,
       const artifactJson = clawScanArtifactJson({ verdict });
       await writeFakeClawScanCommand(
         fakeClawScan,
-        `printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
+        `if [[ -n "\${VIRUSTOTAL_API_KEY:-}" ]]; then
+  echo "VirusTotal key leaked into ClawScan" >&2
+  exit 86
+fi
+printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
 out=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -386,7 +390,9 @@ JSON`,
       );
 
       const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      const previousVirusTotalKey = process.env.VIRUSTOTAL_API_KEY;
       process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+      process.env.VIRUSTOTAL_API_KEY = "vt-fixture-that-must-not-reach-clawscan";
       try {
         const client = {
           action: vi.fn(async (..._args: unknown[]) => ({})),
@@ -438,6 +444,8 @@ JSON`,
       } finally {
         if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
         else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+        if (previousVirusTotalKey === undefined) delete process.env.VIRUSTOTAL_API_KEY;
+        else process.env.VIRUSTOTAL_API_KEY = previousVirusTotalKey;
       }
     },
   );

@@ -90,7 +90,7 @@ const requeueExpiredCodexScanJobsInternalHandler = (
 
 const requeueFailedSecurityScanJobsInternalHandler = (
   requeueFailedSecurityScanJobsInternal as unknown as WrappedHandler<
-    { failedAfter: number; dryRun: boolean; limit?: number },
+    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number },
     {
       dryRun: boolean;
       matched: number;
@@ -628,8 +628,12 @@ function makeQueueHealthCtx(jobs: ScanJob[]) {
   return { db: { query } };
 }
 
-function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
+function makeFailedScanRecoveryCtx(
+  jobs: ScanJob[],
+  docs: Record<string, Record<string, unknown>> = {},
+) {
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
   const patch = vi.fn(
     async (
       tableOrId: string,
@@ -639,10 +643,20 @@ function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
       const id = maybeValue ? (idOrValue as string) : tableOrId;
       const value = maybeValue ?? (idOrValue as Record<string, unknown>);
       patches.push({ id, patch: value });
+      docs[id] = { ...docs[id], ...value };
     },
   );
   const query = vi.fn((table: string) => {
-    expect(table).toBe("securityScanJobs");
+    if (table !== "securityScanJobs") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+          order: vi.fn(() => ({ take: vi.fn(async () => []) })),
+          take: vi.fn(async () => []),
+          unique: vi.fn(async () => null),
+        })),
+      };
+    }
     return {
       withIndex: vi.fn(
         (
@@ -650,11 +664,13 @@ function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
           buildRange: (q: {
             eq: (field: string, value: unknown) => unknown;
             gte: (field: string, value: number) => unknown;
+            lt: (field: string, value: number) => unknown;
           }) => unknown,
         ) => {
           expect(indexName).toBe("by_status_and_updated_at");
           const equals = new Map<string, unknown>();
           let updatedAfter = Number.NEGATIVE_INFINITY;
+          let updatedBefore = Number.POSITIVE_INFINITY;
           const range = {
             eq(field: string, value: unknown) {
               equals.set(field, value);
@@ -665,6 +681,11 @@ function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
               updatedAfter = value;
               return range;
             },
+            lt(field: string, value: number) {
+              expect(field).toBe("updatedAt");
+              updatedBefore = value;
+              return range;
+            },
           };
           buildRange(range);
           const matched = jobs
@@ -672,7 +693,9 @@ function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
               (job) =>
                 Array.from(equals.entries()).every(
                   ([field, value]) => job[field as keyof ScanJob] === value,
-                ) && job.updatedAt >= updatedAfter,
+                ) &&
+                job.updatedAt >= updatedAfter &&
+                job.updatedAt < updatedBefore,
             )
             .sort((a, b) => a.updatedAt - b.updatedAt || a._id.localeCompare(b._id));
           return {
@@ -691,8 +714,11 @@ function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
     ctx: {
       db: {
         delete: vi.fn(),
-        get: vi.fn(),
-        insert: vi.fn(),
+        get: vi.fn(async (id: string) => docs[id] ?? null),
+        insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
+          inserts.push({ table, doc });
+          return `${table}:inserted`;
+        }),
         normalizeId: vi.fn((_table: string, id: string) => id),
         patch,
         query,
@@ -701,6 +727,7 @@ function makeFailedScanRecoveryCtx(jobs: ScanJob[]) {
       },
     },
     patches,
+    inserts,
   };
 }
 
@@ -2417,11 +2444,17 @@ describe("securityScan", () => {
         status: "succeeded",
         updatedAt: 102,
       }),
+      makeScanJob({
+        _id: "securityScanJobs:after-window",
+        status: "failed",
+        updatedAt: 103,
+      }),
     ]);
 
     const result = await requeueFailedSecurityScanJobsInternalHandler(ctx, {
       dryRun: true,
       failedAfter: 100,
+      failedBefore: 103,
       limit: 10,
     });
 
@@ -2461,6 +2494,7 @@ describe("securityScan", () => {
     const result = await requeueFailedSecurityScanJobsInternalHandler(firstCtx.ctx, {
       dryRun: false,
       failedAfter: 100,
+      failedBefore: 200,
       limit: 1,
     });
 
@@ -2497,6 +2531,7 @@ describe("securityScan", () => {
     const second = await requeueFailedSecurityScanJobsInternalHandler(secondCtx.ctx, {
       dryRun: false,
       failedAfter: 100,
+      failedBefore: 200,
     });
 
     expect(second).toMatchObject({ matched: 1, requeued: 1, hasMore: false });
@@ -2517,6 +2552,87 @@ describe("securityScan", () => {
             status: "queued",
             lastError: undefined,
             completedAt: undefined,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("restores failed GitHub-backed scans to pending while requeueing", async () => {
+    const ctx = makeFailedScanRecoveryCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:github-failed",
+          status: "failed",
+          source: "github",
+          targetKind: "skillScanRequest",
+          skillVersionId: undefined,
+          skillScanRequestId: "skillScanRequests:github",
+          attempts: 3,
+          updatedAt: 150,
+        }),
+      ],
+      {
+        "skillScanRequests:github": {
+          _id: "skillScanRequests:github",
+          githubSkillScanId: "githubSkillScans:github",
+          status: "failed",
+        },
+        "githubSkillScans:github": {
+          _id: "githubSkillScans:github",
+          skillId: "skills:github",
+          contentHash: "content-hash",
+          status: "failed",
+        },
+        "skills:github": {
+          _id: "skills:github",
+          installKind: "github",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+          slug: "github-skill",
+          displayName: "GitHub Skill",
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            comments: 0,
+            versions: 0,
+          },
+          moderationStatus: "hidden",
+          moderationReason: "scanner.failed",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 150,
+        },
+      },
+    );
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+    });
+
+    expect(result).toMatchObject({ matched: 1, requeued: 1, hasMore: false });
+    expect(ctx.patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "githubSkillScans:github",
+          patch: expect.objectContaining({
+            status: "pending",
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skills:github",
+          patch: expect.objectContaining({
+            githubScanStatus: "pending",
+            moderationStatus: "active",
+            moderationReason: "pending.scan",
           }),
         }),
       ]),

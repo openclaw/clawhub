@@ -2477,10 +2477,14 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
 export const requeueFailedSecurityScanJobsInternal = internalMutation({
   args: {
     failedAfter: v.number(),
+    failedBefore: v.number(),
     dryRun: v.boolean(),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    if (args.failedBefore <= args.failedAfter) {
+      throw new ConvexError("failedBefore must be greater than failedAfter");
+    }
     const limit = Math.max(
       1,
       Math.min(
@@ -2491,7 +2495,10 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
     const jobs = await ctx.db
       .query("securityScanJobs")
       .withIndex("by_status_and_updated_at", (q) =>
-        q.eq("status", "failed").gte("updatedAt", args.failedAfter),
+        q
+          .eq("status", "failed")
+          .gte("updatedAt", args.failedAfter)
+          .lt("updatedAt", args.failedBefore),
       )
       .order("asc")
       .take(limit + 1);
@@ -2518,12 +2525,33 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
         updatedAt: now,
       });
       if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
+        const request = await ctx.db.get(job.skillScanRequestId);
         await ctx.db.patch(job.skillScanRequestId, {
           status: "queued",
           lastError: undefined,
           completedAt: undefined,
           updatedAt: now,
         });
+        if (request?.githubSkillScanId) {
+          const scan = await ctx.db.get(request.githubSkillScanId);
+          if (scan) {
+            await ctx.db.patch(scan._id, {
+              status: "pending",
+              skillSpectorAnalysis: undefined,
+              llmAnalysis: undefined,
+              lastError: undefined,
+              runId: undefined,
+              completedAt: undefined,
+              updatedAt: now,
+            });
+            await applyGitHubSkillVerificationResultHandler(ctx, {
+              skillId: scan.skillId,
+              contentHash: scan.contentHash,
+              scanStatus: "pending",
+              now,
+            });
+          }
+        }
       }
     }
 

@@ -1236,12 +1236,14 @@ class CommandFailure extends Error {
 async function runCommand(
   command: string,
   args: string[],
-  options: { cwd: string; input?: string; timeoutMs: number },
+  options: { cwd: string; input?: string; omitEnv?: string[]; timeoutMs: number },
 ) {
   return await new Promise<{ stdout: string; stderr: string }>((resolvePromise, reject) => {
+    const env = codexEnv();
+    for (const name of options.omitEnv ?? []) delete env[name];
     const child = spawn(command, args, {
       cwd: options.cwd,
-      env: codexEnv(),
+      env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
@@ -1829,6 +1831,7 @@ export async function runClawScan(
   try {
     const output = await runCommand(command, args, {
       cwd: workspace,
+      omitEnv: ["VIRUSTOTAL_API_KEY"],
       timeoutMs: clawScanTimeoutMs(),
     });
     onDiagnostic({
