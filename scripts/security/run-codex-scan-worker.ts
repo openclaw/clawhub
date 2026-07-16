@@ -1907,22 +1907,25 @@ export function scanHealthClassification(input: {
 
   if (input.implementation === "legacy") {
     let skillSpectorStatus = input.skillSpectorAnalysis?.status;
+    let skillSpectorIssueCount = input.skillSpectorAnalysis?.issueCount;
     if (skillSpectorStatus === undefined && input.skillSpector.rawResult !== undefined) {
       try {
-        skillSpectorStatus = normalizeSkillSpectorAnalysis(input.skillSpector.rawResult).status;
+        const parsedReport = normalizeSkillSpectorAnalysis(input.skillSpector.rawResult);
+        skillSpectorStatus = parsedReport.status;
+        skillSpectorIssueCount = parsedReport.issueCount;
       } catch {
         skillSpectorStatus = "error";
+        skillSpectorIssueCount = 0;
       }
     }
     const skillSpectorRan =
       input.skillSpector.args !== undefined ||
       input.skillSpector.exitCode !== undefined ||
       input.skillSpector.timedOut === true;
-    const validParsedReport =
-      skillSpectorStatus !== undefined &&
-      skillSpectorStatus !== "error" &&
-      skillSpectorStatus !== "failed";
-    const validFindingsExit = input.skillSpector.exitCode === 1 && validParsedReport;
+    const validFindingsExit =
+      input.skillSpector.exitCode === 1 &&
+      (skillSpectorStatus === "suspicious" || skillSpectorStatus === "malicious") &&
+      (skillSpectorIssueCount ?? 0) > 0;
     const unexpectedExit =
       input.skillSpector.exitCode !== undefined &&
       input.skillSpector.exitCode !== 0 &&

@@ -148,6 +148,22 @@ describe("run-codex-scan-worker diagnostics", () => {
       });
     });
 
+    it("treats exit 1 with a clean zero-findings report as a scanner failure", () => {
+      expect(
+        scanHealthClassification({
+          ...baseInput,
+          skillSpectorAnalysis: {
+            status: "clean",
+            issueCount: 0,
+            issues: [],
+            checkedAt: 1,
+          },
+        }),
+      ).toMatchObject({
+        scannerStageFailed: true,
+      });
+    });
+
     it.each([undefined, "{malformed"])(
       "treats a nonzero exit with %s captured output as a scanner failure",
       (rawResult) => {
