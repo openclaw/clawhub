@@ -12,6 +12,7 @@ import {
 import {
   buildPrompt,
   normalizeSkillSpectorAnalysis,
+  publishWorkerHealthSummary,
   processJob,
   resolveSkillSpectorScanInput,
   resolveSkillSpectorScanInputs,
@@ -59,6 +60,63 @@ function unsafeFixtureLabels() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
+  it("publishes the worker report to the Actions summary and diagnostics artifact", async () => {
+    const diagnosticsRoot = await tempDir();
+    const stepSummaryPath = join(await tempDir(), "step-summary.md");
+    await writeFile(stepSummaryPath, "");
+    const previousStepSummary = process.env.GITHUB_STEP_SUMMARY;
+    process.env.GITHUB_STEP_SUMMARY = stepSummaryPath;
+    try {
+      await publishWorkerHealthSummary(diagnosticsRoot, {
+        authoritative: {
+          averageDurationMs: 30_000,
+          completed: 1,
+          failed: 0,
+          judgeStageFailures: 0,
+          scannerStageFailures: 0,
+          timedOut: 0,
+          unclassifiedFailures: 0,
+          verdicts: {
+            benign: 1,
+            malicious: 0,
+            suspicious: 0,
+            unknown: 0,
+          },
+        },
+        claimFailures: 0,
+        durationMs: 30_000,
+        mode: "clawscan",
+        queueHealth: {
+          snapshotAt: 1,
+          queueDepth: 2,
+          queueDepthIsEstimate: false,
+          readyQueueDepth: 1,
+          readyQueueDepthIsEstimate: false,
+          oldestReadyJobAgeSeconds: 60,
+          oldestReadyJobNextRunAt: 0,
+        },
+        throughputPerMinute: 2,
+        totalClaimed: 1,
+        workerId: "fixture-worker",
+      });
+    } finally {
+      if (previousStepSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+      else process.env.GITHUB_STEP_SUMMARY = previousStepSummary;
+    }
+
+    const markdown = await readFile(stepSummaryPath, "utf8");
+    expect(markdown).toContain("## Security scan worker health");
+    expect(markdown).toContain("| Completed | 1 |");
+    const artifact = JSON.parse(
+      await readFile(join(diagnosticsRoot, "worker-summary.json"), "utf8"),
+    );
+    expect(artifact).toMatchObject({
+      mode: "clawscan",
+      workerId: "fixture-worker",
+      queueHealth: { queueDepth: 2 },
+    });
+  });
+
   it("refills a free slot without waiting for the slowest active job", async () => {
     const started: string[] = [];
     let releaseSlowJob: (() => void) | undefined;
@@ -927,6 +985,8 @@ describe("run-codex-scan-worker diagnostics", () => {
           status: "clean",
           verdict: "benign",
         },
+        judgeStageFailed: false,
+        scannerStageFailed: false,
         secondary: {
           confidence: "high",
           implementation: "clawscan",
@@ -934,6 +994,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           verdict: "benign",
         },
         status: "completed",
+        timedOut: false,
       },
       skillSpectorAnalysis: {
         status: "suspicious",
@@ -1054,6 +1115,56 @@ describe("run-codex-scan-worker diagnostics", () => {
       status: "completed",
     });
     expect(await readdir(jobDir)).not.toContain("artifact");
+  });
+
+  it("retains complete redacted legacy diagnostics beyond the former file and bundle caps", async () => {
+    const diagnosticsRoot = await tempDir();
+    const jsonl = Array.from({ length: 4_000 }, (_, index) =>
+      JSON.stringify({
+        item: { id: `item-${index}`, type: "agent_message" },
+        status: "completed",
+        type: "item.completed",
+      }),
+    ).join("\n");
+    const stderr = `STDERR-BEGIN-${"a".repeat(70_000)}-STDERR-END`;
+
+    await writeJobDiagnostic({
+      codex: {
+        exitCode: 0,
+        stderr,
+        stdout: jsonl,
+      },
+      completedAt: 2,
+      diagnosticsRoot,
+      job: {
+        job: {
+          _id: "job-complete-legacy-diagnostics",
+          hasMaliciousSignal: false,
+          leaseToken: "fixture",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {},
+      },
+      startedAt: 1,
+      status: "completed",
+    });
+
+    const jobDir = join(diagnosticsRoot, "job-complete-legacy-diagnostics");
+    const stdout = await readFile(join(jobDir, "codex.stdout.redacted.jsonl"), "utf8");
+    const retainedLines = stdout.trim().split("\n");
+    expect(Buffer.byteLength(stdout)).toBeGreaterThan(256 * 1_024);
+    expect(retainedLines).toHaveLength(4_000);
+    expect(retainedLines[0]).toContain("item-0");
+    expect(retainedLines.at(-1)).toContain("item-3999");
+    expect(stdout).not.toContain("...[truncated ");
+
+    const retainedStderr = await readFile(join(jobDir, "codex.stderr.redacted.log"), "utf8");
+    expect(Buffer.byteLength(retainedStderr)).toBeGreaterThan(64 * 1_024);
+    expect(retainedStderr).toContain("STDERR-BEGIN");
+    expect(retainedStderr).toContain("STDERR-END");
+    expect(retainedStderr).not.toContain("...[truncated ");
   });
 
   it("retains full ClawScan artifact and scanner outputs with secret-safe redaction", async () => {
@@ -1267,10 +1378,14 @@ describe("run-codex-scan-worker diagnostics", () => {
           verdict: "benign",
         },
         error: `clawscan timed out with api_key=${redactionFixture}`,
+        failureStage: "unclassified",
+        judgeStageFailed: false,
+        scannerStageFailed: false,
         secondary: {
           implementation: "clawscan",
         },
         status: "failed",
+        timedOut: true,
       },
       startedAt: 1,
       status: "completed",

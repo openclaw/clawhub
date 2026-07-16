@@ -692,6 +692,7 @@ echo "not json" > "$out"`,
           return payload?.error ? { retry: false } : {};
         }),
       };
+      const onHealth = vi.fn();
 
       const result = await processJob(
         client,
@@ -699,6 +700,7 @@ echo "not json" > "$out"`,
         skillVersionJob("securityScanJobs:malformed"),
         undefined,
         "clawscan",
+        onHealth,
       );
 
       expect(result).toEqual({
@@ -763,6 +765,7 @@ JSON`,
           return payload?.error ? { retry: false } : {};
         }),
       };
+      const onHealth = vi.fn();
 
       const result = await processJob(
         client,
@@ -770,6 +773,7 @@ JSON`,
         skillVersionJob("securityScanJobs:judge-incomplete"),
         undefined,
         "clawscan",
+        onHealth,
       );
 
       expect(result).toEqual({
@@ -780,6 +784,13 @@ JSON`,
       expect(client.action).toHaveBeenCalledTimes(1);
       const payload = client.action.mock.calls[0]?.[1] as { error?: string } | undefined;
       expect(payload?.error).toContain("ClawScan judge dimensions missing required field(s)");
+      expect(onHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          completed: false,
+          failureStage: "judge",
+          judgeStageFailed: true,
+        }),
+      );
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
@@ -891,6 +902,7 @@ JSON`,
           return payload?.error ? { retry: false } : {};
         }),
       };
+      const onHealth = vi.fn();
 
       const result = await processJob(
         client,
@@ -898,6 +910,7 @@ JSON`,
         skillVersionJob("securityScanJobs:scanner-failed"),
         undefined,
         "clawscan",
+        onHealth,
       );
 
       expect(result).toEqual({
@@ -909,6 +922,13 @@ JSON`,
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
         error: "ClawScan scanner skillspector status was failed",
       });
+      expect(onHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          completed: false,
+          failureStage: "scanner",
+          scannerStageFailed: true,
+        }),
+      );
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
@@ -935,6 +955,7 @@ echo "this should never complete"`,
           return payload?.error ? { retry: true } : {};
         }),
       };
+      const onHealth = vi.fn();
 
       const result = await processJob(
         client,
@@ -942,6 +963,7 @@ echo "this should never complete"`,
         skillVersionJob("securityScanJobs:timeout"),
         undefined,
         "clawscan",
+        onHealth,
       );
 
       expect(result).toEqual({
@@ -952,6 +974,13 @@ echo "this should never complete"`,
       expect(client.action).toHaveBeenCalledTimes(1);
       const payload = client.action.mock.calls[0]?.[1] as { error?: string } | undefined;
       expect(payload?.error).toContain("timed out");
+      expect(onHealth).toHaveBeenCalledWith(
+        expect.objectContaining({
+          completed: false,
+          failureStage: "unclassified",
+          timedOut: true,
+        }),
+      );
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;

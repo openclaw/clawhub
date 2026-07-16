@@ -53,6 +53,9 @@ describe("security-scan-codex workflow", () => {
     const jobEnv = workflow.jobs["codex-security-scan"].env ?? {};
     const scanIndex = steps.findIndex((step) => step.id === "diagnostics_secret_scan");
     const uploadIndex = steps.findIndex((step) => step.uses === "actions/upload-artifact@v7");
+    const prepareStep = steps.find(
+      (step) => step.name === "Prepare Codex security diagnostics scan",
+    );
     const scanStep = steps[scanIndex];
     const uploadStep = steps[uploadIndex];
 
@@ -67,10 +70,13 @@ describe("security-scan-codex workflow", () => {
     expect(scanStep?.run).toContain("--only-verified");
     expect(scanStep?.run).toContain("--fail");
     expect(scanStep?.run).not.toContain("--debug");
+    expect(prepareStep?.if).toBe("${{ !cancelled() }}");
+    expect(scanStep?.if).toBe("${{ !cancelled() }}");
     expect(uploadStep?.if).toBe(
       "${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}",
     );
     expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
+    expect(uploadStep?.with?.["if-no-files-found"]).toBe("ignore");
     expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(40);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);

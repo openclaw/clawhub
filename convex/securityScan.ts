@@ -1125,6 +1125,20 @@ export const logCodexScanQueueHealthInternal = internalAction({
   },
 });
 
+export const getCodexScanQueueHealth = action({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args): Promise<CodexScanQueueHealth> => {
+    assertWorkerToken(args.token);
+    return await runQueryRef<CodexScanQueueHealth>(
+      ctx,
+      internalRefs.securityScan.getCodexScanQueueHealthInternal,
+      {},
+    );
+  },
+});
+
 function compareQueuedScanClaimOrder(a: Doc<"securityScanJobs">, b: Doc<"securityScanJobs">) {
   if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt - b.nextRunAt;
   if (a._creationTime !== b._creationTime) return a._creationTime - b._creationTime;
