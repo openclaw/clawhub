@@ -23,8 +23,7 @@ export function getPackageScopeOwnerMismatch(name, ownerHandle) {
     };
 }
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
-// Publication stays narrower until a family has a complete validation path.
-export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export const PackageVerificationTierSchema = type('"structural"|"source-linked"|"provenance-verified"|"rebuild-verified"');
 export const PackageVerificationScopeSchema = type('"artifact-only"|"dependency-graph-aware"');

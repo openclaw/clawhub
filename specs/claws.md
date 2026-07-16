@@ -31,18 +31,27 @@ OpenClaw's namespaced key or define their own profile-pointer contract.
 
 ## Staged implementation
 
-1. Add the shared grouped manifest contract, safe summary, and storage model.
-2. Add feature-gated authenticated publication, validation, and authoring docs.
+1. Add the shared grouped manifest contract, safe summary, and storage model
+   ([PR #3089](https://github.com/openclaw/clawhub/pull/3089)).
+2. Add feature-gated authenticated publication, package-content validation,
+   CLI authoring support, and authoring docs
+   ([PR #3090](https://github.com/openclaw/clawhub/pull/3090)).
 3. Add feature-gated search, detail, and API surfaces.
 4. Add hosted feed export and a published-package end-to-end proof through
    OpenClaw `claws add --dry-run`.
-
-The publish schema intentionally remains narrower than the storage family in
-the first slice. This prevents existing generic package endpoints from
-accepting Claws before their dedicated validation and gate are in place.
 
 The shared validator follows the RFC's strict v1 contract: strings are not
 trimmed into validity, MCP package selectors must resolve exact versions,
 process environment keys follow OpenClaw's host-wide safety policy, and tool
 filters accept only exact names plus `*` wildcards. Registry validation must
 not accept a declaration that the applying OpenClaw client rejects.
+
+Claws use the existing package publication pipeline. `package.json` declares
+the package identity, version, and package-relative `openclaw.claw` manifest
+path. Publication parses `CLAW.md` YAML frontmatter or the JSON compatibility
+form and validates the grouped manifest plus referenced workspace files. The
+release retains the exact artifact and a bounded derived summary rather than
+duplicating the full manifest into Convex storage. The server rejects
+`family: claw` before mutation when the experimental gate is disabled; the gate
+does not bypass ownership, moderation, scanning, or release invariants when
+enabled.

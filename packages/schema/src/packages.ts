@@ -29,8 +29,7 @@ export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string |
 export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
 
-// Publication stays narrower until a family has a complete validation path.
-export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
 
 export const PackageChannelSchema = type('"official"|"community"|"private"');

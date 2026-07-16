@@ -10,7 +10,7 @@ export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: 
 } | null;
 export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "claw" | "code-plugin" | "skill", {}>;
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
-export declare const PackagePublishFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "code-plugin" | "skill", {}>;
+export declare const PackagePublishFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "claw" | "code-plugin" | "skill", {}>;
 export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
 export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"community" | "official" | "private", {}>;
 export type PackageChannel = (typeof PackageChannelSchema)[inferred];
@@ -265,7 +265,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     name: string;
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
-    family: "bundle-plugin" | "code-plugin" | "skill";
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     version: string;
     changelog: string;
     manualOverrideReason?: string | undefined;
@@ -293,7 +293,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     name: string;
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
-    family: "bundle-plugin" | "code-plugin" | "skill";
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     version: string;
     changelog: string;
     manualOverrideReason?: string | undefined;

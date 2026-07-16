@@ -31,7 +31,8 @@
   },
   "dependencies": {
     "arktype": "2.2.3",
-    "croner": "10.0.1"
+    "croner": "10.0.1",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
     "@typescript/native": "npm:typescript@7.0.2",

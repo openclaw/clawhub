@@ -44,7 +44,7 @@ const fixture = {
 } as const;
 
 describe("Claw manifest contract", () => {
-  it("allows Claws in storage contracts without opening generic publication", () => {
+  it("allows Claws in storage and publication metadata contracts", () => {
     expect(PackageFamilySchema("claw")).toBe("claw");
     expect(
       PackagePublishMetadataSchema({
@@ -53,7 +53,7 @@ describe("Claw manifest contract", () => {
         version: "1.0.0",
         changelog: "Initial release",
       }),
-    ).toBeInstanceOf(ArkErrors);
+    ).not.toBeInstanceOf(ArkErrors);
   });
 
   it("accepts the grouped OpenClaw v1 fixture and derives a safe summary", () => {

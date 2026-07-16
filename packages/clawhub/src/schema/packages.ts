@@ -1,7 +1,7 @@
 import { type inferred, type } from "arktype";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
 
 export const PackageChannelSchema = type('"official"|"community"|"private"');
