@@ -60,6 +60,36 @@ async function expectPublishedDetailPage(page: Page, displayName: string) {
   }
 }
 
+async function expectPublishedDetailCurrentVersion(
+  page: Page,
+  args: { displayName: string; version: string },
+) {
+  await expectPublishedDetailPage(page, args.displayName);
+  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
+  await expect(metadata.getByText("Current version", { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(metadata.getByText(`v${args.version}`, { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+async function isPublishedDetailCurrentVersionVisible(
+  page: Page,
+  args: { displayName: string; version: string },
+) {
+  await waitForHydration(page);
+  const title = page.locator(".skill-page-title");
+  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
+  return (
+    (await title.textContent({ timeout: 500 }).catch(() => null)) === args.displayName &&
+    (await metadata
+      .getByText(`v${args.version}`, { exact: true })
+      .isVisible({ timeout: 500 })
+      .catch(() => false))
+  );
+}
+
 async function fillPublishSkillForm(
   page: Page,
   args: {
@@ -131,7 +161,7 @@ type MockPrePublicationClaim = {
   files?: Array<{ path: string; storageId?: string; url?: string | null }>;
 };
 
-async function claimMockPrePublicationChecks(args: {
+export async function claimMockPrePublicationChecks(args: {
   kind: "skill" | "package";
   slug: string;
   version: string;
@@ -538,17 +568,21 @@ export async function publishSkillVersion(
   const detailUrlPattern = new RegExp(`/[^/]+/(?:skills/)?${escapeRegExp(args.slug)}$`);
   const versionExists = async () =>
     args.versionExists ? await args.versionExists() : await publishedSkillVersionExists(page, args);
-  type PublishState = "duplicate" | "pending" | "private-detail" | "published" | "";
+  type PublishState = "duplicate" | "pending" | "private-detail" | "published" | "staged" | "";
   const readPublishState = async (): Promise<PublishState> => {
     if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
-    if (await versionExists()) return "published";
+    if (detailUrlPattern.test(new URL(page.url()).pathname)) {
+      if (await isPublishedDetailCurrentVersionVisible(page, args)) {
+        return "published";
+      }
+      if (await versionExists()) return "staged";
+      return "private-detail";
+    }
     const pendingChecks = page.getByText("Running TruffleHog and ClawScan", { exact: false });
     if (await pendingChecks.isVisible({ timeout: 500 }).catch(() => false)) {
       return "pending";
     }
-    if (!args.versionExists && detailUrlPattern.test(new URL(page.url()).pathname)) {
-      return "private-detail";
-    }
+    if (await versionExists()) return "staged";
     return "";
   };
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -562,31 +596,34 @@ export async function publishSkillVersion(
         .poll(readPublishState, { timeout: 60_000, intervals: [500, 1_000, 2_000] })
         .not.toBe("");
       const observedPublishState = await readPublishState();
-      if (observedPublishState !== "published" && !(await versionExists())) {
+      if (observedPublishState !== "published") {
         if (args.completeChecks === false) {
           return args.ownerHandle;
         }
-        await completeMockPrePublicationChecks({
-          kind: "skill",
-          slug: args.slug,
-          version: args.version,
+        await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
+          waitUntil: "domcontentloaded",
         });
-        await expect
-          .poll(versionExists, { timeout: 60_000, intervals: [500, 1_000, 2_000] })
-          .toBe(true);
+        if (!(await isPublishedDetailCurrentVersionVisible(page, args))) {
+          const completion = await completeMockPrePublicationChecks({
+            kind: "skill",
+            slug: args.slug,
+            version: args.version,
+          });
+          expect((completion as { status?: unknown }).status).toBe("finalized");
+        }
       }
       if (detailUrlPattern.test(new URL(page.url()).pathname)) break;
       await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
         waitUntil: "domcontentloaded",
       });
-      await expectPublishedDetailPage(page, args.displayName);
+      await expectPublishedDetailCurrentVersion(page, args);
       break;
     } catch (error) {
       await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
         waitUntil: "domcontentloaded",
       });
       try {
-        await expectPublishedDetailPage(page, args.displayName);
+        await expectPublishedDetailCurrentVersion(page, args);
         if (!args.versionExists || (await versionExists())) break;
         await page.goto(publishUrl, { waitUntil: "domcontentloaded" });
         await waitForPublishSkillForm(page);
@@ -620,6 +657,6 @@ export async function publishSkillVersion(
       await waitForHydration(page);
     }
   }
-  await expectPublishedDetailPage(page, args.displayName);
+  await expectPublishedDetailCurrentVersion(page, args);
   return actualOwnerHandle!;
 }

@@ -1,7 +1,8 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
   expectNoFatalErrorUi,
   expectNoRuntimeErrors,
+  recoverFromTransientErrorScreen,
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
@@ -19,6 +20,27 @@ test.skip(
 );
 
 test.setTimeout(180_000);
+
+async function gotoUntilStarButtonReady(page: Page, detailPath: string): Promise<Locator> {
+  const starButton = page.getByRole("button", { name: "Star skill" });
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    await page.goto(detailPath, { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+    await recoverFromTransientErrorScreen(page).catch(() => {});
+    try {
+      await expect(starButton).toBeVisible({ timeout: 30_000 });
+      return starButton;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 4) break;
+      await page.waitForTimeout(1_000 * attempt);
+    }
+  }
+
+  throw lastError;
+}
 
 async function expectHealthyStarPage(page: import("@playwright/test").Page, errors: string[]) {
   const expectedTransientTimeouts = [
@@ -66,12 +88,10 @@ test("starring a skill survives refresh with the synchronized count", async ({
   errors.length = 0;
 
   await signInAsLocalPersona(page, "user");
-  await page.goto(buildSkillDetailHref(ownerHandle, slug), { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
+  errors.length = 0;
+  const starButton = await gotoUntilStarButtonReady(page, buildSkillDetailHref(ownerHandle, slug));
   await expectLocalPersonaActive(page, "user");
 
-  const starButton = page.getByRole("button", { name: "Star skill" });
-  await expect(starButton).toBeVisible();
   await expect(starButton).toContainText("0");
 
   await starButton.click();

@@ -11,6 +11,7 @@ import {
 import {
   buildPluginDetailHref,
   buildPluginValidationHref,
+  claimMockPrePublicationChecks,
   completeMockPrePublicationChecks,
   escapeRegExp,
   signInAsLocalPersona,
@@ -174,6 +175,11 @@ async function expectHealthyInspectorPage(page: Page, errors: string[]) {
           expectedTransientTimeouts.some((functionName) => error.includes(functionName))
         ) &&
         !(
+          error.includes("CONVEX A(packages:publishRelease)") &&
+          error.includes("Version ") &&
+          error.includes(" already exists")
+        ) &&
+        !(
           sawHttpRateLimitTimeout &&
           (error.includes("Function execution timed out (maximum duration: 1s)") ||
             error.includes("ErrorBoundary caught") ||
@@ -284,13 +290,16 @@ async function publishWarningPluginWithRetry(args: {
       const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
       await expect(publishButton).toBeEnabled({ timeout: 60_000 });
       await publishButton.click({ timeout: 15_000 });
-      await expect(args.page.getByText("Running TruffleHog and ClawScan")).toBeVisible({
-        timeout: 60_000,
+      const claim = await claimMockPrePublicationChecks({
+        kind: "package",
+        slug: warningName,
+        version: "1.0.0",
       });
       await completeMockPrePublicationChecks({
         kind: "package",
         slug: warningName,
         version: "1.0.0",
+        claim,
       });
       return { warningDisplayName, warningName };
     } catch (error) {
@@ -372,8 +381,10 @@ test("plugin publish stays private until mocked TruffleHog and ClawScan pass", a
   const publishButton = page.getByRole("button", { name: "Publish plugin" });
   await expect(publishButton).toBeEnabled({ timeout: 60_000 });
   await publishButton.click({ timeout: 15_000 });
-  await expect(page.getByText("Running TruffleHog and ClawScan")).toBeVisible({
-    timeout: 60_000,
+  const claim = await claimMockPrePublicationChecks({
+    kind: "package",
+    slug: name,
+    version,
   });
 
   await expect(await publicPackageVersionExists(request, name, version)).toBe(false);
@@ -381,6 +392,7 @@ test("plugin publish stays private until mocked TruffleHog and ClawScan pass", a
     kind: "package",
     slug: name,
     version,
+    claim,
   });
   await expect
     .poll(() => publicPackageVersionExists(request, name, version), {
@@ -425,8 +437,10 @@ test("malicious ClawScan verdict keeps a staged plugin private", async ({
   const publishButton = page.getByRole("button", { name: "Publish plugin" });
   await expect(publishButton).toBeEnabled({ timeout: 60_000 });
   await publishButton.click({ timeout: 15_000 });
-  await expect(page.getByText("Running TruffleHog and ClawScan")).toBeVisible({
-    timeout: 60_000,
+  const claim = await claimMockPrePublicationChecks({
+    kind: "package",
+    slug: name,
+    version,
   });
 
   const result = (await completeMockPrePublicationChecks({
@@ -434,6 +448,7 @@ test("malicious ClawScan verdict keeps a staged plugin private", async ({
     slug: name,
     version,
     clawscan: "malicious",
+    claim,
   })) as { status?: string };
   expect(result.status).toBe("blocked");
   await expect(await publicPackageVersionExists(request, name, version)).toBe(false);

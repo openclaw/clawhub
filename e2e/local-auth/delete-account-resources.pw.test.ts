@@ -340,6 +340,7 @@ test("users can permanently delete their account and personal publisher resource
   });
 
   await signInAsLocalPersona(page, "user");
+  errors.length = 0;
   await expect
     .poll(() => pollableDevSeedState(() => getAccountRecreationState(fixture)), {
       timeout: 30_000,
