@@ -207,6 +207,7 @@ export const RETENTION_POLICIES = {
   packageModerationEventLogs: permanent("Package moderation event audit log."),
   officialPluginMigrations: permanent("Official plugin migration state."),
   catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
+  publisherFeedPublications: permanent("Current coherent publisher feed revision."),
   stars: permanent("User star records."),
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
