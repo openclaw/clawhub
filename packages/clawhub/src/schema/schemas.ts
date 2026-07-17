@@ -965,6 +965,13 @@ export const ApiV1UnbanUserResponseSchema = type({
   restoredSkills: "number?",
 });
 
+export const ApiV1LiftModerationHoldResponseSchema = type({
+  ok: "true",
+  alreadyCleared: "boolean",
+  restoredSkills: "number",
+  scheduledSkills: "boolean",
+});
+
 export const ApiV1ReclassifyBanResponseSchema = type({
   ok: "true",
   dryRun: "boolean",

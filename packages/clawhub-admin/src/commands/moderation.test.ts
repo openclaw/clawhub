@@ -21,6 +21,7 @@ vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdBanUser,
+  cmdLiftModerationHold,
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
@@ -933,6 +934,52 @@ describe("cmdUnbanUser", () => {
         method: "POST",
         path: "/api/v1/users/unban",
         body: { userId: "users_123" },
+      }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("cmdLiftModerationHold", () => {
+  it("requires an audit reason", async () => {
+    await expect(
+      cmdLiftModerationHold(makeGlobalOpts(), "demo", { yes: true }, false),
+    ).rejects.toThrow(/--reason required/i);
+  });
+
+  it("requires --yes when input is disabled", async () => {
+    await expect(
+      cmdLiftModerationHold(makeGlobalOpts(), "demo", { reason: "false positive" }, false),
+    ).rejects.toThrow(/--yes/i);
+  });
+
+  it("posts user id and reason", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyCleared: false,
+      restoredSkills: 1,
+      scheduledSkills: false,
+    });
+    await cmdLiftModerationHold(
+      makeGlobalOpts(),
+      "users_123",
+      {
+        id: true,
+        reason: "Issue #3008 false positive",
+        yes: true,
+        json: true,
+      },
+      false,
+    );
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/lift-moderation-hold",
+        body: {
+          userId: "users_123",
+          reason: "Issue #3008 false positive",
+        },
       }),
       expect.anything(),
     );

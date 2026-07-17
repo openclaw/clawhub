@@ -8433,6 +8433,61 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("lift moderation hold requires admin", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/lift-moderation-hold", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ userId: "users:target", reason: "false positive" }),
+      }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("lift moderation hold forwards actor, target, and reason", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "admin" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValueOnce(okRate()).mockResolvedValueOnce({
+      ok: true,
+      alreadyCleared: false,
+      restoredSkills: 1,
+      scheduledSkills: false,
+    });
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/users/lift-moderation-hold", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          userId: "users:target",
+          reason: "Issue #3008 false positive",
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      alreadyCleared: false,
+      restoredSkills: 1,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:actor",
+        targetUserId: "users:target",
+        reason: "Issue #3008 false positive",
+      }),
+    );
+  });
+
   it("reclassify ban requires admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
