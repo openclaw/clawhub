@@ -29,7 +29,11 @@ import {
   packagesGetRouterV1Http,
   packagesPostRouterV1Http,
   pluginsGetRouterV1Http,
+  publisherFollowsDeleteV1Http,
+  publisherFollowsGetV1Http,
+  publisherFollowsPostV1Http,
   createPublisherV1Http,
+  publishersGetRouterV1Http,
   publishPackageV1Http,
   publishSkillV1Http,
   resolveSkillVersionV1Http,
@@ -310,6 +314,30 @@ http.route({
   path: ApiRoutes.publishers,
   method: "POST",
   handler: createPublisherV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.publishers}/`,
+  method: "GET",
+  handler: publishersGetRouterV1Http,
+});
+
+http.route({
+  path: ApiRoutes.publisherFollows,
+  method: "GET",
+  handler: publisherFollowsGetV1Http,
+});
+
+http.route({
+  path: ApiRoutes.publisherFollows,
+  method: "POST",
+  handler: publisherFollowsPostV1Http,
+});
+
+http.route({
+  path: ApiRoutes.publisherFollows,
+  method: "DELETE",
+  handler: publisherFollowsDeleteV1Http,
 });
 
 http.route({

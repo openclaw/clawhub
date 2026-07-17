@@ -30,6 +30,7 @@ export const ApiRoutes = {
   stars: "/api/v1/stars",
   transfers: "/api/v1/transfers",
   publishers: "/api/v1/publishers",
+  publisherFollows: "/api/v1/publisher-follows",
   users: "/api/v1/users",
   contentRights: "/api/v1/content-rights",
   whoami: "/api/v1/whoami",

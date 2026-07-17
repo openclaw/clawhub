@@ -7,6 +7,11 @@ export type PublisherRole = "owner" | "admin" | "publisher";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
 
+export type PublicPublisherVisibility = {
+  publisher: Doc<"publishers">;
+  linkedUser: Doc<"users"> | null;
+};
+
 export const PUBLISHER_HANDLE_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,38}[a-z0-9])?$/;
 export const PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE =
   "Handle must be 40 characters or fewer, start and end with a lowercase letter or number, and use only lowercase letters, numbers, hyphens, dots, or underscores";
@@ -109,7 +114,7 @@ export function formatReservedOpenClawPublisherHandleMessage(handle: string) {
 
 export function isPublisherActive(
   publisher: Pick<Doc<"publishers">, "deletedAt" | "deactivatedAt"> | null | undefined,
-) {
+): publisher is Doc<"publishers"> {
   return Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt);
 }
 
@@ -230,6 +235,39 @@ export async function getPersonalPublisherForUser(ctx: DbCtx, userId: Id<"users"
     if (isMissingPublisherTableError(error)) return null;
     throw error;
   }
+}
+
+async function getLegacyPersonalPublisherOwner(
+  ctx: Pick<QueryCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const memberships = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .collect();
+  for (const membership of memberships) {
+    if (membership.role !== "owner") continue;
+    const user = await ctx.db.get(membership.userId);
+    if (user && !user.deletedAt && !user.deactivatedAt) return user;
+  }
+  return null;
+}
+
+export async function getPublicPublisherVisibility(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  publisher: Doc<"publishers"> | null | undefined,
+): Promise<PublicPublisherVisibility | null> {
+  if (!isPublisherActive(publisher)) return null;
+  if (publisher.kind !== "user") return { publisher, linkedUser: null };
+
+  if (!publisher.linkedUserId) {
+    const legacyOwner = await getLegacyPersonalPublisherOwner(ctx, publisher._id);
+    return legacyOwner ? { publisher, linkedUser: legacyOwner } : null;
+  }
+
+  const linkedUser = await ctx.db.get(publisher.linkedUserId);
+  if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) return null;
+  return { publisher, linkedUser };
 }
 
 export async function ensurePersonalPublisherForUser(
@@ -611,3 +649,4 @@ export async function getOwnerPublisher(
   if (!user || user.deletedAt || user.deactivatedAt) return null;
   return await getPersonalPublisherForUserOrFallback(ctx, user);
 }
+export const MAX_FOLLOWED_PUBLISHERS = 100;

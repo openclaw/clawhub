@@ -1978,7 +1978,7 @@ describe("users profile audit logs", () => {
       user: { _id: "users:self" },
     } as never);
     const { ctx, get, insert, query } = makeCtx();
-    const runMutation = vi.fn();
+    const runMutation = vi.fn(async () => ({ deleted: 0, scheduled: false }));
     (ctx as { runMutation?: typeof runMutation }).runMutation = runMutation;
     get.mockResolvedValue({
       _id: "users:self",
