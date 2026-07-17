@@ -176,6 +176,7 @@ export async function signedCatalogFeedV1Handler(
     catalogFeedResponseHeaders(publication, {
       representationSha256: signed.sha256,
       additionalHeaders: {
+        "Content-Type": "application/vnd.dsse+json; charset=utf-8",
         "X-Catalog-Payload-SHA256": publication.payloadSha256,
         "X-OpenClaw-Feed-Signing-Key-ID": signingConfig.keyId,
       },
