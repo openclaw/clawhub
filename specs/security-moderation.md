@@ -271,15 +271,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
-  hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
-  for VirusTotal telemetry, then Codex reviews the materialized artifact
-  workspace with static and VT signals as context.
+  hosted LLM call. Codex reviews the materialized artifact workspace with
+  SkillSpector and static scan evidence as context.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
-- ClawHub owns the single live VirusTotal scan for a published artifact. The
-  worker passes the stored full `vtAnalysis` JSON into OSS ClawScan as the
-  `virustotal` scanner result; it must not give ClawScan a VT credential or
-  trigger a second live VT request.
+- VirusTotal telemetry remains a separate Security audit signal and is not an
+  input to the production ClawScan profile or judge.
 - The worker's explicit artifact-only OSS ClawScan route accepts every claimed
   target kind and source through the same completion/failure contract. Skill
   versions and scan requests use the isolated `artifact` root; extracted

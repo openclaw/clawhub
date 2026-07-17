@@ -131,7 +131,7 @@ describe("security-scan-codex workflow", () => {
     const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
     expect(codexInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(codexInstall).not.toContain("@latest");
-    expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.5");
+    expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.6");
     expect(clawScanInstall).not.toContain("@latest");
     expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
     expect(skillspectorInstall).not.toContain("git+https://github.com/NVIDIA/skillspector.git'");

@@ -86,7 +86,7 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.5
+          npm install -g @openclaw/clawscan@0.1.6
           clawscan --version
 
       - name: Run pre-publication publish worker
@@ -94,6 +94,5 @@ jobs:
           CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-          VIRUSTOTAL_API_KEY: ${{ secrets.VT_API_KEY }}
         run: |
           bun run publish:prepublication-worker
