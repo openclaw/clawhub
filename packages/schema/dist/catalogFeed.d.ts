@@ -26,6 +26,8 @@ export type CatalogFeedInstallCandidate = (typeof CatalogFeedInstallCandidateSch
 export declare const CatalogFeedPluginEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     title: string;
+    description?: string | undefined;
+    icon?: string | undefined;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     featured?: boolean | undefined;
@@ -53,6 +55,8 @@ export type CatalogFeedPluginEntry = (typeof CatalogFeedPluginEntrySchema)[infer
 export declare const CatalogFeedSkillEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     title: string;
+    description?: string | undefined;
+    icon?: string | undefined;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     featured?: boolean | undefined;
@@ -80,6 +84,8 @@ export type CatalogFeedSkillEntry = (typeof CatalogFeedSkillEntrySchema)[inferre
 export declare const CatalogFeedEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     title: string;
+    description?: string | undefined;
+    icon?: string | undefined;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     featured?: boolean | undefined;
@@ -105,6 +111,8 @@ export declare const CatalogFeedEntrySchema: import("arktype/internal/variants/o
 } | {
     id: string;
     title: string;
+    description?: string | undefined;
+    icon?: string | undefined;
     version: string;
     state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     featured?: boolean | undefined;
@@ -139,6 +147,8 @@ export declare const CatalogFeedSchema: import("arktype/internal/variants/object
     entries: ({
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
@@ -164,6 +174,8 @@ export declare const CatalogFeedSchema: import("arktype/internal/variants/object
     } | {
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
