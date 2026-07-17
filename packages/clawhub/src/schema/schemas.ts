@@ -325,6 +325,11 @@ export const ApiV1OfficialPublisherListResponseSchema = type({
     displayName: "string|null",
     kind: '"user"|"org"|null',
     active: "boolean",
+    "state?": {
+      claimState: '"unclaimed"|"claimed"',
+      officialState: '"notOfficial"|"official"',
+      restrictionState: '"active"|"deactivated"|"deleted"|"missing"',
+    },
     reason: "string|null",
     createdByUserId: "string|null",
     createdByHandle: "string|null",

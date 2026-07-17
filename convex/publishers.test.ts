@@ -6765,7 +6765,12 @@ describe("official publisher administration", () => {
       expect.objectContaining({
         action: "publisher.official.add",
         targetId: "publishers:steipete",
-        metadata: { handle: "steipete", reason: "Verified individual publisher" },
+        metadata: {
+          handle: "steipete",
+          reason: "Verified individual publisher",
+          priorOfficialState: "notOfficial",
+          officialState: "official",
+        },
       }),
     );
   });
