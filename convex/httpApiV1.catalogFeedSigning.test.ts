@@ -95,6 +95,7 @@ describe("signed catalog feed", () => {
     const body = await first.text();
     const envelope = JSON.parse(body) as { payload: string };
     expect(Buffer.from(envelope.payload, "base64url").toString("utf8")).toBe(publication.payload);
+    expect(first.headers.get("content-type")).toBe("application/vnd.dsse+json; charset=utf-8");
     expect(first.headers.get("etag")).toMatch(/^"sha256:[a-f0-9]{64}"$/u);
     expect(first.headers.get("x-content-sha256")).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.headers.get("x-catalog-payload-sha256")).toBe(publication.payloadSha256);
@@ -137,7 +138,11 @@ describe("signed catalog feed", () => {
     {},
     { CLAWHUB_FEED_SIGNING_CONFIG: "not-json" },
     { CLAWHUB_FEED_SIGNING_CONFIG: "[]" },
-    { CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({ keyId: "clawhub-feed-2026-q3" }) },
+    {
+      CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({
+        keyId: "clawhub-feed-2026-q3",
+      }),
+    },
     {
       CLAWHUB_FEED_SIGNING_CONFIG: JSON.stringify({
         keyId: "clawhub-feed-2026-q3",
