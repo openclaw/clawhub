@@ -148,4 +148,23 @@ describe("CliDeviceAuth", () => {
     expect(authorize).toHaveProperty("disabled", true);
     expect(deny).toHaveProperty("disabled", true);
   });
+
+  it("shows a clean message when a device code was already used", async () => {
+    approveMock.mockRejectedValue(
+      new Error(
+        "[CONVEX M(cliDeviceAuth:approve)] [Request ID: test] Server Error Called by client ConvexError: Device code already used",
+      ),
+    );
+    denyMock.mockResolvedValue(undefined);
+    useMutationMock.mockImplementation((mutation: string) =>
+      mutation === "approve" ? approveMock : denyMock,
+    );
+
+    render(<CliDeviceAuth />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
+
+    expect(await screen.findByText("Device code already used")).toBeTruthy();
+    expect(screen.queryByText(/Server Error Called by client/)).toBeNull();
+  });
 });

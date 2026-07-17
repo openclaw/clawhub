@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { isCliDeviceUserCode } from "../../lib/cliDeviceCode";
+import { getUserFacingConvexError } from "../../lib/convexError";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/cli/device")({
@@ -45,7 +46,7 @@ export function CliDeviceAuth() {
       setIsComplete(true);
       setStatus("Authorized. You can return to your terminal.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Authorization failed.");
+      setStatus(getUserFacingConvexError(error, "Authorization failed."));
     } finally {
       actionInFlight.current = false;
       setPendingAction(null);
@@ -64,7 +65,7 @@ export function CliDeviceAuth() {
       setIsComplete(true);
       setStatus("Denied. You can close this page.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Deny failed.");
+      setStatus(getUserFacingConvexError(error, "Deny failed."));
     } finally {
       actionInFlight.current = false;
       setPendingAction(null);

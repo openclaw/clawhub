@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
@@ -88,19 +88,19 @@ export const approve = mutation({
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
     const normalized = normalizeUserCode(args.userCode);
-    if (!normalized) throw new Error("Code required");
+    if (!normalized) throw new ConvexError("Code required");
 
     const userCodeHash = await hashToken(normalized);
     const now = Date.now();
     const rows = await expireStaleRows(ctx, await getRowsByUserCodeHash(ctx, userCodeHash), now);
     const row =
       pickLatestRow(rows, now, "pending") ?? pickLatestRow(rows, now) ?? pickLatestRow(rows);
-    if (!row) throw new Error("Device code not found");
-    if (row.expiresAt <= now) throw new Error("Device code expired");
-    if (row.status === "expired") throw new Error("Device code expired");
-    if (row.status === "consumed") throw new Error("Device code already used");
-    if (row.status === "approved") throw new Error("Device code already authorized");
-    if (row.status === "denied") throw new Error("Device code was denied");
+    if (!row) throw new ConvexError("Device code not found");
+    if (row.expiresAt <= now) throw new ConvexError("Device code expired");
+    if (row.status === "expired") throw new ConvexError("Device code expired");
+    if (row.status === "consumed") throw new ConvexError("Device code already used");
+    if (row.status === "approved") throw new ConvexError("Device code already authorized");
+    if (row.status === "denied") throw new ConvexError("Device code was denied");
 
     await ctx.db.patch(row._id, {
       status: "approved",
@@ -116,14 +116,14 @@ export const deny = mutation({
   handler: async (ctx, args) => {
     await requireUser(ctx);
     const normalized = normalizeUserCode(args.userCode);
-    if (!normalized) throw new Error("Code required");
+    if (!normalized) throw new ConvexError("Code required");
     const userCodeHash = await hashToken(normalized);
     const now = Date.now();
     const rows = await expireStaleRows(ctx, await getRowsByUserCodeHash(ctx, userCodeHash), now);
     const row =
       pickLatestRow(rows, now, "pending") ?? pickLatestRow(rows, now) ?? pickLatestRow(rows);
-    if (!row) throw new Error("Device code not found");
-    if (row.status === "approved") throw new Error("Device code already authorized");
+    if (!row) throw new ConvexError("Device code not found");
+    if (row.status === "approved") throw new ConvexError("Device code already authorized");
     if (row.status === "pending") {
       await ctx.db.patch(row._id, { status: "denied", deniedAt: now });
     }
