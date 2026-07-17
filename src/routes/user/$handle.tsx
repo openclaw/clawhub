@@ -7,7 +7,7 @@ import {
   normalizeCatalogTopic,
   resolveStoredPluginCategories,
 } from "clawhub-schema";
-import { usePaginatedQuery, useQuery } from "convex/react";
+import { useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -18,6 +18,8 @@ import {
   Plus,
   Search,
   Star,
+  UserCheck,
+  UserPlus,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -63,6 +65,7 @@ import {
   SKILL_CATEGORIES,
   type BrowseCategory,
 } from "../../lib/categories";
+import { getUserFacingConvexError } from "../../lib/convexError";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
 import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../../lib/ownerRoute";
@@ -413,12 +416,14 @@ function PublisherProfile() {
 function PublisherProfileChromeActions({
   addHandle,
   showEditProfile,
+  followControl,
   isAuthenticated,
   onReport,
   requireSignIn,
 }: {
   addHandle?: string;
   showEditProfile: boolean;
+  followControl?: ReactNode;
   isAuthenticated: boolean;
   onReport: () => void;
   requireSignIn: () => void;
@@ -430,6 +435,7 @@ function PublisherProfileChromeActions({
           <Link to="/settings">Edit profile</Link>
         </Button>
       ) : null}
+      {followControl}
       {addHandle ? (
         <Button asChild size="sm" variant="primary">
           <Link to="/add" search={{ kind: "skill", ownerHandle: addHandle, method: undefined }}>
@@ -471,6 +477,52 @@ function PublisherProfileChromeActions({
   );
 }
 
+function PublisherFollowControl({
+  authLoading,
+  isAuthenticated,
+  isFollowing,
+  isLoading,
+  isPending,
+  onToggle,
+  requireSignIn,
+}: {
+  authLoading: boolean;
+  isAuthenticated: boolean;
+  isFollowing: boolean;
+  isLoading: boolean;
+  isPending: boolean;
+  onToggle: () => void;
+  requireSignIn: () => void;
+}) {
+  const label = isFollowing ? "Following" : "Follow";
+  const Icon = isFollowing ? UserCheck : UserPlus;
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={isFollowing ? "secondary" : "primary"}
+      loading={authLoading || isPending || isLoading}
+      aria-pressed={isFollowing}
+      aria-describedby="publisher-follow-help"
+      onClick={() => {
+        if (!isAuthenticated) {
+          requireSignIn();
+          return;
+        }
+        onToggle();
+      }}
+    >
+      <Icon size={15} aria-hidden="true" />
+      {label}
+      <span id="publisher-follow-help" className="sr-only">
+        Following a publisher changes discovery only. It does not mark packages official, reviewed,
+        or installable.
+      </span>
+    </Button>
+  );
+}
+
 function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublisherProfileItem }) {
   return (
     <div className="publisher-profile-chrome-identity">
@@ -509,8 +561,10 @@ export function PublisherProfilePage({
   handle: string;
   loaderPublisher: PublicPublisherProfileItem;
 }) {
-  const { isAuthenticated, me } = useAuthStatus();
+  const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const { signIn } = useAuthActions();
+  const followPublisher = useMutation(api.publisherFollows.followPublisher);
+  const unfollowPublisher = useMutation(api.publisherFollows.unfollowPublisher);
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>(() =>
     resolveDefaultCatalogTab(loaderPublisher),
   );
@@ -561,7 +615,12 @@ export function PublisherProfilePage({
   const myPublisherMemberships = useQuery(
     api.publishers.listMine,
     isAuthenticated ? {} : "skip",
-  ) as Array<{ publisher: { handle: string; kind: "user" | "org" }; role: string }> | undefined;
+  ) as
+    | Array<{
+        publisher: { _id: string; handle: string; kind: "user" | "org" };
+        role: string;
+      }>
+    | undefined;
 
   const viewerCanSeeMemberRoles = useMemo(() => {
     if (!myPublisherMemberships) return false;
@@ -580,6 +639,41 @@ export function PublisherProfilePage({
     publisher?.kind === "user" &&
     (viewerCanAddToPublisher || (me?.handle != null && me.handle === handle));
   const viewerCanSeeOrgRoles = isAdmin(me) || (me?.handle != null && me.handle === handle);
+  const viewerIsPublisher = Boolean(
+    publisher &&
+    me?._id &&
+    (publisher.linkedUserId === me._id ||
+      myPublisherMemberships?.some(
+        (entry) => entry.publisher._id === publisher._id && entry.role === "owner",
+      )),
+  );
+  const followPublisherId = publisher?._id as Id<"publishers"> | undefined;
+  const followPublisherHandle = publisher?.handle ?? handle;
+  const isFollowingPublisher = useQuery(
+    api.publisherFollows.isFollowingPublisher,
+    isAuthenticated && followPublisherId && !viewerIsPublisher
+      ? { publisherId: followPublisherId }
+      : "skip",
+  ) as boolean | undefined;
+  const [isFollowPending, setIsFollowPending] = useState(false);
+
+  const handleToggleFollow = async () => {
+    if (!followPublisherId || isFollowPending) return;
+    setIsFollowPending(true);
+    try {
+      if (isFollowingPublisher) {
+        await unfollowPublisher({ publisherId: followPublisherId });
+        toast.success(`Unfollowed @${followPublisherHandle}.`);
+      } else {
+        await followPublisher({ publisherId: followPublisherId });
+        toast.success(`Following @${followPublisherHandle}.`);
+      }
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Could not update follow state."));
+    } finally {
+      setIsFollowPending(false);
+    }
+  };
 
   const {
     results: publishedResults,
@@ -753,6 +847,21 @@ export function PublisherProfilePage({
               <PublisherProfileChromeActions
                 addHandle={viewerCanAddToPublisher ? publisher.handle : undefined}
                 showEditProfile={viewerOwnsPersonalPublisher}
+                followControl={
+                  viewerIsPublisher ? undefined : (
+                    <PublisherFollowControl
+                      authLoading={isAuthLoading}
+                      isAuthenticated={isAuthenticated}
+                      isFollowing={Boolean(isFollowingPublisher)}
+                      isLoading={isAuthenticated && isFollowingPublisher === undefined}
+                      isPending={isFollowPending}
+                      onToggle={handleToggleFollow}
+                      requireSignIn={() => {
+                        void signIn("github");
+                      }}
+                    />
+                  )
+                }
                 isAuthenticated={isAuthenticated}
                 onReport={openReportDialog}
                 requireSignIn={() => {

@@ -1,14 +1,30 @@
 /* @vitest-environment jsdom */
 
 import { fireEvent, render, screen } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { loaderDataMock, navigateMock, queryMock, searchMock } = vi.hoisted(() => ({
-  loaderDataMock: vi.fn(),
-  navigateMock: vi.fn(),
-  queryMock: vi.fn(),
-  searchMock: vi.fn(),
+const { authStatusMock, loaderDataMock, navigateMock, queryMock, searchMock, useQueryMock } =
+  vi.hoisted(() => ({
+    authStatusMock: vi.fn(),
+    loaderDataMock: vi.fn(),
+    navigateMock: vi.fn(),
+    queryMock: vi.fn(),
+    searchMock: vi.fn(),
+    useQueryMock: vi.fn(),
+  }));
+
+vi.mock("convex/react", () => ({
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
+}));
+
+vi.mock("../lib/useAuthStatus", () => ({
+  useAuthStatus: () => authStatusMock(),
+}));
+
+vi.mock("../components/MarketplaceIcon", () => ({
+  MarketplaceIcon: ({ label }: { label: string }) => <span>{label}</span>,
 }));
 
 vi.mock("../convex/client", () => ({
@@ -77,6 +93,8 @@ async function loadRoute() {
 describe("creators route", () => {
   beforeEach(() => {
     vi.resetModules();
+    authStatusMock.mockReset();
+    authStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: false, me: null });
     loaderDataMock.mockReset();
     loaderDataMock.mockReturnValue({
       page: [],
@@ -94,6 +112,8 @@ describe("creators route", () => {
     });
     searchMock.mockReset();
     searchMock.mockReturnValue({});
+    useQueryMock.mockReset();
+    useQueryMock.mockReturnValue(undefined);
   });
 
   it("renders the public creators listing surface", async () => {
@@ -130,12 +150,21 @@ describe("creators route", () => {
     expect(route.__config.validateSearch?.({ kind: "builders" })).toEqual({
       kind: "people",
       official: undefined,
+      following: undefined,
       q: undefined,
       view: undefined,
     });
     expect(route.__config.validateSearch?.({ kind: "individuals" })).toEqual({
       kind: "people",
       official: undefined,
+      following: undefined,
+      q: undefined,
+      view: undefined,
+    });
+    expect(route.__config.validateSearch?.({ following: "true" })).toEqual({
+      kind: undefined,
+      official: undefined,
+      following: true,
       q: undefined,
       view: undefined,
     });
@@ -193,6 +222,7 @@ describe("creators route", () => {
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Verified" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Following" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Organizations" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Users" })).toBeTruthy();
     expect(screen.queryByText("Builders")).toBeNull();
@@ -254,6 +284,213 @@ describe("creators route", () => {
     });
     expect(lastCall.replace).toBe(true);
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+  });
+
+  it("renders followed publishers for signed-in users", async () => {
+    searchMock.mockReturnValue({ following: true });
+    authStatusMock.mockReturnValue({ isAuthenticated: true, isLoading: false, me: {} });
+    useQueryMock.mockImplementation((query: Parameters<typeof getFunctionName>[0]) => {
+      if (getFunctionName(query) === "publisherActivity:listMine") {
+        return { items: [], nextCursor: null };
+      }
+      return {
+        items: [
+          {
+            publisher: {
+              _id: "publishers:demo",
+              handle: "demo",
+              displayName: "Demo Publisher",
+              kind: "user",
+              image: null,
+            },
+          },
+        ],
+        nextCursor: null,
+      };
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(await screen.findByText("@demo")).toBeTruthy();
+    expect(screen.getByText("Followed publisher")).toBeTruthy();
+    expect(screen.queryByText("No publishers found")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Grid" })).toBeNull();
+  });
+
+  it("does not flash the signed-out following state while auth loads", async () => {
+    searchMock.mockReturnValue({ following: true });
+    authStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: true, me: null });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText("Loading followed publishers...")).toBeTruthy();
+    expect(screen.queryByText("Sign in to see publishers you follow")).toBeNull();
+  });
+
+  it("renders followed publisher activity as a timeline instead of notifications", async () => {
+    searchMock.mockReturnValue({ following: true });
+    authStatusMock.mockReturnValue({ isAuthenticated: true, isLoading: false, me: {} });
+    useQueryMock.mockImplementation((query: Parameters<typeof getFunctionName>[0]) => {
+      if (getFunctionName(query) === "publisherActivity:listMine") {
+        return {
+          items: [
+            {
+              activityId: "publisherActivity:1",
+              eventType: "skill.publish",
+              eventAt: Date.now(),
+              version: "1.2.3",
+              publisher: {
+                publisherId: "publishers:nvidia",
+                handle: "nvidia",
+                displayName: "NVIDIA",
+                kind: "org",
+                image: null,
+              },
+              artifact: {
+                kind: "skill",
+                artifactId: "skills:cuda",
+                displayName: "CUDA Helper",
+                href: "/nvidia/skills/cuda-helper",
+              },
+            },
+          ],
+          nextCursor: null,
+        };
+      }
+      return { items: [], nextCursor: null };
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText("Latest from publishers you follow")).toBeTruthy();
+    const activityLink = screen.getByRole("link", { name: /NVIDIA published CUDA Helper/i });
+    expect(activityLink.getAttribute("href")).toBe("/nvidia/skills/cuda-helper");
+    expect(screen.queryByText(/unread/i)).toBeNull();
+  });
+
+  it("loads older activity through the timeline cursor", async () => {
+    searchMock.mockReturnValue({ following: true });
+    authStatusMock.mockReturnValue({ isAuthenticated: true, isLoading: false, me: {} });
+    useQueryMock.mockImplementation(
+      (query: Parameters<typeof getFunctionName>[0], args: Record<string, unknown> | "skip") => {
+        if (getFunctionName(query) !== "publisherActivity:listMine") {
+          return { items: [], nextCursor: null };
+        }
+        const older = args !== "skip" && args.cursor === "activity:older";
+        return {
+          items: older
+            ? [
+                {
+                  activityId: "publisherActivity:older",
+                  eventType: "skill.publish",
+                  eventAt: 1,
+                  version: "1.0.0",
+                  publisher: {
+                    publisherId: "publishers:nvidia",
+                    handle: "nvidia",
+                    displayName: "NVIDIA",
+                    kind: "org",
+                    image: null,
+                  },
+                  artifact: {
+                    kind: "skill",
+                    artifactId: "skills:older",
+                    displayName: "Older Skill",
+                    href: "/nvidia/skills/older",
+                  },
+                },
+              ]
+            : [],
+          nextCursor: older ? null : "activity:older",
+        };
+      },
+    );
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Load older activity" }));
+    expect(await screen.findByRole("link", { name: /Older Skill/i })).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+      cursor: "activity:older",
+      limit: 25,
+    });
+  });
+
+  it("loads older followed publishers through the follow cursor", async () => {
+    searchMock.mockReturnValue({ following: true });
+    authStatusMock.mockReturnValue({ isAuthenticated: true, isLoading: false, me: {} });
+    useQueryMock.mockImplementation((query, args: Record<string, unknown> | "skip") => {
+      if (getFunctionName(query) === "publisherActivity:listMine") {
+        return { items: [], nextCursor: null };
+      }
+      if (args === "skip") return undefined;
+      if (args.cursor === "next") {
+        return {
+          items: [
+            {
+              publisher: {
+                _id: "publishers:older",
+                handle: "older",
+                displayName: "Older Publisher",
+                kind: "org",
+                image: null,
+              },
+            },
+          ],
+          nextCursor: null,
+        };
+      }
+      return {
+        items: [
+          {
+            publisher: {
+              _id: "publishers:first",
+              handle: "first",
+              displayName: "First Publisher",
+              kind: "user",
+              image: null,
+            },
+          },
+        ],
+        nextCursor: "next",
+      };
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(await screen.findByText("@first")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByText("@older")).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), { cursor: "next", limit: 25 });
+  });
+
+  it("passes followed publisher search to the follow query", async () => {
+    searchMock.mockReturnValue({ following: true, q: "older" });
+    authStatusMock.mockReturnValue({ isAuthenticated: true, isLoading: false, me: {} });
+    useQueryMock.mockImplementation((query: Parameters<typeof getFunctionName>[0]) => {
+      if (getFunctionName(query) === "publisherActivity:listMine") {
+        return { items: [], nextCursor: null };
+      }
+      return { items: [], nextCursor: null };
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), { limit: 25, query: "older" });
+    expect(await screen.findByText("No followed publishers match")).toBeTruthy();
   });
 
   it("sets creators-specific sharing metadata", async () => {

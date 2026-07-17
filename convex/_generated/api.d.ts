@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as accountFeeds from "../accountFeeds.js";
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
 import type * as catalogClassification from "../catalogClassification.js";
@@ -33,11 +34,13 @@ import type * as githubSkillSyncNode from "../githubSkillSyncNode.js";
 import type * as http from "../http.js";
 import type * as httpApi from "../httpApi.js";
 import type * as httpApiV1 from "../httpApiV1.js";
+import type * as httpApiV1_accountFeedsV1 from "../httpApiV1/accountFeedsV1.js";
 import type * as httpApiV1_catalogFeedV1 from "../httpApiV1/catalogFeedV1.js";
 import type * as httpApiV1_contentRightsV1 from "../httpApiV1/contentRightsV1.js";
 import type * as httpApiV1_docsSessionV1 from "../httpApiV1/docsSessionV1.js";
 import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_promotionsV1 from "../httpApiV1/promotionsV1.js";
+import type * as httpApiV1_publisherFollowsV1 from "../httpApiV1/publisherFollowsV1.js";
 import type * as httpApiV1_publishersV1 from "../httpApiV1/publishersV1.js";
 import type * as httpApiV1_shared from "../httpApiV1/shared.js";
 import type * as httpApiV1_skillsV1 from "../httpApiV1/skillsV1.js";
@@ -147,6 +150,8 @@ import type * as publishAttempts from "../publishAttempts.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
 import type * as publisherAbuseDevSeed from "../publisherAbuseDevSeed.js";
 import type * as publisherAbuseTemporalScan from "../publisherAbuseTemporalScan.js";
+import type * as publisherFollows from "../publisherFollows.js";
+import type * as publisherActivity from "../publisherActivity.js";
 import type * as publishers from "../publishers.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as retention from "../retention.js";
@@ -175,6 +180,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accountFeeds: typeof accountFeeds;
   appMeta: typeof appMeta;
   auth: typeof auth;
   catalogClassification: typeof catalogClassification;
@@ -200,11 +206,13 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   httpApi: typeof httpApi;
   httpApiV1: typeof httpApiV1;
+  "httpApiV1/accountFeedsV1": typeof httpApiV1_accountFeedsV1;
   "httpApiV1/catalogFeedV1": typeof httpApiV1_catalogFeedV1;
   "httpApiV1/contentRightsV1": typeof httpApiV1_contentRightsV1;
   "httpApiV1/docsSessionV1": typeof httpApiV1_docsSessionV1;
   "httpApiV1/packagesV1": typeof httpApiV1_packagesV1;
   "httpApiV1/promotionsV1": typeof httpApiV1_promotionsV1;
+  "httpApiV1/publisherFollowsV1": typeof httpApiV1_publisherFollowsV1;
   "httpApiV1/publishersV1": typeof httpApiV1_publishersV1;
   "httpApiV1/shared": typeof httpApiV1_shared;
   "httpApiV1/skillsV1": typeof httpApiV1_skillsV1;
@@ -314,6 +322,8 @@ declare const fullApi: ApiFromModules<{
   publisherAbuse: typeof publisherAbuse;
   publisherAbuseDevSeed: typeof publisherAbuseDevSeed;
   publisherAbuseTemporalScan: typeof publisherAbuseTemporalScan;
+  publisherFollows: typeof publisherFollows;
+  publisherActivity: typeof publisherActivity;
   publishers: typeof publishers;
   rateLimits: typeof rateLimits;
   retention: typeof retention;

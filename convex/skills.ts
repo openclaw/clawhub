@@ -173,6 +173,7 @@ import { readCanonicalStat } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
+import { recordPublisherPublicationActivity } from "./publisherActivity";
 import schema from "./schema";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
@@ -12830,6 +12831,26 @@ export const insertVersion = internalMutation({
       kind: "source",
       createdAt: now,
     });
+
+    if (isPublicSkillDoc(nextSkill)) {
+      try {
+        await recordPublisherPublicationActivity(ctx, {
+          publisherId: ownerPublisherId,
+          eventType: "skill.publish",
+          skillId: skill._id,
+          skillVersionId: versionId,
+          version: args.version,
+          eventAt: now,
+        });
+      } catch (error) {
+        console.warn("Failed to record publisher skill activity", {
+          publisherId: ownerPublisherId,
+          skillId: skill._id,
+          versionId,
+          error,
+        });
+      }
+    }
 
     return { skillId: skill._id, versionId, embeddingId };
   },

@@ -1916,6 +1916,24 @@ function makeInsertReleaseCtx(
             ),
           };
         }
+        if (table === "publisherActivity") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const query = {
+                  eq() {
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return { unique: vi.fn().mockResolvedValue(null) };
+              },
+            ),
+          };
+        }
         throw new Error(`Unexpected table ${table}`);
       }),
       insert,

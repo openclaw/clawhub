@@ -15,14 +15,29 @@ import {
   shouldShowPublisherCatalogLoadMore,
 } from "../routes/user/$handle";
 
-const { authStatusMock, loaderDataMock, paginatedQueryMock, queryMock } = vi.hoisted(() => ({
+const {
+  authStatusMock,
+  followPublisherMock,
+  loaderDataMock,
+  mutationCallState,
+  paginatedQueryMock,
+  queryMock,
+  unfollowPublisherMock,
+} = vi.hoisted(() => ({
   authStatusMock: vi.fn(),
+  followPublisherMock: vi.fn(),
   loaderDataMock: vi.fn(),
+  mutationCallState: { count: 0 },
   paginatedQueryMock: vi.fn(),
   queryMock: vi.fn(),
+  unfollowPublisherMock: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
+  useMutation: () => {
+    mutationCallState.count += 1;
+    return mutationCallState.count % 2 === 1 ? followPublisherMock : unfollowPublisherMock;
+  },
   usePaginatedQuery: (...args: unknown[]) => paginatedQueryMock(...args),
   useQuery: (...args: unknown[]) => queryMock(...args),
 }));
@@ -84,10 +99,13 @@ const publisher = {
 describe("user profile route", () => {
   beforeEach(() => {
     vi.resetModules();
-    loaderDataMock.mockReset();
-    loaderDataMock.mockReturnValue({ publisher });
     authStatusMock.mockReset();
     authStatusMock.mockReturnValue({ isAuthenticated: false, isLoading: false, me: null });
+    followPublisherMock.mockReset();
+    followPublisherMock.mockResolvedValue({ following: true });
+    mutationCallState.count = 0;
+    loaderDataMock.mockReset();
+    loaderDataMock.mockReturnValue({ publisher });
     paginatedQueryMock.mockReset();
     paginatedQueryMock.mockReturnValue({
       loadMore: vi.fn(),
@@ -98,9 +116,13 @@ describe("user profile route", () => {
     queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
       if (args === "skip") return undefined;
       if ("publisherHandle" in args) return { publisher, members: [] };
+      if ("publisherId" in args) return false;
       if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) return [];
       return publisher;
     });
+    unfollowPublisherMock.mockReset();
+    unfollowPublisherMock.mockResolvedValue({ following: false });
   });
 
   it("shows downloads in the publisher stat strip", async () => {
@@ -122,7 +144,7 @@ describe("user profile route", () => {
     render(<Component />);
 
     expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Follow" })).toBeNull();
+    expect(screen.getByRole("button", { name: /follow/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Profile actions" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /github/i })).toBeTruthy();
   });
@@ -131,19 +153,25 @@ describe("user profile route", () => {
     const personalPublisher = {
       ...publisher,
       kind: "user" as const,
+      linkedUserId: "users:nvidia",
     };
     loaderDataMock.mockReturnValue({ publisher: personalPublisher });
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
-      me: { handle: "nvidia" },
+      me: { _id: "users:nvidia", handle: "nvidia" },
     });
     queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
       if (args === "skip") return undefined;
       if ("publisherHandle" in args) return { publisher: personalPublisher, members: [] };
       if ("kind" in args) return null;
       if (Object.keys(args).length === 0) {
-        return [{ publisher: { handle: "nvidia", kind: "user" }, role: "owner" }];
+        return [
+          {
+            publisher: { _id: "publishers:nvidia", handle: "nvidia", kind: "user" },
+            role: "owner",
+          },
+        ];
       }
       return personalPublisher;
     });
@@ -163,6 +191,85 @@ describe("user profile route", () => {
     expect(add.getAttribute("href")).toContain("/add");
     expect(screen.queryByRole("button", { name: "Profile actions" })).toBeNull();
     expect(screen.queryByText("Report profile")).toBeNull();
+    expect(screen.queryByRole("button", { name: /follow/i })).toBeNull();
+  });
+
+  it("requires sign-in before following a publisher", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: /follow/i }));
+
+    expect(followPublisherMock).not.toHaveBeenCalled();
+  });
+
+  it("follows a publisher for signed-in users", async () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:viewer", handle: "viewer", role: "user" },
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: /follow/i }));
+
+    expect(followPublisherMock).toHaveBeenCalledWith({ publisherId: "publishers:nvidia" });
+  });
+
+  it("unfollows a publisher when already following", async () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:viewer", handle: "viewer", role: "user" },
+    });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher, members: [] };
+      if ("publisherId" in args) return true;
+      if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) return [];
+      return publisher;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: /following/i }));
+
+    expect(unfollowPublisherMock).toHaveBeenCalledWith({ publisherId: "publishers:nvidia" });
+  });
+
+  it("does not render follow controls on the viewer's own profile", async () => {
+    const personalPublisher = {
+      ...publisher,
+      kind: "user" as const,
+      linkedUserId: "users:nvidia",
+    };
+    loaderDataMock.mockReturnValue({ publisher: personalPublisher });
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:nvidia", handle: "nvidia", role: "user" },
+    });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: personalPublisher, members: [] };
+      if ("kind" in args) return null;
+      if (Object.keys(args).length === 0) return [];
+      return personalPublisher;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("button", { name: /follow/i })).toBeNull();
   });
 
   it("renders segmented catalog tabs and sort control", async () => {

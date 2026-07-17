@@ -1473,6 +1473,209 @@
             }
           }
         }
+      },
+      "PublisherFeedPublicPublisher": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "user",
+              "org"
+            ]
+          },
+          "handle": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "PublisherFeedDetailResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "publisher",
+          "feedUrl"
+        ],
+        "properties": {
+          "publisher": {
+            "$ref": "#/components/schemas/PublisherFeedPublicPublisher"
+          },
+          "feedUrl": {
+            "type": "string"
+          }
+        }
+      },
+      "PublisherFeedEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "name",
+          "displayName",
+          "summary",
+          "url",
+          "updatedAt"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "plugin"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        }
+      },
+      "PublisherFeed": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "feedId",
+          "publisherId",
+          "handle",
+          "displayName",
+          "generatedAt",
+          "sequence",
+          "entries",
+          "nextCursor"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "feedId": {
+            "type": "string"
+          },
+          "publisherId": {
+            "type": "string"
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublisherFeedEntry"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Opaque continuation cursor; null only when the coherent publisher projection is complete."
+          }
+        }
+      },
+      "PublisherConnection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["publisherId", "handle", "displayName", "kind", "image"],
+        "properties": {
+          "publisherId": { "type": "string" },
+          "handle": { "type": "string" },
+          "displayName": { "type": "string" },
+          "kind": { "type": "string", "enum": ["user", "org"] },
+          "image": { "type": ["string", "null"] }
+        }
+      },
+      "PublisherConnectionList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok", "items", "nextCursor"],
+        "properties": {
+          "ok": { "type": "boolean", "const": true },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PublisherConnection" }
+          },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+      "PublisherFollow": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["publisherId", "following"],
+        "properties": {
+          "followId": { "type": "string" },
+          "publisherId": { "type": "string" },
+          "following": { "type": "boolean" },
+          "createdAt": { "type": "number" },
+          "updatedAt": { "type": "number" },
+          "publisher": { "$ref": "#/components/schemas/PublisherFeedPublicPublisher" }
+        }
+      },
+      "PublisherFollowList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok", "items", "nextCursor"],
+        "properties": {
+          "ok": { "type": "boolean", "const": true },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PublisherFollow" }
+          },
+          "nextCursor": { "type": ["string", "null"] }
+        }
       }
     }
   },
@@ -1803,6 +2006,94 @@
           },
           "429": {
             "description": "Rate limit exceeded",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/packages/search": {
+      "get": {
+        "summary": "Search unified package catalog",
+        "description": "Searches skills and plugin packages.",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "family",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "skill",
+                "code-plugin",
+                "bundle-plugin"
+              ]
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "official",
+                "community",
+                "private"
+              ]
+            }
+          },
+          {
+            "name": "isOfficial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Catalog search results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
             "content": {
               "text/plain": {
                 "schema": {
@@ -2434,94 +2725,6 @@
         }
       }
     },
-    "/api/v1/packages/search": {
-      "get": {
-        "summary": "Search unified package catalog",
-        "description": "Searches skills and plugin packages.",
-        "security": [
-          {},
-          {
-            "bearerAuth": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "q",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          {
-            "name": "family",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "skill",
-                "code-plugin",
-                "bundle-plugin"
-              ]
-            }
-          },
-          {
-            "name": "channel",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "official",
-                "community",
-                "private"
-              ]
-            }
-          },
-          {
-            "name": "isOfficial",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Catalog search results",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PackageSearchResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/PlainTextError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/plugins": {
       "get": {
         "summary": "List plugin catalog packages",
@@ -2675,6 +2878,318 @@
           },
           "400": {
             "description": "Invalid request",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/publisher-follows": {
+      "get": {
+        "summary": "List publishers followed by the authenticated user",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Followed publishers",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PublisherFollowList" } }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor, limit, or query",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      },
+      "post": {
+        "summary": "Follow a publisher",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["publisherId"],
+                "properties": { "publisherId": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Publisher followed or already followed",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/PublisherFollow" } }
+            }
+          },
+          "400": {
+            "description": "Invalid request or self-follow",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "404": {
+            "description": "Publisher not found",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Unfollow a publisher",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "publisherId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Publisher unfollowed or already unfollowed" },
+          "400": {
+            "description": "Missing publisher id",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/publishers/{publisherId}": {
+      "get": {
+        "summary": "Get publisher feed identity",
+        "parameters": [
+          {
+            "name": "publisherId",
+            "in": "path",
+            "required": true,
+            "description": "Stable ClawHub publisher id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher feed identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublisherFeedDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/publishers/{publisherId}/followers": {
+      "get": {
+        "summary": "List a publisher's public followers",
+        "parameters": [
+          {
+            "name": "publisherId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visible publisher identities following this publisher",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PublisherConnectionList" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit",
+            "content": {
+              "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } }
+            }
+          },
+          "404": {
+            "description": "Publisher not found",
+            "content": {
+              "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/publishers/{publisherId}/following": {
+      "get": {
+        "summary": "List publishers followed by a personal publisher",
+        "parameters": [
+          {
+            "name": "publisherId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Visible publisher identities followed by this publisher",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PublisherConnectionList" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit",
+            "content": {
+              "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } }
+            }
+          },
+          "404": {
+            "description": "Publisher not found",
+            "content": {
+              "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/publishers/{publisherId}/feed": {
+      "get": {
+        "summary": "Get publisher feed",
+        "parameters": [
+          {
+            "name": "publisherId",
+            "in": "path",
+            "required": true,
+            "description": "Stable ClawHub publisher id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "description": "Opaque cursor bound to one immutable publisher-feed sequence.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Publisher feed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublisherFeed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed or mismatched cursor or limit",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Cursor sequence is stale; restart from the first page",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlainTextError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Publisher snapshot exceeds the current bounded publication capacity",
             "content": {
               "text/plain": {
                 "schema": {

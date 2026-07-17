@@ -474,12 +474,12 @@ code {
 }
 
 .app-shell:has(
-  .skill-detail-page,
-  .plugin-detail-page,
-  .security-audit-page,
-  .publisher-profile-route,
-  .dashboard-route
-)::before {
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route,
+    .dashboard-route
+  )::before {
   position: absolute;
   top: 0;
   right: 0;
@@ -17228,6 +17228,81 @@ a.agentic-risk-finding-title:focus-visible {
   transform: translateY(-1px);
 }
 
+.followed-publisher-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.followed-publisher-reason {
+  justify-self: end;
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.followed-discovery-stack {
+  display: grid;
+  gap: 28px;
+}
+
+.publisher-activity {
+  display: grid;
+  gap: 10px;
+}
+
+.publisher-activity-list {
+  border-block: 1px solid var(--border-subtle);
+}
+
+.publisher-activity-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 68px;
+  padding: 10px 4px;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.publisher-activity-row:last-child {
+  border-bottom: 0;
+}
+
+.publisher-activity-row:hover .publisher-activity-title {
+  color: var(--text-link);
+}
+
+.publisher-activity-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.publisher-activity-title,
+.publisher-activity-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publisher-activity-title {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.publisher-activity-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.publisher-activity-more {
+  display: flex;
+  justify-content: center;
+  min-height: 36px;
+}
+
 .publisher-card-highlight {
   display: flex;
   flex-direction: column;
@@ -17669,6 +17744,14 @@ a.agentic-risk-finding-title:focus-visible {
 
   .publisher-card-list .publisher-card-main {
     align-items: start;
+  }
+
+  .followed-publisher-card {
+    gap: 10px;
+  }
+
+  .followed-publisher-reason {
+    justify-self: start;
   }
 
   .publisher-card-summary,
