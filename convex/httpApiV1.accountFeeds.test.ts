@@ -37,10 +37,10 @@ async function signedPayload<T>(response: Response, payloadType: string) {
   const envelope = (await response.json()) as {
     payloadType: string;
     payload: string;
-    signatures: Array<{ keyId: string }>;
+    signatures: Array<{ keyid: string }>;
   };
   expect(envelope.payloadType).toBe(payloadType);
-  expect(envelope.signatures).toMatchObject([{ keyId: "clawhub-feed-2026-q3" }]);
+  expect(envelope.signatures).toMatchObject([{ keyid: "clawhub-feed-2026-q3" }]);
   return JSON.parse(Buffer.from(envelope.payload, "base64url").toString("utf8")) as T;
 }
 

@@ -201,8 +201,7 @@ export async function decodePublisherProjectionCursor(
     const envelopeBody = new TextDecoder().decode(base64UrlDecode(raw));
     const envelope = JSON.parse(envelopeBody) as Record<string, unknown>;
     if (
-      !hasExactKeys(envelope, ["schemaVersion", "payloadType", "payload", "signatures"]) ||
-      envelope.schemaVersion !== 1 ||
+      !hasExactKeys(envelope, ["payloadType", "payload", "signatures"]) ||
       envelope.payloadType !== PUBLISHER_FEED_CURSOR_PAYLOAD_TYPE ||
       typeof envelope.payload !== "string" ||
       !Array.isArray(envelope.signatures) ||
