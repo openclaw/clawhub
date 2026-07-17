@@ -109,6 +109,10 @@ the plugin HTTP action wraps those exact bytes in a deterministic DSSE/Ed25519
 envelope. The private key stays in Convex environment secret storage and the
 matching public key is bundled in OpenClaw.
 
+The response uses the standard DSSE JSON envelope fields: `payloadType`,
+`payload`, and `signatures` containing `keyid` and `sig`. Ed25519 is selected by
+the trusted key profile rather than repeated as a nonstandard signature field.
+
 `convex/promotionsFeed.ts` builds the promotions snapshot from the bounded active
 set and stores it in the same publication table. Production backend deploys
 publish an initial snapshot before contract verification. Promotion updates and
