@@ -262,9 +262,12 @@ describe("catalog feed projection", () => {
     const eq = vi.fn().mockReturnThis();
     const ctx = {
       db: {
-        query: vi.fn(() => ({
+        query: vi.fn((table: string) => ({
           withIndex: vi.fn((_index: string, apply: (q: { eq: typeof eq }) => unknown) => {
             apply({ eq });
+            if (table === "catalogFeedRevisions") {
+              return { order: vi.fn(() => ({ first: vi.fn(async () => null) })) };
+            }
             return { unique: vi.fn(async () => null) };
           }),
         })),
@@ -288,7 +291,12 @@ describe("catalog feed projection", () => {
     expect(result).toMatchObject({ sequence: 1, entryCount: 1 });
     expect(insert).toHaveBeenCalledWith(
       "catalogFeedRevisions",
-      expect.objectContaining({ feedId: CATALOG_SKILLS_FEED_ID, sequence: 1 }),
+      expect.objectContaining({
+        feedId: CATALOG_SKILLS_FEED_ID,
+        sequence: 1,
+        changeCount: 2,
+        cumulativeChangeCount: 2,
+      }),
     );
     const journalRows = insert.mock.calls.filter(([table]) => table === "catalogFeedChanges");
     expect(journalRows).toHaveLength(2);
@@ -320,11 +328,23 @@ describe("catalog feed projection", () => {
     const query = vi.fn((table: string) => {
       if (table === "catalogFeedRevisions") {
         return {
-          withIndex: vi.fn(() => ({
-            order: vi.fn((direction: "asc" | "desc") => ({
-              first: vi.fn(async () => ({ sequence: direction === "asc" ? 4 : 5 })),
-            })),
-          })),
+          withIndex: vi.fn((_index: string, apply?: (q: typeof builder) => unknown) => {
+            apply?.(builder);
+            return {
+              order: vi.fn((direction: "asc" | "desc") => ({
+                first: vi.fn(async () =>
+                  direction === "asc"
+                    ? { sequence: 4, changeCount: 2, cumulativeChangeCount: 2 }
+                    : { sequence: 5, changeCount: 1, cumulativeChangeCount: 3 },
+                ),
+              })),
+              unique: vi.fn(async () => ({
+                sequence: 4,
+                changeCount: 2,
+                cumulativeChangeCount: 2,
+              })),
+            };
+          }),
         };
       }
       return {
@@ -352,8 +372,20 @@ describe("catalog feed projection", () => {
       resetRequired: false,
       retainedFromSequence: 3,
       currentSequence: 5,
+      changeCount: 2,
       page: [{ sequence: 4, ordinal: 0, payload: '{"operation":"metadata"}' }],
     });
+
+    const laterRange = await listChangesHandler(
+      { db: { query } },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 4,
+        toSequence: 5,
+        paginationOpts: { cursor: null, numItems: 100 },
+      },
+    );
+    expect(laterRange).toMatchObject({ resetRequired: false, changeCount: 1 });
 
     const reset = await listChangesHandler(
       { db: { query } },
@@ -369,7 +401,7 @@ describe("catalog feed projection", () => {
       retainedFromSequence: 3,
       currentSequence: 5,
     });
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("prunes catalog history in bounded continuation batches", async () => {

@@ -21,9 +21,12 @@ export declare const CatalogFeedUpsertChangeSchema: import("arktype/internal/var
     entry: {
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
+        featuredAt?: number | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -46,9 +49,12 @@ export declare const CatalogFeedUpsertChangeSchema: import("arktype/internal/var
     } | {
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
+        featuredAt?: number | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -89,9 +95,12 @@ export declare const CatalogFeedChangeSchema: import("arktype/internal/variants/
     entry: {
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
+        featuredAt?: number | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -114,9 +123,12 @@ export declare const CatalogFeedChangeSchema: import("arktype/internal/variants/
     } | {
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
+        featuredAt?: number | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -169,9 +181,12 @@ export declare const CatalogFeedQueryPageSchema: import("arktype/internal/varian
     entries: ({
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
+        featuredAt?: number | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -194,9 +209,12 @@ export declare const CatalogFeedQueryPageSchema: import("arktype/internal/varian
     } | {
         id: string;
         title: string;
+        description?: string | undefined;
+        icon?: string | undefined;
         version: string;
         state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
         featured?: boolean | undefined;
+        featuredAt?: number | undefined;
         publisher: {
             id: string;
             trust: "community" | "official";
@@ -237,9 +255,12 @@ export declare const CatalogFeedChangePageSchema: import("arktype/internal/varia
         entry: {
             id: string;
             title: string;
+            description?: string | undefined;
+            icon?: string | undefined;
             version: string;
             state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
             featured?: boolean | undefined;
+            featuredAt?: number | undefined;
             publisher: {
                 id: string;
                 trust: "community" | "official";
@@ -262,9 +283,12 @@ export declare const CatalogFeedChangePageSchema: import("arktype/internal/varia
         } | {
             id: string;
             title: string;
+            description?: string | undefined;
+            icon?: string | undefined;
             version: string;
             state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
             featured?: boolean | undefined;
+            featuredAt?: number | undefined;
             publisher: {
                 id: string;
                 trust: "community" | "official";

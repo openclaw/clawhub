@@ -2719,6 +2719,8 @@ const catalogFeedPublications = defineTable({
 const catalogFeedRevisions = defineTable({
   feedId: v.string(),
   sequence: v.number(),
+  changeCount: v.number(),
+  cumulativeChangeCount: v.number(),
   generatedAt: v.string(),
   expiresAt: v.string(),
   description: v.string(),
