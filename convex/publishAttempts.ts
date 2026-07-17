@@ -83,6 +83,16 @@ function withClawscanAnalysis(insertArgs: unknown, clawscanAnalysis: unknown) {
   };
 }
 
+function reusableClawscanAnalysis(value: unknown) {
+  const analysis = asRecord(value);
+  const status = typeof analysis.status === "string" ? analysis.status.trim().toLowerCase() : "";
+  const verdict = typeof analysis.verdict === "string" ? analysis.verdict.trim().toLowerCase() : "";
+  const completed = new Set(["benign", "clean", "suspicious", "malicious"]);
+  if (typeof analysis.checkedAt !== "number") return undefined;
+  if (!completed.has(status) && !completed.has(verdict)) return undefined;
+  return value;
+}
+
 function scannerFailureSummary(args: {
   trufflehog: { status: string; summary?: string };
   clawscan: { status: string; summary?: string };
@@ -706,6 +716,19 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       updatedAt: now,
     });
 
+    let existingClawscanAnalysis: unknown;
+    if (attempt.kind === "skill" && attempt.skillVersionId) {
+      const version = await ctx.db.get(attempt.skillVersionId);
+      if (version?.fingerprint === attempt.artifactFingerprint) {
+        existingClawscanAnalysis = reusableClawscanAnalysis(version.llmAnalysis);
+      }
+    } else if (attempt.kind === "package" && attempt.packageReleaseId) {
+      const release = await ctx.db.get(attempt.packageReleaseId);
+      if (release?.integritySha256 === attempt.artifactFingerprint) {
+        existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
+      }
+    }
+
     return {
       attemptId: attempt._id,
       status: attempt.status,
@@ -732,6 +755,7 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
             clawpackStorageId: publishAttemptClawpackStorageId(attempt),
             scanContext: buildPackageAttemptScanContext(attempt),
           }),
+      ...(existingClawscanAnalysis ? { existingClawscanAnalysis } : {}),
       checkClaimExpiresAt,
       createdAt: attempt.createdAt,
     };

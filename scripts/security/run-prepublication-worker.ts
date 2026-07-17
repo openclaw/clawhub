@@ -42,6 +42,7 @@ type ClaimedPrePublicationAttempt = {
     package?: Record<string, unknown>;
     release?: Record<string, unknown>;
   };
+  existingClawscanAnalysis?: StoredLlmAnalysis;
   checkClaimExpiresAt: number;
   createdAt: number;
 };
@@ -630,15 +631,28 @@ export async function processPrePublicationAttempt(
 
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
-    try {
-      const review = await runClawScan(job, workspace);
-      clawscanAnalysis = review.analysis;
-      clawscan = review.check;
-    } catch (error) {
-      clawscan = {
-        status: "failed",
-        summary: publicText(error instanceof Error ? error.message : String(error)),
-      };
+    if (attempt.existingClawscanAnalysis) {
+      clawscanAnalysis = attempt.existingClawscanAnalysis;
+      clawscan = clawScanCheckResult(clawscanAnalysis);
+      logger.info(
+        {
+          attemptId: attempt.attemptId,
+          event: "prepublication_clawscan_result_reused",
+          kind: attempt.kind,
+        },
+        "pre-publication ClawScan result reused for exact artifact",
+      );
+    } else {
+      try {
+        const review = await runClawScan(job, workspace);
+        clawscanAnalysis = review.analysis;
+        clawscan = review.check;
+      } catch (error) {
+        clawscan = {
+          status: "failed",
+          summary: publicText(error instanceof Error ? error.message : String(error)),
+        };
+      }
     }
 
     completionStarted = true;

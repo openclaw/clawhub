@@ -132,6 +132,48 @@ describe("pre-publication worker", () => {
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
   });
 
+  it("reuses a completed ClawScan verdict from the exact staged artifact", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "finalized" }),
+    };
+    const runTruffleHog = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      status: "clean",
+      summary: "TruffleHog found no verified secrets.",
+    });
+    const runClawScan = vi.fn();
+    const existingClawscanAnalysis = {
+      checkedAt: 123,
+      confidence: "high",
+      status: "suspicious",
+      summary: "Exact-artifact ClawScan review.",
+      verdict: "suspicious",
+    };
+
+    await expect(
+      processPrePublicationAttempt(
+        client,
+        "worker-token",
+        { ...attempt, existingClawscanAnalysis },
+        {
+          runClawScan,
+          runTruffleHog,
+          writeWorkspace: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toMatchObject({ completed: true });
+
+    expect(runTruffleHog).toHaveBeenCalledTimes(1);
+    expect(runClawScan).not.toHaveBeenCalled();
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        clawscan: expect.objectContaining({ status: "clean" }),
+        clawscanAnalysis: existingClawscanAnalysis,
+      }),
+    );
+  });
+
   it("publishes suspicious staged artifacts without treating them as malicious", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),

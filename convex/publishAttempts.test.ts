@@ -165,6 +165,61 @@ describe("publishAttempts", () => {
     );
   });
 
+  it("reuses a completed ClawScan verdict only for the exact staged artifact", async () => {
+    const attempt = {
+      _id: "publishAttempts:reusable",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      skillVersionId: "skillVersions:reusable",
+      slug: "reusable-skill",
+      displayName: "Reusable Skill",
+      version: "1.0.0",
+      artifactFingerprint: "exact-fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:skill", size: 10, sha256: "sha" }],
+      skillInsertArgs: {
+        staticScan: { status: "clean" },
+      },
+      createdAt: Date.now(),
+    };
+    const analysis = {
+      checkedAt: Date.now(),
+      confidence: "high",
+      status: "suspicious",
+      summary: "Completed exact-artifact review.",
+      verdict: "suspicious",
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:reusable"
+            ? { fingerprint: "exact-fingerprint", llmAnalysis: analysis }
+            : null,
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [attempt]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, { claimId: "checks:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:reusable",
+      existingClawscanAnalysis: analysis,
+    });
+  });
+
   it("hydrates staged package attempts with ClawPack URL and review context", async () => {
     const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
     process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
