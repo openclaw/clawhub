@@ -40,6 +40,10 @@ chromium Playwright browser has already been installed.
 Vercel preview builds retry the full Convex deploy-and-seed pipeline up to three
 times, waiting 20 seconds and then 40 seconds. Retries use fresh suffixed preview
 names because duplicate names can resolve to an earlier, incomplete deployment.
+All Vercel-created preview names carry a `-vercel` suffix: `--preview-create`
+replaces (deletes) any same-name deployment, so a second deploy-key consumer
+using raw branch names would otherwise delete Vercel's deployment mid-push
+(observed 2026-07-17 as get_config_hashes/wait_for_schema 404s on every PR).
 
 To reproduce the local-auth browser gate locally, install the chromium
 Playwright browser once and run:

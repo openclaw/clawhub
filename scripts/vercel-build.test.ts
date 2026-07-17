@@ -107,13 +107,13 @@ describe("Vercel build plan", () => {
 
     expect(spawn).toHaveBeenCalledTimes(3);
     expect(spawn.mock.calls.map(([command]) => command)).toEqual(["bunx", "bunx", "bun"]);
-    expect(spawn.mock.calls[0]?.[1]).toContain("pe/claw-413-pr-previews");
-    expect(spawn.mock.calls[1]?.[1]).toContain("pe/claw-413-pr-previews-retry-2");
-    expect(spawn.mock.calls[2]?.[1]).toContain("pe/claw-413-pr-previews-retry-2");
+    expect(spawn.mock.calls[0]?.[1]).toContain("pe/claw-413-pr-previews-vercel");
+    expect(spawn.mock.calls[1]?.[1]).toContain("pe/claw-413-pr-previews-vercel-retry-2");
+    expect(spawn.mock.calls[2]?.[1]).toContain("pe/claw-413-pr-previews-vercel-retry-2");
     expect(sleep).toHaveBeenCalledOnce();
     expect(sleep).toHaveBeenCalledWith(20_000);
     expect(log).toHaveBeenCalledWith(
-      "[vercel-build] convex preview pipeline failed (attempt 1/3); retrying in 20s with preview name pe/claw-413-pr-previews-retry-2...",
+      "[vercel-build] convex preview pipeline failed (attempt 1/3); retrying in 20s with preview name pe/claw-413-pr-previews-vercel-retry-2...",
     );
   });
 
@@ -130,10 +130,10 @@ describe("Vercel build plan", () => {
 
     expect(spawn).toHaveBeenCalledTimes(4);
     expect(spawn.mock.calls.map(([command]) => command)).toEqual(["bunx", "bun", "bunx", "bun"]);
-    expect(spawn.mock.calls[0]?.[1]).toContain("pe/claw-413-pr-previews");
-    expect(spawn.mock.calls[1]?.[1]).toContain("pe/claw-413-pr-previews");
-    expect(spawn.mock.calls[2]?.[1]).toContain("pe/claw-413-pr-previews-retry-2");
-    expect(spawn.mock.calls[3]?.[1]).toContain("pe/claw-413-pr-previews-retry-2");
+    expect(spawn.mock.calls[0]?.[1]).toContain("pe/claw-413-pr-previews-vercel");
+    expect(spawn.mock.calls[1]?.[1]).toContain("pe/claw-413-pr-previews-vercel");
+    expect(spawn.mock.calls[2]?.[1]).toContain("pe/claw-413-pr-previews-vercel-retry-2");
+    expect(spawn.mock.calls[3]?.[1]).toContain("pe/claw-413-pr-previews-vercel-retry-2");
     expect(sleep).toHaveBeenCalledOnce();
     expect(sleep).toHaveBeenCalledWith(20_000);
   });
@@ -153,8 +153,8 @@ describe("Vercel build plan", () => {
     await expect(main({ env: previewEnv, spawn, sleep })).resolves.toBe(1);
 
     expect(spawn).toHaveBeenCalledTimes(6);
-    expect(spawn.mock.calls[4]?.[1]).toContain("pe/claw-413-pr-previews-retry-3");
-    expect(spawn.mock.calls[5]?.[1]).toContain("pe/claw-413-pr-previews-retry-3");
+    expect(spawn.mock.calls[4]?.[1]).toContain("pe/claw-413-pr-previews-vercel-retry-3");
+    expect(spawn.mock.calls[5]?.[1]).toContain("pe/claw-413-pr-previews-vercel-retry-3");
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(sleep).toHaveBeenNthCalledWith(1, 20_000);
     expect(sleep).toHaveBeenNthCalledWith(2, 40_000);

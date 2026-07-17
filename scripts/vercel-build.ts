@@ -107,10 +107,15 @@ export async function main({
   const branchName = env.VERCEL_GIT_COMMIT_REF?.trim();
   if (!branchName) throw new Error("Preview builds require VERCEL_GIT_COMMIT_REF");
 
+  // Namespace preview names per builder: a second deploy-key consumer running
+  // --preview-create on the raw branch name replaces (deletes) our deployment
+  // mid-push, which surfaced as get_config_hashes/wait_for_schema 404s.
+  const baseName = `${branchName}-vercel`;
+
   const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const previewName = attempt === 1 ? branchName : `${branchName}-retry-${attempt}`;
-    const plan = attempt === 1 ? initialPlan : resolveVercelBuildPlan(env, previewName);
+    const previewName = attempt === 1 ? baseName : `${baseName}-retry-${attempt}`;
+    const plan = resolveVercelBuildPlan(env, previewName);
     const failure = runBuildPlan(plan, spawn);
     if (!failure) return 0;
 
@@ -120,7 +125,7 @@ export async function main({
     }
 
     const delayMs = attempt * 20_000;
-    const nextPreviewName = `${branchName}-retry-${attempt + 1}`;
+    const nextPreviewName = `${baseName}-retry-${attempt + 1}`;
     console.error(
       `[vercel-build] convex preview pipeline failed (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs / 1_000}s with preview name ${nextPreviewName}...`,
     );
