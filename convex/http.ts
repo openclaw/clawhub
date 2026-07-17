@@ -59,6 +59,7 @@ import {
   whoamiV1Http,
   contentRightsV1Http,
 } from "./httpApiV1";
+import { signedCatalogFeedChangesHttp } from "./httpApiV1/catalogFeedChanges";
 import { signedCatalogFeedV1Http } from "./httpApiV1/catalogFeedSigning";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
@@ -166,6 +167,12 @@ http.route({
   path: ApiRoutes.catalogFeed,
   method: "GET",
   handler: signedCatalogFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.catalogFeedChanges,
+  method: "GET",
+  handler: signedCatalogFeedChangesHttp,
 });
 
 http.route({

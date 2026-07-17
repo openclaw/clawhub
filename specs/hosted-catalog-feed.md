@@ -94,8 +94,11 @@ outside the promotion's declared provider.
 
 `convex/catalogFeed.ts` builds both feeds from indexed package/skill queries and
 stores one current publication row per feed in `catalogFeedPublications`.
-Keeping one row per feed avoids an unbounded publication log while preserving
-the sequence and exact payload needed for validators.
+It also keeps a bounded 30-day revision and change journal. Each revision stores
+its own change count and the cumulative retained count, allowing a reader to pin
+an exact sequence range and page it without scanning or counting the journal.
+Retention removes a revision marker before its change rows so a concurrent
+reader receives a reset response instead of a partial revision.
 
 The `Publish Hosted Catalog Feed` workflow refreshes the snapshot every six
 hours and can be run manually. It requires the existing `Production` environment
@@ -115,8 +118,8 @@ snapshot inside its 24-hour `expiresAt` horizon.
 
 ## Edge delivery
 
-The HTTP endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`, and
-`/api/v1/feeds/promotions`. Each representation provides:
+The snapshot endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`, and
+`/api/v1/feeds/promotions`. Each snapshot representation provides:
 
 - `ETag: "sha256:<payload hash>"`
 - `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=86400`
@@ -135,6 +138,23 @@ secret containing exactly `keyId` and `privateKey`. It returns `503` with
 `X-Catalog-Payload-SHA256` preserves the stored publication payload digest.
 Skills and promotions remain on their existing unsigned representations until
 their payload types and matching OpenClaw consumers are specified.
+
+`GET /api/v1/feeds/plugins/changes?fromSequence=<n>&limit=<1..500>` returns the
+signed plugin changes after `fromSequence` through a `toSequence` pinned when
+the first page is requested. It reports the exact `changeCount`; every revision
+in the range has at least one ordered upsert, remove, or metadata record. A
+continuation request supplies only the opaque `cursor`. The five-minute signed
+cursor binds the feed id, range, exact count, Convex cursor, limit, page index,
+start index, and expiry, so clients cannot alter pagination or drift onto a
+newer publication mid-chain.
+
+Change pages use the
+`openclaw.official-external-plugin-catalog-changes.v1` DSSE payload type,
+`Cache-Control: no-store`, at most 500 records, and a 1 MiB signed-response
+limit. If retention can no longer cover the pinned range, the same endpoint
+returns a signed `409 resetRequired` payload whose same-origin `snapshotUrl`
+points to `/api/v1/feeds/plugins`. Invalid or expired cursors are never treated
+as unsigned pagination state.
 
 Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
 `/v1/feeds/promotions` through the same environment-aware Convex proxy used for
