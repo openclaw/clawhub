@@ -5,6 +5,7 @@ import { api } from "../../../convex/_generated/api";
 import {
   BrowseActions,
   BrowseCategorySelect,
+  BrowseCategorySidebar,
   BrowseControls,
   BrowseControlsDivider,
   BrowseControlsRow,
@@ -303,6 +304,7 @@ export function SkillsIndex() {
               categories={SKILL_CATEGORIES}
               value={model.activeCategory}
               onChange={handleCategoryChange}
+              responsive
             />
             <BrowseViewToggle view={model.view} onToggle={model.onToggleView} />
           </BrowseActions>
@@ -322,9 +324,16 @@ export function SkillsIndex() {
           topics={categoryTopics ?? []}
           activeTopic={activeTopic}
           onChange={handleTopicChange}
+          loading={Boolean(model.activeCategory && categoryTopics === undefined)}
         />
       </BrowseControls>
-      <div className="browse-layout">
+      <div className="browse-layout browse-layout-with-sidebar">
+        <BrowseCategorySidebar
+          ariaLabel="Skill categories"
+          categories={SKILL_CATEGORIES}
+          value={model.activeCategory}
+          onChange={handleCategoryChange}
+        />
         <div className="browse-results">
           <SkillsResults
             isLoadingSkills={model.isLoadingSkills}

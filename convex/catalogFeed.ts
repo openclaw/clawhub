@@ -15,6 +15,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
@@ -53,6 +54,8 @@ function appendEntriesWithinFeedLimit<T>(target: T[], entries: T[]) {
 const catalogFeedEntryFields = {
   id: v.string(),
   title: v.string(),
+  description: v.optional(v.string()),
+  icon: v.optional(v.string()),
   version: v.string(),
   state: v.union(
     v.literal("available"),
@@ -61,6 +64,7 @@ const catalogFeedEntryFields = {
     v.literal("blocked"),
     v.literal("deprecated"),
   ),
+  featured: v.optional(v.boolean()),
   publisher: v.object({
     id: v.string(),
     trust: v.union(v.literal("official"), v.literal("community")),
@@ -115,15 +119,24 @@ async function buildEntry(
   const packageName = pkg.name.trim();
   const id = pkg.normalizedName.trim();
   const title = pkg.displayName.trim() || packageName;
+  const description = pkg.summary?.trim();
+  const icon = pkg.icon?.trim();
   const version = release.version.trim();
   if (!packageName || !id || !title || !version) return null;
+  const highlighted = await ctx.db
+    .query("packageBadges")
+    .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
+    .unique();
 
   return {
     type: "plugin",
     id,
     title,
+    ...(description ? { description } : {}),
+    ...(icon ? { icon } : {}),
     version,
     state: "available",
+    featured: Boolean(highlighted),
     publisher: {
       id: publisherId,
       trust: "official",
@@ -195,6 +208,8 @@ async function buildSkillEntry(
   const publisherId = owner.handle?.trim();
   const slug = skill.slug.trim();
   const title = skill.displayName.trim() || slug;
+  const description = skill.summary?.trim();
+  const icon = skill.icon?.trim();
   const packageName = `@${publisherId}/${slug}`;
   if (!publisherId || !slug || !title) return null;
 
@@ -223,8 +238,11 @@ async function buildSkillEntry(
       type: "skill",
       id: packageName,
       title,
+      ...(description ? { description } : {}),
+      ...(icon ? { icon } : {}),
       version: commit,
       state: "available",
+      featured: isSkillHighlighted(skill),
       publisher: {
         id: publisherId,
         trust: "official",
@@ -267,8 +285,11 @@ async function buildSkillEntry(
     type: "skill",
     id: packageName,
     title,
+    ...(description ? { description } : {}),
+    ...(icon ? { icon } : {}),
     version: versionName,
     state: "available",
+    featured: isSkillHighlighted(skill),
     publisher: {
       id: publisherId,
       trust: "official",

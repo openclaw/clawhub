@@ -8781,6 +8781,7 @@ describe("publisher abuse dry-run persistence", () => {
       nominations: 0,
       candidates: [],
       benchmark: {
+        scope: "all_active_skills",
         sampleSize: 1,
         downloads30dAverage: 2_000,
         downloads30dMedian: 2_000,
@@ -8793,6 +8794,145 @@ describe("publisher abuse dry-run persistence", () => {
 
     expect(ctx.runQuery).toHaveBeenCalledTimes(1);
     expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
+  it("benchmarks review candidates against every scanned active skill", async () => {
+    const candidate = temporalCandidate("skills:anysearch", {
+      slug: "anysearch",
+      displayName: "AnySearch",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.sustained = false;
+    candidate.temporalScore.recent30Downloads = 3_370;
+    candidate.temporalScore.recent30Installs = 4;
+    candidate.temporalScore.reasonCodes = [];
+    const ordinaryScore = {
+      ...candidate.temporalScore,
+      recent30Downloads: 100,
+      recent30Installs: 1,
+      spikeMultiplier: 1,
+    };
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 100,
+        benchmarkScores: [
+          ...Array.from({ length: 99 }, () => ({ ...ordinaryScore })),
+          candidate.temporalScore,
+        ],
+        candidates: [candidate],
+      })),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: true,
+        candidateLimit: 100,
+        batchSize: 100,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      scannedSkills: 100,
+      highTemporalSkills: 1,
+      benchmark: {
+        sampleSize: 100,
+        downloads30dP95: 100,
+        downloads30dP99: 100,
+      },
+      candidates: [
+        expect.objectContaining({
+          slug: "anysearch",
+          temporalScore: expect.objectContaining({
+            sustained: true,
+            downloads30dCohortBand: "p99",
+          }),
+        }),
+      ],
+    });
+  });
+
+  it("persists the full active-skill benchmark for completed current scans", async () => {
+    const candidate = temporalCandidate("skills:anysearch", {
+      slug: "anysearch",
+      displayName: "AnySearch",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.sustained = false;
+    candidate.temporalScore.recent30Downloads = 3_370;
+    candidate.temporalScore.recent30Installs = 4;
+    candidate.temporalScore.reasonCodes = [];
+    const ordinaryScore = {
+      ...candidate.temporalScore,
+      recent30Downloads: 100,
+      recent30Installs: 1,
+      spikeMultiplier: 1,
+    };
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        runId: "publisherAbuseScoreRuns:temporal",
+        flaggedPublishers: 1,
+        nominations: 0,
+      })
+      .mockResolvedValueOnce({
+        archivedCandidates: 1,
+        archivedSignals: 1,
+        changedSignals: 1,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        processed: 0,
+        warned: 0,
+        banned: 0,
+        alreadyBanned: 0,
+        skipped: 0,
+        isDone: true,
+      });
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 100,
+        benchmarkScores: [
+          ...Array.from({ length: 99 }, () => ({ ...ordinaryScore })),
+          candidate.temporalScore,
+        ],
+        candidates: [candidate],
+      })),
+      runMutation,
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: false,
+        candidateLimit: 100,
+        batchSize: 100,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      scannedSkills: 100,
+      highTemporalSkills: 1,
+      flaggedPublishers: 1,
+    });
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        benchmark: expect.objectContaining({
+          sampleSize: 100,
+          downloads30dP95: 100,
+          downloads30dP99: 100,
+        }),
+      }),
+    );
   });
 
   it("keeps current temporal dry-runs read-only unless archival is requested", async () => {
@@ -8911,7 +9051,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
   });
 
-  it("archives bounded current temporal dry-run signals before scan completion when requested", async () => {
+  it("does not archive temporal dry-run signals before the full benchmark scan completes", async () => {
     const candidate = temporalCandidate("skills:bounded-ratio", {
       slug: "bounded-ratio",
       displayName: "Bounded Ratio",
@@ -8963,24 +9103,62 @@ describe("publisher abuse dry-run persistence", () => {
       nominations: 0,
     });
 
-    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
-    expect(ctx.runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        candidates: [expect.objectContaining({ skillId: "skills:bounded-ratio" })],
-      }),
-    );
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("caps temporal scan candidate limits below Convex array limits", async () => {
+  it("does not present percentile signals or a benchmark for partial dry runs", async () => {
+    const candidate = temporalCandidate("skills:partial-spike", {
+      slug: "partial-spike",
+      displayName: "Partial Spike",
+    });
     const ctx = {
-      runQuery: vi.fn(async (_query: unknown, args: { batchSize: number }) => ({
-        cursor: "next",
+      runQuery: vi.fn(async () => ({
+        cursor: "next-page",
         isDone: false,
-        scannedSkills: args.batchSize,
-        candidates: [],
+        scannedSkills: 1,
+        benchmarkScores: [candidate.temporalScore],
+        candidates: [candidate],
       })),
+      runMutation: vi.fn(),
+    };
+
+    const result = await temporalRunHandler(ctx, {
+      mode: "current",
+      dryRun: true,
+      candidateLimit: 1,
+      batchSize: 1,
+      maxPages: 1,
+      todayDay: 100,
+    });
+
+    expect(result).toMatchObject({
+      scannedSkills: 1,
+      highTemporalSkills: 0,
+      candidates: [],
+    });
+    expect(result).not.toHaveProperty("benchmark");
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy manual scan bounded and omits a partial benchmark", async () => {
+    const score = temporalCandidate("skills:benchmark", {
+      slug: "benchmark",
+      displayName: "Benchmark",
+    }).temporalScore;
+    let pageNumber = 0;
+    const ctx = {
+      runQuery: vi.fn(async (_query: unknown, args: { batchSize: number }) => {
+        pageNumber += 1;
+        const isDone = pageNumber === 81;
+        return {
+          cursor: isDone ? undefined : `page-${pageNumber + 1}`,
+          isDone,
+          scannedSkills: args.batchSize,
+          benchmarkScores: Array.from({ length: args.batchSize }, () => score),
+          candidates: [],
+        };
+      }),
       runMutation: vi.fn(),
     };
 
@@ -8988,9 +9166,7 @@ describe("publisher abuse dry-run persistence", () => {
       temporalRunHandler(ctx, {
         mode: "current",
         dryRun: true,
-        candidateLimit: 10_000,
         batchSize: 100,
-        maxPages: 100,
         todayDay: 100,
       }),
     ).resolves.toMatchObject({
@@ -9346,7 +9522,14 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
-          if (table === "skillDailyStats") throw new Error("official publisher was scanned");
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (_indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                callback(indexBuilder);
+                return { take: async () => [] };
+              },
+            };
+          }
           if (table === "officialPublishers") {
             return {
               withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
@@ -9376,6 +9559,7 @@ describe("publisher abuse dry-run persistence", () => {
       cursor: undefined,
       isDone: true,
       scannedSkills: 1,
+      benchmarkScores: [expect.objectContaining({ recent30Downloads: 0 })],
       candidates: [],
     });
   });
@@ -9456,7 +9640,14 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
-          if (table === "skillDailyStats") throw new Error("staff org publisher was scanned");
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (_indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                callback(indexBuilder);
+                return { take: async () => [] };
+              },
+            };
+          }
           if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
@@ -9473,6 +9664,7 @@ describe("publisher abuse dry-run persistence", () => {
       cursor: undefined,
       isDone: true,
       scannedSkills: 1,
+      benchmarkScores: [expect.objectContaining({ recent30Downloads: 0 })],
       candidates: [],
     });
   });

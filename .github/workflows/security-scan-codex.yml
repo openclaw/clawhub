@@ -31,7 +31,7 @@ concurrency:
 jobs:
   codex-security-scan:
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 40
     environment: Production
     strategy:
@@ -65,18 +65,14 @@ jobs:
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
       CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
-      CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN || '0' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX || 'docker' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_SANDBOX_IMAGE || 'ghcr.io/openclaw/clawscan-runtime@sha256:d85bfe671fe597edc6802f9d6a07dd91b59c69cec4faa6e8f89778037507dc3b' }}
-      CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN_TIMEOUT_MS || '300000' }}
+      CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '240000' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
       CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
       CODEX_SECURITY_SCAN_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       SKILLSPECTOR_PROVIDER: openai
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - uses: ./.github/actions/setup-bun
 
@@ -95,7 +91,7 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.1
+          npm install -g @openclaw/clawscan@0.1.6
           clawscan --version
 
       - name: Install SkillSpector

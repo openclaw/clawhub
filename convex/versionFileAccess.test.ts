@@ -90,6 +90,56 @@ describe("version file access actions", () => {
     ).rejects.toThrow("Version not available");
   });
 
+  it("blocks unauthenticated access to pending-publication versions on public skills", async () => {
+    const ctx = makeActionCtx({
+      version: { ...makeSkillVersion(), publicationStatus: "pending" },
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: [],
+        stats: {
+          downloads: 0,
+          stars: 0,
+          installsAllTime: 0,
+          versions: 1,
+          comments: 0,
+        },
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).rejects.toThrow("Version not available");
+  });
+
+  it("allows owners to read pending-publication versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = makeActionCtx({
+      actor: { _id: "users:owner", role: "user" },
+      version: { ...makeSkillVersion(), publicationStatus: "pending" },
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: [],
+        stats: {
+          downloads: 0,
+          stars: 0,
+          installsAllTime: 0,
+          versions: 1,
+          comments: 0,
+        },
+      },
+    });
+
+    await expect(
+      getSkillReadmeHandler._handler(ctx, { versionId: "skillVersions:1" } as never),
+    ).resolves.toEqual({ path: "SKILL.md", text: "# skill" });
+  });
+
   it("allows owners to read hidden skill versions", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = makeActionCtx({

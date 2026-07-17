@@ -1,6 +1,7 @@
 ---
 name: convex-quickstart
-description: Creates or adds Convex to an app. Use for new Convex projects, npm create
+description:
+  Creates or adds Convex to an app. Use for new Convex projects, npm create
   convex@latest, frontend setup, env vars, or the first npx convex dev run.
 ---
 
@@ -221,7 +222,9 @@ Create the `ConvexReactClient` at module scope, not inside a component:
 ```tsx
 // Bad: re-creates the client on every render
 function App() {
-  const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
+  const convex = new ConvexReactClient(
+    import.meta.env.VITE_CONVEX_URL as string,
+  );
   return <ConvexProvider client={convex}>...</ConvexProvider>;
 }
 
@@ -272,7 +275,11 @@ export function ConvexClientProvider({ children }: { children: ReactNode }) {
 // app/layout.tsx
 import { ConvexClientProvider } from "./ConvexClientProvider";
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="en">
       <body>

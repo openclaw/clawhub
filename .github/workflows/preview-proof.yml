@@ -1,0 +1,148 @@
+name: Preview Proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: "Vercel preview URL to verify"
+        required: true
+        type: string
+      checkout_ref:
+        description: "Optional git ref or SHA to check out; use this when dispatching from main for a PR preview"
+        required: false
+        type: string
+      expected_sha:
+        description: "Expected git SHA after checkout"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch-info:
+    name: preview-proof-dispatch-info
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize dispatch
+        env:
+          CHECKOUT_REF: ${{ inputs.checkout_ref }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          PREVIEW_URL: ${{ inputs.preview_url }}
+        run: |
+          {
+            echo "## Preview proof dispatch"
+            echo
+            echo "- Workflow ref: \`${GITHUB_REF}\`"
+            echo "- Workflow SHA: \`${GITHUB_SHA}\`"
+            echo "- Checkout ref: \`${CHECKOUT_REF:-$GITHUB_SHA}\`"
+            echo "- Expected SHA: \`${EXPECTED_SHA:-not supplied}\`"
+            echo "- Preview URL: ${PREVIEW_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::notice::Protected preview proof only runs from refs/heads/main. Re-run from main with checkout_ref set to the PR SHA."
+          fi
+
+  preview-proof:
+    name: preview-proof
+    needs: dispatch-info
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: Test
+
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.checkout_ref || github.sha }}
+
+      - name: Verify checked-out revision
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          echo "actual_sha=$actual_sha" >> "$GITHUB_ENV"
+          if [[ -n "$EXPECTED_SHA" && "$actual_sha" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Expected $EXPECTED_SHA but checked out $actual_sha"
+            exit 1
+          fi
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Verify protected preview public routes
+        env:
+          PREVIEW_URL: ${{ inputs.preview_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          bun <<'TS'
+          const previewUrl = process.env.PREVIEW_URL?.trim();
+          const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+          if (!previewUrl) throw new Error("PREVIEW_URL is required");
+          if (!bypassSecret) throw new Error("VERCEL_AUTOMATION_BYPASS_SECRET is required");
+
+          const base = new URL(previewUrl);
+          const headers = { "x-vercel-protection-bypass": bypassSecret };
+
+          async function fetchText(path: string) {
+            const response = await fetch(new URL(path, base), { headers });
+            if (!response.ok) {
+              throw new Error(`${path} returned ${response.status} ${response.statusText}`);
+            }
+            return await response.text();
+          }
+
+          async function fetchJson(path: string) {
+            const response = await fetch(new URL(path, base), {
+              headers: { ...headers, accept: "application/json" },
+            });
+            if (!response.ok) {
+              throw new Error(`${path} returned ${response.status} ${response.statusText}`);
+            }
+            return await response.json();
+          }
+
+          const home = await fetchText("/");
+          if (!home.includes("<title>ClawHub")) {
+            throw new Error("Preview home page did not render the ClawHub shell");
+          }
+
+          const detail = await fetchJson("/api/v1/skills/gifgrep");
+          if (detail?.skill?.slug !== "gifgrep") {
+            throw new Error(`Expected gifgrep API detail, received ${JSON.stringify(detail)}`);
+          }
+
+          const skillFile = await fetchText("/api/v1/skills/gifgrep/file?path=SKILL.md");
+          if (!skillFile.trim()) {
+            throw new Error("Preview skill file route returned an empty SKILL.md");
+          }
+
+          console.log(
+            JSON.stringify(
+              {
+                previewUrl: base.toString(),
+                skillSlug: detail.skill.slug,
+                ownerHandle: detail.owner?.handle ?? null,
+                latestVersion: detail.latestVersion?.version ?? null,
+                skillFileBytes: skillFile.length,
+              },
+              null,
+              2,
+            ),
+          );
+          TS
+
+      - name: Write proof summary
+        env:
+          PREVIEW_URL: ${{ inputs.preview_url }}
+        run: |
+          {
+            echo "## Preview proof"
+            echo
+            echo "- Git SHA: \`${actual_sha}\`"
+            echo "- Preview URL: ${PREVIEW_URL}"
+            echo "- Verified routes: \`/\`, \`/api/v1/skills/gifgrep\`, \`/api/v1/skills/gifgrep/file?path=SKILL.md\`"
+          } >> "$GITHUB_STEP_SUMMARY"

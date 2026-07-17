@@ -52,11 +52,11 @@ const MAX_REVIEW_DASHBOARD_PAGE_SIZE = 25;
 const DASHBOARD_SIGNAL_COUNT_LIMIT = 25;
 const DASHBOARD_SIGNAL_COUNT_SCAN_LIMIT = 100;
 const MAX_BAN_REASON_LENGTH = 500;
-const DEFAULT_TEMPORAL_BATCH_SIZE = 50;
+const DEFAULT_TEMPORAL_BATCH_SIZE = 100;
 const MAX_TEMPORAL_BATCH_SIZE = 100;
-const DEFAULT_TEMPORAL_CANDIDATE_LIMIT = 1000;
+const DEFAULT_TEMPORAL_CANDIDATE_LIMIT = 8_000;
 const MAX_TEMPORAL_CANDIDATE_LIMIT = 8_000;
-const DEFAULT_TEMPORAL_MAX_PAGES = 20;
+const DEFAULT_TEMPORAL_MAX_PAGES = 100;
 const MAX_TEMPORAL_MAX_PAGES = 100;
 const CURRENT_TEMPORAL_LOOKBACK_DAYS = 37;
 const DEFAULT_BACKFILL_TEMPORAL_LOOKBACK_DAYS = 365;
@@ -172,7 +172,7 @@ type PublisherAbuseExclusionPublisher = Pick<Doc<"publishers">, "_id" | "kind"> 
   deactivatedAt?: number | null;
 };
 
-type TemporalSkillCandidate = {
+export type TemporalSkillCandidate = {
   ownerKey: string;
   ownerPublisherId?: Id<"publishers">;
   ownerUserId?: Id<"users">;
@@ -189,6 +189,7 @@ type TemporalSkillCandidatesPage = {
   cursor?: string;
   isDone: boolean;
   scannedSkills: number;
+  benchmarkScores?: SkillTemporalAbuseScore[];
   candidates: TemporalSkillCandidate[];
 };
 
@@ -258,6 +259,7 @@ type PublisherAbuseWarningTarget = Pick<Doc<"users">, "_id" | "email" | "handle"
 const temporalCohortBandValidator = v.union(v.literal("p95"), v.literal("p99"));
 
 const temporalAbuseCohortBenchmarkValidator = v.object({
+  scope: v.optional(v.literal("all_active_skills")),
   sampleSize: v.number(),
   downloads30dAverage: v.number(),
   downloads30dMedian: v.number(),
@@ -1562,6 +1564,7 @@ export const archiveTemporalPublisherAbuseSignalsPageInternal = internalMutation
   args: {
     runId: v.optional(v.id("publisherAbuseScoreRuns")),
     candidates: v.array(temporalCandidateValidator),
+    benchmark: v.optional(temporalAbuseCohortBenchmarkValidator),
     now: v.number(),
   },
   handler: archiveTemporalPublisherAbuseSignalsPageInternalHandler,
@@ -2339,17 +2342,9 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
     .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
 
   const candidates: TemporalSkillCandidate[] = [];
+  const benchmarkScores: SkillTemporalAbuseScore[] = [];
   const staffManagerExclusionBudget = createStaffPublisherManagerExclusionBudget();
   for (const skill of page.page) {
-    if (!skill.ownerPublisherId) continue;
-    const publisher = await ctx.db.get(skill.ownerPublisherId);
-    if (
-      !publisher ||
-      (await isPublisherExcludedFromPublisherAbuse(ctx, publisher, staffManagerExclusionBudget))
-    ) {
-      continue;
-    }
-
     const dailyStats = await ctx.db
       .query("skillDailyStats")
       .withIndex("by_skill_day", (q) =>
@@ -2360,6 +2355,16 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
       args.mode === "backfill"
         ? computeHistoricalSkillTemporalAbuseScore({ dailyStats })
         : computeCurrentSkillTemporalAbuseScore({ todayDay, dailyStats });
+    benchmarkScores.push(temporalScore);
+
+    if (!skill.ownerPublisherId) continue;
+    const publisher = await ctx.db.get(skill.ownerPublisherId);
+    if (
+      !publisher ||
+      (await isPublisherExcludedFromPublisherAbuse(ctx, publisher, staffManagerExclusionBudget))
+    ) {
+      continue;
+    }
 
     candidates.push({
       ownerKey: `publisher:${publisher._id}`,
@@ -2379,6 +2384,7 @@ export async function collectTemporalPublisherAbuseSkillCandidatesPageInternalHa
     cursor: page.isDone ? undefined : page.continueCursor,
     isDone: page.isDone,
     scannedSkills: page.page.length,
+    benchmarkScores,
     candidates,
   };
 }
@@ -2452,7 +2458,7 @@ export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
     status: "completed",
     phase: "completed",
     temporalScanComplete: args.scanComplete,
-    temporalBenchmark: args.benchmark,
+    ...(args.benchmark ? { temporalBenchmark: args.benchmark } : {}),
     scannedPublishers,
     scoredPublishers,
     finalizedScores: finalizedCount,
@@ -2896,12 +2902,12 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
   flaggedPublishers: number;
   nominations: number;
   candidates?: TemporalSkillCandidate[];
-  benchmark: TemporalAbuseCohortBenchmark;
+  benchmark?: TemporalAbuseCohortBenchmark;
 }> {
   const mode = args.mode ?? "current";
   const dryRun = args.dryRun ?? false;
   const archiveDryRunSignals = args.archiveDryRunSignals ?? false;
-  const requestedCandidateLimit = clampInt(
+  const candidateLimit = clampInt(
     args.candidateLimit ?? DEFAULT_TEMPORAL_CANDIDATE_LIMIT,
     1,
     MAX_TEMPORAL_CANDIDATE_LIMIT,
@@ -2911,13 +2917,7 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
     1,
     MAX_TEMPORAL_BATCH_SIZE,
   );
-  const requestedMaxPages = clampInt(
-    args.maxPages ?? DEFAULT_TEMPORAL_MAX_PAGES,
-    1,
-    MAX_TEMPORAL_MAX_PAGES,
-  );
-  const candidateLimit = requestedCandidateLimit;
-  const maxPages = requestedMaxPages;
+  const maxPages = clampInt(args.maxPages ?? DEFAULT_TEMPORAL_MAX_PAGES, 1, MAX_TEMPORAL_MAX_PAGES);
   const todayDay = args.todayDay ?? toDayKey(Date.now());
 
   let cursor: string | undefined;
@@ -2925,19 +2925,24 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
   let pages = 0;
   let scanComplete = false;
   const candidates: TemporalSkillCandidate[] = [];
+  const benchmarkScores: SkillTemporalAbuseScore[] = [];
   while (pages < maxPages && scannedSkills < candidateLimit) {
+    const remainingSkills = candidateLimit - scannedSkills;
     const result: TemporalSkillCandidatesPage = await ctx.runQuery(
       internal.publisherAbuse.collectTemporalPublisherAbuseSkillCandidatesPageInternal,
       {
         mode,
         cursor,
-        batchSize: Math.min(batchSize, candidateLimit - scannedSkills),
+        batchSize: Math.min(batchSize, remainingSkills),
         todayDay,
         lookbackDays: args.lookbackDays,
       },
     );
     pages += 1;
     scannedSkills += result.scannedSkills;
+    benchmarkScores.push(
+      ...(result.benchmarkScores ?? result.candidates.map((candidate) => candidate.temporalScore)),
+    );
     candidates.push(...result.candidates);
     cursor = result.cursor;
     if (result.isDone || !cursor) {
@@ -2946,13 +2951,18 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
     }
   }
 
-  const benchmark = computeTemporalAbuseCohortBenchmark(
-    candidates.map((candidate) => candidate.temporalScore),
-  );
+  const benchmark = scanComplete
+    ? {
+        ...computeTemporalAbuseCohortBenchmark(benchmarkScores),
+        scope: "all_active_skills" as const,
+      }
+    : undefined;
   const highTemporalCandidates = candidates
     .map((candidate) => ({
       ...candidate,
-      temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, benchmark),
+      temporalScore: benchmark
+        ? classifySkillTemporalAbuseScore(candidate.temporalScore, benchmark)
+        : withoutTemporalCohortClassification(candidate.temporalScore),
     }))
     .filter(
       (candidate) =>
@@ -2963,7 +2973,13 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
 
   const flaggedPublishers = aggregateTemporalPublisherCandidates(highTemporalCandidates).length;
   if (dryRun || !scanComplete || (mode !== "current" && highTemporalCandidates.length === 0)) {
-    if (dryRun && archiveDryRunSignals && mode === "current" && highTemporalCandidates.length > 0) {
+    if (
+      dryRun &&
+      archiveDryRunSignals &&
+      mode === "current" &&
+      scanComplete &&
+      highTemporalCandidates.length > 0
+    ) {
       await archiveTemporalPublisherAbuseSignalPages(ctx, {
         candidates: highTemporalCandidates,
         now: Date.now(),
@@ -2978,22 +2994,49 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       highTemporalSkills: highTemporalCandidates.length,
       flaggedPublishers,
       nominations: 0,
-      benchmark,
+      ...(benchmark ? { benchmark } : {}),
       ...(dryRun
         ? { candidates: highTemporalCandidates.slice(0, MAX_TEMPORAL_DRY_RUN_CANDIDATES) }
         : {}),
     };
   }
 
+  if (!benchmark) {
+    throw new Error("Completed temporal scan is missing its platform benchmark");
+  }
+
   return await finishTemporalPublisherAbuseScan(ctx, {
     mode,
     dryRun,
     candidates,
+    benchmark,
     scannedSkills,
     scanComplete,
     trigger: args.trigger ?? "cron",
     actorUserId: args.actorUserId,
   });
+}
+
+function withoutTemporalCohortClassification(
+  score: SkillTemporalAbuseScore,
+): SkillTemporalAbuseScore {
+  return {
+    ...score,
+    spike: false,
+    sustained: false,
+    pressure: score.nearConversion
+      ? Math.max(score.installDownloadExcessZScore7, score.installDownloadExcessZScore30)
+      : 0,
+    downloads30dCohortBand: undefined,
+    spikeMultiplierCohortBand: undefined,
+    downloads30dVsPeerP95: undefined,
+    spikeMultiplierVsPeerP95: undefined,
+    spikeWindowStartDay: undefined,
+    spikeWindowEndDay: undefined,
+    sustainedWindowStartDay: undefined,
+    sustainedWindowEndDay: undefined,
+    reasonCodes: score.nearConversion ? ["temporal_installs_track_downloads"] : [],
+  };
 }
 
 async function finishTemporalPublisherAbuseScan(
@@ -3002,19 +3045,17 @@ async function finishTemporalPublisherAbuseScan(
     mode: TemporalAbuseMode;
     dryRun: boolean;
     candidates: TemporalSkillCandidate[];
+    benchmark: TemporalAbuseCohortBenchmark;
     scannedSkills: number;
     scanComplete: boolean;
     trigger: "cron" | "manual";
     actorUserId?: Id<"users">;
   },
 ) {
-  const benchmark = computeTemporalAbuseCohortBenchmark(
-    args.candidates.map((candidate) => candidate.temporalScore),
-  );
   const highTemporalCandidates = args.candidates
     .map((candidate) => ({
       ...candidate,
-      temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, benchmark),
+      temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, args.benchmark),
     }))
     .filter(
       (candidate) =>
@@ -3033,7 +3074,7 @@ async function finishTemporalPublisherAbuseScan(
       trigger: args.trigger,
       actorUserId: args.actorUserId,
       candidates: highTemporalCandidates,
-      benchmark,
+      benchmark: args.benchmark,
       scanComplete: args.scanComplete,
     },
   );
@@ -3054,7 +3095,7 @@ async function finishTemporalPublisherAbuseScan(
     highTemporalSkills: highTemporalCandidates.length,
     flaggedPublishers: saved.flaggedPublishers,
     nominations: saved.nominations,
-    benchmark,
+    benchmark: args.benchmark,
   };
 }
 
@@ -3291,11 +3332,12 @@ function temporalEvidenceFromCandidate(candidate: TemporalSkillCandidate) {
   };
 }
 
-async function archiveTemporalPublisherAbuseSignals(
+export async function archiveTemporalPublisherAbuseSignals(
   ctx: Pick<MutationCtx, "db">,
   args: {
     runId?: Id<"publisherAbuseScoreRuns">;
     candidates: TemporalSkillCandidate[];
+    benchmark?: TemporalAbuseCohortBenchmark;
     now: number;
   },
 ) {
@@ -3306,6 +3348,7 @@ async function archiveTemporalPublisherAbuseSignals(
       const changed = await upsertPublisherAbuseSignal(ctx, {
         runId: args.runId,
         candidate,
+        benchmark: args.benchmark,
         signalType,
         now: args.now,
       });
@@ -3321,6 +3364,7 @@ export async function archiveTemporalPublisherAbuseSignalsPageInternalHandler(
   args: {
     runId?: Id<"publisherAbuseScoreRuns">;
     candidates: TemporalSkillCandidate[];
+    benchmark?: TemporalAbuseCohortBenchmark;
     now: number;
   },
 ) {
@@ -3345,6 +3389,7 @@ async function upsertPublisherAbuseSignal(
   args: {
     runId?: Id<"publisherAbuseScoreRuns">;
     candidate: TemporalSkillCandidate;
+    benchmark?: TemporalAbuseCohortBenchmark;
     signalType: PublisherAbuseSignalType;
     now: number;
   },
@@ -3397,6 +3442,7 @@ async function upsertPublisherAbuseSignal(
 function publisherAbuseSignalSnapshot(args: {
   runId?: Id<"publisherAbuseScoreRuns">;
   candidate: TemporalSkillCandidate;
+  benchmark?: TemporalAbuseCohortBenchmark;
   signalType: PublisherAbuseSignalType;
 }) {
   const { candidate } = args;
@@ -3424,6 +3470,7 @@ function publisherAbuseSignalSnapshot(args: {
     }),
     allTimeDownloads: nonNegative(candidate.totalDownloads),
     allTimeInstalls: nonNegative(candidate.totalInstalls),
+    temporalBenchmark: args.benchmark,
     allTimeInstallDownloadRatio: installDownloadRatio({
       installs: candidate.totalInstalls,
       downloads: candidate.totalDownloads,

@@ -736,7 +736,6 @@ export function Upload() {
       return;
     }
     setIsSubmitting(true);
-    setStatus("Uploading files…");
     try {
       const uploaded = [] as Array<{
         path: string;
@@ -764,7 +763,6 @@ export function Upload() {
         });
       }
 
-      setStatus("Publishing…");
       const result = await publishVersion({
         ownerHandle: ownerHandle || undefined,
         sourceOwnerHandle:
@@ -794,8 +792,8 @@ export function Upload() {
       setChangelogSource("user");
       if (result) {
         if (typeof result === "object" && "status" in result && result.status === "pending") {
-          setStatus("Publish received. Running TruffleHog and ClawScan before public listing.");
           toast.success("Publish received. Security checks are running.");
+          void navigate({ to: "/dashboard" });
           return;
         }
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");

@@ -1,15 +1,17 @@
 /* @vitest-environment node */
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   claimBatchDrainedQueue,
+  claimPrePublicationAttempt,
   claimPrePublicationBatch,
-  configurePrePublicationCodexHome,
+  parseArgs,
   processPrePublicationBatch,
   processPrePublicationAttempt,
+  runNativeClawScan,
   resolveTruffleHogImage,
   runNativeTruffleHog,
 } from "./run-prepublication-worker";
@@ -49,23 +51,95 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("treats empty scheduled recovery flags as absent", () => {
+    expect(
+      parseArgs(
+        [
+          "--batch-limit",
+          "2",
+          "--max-jobs",
+          "--max-runtime-minutes",
+          "8",
+          "--attempt-id",
+          "--kind",
+          "--slug",
+          "--version",
+        ],
+        {},
+      ),
+    ).toEqual({
+      batchLimit: 2,
+      maxJobs: undefined,
+      maxRuntimeMs: 8 * 60 * 1000,
+      claimFilters: {
+        attemptId: undefined,
+        kind: undefined,
+        slug: undefined,
+        version: undefined,
+      },
+    });
+  });
+
+  it("parses populated targeted recovery inputs", () => {
+    expect(
+      parseArgs(
+        [
+          "--batch-limit",
+          "1",
+          "--max-jobs",
+          "1",
+          "--max-runtime-minutes",
+          "12",
+          "--attempt-id",
+          "publishAttempts:driver",
+          "--kind",
+          "skill",
+          "--slug",
+          "driver",
+          "--version",
+          "0.8.3",
+        ],
+        {},
+      ),
+    ).toEqual({
+      batchLimit: 1,
+      maxJobs: 1,
+      maxRuntimeMs: 12 * 60 * 1000,
+      claimFilters: {
+        attemptId: "publishAttempts:driver",
+        kind: "skill",
+        slug: "driver",
+        version: "0.8.3",
+      },
+    });
+  });
+
+  it("forwards targeted recovery filters when claiming an attempt", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue(attempt),
+    };
+
+    await expect(
+      claimPrePublicationAttempt(client, "fixture", {
+        kind: "skill",
+        slug: "driver",
+        version: "0.8.3",
+      }),
+    ).resolves.toEqual(attempt);
+
+    expect(client.action).toHaveBeenCalledWith(expect.anything(), {
+      token: "fixture",
+      kind: "skill",
+      slug: "driver",
+      version: "0.8.3",
+    });
+  });
+
   it("keeps claiming after partial transient claim failures", () => {
     expect(claimBatchDrainedQueue(0, 0, 6)).toBe(true);
     expect(claimBatchDrainedQueue(0, 5, 6)).toBe(true);
     expect(claimBatchDrainedQueue(1, 5, 6)).toBe(false);
     expect(claimBatchDrainedQueue(0, 6, 6)).toBe(false);
-  });
-
-  it("does not clear the Codex home configured by GitHub Actions login", () => {
-    const env = {
-      CI: "true",
-      GITHUB_ACTIONS: "true",
-      GITHUB_REPOSITORY: "openclaw/clawhub",
-      GITHUB_RUN_ID: "123",
-    } as NodeJS.ProcessEnv;
-
-    expect(configurePrePublicationCodexHome(env)).toBeUndefined();
-    expect(env).not.toHaveProperty("CODEX_HOME");
   });
 
   it("requires the TruffleHog image to be pinned by digest", () => {
@@ -75,7 +149,7 @@ describe("pre-publication worker", () => {
     );
   });
 
-  it("completes clean staged publishes after TruffleHog and ClawHub review pass", async () => {
+  it("completes clean staged publishes after TruffleHog and ClawScan pass", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
     };
@@ -84,26 +158,30 @@ describe("pre-publication worker", () => {
       status: "clean",
       summary: "TruffleHog found no verified secrets.",
     });
-    const runClawHubReview = vi.fn().mockResolvedValue({
-      llmAnalysis: {
+    const runClawScan = vi.fn().mockResolvedValue({
+      analysis: {
         checkedAt: 123,
         confidence: "high",
         status: "clean",
-        summary: "ClawHub security review passed.",
+        summary: "ClawScan passed.",
         verdict: "benign",
+      },
+      check: {
+        status: "clean",
+        summary: "ClawScan passed.",
       },
     });
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
-        runClawHubReview,
+        runClawScan,
         runTruffleHog,
         writeWorkspace: vi.fn().mockResolvedValue(undefined),
       }),
     ).resolves.toMatchObject({ completed: true });
 
     expect(runTruffleHog).toHaveBeenCalledTimes(1);
-    expect(runClawHubReview).toHaveBeenCalledTimes(1);
+    expect(runClawScan).toHaveBeenCalledTimes(1);
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -118,6 +196,48 @@ describe("pre-publication worker", () => {
     expect(client.action.mock.calls[0]?.[1].trufflehog).not.toHaveProperty("exitCode");
   });
 
+  it("reuses a completed ClawScan verdict from the exact staged artifact", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue({ status: "finalized" }),
+    };
+    const runTruffleHog = vi.fn().mockResolvedValue({
+      exitCode: 0,
+      status: "clean",
+      summary: "TruffleHog found no verified secrets.",
+    });
+    const runClawScan = vi.fn();
+    const existingClawscanAnalysis = {
+      checkedAt: 123,
+      confidence: "high",
+      status: "suspicious",
+      summary: "Exact-artifact ClawScan review.",
+      verdict: "suspicious",
+    };
+
+    await expect(
+      processPrePublicationAttempt(
+        client,
+        "worker-token",
+        { ...attempt, existingClawscanAnalysis },
+        {
+          runClawScan,
+          runTruffleHog,
+          writeWorkspace: vi.fn().mockResolvedValue(undefined),
+        },
+      ),
+    ).resolves.toMatchObject({ completed: true });
+
+    expect(runTruffleHog).toHaveBeenCalledTimes(1);
+    expect(runClawScan).not.toHaveBeenCalled();
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        clawscan: expect.objectContaining({ status: "clean" }),
+        clawscanAnalysis: existingClawscanAnalysis,
+      }),
+    );
+  });
+
   it("publishes suspicious staged artifacts without treating them as malicious", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
@@ -125,13 +245,18 @@ describe("pre-publication worker", () => {
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
-        runClawHubReview: vi.fn().mockResolvedValue({
-          llmAnalysis: {
+        runClawScan: vi.fn().mockResolvedValue({
+          analysis: {
             checkedAt: 123,
             confidence: "high",
             status: "suspicious",
             summary: "The artifact needs moderator review.",
             verdict: "suspicious",
+          },
+          check: {
+            status: "clean",
+            summary: "The artifact needs moderator review.",
+            redactedFindings: ["status=suspicious; verdict=suspicious"],
           },
         }),
         runTruffleHog: vi.fn().mockResolvedValue({
@@ -165,13 +290,18 @@ describe("pre-publication worker", () => {
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
-        runClawHubReview: vi.fn().mockResolvedValue({
-          llmAnalysis: {
+        runClawScan: vi.fn().mockResolvedValue({
+          analysis: {
             checkedAt: 123,
             confidence: "high",
             status: "malicious",
             summary: "The artifact contains intentional credential exfiltration.",
             verdict: "malicious",
+          },
+          check: {
+            status: "blocked",
+            summary: "The artifact contains intentional credential exfiltration.",
+            redactedFindings: ["status=malicious; verdict=malicious"],
           },
         }),
         runTruffleHog: vi.fn().mockResolvedValue({
@@ -241,7 +371,7 @@ describe("pre-publication worker", () => {
     );
   });
 
-  it("blocks secret-positive attempts without running ClawHub review", async () => {
+  it("blocks secret-positive attempts without running ClawScan", async () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "blocked" }),
     };
@@ -250,17 +380,17 @@ describe("pre-publication worker", () => {
       summary: "TruffleHog found verified secret material.",
       redactedFindings: ["GitHub token in filesystem"],
     });
-    const runClawHubReview = vi.fn();
+    const runClawScan = vi.fn();
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
-        runClawHubReview,
+        runClawScan,
         runTruffleHog,
         writeWorkspace: vi.fn().mockResolvedValue(undefined),
       }),
     ).resolves.toMatchObject({ completed: true });
 
-    expect(runClawHubReview).not.toHaveBeenCalled();
+    expect(runClawScan).not.toHaveBeenCalled();
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -288,7 +418,7 @@ describe("pre-publication worker", () => {
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", attempt, {
-        runClawHubReview: vi.fn(),
+        runClawScan: vi.fn(),
         runTruffleHog,
         writeWorkspace: vi.fn().mockResolvedValue(undefined),
       }),
@@ -311,7 +441,7 @@ describe("pre-publication worker", () => {
     const client = {
       action: vi.fn().mockResolvedValue({ status: "finalized" }),
     };
-    const runClawHubReview = vi.fn();
+    const runClawScan = vi.fn();
     const runTruffleHog = vi.fn();
     const writeWorkspace = vi.fn();
 
@@ -321,7 +451,7 @@ describe("pre-publication worker", () => {
         "worker-token",
         { ...attempt, status: "ready_to_finalize", files: [] },
         {
-          runClawHubReview,
+          runClawScan,
           runTruffleHog,
           writeWorkspace,
         },
@@ -330,7 +460,7 @@ describe("pre-publication worker", () => {
 
     expect(writeWorkspace).not.toHaveBeenCalled();
     expect(runTruffleHog).not.toHaveBeenCalled();
-    expect(runClawHubReview).not.toHaveBeenCalled();
+    expect(runClawScan).not.toHaveBeenCalled();
     expect(client.action).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -341,7 +471,7 @@ describe("pre-publication worker", () => {
     );
   });
 
-  it("passes package ClawPack and manifest context into the ClawHub review job", async () => {
+  it("passes package ClawPack and manifest context into the ClawScan job", async () => {
     const packageAttempt = {
       ...attempt,
       kind: "package" as const,
@@ -367,13 +497,17 @@ describe("pre-publication worker", () => {
 
     await expect(
       processPrePublicationAttempt(client, "worker-token", packageAttempt, {
-        runClawHubReview: vi.fn().mockResolvedValue({
-          llmAnalysis: {
+        runClawScan: vi.fn().mockResolvedValue({
+          analysis: {
             checkedAt: 123,
             confidence: "high",
             status: "clean",
-            summary: "ClawHub security review passed.",
+            summary: "ClawScan passed.",
             verdict: "benign",
+          },
+          check: {
+            status: "clean",
+            summary: "ClawScan passed.",
           },
         }),
         runTruffleHog: vi.fn().mockResolvedValue({
@@ -415,7 +549,7 @@ describe("pre-publication worker", () => {
           files: [{ ...attempt.files[0], url: null }],
         },
         {
-          runClawHubReview: vi.fn(),
+          runClawScan: vi.fn(),
           runTruffleHog: vi.fn(),
           writeWorkspace: vi.fn().mockResolvedValue(undefined),
         },
@@ -435,6 +569,191 @@ describe("pre-publication worker", () => {
         }),
       }),
     );
+  });
+
+  it("runs native ClawScan as the required non-shadow security gate", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" > "${workspace}/clawscan-args.txt"
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"completed","result":{"verdict":"benign","confidence":"high","summary":"Native ClawScan passed."}}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    const previousSandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+    delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          analysis: expect.objectContaining({
+            status: "clean",
+            verdict: "benign",
+          }),
+          check: {
+            status: "clean",
+            summary: "Native ClawScan passed.",
+          },
+        }),
+      );
+
+      const args = await readFile(join(workspace, "clawscan-args.txt"), "utf8");
+      expect(args).toContain("./artifact");
+      expect(args).toContain("--profile\nclawhub");
+      expect(args).toContain("--output\n");
+      expect(args).not.toContain("--sandbox");
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+      if (previousSandbox === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_SANDBOX;
+      else process.env.PREPUBLICATION_CLAWSCAN_SANDBOX = previousSandbox;
+    }
+  });
+
+  it("preserves the redacted ClawScan judge failure reason", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--output" ]; then
+    output="$2"
+    break
+  fi
+  shift
+done
+cat > "$output" <<'JSON'
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}
+JSON
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              _id: String(attempt.attemptId),
+              attempts: 1,
+              hasMaliciousSignal: false,
+              leaseToken: attempt.claimId,
+              source: "pre-publication",
+              targetKind: "skillVersion",
+              waitForVtUntil: 0,
+            },
+            target: {},
+          },
+          workspace,
+        ),
+      ).resolves.toEqual({
+        check: {
+          status: "failed",
+          summary: "ClawScan judge status was failed: Codex request was rate limited.",
+        },
+      });
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+    }
+  });
+
+  it("terminates the full ClawScan process tree on timeout", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+(
+  trap '' TERM
+  exec >/dev/null 2>&1
+  while true; do sleep 1; done
+) &
+child_pid=$!
+printf '%s' "$child_pid" > "${workspace}/descendant.pid"
+wait "$child_pid"
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    const previousTimeout = process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = "500";
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              targetKind: "skillVersion",
+            },
+            target: {},
+          } as Parameters<typeof runNativeClawScan>[0],
+          workspace,
+        ),
+      ).rejects.toThrow("timed out");
+
+      const descendantPid = Number(await readFile(join(workspace, "descendant.pid"), "utf8"));
+      let descendantRunning = true;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          process.kill(descendantPid, 0);
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+        } catch {
+          descendantRunning = false;
+          break;
+        }
+      }
+      expect(descendantRunning).toBe(false);
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+      if (previousTimeout === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
+      else process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = previousTimeout;
+    }
   });
 
   it("maps TruffleHog verified-secret exit code to a blocked result", async () => {

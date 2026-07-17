@@ -39,10 +39,26 @@ describe("pre-publication publish worker workflow", () => {
         schedule?: Array<{ cron?: string }>;
         workflow_dispatch?: {
           inputs?: {
+            "attempt-id"?: {
+              default?: string;
+              required?: boolean;
+            };
+            kind?: {
+              default?: string;
+              required?: boolean;
+            };
             runner?: {
               default?: string;
               options?: string[];
               type?: string;
+            };
+            slug?: {
+              default?: string;
+              required?: boolean;
+            };
+            version?: {
+              default?: string;
+              required?: boolean;
             };
           };
         };
@@ -60,29 +76,66 @@ describe("pre-publication publish worker workflow", () => {
       type: "choice",
       options: ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-latest"],
     });
+    expect(workflow.on?.workflow_dispatch?.inputs?.kind).toMatchObject({
+      required: false,
+      default: "",
+    });
+    expect(workflow.on?.workflow_dispatch?.inputs?.["attempt-id"]).toMatchObject({
+      required: false,
+      default: "",
+    });
+    expect(workflow.on?.workflow_dispatch?.inputs?.slug).toMatchObject({
+      required: false,
+      default: "",
+    });
+    expect(workflow.on?.workflow_dispatch?.inputs?.version).toMatchObject({
+      required: false,
+      default: "",
+    });
     expect(job.environment).toBe("Production");
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(20);
-    expect(job.strategy?.matrix?.shard).toEqual([0, 1]);
+    expect(job.strategy?.matrix?.shard).toBe(
+      "${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '' && '[0]' || '[0,1]') }}",
+    );
     expect(job.strategy?.["max-parallel"]).toBe(2);
     expect(job.env).toMatchObject({
-      CODEX_SECURITY_SCAN_TIMEOUT_MS: "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",
       CONVEX_URL:
         "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
+      PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
+        "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}",
+      PREPUBLICATION_CHECK_ATTEMPT_ID: "${{ inputs['attempt-id'] || '' }}",
       PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '2' }}",
+      PREPUBLICATION_CHECK_KIND: "${{ inputs.kind || '' }}",
+      PREPUBLICATION_CHECK_SLUG: "${{ inputs.slug || '' }}",
+      PREPUBLICATION_CHECK_VERSION: "${{ inputs.version || '' }}",
       PREPUBLICATION_TRUFFLEHOG_IMAGE:
         "${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}",
     });
     expect(String(job.env?.PREPUBLICATION_TRUFFLEHOG_IMAGE)).toContain("@sha256:");
+    expect(job.env).not.toHaveProperty("CODEX_API_KEY");
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expect(job.env).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
 
     const runStep = steps.find((step) => step.name === "Run pre-publication publish worker");
     expect(runStep?.run).toContain("bun run publish:prepublication-worker");
-    expect(steps.find((step) => step.name === "Install ClawScan CLI")).toBeUndefined();
+    expect(runStep?.run).not.toContain("--attempt-id");
+    expect(runStep?.run).not.toContain("--kind");
+    expect(runStep?.run).not.toContain("--slug");
+    expect(runStep?.run).not.toContain("--version");
+    expect(runStep?.run).not.toContain("--max-jobs");
+    expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
+      "npm install -g @openclaw/clawscan@0.1.6",
+    );
+    expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
+      "npm install -g @openai/codex@0.142.3",
+    );
+    expect(steps.find((step) => step.name === "Authenticate Codex CLI")).toBeUndefined();
+    expect(steps.find((step) => step.name === "Install SkillSpector")).toBeUndefined();
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
-    expect(JSON.stringify(job)).not.toContain("clawscan --version");
     expect(runStep?.env).toEqual({
+      CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
     });
@@ -92,9 +145,13 @@ describe("pre-publication publish worker workflow", () => {
       expect(stepUsesSecret(step, "SECURITY_SCAN_WORKER_TOKEN"), stepName).toBe(
         stepName === "Run pre-publication publish worker",
       );
-      expect(stepUsesSecret(step, "OPENAI_API_KEY"), stepName).toBe(
-        stepName === "Authenticate Codex CLI" || stepName === "Run pre-publication publish worker",
+      expect(stepUsesSecret(step, "CODEX_API_KEY"), stepName).toBe(
+        stepName === "Run pre-publication publish worker",
       );
+      expect(stepUsesSecret(step, "OPENAI_API_KEY"), stepName).toBe(
+        stepName === "Run pre-publication publish worker",
+      );
+      expect(stepUsesSecret(step, "VT_API_KEY"), stepName).toBe(false);
     }
   });
 });

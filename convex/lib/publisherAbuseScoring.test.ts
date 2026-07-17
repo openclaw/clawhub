@@ -435,17 +435,17 @@ describe("publisher abuse scoring", () => {
       }),
       dailyStats: [
         ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
-        ...dailyRange(94, 7, { downloads: 200, installs: 0 }),
+        ...dailyRange(94, 7, { downloads: 400, installs: 0 }),
       ],
     });
 
     expect(score.spike).toBe(true);
     expect(score.sustained).toBe(false);
-    expect(score.recent7Downloads).toBe(1_400);
+    expect(score.recent7Downloads).toBe(2_800);
     expect(score.recent7Installs).toBe(0);
     expect(score.previous30Downloads).toBe(150);
-    expect(score.spikeMultiplier).toBeCloseTo(14);
-    expect(score.spikeMultiplierCohortBand).toBe("p95");
+    expect(score.spikeMultiplier).toBeCloseTo(28);
+    expect(score.spikeMultiplierCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
   });
 
@@ -455,7 +455,7 @@ describe("publisher abuse scoring", () => {
       todayDay,
       benchmark: temporalBenchmark({
         downloads30dP95: 3_000,
-        downloads30dP99: 6_000,
+        downloads30dP99: 3_000,
         spikeMultiplier7dP95: 20,
         spikeMultiplier7dP99: 50,
       }),
@@ -467,8 +467,38 @@ describe("publisher abuse scoring", () => {
     expect(score.recent30Downloads).toBe(3_600);
     expect(score.recent30Installs).toBe(0);
     expect(score.downloadInstallRatio30).toBe(3_600);
-    expect(score.downloads30dCohortBand).toBe("p95");
+    expect(score.downloads30dCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
+  });
+
+  it("keeps P95-only sustained download traffic below review thresholds", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 3_000,
+        downloads30dP99: 6_000,
+      }),
+      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+    });
+
+    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.sustained).toBe(false);
+    expect(score.downloads30dCohortBand).toBeUndefined();
+  });
+
+  it("keeps sub-3000 P99 download traffic below the absolute review floor", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 1_000,
+        downloads30dP99: 2_000,
+      }),
+      dailyStats: dailyRange(71, 30, { downloads: 90, installs: 0 }),
+    });
+
+    expect(score.recent30Downloads).toBe(2_700);
+    expect(score.sustained).toBe(false);
+    expect(score.downloads30dCohortBand).toBeUndefined();
   });
 
   it("flags high-volume installs that track downloads too closely", () => {
@@ -588,8 +618,8 @@ describe("publisher abuse scoring", () => {
       }),
       dailyStats: [
         ...dailyRange(10, 30, { downloads: 3, installs: 0 }),
-        ...dailyRange(40, 7, { downloads: 220, installs: 0 }),
-        ...dailyRange(80, 30, { downloads: 150, installs: 0 }),
+        ...dailyRange(40, 7, { downloads: 400, installs: 0 }),
+        ...dailyRange(80, 30, { downloads: 400, installs: 0 }),
       ],
     });
 

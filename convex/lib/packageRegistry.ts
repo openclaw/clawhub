@@ -280,6 +280,7 @@ export function derivePluginManifestSummary(params: {
   files: PluginManifestSummaryFile[];
   compatibility?: PackageCompatibility;
 }) {
+  const icon = normalizePluginManifestIcon(params.pluginManifest);
   const compatibility = extractCompatibilityFromManifest(
     params.pluginManifest,
     params.compatibility,
@@ -312,6 +313,7 @@ export function derivePluginManifestSummary(params: {
 
   return {
     schemaVersion: 1 as const,
+    ...(icon ? { icon } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
     configFields: extractConfigFields(params.pluginManifest),

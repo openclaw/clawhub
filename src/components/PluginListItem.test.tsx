@@ -70,7 +70,14 @@ describe("PluginListItem", () => {
   });
 
   it("falls back to the default plugin glyph when a manifest icon fails to load", () => {
-    render(<PluginListItem item={makePlugin({ icon: "https://cdn.example.test/broken.svg" })} />);
+    render(
+      <PluginListItem
+        item={makePlugin({
+          categories: ["models"],
+          icon: "https://cdn.example.test/broken.svg",
+        })}
+      />,
+    );
 
     const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
     expect(image).toBeTruthy();
@@ -78,7 +85,9 @@ describe("PluginListItem", () => {
     fireEvent.error(image!);
 
     expect(document.querySelector(".marketplace-icon-image")).toBeNull();
-    expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+    expect(
+      document.querySelector(".marketplace-icon-glyph")?.classList.contains("lucide-brain"),
+    ).toBe(true);
   });
 
   it.each(["list", "card"] as const)(

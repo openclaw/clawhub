@@ -81,6 +81,7 @@ Pass `--owner <handle>` to `revoke-version` when more than one publisher uses th
 ```text
 ban <handleOrId>
 unban <handleOrId>
+lift-moderation-hold <handleOrId>
 set-role <handleOrId> <role>
 reclassify-ban <handleOrId>
 remediate-autobans
@@ -91,6 +92,7 @@ Examples:
 ```sh
 bun run admin -- users ban <handleOrId> --reason "<reason>" --yes
 bun run admin -- users unban <handleOrId> --reason "<reason>" --yes
+bun run admin -- users lift-moderation-hold <handleOrId> --reason "<reason>" --yes
 bun run admin -- users set-role <handleOrId> <user|moderator|admin> --yes
 bun run admin -- users reclassify-ban <handleOrId> --reason "<reason>" --apply --yes
 bun run admin -- users remediate-autobans --apply --reason "<reason>"
@@ -214,6 +216,8 @@ only after admin auth succeeds.
   hides owned skills, soft-deletes comments, and writes audit logs.
 - `users unban` is admin-only. It clears ban state and restores skills that were
   hidden by the matching ban flow; revoked API tokens stay revoked.
+- `users lift-moderation-hold` is admin-only. It clears the account-level
+  moderation hold, restores skills hidden by that hold, and writes an audit log.
 - `packages transfer` preserves the package row, stats, releases, and history;
   it changes the owner publisher.
 - `org delete` soft-deletes an empty org publisher and retains member rows for

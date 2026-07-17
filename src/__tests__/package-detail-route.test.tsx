@@ -505,6 +505,46 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
 
+  it("keeps catalog icons out of the plugin detail header", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          icon: "https://cdn.example.test/icons/package.svg",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Adds a manifest icon",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            icon: "https://cdn.example.test/icons/manifest.svg",
+            configFields: [],
+            mcpServers: [],
+            bundledSkills: [],
+          },
+        },
+      },
+    };
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+
+    const { container } = render(
+      <PluginDetailPage name="demo-plugin" loaderData={loaderDataMock} />,
+    );
+
+    expect(container.querySelector(".skill-hero-title-row .marketplace-icon")).toBeNull();
+  });
+
   it("loads and appends the next active release page", async () => {
     loaderDataMock = {
       ...loaderDataMock,

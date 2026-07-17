@@ -84,6 +84,7 @@ User administration:
 ```bash
 bun run admin -- users ban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run admin -- users unban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
+bun run admin -- users lift-moderation-hold <handleOrId> --reason <text> [--id] [--fuzzy] [--yes] [--json]
 bun run admin -- users set-role <handleOrId> <user|moderator|admin> [--id] [--fuzzy] [--yes]
 bun run admin -- users reclassify-ban <handleOrId> --reason <text> [--id] [--fuzzy] [--dry-run|--apply] [--yes] [--json]
 bun run admin -- users recover-publisher <handle> --to <handle> --previous-github-id <id> --next-github-id <id> --reason <text> [--retired-handle <handle>] [--verified] [--apply] [--yes] [--json]
@@ -113,11 +114,15 @@ Package moderation and operations:
 
 ```bash
 bun run admin -- skills reports [--status open|confirmed|dismissed|all]
+bun run admin -- skills feature <slug|@owner/slug> [--json]
+bun run admin -- skills unfeature <slug|@owner/slug> [--json]
 bun run admin -- skills rescan <slug> [--version <version>] [--yes] [--json]
 bun run admin -- skills unhide <slug> --reason <text> [--yes]
 bun run admin -- skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]
 
 bun run admin -- plugins moderate <name> --version <version> --state approved|quarantined|revoked --reason <text>
+bun run admin -- plugins feature <name> [--json]
+bun run admin -- plugins unfeature <name> [--json]
 bun run admin -- plugins status <name>
 bun run admin -- plugins queue [--status open|blocked|manual|all]
 bun run admin -- plugins reports [--status open|confirmed|dismissed|all]

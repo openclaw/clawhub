@@ -975,12 +975,15 @@ export async function cmdPublishPackage(
         ApiV1PackagePublishResponseSchema,
       );
 
+      const isPendingPublication = result.publicationStatus === "pending";
       if (options.json) {
         process.stdout.write(
           `${JSON.stringify(
             {
               ...plan.output,
               releaseId: result.releaseId,
+              publicationStatus: result.publicationStatus,
+              attemptId: result.attemptId,
               inspectorFindings: result.inspectorFindings,
             },
             null,
@@ -989,7 +992,9 @@ export async function cmdPublishPackage(
         );
       } else {
         spinner?.succeed(
-          `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
+          isPendingPublication
+            ? `OK. Uploaded ${plan.payload.name}@${plan.payload.version}; security checks are pending before it becomes public (${result.releaseId})`
+            : `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
         );
         printPackageInspectorFindings(result);
       }

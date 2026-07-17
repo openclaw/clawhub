@@ -43,6 +43,7 @@ import {
 } from "./skills";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
+import { normalizeSkillTags } from "./skillTags";
 import { runStaticPublishScan } from "./staticPublishScan";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
@@ -80,14 +81,13 @@ function normalizeStoredSkillCategoryOverride(categories: readonly string[] | un
 export type PublishResult = {
   skillId: Id<"skills">;
   versionId: Id<"skillVersions">;
-  embeddingId: Id<"skillEmbeddings">;
-};
-
-export type PendingPublishResult = {
-  status: "pending";
-  attemptId: Id<"publishAttempts">;
-  slug: string;
-  version: string;
+  embeddingId?: Id<"skillEmbeddings">;
+  status?: "pending" | "published";
+  slug?: string;
+  version?: string;
+  publicationStatus?: "pending" | "published";
+  attemptId?: Id<"publishAttempts">;
+  createdNewParent?: boolean;
 };
 
 type SkillPublishFollowup = {
@@ -98,7 +98,7 @@ type SkillPublishFollowup = {
   displayName: string;
 };
 
-export type SkillPublishResult = PublishResult | PendingPublishResult;
+export type SkillPublishResult = PublishResult;
 
 export type PublishVersionArgs = {
   slug: string;
@@ -216,6 +216,23 @@ async function publishVersionForUserInternal(
       },
     )) as Doc<"skillVersions"> | null;
     if (existingVersion) {
+      throw new ConvexError(
+        `Version ${version} already exists. Increment the version number and try again.`,
+      );
+    }
+  }
+  if (options.stagePrePublicationChecks) {
+    const existingAttempt = (await ctx.runQuery(
+      internal.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+      {
+        kind: "skill",
+        slug: normalizedSlug,
+        version,
+        userId,
+        ownerPublisherId: options.ownerPublisherId,
+      },
+    )) as { attemptId: Id<"publishAttempts"> } | null;
+    if (existingAttempt) {
       throw new ConvexError(
         `Version ${version} already exists. Increment the version number and try again.`,
       );
@@ -427,7 +444,7 @@ async function publishVersionForUserInternal(
     changelog: changelogText,
     changelogSource,
     sourceProvenance: options.sourceProvenance,
-    tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
+    tags: normalizeSkillTags(args.tags),
     categories,
     topics: topics.length ? topics : undefined,
     fingerprint,
@@ -504,12 +521,23 @@ async function publishVersionForUserInternal(
     return publishResult;
   }
 
-  const staged = (await ctx.runMutation(
-    internal.publishAttempts.createSkillPublishAttemptInternal,
-    {
+  const pendingInsertArgs = {
+    ...skillInsertArgs,
+    publicationStatus: "pending" as const,
+  };
+  const pendingResult = (await ctx.runMutation(
+    internal.skills.insertVersion,
+    pendingInsertArgs,
+  )) as PublishResult;
+
+  const staged = (await ctx
+    .runMutation(internal.publishAttempts.createSkillPublishAttemptInternal, {
       userId,
       ownerPublisherId: options.ownerPublisherId,
       sourceOwnerPublisherId: options.sourceOwnerPublisherId,
+      skillId: pendingResult.skillId,
+      skillVersionId: pendingResult.versionId,
+      createdNewParent: pendingResult.createdNewParent,
       slug,
       displayName,
       version,
@@ -525,13 +553,20 @@ async function publishVersionForUserInternal(
         ...file,
         path: file.path,
       })),
-      skillInsertArgs: stripUndefinedForStoredAttempt(skillInsertArgs),
+      scanContext: buildSkillPublishAttemptScanContext(skillInsertArgs),
       followup: {
         skipWebhook: followup.skipWebhook,
         ownerHandle,
       },
-    },
-  )) as {
+    })
+    .catch(async (error) => {
+      await ctx.runMutation(internal.skills.discardPendingPublicationInternal, {
+        skillId: pendingResult.skillId,
+        versionId: pendingResult.versionId,
+        createdNewParent: pendingResult.createdNewParent,
+      });
+      throw error;
+    })) as {
     attemptId: Id<"publishAttempts">;
     status: string;
     result?: PublishResult;
@@ -541,7 +576,15 @@ async function publishVersionForUserInternal(
     return staged.result;
   }
 
-  return { status: "pending", attemptId: staged.attemptId, slug, version };
+  return {
+    skillId: pendingResult.skillId,
+    versionId: pendingResult.versionId,
+    status: "pending",
+    slug,
+    version,
+    publicationStatus: "pending",
+    attemptId: staged.attemptId,
+  };
 }
 
 export async function finalizeSkillPublishAttempt(
@@ -557,7 +600,9 @@ export async function finalizeSkillPublishAttempt(
         status: "claimed";
         attemptId: Id<"publishAttempts">;
         createdAt: number;
-        skillInsertArgs: unknown;
+        skillId?: Id<"skills">;
+        versionId?: Id<"skillVersions">;
+        skillInsertArgs?: unknown;
         followup: SkillPublishFollowup;
       }
     | {
@@ -573,11 +618,28 @@ export async function finalizeSkillPublishAttempt(
 
   let publishResult: PublishResult;
   try {
-    const skillInsertArgs = await prepareSkillInsertArgsForFinalization(ctx, claim.skillInsertArgs);
-    publishResult = (await ctx.runMutation(
-      internal.skills.insertVersion,
-      skillInsertArgs as never,
-    )) as PublishResult;
+    if (claim.versionId) {
+      const rawPublishArgs = await ctx.runQuery(
+        internal.skills.getPendingVersionPublishArgsInternal,
+        {
+          versionId: claim.versionId,
+        },
+      );
+      const skillInsertArgs = await prepareSkillInsertArgsForFinalization(ctx, rawPublishArgs);
+      publishResult = (await ctx.runMutation(internal.skills.publishPendingVersionInternal, {
+        versionId: claim.versionId,
+        publishArgs: skillInsertArgs,
+      })) as PublishResult;
+    } else {
+      const skillInsertArgs = await prepareSkillInsertArgsForFinalization(
+        ctx,
+        claim.skillInsertArgs,
+      );
+      publishResult = (await ctx.runMutation(
+        internal.skills.insertVersion,
+        skillInsertArgs as never,
+      )) as PublishResult;
+    }
   } catch (error) {
     const existingResult = (await ctx.runQuery(
       internal.publishAttempts.findSkillPublishAttemptPublicResultInternal,
@@ -614,8 +676,16 @@ async function prepareSkillInsertArgsForFinalization(
     return rawInsertArgs;
   }
   const insertArgs = rawInsertArgs as Record<string, unknown>;
+  const tags = Array.isArray(insertArgs.tags)
+    ? normalizeSkillTags(insertArgs.tags.filter((tag): tag is string => typeof tag === "string"))
+    : undefined;
   const deferred = insertArgs.deferredAiEnrichment as DeferredAiEnrichment | undefined;
-  if (!deferred) return rawInsertArgs;
+  if (!deferred) {
+    return {
+      ...insertArgs,
+      ...(insertArgs.tags !== undefined ? { tags } : {}),
+    };
+  }
 
   const { deferredAiEnrichment: _deferredAiEnrichment, ...prepared } = insertArgs;
   const files = Array.isArray(prepared.files)
@@ -684,6 +754,7 @@ async function prepareSkillInsertArgsForFinalization(
 
   return {
     ...prepared,
+    ...(prepared.tags !== undefined ? { tags } : {}),
     summary,
     changelog,
     embedding,
@@ -693,6 +764,27 @@ async function prepareSkillInsertArgsForFinalization(
 function stringField(record: Record<string, unknown>, field: string) {
   const value = record[field];
   return typeof value === "string" ? value : "";
+}
+
+function buildSkillPublishAttemptScanContext(insertArgs: unknown) {
+  const record =
+    insertArgs && typeof insertArgs === "object" ? (insertArgs as Record<string, unknown>) : {};
+  const parsed =
+    record.parsed && typeof record.parsed === "object"
+      ? (record.parsed as Record<string, unknown>)
+      : {};
+  return stripUndefinedForStoredAttempt({
+    version: {
+      staticScan: record.staticScan,
+      parsed: {
+        metadata: parsed.metadata,
+        clawdis: parsed.clawdis,
+        license: parsed.license,
+      },
+      qualityAssessment: record.qualityAssessment,
+      sourceProvenance: record.sourceProvenance,
+    },
+  });
 }
 
 async function releaseSkillPublishAttemptFinalizationClaim(

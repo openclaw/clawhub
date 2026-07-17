@@ -1,6 +1,10 @@
 import { expect, type ConsoleMessage, type Page } from "@playwright/test";
 import { isKnownOpenClawMediaUrl } from "./externalMedia";
 
+type TrackRuntimeErrorsOptions = {
+  includeConsoleLocation?: boolean;
+};
+
 const EXTERNAL_RESOURCE_DNS_ERROR = "Failed to load resource: net::ERR_NAME_NOT_RESOLVED";
 const TRANSIENT_CHROMIUM_RESOURCE_ERRORS = new Set([
   "Failed to load resource: net::ERR_NETWORK_CHANGED",
@@ -25,7 +29,15 @@ function isIgnoredVercelToolbarCspError(message: ConsoleMessage) {
   );
 }
 
-export function trackRuntimeErrors(page: Page) {
+function formatConsoleRuntimeError(message: ConsoleMessage, options: TrackRuntimeErrorsOptions) {
+  const text = `console:${message.text()}`;
+  if (!options.includeConsoleLocation) return text;
+
+  const locationUrl = message.location().url;
+  return locationUrl ? `${text} @ ${locationUrl}` : text;
+}
+
+export function trackRuntimeErrors(page: Page, options: TrackRuntimeErrorsOptions = {}) {
   const errors: string[] = [];
 
   page.on("pageerror", (error) => {
@@ -37,7 +49,7 @@ export function trackRuntimeErrors(page: Page) {
     if (isIgnoredExternalResourceDnsError(message)) return;
     if (isIgnoredTransientResourceError(message)) return;
     if (isIgnoredVercelToolbarCspError(message)) return;
-    errors.push(`console:${message.text()}`);
+    errors.push(formatConsoleRuntimeError(message, options));
   });
 
   return errors;
@@ -61,6 +73,24 @@ export async function expectNoRuntimeErrors(page: Page, errors: string[]) {
 export async function expectNoFatalErrorUi(page: Page) {
   await expect(page.locator("text=Something went wrong!")).toHaveCount(0);
   await expect(page.locator("text=Hide Error")).toHaveCount(0);
+}
+
+export async function recoverFromTransientErrorScreen(page: Page) {
+  const errorHeading = page.getByRole("heading", { name: /Something went wrong!?/i });
+  const legacyErrorText = page.locator("text=Something went wrong!").first();
+  const hasErrorScreen =
+    (await errorHeading.isVisible({ timeout: 500 }).catch(() => false)) ||
+    (await legacyErrorText.isVisible({ timeout: 500 }).catch(() => false));
+  if (!hasErrorScreen) return false;
+
+  const retryButton = page.getByRole("button", { name: "Try again" });
+  if (await retryButton.isVisible({ timeout: 500 }).catch(() => false)) {
+    await retryButton.click({ timeout: 5_000 });
+  } else {
+    await page.reload({ waitUntil: "domcontentloaded" });
+  }
+  await waitForHydration(page).catch(() => {});
+  return true;
 }
 
 export async function expectHealthyPage(page: Page, errors: string[]) {
