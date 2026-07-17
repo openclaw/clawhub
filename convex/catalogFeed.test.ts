@@ -1,6 +1,14 @@
-import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID } from "clawhub-schema";
+import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID, type CatalogFeedEntry } from "clawhub-schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listOfficialEntries, listOfficialSkillEntries, publish } from "./catalogFeed";
+import {
+  __test,
+  listChanges,
+  listOfficialEntries,
+  listOfficialSkillEntries,
+  pruneCatalogFeedHistoryInternal,
+  publish,
+  storePublication,
+} from "./catalogFeed";
 
 vi.mock("./lib/publishers", () => ({
   getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
@@ -27,6 +35,38 @@ const listOfficialSkillEntriesHandler = (
 )._handler;
 const publishHandler = (
   publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
+)._handler;
+const storePublicationHandler = (
+  storePublication as unknown as WrappedHandler<
+    {
+      feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID;
+      description: string;
+      generatedAt: string;
+      expiresAt: string;
+      entries: unknown[];
+    },
+    { sequence: number; entryCount: number }
+  >
+)._handler;
+const listChangesHandler = (
+  listChanges as unknown as WrappedHandler<
+    {
+      feedId: typeof CATALOG_FEED_ID;
+      fromSequence: number;
+      toSequence: number;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      resetRequired: boolean;
+      page?: Array<{ sequence: number; ordinal: number; payload: string }>;
+    }
+  >
+)._handler;
+const pruneCatalogFeedHistoryHandler = (
+  pruneCatalogFeedHistoryInternal as unknown as WrappedHandler<
+    { batchSize?: number },
+    { deleted: number; hasMore: boolean }
+  >
 )._handler;
 
 function makePackage(overrides: Record<string, unknown> = {}) {
@@ -110,7 +150,7 @@ function makeGitHubSource(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeFeedSkillEntry(index: number) {
+function makeFeedSkillEntry(index: number): CatalogFeedEntry {
   const id = `@openclaw/demo-${index.toString().padStart(3, "0")}`;
   return {
     type: "skill",
@@ -187,6 +227,184 @@ function makeCtx(
 describe("catalog feed projection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("builds deterministic complete revision changes", () => {
+    const previous = makeFeedSkillEntry(1);
+    const replacement = { ...previous, title: "Updated" };
+    const removed = makeFeedSkillEntry(2);
+    expect(
+      __test.buildCatalogFeedChanges({
+        sequence: 7,
+        previousEntries: [removed, previous],
+        nextEntries: [replacement],
+        previousDescription: "Official",
+        nextDescription: "Official",
+      }),
+    ).toEqual([
+      { sequence: 7, operation: "remove", entryType: "skill", entryId: removed.id },
+      { sequence: 7, operation: "upsert", entry: replacement },
+    ]);
+    expect(
+      __test.buildCatalogFeedChanges({
+        sequence: 8,
+        previousEntries: [replacement],
+        nextEntries: [replacement],
+        previousDescription: "Official",
+        nextDescription: "Official",
+      }),
+    ).toEqual([{ sequence: 8, operation: "metadata", metadata: { description: "Official" } }]);
+  });
+
+  it("stores a revision and its journal rows with the current publication", async () => {
+    const insert = vi.fn(async (table: string, _value: Record<string, unknown>) => `${table}:1`);
+    const patch = vi.fn();
+    const eq = vi.fn().mockReturnThis();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn((_index: string, apply: (q: { eq: typeof eq }) => unknown) => {
+            apply({ eq });
+            return { unique: vi.fn(async () => null) };
+          }),
+        })),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        get: vi.fn(),
+        normalizeId: vi.fn(),
+        system: { get: vi.fn(), query: vi.fn() },
+      },
+    };
+    const result = await storePublicationHandler(ctx, {
+      feedId: CATALOG_SKILLS_FEED_ID,
+      description: "Official",
+      generatedAt: "2026-07-16T00:00:00.000Z",
+      expiresAt: "2026-07-16T01:00:00.000Z",
+      entries: [makeFeedSkillEntry(1)],
+    });
+
+    expect(result).toMatchObject({ sequence: 1, entryCount: 1 });
+    expect(insert).toHaveBeenCalledWith(
+      "catalogFeedRevisions",
+      expect.objectContaining({ feedId: CATALOG_SKILLS_FEED_ID, sequence: 1 }),
+    );
+    const journalRows = insert.mock.calls.filter(([table]) => table === "catalogFeedChanges");
+    expect(journalRows).toHaveLength(2);
+    expect(journalRows.map(([, row]) => JSON.parse(String(row.payload)).operation)).toEqual([
+      "upsert",
+      "metadata",
+    ]);
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("reads only the requested bounded change range", async () => {
+    const builder = {
+      eq: vi.fn().mockReturnThis(),
+      gt: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+    };
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          sequence: 4,
+          ordinal: 0,
+          payload: '{"operation":"metadata"}',
+          expirationTime: 1,
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    }));
+    const query = vi.fn((table: string) => {
+      if (table === "catalogFeedRevisions") {
+        return {
+          withIndex: vi.fn(() => ({
+            order: vi.fn((direction: "asc" | "desc") => ({
+              first: vi.fn(async () => ({ sequence: direction === "asc" ? 4 : 5 })),
+            })),
+          })),
+        };
+      }
+      return {
+        withIndex: vi.fn((_index: string, apply: (q: typeof builder) => unknown) => {
+          apply(builder);
+          return { paginate };
+        }),
+      };
+    });
+    const result = await listChangesHandler(
+      {
+        db: { query },
+      },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 3,
+        toSequence: 4,
+        paginationOpts: { cursor: null, numItems: 100 },
+      },
+    );
+
+    expect(builder.gt).toHaveBeenCalledWith("sequence", 3);
+    expect(builder.lte).toHaveBeenCalledWith("sequence", 4);
+    expect(result).toMatchObject({
+      resetRequired: false,
+      retainedFromSequence: 3,
+      currentSequence: 5,
+      page: [{ sequence: 4, ordinal: 0, payload: '{"operation":"metadata"}' }],
+    });
+
+    const reset = await listChangesHandler(
+      { db: { query } },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 2,
+        toSequence: 4,
+        paginationOpts: { cursor: null, numItems: 100 },
+      },
+    );
+    expect(reset).toEqual({
+      resetRequired: true,
+      retainedFromSequence: 3,
+      currentSequence: 5,
+    });
+    expect(paginate).toHaveBeenCalledTimes(1);
+  });
+
+  it("prunes catalog history in bounded continuation batches", async () => {
+    const expiredRevisions = [{ _id: "catalogFeedRevisions:1" }, { _id: "catalogFeedRevisions:2" }];
+    const take = vi.fn(async () => expiredRevisions);
+    const delete_ = vi.fn();
+    const runAfter = vi.fn();
+    const result = await pruneCatalogFeedHistoryHandler(
+      {
+        db: {
+          query: vi.fn(() => ({
+            withIndex: vi.fn(
+              (_index: string, apply: (q: { lt: ReturnType<typeof vi.fn> }) => unknown) => {
+                const q = { lt: vi.fn().mockReturnThis() };
+                apply(q);
+                return { take };
+              },
+            ),
+          })),
+          insert: vi.fn(),
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: delete_,
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+          system: { get: vi.fn(), query: vi.fn() },
+        },
+        scheduler: { runAfter },
+      },
+      { batchSize: 2 },
+    );
+
+    expect(result).toEqual({ deleted: 2, hasMore: true });
+    expect(delete_).toHaveBeenCalledTimes(2);
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 2 });
   });
 
   it("projects official releases into ClawHub install candidates", async () => {

@@ -5,16 +5,20 @@ import {
   CATALOG_FEED_SOURCE_REF,
   CATALOG_SKILLS_FEED_DESCRIPTION,
   CATALOG_SKILLS_FEED_ID,
+  parseCatalogFeed,
   PROMOTIONS_FEED_ID,
   serializeCatalogFeed,
+  type CatalogFeedChange,
   type CatalogFeedEntry,
   type CatalogFeedSkillEntry,
 } from "clawhub-schema";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
-import { internalAction, internalMutation, internalQuery } from "./_generated/server";
+import { internalAction, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
+import { internalMutation } from "./functions";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
 import { isPublicSkillDoc } from "./lib/globalStats";
@@ -32,6 +36,8 @@ import {
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
 const CATALOG_FEED_PAGE_SIZE = 100;
 const MAX_CATALOG_FEED_ENTRIES = 1000;
+const CATALOG_FEED_CHANGE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const CATALOG_FEED_CHANGE_PAGE_SIZE = 500;
 const CATALOG_FEED_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
@@ -90,6 +96,47 @@ const catalogFeedEntryValidator = v.union(
   v.object({ type: v.literal("plugin"), ...catalogFeedEntryFields }),
   v.object({ type: v.literal("skill"), ...catalogFeedEntryFields }),
 );
+
+function catalogFeedEntryKey(entry: Pick<CatalogFeedEntry, "type" | "id">) {
+  return `${entry.type}\0${entry.id}`;
+}
+
+function buildCatalogFeedChanges(args: {
+  sequence: number;
+  previousEntries: CatalogFeedEntry[];
+  nextEntries: CatalogFeedEntry[];
+  previousDescription?: string;
+  nextDescription: string;
+}): CatalogFeedChange[] {
+  const previousByKey = new Map(
+    args.previousEntries.map((entry) => [catalogFeedEntryKey(entry), entry]),
+  );
+  const nextByKey = new Map(args.nextEntries.map((entry) => [catalogFeedEntryKey(entry), entry]));
+  const changes: CatalogFeedChange[] = [];
+  for (const [key, previous] of [...previousByKey].sort(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (nextByKey.has(key)) continue;
+    changes.push({
+      sequence: args.sequence,
+      operation: "remove",
+      entryType: previous.type,
+      entryId: previous.id,
+    });
+  }
+  for (const [key, entry] of [...nextByKey].sort(([left], [right]) => left.localeCompare(right))) {
+    if (JSON.stringify(previousByKey.get(key)) === JSON.stringify(entry)) continue;
+    changes.push({ sequence: args.sequence, operation: "upsert", entry });
+  }
+  if (args.previousDescription !== args.nextDescription || changes.length === 0) {
+    changes.push({
+      sequence: args.sequence,
+      operation: "metadata",
+      metadata: { description: args.nextDescription },
+    });
+  }
+  return changes;
+}
 
 async function buildEntry(
   ctx: CatalogQueryCtx,
@@ -381,6 +428,14 @@ export const storePublication = internalMutation({
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
       .unique();
     const sequence = (latest?.sequence ?? 0) + 1;
+    const previousFeed = latest ? parseCatalogFeed(JSON.parse(latest.payload)) : null;
+    const changes = buildCatalogFeedChanges({
+      sequence,
+      previousEntries: previousFeed?.entries ?? [],
+      nextEntries: args.entries,
+      previousDescription: previousFeed?.description,
+      nextDescription: args.description,
+    });
     const payload = serializeCatalogFeed({
       schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
       id: args.feedId,
@@ -392,6 +447,7 @@ export const storePublication = internalMutation({
     });
     const payloadSha256 = await sha256Hex(new TextEncoder().encode(payload));
     const publishedAt = Date.now();
+    const expirationTime = publishedAt + CATALOG_FEED_CHANGE_RETENTION_MS;
     const publication = {
       feedId: args.feedId,
       sequence,
@@ -404,6 +460,32 @@ export const storePublication = internalMutation({
     const publicationId = latest
       ? (await ctx.db.patch(latest._id, publication), latest._id)
       : await ctx.db.insert("catalogFeedPublications", publication);
+    await ctx.db.insert("catalogFeedRevisions", {
+      feedId: args.feedId,
+      sequence,
+      generatedAt: args.generatedAt,
+      expiresAt: args.expiresAt,
+      description: args.description,
+      publishedAt,
+      expirationTime,
+    });
+    for (const [ordinal, change] of changes.entries()) {
+      const identity =
+        change.operation === "upsert"
+          ? { entryType: change.entry.type, entryId: change.entry.id }
+          : change.operation === "remove"
+            ? { entryType: change.entryType, entryId: change.entryId }
+            : {};
+      await ctx.db.insert("catalogFeedChanges", {
+        feedId: args.feedId,
+        sequence,
+        ordinal,
+        operation: change.operation,
+        ...identity,
+        payload: JSON.stringify(change),
+        expirationTime,
+      });
+    }
     return {
       publicationId,
       feedId: args.feedId,
@@ -412,6 +494,132 @@ export const storePublication = internalMutation({
       publishedAt,
       entryCount: args.entries.length,
     };
+  },
+});
+
+export const listChanges = internalQuery({
+  args: {
+    feedId: v.union(v.literal(CATALOG_FEED_ID), v.literal(CATALOG_SKILLS_FEED_ID)),
+    fromSequence: v.number(),
+    toSequence: v.number(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    if (
+      !Number.isSafeInteger(args.fromSequence) ||
+      !Number.isSafeInteger(args.toSequence) ||
+      args.fromSequence < 0 ||
+      args.toSequence < args.fromSequence
+    ) {
+      throw new Error("Catalog feed change range is invalid");
+    }
+    if (
+      !Number.isSafeInteger(args.paginationOpts.numItems) ||
+      args.paginationOpts.numItems < 1 ||
+      args.paginationOpts.numItems > CATALOG_FEED_CHANGE_PAGE_SIZE
+    ) {
+      throw new Error(
+        `Catalog feed change page size must be between 1 and ${CATALOG_FEED_CHANGE_PAGE_SIZE}`,
+      );
+    }
+    const window = await readCatalogFeedChangeWindow(ctx, args.feedId);
+    if (
+      args.fromSequence < window.retainedFromSequence ||
+      args.toSequence > window.currentSequence
+    ) {
+      return { resetRequired: true as const, ...window };
+    }
+    const page = await ctx.db
+      .query("catalogFeedChanges")
+      .withIndex("by_feed_and_sequence_and_ordinal", (q) =>
+        q
+          .eq("feedId", args.feedId)
+          .gt("sequence", args.fromSequence)
+          .lte("sequence", args.toSequence),
+      )
+      .paginate(args.paginationOpts);
+    return {
+      resetRequired: false as const,
+      ...window,
+      ...page,
+      page: page.page.map(({ sequence, ordinal, payload }) => ({ sequence, ordinal, payload })),
+    };
+  },
+});
+
+async function readCatalogFeedChangeWindow(
+  ctx: Pick<QueryCtx, "db">,
+  feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID,
+) {
+  const [oldest, latest] = await Promise.all([
+    ctx.db
+      .query("catalogFeedRevisions")
+      .withIndex("by_feed_and_sequence", (q) => q.eq("feedId", feedId))
+      .order("asc")
+      .first(),
+    ctx.db
+      .query("catalogFeedRevisions")
+      .withIndex("by_feed_and_sequence", (q) => q.eq("feedId", feedId))
+      .order("desc")
+      .first(),
+  ]);
+  if (latest) {
+    return {
+      currentSequence: latest.sequence,
+      retainedFromSequence: Math.max(0, (oldest?.sequence ?? latest.sequence) - 1),
+    };
+  }
+  const publication = await ctx.db
+    .query("catalogFeedPublications")
+    .withIndex("by_feed", (q) => q.eq("feedId", feedId))
+    .unique();
+  const currentSequence = publication?.sequence ?? 0;
+  return { currentSequence, retainedFromSequence: currentSequence };
+}
+
+export const getChangeWindow = internalQuery({
+  args: {
+    feedId: v.union(v.literal(CATALOG_FEED_ID), v.literal(CATALOG_SKILLS_FEED_ID)),
+  },
+  handler: async (ctx, args) => await readCatalogFeedChangeWindow(ctx, args.feedId),
+});
+
+export const pruneCatalogFeedHistoryInternal = internalMutation({
+  args: { batchSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const batchSize = args.batchSize ?? CATALOG_FEED_CHANGE_PAGE_SIZE;
+    if (
+      !Number.isSafeInteger(batchSize) ||
+      batchSize < 1 ||
+      batchSize > CATALOG_FEED_CHANGE_PAGE_SIZE
+    ) {
+      throw new Error(
+        `Catalog feed prune batch size must be between 1 and ${CATALOG_FEED_CHANGE_PAGE_SIZE}`,
+      );
+    }
+    const now = Date.now();
+    // Retire the revision marker first so readers reset instead of observing a
+    // revision whose journal rows are only partially retained.
+    const revisions = await ctx.db
+      .query("catalogFeedRevisions")
+      .withIndex("by_expiration_time", (q) => q.lt("expirationTime", now))
+      .take(batchSize);
+    const changes =
+      revisions.length < batchSize
+        ? await ctx.db
+            .query("catalogFeedChanges")
+            .withIndex("by_expiration_time", (q) => q.lt("expirationTime", now))
+            .take(batchSize - revisions.length)
+        : [];
+    for (const row of [...revisions, ...changes]) await ctx.db.delete(row._id);
+    const deleted = changes.length + revisions.length;
+    const hasMore = deleted === batchSize;
+    if (hasMore) {
+      await ctx.scheduler.runAfter(0, internal.catalogFeed.pruneCatalogFeedHistoryInternal, {
+        batchSize,
+      });
+    }
+    return { deleted, hasMore };
   },
 });
 
@@ -507,3 +715,5 @@ export const getLatestPublication = internalQuery({
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
       .unique(),
 });
+
+export const __test = { buildCatalogFeedChanges };

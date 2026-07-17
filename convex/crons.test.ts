@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => {
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
+  const catalogFeedHistoryPruneRef = Symbol("catalog-feed-history-prune");
   const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
   const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
   return {
@@ -35,6 +36,7 @@ const mocks = vi.hoisted(() => {
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
     promotionsFeedPublishRef,
+    catalogFeedHistoryPruneRef,
     securityScanExpiredLeaseRecoveryRef,
     securityScanDispatchWatchdogRef,
   };
@@ -79,6 +81,9 @@ vi.mock("./_generated/api", () => ({
     },
     promotionsFeed: {
       publishInternal: mocks.promotionsFeedPublishRef,
+    },
+    catalogFeed: {
+      pruneCatalogFeedHistoryInternal: mocks.catalogFeedHistoryPruneRef,
     },
     vt: {
       pollPendingScans: Symbol("vt-pending-scans"),
@@ -156,6 +161,17 @@ describe("crons", () => {
       { hours: 6 },
       mocks.promotionsFeedPublishRef,
       {},
+    );
+  });
+
+  it("prunes catalog feed history in bounded daily batches", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "catalog-feed-history-prune",
+      { hours: 24 },
+      mocks.catalogFeedHistoryPruneRef,
+      { batchSize: 500 },
     );
   });
 
