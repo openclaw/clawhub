@@ -126,7 +126,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(runStep?.run).not.toContain("--version");
     expect(runStep?.run).not.toContain("--max-jobs");
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
-      "npm install -g @openclaw/clawscan@0.1.5",
+      "npm install -g @openclaw/clawscan@0.1.6",
     );
     expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
       "npm install -g @openai/codex@0.142.3",
@@ -138,7 +138,6 @@ describe("pre-publication publish worker workflow", () => {
       CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
-      VIRUSTOTAL_API_KEY: "${{ secrets.VT_API_KEY }}",
     });
 
     for (const step of steps) {
@@ -152,9 +151,7 @@ describe("pre-publication publish worker workflow", () => {
       expect(stepUsesSecret(step, "OPENAI_API_KEY"), stepName).toBe(
         stepName === "Run pre-publication publish worker",
       );
-      expect(stepUsesSecret(step, "VT_API_KEY"), stepName).toBe(
-        stepName === "Run pre-publication publish worker",
-      );
+      expect(stepUsesSecret(step, "VT_API_KEY"), stepName).toBe(false);
     }
   });
 });

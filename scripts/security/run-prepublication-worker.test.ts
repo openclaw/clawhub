@@ -661,7 +661,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 cat > "$output" <<'JSON'
-{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"},"virustotal":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}
+{"schemaVersion":"clawscan-run-v1","profile":"clawhub","scanners":{"clawscan-static":{"status":"completed"},"skillspector":{"status":"completed"}},"judge":{"status":"failed","error":"Codex request was rate limited.","result":null}}
 JSON
 `,
     );

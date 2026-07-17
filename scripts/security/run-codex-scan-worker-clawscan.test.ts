@@ -161,14 +161,13 @@ function clawScanArtifactJson(options?: {
   completedAt?: string;
   includeCompletedAt?: boolean;
   judgeResult?: Record<string, unknown>;
-  scannerStatuses?: Partial<Record<"clawscan-static" | "skillspector" | "virustotal", string>>;
+  scannerStatuses?: Partial<Record<"clawscan-static" | "skillspector", string>>;
   verdict?: ClawScanVerdict;
 }) {
   const verdict = options?.verdict ?? "benign";
   const scannerStatuses = {
     "clawscan-static": "completed",
     skillspector: "completed",
-    virustotal: "completed",
     ...options?.scannerStatuses,
   };
   const artifact: Record<string, unknown> = {
@@ -184,12 +183,6 @@ function clawScanArtifactJson(options?: {
             recommendation: "DO_NOT_INSTALL",
           },
           issues: [{ id: "SDI-1", severity: "HIGH", explanation: "test finding" }],
-        },
-      },
-      virustotal: {
-        status: scannerStatuses.virustotal,
-        raw: {
-          status: scannerStatuses.virustotal === "skipped" ? "skipped" : "clean",
         },
       },
       "clawscan-static": {
@@ -277,7 +270,6 @@ JSON`,
       const workspace = await tempDir();
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
-      const virusTotalLog = join(workspace, "virustotal-input.json");
       const artifactJson = clawScanArtifactJson({ verdict });
       await writeFakeClawScanCommand(
         fakeClawScan,
@@ -287,13 +279,9 @@ JSON`,
 fi
 printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
 out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --scanner-result)
-      cp "\${2#virustotal=}" ${JSON.stringify(virusTotalLog)}
-      shift 2
-      ;;
-    --output)
+	while [[ $# -gt 0 ]]; do
+	  case "$1" in
+	    --output)
       out="$2"
       shift 2
       ;;
@@ -348,15 +336,7 @@ JSON`,
         expect(invocationArgs).toContain("--profile");
         expect(invocationArgs).toContain("clawhub");
         expect(invocationArgs).not.toContain("--context");
-        expect(invocationArgs).toContain("--scanner-result");
-        const invocationLines = invocationArgs.trim().split("\n");
-        const scannerResultIndex = invocationLines.indexOf("--scanner-result");
-        const scannerResult = invocationLines[scannerResultIndex + 1];
-        expect(scannerResult).toMatch(/^virustotal=/);
-        expect(JSON.parse(await readFile(virusTotalLog, "utf8"))).toEqual({
-          status: "completed",
-          source: "cached-skill-version",
-        });
+        expect(invocationArgs).not.toContain("--scanner-result");
       } finally {
         if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
         else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
@@ -422,20 +402,15 @@ JSON`,
       const fakeClawScan = join(workspace, "fake-clawscan");
       const argsLog = join(workspace, "clawscan-args.log");
       const filesLog = join(workspace, "clawscan-files.log");
-      const virusTotalLog = join(workspace, "virustotal-input.json");
       await writeFakeClawScanCommand(
         fakeClawScan,
         `target="$1"
 printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
 find "$target" -type f -print | sort > ${JSON.stringify(filesLog)}
 out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --scanner-result)
-      cp "\${2#virustotal=}" ${JSON.stringify(virusTotalLog)}
-      shift 2
-      ;;
-    --output)
+	while [[ $# -gt 0 ]]; do
+	  case "$1" in
+	    --output)
       out="$2"
       shift 2
       ;;
@@ -495,14 +470,7 @@ JSON`,
           expect.arrayContaining(["--profile", "clawhub", "--output"]),
         );
         expect(invocationArgs).not.toContain("--context");
-        const scannerResultIndex = invocationArgs.indexOf("--scanner-result");
-        expect(scannerResultIndex).toBeGreaterThan(-1);
-        const scannerResult = invocationArgs[scannerResultIndex + 1];
-        expect(scannerResult).toMatch(/^virustotal=/);
-        expect(JSON.parse(await readFile(virusTotalLog, "utf8"))).toEqual({
-          status: "completed",
-          source: `${targetKind}-${source}`,
-        });
+        expect(invocationArgs).not.toContain("--scanner-result");
         expect((await readFile(filesLog, "utf8")).trim().split("\n")).toContain(expectedFile);
       } finally {
         if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
@@ -510,69 +478,6 @@ JSON`,
       }
     },
   );
-
-  it("passes a completed null VirusTotal fixture when cached telemetry is unavailable", async () => {
-    const workspace = await tempDir();
-    const fakeClawScan = join(workspace, "fake-clawscan");
-    const argsLog = join(workspace, "clawscan-args.log");
-    const virusTotalLog = join(workspace, "virustotal-input.json");
-    await writeFakeClawScanCommand(
-      fakeClawScan,
-      `printf '%s\n' "$@" > ${JSON.stringify(argsLog)}
-out=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --scanner-result)
-      cp "\${2#virustotal=}" ${JSON.stringify(virusTotalLog)}
-      shift 2
-      ;;
-    --output)
-      out="$2"
-      shift 2
-      ;;
-    *)
-      shift
-      ;;
-  esac
-done
-mkdir -p "$(dirname "$out")"
-cat > "$out" <<'JSON'
-${clawScanArtifactJson()}
-JSON`,
-    );
-
-    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
-    try {
-      const client = {
-        action: vi.fn(async (..._args: unknown[]) => ({})),
-      };
-      const result = await processJob(
-        client,
-        "worker-auth",
-        claimedJob({
-          jobId: "securityScanJobs:no-cached-vt",
-          source: "manual",
-          target: fileTarget("SKILL.md", "# Uploaded skill\n"),
-          targetKind: "skillScanRequest",
-        }),
-        undefined,
-      );
-
-      expect(result).toEqual({
-        completed: true,
-        hardFailed: false,
-        retryableFailed: false,
-      });
-      const invocationArgs = (await readFile(argsLog, "utf8")).trim().split("\n");
-      const scannerResult = invocationArgs[invocationArgs.indexOf("--scanner-result") + 1];
-      expect(scannerResult).toMatch(/^virustotal=/);
-      expect(JSON.parse(await readFile(virusTotalLog, "utf8"))).toBeNull();
-    } finally {
-      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
-      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
-    }
-  });
 
   it.each([
     {
@@ -634,11 +539,11 @@ JSON`,
     },
   );
 
-  it("fails the job when VirusTotal scanner status is skipped", async () => {
+  it("fails the job when SkillSpector scanner status is skipped", async () => {
     const workspace = await tempDir();
     const fakeClawScan = join(workspace, "fake-clawscan");
     const artifactJson = clawScanArtifactJson({
-      scannerStatuses: { virustotal: "skipped" },
+      scannerStatuses: { skillspector: "skipped" },
     });
     await writeFakeClawScanCommand(
       fakeClawScan,
@@ -672,7 +577,7 @@ JSON`,
       const result = await processJob(
         client,
         "worker-auth",
-        skillVersionJob("securityScanJobs:vt-skipped"),
+        skillVersionJob("securityScanJobs:skillspector-skipped"),
         undefined,
       );
 
@@ -683,7 +588,7 @@ JSON`,
       });
       expect(client.action).toHaveBeenCalledTimes(1);
       expect(client.action.mock.calls[0]?.[1]).toMatchObject({
-        error: "ClawScan scanner virustotal status was skipped",
+        error: "ClawScan scanner skillspector status was skipped",
       });
     } finally {
       if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;

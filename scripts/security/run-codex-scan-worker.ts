@@ -105,7 +105,6 @@ type ClawScanCommandDiagnostic = {
     };
     scanners?: {
       skillspectorStatus?: string;
-      virustotalStatus?: string;
       staticStatus?: string;
     };
   };
@@ -135,7 +134,7 @@ type ProcessJobResult = {
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CLAWSCAN_TIMEOUT_MS = 20 * 60 * 1000;
-const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector", "virustotal"];
+const REQUIRED_CLAWHUB_SCANNERS = ["clawscan-static", "skillspector"];
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;
 const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
@@ -361,7 +360,6 @@ const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
   "clawscanmapping.judge.promptsha256",
   "clawscanmapping.judge.outputschemasha256",
   "clawscanmapping.scanners.skillspectorstatus",
-  "clawscanmapping.scanners.virustotalstatus",
   "clawscanmapping.scanners.staticstatus",
   "llmanalysis.confidence",
   "llmanalysis.status",
@@ -787,14 +785,6 @@ async function fileExists(path: string) {
   } catch {
     return false;
   }
-}
-
-function cachedVirusTotalAnalysis(job: ClaimedJob) {
-  return (
-    (job.target.version as Record<string, unknown> | undefined)?.vtAnalysis ??
-    (job.target.release as Record<string, unknown> | undefined)?.vtAnalysis ??
-    null
-  );
 }
 
 function codexEnv() {
@@ -1309,7 +1299,6 @@ function clawScanDiagnosticMapping(artifact: Record<string, unknown>) {
     scanners: {
       skillspectorStatus: scannerStatuses.skillspector,
       staticStatus: scannerStatuses["clawscan-static"],
-      virustotalStatus: scannerStatuses.virustotal,
     },
   };
 }
@@ -1328,7 +1317,6 @@ function validateClawScanArtifactForClawHubProfile(artifact: Record<string, unkn
   const allowedScannerStatuses: Record<string, Set<string>> = {
     "clawscan-static": new Set(["completed"]),
     skillspector: new Set(["completed"]),
-    virustotal: new Set(["completed"]),
   };
   for (const [scanner, status] of Object.entries(scannerStatuses)) {
     const allowed = allowedScannerStatuses[scanner] ?? new Set(["completed"]);
@@ -1377,22 +1365,8 @@ export async function runClawScan(
 ) {
   const command = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND ?? "clawscan";
   const artifactPath = join(workspace, "clawscan-artifact.json");
-  const virusTotalResultPath = join(workspace, "clawscan-virustotal.json");
-  await writeFile(
-    virusTotalResultPath,
-    `${JSON.stringify(cachedVirusTotalAnalysis(job), null, 2)}\n`,
-    "utf8",
-  );
   const target = await resolveClawScanTarget(workspace, job);
-  const args = [
-    target,
-    "--profile",
-    "clawhub",
-    "--scanner-result",
-    `virustotal=${virusTotalResultPath}`,
-    "--output",
-    artifactPath,
-  ];
+  const args = [target, "--profile", "clawhub", "--output", artifactPath];
   onDiagnostic({ args: [command, ...args], artifactPath });
 
   const captureArtifact = async () => {
