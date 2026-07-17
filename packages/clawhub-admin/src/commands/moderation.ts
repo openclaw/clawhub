@@ -13,6 +13,7 @@ import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
+  ApiV1LiftModerationHoldResponseSchema,
   ApiV1PublisherRecoveryResponseSchema,
   ApiV1ReclassifyBanResponseSchema,
   ApiV1SetRoleResponseSchema,
@@ -197,6 +198,78 @@ export async function cmdUnbanUser(
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdLiftModerationHold(
+  opts: GlobalOpts,
+  identifierArg: string,
+  options: {
+    yes?: boolean;
+    id?: boolean;
+    fuzzy?: boolean;
+    reason?: string;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  const raw = identifierArg.trim();
+  if (!raw) fail("Handle or user id required");
+
+  const reason = options.reason?.trim();
+  if (!reason) fail("--reason required");
+  if (reason.length > 500) fail("--reason must be 500 characters or fewer");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const allowPrompt = isInteractive() && inputAllowed !== false;
+  const resolved = await resolveUserIdentifier(
+    registry,
+    token,
+    raw,
+    { id: options.id, fuzzy: options.fuzzy },
+    allowPrompt,
+  );
+  if (!resolved) return undefined;
+  if (!options.yes) {
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(
+      `Lift the moderation hold for ${resolved.label}? This restores eligible skills.`,
+    );
+    if (!ok) return undefined;
+  }
+
+  const spinner = options.json
+    ? null
+    : createCrabLoader(`Lifting moderation hold for ${resolved.label}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/lift-moderation-hold`,
+        token,
+        body: resolved.userId
+          ? { userId: resolved.userId, reason }
+          : { handle: resolved.handle, reason },
+      },
+      ApiV1LiftModerationHoldResponseSchema,
+    );
+    const parsed = parseArk(
+      ApiV1LiftModerationHoldResponseSchema,
+      result,
+      "Lift moderation hold response",
+    );
+    spinner?.succeed(
+      parsed.alreadyCleared
+        ? `OK. ${resolved.label} had no moderation hold`
+        : `OK. Lifted moderation hold for ${resolved.label} (${formatRestoredSkills(parsed.restoredSkills)})`,
+    );
+    if (options.json) process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
     throw error;
   }
 }

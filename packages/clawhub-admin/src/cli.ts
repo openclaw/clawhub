@@ -30,6 +30,7 @@ import { cmdSendStaffEmail } from "./commands/email.js";
 import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
 import {
   cmdBanUser,
+  cmdLiftModerationHold,
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
@@ -244,6 +245,20 @@ users
   .action(async (handleOrId, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUnbanUser(opts, handleOrId, options, isInputAllowed());
+  });
+
+users
+  .command("lift-moderation-hold")
+  .description("Lift an account moderation hold and restore eligible skills")
+  .argument("<handleOrId>", "User handle (default) or user id")
+  .option("--id", "Treat argument as user id")
+  .option("--fuzzy", "Resolve handle via fuzzy user search")
+  .requiredOption("--reason <reason>", "Audit reason")
+  .option("--yes", "Skip confirmation")
+  .option("--json", "Output JSON")
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdLiftModerationHold(opts, handleOrId, options, isInputAllowed());
   });
 
 users

@@ -84,6 +84,7 @@ User administration:
 ```bash
 bun run admin -- users ban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
 bun run admin -- users unban <handleOrId> [--id] [--fuzzy] [--reason <text>] [--yes]
+bun run admin -- users lift-moderation-hold <handleOrId> --reason <text> [--id] [--fuzzy] [--yes] [--json]
 bun run admin -- users set-role <handleOrId> <user|moderator|admin> [--id] [--fuzzy] [--yes]
 bun run admin -- users reclassify-ban <handleOrId> --reason <text> [--id] [--fuzzy] [--dry-run|--apply] [--yes] [--json]
 bun run admin -- users recover-publisher <handle> --to <handle> --previous-github-id <id> --next-github-id <id> --reason <text> [--retired-handle <handle>] [--verified] [--apply] [--yes] [--json]
