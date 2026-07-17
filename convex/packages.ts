@@ -55,7 +55,6 @@ import {
 import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
-  ACTIVITY_TREND_DAY_MS,
   buildDailyMetricTrends,
   clampActivityTrendEndDay,
   getActivityTrendRangeForEndDay,
@@ -339,7 +338,6 @@ const skillSpectorAnalysisValidator = v.object({
   checkedAt: v.number(),
 });
 
-const PACKAGE_DAILY_STATS_ROLLOUT_AT_ENV = "PACKAGE_DAILY_STATS_ROLLOUT_AT";
 const PACKAGE_STAT_EVENT_BATCH_SIZE = 100;
 export const PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
   "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS";
@@ -397,15 +395,6 @@ function normalizeProcessedPackageStatEventPruneMaxBatches(maxBatches: number | 
     1,
     MAX_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_MAX_BATCHES,
   );
-}
-
-function getPackageDailyStatsRolloutTime() {
-  const raw = process.env[PACKAGE_DAILY_STATS_ROLLOUT_AT_ENV]?.trim();
-  if (!raw) return null;
-
-  const numeric = Number(raw);
-  const parsed = Number.isFinite(numeric) ? numeric : Date.parse(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function inferOwnerHandleFromScopedPackageName(name: string) {
@@ -4427,30 +4416,6 @@ async function buildPackageActivityTrend(ctx: DbReaderCtx, pkg: Doc<"packages">,
       q.eq("packageId", pkg._id).gte("day", startDay).lte("day", normalizedEndDay),
     )
     .take(ACTIVITY_TREND_DAYS);
-
-  const allTimeDownloads = Math.max(0, Math.trunc(pkg.stats?.downloads ?? 0));
-  const allTimeInstalls = Math.max(0, Math.trunc(pkg.stats?.installs ?? 0));
-  const dailyTotals = rows.reduce(
-    (totals, row) => ({
-      downloads: totals.downloads + Math.max(0, Math.trunc(row.downloads)),
-      installs: totals.installs + Math.max(0, Math.trunc(row.installs)),
-    }),
-    { downloads: 0, installs: 0 },
-  );
-  const dailyRowsCoverAllTimeActivity =
-    dailyTotals.downloads >= allTimeDownloads && dailyTotals.installs >= allTimeInstalls;
-  const packageDailyStatsRolloutTime = getPackageDailyStatsRolloutTime();
-  const hasAllTimeActivity = allTimeDownloads > 0 || allTimeInstalls > 0;
-  const packageCreatedAt = pkg.createdAt ?? pkg._creationTime;
-  const hasUntrustedHistoricalActivity =
-    hasAllTimeActivity &&
-    (packageDailyStatsRolloutTime === null || packageCreatedAt < packageDailyStatsRolloutTime);
-  const hasCompleteDailyWindow =
-    packageDailyStatsRolloutTime !== null &&
-    startDay * ACTIVITY_TREND_DAY_MS >= packageDailyStatsRolloutTime;
-  if (hasUntrustedHistoricalActivity && !hasCompleteDailyWindow && !dailyRowsCoverAllTimeActivity) {
-    return null;
-  }
 
   return buildDailyMetricTrends(rows, normalizedEndDay);
 }

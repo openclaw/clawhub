@@ -21,9 +21,6 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 
-const packageDailyStatsRolloutAtEnv = "PACKAGE_DAILY_STATS_ROLLOUT_AT";
-const originalPackageDailyStatsRolloutAt = process.env[packageDailyStatsRolloutAtEnv];
-
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
@@ -78,18 +75,9 @@ const getActivityTrendHandler = (
   >
 )._handler;
 
-function setPackageDailyStatsRolloutAt(value: string | undefined) {
-  if (value === undefined) {
-    delete process.env[packageDailyStatsRolloutAtEnv];
-    return;
-  }
-  process.env[packageDailyStatsRolloutAtEnv] = value;
-}
-
 describe("package stat events", () => {
   afterEach(() => {
     vi.mocked(getAuthUserId).mockReset();
-    setPackageDailyStatsRolloutAt(originalPackageDailyStatsRolloutAt);
   });
 
   it("records downloads as append-only events", async () => {
@@ -534,7 +522,6 @@ describe("package stat events", () => {
   it("builds package activity from 30 daily package stat rows", async () => {
     const now = Date.UTC(2026, 6, 18) + 1;
     const { startDay, endDay } = getActivityTrendRange(now);
-    setPackageDailyStatsRolloutAt("2026-06-18T00:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
 
@@ -616,8 +603,9 @@ describe("package stat events", () => {
     }
   });
 
-  it("returns null for unseeded historical package trends", async () => {
+  it("returns a zero-filled trend for packages without daily rows", async () => {
     const now = Date.UTC(2026, 5, 20) + 1;
+    const { startDay, endDay } = getActivityTrendRange(now);
     vi.useFakeTimers();
     vi.setSystemTime(now);
 
@@ -671,20 +659,21 @@ describe("package stat events", () => {
         },
       };
 
-      const { endDay } = getActivityTrendRange(now);
       const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
 
       expect(takeDailyStats).toHaveBeenCalledWith(ACTIVITY_TREND_DAYS);
-      expect(trend).toBeNull();
+      expect(trend?.downloads.total).toBe(0);
+      expect(trend?.downloads.points).toHaveLength(ACTIVITY_TREND_DAYS);
+      expect(trend?.downloads.points[0]).toEqual({ day: startDay, value: 0 });
+      expect(trend?.downloads.points.at(-1)).toEqual({ day: endDay, value: 0 });
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("uses package activity rows without a rollout env when they cover all-time totals", async () => {
+  it("builds package activity from available daily rows", async () => {
     const now = Date.UTC(2026, 5, 20) + 1;
     const { startDay, endDay } = getActivityTrendRange(now);
-    setPackageDailyStatsRolloutAt(undefined);
     vi.useFakeTimers();
     vi.setSystemTime(now);
 
@@ -754,77 +743,10 @@ describe("package stat events", () => {
     }
   });
 
-  it("returns null until the actual package daily rollout window is complete", async () => {
-    const now = Date.UTC(2026, 6, 18) + 1;
-    const { endDay } = getActivityTrendRange(now);
-    setPackageDailyStatsRolloutAt("2026-07-10T00:00:00.000Z");
-    vi.useFakeTimers();
-    vi.setSystemTime(now);
-
-    try {
-      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
-      const dailyIndexBuilder = {
-        eq: vi.fn(() => dailyIndexBuilder),
-        gte: vi.fn(() => dailyIndexBuilder),
-        lte: vi.fn(() => dailyIndexBuilder),
-      };
-      const packageWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
-          buildQuery(packageIndexBuilder);
-          return {
-            unique: vi.fn(async () => ({
-              _id: "packages:one",
-              _creationTime: Date.UTC(2026, 5, 1),
-              createdAt: Date.UTC(2026, 5, 1),
-              normalizedName: "demo-plugin",
-              channel: "public",
-              scanStatus: "clean",
-              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
-            })),
-          };
-        },
-      );
-      const takeDailyStats = vi.fn(async () => [{ day: endDay, downloads: 1, installs: 1 }]);
-      const dailyWithIndex = vi.fn(
-        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
-          buildQuery(dailyIndexBuilder);
-          return { take: takeDailyStats };
-        },
-      );
-      const ctx = {
-        db: {
-          query: vi.fn((tableName: string) => {
-            if (tableName === "packages") return { withIndex: packageWithIndex };
-            if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
-            throw new Error(`Unexpected table ${tableName}`);
-          }),
-          get: vi.fn(),
-          normalizeId: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: vi.fn(),
-          system: {
-            get: vi.fn(),
-            query: vi.fn(),
-          },
-        },
-      };
-
-      const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
-
-      expect(takeDailyStats).toHaveBeenCalledWith(ACTIVITY_TREND_DAYS);
-      expect(trend).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clamps future package trend windows before checking rollout completeness", async () => {
+  it("clamps future package trend windows to the current day", async () => {
     const now = Date.UTC(2026, 6, 18) + 1;
     const { endDay: serverEndDay } = getActivityTrendRange(now);
     const { endDay: futureEndDay } = getActivityTrendRange(Date.UTC(2026, 8, 20) + 1);
-    setPackageDailyStatsRolloutAt("2026-08-10T00:00:00.000Z");
     vi.useFakeTimers();
     vi.setSystemTime(now);
 
@@ -854,7 +776,7 @@ describe("package stat events", () => {
       const dailyWithIndex = vi.fn(
         (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
           buildQuery(dailyIndexBuilder);
-          return { take: vi.fn(async () => [{ day: futureEndDay, downloads: 1, installs: 1 }]) };
+          return { take: vi.fn(async () => [{ day: serverEndDay, downloads: 1, installs: 1 }]) };
         },
       );
       const ctx = {
@@ -883,7 +805,7 @@ describe("package stat events", () => {
       });
 
       expect(dailyIndexBuilder.lte).toHaveBeenCalledWith("day", serverEndDay);
-      expect(trend).toBeNull();
+      expect(trend?.downloads.points.at(-1)).toEqual({ day: serverEndDay, value: 1 });
     } finally {
       vi.useRealTimers();
     }
@@ -892,7 +814,6 @@ describe("package stat events", () => {
   it("returns private package trends when the owner is signed in", async () => {
     const now = Date.UTC(2026, 6, 18) + 1;
     const { endDay } = getActivityTrendRange(now);
-    setPackageDailyStatsRolloutAt("2026-06-18T00:00:00.000Z");
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     vi.useFakeTimers();
     vi.setSystemTime(now);
