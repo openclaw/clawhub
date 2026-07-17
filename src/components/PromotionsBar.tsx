@@ -39,28 +39,8 @@ function nextPromotionsRefreshDelay(promotions: PublicPromotion[], now: number) 
   );
 }
 
-function formatPromotionDate(endsAt: number) {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(endsAt));
-}
-
-function isTencentHyPromotion(title: string) {
-  return /tencent hy3/i.test(title);
-}
-
 function promotionCtaUrl(promotion: PublicPromotion) {
   return promotion.launchPageUrl ?? promotion.signupUrl ?? promotion.docsUrl ?? null;
-}
-
-function promotionMetaCopy(promotion: PublicPromotion) {
-  if (isTencentHyPromotion(promotion.title)) {
-    return `Tencent's latest model, free until ${formatPromotionDate(promotion.endsAt)}`;
-  }
-
-  return promotion.blurb;
 }
 
 function PromotionBarItem({
@@ -71,31 +51,17 @@ function PromotionBarItem({
   onDismiss: (promotion: PublicPromotion) => void;
 }) {
   const ctaUrl = promotionCtaUrl(promotion);
-  const isTencentPromotion = isTencentHyPromotion(promotion.title);
 
   return (
     <article className="promotion-bar-item">
       <div className="promotion-bar-content">
         <div className="promotion-bar-copy">
           <h3 className="promotion-bar-title">
-            {isTencentPromotion ? (
-              <img
-                src="/tencent-hy-favicon.png"
-                alt=""
-                aria-hidden="true"
-                className="promotion-bar-icon"
-              />
-            ) : (
-              <Gift
-                size={14}
-                aria-hidden="true"
-                className="promotion-bar-icon promotion-bar-icon-fallback"
-              />
-            )}
+            <Gift size={14} aria-hidden="true" className="promotion-bar-icon" />
             <span className="promotion-bar-title-copy">{promotion.title}</span>
           </h3>
           <span className="promotion-bar-separator" aria-hidden="true" />
-          <span className="promotion-bar-meta">{promotionMetaCopy(promotion)}</span>
+          <span className="promotion-bar-meta">{promotion.blurb}</span>
         </div>
         {ctaUrl ? (
           <a className="promotion-bar-link" href={ctaUrl} target="_blank" rel="noopener noreferrer">

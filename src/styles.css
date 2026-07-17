@@ -25694,10 +25694,6 @@ a.search-empty-action {
   width: 14px;
   height: 14px;
   flex: 0 0 auto;
-  border-radius: var(--oc-radius-inset);
-}
-
-.promotion-bar-icon-fallback {
   color: var(--accent);
 }
 

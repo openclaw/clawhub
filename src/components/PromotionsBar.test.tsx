@@ -60,7 +60,7 @@ describe("PromotionsBar", () => {
         promotionsResponse([{ ...promotion, startsAt: 120_000, endsAt: 200_000 }]),
       );
 
-    const { container } = render(<PromotionsBar />);
+    render(<PromotionsBar />);
     await flushPromises();
     expect(screen.queryByText(promotion.title)).toBeNull();
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://clawhub.test/api/v1/promotions");
@@ -74,7 +74,6 @@ describe("PromotionsBar", () => {
     expect(screen.getByText(promotion.title)).toBeTruthy();
     expect(screen.getByText(promotion.blurb)).toBeTruthy();
     expect(screen.queryByText("1 day left")).toBeNull();
-    expect(container.querySelector('img[src="/tencent-hy-favicon.png"]')).toBeNull();
   });
 
   it("removes a promotion at its expiry boundary and refreshes the query", async () => {
@@ -93,25 +92,6 @@ describe("PromotionsBar", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(promotion.title)).toBeNull();
-  });
-
-  it("uses the campaign date instead of a changing countdown for Tencent Hy3", async () => {
-    fetchMock.mockResolvedValueOnce(
-      promotionsResponse([
-        {
-          ...promotion,
-          title: "Tencent Hy3 is free on OpenRouter",
-          endsAt: Date.UTC(2026, 6, 21),
-        },
-      ]),
-    );
-
-    const { container } = render(<PromotionsBar />);
-    await flushPromises();
-
-    expect(screen.getByText("Tencent's latest model, free until July 21")).toBeTruthy();
-    expect(screen.queryByText(/days left/)).toBeNull();
-    expect(container.querySelector('img[src="/tencent-hy-favicon.png"]')).toBeTruthy();
   });
 
   it("keeps a dismissed promotion hidden for the same campaign window", async () => {
