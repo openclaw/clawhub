@@ -95,7 +95,9 @@ describe("pre-publication publish worker workflow", () => {
     expect(job.environment).toBe("Production");
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(20);
-    expect(job.strategy?.matrix?.shard).toEqual([0, 1]);
+    expect(job.strategy?.matrix?.shard).toBe(
+      "${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '' && '[0]' || '[0,1]') }}",
+    );
     expect(job.strategy?.["max-parallel"]).toBe(2);
     expect(job.env).toMatchObject({
       CONVEX_URL:
@@ -124,7 +126,9 @@ describe("pre-publication publish worker workflow", () => {
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
       "npm install -g @openclaw/clawscan@0.1.4",
     );
-    expect(steps.find((step) => step.name === "Install Codex CLI")).toBeUndefined();
+    expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
+      "npm install -g @openai/codex@0.142.3",
+    );
     expect(steps.find((step) => step.name === "Authenticate Codex CLI")).toBeUndefined();
     expect(steps.find((step) => step.name === "Install SkillSpector")).toBeUndefined();
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
