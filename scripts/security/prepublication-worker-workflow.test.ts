@@ -126,7 +126,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(runStep?.run).not.toContain("--version");
     expect(runStep?.run).not.toContain("--max-jobs");
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
-      "npm install -g @openclaw/clawscan@0.1.4",
+      "npm install -g @openclaw/clawscan@0.1.5",
     );
     expect(steps.find((step) => step.name === "Install Codex CLI")?.run).toContain(
       "npm install -g @openai/codex@0.142.3",

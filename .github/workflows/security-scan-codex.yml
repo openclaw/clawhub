@@ -91,7 +91,7 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.4
+          npm install -g @openclaw/clawscan@0.1.5
           clawscan --version
 
       - name: Install SkillSpector
