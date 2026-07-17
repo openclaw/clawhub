@@ -70,7 +70,7 @@ describe("PluginPublishSubmittedDialog", () => {
         "https://clawhub.ai/vintageayu/plugins/demo-plugin",
       );
     });
-    expect(screen.getByRole("button", { name: "Copied plugin link" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Copied plugin link" })).toBeTruthy();
     expect(screen.getByText("Copied")).toBeTruthy();
   });
 
