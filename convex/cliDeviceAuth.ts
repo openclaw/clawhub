@@ -197,6 +197,6 @@ function getVerificationUrl(siteUrlValue: string | undefined, userCode: string) 
   } catch {
     verificationUrl = new URL("/cli/device", "https://clawhub.ai");
   }
-  verificationUrl.searchParams.set("code", userCode);
+  verificationUrl.searchParams.set("user_code", userCode);
   return verificationUrl;
 }

@@ -2,6 +2,13 @@
 
 ClawHub uses Convex Auth with GitHub OAuth for production user sessions.
 
+## OAuth completion query parameter
+
+The app-level OAuth code handler consumes `?code=` on every route, so `code` is
+reserved for Convex Auth OAuth completion. Other flows must use a different query
+parameter; CLI device login uses `user_code`. As defense in depth, the handler
+explicitly ignores device-shaped codes (`XXXX-XXXX`).
+
 Security invariant: a GitHub OAuth account may link to a ClawHub user only through
 the auth-managed GitHub `providerAccountId`, which is the immutable GitHub
 numeric account id stored in `authAccounts`. Mutable GitHub usernames and OAuth

@@ -1,16 +1,19 @@
 /* @vitest-environment jsdom */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const approveMock = vi.fn();
 const denyMock = vi.fn();
 const useMutationMock = vi.fn();
+const { useSearchMock } = vi.hoisted(() => ({
+  useSearchMock: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown }) => ({
     ...config,
-    useSearch: () => ({ code: "device-code" }),
+    useSearch: useSearchMock,
   }),
 }));
 
@@ -76,6 +79,39 @@ vi.mock("../../components/ui/label", () => ({
 const { CliDeviceAuth } = await import("./device");
 
 describe("CliDeviceAuth", () => {
+  beforeEach(() => {
+    approveMock.mockReset();
+    denyMock.mockReset();
+    useMutationMock.mockReset();
+    useSearchMock.mockReturnValue({ user_code: "ABCD-2345" });
+  });
+
+  it("prefills the code from user_code", () => {
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
+  });
+
+  it("prefills the code from a legacy device-shaped code param", () => {
+    useSearchMock.mockReturnValue({ code: "ABCD-2345" });
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
+  });
+
+  it("does not prefill an OAuth completion code from the legacy param", () => {
+    useSearchMock.mockReturnValue({ code: "long-random-oauth-completion-code-1234567890" });
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "");
+  });
+
   it("allows only one device decision while the mutation is pending", async () => {
     let resolveApprove!: () => void;
     approveMock.mockImplementation(

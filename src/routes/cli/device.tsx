@@ -9,6 +9,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { isCliDeviceUserCode } from "../../lib/cliDeviceCode";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/cli/device")({
@@ -16,8 +17,11 @@ export const Route = createFileRoute("/cli/device")({
 });
 
 export function CliDeviceAuth() {
-  const search = Route.useSearch() as { code?: string };
-  const [code, setCode] = useState(search.code ?? "");
+  const search = Route.useSearch() as { user_code?: string; code?: string };
+  const legacyCode = search.code ?? "";
+  const [code, setCode] = useState(
+    search.user_code ?? (isCliDeviceUserCode(legacyCode) ? legacyCode : ""),
+  );
   const [status, setStatus] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(null);
   const [isComplete, setIsComplete] = useState(false);

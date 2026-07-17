@@ -413,7 +413,7 @@ describe("httpApi handlers", () => {
     const result = {
       device_code: "device",
       user_code: "ABCD-2345",
-      verification_uri: "https://clawhub.ai/cli/device?code=ABCD-2345",
+      verification_uri: "https://clawhub.ai/cli/device?user_code=ABCD-2345",
       expires_in: 900,
       interval: 5,
     };

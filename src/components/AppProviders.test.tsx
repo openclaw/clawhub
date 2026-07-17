@@ -70,6 +70,32 @@ describe("AuthCodeHandler", () => {
     expect(getAuthErrorSnapshot()).toBeNull();
   });
 
+  it("leaves CLI device user codes for the device route", async () => {
+    window.history.replaceState(null, "", "/cli/device?code=ABCD-2345");
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(signInMock).not.toHaveBeenCalled();
+    });
+    expect(`${window.location.pathname}${window.location.search}`).toBe(
+      "/cli/device?code=ABCD-2345",
+    );
+  });
+
+  it("still consumes long OAuth completion codes", async () => {
+    const code = "long-random-oauth-completion-code-1234567890";
+    signInMock.mockResolvedValue({ signingIn: true });
+    window.history.replaceState(null, "", `/sign-in?code=${code}`);
+
+    render(<AuthCodeHandler />);
+
+    await waitFor(() => {
+      expect(signInMock).toHaveBeenCalledWith(undefined, { code });
+    });
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/sign-in");
+  });
+
   it("strips the auth code before waiting for code verification", async () => {
     signInMock.mockReturnValue(new Promise(() => {}));
     window.history.replaceState(
