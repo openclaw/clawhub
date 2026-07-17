@@ -7862,6 +7862,11 @@ code {
   height: 18px;
 }
 
+.browse-page .skill-list-item .official-badge svg {
+  width: 14px;
+  height: 14px;
+}
+
 .skill-hero-scan-row {
   display: grid;
   gap: 6px;
@@ -16736,7 +16741,7 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .browse-list-head-icon-spacer {
-  width: 36px;
+  width: 27px;
 }
 
 .browse-list-head-actions-spacer {
@@ -16833,8 +16838,9 @@ a.agentic-risk-finding-title:focus-visible {
 .browse-page .skill-list-item > .marketplace-icon {
   --marketplace-icon-accent: var(--ink-soft) !important;
   --marketplace-icon-wash: transparent !important;
-  width: 36px;
-  height: 36px;
+  width: 27px;
+  height: 27px;
+  border-radius: 7px;
   border-color: color-mix(in srgb, var(--line) 78%, transparent);
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   color: color-mix(in srgb, var(--ink-soft) 88%, transparent);
@@ -16842,8 +16848,8 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .browse-page .skill-list-item > .marketplace-icon .marketplace-icon-glyph {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
 }
 
 .skill-list-item-main {
@@ -18639,6 +18645,21 @@ body:has(.browse-page-borderless-header) .navbar {
   display: none;
 }
 
+.browse-topic-chip-skeleton {
+  width: 86px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+}
+
+.browse-topic-chip-skeleton:nth-child(3n + 1) {
+  width: 104px;
+}
+
+.browse-topic-chip-skeleton:nth-child(3n) {
+  width: 72px;
+}
+
 .browse-topic-chip {
   display: inline-flex;
   align-items: center;
@@ -19133,6 +19154,11 @@ body:has(.browse-page-borderless-header) .navbar {
   align-items: start;
 }
 
+.browse-layout-with-sidebar {
+  grid-template-columns: minmax(168px, 188px) minmax(0, 1fr);
+  gap: 28px;
+}
+
 .browse-sidebar {
   position: sticky;
   top: var(--browse-sticky-top);
@@ -19186,6 +19212,17 @@ body:has(.browse-page-borderless-header) .navbar {
 
 .sidebar-option:hover {
   color: var(--ink);
+}
+
+.sidebar-option:focus-visible {
+  color: var(--ink);
+  outline: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  outline-offset: 2px;
+}
+
+.sidebar-option:disabled {
+  cursor: default;
+  opacity: 0.62;
 }
 
 .sidebar-option.is-active {
@@ -19265,6 +19302,23 @@ body:has(.browse-page-borderless-header) .navbar {
 
 .sidebar-checkbox input[type="checkbox"] {
   accent-color: var(--accent);
+}
+
+@media (min-width: 1081px) {
+  .browse-category-select-responsive {
+    display: none;
+  }
+}
+
+@media (max-width: 1080px) {
+  .browse-layout-with-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .browse-category-sidebar {
+    display: none;
+  }
 }
 
 .browse-results {

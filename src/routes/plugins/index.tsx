@@ -7,6 +7,7 @@ import { api } from "../../../convex/_generated/api";
 import {
   BrowseActions,
   BrowseCategorySelect,
+  BrowseCategorySidebar,
   BrowseControls,
   BrowseControlsRow,
   BrowseSearchInput,
@@ -351,12 +352,20 @@ function PluginsIndexPending() {
               categories={PLUGIN_CATEGORIES}
               value={undefined}
               onChange={() => {}}
+              responsive
             />
             <BrowseViewToggle view="list" onToggle={() => {}} />
           </BrowseActions>
         </BrowseControlsRow>
       </BrowseControls>
-      <div className="browse-layout">
+      <div className="browse-layout browse-layout-with-sidebar">
+        <BrowseCategorySidebar
+          ariaLabel="Plugin categories"
+          categories={PLUGIN_CATEGORIES}
+          value={undefined}
+          onChange={() => {}}
+          disabled
+        />
         <div className="browse-results">
           <div className="browse-results-toolbar">
             <span className="browse-results-count">Loading results</span>
@@ -699,6 +708,7 @@ function PluginsIndex() {
               categories={PLUGIN_CATEGORIES}
               value={activeCategory}
               onChange={handleCategoryChange}
+              responsive
             />
             <BrowseViewToggle view={view} onToggle={handleToggleView} />
           </BrowseActions>
@@ -719,9 +729,16 @@ function PluginsIndex() {
           topics={categoryTopics ?? []}
           activeTopic={activeTopic}
           onChange={handleTopicChange}
+          loading={Boolean(activeCategory && categoryTopics === undefined)}
         />
       </BrowseControls>
-      <div className="browse-layout">
+      <div className="browse-layout browse-layout-with-sidebar">
+        <BrowseCategorySidebar
+          ariaLabel="Plugin categories"
+          categories={PLUGIN_CATEGORIES}
+          value={activeCategory}
+          onChange={handleCategoryChange}
+        />
         <div className="browse-results">
           {isLoading ? (
             <BrowseResultsSkeleton label="Plugin" variant={effectiveView} />

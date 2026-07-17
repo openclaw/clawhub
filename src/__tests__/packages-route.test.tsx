@@ -618,6 +618,18 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
   });
 
+  it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const categorySidebar = screen.getByLabelText("Plugin categories");
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(13);
+    expect(categorySidebar.textContent).toContain("Channels");
+    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
+  });
+
   it("uses recommendation ranking as the plugin browse default", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
