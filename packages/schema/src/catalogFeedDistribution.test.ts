@@ -156,7 +156,7 @@ describe("catalog feed distribution schema", () => {
   });
 
   it("validates complete query page chains", () => {
-    const query = { text: "demo", types: ["plugin", "skill"] as const };
+    const query = { text: "demo", types: ["plugin", "skill"] as ("plugin" | "skill")[] };
     const skillWithPluginId = { ...entry, type: "skill" as const };
     const first = queryPage({ query, resultCount: 2, nextCursor: "query-page-2" });
     const second = queryPage({
