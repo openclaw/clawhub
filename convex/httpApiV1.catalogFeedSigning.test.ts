@@ -63,22 +63,22 @@ describe("signed catalog feed", () => {
     const payloadBytes = Buffer.from(signed.envelope.payload, "base64url");
 
     expect(payloadBytes.toString("utf8")).toBe(publication.payload);
+    expect(Object.keys(signed.envelope).sort()).toEqual(["payload", "payloadType", "signatures"]);
     expect(signed.envelope).toMatchObject({
-      schemaVersion: 1,
       payloadType: OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE,
       signatures: [
         {
-          keyId: "clawhub-feed-2026-q3",
-          algorithm: "ed25519",
+          keyid: "clawhub-feed-2026-q3",
         },
       ],
     });
+    expect(Object.keys(signed.envelope.signatures[0] ?? {}).sort()).toEqual(["keyid", "sig"]);
     expect(
       verifyDetached(
         null,
         dsseInput(payloadBytes),
         createPublicKey(publicKey),
-        Buffer.from(signed.envelope.signatures[0]?.signature ?? "", "base64url"),
+        Buffer.from(signed.envelope.signatures[0]?.sig ?? "", "base64url"),
       ),
     ).toBe(true);
   });
