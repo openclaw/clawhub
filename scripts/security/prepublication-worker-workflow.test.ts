@@ -94,7 +94,7 @@ describe("pre-publication publish worker workflow", () => {
     });
     expect(job.environment).toBe("Production");
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
-    expect(job["timeout-minutes"]).toBe(20);
+    expect(job["timeout-minutes"]).toBe(25);
     expect(job.strategy?.matrix?.shard).toBe(
       "${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '' && '[0]' || '[0,1]') }}",
     );
@@ -105,8 +105,9 @@ describe("pre-publication publish worker workflow", () => {
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}",
       PREPUBLICATION_CHECK_ATTEMPT_ID: "${{ inputs['attempt-id'] || '' }}",
-      PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '2' }}",
+      PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '4' }}",
       PREPUBLICATION_CHECK_KIND: "${{ inputs.kind || '' }}",
+      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: "${{ inputs['max-runtime-minutes'] || '15' }}",
       PREPUBLICATION_CHECK_SLUG: "${{ inputs.slug || '' }}",
       PREPUBLICATION_CHECK_VERSION: "${{ inputs.version || '' }}",
       PREPUBLICATION_TRUFFLEHOG_IMAGE:

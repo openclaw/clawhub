@@ -6,7 +6,7 @@ on:
       batch-limit:
         description: "Maximum staged publish attempts to check per worker shard"
         required: true
-        default: "2"
+        default: "4"
       max-jobs:
         description: "Optional total attempts cap per worker shard"
         required: false
@@ -14,7 +14,7 @@ on:
       max-runtime-minutes:
         description: "Stop claiming new attempts after this many minutes"
         required: true
-        default: "8"
+        default: "15"
       attempt-id:
         description: "Optional exact publish attempt ID for targeted recovery"
         required: false
@@ -53,7 +53,7 @@ jobs:
   prepublication-publish-checks:
     name: Pre-publication publish checks shard ${{ matrix.shard }}
     runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
-    timeout-minutes: 20
+    timeout-minutes: 25
     environment: Production
     strategy:
       fail-fast: false
@@ -62,9 +62,9 @@ jobs:
         shard: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs['attempt-id'] != '' && '[0]' || '[0,1]') }}
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      PREPUBLICATION_CHECK_LIMIT: ${{ inputs['batch-limit'] || '2' }}
+      PREPUBLICATION_CHECK_LIMIT: ${{ inputs['batch-limit'] || '4' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
-      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
+      PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '15' }}
       PREPUBLICATION_CHECK_ATTEMPT_ID: ${{ inputs['attempt-id'] || '' }}
       PREPUBLICATION_CHECK_KIND: ${{ inputs.kind || '' }}
       PREPUBLICATION_CHECK_SLUG: ${{ inputs.slug || '' }}
