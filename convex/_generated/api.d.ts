@@ -122,6 +122,7 @@ import type * as lib_skillSearchDigest from "../lib/skillSearchDigest.js";
 import type * as lib_skillSlugValidator from "../lib/skillSlugValidator.js";
 import type * as lib_skillStats from "../lib/skillStats.js";
 import type * as lib_skillSummary from "../lib/skillSummary.js";
+import type * as lib_skillTags from "../lib/skillTags.js";
 import type * as lib_skillZip from "../lib/skillZip.js";
 import type * as lib_skills_index from "../lib/skills/index.js";
 import type * as lib_skills_slugResolution from "../lib/skills/slugResolution.js";
@@ -288,6 +289,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillSlugValidator": typeof lib_skillSlugValidator;
   "lib/skillStats": typeof lib_skillStats;
   "lib/skillSummary": typeof lib_skillSummary;
+  "lib/skillTags": typeof lib_skillTags;
   "lib/skillZip": typeof lib_skillZip;
   "lib/skills/index": typeof lib_skills_index;
   "lib/skills/slugResolution": typeof lib_skills_slugResolution;
