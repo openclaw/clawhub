@@ -11,7 +11,7 @@ export const CATALOG_FEED_CHANGES_PAYLOAD_TYPE =
   "openclaw.official-external-plugin-catalog-changes.v1";
 export const CATALOG_FEED_QUERY_MAX_ENTRIES = 200;
 export const CATALOG_FEED_CHANGES_MAX_RECORDS = 500;
-export const CATALOG_FEED_DESCRIPTION_MAX_BYTES = 2_048;
+export const CATALOG_FEED_DESCRIPTION_MAX_BYTES = 1_024;
 
 export const CatalogFeedQuerySchema = type({
   "+": "reject",
@@ -337,6 +337,58 @@ export function parseCatalogFeedQueryPage(value: unknown): CatalogFeedQueryPage 
   return page;
 }
 
+export function parseCatalogFeedQueryPages(values: readonly unknown[]): CatalogFeedQueryPage[] {
+  if (values.length === 0) {
+    throw new Error("Catalog feed query page chain must not be empty");
+  }
+  const pages = values.map(parseCatalogFeedQueryPage);
+  const first = pages[0]!;
+  if (first.requestCursor !== null || first.pageIndex !== 0 || first.startIndex !== 0) {
+    throw new Error("Catalog feed query page chain must start at page and item index zero");
+  }
+  const entryKeys = new Set<string>();
+  const consumedCursors = new Set<string>();
+  let expectedStartIndex = 0;
+  let expectedRequestCursor: string | null = null;
+  for (const [pageIndex, page] of pages.entries()) {
+    if (
+      page.feedId !== first.feedId ||
+      page.sequence !== first.sequence ||
+      page.expiresAt !== first.expiresAt ||
+      page.resultCount !== first.resultCount ||
+      !queriesEqual(page.query, first.query)
+    ) {
+      throw new Error("Catalog feed query page chain changed its pinned projection");
+    }
+    if (
+      page.pageIndex !== pageIndex ||
+      page.startIndex !== expectedStartIndex ||
+      page.requestCursor !== expectedRequestCursor
+    ) {
+      throw new Error("Catalog feed query page chain contains a cursor, page, or offset gap");
+    }
+    if (page.requestCursor !== null) {
+      if (consumedCursors.has(page.requestCursor)) {
+        throw new Error("Catalog feed query page chain reuses a continuation cursor");
+      }
+      consumedCursors.add(page.requestCursor);
+    }
+    for (const entry of page.entries) {
+      const entryKey = `${entry.type}\0${entry.id}`;
+      if (entryKeys.has(entryKey)) {
+        throw new Error("Catalog feed query page chain contains duplicate entry identities");
+      }
+      entryKeys.add(entryKey);
+    }
+    expectedStartIndex += page.entries.length;
+    expectedRequestCursor = page.nextCursor;
+  }
+  if (expectedRequestCursor !== null) {
+    throw new Error("Catalog feed query page chain must include its terminal page");
+  }
+  return pages;
+}
+
 export function parseCatalogFeedChangePage(value: unknown): CatalogFeedChangePage {
   const page = CatalogFeedChangePageSchema.assert(value);
   requireProjectionHeader(page);
@@ -356,6 +408,12 @@ export function parseCatalogFeedChangePage(value: unknown): CatalogFeedChangePag
     }
     if (change.sequence < priorSequence) {
       throw new Error("Catalog feed changes must be ordered by sequence");
+    }
+    if (
+      change.sequence > priorSequence + 1 &&
+      (page.pageIndex === 0 || priorSequence > page.fromSequence)
+    ) {
+      throw new Error("Catalog feed change page contains a missing revision");
     }
     priorSequence = change.sequence;
     if (change.operation === "remove") {
@@ -385,6 +443,60 @@ export function parseCatalogFeedChangePage(value: unknown): CatalogFeedChangePag
     nextCursor: page.nextCursor,
   });
   return page;
+}
+
+export function parseCatalogFeedChangePages(values: readonly unknown[]): CatalogFeedChangePage[] {
+  if (values.length === 0) {
+    throw new Error("Catalog feed change page chain must not be empty");
+  }
+  const pages = values.map(parseCatalogFeedChangePage);
+  const first = pages[0]!;
+  if (first.requestCursor !== null || first.pageIndex !== 0 || first.startIndex !== 0) {
+    throw new Error("Catalog feed change page chain must start at page and item index zero");
+  }
+  let expectedStartIndex = 0;
+  let expectedRequestCursor: string | null = null;
+  let priorSequence = first.fromSequence;
+  const consumedCursors = new Set<string>();
+  for (const [pageIndex, page] of pages.entries()) {
+    if (
+      page.feedId !== first.feedId ||
+      page.fromSequence !== first.fromSequence ||
+      page.toSequence !== first.toSequence ||
+      page.expiresAt !== first.expiresAt ||
+      page.changeCount !== first.changeCount
+    ) {
+      throw new Error("Catalog feed change page chain changed its pinned range");
+    }
+    if (
+      page.pageIndex !== pageIndex ||
+      page.startIndex !== expectedStartIndex ||
+      page.requestCursor !== expectedRequestCursor
+    ) {
+      throw new Error("Catalog feed change page chain contains a cursor, page, or offset gap");
+    }
+    if (page.requestCursor !== null) {
+      if (consumedCursors.has(page.requestCursor)) {
+        throw new Error("Catalog feed change page chain reuses a continuation cursor");
+      }
+      consumedCursors.add(page.requestCursor);
+    }
+    for (const change of page.changes) {
+      if (change.sequence !== priorSequence && change.sequence !== priorSequence + 1) {
+        throw new Error("Catalog feed change page chain contains a missing revision");
+      }
+      priorSequence = change.sequence;
+    }
+    expectedStartIndex += page.changes.length;
+    expectedRequestCursor = page.nextCursor;
+  }
+  if (expectedRequestCursor !== null) {
+    throw new Error("Catalog feed change page chain must include its terminal page");
+  }
+  if (priorSequence !== first.toSequence) {
+    throw new Error("Catalog feed change page chain must cover every revision");
+  }
+  return pages;
 }
 
 export function parseCatalogFeedResetRequired(value: unknown): CatalogFeedResetRequired {
