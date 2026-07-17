@@ -39,6 +39,10 @@ describe("pre-publication publish worker workflow", () => {
         schedule?: Array<{ cron?: string }>;
         workflow_dispatch?: {
           inputs?: {
+            "attempt-id"?: {
+              default?: string;
+              required?: boolean;
+            };
             kind?: {
               default?: string;
               required?: boolean;
@@ -76,6 +80,10 @@ describe("pre-publication publish worker workflow", () => {
       required: false,
       default: "",
     });
+    expect(workflow.on?.workflow_dispatch?.inputs?.["attempt-id"]).toMatchObject({
+      required: false,
+      default: "",
+    });
     expect(workflow.on?.workflow_dispatch?.inputs?.slug).toMatchObject({
       required: false,
       default: "",
@@ -94,6 +102,7 @@ describe("pre-publication publish worker workflow", () => {
         "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}",
+      PREPUBLICATION_CHECK_ATTEMPT_ID: "${{ inputs['attempt-id'] || '' }}",
       PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '2' }}",
       PREPUBLICATION_CHECK_KIND: "${{ inputs.kind || '' }}",
       PREPUBLICATION_CHECK_SLUG: "${{ inputs.slug || '' }}",
@@ -108,6 +117,7 @@ describe("pre-publication publish worker workflow", () => {
 
     const runStep = steps.find((step) => step.name === "Run pre-publication publish worker");
     expect(runStep?.run).toContain("bun run publish:prepublication-worker");
+    expect(runStep?.run).toContain('--attempt-id "$PREPUBLICATION_CHECK_ATTEMPT_ID"');
     expect(runStep?.run).toContain('--kind "$PREPUBLICATION_CHECK_KIND"');
     expect(runStep?.run).toContain('--slug "$PREPUBLICATION_CHECK_SLUG"');
     expect(runStep?.run).toContain('--version "$PREPUBLICATION_CHECK_VERSION"');

@@ -15,6 +15,10 @@ on:
         description: "Stop claiming new attempts after this many minutes"
         required: true
         default: "8"
+      attempt-id:
+        description: "Optional exact publish attempt ID for targeted recovery"
+        required: false
+        default: ""
       kind:
         description: "Optional targeted recovery kind: skill or package"
         required: false
@@ -61,6 +65,7 @@ jobs:
       PREPUBLICATION_CHECK_LIMIT: ${{ inputs['batch-limit'] || '2' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
       PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
+      PREPUBLICATION_CHECK_ATTEMPT_ID: ${{ inputs['attempt-id'] || '' }}
       PREPUBLICATION_CHECK_KIND: ${{ inputs.kind || '' }}
       PREPUBLICATION_CHECK_SLUG: ${{ inputs.slug || '' }}
       PREPUBLICATION_CHECK_VERSION: ${{ inputs.version || '' }}
@@ -88,6 +93,7 @@ jobs:
             --batch-limit "$PREPUBLICATION_CHECK_LIMIT" \
             --max-jobs "$PREPUBLICATION_CHECK_MAX_JOBS" \
             --max-runtime-minutes "$PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES" \
+            --attempt-id "$PREPUBLICATION_CHECK_ATTEMPT_ID" \
             --kind "$PREPUBLICATION_CHECK_KIND" \
             --slug "$PREPUBLICATION_CHECK_SLUG" \
             --version "$PREPUBLICATION_CHECK_VERSION"
