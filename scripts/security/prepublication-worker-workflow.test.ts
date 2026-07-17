@@ -113,6 +113,7 @@ describe("pre-publication publish worker workflow", () => {
         "${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}",
     });
     expect(String(job.env?.PREPUBLICATION_TRUFFLEHOG_IMAGE)).toContain("@sha256:");
+    expect(job.env).not.toHaveProperty("CODEX_API_KEY");
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(job.env).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
@@ -134,6 +135,7 @@ describe("pre-publication publish worker workflow", () => {
     expect(steps.find((step) => step.name === "Install SkillSpector")).toBeUndefined();
     expect(JSON.stringify(job)).not.toContain("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(runStep?.env).toEqual({
+      CODEX_API_KEY: "${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}",
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",
       VIRUSTOTAL_API_KEY: "${{ secrets.VT_API_KEY }}",
@@ -142,6 +144,9 @@ describe("pre-publication publish worker workflow", () => {
     for (const step of steps) {
       const stepName = step.name ?? step.uses ?? "<unnamed>";
       expect(stepUsesSecret(step, "SECURITY_SCAN_WORKER_TOKEN"), stepName).toBe(
+        stepName === "Run pre-publication publish worker",
+      );
+      expect(stepUsesSecret(step, "CODEX_API_KEY"), stepName).toBe(
         stepName === "Run pre-publication publish worker",
       );
       expect(stepUsesSecret(step, "OPENAI_API_KEY"), stepName).toBe(
