@@ -159,11 +159,6 @@ async function expectHealthyPublishPage(page: Page, errors: string[]) {
         !(
           error.includes("Function execution timed out (maximum duration: 1s)") &&
           expectedTransientTimeouts.some((functionName) => error.includes(functionName))
-        ) &&
-        !(
-          error.includes("CONVEX A(skills:publishVersion)") &&
-          error.includes("Version ") &&
-          error.includes(" already exists")
         ),
     ),
   );

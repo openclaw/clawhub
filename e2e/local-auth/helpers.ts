@@ -571,7 +571,11 @@ export async function publishSkillVersion(
   type PublishState = "duplicate" | "pending" | "private-detail" | "published" | "staged" | "";
   const readPublishState = async (): Promise<PublishState> => {
     if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
-    if (detailUrlPattern.test(new URL(page.url()).pathname)) {
+    const pathname = new URL(page.url()).pathname;
+    // Staged publishes redirect to the dashboard as soon as Convex accepts the
+    // upload. Treat that navigation as success instead of waiting and retrying.
+    if (pathname === "/dashboard") return "staged";
+    if (detailUrlPattern.test(pathname)) {
       if (await isPublishedDetailCurrentVersionVisible(page, args)) {
         return "published";
       }

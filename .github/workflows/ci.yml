@@ -152,7 +152,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 1
+      max-parallel: 8
       matrix:
         include:
           - name: account-cleanup
@@ -163,10 +163,10 @@ jobs:
             specs: |
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
-          - name: moderation-star
-            specs: |
-              e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
-              e2e/local-auth/skill-star-sync.pw.test.ts
+          - name: moderation-malicious
+            specs: e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
+          - name: star-sync
+            specs: e2e/local-auth/skill-star-sync.pw.test.ts
           - name: inspector-version
             specs: |
               e2e/local-auth/plugin-inspector-findings.pw.test.ts
