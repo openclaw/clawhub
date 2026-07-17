@@ -19,6 +19,10 @@ import {
   type PackagePickSource,
 } from "../../components/PackageSourceChooser";
 import {
+  PluginPublishSubmittedDialog,
+  type SubmittedPlugin,
+} from "../../components/PluginPublishSubmittedDialog";
+import {
   PublisherOwnerSelect,
   type PublisherOwnerMembership,
 } from "../../components/PublisherOwnerSelect";
@@ -41,6 +45,7 @@ import {
   normalizePackageUploadFiles,
 } from "../../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublishPrefill";
+import { buildPluginDetailHref, displayPluginPackageName } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -69,6 +74,29 @@ const apiRefs = api as unknown as {
 
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
+
+function normalizePublisherHandle(handle: string) {
+  return handle.trim().replace(/^@+/, "").toLowerCase();
+}
+
+function findPublisherMembership(
+  publishers: PublisherOwnerMembership[] | undefined,
+  handle: string,
+) {
+  const normalizedHandle = normalizePublisherHandle(handle);
+  if (!normalizedHandle) return null;
+  return (
+    publishers?.find(
+      (membership) => normalizePublisherHandle(membership.publisher.handle) === normalizedHandle,
+    ) ?? null
+  );
+}
+
+function normalizePluginPackageName(name: string) {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "publish") return null;
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : null;
+}
 
 function findReadmeFile(files: File[]): File | null {
   // Match the same lookup the publish backend uses (readme.md / readme.mdx)
@@ -117,6 +145,24 @@ type ParsedInspectorPublishError = {
   summary: string;
   findings: Array<{ code: string; message: string }>;
 };
+
+type PluginPublishResult = {
+  isPending: boolean;
+  hasPluginPage: boolean;
+  packageName: string | null;
+};
+
+function parsePluginPublishResult(result: unknown): PluginPublishResult {
+  if (result === null || typeof result !== "object") {
+    return { isPending: false, hasPluginPage: false, packageName: null };
+  }
+  return {
+    isPending: "status" in result && result.status === "pending",
+    hasPluginPage: "packageId" in result && typeof result.packageId === "string",
+    packageName:
+      "packageName" in result && typeof result.packageName === "string" ? result.packageName : null,
+  };
+}
 
 const PLUGIN_INSPECTOR_BLOCKED_PREFIX = "Plugin Inspector blocked publish:";
 
@@ -231,7 +277,18 @@ export function PublishPluginRoute() {
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submittedPlugin, setSubmittedPlugin] = useState<SubmittedPlugin | null>(null);
   const showChangelogField = Boolean(search.name);
+
+  const canonicalDraftName = useMemo(() => normalizePluginPackageName(name), [name]);
+  const existingPluginPage = useQuery(
+    api.packages.getByName,
+    me && canonicalDraftName ? { name: canonicalDraftName } : "skip",
+  );
+
+  const selectedPublisher = useMemo(() => {
+    return findPublisherMembership(publishers, ownerHandle)?.publisher ?? null;
+  }, [ownerHandle, publishers]);
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const normalizedPaths = useMemo(
@@ -260,8 +317,10 @@ export function PublishPluginRoute() {
   const isNewPluginPublishEmpty = files.length === 0 && !search.name;
   const metadataDisabled = isMetadataLocked || isSubmitting;
   const ownerScopeError = useMemo(() => {
-    return getPackageScopeOwnerMismatch(name, ownerHandle)?.message ?? null;
-  }, [name, ownerHandle]);
+    return (
+      getPackageScopeOwnerMismatch(name, selectedPublisher?.handle ?? ownerHandle)?.message ?? null
+    );
+  }, [name, ownerHandle, selectedPublisher]);
   const submitBlockers = useMemo(() => {
     if (isMetadataLocked) return [];
     const blockers: string[] = [];
@@ -277,8 +336,18 @@ export function PublishPluginRoute() {
     Boolean(validationError) || Boolean(ownerScopeError) || codePluginFieldIssues.length > 0;
   const hasPublished =
     status?.startsWith("Published.") || status?.startsWith("Publish received.") || false;
+  const isPublisherLoading = me !== null && me !== undefined && publishers === undefined;
+  const isExistingContextLoading = Boolean(me && search.name && existing === undefined);
+  const isPluginPageLookupLoading = Boolean(
+    me && files.length > 0 && canonicalDraftName && existingPluginPage === undefined,
+  );
   const isPublishDisabled =
     !isAuthenticated ||
+    isPublisherLoading ||
+    isExistingContextLoading ||
+    isPluginPageLookupLoading ||
+    !ownerHandle ||
+    !selectedPublisher ||
     isMetadataLocked ||
     hasPackageBlocker ||
     submitBlockers.length > 0 ||
@@ -287,6 +356,11 @@ export function PublishPluginRoute() {
   const publishBlockerSummary = useMemo(() => {
     if (isSubmitting) return null;
     if (!isAuthenticated) return "Sign in to publish.";
+    if (isPublisherLoading) return "Loading publishing identities…";
+    if (isExistingContextLoading) return "Loading plugin details…";
+    if (isPluginPageLookupLoading) return "Checking plugin page…";
+    if (!ownerHandle) return "Select a publisher to publish.";
+    if (!selectedPublisher) return "Select an available publisher to publish.";
     if (isMetadataLocked) return "Complete plugin files to publish.";
     if (validationError) return `Fix: ${validationError}`;
     if (ownerScopeError) return `Fix: ${ownerScopeError}`;
@@ -302,9 +376,14 @@ export function PublishPluginRoute() {
   }, [
     codePluginFieldIssues,
     isAuthenticated,
+    isExistingContextLoading,
     isMetadataLocked,
+    isPluginPageLookupLoading,
+    isPublisherLoading,
     isSubmitting,
+    ownerHandle,
     ownerScopeError,
+    selectedPublisher,
     submitBlockers,
     validationError,
   ]);
@@ -360,6 +439,7 @@ export function PublishPluginRoute() {
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
     setStatus(null);
+    setSubmittedPlugin(null);
     setReadmeAssetReport(await scanReadmeRelativeAssets(filtered.files));
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
@@ -389,14 +469,16 @@ export function PublishPluginRoute() {
     setReadmeAssetReport(EMPTY_README_ASSET_REPORT);
     setError(null);
     setStatus(null);
+    setSubmittedPlugin(null);
   };
 
   useEffect(() => {
-    if (ownerHandle) return;
-    const personal =
-      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
-    if (personal?.publisher.handle) {
-      setOwnerHandle(personal.publisher.handle);
+    const matchingMembership = ownerHandle
+      ? findPublisherMembership(publishers, ownerHandle)
+      : (publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0]);
+    const canonicalHandle = matchingMembership?.publisher.handle;
+    if (canonicalHandle && ownerHandle !== canonicalHandle) {
+      setOwnerHandle(canonicalHandle);
     }
   }, [ownerHandle, publishers]);
 
@@ -812,6 +894,10 @@ export function PublishPluginRoute() {
                           toast.error(validationError);
                           return;
                         }
+                        if (!selectedPublisher) {
+                          toast.error("Select an available publisher to publish.");
+                          return;
+                        }
                         if (ownerScopeError) {
                           toast.error(ownerScopeError);
                           return;
@@ -833,7 +919,7 @@ export function PublishPluginRoute() {
                           payload: {
                             name: name.trim(),
                             displayName: displayName.trim() || undefined,
-                            ownerHandle: ownerHandle || undefined,
+                            ownerHandle: selectedPublisher.handle,
                             family,
                             version: version.trim(),
                             changelog: changelog.trim(),
@@ -872,18 +958,39 @@ export function PublishPluginRoute() {
                             files: uploaded,
                           },
                         });
-                        if (
-                          result &&
-                          typeof result === "object" &&
-                          "status" in result &&
-                          result.status === "pending"
-                        ) {
+                        const publishResult = parsePluginPublishResult(result);
+                        const submittedPackageName =
+                          publishResult.packageName ?? canonicalDraftName;
+                        const existingPluginHasPage = Boolean(
+                          submittedPackageName &&
+                          (existingPluginPage?.package?.name === submittedPackageName ||
+                            existing?.package?.name === submittedPackageName),
+                        );
+                        const hasSubmittedPluginPage =
+                          publishResult.hasPluginPage || existingPluginHasPage;
+                        if (publishResult.isPending) {
                           setStatus(null);
-                          void navigate({ to: "/dashboard" });
+                          if (!hasSubmittedPluginPage) {
+                            void navigate({ to: "/dashboard" });
+                          }
                         } else {
                           setStatus(
                             "Published. Pending security checks and verification before public listing.",
                           );
+                        }
+                        if (hasSubmittedPluginPage) {
+                          setSubmittedPlugin({
+                            name:
+                              displayName.trim() ||
+                              displayPluginPackageName(submittedPackageName ?? name.trim()),
+                            path: buildPluginDetailHref(submittedPackageName ?? name.trim(), {
+                              ownerHandle: selectedPublisher.handle,
+                            }),
+                            publisher: {
+                              displayName: selectedPublisher.displayName,
+                              handle: selectedPublisher.handle,
+                            },
+                          });
                         }
                       } catch (publishError) {
                         const message = formatPublishError(publishError);
@@ -908,6 +1015,13 @@ export function PublishPluginRoute() {
           </div>
         ) : null}
       </Container>
+      {submittedPlugin ? (
+        <PluginPublishSubmittedDialog
+          isOpen
+          plugin={submittedPlugin}
+          onDismiss={() => setSubmittedPlugin(null)}
+        />
+      ) : null}
     </main>
   );
 }
