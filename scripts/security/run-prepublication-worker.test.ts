@@ -8,6 +8,7 @@ import {
   claimBatchDrainedQueue,
   claimPrePublicationAttempt,
   claimPrePublicationBatch,
+  parseArgs,
   processPrePublicationBatch,
   processPrePublicationAttempt,
   runNativeClawScan,
@@ -50,6 +51,69 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("treats empty scheduled recovery flags as absent", () => {
+    expect(
+      parseArgs(
+        [
+          "--batch-limit",
+          "2",
+          "--max-jobs",
+          "--max-runtime-minutes",
+          "8",
+          "--attempt-id",
+          "--kind",
+          "--slug",
+          "--version",
+        ],
+        {},
+      ),
+    ).toEqual({
+      batchLimit: 2,
+      maxJobs: undefined,
+      maxRuntimeMs: 8 * 60 * 1000,
+      claimFilters: {
+        attemptId: undefined,
+        kind: undefined,
+        slug: undefined,
+        version: undefined,
+      },
+    });
+  });
+
+  it("parses populated targeted recovery inputs", () => {
+    expect(
+      parseArgs(
+        [
+          "--batch-limit",
+          "1",
+          "--max-jobs",
+          "1",
+          "--max-runtime-minutes",
+          "12",
+          "--attempt-id",
+          "publishAttempts:driver",
+          "--kind",
+          "skill",
+          "--slug",
+          "driver",
+          "--version",
+          "0.8.3",
+        ],
+        {},
+      ),
+    ).toEqual({
+      batchLimit: 1,
+      maxJobs: 1,
+      maxRuntimeMs: 12 * 60 * 1000,
+      claimFilters: {
+        attemptId: "publishAttempts:driver",
+        kind: "skill",
+        slug: "driver",
+        version: "0.8.3",
+      },
+    });
+  });
+
   it("forwards targeted recovery filters when claiming an attempt", async () => {
     const client = {
       action: vi.fn().mockResolvedValue(attempt),

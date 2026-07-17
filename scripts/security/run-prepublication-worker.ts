@@ -92,11 +92,11 @@ const MAX_TRUFFLEHOG_FINDINGS = 10;
 const MAX_PUBLIC_SUMMARY_CHARS = 600;
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 
-function parseArgs() {
-  const args = process.argv.slice(2);
+export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env) {
   const get = (name: string) => {
     const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
+    const value = index === -1 ? undefined : args[index + 1];
+    return value && !value.startsWith("--") ? value : undefined;
   };
   const numberFrom = (value: string | undefined, fallback: number) => {
     const parsed = Number(value);
@@ -107,28 +107,28 @@ function parseArgs() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   };
   const optionalStringFrom = (value: string | undefined) => value?.trim() || undefined;
-  const kind = optionalStringFrom(get("--kind") ?? process.env.PREPUBLICATION_CHECK_KIND);
+  const kind = optionalStringFrom(get("--kind") ?? env.PREPUBLICATION_CHECK_KIND);
   if (kind && kind !== "skill" && kind !== "package") {
     throw new Error("--kind must be skill or package");
   }
   return {
     batchLimit: numberFrom(
-      get("--batch-limit") ?? process.env.PREPUBLICATION_CHECK_LIMIT,
+      get("--batch-limit") ?? env.PREPUBLICATION_CHECK_LIMIT,
       DEFAULT_BATCH_LIMIT,
     ),
-    maxJobs: optionalNumberFrom(get("--max-jobs") ?? process.env.PREPUBLICATION_CHECK_MAX_JOBS),
+    maxJobs: optionalNumberFrom(get("--max-jobs") ?? env.PREPUBLICATION_CHECK_MAX_JOBS),
     maxRuntimeMs:
       numberFrom(
-        get("--max-runtime-minutes") ?? process.env.PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES,
+        get("--max-runtime-minutes") ?? env.PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES,
         DEFAULT_MAX_RUNTIME_MS / 60_000,
       ) * 60_000,
     claimFilters: {
-      attemptId: optionalStringFrom(
-        get("--attempt-id") ?? process.env.PREPUBLICATION_CHECK_ATTEMPT_ID,
-      ) as Id<"publishAttempts"> | undefined,
+      attemptId: optionalStringFrom(get("--attempt-id") ?? env.PREPUBLICATION_CHECK_ATTEMPT_ID) as
+        | Id<"publishAttempts">
+        | undefined,
       kind: kind as "skill" | "package" | undefined,
-      slug: optionalStringFrom(get("--slug") ?? process.env.PREPUBLICATION_CHECK_SLUG),
-      version: optionalStringFrom(get("--version") ?? process.env.PREPUBLICATION_CHECK_VERSION),
+      slug: optionalStringFrom(get("--slug") ?? env.PREPUBLICATION_CHECK_SLUG),
+      version: optionalStringFrom(get("--version") ?? env.PREPUBLICATION_CHECK_VERSION),
     } satisfies PrePublicationClaimFilters,
   };
 }

@@ -95,11 +95,4 @@ jobs:
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
           VIRUSTOTAL_API_KEY: ${{ secrets.VT_API_KEY }}
         run: |
-          bun run publish:prepublication-worker -- \
-            --batch-limit "$PREPUBLICATION_CHECK_LIMIT" \
-            --max-jobs "$PREPUBLICATION_CHECK_MAX_JOBS" \
-            --max-runtime-minutes "$PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES" \
-            --attempt-id "$PREPUBLICATION_CHECK_ATTEMPT_ID" \
-            --kind "$PREPUBLICATION_CHECK_KIND" \
-            --slug "$PREPUBLICATION_CHECK_SLUG" \
-            --version "$PREPUBLICATION_CHECK_VERSION"
+          bun run publish:prepublication-worker

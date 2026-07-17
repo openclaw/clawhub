@@ -119,10 +119,11 @@ describe("pre-publication publish worker workflow", () => {
 
     const runStep = steps.find((step) => step.name === "Run pre-publication publish worker");
     expect(runStep?.run).toContain("bun run publish:prepublication-worker");
-    expect(runStep?.run).toContain('--attempt-id "$PREPUBLICATION_CHECK_ATTEMPT_ID"');
-    expect(runStep?.run).toContain('--kind "$PREPUBLICATION_CHECK_KIND"');
-    expect(runStep?.run).toContain('--slug "$PREPUBLICATION_CHECK_SLUG"');
-    expect(runStep?.run).toContain('--version "$PREPUBLICATION_CHECK_VERSION"');
+    expect(runStep?.run).not.toContain("--attempt-id");
+    expect(runStep?.run).not.toContain("--kind");
+    expect(runStep?.run).not.toContain("--slug");
+    expect(runStep?.run).not.toContain("--version");
+    expect(runStep?.run).not.toContain("--max-jobs");
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
       "npm install -g @openclaw/clawscan@0.1.4",
     );
