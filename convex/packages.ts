@@ -137,6 +137,8 @@ const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES = 40;
 const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
+// Release rows can approach 1 MiB, and trigger-wrapped patches materialize full documents.
+const PACKAGE_RELEASE_TAG_CLEANUP_BATCH_SIZE = 4;
 const packageListScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -498,6 +500,7 @@ const internalRefs = internal as unknown as {
     claimPackageInspectorScanBatchInternal: unknown;
     ingestPackageInspectorScanResultsInternal: unknown;
     discardPendingPackagePublicationInternal: unknown;
+    cleanupReassignedPackageReleaseTagsInternal: unknown;
     publishPendingReleaseInternal: unknown;
   };
   packageInspectorNode: {
@@ -9391,6 +9394,46 @@ function stringArrayPendingField(metadata: Record<string, unknown>, field: strin
     : undefined;
 }
 
+type PackageReleaseTagCleanupAssignment = {
+  releaseId: Id<"packageReleases">;
+  tags: string[];
+};
+
+function getPackageTagReleaseId(
+  pkg: Pick<Doc<"packages">, "_id" | "latestReleaseId" | "tags">,
+  tag: string,
+) {
+  return tag === "latest" ? (pkg.tags.latest ?? pkg.latestReleaseId) : pkg.tags[tag];
+}
+
+function planPackageReleaseTagReassignment(
+  pkg: Pick<Doc<"packages">, "_id" | "latestReleaseId" | "tags">,
+  releaseId: Id<"packageReleases">,
+  effectiveTags: string[],
+) {
+  const cleanupTagsByRelease = new Map<Id<"packageReleases">, string[]>();
+  const nextTags = { ...pkg.tags };
+
+  for (const tag of new Set(effectiveTags)) {
+    const priorReleaseId = getPackageTagReleaseId(pkg, tag);
+    nextTags[tag] = releaseId;
+    if (priorReleaseId && priorReleaseId !== releaseId) {
+      cleanupTagsByRelease.set(priorReleaseId, [
+        ...(cleanupTagsByRelease.get(priorReleaseId) ?? []),
+        tag,
+      ]);
+    }
+  }
+
+  return {
+    nextTags,
+    cleanupAssignments: [...cleanupTagsByRelease].map(([priorReleaseId, tags]) => ({
+      releaseId: priorReleaseId,
+      tags,
+    })),
+  };
+}
+
 export const discardPendingPackagePublicationInternal = internalMutation({
   args: {
     packageId: v.id("packages"),
@@ -9439,6 +9482,70 @@ export const discardPendingPackagePublicationInternal = internalMutation({
   },
 });
 
+export const cleanupReassignedPackageReleaseTagsInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    assignments: v.array(
+      v.object({
+        releaseId: v.id("packageReleases"),
+        tags: v.array(v.string()),
+      }),
+    ),
+    offset: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const offset = Math.max(0, Math.floor(args.offset ?? 0));
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg) return { cleaned: 0, scheduled: false };
+
+    const batch = args.assignments.slice(offset, offset + PACKAGE_RELEASE_TAG_CLEANUP_BATCH_SIZE);
+    let cleaned = 0;
+    for (const assignment of batch) {
+      const tagsToRemove = assignment.tags.filter(
+        (tag) => getPackageTagReleaseId(pkg, tag) !== assignment.releaseId,
+      );
+      if (tagsToRemove.length === 0) continue;
+
+      const priorRelease = await ctx.db.get(assignment.releaseId);
+      if (
+        !priorRelease ||
+        priorRelease.packageId !== pkg._id ||
+        !isPublishedPackageRelease(priorRelease)
+      ) {
+        continue;
+      }
+      const tagsToRemoveSet = new Set(tagsToRemove);
+      const nextDistTags = (priorRelease.distTags ?? []).filter((tag) => !tagsToRemoveSet.has(tag));
+      if (nextDistTags.length === (priorRelease.distTags ?? []).length) continue;
+      await ctx.db.patch(priorRelease._id, { distTags: nextDistTags });
+      cleaned += 1;
+    }
+
+    const nextOffset = offset + batch.length;
+    const scheduled = nextOffset < args.assignments.length;
+    if (scheduled) {
+      await runAfterRef(ctx, 0, internalRefs.packages.cleanupReassignedPackageReleaseTagsInternal, {
+        packageId: args.packageId,
+        assignments: args.assignments,
+        offset: nextOffset,
+      });
+    }
+    return { cleaned, scheduled };
+  },
+});
+
+async function schedulePackageReleaseTagCleanup(
+  ctx: Pick<MutationCtx, "scheduler">,
+  packageId: Id<"packages">,
+  assignments: PackageReleaseTagCleanupAssignment[],
+) {
+  if (assignments.length === 0) return;
+  await runAfterRef(ctx, 0, internalRefs.packages.cleanupReassignedPackageReleaseTagsInternal, {
+    packageId,
+    assignments,
+  });
+}
+
 export const publishPendingReleaseInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
@@ -9479,21 +9586,11 @@ export const publishPendingReleaseInternal = internalMutation({
       verification: releaseVerification,
     } as Doc<"packageReleases">;
 
-    const priorReleases = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
-      .collect();
-
-    const nextTags = { ...pkg.tags };
-    for (const tag of effectiveTags) nextTags[tag] = release._id;
-    for (const priorRelease of priorReleases) {
-      if (priorRelease._id === release._id || !isPublishedPackageRelease(priorRelease)) continue;
-      const nextDistTags = (priorRelease.distTags ?? []).filter(
-        (tag) => !effectiveTags.includes(tag),
-      );
-      if (nextDistTags.length === (priorRelease.distTags ?? []).length) continue;
-      await ctx.db.patch(priorRelease._id, { distTags: nextDistTags });
-    }
+    const { nextTags, cleanupAssignments } = planPackageReleaseTagReassignment(
+      pkg,
+      release._id,
+      effectiveTags,
+    );
 
     await ctx.db.patch(release._id, {
       publicationStatus: "published",
@@ -9541,6 +9638,7 @@ export const publishPendingReleaseInternal = internalMutation({
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
     });
+    await schedulePackageReleaseTagCleanup(ctx, pkg._id, cleanupAssignments);
 
     return {
       ok: true as const,
@@ -9805,13 +9903,6 @@ export const insertReleaseInternal = internalMutation({
         );
       }
     }
-    const priorReleases = existing
-      ? await ctx.db
-          .query("packageReleases")
-          .withIndex("by_package", (q) => q.eq("packageId", existing._id))
-          .collect()
-      : [];
-
     const shouldPromoteLatest = args.tags.includes("latest");
     const effectiveTags = shouldPromoteLatest
       ? Array.from(new Set([...args.tags, "latest"]))
@@ -9883,15 +9974,11 @@ export const insertReleaseInternal = internalMutation({
       };
     }
 
-    const nextTags = { ...pkg.tags };
-    for (const tag of effectiveTags) nextTags[tag] = releaseId;
-    for (const priorRelease of priorReleases) {
-      const nextDistTags = (priorRelease.distTags ?? []).filter(
-        (tag) => !effectiveTags.includes(tag),
-      );
-      if (nextDistTags.length === (priorRelease.distTags ?? []).length) continue;
-      await ctx.db.patch(priorRelease._id, { distTags: nextDistTags });
-    }
+    const { nextTags, cleanupAssignments } = planPackageReleaseTagReassignment(
+      pkg,
+      releaseId,
+      effectiveTags,
+    );
 
     await ctx.db.patch(pkgId, {
       displayName: args.displayName,
@@ -9939,6 +10026,7 @@ export const insertReleaseInternal = internalMutation({
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
       updatedAt: now,
     });
+    await schedulePackageReleaseTagCleanup(ctx, pkgId, cleanupAssignments);
 
     return {
       ok: true as const,

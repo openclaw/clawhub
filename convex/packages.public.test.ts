@@ -40,6 +40,7 @@ import {
   getVersionByName,
   getVersionSecurityByNameForViewerInternal,
   insertReleaseInternal,
+  cleanupReassignedPackageReleaseTagsInternal,
   publishPendingReleaseInternal,
   finalizePackagePublishAttemptInternal,
   findPackagePublishResultInternal,
@@ -280,6 +281,16 @@ const publishPendingReleaseInternalHandler = (
   publishPendingReleaseInternal as unknown as WrappedHandler<
     {
       releaseId: string;
+    },
+    unknown
+  >
+)._handler;
+const cleanupReassignedPackageReleaseTagsInternalHandler = (
+  cleanupReassignedPackageReleaseTagsInternal as unknown as WrappedHandler<
+    {
+      packageId: string;
+      assignments: Array<{ releaseId: string; tags: string[] }>;
+      offset?: number;
     },
     unknown
   >
@@ -1753,9 +1764,31 @@ function makeInsertReleaseCtx(
   recordsById: Record<string, Record<string, unknown>> = {},
   runtimePackages: Array<Record<string, unknown>> = [],
   finalPublisherMembershipRole?: "owner" | "admin" | "publisher" | null,
+  packageReleaseReadLimitBytes?: number,
 ) {
-  const patch = vi.fn();
   let insertedPackage: Record<string, unknown> | null = null;
+  const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+    const target =
+      recordsById[id] ??
+      priorReleases.find((release) => release._id === id) ??
+      (existing?._id === id ? existing : null) ??
+      (insertedPackage?._id === id ? insertedPackage : null);
+    if (target) Object.assign(target, value);
+  });
+  const scheduler = {
+    runAfter: vi.fn(),
+  };
+  let packageReleaseBytesRead = 0;
+  const readPackageRelease = (record: Record<string, unknown> | null) => {
+    if (!record || packageReleaseReadLimitBytes === undefined) return record;
+    packageReleaseBytesRead += JSON.stringify(record).length;
+    if (packageReleaseBytesRead > packageReleaseReadLimitBytes) {
+      throw new Error(
+        `Too many bytes read in a single function execution (limit: ${packageReleaseReadLimitBytes} bytes).`,
+      );
+    }
+    return record;
+  };
   const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
     if (table === "packages") {
       insertedPackage = makePackageDoc({
@@ -1774,11 +1807,22 @@ function makeInsertReleaseCtx(
   return {
     patch,
     insert,
+    scheduler,
+    resetPackageReleaseReadBudget: () => {
+      packageReleaseBytesRead = 0;
+    },
     db: {
       get: vi.fn(async (id: string) => {
-        if (id in recordsById) return recordsById[id];
+        if (id in recordsById) {
+          return id.startsWith("packageReleases:")
+            ? readPackageRelease(recordsById[id])
+            : recordsById[id];
+        }
         if (id === "packages:new") return insertedPackage;
+        if (existing?._id === id) return existing;
         if (id === "users:owner") return { _id: id, role: "user", trustedPublisher: false };
+        const priorRelease = priorReleases.find((release) => release._id === id);
+        if (priorRelease) return readPackageRelease(priorRelease);
         return null;
       }),
       query: vi.fn((table: string) => {
@@ -1821,7 +1865,17 @@ function makeInsertReleaseCtx(
               ) => {
                 if (indexName === "by_package") {
                   return {
-                    collect: vi.fn().mockResolvedValue(priorReleases),
+                    collect: vi.fn(async () => {
+                      if (
+                        packageReleaseReadLimitBytes !== undefined &&
+                        JSON.stringify(priorReleases).length > packageReleaseReadLimitBytes
+                      ) {
+                        throw new Error(
+                          `Too many bytes read in a single function execution (limit: ${packageReleaseReadLimitBytes} bytes).`,
+                        );
+                      }
+                      return priorReleases;
+                    }),
                   };
                 }
                 if (indexName === "by_package_version") {
@@ -1925,6 +1979,24 @@ function makeInsertReleaseCtx(
       normalizeId: vi.fn(),
     },
   };
+}
+
+async function flushScheduledPackageReleaseTagCleanup(
+  ctx: ReturnType<typeof makeInsertReleaseCtx>,
+) {
+  for (let callIndex = 0; callIndex < ctx.scheduler.runAfter.mock.calls.length; callIndex += 1) {
+    const [, , args] = ctx.scheduler.runAfter.mock.calls[callIndex] as [
+      number,
+      unknown,
+      {
+        packageId: string;
+        assignments: Array<{ releaseId: string; tags: string[] }>;
+        offset?: number;
+      },
+    ];
+    ctx.resetPackageReleaseReadBudget();
+    await cleanupReassignedPackageReleaseTagsInternalHandler(ctx, args);
+  }
 }
 
 function makeReservePackageNameCtx(options?: {
@@ -7176,6 +7248,7 @@ describe("packages public queries", () => {
       pendingPublication: undefined,
       verification: { scanStatus: "clean" },
     });
+    await flushScheduledPackageReleaseTagCleanup(ctx);
     expect(ctx.patch).toHaveBeenCalledWith("packageReleases:old", { distTags: [] });
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
@@ -7187,6 +7260,189 @@ describe("packages public queries", () => {
         scanStatus: "clean",
       }),
     );
+  });
+
+  it("publishes a pending release without reading its file-heavy release history", async () => {
+    const priorRelease = makeReleaseDoc({
+      _id: "packageReleases:old",
+      version: "1.0.0",
+      distTags: ["latest"],
+      publicationStatus: "published",
+      extractedPackageJson: {
+        description: "x".repeat(190_000),
+      },
+    });
+    const unrelatedReleases = Array.from({ length: 91 }, (_, index) =>
+      makeReleaseDoc({
+        _id: `packageReleases:history-${index}`,
+        version: `0.0.${index}`,
+        distTags: [],
+        publicationStatus: "published",
+        extractedPackageJson: {
+          description: "x".repeat(190_000),
+        },
+      }),
+    );
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      version: "2.0.0",
+      publicationStatus: "pending",
+      pendingPublication: {
+        displayName: "Demo Plugin",
+        tags: ["latest"],
+        channel: "community",
+        isOfficial: false,
+      },
+      distTags: ["latest"],
+      summary: "pending summary",
+      changelog: "next",
+      integritySha256: "pending-sha",
+      verification: { scanStatus: "pending" },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 1_700_000_000_000,
+      },
+    });
+    const existingPackage = makePackageDoc({
+      latestReleaseId: "packageReleases:old",
+      latestVersionSummary: { version: "1.0.0" },
+      tags: { latest: "packageReleases:old" },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 92 },
+    });
+    const allReleases = [priorRelease, ...unrelatedReleases, pendingRelease];
+    const ctx = makeInsertReleaseCtx(
+      existingPackage,
+      allReleases,
+      {
+        "packageReleases:old": priorRelease,
+        "packageReleases:pending": pendingRelease,
+        "packages:demo": existingPackage,
+      },
+      [],
+      undefined,
+      16 * 1024 * 1024,
+    );
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, {
+        releaseId: "packageReleases:pending",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:pending",
+    });
+
+    await flushScheduledPackageReleaseTagCleanup(ctx);
+    expect(ctx.patch).toHaveBeenCalledWith("packageReleases:old", { distTags: [] });
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:pending",
+        tags: { latest: "packageReleases:pending" },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 93 },
+      }),
+    );
+  });
+
+  it("publishes a pending release without hydrating every file-heavy tag owner", async () => {
+    const tagNames = ["latest", ...Array.from({ length: 89 }, (_, index) => `tag-${index}`)];
+    const priorReleases = tagNames.map((tag, index) =>
+      makeReleaseDoc({
+        _id: `packageReleases:old-${index}`,
+        version: `1.0.${index}`,
+        distTags: [tag],
+        publicationStatus: "published",
+        extractedPackageJson: {
+          description: "x".repeat(190_000),
+        },
+      }),
+    );
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      version: "2.0.0",
+      publicationStatus: "pending",
+      pendingPublication: {
+        displayName: "Demo Plugin",
+        tags: tagNames,
+        channel: "community",
+        isOfficial: false,
+      },
+      distTags: tagNames,
+      summary: "pending summary",
+      changelog: "next",
+      integritySha256: "pending-sha",
+      verification: { scanStatus: "pending" },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 1_700_000_000_000,
+      },
+    });
+    const packageTags = Object.fromEntries(
+      tagNames.map((tag, index) => [tag, `packageReleases:old-${index}`]),
+    );
+    const existingPackage = makePackageDoc({
+      latestReleaseId: "packageReleases:old-0",
+      latestVersionSummary: { version: "1.0.0" },
+      tags: packageTags,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: priorReleases.length },
+    });
+    const recordsById: Record<string, Record<string, unknown>> = Object.fromEntries(
+      [...priorReleases, pendingRelease].map((release) => [release._id, release]),
+    );
+    recordsById["packages:demo"] = existingPackage;
+    const ctx = makeInsertReleaseCtx(
+      existingPackage,
+      [...priorReleases, pendingRelease],
+      recordsById,
+      [],
+      undefined,
+      16 * 1024 * 1024,
+    );
+
+    await expect(
+      publishPendingReleaseInternalHandler(ctx, {
+        releaseId: "packageReleases:pending",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:pending",
+    });
+
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledOnce();
+    expect(ctx.patch).not.toHaveBeenCalledWith(
+      expect.stringMatching(/^packageReleases:old-/),
+      expect.anything(),
+    );
+    await flushScheduledPackageReleaseTagCleanup(ctx);
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledTimes(23);
+    expect(
+      ctx.patch.mock.calls.filter(([id]) => id.startsWith("packageReleases:old-")),
+    ).toHaveLength(90);
+  });
+
+  it("keeps a dist-tag when a later publish moves it back before cleanup runs", async () => {
+    const priorRelease = makeReleaseDoc({
+      _id: "packageReleases:old",
+      distTags: ["latest"],
+      publicationStatus: "published",
+    });
+    const pkg = makePackageDoc({
+      latestReleaseId: "packageReleases:old",
+      tags: { latest: "packageReleases:old" },
+    });
+    const ctx = makeInsertReleaseCtx(pkg, [priorRelease]);
+
+    await cleanupReassignedPackageReleaseTagsInternalHandler(ctx, {
+      packageId: "packages:demo",
+      assignments: [{ releaseId: "packageReleases:old", tags: ["latest"] }],
+    });
+
+    expect(ctx.patch).not.toHaveBeenCalledWith("packageReleases:old", expect.anything());
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("releases release-backed finalization claims when pending promotion fails", async () => {
@@ -8388,6 +8644,7 @@ describe("packages public queries", () => {
       integritySha256: "abc123",
     });
 
+    await flushScheduledPackageReleaseTagCleanup(ctx);
     expect(ctx.patch).toHaveBeenCalledWith("packageReleases:old", {
       distTags: ["stable"],
     });
