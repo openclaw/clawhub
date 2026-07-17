@@ -427,6 +427,11 @@ export const storePublication = internalMutation({
       .query("catalogFeedPublications")
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
       .unique();
+    const latestRevision = await ctx.db
+      .query("catalogFeedRevisions")
+      .withIndex("by_feed_and_sequence", (q) => q.eq("feedId", args.feedId))
+      .order("desc")
+      .first();
     const sequence = (latest?.sequence ?? 0) + 1;
     const previousFeed = latest ? parseCatalogFeed(JSON.parse(latest.payload)) : null;
     const changes = buildCatalogFeedChanges({
@@ -463,6 +468,8 @@ export const storePublication = internalMutation({
     await ctx.db.insert("catalogFeedRevisions", {
       feedId: args.feedId,
       sequence,
+      changeCount: changes.length,
+      cumulativeChangeCount: (latestRevision?.cumulativeChangeCount ?? 0) + changes.length,
       generatedAt: args.generatedAt,
       expiresAt: args.expiresAt,
       description: args.description,
@@ -522,11 +529,16 @@ export const listChanges = internalQuery({
         `Catalog feed change page size must be between 1 and ${CATALOG_FEED_CHANGE_PAGE_SIZE}`,
       );
     }
-    const window = await readCatalogFeedChangeWindow(ctx, args.feedId);
+    const state = await readCatalogFeedChangeState(ctx, args.feedId);
+    const window = changeWindowFromState(state);
     if (
       args.fromSequence < window.retainedFromSequence ||
       args.toSequence > window.currentSequence
     ) {
+      return { resetRequired: true as const, ...window };
+    }
+    const changeCount = await countCatalogFeedChanges(ctx, args.feedId, args, state);
+    if (changeCount === null) {
       return { resetRequired: true as const, ...window };
     }
     const page = await ctx.db
@@ -541,13 +553,14 @@ export const listChanges = internalQuery({
     return {
       resetRequired: false as const,
       ...window,
+      changeCount,
       ...page,
       page: page.page.map(({ sequence, ordinal, payload }) => ({ sequence, ordinal, payload })),
     };
   },
 });
 
-async function readCatalogFeedChangeWindow(
+async function readCatalogFeedChangeState(
   ctx: Pick<QueryCtx, "db">,
   feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID,
 ) {
@@ -567,6 +580,8 @@ async function readCatalogFeedChangeWindow(
     return {
       currentSequence: latest.sequence,
       retainedFromSequence: Math.max(0, (oldest?.sequence ?? latest.sequence) - 1),
+      oldestRevision: oldest,
+      latestRevision: latest,
     };
   }
   const publication = await ctx.db
@@ -574,14 +589,66 @@ async function readCatalogFeedChangeWindow(
     .withIndex("by_feed", (q) => q.eq("feedId", feedId))
     .unique();
   const currentSequence = publication?.sequence ?? 0;
-  return { currentSequence, retainedFromSequence: currentSequence };
+  return {
+    currentSequence,
+    retainedFromSequence: currentSequence,
+    oldestRevision: null,
+    latestRevision: null,
+  };
+}
+
+function changeWindowFromState(state: Awaited<ReturnType<typeof readCatalogFeedChangeState>>) {
+  return {
+    currentSequence: state.currentSequence,
+    retainedFromSequence: state.retainedFromSequence,
+  };
+}
+
+async function countCatalogFeedChanges(
+  ctx: Pick<QueryCtx, "db">,
+  feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID,
+  range: { fromSequence: number; toSequence: number },
+  state: Awaited<ReturnType<typeof readCatalogFeedChangeState>>,
+) {
+  if (range.fromSequence === range.toSequence) return 0;
+  if (!state.oldestRevision || !state.latestRevision) return null;
+
+  const baseRevision =
+    range.fromSequence === state.retainedFromSequence
+      ? state.oldestRevision
+      : range.fromSequence === state.latestRevision.sequence
+        ? state.latestRevision
+        : await ctx.db
+            .query("catalogFeedRevisions")
+            .withIndex("by_feed_and_sequence", (q) =>
+              q.eq("feedId", feedId).eq("sequence", range.fromSequence),
+            )
+            .unique();
+  const targetRevision =
+    range.toSequence === state.latestRevision.sequence
+      ? state.latestRevision
+      : await ctx.db
+          .query("catalogFeedRevisions")
+          .withIndex("by_feed_and_sequence", (q) =>
+            q.eq("feedId", feedId).eq("sequence", range.toSequence),
+          )
+          .unique();
+  if (!baseRevision || !targetRevision) return null;
+
+  const baseCount =
+    range.fromSequence === state.retainedFromSequence
+      ? baseRevision.cumulativeChangeCount - baseRevision.changeCount
+      : baseRevision.cumulativeChangeCount;
+  const changeCount = targetRevision.cumulativeChangeCount - baseCount;
+  return Number.isSafeInteger(changeCount) && changeCount >= 0 ? changeCount : null;
 }
 
 export const getChangeWindow = internalQuery({
   args: {
     feedId: v.union(v.literal(CATALOG_FEED_ID), v.literal(CATALOG_SKILLS_FEED_ID)),
   },
-  handler: async (ctx, args) => await readCatalogFeedChangeWindow(ctx, args.feedId),
+  handler: async (ctx, args) =>
+    changeWindowFromState(await readCatalogFeedChangeState(ctx, args.feedId)),
 });
 
 export const pruneCatalogFeedHistoryInternal = internalMutation({
