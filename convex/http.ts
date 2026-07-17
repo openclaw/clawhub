@@ -65,6 +65,7 @@ import {
   skillsShCatalogPublicV1Http,
 } from "./httpApiV1";
 import { catalogFeedWithOptionalSigningV1Http } from "./httpApiV1/catalogFeedSigning";
+import { signedCatalogFeedChangesHttp } from "./httpApiV1/catalogFeedChanges";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import {
@@ -191,6 +192,12 @@ http.route({
   path: ApiRoutes.catalogFeed,
   method: "GET",
   handler: catalogFeedWithOptionalSigningV1Http,
+});
+
+http.route({
+  path: ApiRoutes.catalogFeedChanges,
+  method: "GET",
+  handler: signedCatalogFeedChangesHttp,
 });
 
 http.route({
