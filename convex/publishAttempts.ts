@@ -667,7 +667,9 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       : (
           await ctx.db
             .query("publishAttempts")
-            .withIndex("by_status_and_created", (q) => q.eq("status", "pending_checks"))
+            .withIndex("by_status_check_claim_expires_at_created", (q) =>
+              q.eq("status", "pending_checks"),
+            )
             .order("asc")
             .take(25)
         ).find((candidate) => {

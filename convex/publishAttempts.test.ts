@@ -104,6 +104,67 @@ describe("publishAttempts", () => {
     expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
   });
 
+  it("claims fresh staged publishes before older scanner retries", async () => {
+    const now = Date.now();
+    const freshAttempt = {
+      _id: "publishAttempts:fresh",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      slug: "fresh-skill",
+      displayName: "Fresh Skill",
+      version: "1.0.0",
+      artifactFingerprint: "fresh-fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:fresh", size: 10, sha256: "fresh-sha" }],
+      skillInsertArgs: {
+        staticScan: { status: "clean" },
+      },
+      createdAt: now,
+    };
+    const retryAttempt = {
+      ...freshAttempt,
+      _id: "publishAttempts:retry",
+      slug: "retry-skill",
+      artifactFingerprint: "retry-fingerprint",
+      checkClaimExpiresAt: now - 1,
+      checkClaimLastError: "ClawScan judge status was failed",
+      createdAt: now - 60_000,
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn((indexName: string) => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () =>
+                indexName === "by_status_check_claim_expires_at_created"
+                  ? [freshAttempt, retryAttempt]
+                  : [retryAttempt, freshAttempt],
+              ),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, { claimId: "checks:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:fresh",
+      slug: "fresh-skill",
+    });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:fresh",
+      expect.objectContaining({ checkClaimId: "checks:claim" }),
+    );
+  });
+
   it("hydrates staged package attempts with ClawPack URL and review context", async () => {
     const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
     process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";

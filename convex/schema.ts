@@ -1175,6 +1175,7 @@ const publishAttempts = defineTable({
 })
   .index("by_idempotency_key", ["idempotencyKey"])
   .index("by_status_and_created", ["status", "createdAt"])
+  .index("by_status_check_claim_expires_at_created", ["status", "checkClaimExpiresAt", "createdAt"])
   .index("by_expires_at", ["expiresAt"])
   .index("by_kind_status_slug_version_created", ["kind", "status", "slug", "version", "createdAt"])
   .index("by_user_status_created", ["userId", "status", "createdAt"])
