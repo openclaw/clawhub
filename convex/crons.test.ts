@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   const publisherAbuseSignalNotificationsRef = Symbol("publisher-abuse-signal-notifications");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
+  const publisherTemporalAbuseScanPruneRef = Symbol("publisher-temporal-abuse-scan-prune");
   const httpRateLimitKeysPruneRef = Symbol("http-rate-limit-keys-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
@@ -26,6 +27,7 @@ const mocks = vi.hoisted(() => {
     publisherAbuseSignalNotificationsRef,
     publisherAbuseScoreRefreshRef,
     publisherTemporalAbuseScanRef,
+    publisherTemporalAbuseScanPruneRef,
     httpRateLimitKeysPruneRef,
     skillStatEventPruneRef,
     packageStatEventPruneRef,
@@ -68,9 +70,12 @@ vi.mock("./_generated/api", () => ({
     },
     publisherAbuse: {
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
-      runTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
       notifyPublisherAbuseSignalChangesInternal: mocks.publisherAbuseSignalNotificationsRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
+    },
+    publisherAbuseTemporalScan: {
+      runScheduledTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
+      pruneExpiredTemporalScanRowsInternal: mocks.publisherTemporalAbuseScanPruneRef,
     },
     promotionsFeed: {
       publishInternal: mocks.promotionsFeedPublishRef,
@@ -215,15 +220,13 @@ describe("crons", () => {
       "publisher-temporal-abuse-scan",
       { hours: 24 },
       mocks.publisherTemporalAbuseScanRef,
-      {
-        mode: "current",
-        dryRun: true,
-        archiveDryRunSignals: true,
-        candidateLimit: 1_000,
-        batchSize: 50,
-        maxPages: 20,
-        trigger: "cron",
-      },
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-temporal-abuse-scan-row-prune",
+      { hours: 24 },
+      mocks.publisherTemporalAbuseScanPruneRef,
+      { batchSize: 500 },
     );
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-abuse-autobans",

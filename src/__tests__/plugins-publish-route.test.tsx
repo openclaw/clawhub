@@ -6,7 +6,8 @@ import { getFunctionName } from "convex/server";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { toastErrorMock } = vi.hoisted(() => ({
+const { navigateMock, toastErrorMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
   toastErrorMock: vi.fn(),
 }));
 
@@ -15,6 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
+  useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
 }));
 
@@ -103,6 +105,7 @@ describe("plugins publish route", () => {
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
     useSearchMock.mockReset();
+    navigateMock.mockReset();
     toastErrorMock.mockReset();
 
     useSearchMock.mockReturnValue({
@@ -834,7 +837,7 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("shows pending verification messaging after staged plugin publish", async () => {
+  it("redirects to the dashboard after a staged plugin publish is accepted", async () => {
     publishRelease.mockResolvedValueOnce({
       ok: true,
       status: "pending",
@@ -876,12 +879,11 @@ describe("plugins publish route", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
-    expect(
-      await screen.findByText(/Running TruffleHog and ClawScan before public listing\./i),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
-    ).not.toBeNull();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({ to: "/dashboard" });
+    });
+    expect(screen.queryByText(/Running TruffleHog and ClawScan/i)).toBeNull();
+    expect(screen.queryByText("Publishing release...")).toBeNull();
   });
 
   it("warns when README references relative image paths but no source repo/commit is set", async () => {

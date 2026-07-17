@@ -140,6 +140,43 @@ function makeVersion() {
   };
 }
 
+function makePaginatedSkillVersionQuery(versions: Array<Record<string, unknown>>) {
+  const filters = new Map<string, unknown>();
+  const indexNames: string[] = [];
+  const paginate = vi.fn(
+    async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+      const start = cursor ? Number(cursor) : 0;
+      const filtered = versions.filter((candidate) =>
+        [...filters].every(([field, value]) => candidate[field] === value),
+      );
+      const page = filtered.slice(start, start + numItems);
+      const next = start + page.length;
+      return {
+        page,
+        isDone: next >= filtered.length,
+        continueCursor: String(next),
+      };
+    },
+  );
+  const withIndex = vi.fn(
+    (
+      index: string,
+      buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+    ) => {
+      indexNames.push(index);
+      const query = {
+        eq(field: string, value: unknown) {
+          filters.set(field, value);
+          return query;
+        },
+      };
+      buildQuery?.(query);
+      return { order: vi.fn(() => ({ paginate })) };
+    },
+  );
+  return { withIndex, paginate, filters, indexNames };
+}
+
 describe("public skill version queries", () => {
   beforeEach(() => {
     vi.mocked(getAuthUserId).mockReset();
@@ -232,17 +269,18 @@ describe("public skill version queries", () => {
   it("sanitizes direct public version queries", async () => {
     const version = makeVersion();
     const unique = vi.fn().mockResolvedValue(version);
-    const take = vi.fn().mockResolvedValue([version]);
+    const paginated = makePaginatedSkillVersionQuery([version]);
     const ctx = {
       db: {
         get: vi.fn().mockResolvedValue(version),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
-            withIndex: vi.fn(() => ({
-              unique,
-              order: vi.fn(() => ({ take })),
-            })),
+            withIndex: vi.fn((index: string, buildQuery?: unknown) =>
+              index === "by_skill_active_created"
+                ? paginated.withIndex(index, buildQuery as never)
+                : { unique },
+            ),
           };
         }),
       },
@@ -313,48 +351,71 @@ describe("public skill version queries", () => {
     }
   });
 
-  it("applies public version limits after selecting active skill versions", async () => {
+  it("hides pending publication versions while keeping legacy status-less versions public", async () => {
+    for (const version of [
+      { ...makeVersion(), publicationStatus: "pending" },
+      { ...makeVersion(), publicationStatus: "blocked" },
+    ]) {
+      const ctx = {
+        db: {
+          get: vi.fn().mockResolvedValue(version),
+          query: vi.fn((table: string) => {
+            if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(version),
+              })),
+            };
+          }),
+        },
+      } as never;
+
+      await expect(
+        getVersionByIdHandler(ctx, { versionId: version._id } as never),
+      ).resolves.toBeNull();
+      await expect(
+        getVersionBySkillAndVersionHandler(ctx, {
+          skillId: version.skillId,
+          version: version.version,
+        } as never),
+      ).resolves.toBeNull();
+    }
+
+    const legacyVersion = makeVersion();
+    const legacyCtx = {
+      db: {
+        get: vi.fn().mockResolvedValue(legacyVersion),
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(legacyVersion),
+            })),
+          };
+        }),
+      },
+    } as never;
+
+    await expect(
+      getVersionByIdHandler(legacyCtx, { versionId: legacyVersion._id } as never),
+    ).resolves.toMatchObject({ _id: legacyVersion._id });
+  });
+
+  it("applies public version limits after skipping pending publication versions", async () => {
     const version = makeVersion();
-    const deletedVersion = {
+    const pendingVersion = {
       ...makeVersion(),
-      _id: "skillVersions:deleted",
+      _id: "skillVersions:pending",
       version: "2.0.0",
-      softDeletedAt: 123,
+      publicationStatus: "pending",
     };
-    const indexNames: string[] = [];
-    const filters = new Map<string, unknown>();
-    const take = vi.fn(async (limit: number) =>
-      [deletedVersion, version]
-        .filter((candidate) =>
-          [...filters].every(
-            ([field, value]) => candidate[field as keyof typeof candidate] === value,
-          ),
-        )
-        .slice(0, limit),
-    );
+    const paginated = makePaginatedSkillVersionQuery([pendingVersion, version]);
     const ctx = {
       db: {
         get: vi.fn().mockResolvedValue(null),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(
-              (
-                index: string,
-                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                indexNames.push(index);
-                const query = {
-                  eq(field: string, value: unknown) {
-                    filters.set(field, value);
-                    return query;
-                  },
-                };
-                buildQuery?.(query);
-                return { order: vi.fn(() => ({ take })) };
-              },
-            ),
-          };
+          return { withIndex: paginated.withIndex };
         }),
       },
     } as never;
@@ -365,14 +426,47 @@ describe("public skill version queries", () => {
     } as never)) as Array<{ version: string }>;
 
     expect(result.map((item) => item.version)).toEqual(["1.0.0"]);
-    expect(indexNames).toEqual(["by_skill_active_created"]);
-    expect(filters).toEqual(
+    expect(paginated.indexNames).toEqual(["by_skill_active_created"]);
+    expect(paginated.filters).toEqual(
       new Map<string, unknown>([
         ["skillId", "skills:1"],
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(take).toHaveBeenCalledWith(1);
+    expect(paginated.paginate).toHaveBeenCalledOnce();
+    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 12 });
+  });
+
+  it("bounds public version pagination over hidden pending versions", async () => {
+    const pendingVersions = Array.from({ length: 13 }, (_, index) => ({
+      ...makeVersion(),
+      _id: `skillVersions:pending-${index}`,
+      version: `2.0.${index}`,
+      publicationStatus: "pending",
+    }));
+    const publishedVersion = {
+      ...makeVersion(),
+      _id: "skillVersions:published-after-backlog",
+      version: "1.0.0",
+    };
+    const paginated = makePaginatedSkillVersionQuery([...pendingVersions, publishedVersion]);
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return { withIndex: paginated.withIndex };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsPageHandler(ctx, {
+      skillId: "skills:1",
+      limit: 1,
+    } as never)) as { items: Array<{ version: string }>; nextCursor: string | null };
+
+    expect(result).toEqual({ items: [], nextCursor: "12" });
+    expect(paginated.paginate).toHaveBeenCalledOnce();
+    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 12 });
   });
 
   it.each(["admin", "moderator"] as const)(
@@ -429,31 +523,31 @@ describe("public skill version queries", () => {
     },
   );
 
-  it("keeps soft-deleted versions from consuming an ordinary viewer's limit", async () => {
+  it("shows active pending version history to owners through the bounded active index", async () => {
     const version = makeVersion();
-    const deletedVersion = {
+    const pendingVersion = {
       ...makeVersion(),
-      _id: "skillVersions:deleted",
+      _id: "skillVersions:pending",
       version: "2.0.0",
-      softDeletedAt: 123,
+      publicationStatus: "pending",
     };
     const indexNames: string[] = [];
     const filters = new Map<string, unknown>();
-    const take = vi.fn(async (limit: number) =>
-      [deletedVersion, version]
-        .filter((candidate) =>
-          [...filters].every(
-            ([field, value]) => candidate[field as keyof typeof candidate] === value,
-          ),
-        )
-        .slice(0, limit),
-    );
-    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
+    const take = vi.fn(async (limit: number) => [pendingVersion, version].slice(0, limit));
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const ctx = {
       db: {
-        get: vi.fn(async (id: string) =>
-          id === "users:viewer" ? { _id: id, role: "user" } : null,
-        ),
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id, role: "user" };
+          if (id === "skills:1") {
+            return {
+              _id: id,
+              ownerUserId: "users:owner",
+              ownerPublisherId: undefined,
+            };
+          }
+          return null;
+        }),
         query: vi.fn((table: string) => {
           if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
           return {
@@ -480,10 +574,10 @@ describe("public skill version queries", () => {
 
     const result = (await listVersionsHandler(ctx, {
       skillId: "skills:1",
-      limit: 1,
+      limit: 50,
     } as never)) as Array<{ version: string }>;
 
-    expect(result.map((item) => item.version)).toEqual(["1.0.0"]);
+    expect(result.map((item) => item.version)).toEqual(["2.0.0", "1.0.0"]);
     expect(indexNames).toEqual(["by_skill_active_created"]);
     expect(filters).toEqual(
       new Map<string, unknown>([
@@ -491,7 +585,45 @@ describe("public skill version queries", () => {
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(take).toHaveBeenCalledWith(1);
+    expect(take).toHaveBeenCalledWith(50);
+  });
+
+  it("keeps soft-deleted versions from consuming an ordinary viewer's limit", async () => {
+    const version = makeVersion();
+    const deletedVersion = {
+      ...makeVersion(),
+      _id: "skillVersions:deleted",
+      version: "2.0.0",
+      softDeletedAt: 123,
+    };
+    const paginated = makePaginatedSkillVersionQuery([deletedVersion, version]);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "users:viewer" ? { _id: id, role: "user" } : null,
+        ),
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return { withIndex: paginated.withIndex };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsHandler(ctx, {
+      skillId: "skills:1",
+      limit: 1,
+    } as never)) as Array<{ version: string }>;
+
+    expect(result.map((item) => item.version)).toEqual(["1.0.0"]);
+    expect(paginated.indexNames).toEqual(["by_skill_active_created"]);
+    expect(paginated.filters).toEqual(
+      new Map<string, unknown>([
+        ["skillId", "skills:1"],
+        ["softDeletedAt", undefined],
+      ]),
+    );
+    expect(paginated.paginate).toHaveBeenCalledWith({ cursor: null, numItems: 12 });
   });
 
   it("paginates public version history over active skill versions", async () => {
@@ -556,7 +688,7 @@ describe("public skill version queries", () => {
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(paginate).toHaveBeenCalledWith({ cursor: "active-page", numItems: 1 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "active-page", numItems: 12 });
   });
 
   it("recovers public version pagination from stale pre-active-index cursors", async () => {
@@ -587,7 +719,7 @@ describe("public skill version queries", () => {
 
     expect(result).toEqual({ items: [], nextCursor: null });
     expect(paginate).toHaveBeenCalledTimes(1);
-    expect(paginate).toHaveBeenCalledWith({ cursor: "legacy-by-skill-cursor", numItems: 1 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "legacy-by-skill-cursor", numItems: 12 });
   });
 
   it("sanitizes latestVersion in listWithLatest", async () => {

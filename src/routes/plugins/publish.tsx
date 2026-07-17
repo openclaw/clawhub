@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { DocsLinks, getPackageScopeOwnerMismatch, isPluginCategorySlug } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
@@ -189,6 +189,7 @@ function PluginPublishError({ message }: { message: string }) {
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
+  const navigate = useNavigate();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
@@ -822,14 +823,12 @@ export function PublishPluginRoute() {
                           return;
                         }
                         setIsSubmitting(true);
-                        setStatus("Uploading files...");
                         setError(null);
                         const uploaded = await buildPackageUploadEntries(files, {
                           generateUploadUrl,
                           hashFile,
                           uploadFile,
                         });
-                        setStatus("Publishing release...");
                         const result = await publishRelease({
                           payload: {
                             name: name.trim(),
@@ -879,9 +878,8 @@ export function PublishPluginRoute() {
                           "status" in result &&
                           result.status === "pending"
                         ) {
-                          setStatus(
-                            "Publish received. Running TruffleHog and ClawScan before public listing.",
-                          );
+                          setStatus(null);
+                          void navigate({ to: "/dashboard" });
                         } else {
                           setStatus(
                             "Published. Pending security checks and verification before public listing.",

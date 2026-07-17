@@ -85,6 +85,7 @@ describe("packageRegistry", () => {
         description: "Manifest description is diagnostic only",
         version: "9.9.9",
         family: "code-plugin",
+        icon: "  https://cdn.example.test/icons/example-ai-plugin.svg  ",
         openclaw: {
           compat: {
             pluginApi: "^2.0.0",
@@ -147,6 +148,7 @@ describe("packageRegistry", () => {
 
     expect(summary).toEqual({
       schemaVersion: 1,
+      icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
       compatibility: { pluginApiRange: "^2.0.0" },
       manifestIdentity: {
         name: "example-ai-plugin",
@@ -191,6 +193,18 @@ describe("packageRegistry", () => {
     expect(JSON.stringify(summary)).not.toContain("transport");
     expect(JSON.stringify(summary)).not.toContain("shared_deps");
     expect(JSON.stringify(summary)).not.toContain("contracts");
+  });
+
+  it("omits invalid plugin icons from the stored manifest summary", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        icon: "http://cdn.example.test/icons/example-ai-plugin.svg",
+      },
+      files: [],
+    });
+
+    expect(summary).not.toHaveProperty("icon");
   });
 
   it("derives bundled skills from the real bundle manifest when present", () => {

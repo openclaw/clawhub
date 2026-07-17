@@ -108,6 +108,11 @@ export const ApiCliPublishResponseSchema = type({
   ok: "true",
   skillId: "string",
   versionId: "string",
+  status: '"pending"|"published"?',
+  slug: "string?",
+  version: "string?",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
 });
 
 export const CliSkillDeleteRequestSchema = type({
@@ -885,6 +890,11 @@ export const ApiV1PublishResponseSchema = type({
   ok: "true",
   skillId: "string",
   versionId: "string",
+  status: '"pending"|"published"?',
+  slug: "string?",
+  version: "string?",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
 });
 
 export const ApiV1DeleteResponseSchema = type({
@@ -953,6 +963,13 @@ export const ApiV1UnbanUserResponseSchema = type({
   ok: "true",
   alreadyUnbanned: "boolean",
   restoredSkills: "number?",
+});
+
+export const ApiV1LiftModerationHoldResponseSchema = type({
+  ok: "true",
+  alreadyCleared: "boolean",
+  restoredSkills: "number",
+  scheduledSkills: "boolean",
 });
 
 export const ApiV1ReclassifyBanResponseSchema = type({

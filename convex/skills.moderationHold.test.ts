@@ -107,12 +107,20 @@ describe("skills moderation holds", () => {
     );
   });
 
-  it("restores clean hold-hidden skills but keeps unscanned skills hidden pending scan", async () => {
+  it("restores from current scanner verdicts but keeps unscanned skills pending", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_000);
     const { ctx, patch } = makeCtx({
       user: { _id: "users:owner", requiresModerationAt: undefined },
       versions: {
         "versions:clean": { _id: "versions:clean", vtAnalysis: { status: "clean" } },
+        "versions:clawscan-clean": {
+          _id: "versions:clawscan-clean",
+          llmAnalysis: { status: "clean" },
+        },
+        "versions:malicious": {
+          _id: "versions:malicious",
+          llmAnalysis: { status: "malicious" },
+        },
         "versions:pending": { _id: "versions:pending" },
       },
       skills: [
@@ -120,6 +128,26 @@ describe("skills moderation holds", () => {
           _id: "skills:clean",
           ownerUserId: "users:owner",
           latestVersionId: "versions:clean",
+          moderationStatus: "hidden",
+          moderationReason: "user.moderation",
+          moderationFlags: undefined,
+          softDeletedAt: undefined,
+          hiddenAt: 1_000,
+        },
+        {
+          _id: "skills:clawscan-clean",
+          ownerUserId: "users:owner",
+          latestVersionId: "versions:clawscan-clean",
+          moderationStatus: "hidden",
+          moderationReason: "user.moderation",
+          moderationFlags: undefined,
+          softDeletedAt: undefined,
+          hiddenAt: 1_000,
+        },
+        {
+          _id: "skills:malicious",
+          ownerUserId: "users:owner",
+          latestVersionId: "versions:malicious",
           moderationStatus: "hidden",
           moderationReason: "user.moderation",
           moderationFlags: undefined,
@@ -144,13 +172,28 @@ describe("skills moderation holds", () => {
       holdPlacedAt: 1_000,
     });
 
-    expect(result.restoredCount).toBe(2);
+    expect(result.restoredCount).toBe(4);
     expect(patch).toHaveBeenCalledWith(
       "skills:clean",
       expect.objectContaining({
         moderationStatus: "active",
-        moderationReason: "restored.moderation_lift",
+        moderationReason: "scanner.vt.clean",
         hiddenAt: undefined,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:clawscan-clean",
+      expect.objectContaining({
+        moderationStatus: "active",
+        moderationReason: "scanner.llm.clean",
+        hiddenAt: undefined,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skills:malicious",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        moderationReason: "scanner.llm.malicious",
       }),
     );
     expect(patch).toHaveBeenCalledWith(

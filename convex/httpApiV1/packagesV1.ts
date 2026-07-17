@@ -143,6 +143,7 @@ const internalRefs = internal as unknown as {
     listOfficialPluginMigrationsInternal: unknown;
     upsertOfficialPluginMigrationForUserInternal: unknown;
     listPackageModerationQueueInternal: unknown;
+    setPackageFeaturedForUserInternal: unknown;
   };
   downloadMetrics: {
     recordDownloadMetricInternal: unknown;
@@ -2913,6 +2914,37 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
         400,
         rate.headers,
       );
+    }
+  }
+
+  if (packageSegments[0] === "featured" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = await readOptionalJson(request);
+      const featured =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>).featured
+          : undefined;
+      if (typeof featured !== "boolean") {
+        return text("featured must be a boolean", 400, rate.headers);
+      }
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.setPackageFeaturedForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          featured,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package feature update failed");
     }
   }
 

@@ -1,13 +1,11 @@
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskKnownWorkerSecrets,
@@ -15,11 +13,7 @@ import {
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
 import {
-  runCodex,
-  runSkillSpector,
-  resolveSkillSpectorScanInputs,
   type ClaimedJob,
-  type SkillSpectorAnalysis,
   type StoredLlmAnalysis,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
@@ -48,6 +42,7 @@ type ClaimedPrePublicationAttempt = {
     package?: Record<string, unknown>;
     release?: Record<string, unknown>;
   };
+  existingClawscanAnalysis?: StoredLlmAnalysis;
   checkClaimExpiresAt: number;
   createdAt: number;
 };
@@ -65,15 +60,24 @@ type ProcessAttemptResult = {
 
 type PrePublicationWorkerClient = Pick<ConvexHttpClient, "action">;
 
+type PrePublicationClaimFilters = {
+  attemptId?: Id<"publishAttempts">;
+  kind?: "skill" | "package";
+  slug?: string;
+  version?: string;
+};
+
 type TruffleHogResult = WorkerCheckResult & {
   exitCode?: number | null;
 };
 
+type ClawScanResult = {
+  check: WorkerCheckResult;
+  analysis?: StoredLlmAnalysis;
+};
+
 type ProcessAttemptDeps = {
-  runClawHubReview?: (
-    job: ClaimedJob,
-    workspace: string,
-  ) => Promise<{ llmAnalysis: StoredLlmAnalysis; skillSpectorAnalysis?: SkillSpectorAnalysis }>;
+  runClawScan?: (job: ClaimedJob, workspace: string) => Promise<ClawScanResult>;
   runTruffleHog?: (workspace: string) => Promise<TruffleHogResult>;
   writeWorkspace?: (job: ClaimedJob, workspace: string) => Promise<void>;
 };
@@ -86,18 +90,13 @@ const DEFAULT_TRUFFLEHOG_IMAGE =
 const TRUFFLEHOG_SECRET_EXIT_CODE = 183;
 const MAX_TRUFFLEHOG_FINDINGS = 10;
 const MAX_PUBLIC_SUMMARY_CHARS = 600;
-const LOCAL_CODEX_HOME = join(rootDir(), ".codex/runtime/codex-workers/prepublication");
 const logger = createWorkerLogger({ name: "prepublication-worker" });
 
-function rootDir() {
-  return resolve(new URL("../..", import.meta.url).pathname);
-}
-
-function parseArgs() {
-  const args = process.argv.slice(2);
+export function parseArgs(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env) {
   const get = (name: string) => {
     const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
+    const value = index === -1 ? undefined : args[index + 1];
+    return value && !value.startsWith("--") ? value : undefined;
   };
   const numberFrom = (value: string | undefined, fallback: number) => {
     const parsed = Number(value);
@@ -107,17 +106,30 @@ function parseArgs() {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   };
+  const optionalStringFrom = (value: string | undefined) => value?.trim() || undefined;
+  const kind = optionalStringFrom(get("--kind") ?? env.PREPUBLICATION_CHECK_KIND);
+  if (kind && kind !== "skill" && kind !== "package") {
+    throw new Error("--kind must be skill or package");
+  }
   return {
     batchLimit: numberFrom(
-      get("--batch-limit") ?? process.env.PREPUBLICATION_CHECK_LIMIT,
+      get("--batch-limit") ?? env.PREPUBLICATION_CHECK_LIMIT,
       DEFAULT_BATCH_LIMIT,
     ),
-    maxJobs: optionalNumberFrom(get("--max-jobs") ?? process.env.PREPUBLICATION_CHECK_MAX_JOBS),
+    maxJobs: optionalNumberFrom(get("--max-jobs") ?? env.PREPUBLICATION_CHECK_MAX_JOBS),
     maxRuntimeMs:
       numberFrom(
-        get("--max-runtime-minutes") ?? process.env.PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES,
+        get("--max-runtime-minutes") ?? env.PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES,
         DEFAULT_MAX_RUNTIME_MS / 60_000,
       ) * 60_000,
+    claimFilters: {
+      attemptId: optionalStringFrom(get("--attempt-id") ?? env.PREPUBLICATION_CHECK_ATTEMPT_ID) as
+        | Id<"publishAttempts">
+        | undefined,
+      kind: kind as "skill" | "package" | undefined,
+      slug: optionalStringFrom(get("--slug") ?? env.PREPUBLICATION_CHECK_SLUG),
+      version: optionalStringFrom(get("--version") ?? env.PREPUBLICATION_CHECK_VERSION),
+    } satisfies PrePublicationClaimFilters,
   };
 }
 
@@ -245,6 +257,7 @@ async function runCommand(
     (resolvePromise, reject) => {
       const child = spawn(command, args, {
         cwd: options.cwd,
+        detached: process.platform !== "win32",
         env: {
           ...process.env,
           NO_COLOR: "1",
@@ -254,10 +267,23 @@ async function runCommand(
       let stdout = "";
       let stderr = "";
       let timedOut = false;
+      let forceKillTimeout: NodeJS.Timeout | undefined;
+      const killProcessTree = (signal: NodeJS.Signals) => {
+        if (process.platform !== "win32" && child.pid) {
+          try {
+            process.kill(-child.pid, signal);
+            return;
+          } catch {
+            // The process group may already have exited; fall back to the direct child.
+          }
+        }
+        child.kill(signal);
+      };
       const timeout = setTimeout(() => {
         timedOut = true;
-        child.kill("SIGTERM");
-        setTimeout(() => child.kill("SIGKILL"), 10_000).unref();
+        killProcessTree("SIGTERM");
+        forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
+        forceKillTimeout.unref();
       }, options.timeoutMs);
       child.stdout.on("data", (chunk) => {
         stdout += String(chunk);
@@ -267,10 +293,14 @@ async function runCommand(
       });
       child.on("error", (error) => {
         clearTimeout(timeout);
+        if (timedOut) killProcessTree("SIGKILL");
+        if (forceKillTimeout) clearTimeout(forceKillTimeout);
         reject(error);
       });
       child.on("close", (code) => {
         clearTimeout(timeout);
+        if (timedOut) killProcessTree("SIGKILL");
+        if (forceKillTimeout) clearTimeout(forceKillTimeout);
         if (timedOut) {
           reject(new Error(`${command} timed out`));
           return;
@@ -331,57 +361,184 @@ export async function runNativeTruffleHog(workspace: string): Promise<TruffleHog
   };
 }
 
-export async function runNormalClawHubReview(job: ClaimedJob, workspace: string) {
-  const skillSpectorAnalysis = await runSkillSpectorIfApplicable(job, workspace);
-  const llmAnalysis = await runCodex(job, workspace, skillSpectorAnalysis, () => {});
-  return { llmAnalysis, skillSpectorAnalysis };
+function clawScanTimeoutMs() {
+  const parsed = Number(process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 240_000;
 }
 
-async function runSkillSpectorIfApplicable(job: ClaimedJob, workspace: string) {
-  const inputs = await resolveSkillSpectorScanInputs(workspace, job);
-  if (inputs.length === 0) return undefined;
-  return await runSkillSpector(workspace, inputs, () => {});
+function clawScanCommand() {
+  return process.env.PREPUBLICATION_CLAWSCAN_COMMAND?.trim() || "clawscan";
 }
 
-function clawHubReviewCheckResult(llmAnalysis: StoredLlmAnalysis): WorkerCheckResult {
-  const status = (llmAnalysis.status || llmAnalysis.verdict || "").trim().toLowerCase();
-  const verdict = (llmAnalysis.verdict || "").trim().toLowerCase();
+async function fileExists(path: string) {
+  return Boolean(await stat(path).catch(() => null));
+}
+
+async function resolveNativeClawScanTarget(workspace: string, job: ClaimedJob) {
+  if (job.job.targetKind === "packageRelease") {
+    const packageRoot = join(workspace, "artifact", "package");
+    if (await fileExists(join(packageRoot, "package.json"))) return "./artifact/package";
+  }
+  return "./artifact";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function readString(record: Record<string, unknown> | undefined, names: string[]) {
+  if (!record) return undefined;
+  for (const name of names) {
+    const value = record[name];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function verdictToStoredStatus(verdict: string | undefined): StoredLlmAnalysis["status"] {
+  const normalized = verdict?.trim().toLowerCase();
+  if (normalized === "benign" || normalized === "clean") return "clean";
+  if (normalized === "suspicious") return "suspicious";
+  if (normalized === "malicious") return "malicious";
+  return "pending";
+}
+
+function collectClawScanScannerFailures(scanners: Record<string, unknown> | undefined) {
+  if (!scanners) return [];
+  const failures: string[] = [];
+  for (const [scanner, value] of Object.entries(scanners)) {
+    const scannerRecord = asRecord(value);
+    const status = readString(scannerRecord, ["status"]) ?? "unknown";
+    if (status !== "completed") failures.push(`${scanner}=${status}`);
+  }
+  return failures;
+}
+
+function storedAnalysisFromClawScanArtifact(artifact: unknown): {
+  analysis?: StoredLlmAnalysis;
+  error?: string;
+} {
+  const record = asRecord(artifact);
+  const judge = asRecord(record?.judge);
+  const result = asRecord(judge?.result);
+  const judgeStatus = readString(judge, ["status"]);
+  const judgeError = readString(judge, ["error"]);
+  const scannerFailures = collectClawScanScannerFailures(asRecord(record?.scanners));
+  if (scannerFailures.length > 0) {
+    return { error: `ClawScan scanner did not complete: ${scannerFailures.join(", ")}` };
+  }
+  if (judgeStatus !== "completed") {
+    return {
+      error: [
+        `ClawScan judge status was ${judgeStatus ?? "missing"}`,
+        ...(judgeError ? [judgeError] : []),
+      ].join(": "),
+    };
+  }
+  const verdict = readString(result, ["verdict", "status"]);
+  if (!verdict) return { error: "ClawScan judge did not return a verdict" };
+
+  const dimensions = Array.isArray(result?.dimensions)
+    ? (result.dimensions as StoredLlmAnalysis["dimensions"])
+    : undefined;
+  const confidence = readString(result, ["confidence"]);
+  const findings = readString(result, ["findings"]);
+  const guidance = readString(result, ["guidance"]);
+  const model = readString(result, ["model"]);
+  const summary = readString(result, ["summary"]);
+  return {
+    analysis: {
+      checkedAt: Date.now(),
+      status: verdictToStoredStatus(verdict),
+      verdict,
+      ...(confidence ? { confidence } : {}),
+      ...(dimensions ? { dimensions } : {}),
+      ...(findings ? { findings } : {}),
+      ...(guidance ? { guidance } : {}),
+      ...(model ? { model } : {}),
+      ...(summary ? { summary } : {}),
+    },
+  };
+}
+
+function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {
+  const status = (analysis.status || analysis.verdict || "").trim().toLowerCase();
+  const verdict = (analysis.verdict || "").trim().toLowerCase();
   const normalizedVerdict = verdict || status;
   const summary = publicText(
-    llmAnalysis.summary ??
-      llmAnalysis.findings ??
-      `ClawHub security review returned ${llmAnalysis.status}.`,
+    analysis.summary ?? analysis.findings ?? `ClawScan returned ${analysis.status}.`,
   );
   if (status === "clean" || normalizedVerdict === "benign") {
     return {
       status: "clean",
-      summary: summary || "ClawHub security review passed.",
+      summary: summary || "ClawScan passed.",
     };
   }
   if (normalizedVerdict === "suspicious") {
     return {
       status: "clean",
-      summary: summary || "ClawHub security review requires user attention.",
-      redactedFindings: [
-        publicText(`status=${llmAnalysis.status}; verdict=${llmAnalysis.verdict}`),
-      ],
+      summary: summary || "ClawScan returned suspicious review findings.",
+      redactedFindings: [publicText(`status=${analysis.status}; verdict=${analysis.verdict}`)],
     };
   }
   if (normalizedVerdict !== "malicious") {
     return {
       status: "failed",
-      summary: summary || "ClawHub security review did not return a final verdict.",
-      redactedFindings: [
-        publicText(`status=${llmAnalysis.status}; verdict=${llmAnalysis.verdict}`),
-      ],
+      summary: summary || "ClawScan did not return a final verdict.",
+      redactedFindings: [publicText(`status=${analysis.status}; verdict=${analysis.verdict}`)],
     };
   }
   return {
     status: "blocked",
-    summary:
-      summary ||
-      `ClawHub security review blocked the staged publish with status ${llmAnalysis.status}.`,
-    redactedFindings: [publicText(`status=${llmAnalysis.status}; verdict=${llmAnalysis.verdict}`)],
+    summary: summary || `ClawScan blocked the staged publish with status ${analysis.status}.`,
+    redactedFindings: [publicText(`status=${analysis.status}; verdict=${analysis.verdict}`)],
+  };
+}
+
+export async function runNativeClawScan(
+  job: ClaimedJob,
+  workspace: string,
+): Promise<ClawScanResult> {
+  const artifactPath = join(workspace, "clawscan-result.json");
+  const target = await resolveNativeClawScanTarget(workspace, job);
+  const command = clawScanCommand();
+  const args = [target, "--profile", "clawhub", "--output", artifactPath];
+  const sandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX?.trim();
+  if (sandbox) {
+    args.push("--sandbox", sandbox);
+    const sandboxImage = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX_IMAGE?.trim();
+    if (sandbox === "docker" && sandboxImage) args.push("--sandbox-image", sandboxImage);
+  }
+
+  const output = await runCommand(command, args, {
+    cwd: workspace,
+    timeoutMs: clawScanTimeoutMs(),
+  });
+  if (output.code !== 0) {
+    return {
+      check: {
+        status: "failed",
+        summary: publicText(
+          `ClawScan failed before returning a verdict: ${output.stderr || output.stdout}`,
+        ),
+      },
+    };
+  }
+
+  const raw = await readFile(artifactPath, "utf8");
+  const parsed = storedAnalysisFromClawScanArtifact(JSON.parse(raw) as unknown);
+  if (parsed.error || !parsed.analysis) {
+    return {
+      check: {
+        status: "failed",
+        summary: publicText(parsed.error ?? "ClawScan did not return a usable result."),
+      },
+    };
+  }
+  return {
+    analysis: parsed.analysis,
+    check: clawScanCheckResult(parsed.analysis),
   };
 }
 
@@ -430,7 +587,7 @@ export async function processPrePublicationAttempt(
         },
         {
           status: "clean",
-          summary: "Pre-publication ClawHub security review already passed.",
+          summary: "Pre-publication ClawScan already passed.",
         },
       );
       logger.info(
@@ -461,7 +618,7 @@ export async function processPrePublicationAttempt(
   const startedAt = Date.now();
   const writeWorkspace = deps.writeWorkspace ?? writeArtifactWorkspace;
   const runTruffleHog = deps.runTruffleHog ?? runNativeTruffleHog;
-  const runClawHubReview = deps.runClawHubReview ?? runNormalClawHubReview;
+  const runClawScan = deps.runClawScan ?? runNativeClawScan;
   let truffleHogBlocked = false;
   let completionStarted = false;
   try {
@@ -473,7 +630,7 @@ export async function processPrePublicationAttempt(
       completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
-        summary: "ClawHub security review skipped because TruffleHog blocked the artifact.",
+        summary: "ClawScan skipped because TruffleHog blocked the artifact.",
       });
       logger.info(
         {
@@ -491,22 +648,35 @@ export async function processPrePublicationAttempt(
       completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
-        summary: "ClawHub security review skipped because TruffleHog failed.",
+        summary: "ClawScan skipped because TruffleHog failed.",
       });
       return { completed: false, result };
     }
 
     let clawscan: WorkerCheckResult;
     let clawscanAnalysis: StoredLlmAnalysis | undefined;
-    try {
-      const review = await runClawHubReview(job, workspace);
-      clawscanAnalysis = review.llmAnalysis;
-      clawscan = clawHubReviewCheckResult(review.llmAnalysis);
-    } catch (error) {
-      clawscan = {
-        status: "failed",
-        summary: publicText(error instanceof Error ? error.message : String(error)),
-      };
+    if (attempt.existingClawscanAnalysis) {
+      clawscanAnalysis = attempt.existingClawscanAnalysis;
+      clawscan = clawScanCheckResult(clawscanAnalysis);
+      logger.info(
+        {
+          attemptId: attempt.attemptId,
+          event: "prepublication_clawscan_result_reused",
+          kind: attempt.kind,
+        },
+        "pre-publication ClawScan result reused for exact artifact",
+      );
+    } else {
+      try {
+        const review = await runClawScan(job, workspace);
+        clawscanAnalysis = review.analysis;
+        clawscan = review.check;
+      } catch (error) {
+        clawscan = {
+          status: "failed",
+          summary: publicText(error instanceof Error ? error.message : String(error)),
+        };
+      }
     }
 
     completionStarted = true;
@@ -616,9 +786,11 @@ export async function processPrePublicationBatch(
 export async function claimPrePublicationAttempt(
   client: PrePublicationWorkerClient,
   token: string,
+  filters: PrePublicationClaimFilters = {},
 ) {
   return (await client.action(api.publishAttempts.claimPrePublicationChecks, {
     token,
+    ...filters,
   })) as ClaimedPrePublicationAttempt | null;
 }
 
@@ -626,9 +798,10 @@ export async function claimPrePublicationBatch(
   client: PrePublicationWorkerClient,
   token: string,
   limit: number,
+  filters: PrePublicationClaimFilters = {},
 ) {
   const claims = await Promise.allSettled(
-    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token)),
+    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token, filters)),
   );
   const attempts: ClaimedPrePublicationAttempt[] = [];
   const failures: unknown[] = [];
@@ -658,8 +831,7 @@ export function claimBatchDrainedQueue(
 }
 
 async function main() {
-  const { batchLimit, maxJobs, maxRuntimeMs } = parseArgs();
-  assertCodexWorkerExecutionAllowed(process.env);
+  const { batchLimit, claimFilters, maxJobs, maxRuntimeMs } = parseArgs();
   maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
@@ -684,8 +856,14 @@ async function main() {
     if (totalClaimed > 0 && claimDeadline - Date.now() < CLAIM_WINDOW_SHUTDOWN_BUFFER_MS) break;
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
-    const claimLimit = Math.min(batchLimit, remainingJobs);
-    const { attempts, claimFailures } = await claimPrePublicationBatch(client, token, claimLimit);
+    const targeted = Object.values(claimFilters).some(Boolean);
+    const claimLimit = Math.min(targeted ? 1 : batchLimit, remainingJobs);
+    const { attempts, claimFailures } = await claimPrePublicationBatch(
+      client,
+      token,
+      claimLimit,
+      claimFilters,
+    );
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
     const results = await processPrePublicationBatch(attempts, (attempt) =>
@@ -706,15 +884,6 @@ async function main() {
   );
 }
 
-export function configurePrePublicationCodexHome(env: NodeJS.ProcessEnv = process.env) {
-  const codexHome = resolveCodexWorkerHome(env, LOCAL_CODEX_HOME);
-  if (!codexHome) return undefined;
-  env.CODEX_HOME = codexHome;
-  mkdirSync(codexHome, { recursive: true });
-  return codexHome;
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  configurePrePublicationCodexHome();
   await main();
 }

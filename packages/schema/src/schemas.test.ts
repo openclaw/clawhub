@@ -3,7 +3,12 @@
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
-import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
+import {
+  ApiV1PackageVersionResponseSchema,
+  ApiV1PackagePublishResponseSchema,
+  getPackageScopeOwnerMismatch,
+  inferPackageNameScope,
+} from "./packages";
 import {
   ApiSearchResponseSchema,
   ApiV1SkillInstallResolveResponseSchema,
@@ -73,6 +78,55 @@ describe("clawhub-schema", () => {
     );
     expect(payload.ownerHandle).toBeUndefined();
     expect(payload.acceptLicenseTerms).toBe(true);
+  });
+
+  it("accepts pending package publish responses with legacy IDs", () => {
+    const response = parseArk(
+      ApiV1PackagePublishResponseSchema,
+      {
+        ok: true,
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        publicationStatus: "pending",
+        attemptId: "publishAttempts:demo",
+      },
+      "Package publish response",
+    );
+
+    expect(response.releaseId).toBe("packageReleases:demo");
+    expect(response.publicationStatus).toBe("pending");
+    expect(response.attemptId).toBe("publishAttempts:demo");
+  });
+
+  it("preserves plugin manifest icons in package version responses", () => {
+    const response = parseArk(
+      ApiV1PackageVersionResponseSchema,
+      {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Adds a manifest icon",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            icon: "https://cdn.example.test/icons/demo-plugin.svg",
+            configFields: [],
+            mcpServers: [],
+            bundledSkills: [],
+          },
+        },
+      },
+      "Package version response",
+    );
+
+    expect(response.version?.pluginManifestSummary?.icon).toBe(
+      "https://cdn.example.test/icons/demo-plugin.svg",
+    );
   });
 
   it("accepts publish payload with github source", () => {

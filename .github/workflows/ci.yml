@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
 
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - uses: ./.github/actions/setup-bun
 
@@ -148,15 +148,14 @@ jobs:
 
   playwright-local-auth-shard:
     name: playwright-local-auth / ${{ matrix.name }}
-    runs-on: ${{ matrix.runner || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 8
       matrix:
         include:
           - name: account-cleanup
-            runner: blacksmith-8vcpu-ubuntu-2404
             specs: |
               e2e/local-auth/delete-account-resources.pw.test.ts
               e2e/local-auth/delete-org-resources.pw.test.ts
@@ -164,11 +163,10 @@ jobs:
             specs: |
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
-          - name: moderation-star
-            runner: blacksmith-8vcpu-ubuntu-2404
-            specs: |
-              e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
-              e2e/local-auth/skill-star-sync.pw.test.ts
+          - name: moderation-malicious
+            specs: e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
+          - name: star-sync
+            specs: e2e/local-auth/skill-star-sync.pw.test.ts
           - name: inspector-version
             specs: |
               e2e/local-auth/plugin-inspector-findings.pw.test.ts
@@ -179,9 +177,11 @@ jobs:
           - name: publish-new-version
             specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: skill publishers can create a skill
+          - name: old-cli-publish
+            specs: e2e/local-auth/old-cli-publish-compat.pw.test.ts
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
 
       - uses: ./.github/actions/setup-bun
 
@@ -202,6 +202,27 @@ jobs:
           PLAYWRIGHT_SPECS: ${{ matrix.specs }}
         run: |
           set -euo pipefail
+          pressure_phase=before
+          report_runner_pressure() {
+            echo "::group::Local-auth runner pressure ($pressure_phase)"
+            date --utc --iso-8601=seconds
+            printf 'logical_cpus='
+            nproc
+            printf 'loadavg='
+            cat /proc/loadavg
+            if [[ -r /sys/fs/cgroup/cpu.stat ]]; then
+              cat /sys/fs/cgroup/cpu.stat
+            fi
+            if [[ -r /proc/pressure/memory ]]; then
+              cat /proc/pressure/memory
+            fi
+            free -h || true
+            echo "::endgroup::"
+          }
+          report_runner_pressure
+          pressure_phase=after
+          trap report_runner_pressure EXIT
+
           mapfile -t specs < <(printf '%s\n' "$PLAYWRIGHT_SPECS" | sed '/^[[:space:]]*$/d')
           args=(--project=chromium "${specs[@]}")
           if [[ -n "$PLAYWRIGHT_GREP" ]]; then

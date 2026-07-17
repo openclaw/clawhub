@@ -25,6 +25,7 @@ export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred]
 
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
+  icon: "string?",
   compatibility: PackageCompatibilitySchema.optional(),
   manifestIdentity: type({
     name: "string?",
@@ -861,6 +862,8 @@ export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",
   releaseId: "string",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
   inspectorFindings: type({
     findingKind: '"warning"|"error"',
     code: "string",

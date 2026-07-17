@@ -132,13 +132,36 @@ function makeFeedSkillEntry(index: number) {
   };
 }
 
-function makeCtx(packages: unknown[], records: Record<string, unknown>) {
+function makeCtx(
+  packages: unknown[],
+  records: Record<string, unknown>,
+  options: { packageHighlighted?: boolean } = {},
+) {
   return {
     db: {
-      query: vi.fn(() => {
+      query: vi.fn((table: string) => {
         const query = {
           eq: vi.fn(() => query),
         };
+        if (table === "packageBadges") {
+          return {
+            withIndex: vi.fn((_index: string, apply: (value: typeof query) => unknown) => {
+              apply(query);
+              return {
+                unique: vi.fn(async () =>
+                  options.packageHighlighted
+                    ? {
+                        packageId: "packages:1",
+                        kind: "highlighted",
+                        byUserId: "users:moderator",
+                        at: 1,
+                      }
+                    : null,
+                ),
+              };
+            }),
+          };
+        }
         return {
           withIndex: vi.fn((_index: string, apply: (value: typeof query) => unknown) => {
             apply(query);
@@ -168,9 +191,17 @@ describe("catalog feed projection", () => {
 
   it("projects official releases into ClawHub install candidates", async () => {
     const result = await listOfficialEntriesHandler(
-      makeCtx([makePackage()], {
-        "packageReleases:1": makeRelease(),
-      }),
+      makeCtx(
+        [
+          makePackage({
+            summary: "Search flights, stays, and travel options.",
+            icon: "https://cdn.example.test/expedia.png",
+          }),
+        ],
+        {
+          "packageReleases:1": makeRelease(),
+        },
+      ),
       { family: "code-plugin" },
     );
 
@@ -179,8 +210,11 @@ describe("catalog feed projection", () => {
         type: "plugin",
         id: "@openclaw/demo",
         title: "Demo",
+        description: "Search flights, stays, and travel options.",
+        icon: "https://cdn.example.test/expedia.png",
         version: "1.2.3",
         state: "available",
+        featured: false,
         publisher: { id: "openclaw", trust: "official" },
         install: {
           candidates: [
@@ -193,6 +227,34 @@ describe("catalog feed projection", () => {
           ],
         },
       },
+    ]);
+  });
+
+  it("projects highlighted official packages as featured install candidates", async () => {
+    const result = await listOfficialEntriesHandler(
+      makeCtx(
+        [makePackage()],
+        {
+          "packageReleases:1": makeRelease(),
+        },
+        { packageHighlighted: true },
+      ),
+      { family: "code-plugin" },
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        id: "@openclaw/demo",
+        state: "available",
+        featured: true,
+        install: {
+          candidates: [
+            expect.objectContaining({
+              package: "@openclaw/demo",
+            }),
+          ],
+        },
+      }),
     ]);
   });
 
@@ -244,7 +306,7 @@ describe("catalog feed projection", () => {
 
   it("projects only published skills from verified organization publishers", async () => {
     const result = (await listOfficialSkillEntriesHandler(
-      makeCtx([makeSkill()], {
+      makeCtx([makeSkill({ summary: "Deploy AIQ services.", icon: "lucide:rocket" })], {
         "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
         "skillVersions:1": makeSkillVersion(),
       }),
@@ -257,8 +319,11 @@ describe("catalog feed projection", () => {
           type: "skill",
           id: "@openclaw/demo",
           title: "Demo skill",
+          description: "Deploy AIQ services.",
+          icon: "lucide:rocket",
           version: "1.2.3",
           state: "available",
+          featured: false,
           publisher: { id: "openclaw", trust: "official" },
           install: {
             candidates: [
@@ -274,6 +339,24 @@ describe("catalog feed projection", () => {
       ],
       isDone: true,
     });
+  });
+
+  it("projects highlighted official skills as featured install candidates", async () => {
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx([makeSkill({ badges: { highlighted: { byUserId: "users:moderator", at: 1 } } })], {
+        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+        "skillVersions:1": makeSkillVersion(),
+      }),
+      { publisherId: "publishers:1", cursor: null },
+    )) as { entries: unknown[]; isDone: boolean };
+
+    expect(result.entries).toEqual([
+      expect.objectContaining({
+        id: "@openclaw/demo",
+        state: "available",
+        featured: true,
+      }),
+    ]);
   });
 
   it("keeps suspicious hosted skills in hosted ClawHub install candidates", async () => {
@@ -320,6 +403,7 @@ describe("catalog feed projection", () => {
           title: "AIQ Deploy",
           version: "1111111111111111111111111111111111111111",
           state: "available",
+          featured: false,
           publisher: { id: "nvidia", trust: "official" },
           install: {
             candidates: [

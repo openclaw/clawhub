@@ -1,0 +1,122 @@
+name: Catalog Feed Schema Version Guard
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  schema-version:
+    name: schema-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Test schema-version parser
+        run: node --test .github/scripts/catalog-feed-schema-version-guard.test.cjs
+
+      - name: Require explicit approval for catalog feed schema bumps
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const {
+              extractCatalogFeedSchemaVersion,
+            } = require("./.github/scripts/catalog-feed-schema-version-guard.cjs");
+            const path = "packages/schema/src/catalogFeed.ts";
+            const approvalLabel = "schema-version-approved";
+            const pull = context.payload.pull_request;
+
+            async function readVersion({ owner, repo, ref }) {
+              const response = await github.rest.repos.getContent({
+                owner,
+                repo,
+                path,
+                ref,
+              });
+              if (Array.isArray(response.data) || response.data.type !== "file") {
+                throw new Error(`Expected ${path} to be a file at ${owner}/${repo}@${ref}`);
+              }
+              const source = Buffer.from(response.data.content, "base64").toString("utf8");
+              return extractCatalogFeedSchemaVersion(source);
+            }
+
+            const comparison = await github.rest.repos.compareCommitsWithBasehead({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              basehead: `${pull.base.sha}...${pull.head.sha}`,
+            });
+            const baseVersion = await readVersion({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: comparison.data.merge_base_commit.sha,
+            });
+            let headVersion;
+            try {
+              headVersion = await readVersion({
+                owner: pull.head.repo.owner.login,
+                repo: pull.head.repo.name,
+                ref: pull.head.sha,
+              });
+            } catch (error) {
+              core.setFailed(
+                `${path} must remain at its canonical location: ${error.message}`,
+              );
+              return;
+            }
+
+            if (headVersion === baseVersion) {
+              core.info(`Catalog feed schema version remains ${baseVersion}.`);
+              return;
+            }
+
+            const labels = new Set(pull.labels.map((label) => label.name));
+            if (
+              context.payload.action === "synchronize" &&
+              labels.has(approvalLabel)
+            ) {
+              const previousHead = context.payload.before;
+              let previousVersion;
+              try {
+                previousVersion = previousHead
+                  ? await readVersion({
+                      owner: pull.head.repo.owner.login,
+                      repo: pull.head.repo.name,
+                      ref: previousHead,
+                    })
+                  : undefined;
+              } catch {
+                previousVersion = undefined;
+              }
+              if (previousVersion !== headVersion) {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pull.number,
+                  name: approvalLabel,
+                });
+                core.setFailed(
+                  `The latest commit changed the catalog feed schema version. The stale "${approvalLabel}" label was removed; re-add it only after the current head ${pull.head.sha} receives explicit approval.`,
+                );
+                return;
+              }
+            }
+            if (!labels.has(approvalLabel)) {
+              core.setFailed(
+                [
+                  `Catalog feed schema version changed from ${baseVersion} to ${headVersion}.`,
+                  `Add the "${approvalLabel}" label only after explicit approval.`,
+                  "A schema-version change is a cross-repo wire-contract change and requires matching OpenClaw parser and validation updates before ClawHub publishes it.",
+                ].join(" "),
+              );
+              return;
+            }
+
+            core.notice(
+              `Catalog feed schema version changed from ${baseVersion} to ${headVersion} with explicit approval via "${approvalLabel}".`,
+            );

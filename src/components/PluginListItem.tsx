@@ -59,7 +59,13 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
         aria-label={`Plugin: ${item.displayName}`}
       >
         <div className="skill-card-header">
-          <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} size="md" />
+          <MarketplaceIcon
+            kind="plugin"
+            label={item.displayName}
+            imageUrl={item.icon}
+            categorySlug={primaryCategory?.slug}
+            size="md"
+          />
           <div className="skill-card-identity">
             <h3 className="skill-card-title" title={item.displayName}>
               {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
@@ -107,7 +113,12 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
       className="skill-list-item skill-list-item-with-taxonomy"
       aria-label={`Plugin: ${item.displayName}`}
     >
-      <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} />
+      <MarketplaceIcon
+        kind="plugin"
+        label={item.displayName}
+        imageUrl={item.icon}
+        categorySlug={primaryCategory?.slug}
+      />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-identity">

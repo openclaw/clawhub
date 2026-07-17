@@ -31,6 +31,11 @@ catalogs.
 consumer. Do not bump it until matching OpenClaw parser and validation support
 has shipped, or current clients will reject the hosted feed and fall back to
 bundled data.
+Any pull request changing `CATALOG_FEED_SCHEMA_VERSION` must carry the
+`schema-version-approved` label, added only after explicit approval confirms
+that the matching OpenClaw parser and validation work is coordinated. A new
+commit that changes the schema version automatically removes the label so the
+current revision must be approved again.
 
 The producer excludes soft-deleted packages, inactive releases, releases without
 an artifact digest, and releases blocked by ClawHub security or moderation

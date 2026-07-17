@@ -23,6 +23,7 @@ import {
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
+import { recomputePublisherStats } from "./lib/publisherStats";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
@@ -1366,6 +1367,148 @@ export const seedPublicCorpusBatchMutation = internalMutation({
     }
 
     return { ok: true, seeded, skipped };
+  },
+});
+
+export const seedCatalogPresentationFixtures = internalMutation({
+  args: {
+    orgs: v.array(
+      v.object({
+        sourceOwnerHandle: v.string(),
+        handle: v.string(),
+        displayName: v.string(),
+        bio: v.string(),
+        image: v.string(),
+        skillSlug: v.string(),
+        packageName: v.string(),
+        featured: v.boolean(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const affectedPublisherIds = new Set<Id<"publishers">>();
+    const seeded: string[] = [];
+
+    for (const spec of args.orgs) {
+      const sourcePublisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", spec.sourceOwnerHandle))
+        .unique();
+      if (!sourcePublisher || sourcePublisher.kind !== "user" || !sourcePublisher.linkedUserId) {
+        throw new Error(`Catalog presentation source owner not found: ${spec.sourceOwnerHandle}`);
+      }
+
+      const skill = await ctx.db
+        .query("skills")
+        .withIndex("by_slug", (q) => q.eq("slug", spec.skillSlug))
+        .unique();
+      const pkg = await findSeedPluginFixtureByName(ctx, spec.packageName);
+      if (!skill || !pkg) {
+        throw new Error(`Catalog presentation content not found for ${spec.handle}`);
+      }
+
+      const existingPublisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", spec.handle))
+        .unique();
+      if (existingPublisher && existingPublisher.kind !== "org") {
+        throw new Error(`Catalog presentation handle is not an organization: ${spec.handle}`);
+      }
+
+      const publisherPatch = {
+        kind: "org" as const,
+        handle: spec.handle,
+        displayName: spec.displayName,
+        bio: spec.bio,
+        image: spec.image,
+        linkedUserId: undefined,
+        trustedPublisher: false,
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        updatedAt: now,
+      };
+      const publisherId =
+        existingPublisher?._id ??
+        (await ctx.db.insert("publishers", {
+          ...publisherPatch,
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalDownloads: 0,
+          totalStars: 0,
+          skillTotalInstalls: 0,
+          skillTotalDownloads: 0,
+          skillTotalStars: 0,
+          createdAt: now,
+        }));
+      if (existingPublisher) {
+        await ctx.db.patch(existingPublisher._id, publisherPatch);
+      }
+
+      const official = await ctx.db
+        .query("officialPublishers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+        .unique();
+      const officialPatch = {
+        reason: "Synthetic local and preview catalog presentation fixture.",
+        createdByUserId: sourcePublisher.linkedUserId,
+        updatedAt: now,
+      };
+      if (official) {
+        await ctx.db.patch(official._id, officialPatch);
+      } else {
+        await ctx.db.insert("officialPublishers", {
+          publisherId,
+          ...officialPatch,
+          createdAt: now,
+        });
+      }
+
+      const membership = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher_user", (q) =>
+          q.eq("publisherId", publisherId).eq("userId", sourcePublisher.linkedUserId!),
+        )
+        .unique();
+      if (membership) {
+        await ctx.db.patch(membership._id, { role: "owner", updatedAt: now });
+      } else {
+        await ctx.db.insert("publisherMembers", {
+          publisherId,
+          userId: sourcePublisher.linkedUserId,
+          role: "owner",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      if (skill.ownerPublisherId !== publisherId) {
+        if (skill.ownerPublisherId) affectedPublisherIds.add(skill.ownerPublisherId);
+        await ctx.db.patch(skill._id, { ownerPublisherId: publisherId, updatedAt: now });
+      }
+      if (pkg.ownerPublisherId !== publisherId) {
+        if (pkg.ownerPublisherId) affectedPublisherIds.add(pkg.ownerPublisherId);
+        await ctx.db.patch(pkg._id, { ownerPublisherId: publisherId, updatedAt: now });
+      }
+      if (spec.featured) {
+        await ensureHighlightedSkillBadge(ctx, skill._id, sourcePublisher.linkedUserId, now);
+        await ensureHighlightedPackageBadge(ctx, pkg._id, sourcePublisher.linkedUserId, now);
+      }
+
+      affectedPublisherIds.add(publisherId);
+      seeded.push(spec.handle);
+    }
+
+    for (const publisherId of affectedPublisherIds) {
+      if (!(await ctx.db.get(publisherId))) continue;
+      await ctx.db.patch(publisherId, {
+        ...(await recomputePublisherStats(ctx, publisherId)),
+        updatedAt: now,
+      });
+    }
+
+    return { ok: true as const, seeded };
   },
 });
 
@@ -5061,6 +5204,51 @@ export const getAccountRecreationState: ReturnType<typeof rawInternalMutation> =
               deletedAt: activePublisher.deletedAt ?? null,
             }
           : null,
+      };
+    },
+  });
+
+export const getPrePublicationSkillAttemptState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      attemptId: v.id("publishAttempts"),
+    },
+    handler: async (ctx, args) => {
+      const attempt = await ctx.db.get(args.attemptId);
+      if (!attempt || attempt.kind !== "skill") {
+        return {
+          ok: true as const,
+          attemptExists: Boolean(attempt),
+          skillExists: false,
+          versionExists: false,
+        };
+      }
+
+      const skill = attempt.skillId ? await ctx.db.get(attempt.skillId) : null;
+      const version = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
+
+      return {
+        ok: true as const,
+        attemptExists: true,
+        attempt: {
+          attemptId: attempt._id,
+          status: attempt.status,
+          slug: attempt.slug,
+          version: attempt.version,
+          skillId: attempt.skillId ?? null,
+          skillVersionId: attempt.skillVersionId ?? null,
+          filesCount: attempt.files.length,
+          hasSkillInsertArgs: attempt.skillInsertArgs !== undefined,
+          hasFollowup: attempt.followup !== undefined,
+          trufflehogStatus: attempt.checks.trufflehog.status,
+          trufflehogRedactedFindingCount: attempt.checks.trufflehog.redactedFindings?.length ?? 0,
+          clawscanStatus: attempt.checks.clawscan.status,
+          blockedAt: attempt.blockedAt ?? null,
+        },
+        skillExists: Boolean(skill),
+        skillLatestVersionId: skill?.latestVersionId ?? null,
+        versionExists: Boolean(version),
+        versionPublicationStatus: version?.publicationStatus ?? null,
       };
     },
   });

@@ -118,6 +118,22 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
   });
 
+  it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const categorySidebar = screen.getByLabelText("Skill categories");
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(15);
+    expect(categorySidebar.textContent).toContain("Development");
+    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
+
+    fireEvent.click(
+      categorySidebar.querySelector('button[aria-pressed="false"]') as HTMLButtonElement,
+    );
+
+    expect(navigateMock).toHaveBeenCalled();
+  });
+
   it("separates primary views from secondary sort options", async () => {
     render(<SkillsIndex />);
     await act(async () => {});

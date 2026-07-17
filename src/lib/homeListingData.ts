@@ -1,12 +1,12 @@
+import { PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
-import { isSkillOfficial } from "./badges";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
 import type { PublicSkill, PublicUser } from "./publicUser";
 
 export type HomeListingKind = "skills" | "plugins";
-export type HomeListingTab = "popular" | "trending" | "officials" | "new";
+export type HomeListingTab = "featured" | "popular" | "trending";
 
 export type HomeSkillListingEntry = {
   skill: PublicSkill;
@@ -18,18 +18,29 @@ export type HomeListingCacheEntry =
   | { kind: "skills"; items: HomeSkillListingEntry[]; hasMore: boolean }
   | { kind: "plugins"; items: PackageListItem[]; hasMore: boolean };
 
-export type HomeListingInitialData = {
-  kind: "skills";
-  tab: "popular";
+type HomeListingInitialDataBase = {
+  tab: HomeListingTab;
   categorySlugs: [];
   fetchLimit: typeof HOME_LISTING_PAGE_SIZE;
-  items: HomeSkillListingEntry[];
   hasMore: boolean;
+  featuredAvailability: Record<HomeListingKind, boolean>;
 };
+
+export type HomeListingInitialData =
+  | (HomeListingInitialDataBase & {
+      kind: "skills";
+      items: HomeSkillListingEntry[];
+    })
+  | (HomeListingInitialDataBase & {
+      kind: "plugins";
+      items: PackageListItem[];
+    });
 
 export const HOME_LISTING_PAGE_SIZE = 20;
 
 const PLUGIN_CATALOG_PAGE_LIMIT = 100;
+// Highlighted skill responses are cursorless, so request the backend's full public maximum.
+const FEATURED_SKILL_LIST_LIMIT = 200;
 
 export function homeListingCacheKey({
   kind,
@@ -43,28 +54,6 @@ export function homeListingCacheKey({
   fetchLimit: number;
 }) {
   return ["listing", kind, tab, categoryCacheKey(categorySlugs), fetchLimit].join(":");
-}
-
-export function filterHomeSkillsByTab(entries: HomeSkillListingEntry[], tab: HomeListingTab) {
-  if (tab === "officials") {
-    return entries.filter((entry) => isSkillOfficial(entry.skill));
-  }
-  return entries;
-}
-
-export function filterHomePluginsByTab(items: PackageListItem[], tab: HomeListingTab) {
-  if (tab === "officials") {
-    return items.filter((item) => item.isOfficial);
-  }
-  return items;
-}
-
-export function isNewHomeSkillEligible(skill: PublicSkill) {
-  return (
-    !skill.isSuspicious &&
-    skill.githubScanStatus !== "pending" &&
-    skill.githubScanStatus !== "suspicious"
-  );
 }
 
 export function itemMatchesAnyHomeCategory(
@@ -98,14 +87,8 @@ export function uniqueHomePlugins(items: PackageListItem[]) {
   return [...byName.values()];
 }
 
-export function sortHomeSkillEntries(entries: HomeSkillListingEntry[], tab: HomeListingTab) {
+function sortHomeSkillEntries(entries: HomeSkillListingEntry[]) {
   return [...entries].sort((left, right) => {
-    if (tab === "new") {
-      return (
-        (right.skill.updatedAt ?? right.skill.createdAt ?? right.skill._creationTime ?? 0) -
-        (left.skill.updatedAt ?? left.skill.createdAt ?? left.skill._creationTime ?? 0)
-      );
-    }
     return (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0);
   });
 }
@@ -129,6 +112,7 @@ export async function fetchHomeSkillListing(
     };
   }
 
+  const requestLimit = tab === "featured" ? FEATURED_SKILL_LIST_LIMIT : numItems;
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
     categoriesToFetch.map(async (categorySlug) => {
@@ -136,21 +120,19 @@ export async function fetchHomeSkillListing(
       let cursor: string | null | undefined;
       let hasMore = false;
 
-      while (page.length < numItems) {
+      while (page.length < requestLimit) {
         const result = await convexHttp.query(api.skills.listPublicPageV4, {
           cursor: cursor ?? undefined,
-          numItems: numItems - page.length,
-          sort: tab === "new" ? "newest" : "downloads",
+          numItems: requestLimit - page.length,
+          sort: "downloads",
           dir: "desc",
-          officialFirst: tab === "officials" ? true : undefined,
+          highlightedOnly: tab === "featured" ? true : undefined,
           categorySlug: categorySlug ?? undefined,
         });
         if (Array.isArray(result)) break;
 
         const resultPage = ((result as { page?: HomeSkillListingEntry[] }).page ?? []).filter(
-          (entry) =>
-            skillMatchesAnyHomeCategory(entry.skill, categorySlugs) &&
-            (tab !== "new" || isNewHomeSkillEligible(entry.skill)),
+          (entry) => skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
         );
         page.push(...resultPage);
 
@@ -164,11 +146,9 @@ export async function fetchHomeSkillListing(
     }),
   );
   const pages = results.flatMap((result) => result.page);
-  const sorted = sortHomeSkillEntries(
-    filterHomeSkillsByTab(uniqueHomeSkillEntries(pages), tab),
-    tab,
-  );
-  const hasMore = sorted.length > numItems || results.some((result) => result.hasMore);
+  const sorted = sortHomeSkillEntries(uniqueHomeSkillEntries(pages));
+  const hasMore =
+    sorted.length > numItems || (tab !== "featured" && results.some((result) => result.hasMore));
   const page = sorted.slice(0, numItems);
   return { page, hasMore };
 }
@@ -179,29 +159,47 @@ export async function fetchHomePluginListing(
   limit: number,
   signal?: AbortSignal,
 ) {
-  const openClawOfficials = tab === "officials";
-  const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
+  const featured = tab === "featured";
+  const trending = tab === "trending";
+  const usesGlobalTrendingFilter = trending && categorySlugs.length > 1;
+  const categoriesToFetch = usesGlobalTrendingFilter
+    ? [null]
+    : categorySlugs.length > 0
+      ? categorySlugs
+      : [null];
   const results = await Promise.all(
     categoriesToFetch.map(async (categorySlug) => {
       const items: PackageListItem[] = [];
       let cursor: string | null | undefined;
       let hasMore = false;
+      let trendingCandidatesScanned = 0;
 
       while (items.length < limit) {
         const result = await fetchPluginCatalog({
           category: categorySlug ?? undefined,
           cursor: cursor ?? undefined,
-          isOfficial: openClawOfficials ? true : undefined,
-          excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
-          sort: tab === "new" ? "updated" : "downloads",
-          limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
+          featured: featured ? true : undefined,
+          sort: trending ? "trending" : "downloads",
+          limit: usesGlobalTrendingFilter
+            ? PLUGIN_CATALOG_PAGE_LIMIT
+            : Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
           signal,
         });
+        trendingCandidatesScanned += result.items.length;
         items.push(
           ...result.items.filter((item) => itemMatchesAnyHomeCategory(item, categorySlugs)),
         );
 
         hasMore = result.nextCursor != null;
+        if (
+          usesGlobalTrendingFilter &&
+          trendingCandidatesScanned >= PACKAGE_TRENDING_LEADERBOARD_LIMIT &&
+          result.nextCursor
+        ) {
+          throw new Error(
+            `Trending plugin feed exceeded ${PACKAGE_TRENDING_LEADERBOARD_LIMIT}-item contract`,
+          );
+        }
         if (!result.nextCursor || result.nextCursor === cursor) break;
         cursor = result.nextCursor;
       }
@@ -210,10 +208,7 @@ export async function fetchHomePluginListing(
     }),
   );
   let items = uniqueHomePlugins(results.flatMap((result) => result.items));
-  items = filterHomePluginsByTab(items, tab);
-  if (tab === "new") {
-    items.sort((a, b) => b.updatedAt - a.updatedAt);
-  } else if (tab === "popular" || openClawOfficials) {
+  if (tab === "popular" || featured) {
     items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
   }
   const page = items.slice(0, limit);
@@ -223,15 +218,49 @@ export async function fetchHomePluginListing(
   };
 }
 
+export async function fetchHomeFeaturedAvailability(kind: HomeListingKind, signal?: AbortSignal) {
+  if (kind === "skills") {
+    const result = await convexHttp.query(api.skills.listPublicPageV4, {
+      numItems: 1,
+      sort: "downloads",
+      dir: "desc",
+      highlightedOnly: true,
+    });
+    return (
+      !Array.isArray(result) &&
+      ((result as { page?: HomeSkillListingEntry[] }).page?.length ?? 0) > 0
+    );
+  }
+
+  const result = await fetchPluginCatalog({
+    featured: true,
+    sort: "downloads",
+    limit: 1,
+    signal,
+  });
+  return result.items.length > 0;
+}
+
 export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
-  const result = await fetchHomeSkillListing("popular", [], HOME_LISTING_PAGE_SIZE);
+  const [featuredPlugins, hasFeaturedSkills] = await Promise.all([
+    fetchHomePluginListing("featured", [], HOME_LISTING_PAGE_SIZE),
+    fetchHomeFeaturedAvailability("skills").catch(() => false),
+  ]);
+  const hasFeaturedPlugins = featuredPlugins.items.length > 0;
+  const result = hasFeaturedPlugins
+    ? featuredPlugins
+    : await fetchHomePluginListing("popular", [], HOME_LISTING_PAGE_SIZE);
   return {
-    kind: "skills",
-    tab: "popular",
+    kind: "plugins",
+    tab: hasFeaturedPlugins ? "featured" : "popular",
     categorySlugs: [],
     fetchLimit: HOME_LISTING_PAGE_SIZE,
-    items: result.page,
+    items: result.items,
     hasMore: result.hasMore,
+    featuredAvailability: {
+      plugins: hasFeaturedPlugins,
+      skills: hasFeaturedSkills,
+    },
   };
 }
 

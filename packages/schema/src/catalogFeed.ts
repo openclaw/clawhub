@@ -31,8 +31,12 @@ const CatalogFeedEntryBaseSchema = {
   "+": "reject",
   id: "string",
   title: "string",
+  description: "string?",
+  icon: "string?",
   version: "string",
   state: CatalogFeedStateSchema,
+  // Additive v1 metadata: existing hosted-feed consumers ignore unknown entry fields.
+  featured: "boolean?",
   publisher: {
     "+": "reject",
     id: "string",
@@ -114,8 +118,11 @@ export function serializeCatalogFeed(feed: CatalogFeed): string {
       type: entry.type,
       id: entry.id,
       title: entry.title,
+      ...(entry.description === undefined ? {} : { description: entry.description }),
+      ...(entry.icon === undefined ? {} : { icon: entry.icon }),
       version: entry.version,
       state: entry.state,
+      ...(entry.featured === undefined ? {} : { featured: entry.featured }),
       publisher: {
         id: entry.publisher.id,
         trust: entry.publisher.trust,

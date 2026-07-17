@@ -28,6 +28,7 @@ const usersV1InternalRefs = internal as unknown as {
   users: {
     getBanAppealContextByGitHubProviderAccountIdInternal: unknown;
     getByHandleInternal: unknown;
+    liftModerationHoldInternal: unknown;
     recordStaffEmailAttemptAuditInternal: unknown;
     recordStaffEmailSentAuditInternal: unknown;
     reclassifyBanInternal: unknown;
@@ -86,6 +87,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   if (
     action !== "ban" &&
     action !== "unban" &&
+    action !== "lift-moderation-hold" &&
     action !== "role" &&
     action !== "reclassify-ban" &&
     action !== "ban-appeal-unban" &&
@@ -119,6 +121,11 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminReclassifyBan(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "lift-moderation-hold") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
   }
 
   if (action === "reclaim") {
@@ -238,6 +245,38 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
       return json(result, 200, rate.headers);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unban failed";
+      if (message.toLowerCase().includes("forbidden")) {
+        return text("Forbidden", 403, rate.headers);
+      }
+      if (message.toLowerCase().includes("not found")) {
+        return text(message, 404, rate.headers);
+      }
+      return text(message, 400, rate.headers);
+    }
+  }
+
+  if (action === "lift-moderation-hold") {
+    const reason = reasonRaw.length > 0 ? reasonRaw : undefined;
+    if (!reason) {
+      return text("Missing reason", 400, rate.headers);
+    }
+    if (reason.length > 500) {
+      return text("Reason too long (max 500 chars)", 400, rate.headers);
+    }
+    try {
+      const result = await runUsersV1MutationRef<{
+        ok: true;
+        alreadyCleared: boolean;
+        restoredSkills: number;
+        scheduledSkills: boolean;
+      }>(ctx, usersV1InternalRefs.users.liftModerationHoldInternal, {
+        actorUserId,
+        targetUserId,
+        reason,
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Moderation hold lift failed";
       if (message.toLowerCase().includes("forbidden")) {
         return text("Forbidden", 403, rate.headers);
       }

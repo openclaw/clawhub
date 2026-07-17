@@ -497,6 +497,8 @@ const internalRefs = internal as unknown as {
     markPackageInspectorFindingsEmailedInternal: unknown;
     claimPackageInspectorScanBatchInternal: unknown;
     ingestPackageInspectorScanResultsInternal: unknown;
+    discardPendingPackagePublicationInternal: unknown;
+    publishPendingReleaseInternal: unknown;
   };
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
@@ -519,6 +521,7 @@ const internalRefs = internal as unknown as {
   };
   publishAttempts: {
     createPackagePublishAttemptInternal: unknown;
+    findExistingPublishAttemptForArtifactInternal: unknown;
     claimPackagePublishAttemptForFinalizationInternal: unknown;
     releasePackagePublishAttemptFinalizationClaimInternal: unknown;
     recordPackagePublishAttemptFinalizedInternal: unknown;
@@ -1121,6 +1124,22 @@ function resolvePublicPackageScanStatus(
   return pkg.scanStatus;
 }
 
+function isPublishedPackageRelease(
+  release: Doc<"packageReleases"> | null | undefined,
+): release is Doc<"packageReleases"> {
+  return Boolean(
+    release &&
+    !release.softDeletedAt &&
+    (release.publicationStatus === undefined || release.publicationStatus === "published"),
+  );
+}
+
+function hasNoPublishedPackageVersions(
+  pkg: Pick<Doc<"packages">, "latestReleaseId" | "latestVersionSummary" | "stats">,
+) {
+  return !pkg.latestReleaseId && !pkg.latestVersionSummary && (pkg.stats?.versions ?? 0) <= 0;
+}
+
 function normalizePublicPackageSourcePath(sourcePath: unknown) {
   if (typeof sourcePath !== "string") return undefined;
   const trimmed = sourcePath.trim();
@@ -1151,10 +1170,18 @@ function toPublicPackage(
   latestRelease?: Doc<"packageReleases"> | null,
 ): PublicPackageDoc | null {
   if (!pkg || pkg.softDeletedAt) return null;
+  if (hasNoPublishedPackageVersions(pkg)) return null;
+  if (
+    latestRelease !== undefined &&
+    latestRelease &&
+    (latestRelease.publicationStatus === "pending" || latestRelease.publicationStatus === "blocked")
+  ) {
+    return null;
+  }
   const latestVersion =
     latestRelease === undefined
       ? (pkg.latestVersionSummary?.version ?? null)
-      : latestRelease && !latestRelease.softDeletedAt
+      : isPublishedPackageRelease(latestRelease)
         ? latestRelease.version
         : null;
   const scanStatus = resolvePublicPackageScanStatus(pkg, latestRelease);
@@ -1178,7 +1205,7 @@ function toPublicPackage(
     artifact:
       latestRelease === undefined
         ? pkg.latestVersionSummary?.artifact
-        : latestRelease && !latestRelease.softDeletedAt
+        : isPublishedPackageRelease(latestRelease)
           ? packageArtifactSummary(latestRelease)
           : undefined,
     scanStatus,
@@ -1201,6 +1228,50 @@ function toPublicPackageRelease(release: Doc<"packageReleases">) {
       sourcePath,
     },
   };
+}
+
+async function paginatePublishedPackageReleases(
+  ctx: QueryCtx,
+  packageId: Id<"packages">,
+  paginationOpts: { cursor: string | null; numItems: number },
+) {
+  const targetCount = Math.max(1, Math.min(paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  const page: Doc<"packageReleases">[] = [];
+  let cursor = paginationOpts.cursor;
+  let isDone = false;
+  let continueCursor = "";
+  let remainingScanBudget = Math.max(
+    targetCount,
+    Math.min(
+      MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS,
+      targetCount * MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
+    ),
+  );
+
+  for (let scanPages = 0; scanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES; scanPages += 1) {
+    if (page.length >= targetCount || isDone || remainingScanBudget <= 0) break;
+    const pageSize = Math.min(remainingScanBudget, targetCount - page.length);
+    const result = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_active_created", (q) =>
+        q.eq("packageId", packageId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: pageSize });
+    remainingScanBudget -= pageSize;
+    cursor = result.continueCursor;
+    continueCursor = result.continueCursor;
+    isDone = result.isDone;
+    for (const release of result.page) {
+      if (isPublishedPackageRelease(release)) {
+        page.push(release);
+        if (page.length >= targetCount) break;
+      }
+    }
+    if (result.page.length === 0) break;
+  }
+
+  return { page, isDone, continueCursor: isDone ? "" : continueCursor };
 }
 
 function packageArtifactSummary(
@@ -2677,10 +2748,9 @@ export const getByName = query({
     );
     return {
       package: publicPackage,
-      latestRelease:
-        latestRelease && !latestRelease.softDeletedAt
-          ? toPublicPackageRelease(latestRelease)
-          : null,
+      latestRelease: isPublishedPackageRelease(latestRelease)
+        ? toPublicPackageRelease(latestRelease)
+        : null,
       owner,
     };
   },
@@ -2908,10 +2978,9 @@ export const getByNameForStaff = query({
 
     return {
       package: pkg,
-      latestRelease:
-        latestRelease && !latestRelease.softDeletedAt
-          ? toPublicPackageRelease(latestRelease)
-          : null,
+      latestRelease: isPublishedPackageRelease(latestRelease)
+        ? toPublicPackageRelease(latestRelease)
+        : null,
       owner,
       highlighted: highlighted
         ? {
@@ -2942,10 +3011,9 @@ export const getByNameForViewerInternal = internalQuery({
     );
     return {
       package: publicPackage,
-      latestRelease:
-        latestRelease && !latestRelease.softDeletedAt
-          ? toPublicPackageRelease(latestRelease)
-          : null,
+      latestRelease: isPublishedPackageRelease(latestRelease)
+        ? toPublicPackageRelease(latestRelease)
+        : null,
       owner,
     };
   },
@@ -2960,13 +3028,7 @@ export const listVersions = query({
     const viewerUserId = await getOptionalViewerUserId(ctx);
     const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
-    const result = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_active_created", (q) =>
-        q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate(args.paginationOpts);
+    const result = await paginatePublishedPackageReleases(ctx, pkg._id, args.paginationOpts);
     return {
       ...result,
       page: result.page.map(toPublicPackageRelease),
@@ -2983,13 +3045,7 @@ export const listVersionsForViewerInternal = internalQuery({
   handler: async (ctx, args) => {
     const pkg = await getReadablePackageByName(ctx, args.name, args.viewerUserId);
     if (!pkg) return { page: [], isDone: true, continueCursor: "" };
-    const result = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_active_created", (q) =>
-        q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate(args.paginationOpts);
+    const result = await paginatePublishedPackageReleases(ctx, pkg._id, args.paginationOpts);
     return {
       ...result,
       page: result.page.map(toPublicPackageRelease),
@@ -3012,7 +3068,7 @@ export const getVersionByName = query({
         q.eq("packageId", pkg._id).eq("version", args.version),
       )
       .unique();
-    if (!release || release.softDeletedAt) return null;
+    if (!isPublishedPackageRelease(release)) return null;
     const latestRelease =
       pkg.latestReleaseId === release._id
         ? release
@@ -3043,7 +3099,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
         q.eq("packageId", pkg._id).eq("version", args.version),
       )
       .unique();
-    if (!release || release.softDeletedAt) return null;
+    if (!isPublishedPackageRelease(release)) return null;
     const latestRelease =
       pkg.latestReleaseId === release._id
         ? release
@@ -3074,7 +3130,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
         q.eq("packageId", pkg._id).eq("version", args.version),
       )
       .unique();
-    if (!release || release.softDeletedAt) return null;
+    if (!isPublishedPackageRelease(release)) return null;
     const latestRelease =
       pkg.latestReleaseId === release._id
         ? release
@@ -3194,32 +3250,31 @@ export const listAuditPage = query({
           verificationTier: pkg.verification?.tier ?? null,
         },
         owner,
-        latestRelease:
-          latestRelease && !latestRelease.softDeletedAt
-            ? {
-                version: latestRelease.version,
-                createdAt: latestRelease.createdAt,
-                vtAnalysis: latestRelease.vtAnalysis,
-                llmAnalysis: latestRelease.llmAnalysis,
-                staticScan: latestRelease.staticScan
-                  ? {
-                      status: latestRelease.staticScan.status,
-                      reasonCodes: latestRelease.staticScan.reasonCodes,
-                      findings: (latestRelease.staticScan.findings ?? []).map((finding) => ({
-                        code: finding.code,
-                        severity: finding.severity,
-                        file: finding.file,
-                        line: finding.line,
-                        message: finding.message,
-                        evidence: "",
-                      })),
-                      summary: latestRelease.staticScan.summary,
-                      engineVersion: latestRelease.staticScan.engineVersion,
-                      checkedAt: latestRelease.staticScan.checkedAt,
-                    }
-                  : null,
-              }
-            : null,
+        latestRelease: isPublishedPackageRelease(latestRelease)
+          ? {
+              version: latestRelease.version,
+              createdAt: latestRelease.createdAt,
+              vtAnalysis: latestRelease.vtAnalysis,
+              llmAnalysis: latestRelease.llmAnalysis,
+              staticScan: latestRelease.staticScan
+                ? {
+                    status: latestRelease.staticScan.status,
+                    reasonCodes: latestRelease.staticScan.reasonCodes,
+                    findings: (latestRelease.staticScan.findings ?? []).map((finding) => ({
+                      code: finding.code,
+                      severity: finding.severity,
+                      file: finding.file,
+                      line: finding.line,
+                      message: finding.message,
+                      evidence: "",
+                    })),
+                    summary: latestRelease.staticScan.summary,
+                    engineVersion: latestRelease.staticScan.engineVersion,
+                    checkedAt: latestRelease.staticScan.checkedAt,
+                  }
+                : null,
+            }
+          : null,
       });
     }
 
@@ -4353,7 +4408,7 @@ export const findPackagePublishResultInternal = internalQuery({
         q.eq("packageId", pkg._id).eq("version", args.version),
       )
       .unique();
-    if (!release || release.softDeletedAt || release.integritySha256 !== args.integritySha256) {
+    if (!isPublishedPackageRelease(release) || release.integritySha256 !== args.integritySha256) {
       return null;
     }
     return { ok: true as const, packageId: pkg._id, releaseId: release._id };
@@ -7743,23 +7798,54 @@ async function publishPackageImpl(
     ) ?? [];
 
   if (options.stagePrePublicationChecks) {
+    let existingRelease: Doc<"packageReleases"> | null = null;
     if (existingPackage) {
-      const existingRelease = await runQueryRef<Doc<"packageReleases"> | null>(
+      existingRelease = await runQueryRef<Doc<"packageReleases"> | null>(
         ctx,
         internalRefs.packages.getReleaseByPackageAndVersionInternal,
         { packageId: existingPackage._id, version },
       );
-      const canReuseExistingRelease =
-        packageInsertArgs.allowExistingRelease &&
-        existingRelease &&
-        !existingRelease.softDeletedAt &&
-        existingRelease.integritySha256 === integritySha256;
-      if (existingRelease && !canReuseExistingRelease) {
+    }
+    const existingAttempt = await runQueryRef<null | { attemptId: Id<"publishAttempts"> }>(
+      ctx,
+      internalRefs.publishAttempts.findExistingPublishAttemptForArtifactInternal,
+      {
+        kind: "package",
+        slug: name,
+        version,
+      },
+    );
+    if (existingAttempt) {
+      throw new ConvexError(
+        `Version ${version} already exists. Increment the version number and try again.`,
+      );
+    }
+    if (existingPackage && existingRelease) {
+      if (!existingRelease.softDeletedAt && existingRelease.publicationStatus === "pending") {
+        await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
+          packageId: existingPackage._id,
+          releaseId: existingRelease._id,
+          createdNewParent: hasNoPublishedPackageVersions(existingPackage),
+        });
         throw new ConvexError(
-          `Version ${version} already exists. Increment the version number and try again.`,
+          `Previous pending publish for ${version} did not finish creating security checks. It was cleaned up; retry the publish.`,
         );
       }
+      throw new ConvexError(
+        `Version ${version} already exists. Increment the version number and try again.`,
+      );
     }
+
+    const pendingResult = await runMutationRef<{
+      ok: true;
+      packageId: Id<"packages">;
+      releaseId: Id<"packageReleases">;
+      publicationStatus?: "pending" | "published";
+      createdNewParent?: boolean;
+    }>(ctx, internalRefs.packages.insertReleaseInternal, {
+      ...packageInsertArgs,
+      publicationStatus: "pending",
+    });
 
     const staged = await runMutationRef<{
       attemptId: Id<"publishAttempts">;
@@ -7769,6 +7855,9 @@ async function publishPackageImpl(
       userId: actorUserId,
       ownerUserId,
       ownerPublisherId,
+      packageId: pendingResult.packageId,
+      packageReleaseId: pendingResult.releaseId,
+      createdNewParent: pendingResult.createdNewParent,
       name,
       displayName,
       version,
@@ -7782,7 +7871,8 @@ async function publishPackageImpl(
       }),
       artifactFingerprint: integritySha256,
       files,
-      packageInsertArgs: stripUndefinedForStoredAttempt(packageInsertArgs),
+      clawpackStorageId: packageInsertArgs.clawpackStorageId,
+      scanContext: buildPackagePublishAttemptScanContext(packageInsertArgs),
       packageFollowup: stripUndefinedForStoredAttempt({
         ownerUserId,
         ownerPublisherId,
@@ -7819,6 +7909,13 @@ async function publishPackageImpl(
               }
             : undefined,
       }),
+    }).catch(async (error) => {
+      await runMutationRef(ctx, internalRefs.packages.discardPendingPackagePublicationInternal, {
+        packageId: pendingResult.packageId,
+        releaseId: pendingResult.releaseId,
+        createdNewParent: pendingResult.createdNewParent,
+      });
+      throw error;
     });
     if (auth.kind === "github-actions") {
       await runMutationRef(ctx, internalRefs.packagePublishTokens.revokeInternal, {
@@ -7833,6 +7930,9 @@ async function publishPackageImpl(
     return {
       ok: true as const,
       status: "pending" as const,
+      packageId: pendingResult.packageId,
+      releaseId: pendingResult.releaseId,
+      publicationStatus: "pending" as const,
       attemptId: staged.attemptId,
       packageName: name,
       version,
@@ -7994,7 +8094,9 @@ export const finalizePackagePublishAttemptInternal = internalAction({
       | {
           status: "claimed";
           attemptId: Id<"publishAttempts">;
-          packageInsertArgs: unknown;
+          packageId?: Id<"packages">;
+          releaseId?: Id<"packageReleases">;
+          packageInsertArgs?: unknown;
           packageFollowup: unknown;
         }
       | {
@@ -8011,12 +8113,21 @@ export const finalizePackagePublishAttemptInternal = internalAction({
 
     let publishResult: { ok: true; packageId: Id<"packages">; releaseId: Id<"packageReleases"> };
     try {
-      publishResult = await runMutationRef(
-        ctx,
-        internalRefs.packages.insertReleaseInternal,
-        claim.packageInsertArgs,
-      );
+      publishResult =
+        claim.releaseId !== undefined
+          ? await runMutationRef(ctx, internalRefs.packages.publishPendingReleaseInternal, {
+              releaseId: claim.releaseId,
+            })
+          : await runMutationRef(
+              ctx,
+              internalRefs.packages.insertReleaseInternal,
+              claim.packageInsertArgs,
+            );
     } catch (error) {
+      if (claim.releaseId !== undefined) {
+        await releasePackagePublishAttemptFinalizationClaim(ctx, claim.attemptId, claimId, error);
+        throw error;
+      }
       const insertArgs = claim.packageInsertArgs as {
         name?: string;
         version?: string;
@@ -8125,6 +8236,28 @@ function stripUndefinedForStoredAttempt(value: unknown): unknown {
     if (nested !== undefined) result[key] = stripUndefinedForStoredAttempt(nested);
   }
   return result;
+}
+
+function buildPackagePublishAttemptScanContext(insertArgs: Record<string, unknown>) {
+  const verification =
+    insertArgs.verification &&
+    typeof insertArgs.verification === "object" &&
+    !Array.isArray(insertArgs.verification)
+      ? (insertArgs.verification as Record<string, unknown>)
+      : {};
+  return stripUndefinedForStoredAttempt({
+    trustedOpenClawPlugin: verification.trustedOpenClawPlugin === true ? true : undefined,
+    release: {
+      staticScan: insertArgs.staticScan,
+      pluginManifestSummary: insertArgs.pluginManifestSummary,
+      verification: insertArgs.verification,
+      artifactKind: insertArgs.artifactKind,
+      npmIntegrity: insertArgs.npmIntegrity,
+      npmShasum: insertArgs.npmShasum,
+      npmTarballName: insertArgs.npmTarballName,
+      source: insertArgs.source,
+    },
+  });
 }
 
 function buildPackageFinalizationClaimId() {
@@ -9048,6 +9181,7 @@ async function listPackageInspectorScanBatch(
   const items: PackageInspectorScanBatchItem[] = [];
   for (const release of page.page) {
     if (items.length >= batchSize) break;
+    if (!isPublishedPackageRelease(release)) continue;
     const pkg = await ctx.db.get(release.packageId);
     if (
       !pkg ||
@@ -9137,7 +9271,7 @@ export const getPackageInspectorArtifactInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const release = await ctx.db.get(args.releaseId);
-    if (!release || release.softDeletedAt) return null;
+    if (!isPublishedPackageRelease(release)) return null;
     const pkg = await ctx.db.get(release.packageId);
     if (
       !pkg ||
@@ -9232,6 +9366,190 @@ async function sendResendEmail(args: { to: string; subject: string; text: string
   }
 }
 
+function pendingPackagePublicationMetadata(release: Doc<"packageReleases">) {
+  return release.pendingPublication &&
+    typeof release.pendingPublication === "object" &&
+    !Array.isArray(release.pendingPublication)
+    ? (release.pendingPublication as Record<string, unknown>)
+    : {};
+}
+
+function stringPendingField(metadata: Record<string, unknown>, field: string, fallback?: string) {
+  const value = metadata[field];
+  return typeof value === "string" ? value : fallback;
+}
+
+function booleanPendingField(metadata: Record<string, unknown>, field: string, fallback: boolean) {
+  const value = metadata[field];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function stringArrayPendingField(metadata: Record<string, unknown>, field: string) {
+  const value = metadata[field];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+}
+
+export const discardPendingPackagePublicationInternal = internalMutation({
+  args: {
+    packageId: v.id("packages"),
+    releaseId: v.id("packageReleases"),
+    createdNewParent: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (
+      !release ||
+      release.packageId !== args.packageId ||
+      release.publicationStatus !== "pending"
+    ) {
+      return { deleted: false };
+    }
+
+    const storageIds = new Set<Id<"_storage">>();
+    for (const file of release.files ?? []) {
+      if (typeof file.storageId === "string") {
+        storageIds.add(file.storageId as Id<"_storage">);
+      }
+    }
+    if (typeof release.clawpackStorageId === "string") {
+      storageIds.add(release.clawpackStorageId as Id<"_storage">);
+    }
+
+    await ctx.db.delete(release._id);
+    await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
+
+    let parentDeleted = false;
+    if (args.createdNewParent) {
+      const pkg = await ctx.db.get(args.packageId);
+      if (pkg && !pkg.latestReleaseId) {
+        const remainingReleases = await ctx.db
+          .query("packageReleases")
+          .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+          .take(1);
+        if (remainingReleases.length === 0) {
+          await ctx.db.delete(args.packageId);
+          parentDeleted = true;
+        }
+      }
+    }
+
+    return { deleted: true, parentDeleted };
+  },
+});
+
+export const publishPendingReleaseInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.softDeletedAt) {
+      throw new ConvexError("Pending package release not found");
+    }
+    if (release.publicationStatus === undefined || release.publicationStatus === "published") {
+      return {
+        ok: true as const,
+        packageId: release.packageId,
+        releaseId: release._id,
+      };
+    }
+    if (release.publicationStatus !== "pending") {
+      throw new ConvexError(`Package release is ${release.publicationStatus}, not pending.`);
+    }
+
+    const pkg = await ctx.db.get(release.packageId);
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Package not found");
+    }
+
+    const now = Date.now();
+    const metadata = pendingPackagePublicationMetadata(release);
+    const effectiveTags = stringArrayPendingField(metadata, "tags") ?? release.distTags ?? [];
+    const shouldPromoteLatest = effectiveTags.includes("latest");
+    const scanStatus = resolvePackageReleaseScanStatus(release);
+    const releaseVerification = release.verification
+      ? { ...release.verification, scanStatus }
+      : release.verification;
+    const publishedRelease = {
+      ...release,
+      publicationStatus: "published" as const,
+      pendingPublication: undefined,
+      verification: releaseVerification,
+    } as Doc<"packageReleases">;
+
+    const priorReleases = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+      .collect();
+
+    const nextTags = { ...pkg.tags };
+    for (const tag of effectiveTags) nextTags[tag] = release._id;
+    for (const priorRelease of priorReleases) {
+      if (priorRelease._id === release._id || !isPublishedPackageRelease(priorRelease)) continue;
+      const nextDistTags = (priorRelease.distTags ?? []).filter(
+        (tag) => !effectiveTags.includes(tag),
+      );
+      if (nextDistTags.length === (priorRelease.distTags ?? []).length) continue;
+      await ctx.db.patch(priorRelease._id, { distTags: nextDistTags });
+    }
+
+    await ctx.db.patch(release._id, {
+      publicationStatus: "published",
+      pendingPublication: undefined,
+      verification: releaseVerification,
+    });
+
+    await ctx.db.patch(pkg._id, {
+      displayName: stringPendingField(metadata, "displayName", pkg.displayName),
+      ownerUserId: pkg.ownerUserId,
+      ownerPublisherId: pkg.ownerPublisherId,
+      family: pkg.family,
+      summary: shouldPromoteLatest ? release.summary : pkg.summary,
+      icon: shouldPromoteLatest ? release.icon : pkg.icon,
+      categories: shouldPromoteLatest
+        ? stringArrayPendingField(metadata, "categories")
+        : pkg.categories,
+      topics: shouldPromoteLatest ? stringArrayPendingField(metadata, "topics") : pkg.topics,
+      ...(shouldPromoteLatest
+        ? {
+            inferredCategories: undefined,
+            inferredTopics: undefined,
+            inferredFromReleaseId: undefined,
+            inferredCategoryConfidence: undefined,
+            inferredTopicConfidence: undefined,
+            inferredClassifierVersion: undefined,
+            inferredTopicClassifierVersion: undefined,
+            inferredInputHash: undefined,
+            inferredTopicInputHash: undefined,
+            inferredAt: undefined,
+          }
+        : {}),
+      sourceRepo: stringPendingField(metadata, "sourceRepo", release.sourceRepo),
+      runtimeId: shouldPromoteLatest ? release.runtimeId : pkg.runtimeId,
+      channel: stringPendingField(metadata, "channel", pkg.channel) as Doc<"packages">["channel"],
+      isOfficial: booleanPendingField(metadata, "isOfficial", pkg.isOfficial),
+      latestReleaseId: shouldPromoteLatest ? release._id : pkg.latestReleaseId,
+      latestVersionSummary: shouldPromoteLatest
+        ? packageLatestSummaryFromRelease(publishedRelease)
+        : pkg.latestVersionSummary,
+      tags: nextTags,
+      compatibility: shouldPromoteLatest ? release.compatibility : pkg.compatibility,
+      verification: shouldPromoteLatest ? releaseVerification : pkg.verification,
+      scanStatus: shouldPromoteLatest ? scanStatus : pkg.scanStatus,
+      stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
+      updatedAt: now,
+    });
+
+    return {
+      ok: true as const,
+      packageId: pkg._id,
+      releaseId: release._id,
+    };
+  },
+});
+
 export const insertReleaseInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -9257,6 +9575,7 @@ export const insertReleaseInternal = internalMutation({
     displayName: v.string(),
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     version: v.string(),
+    publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
     changelog: v.string(),
     icon: v.optional(v.string()),
     tags: v.array(v.string()),
@@ -9302,6 +9621,8 @@ export const insertReleaseInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const publicationStatus = args.publicationStatus ?? "published";
+    const pendingPublication = publicationStatus === "pending";
     const prePublicationScanStatus = args.llmAnalysis
       ? normalizePackageScanStatus(args.llmAnalysis.verdict ?? args.llmAnalysis.status)
       : undefined;
@@ -9420,6 +9741,7 @@ export const insertReleaseInternal = internalMutation({
       }
     }
 
+    const createdNewParent = !existing;
     const pkgId =
       existing?._id ??
       (await ctx.db.insert("packages", {
@@ -9498,6 +9820,24 @@ export const insertReleaseInternal = internalMutation({
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,
       version: args.version,
+      publicationStatus,
+      pendingPublication: pendingPublication
+        ? {
+            displayName: args.displayName,
+            ownerUserId: args.ownerUserId,
+            ownerPublisherId: args.ownerPublisherId,
+            family: args.family,
+            summary: args.summary,
+            icon: args.icon,
+            categories: args.categories,
+            topics: args.topics,
+            sourceRepo: args.sourceRepo,
+            runtimeId: args.runtimeId,
+            channel: nextChannel,
+            isOfficial: nextIsOfficial,
+            tags: effectiveTags,
+          }
+        : undefined,
       changelog: args.changelog,
       summary: args.summary,
       icon: args.icon,
@@ -9533,6 +9873,15 @@ export const insertReleaseInternal = internalMutation({
 
     const pkg = existing ?? (await ctx.db.get(pkgId));
     if (!pkg) throw new ConvexError("Package insert failed");
+    if (pendingPublication) {
+      return {
+        ok: true as const,
+        packageId: pkgId,
+        releaseId,
+        publicationStatus,
+        createdNewParent,
+      };
+    }
 
     const nextTags = { ...pkg.tags };
     for (const tag of effectiveTags) nextTags[tag] = releaseId;
@@ -10272,23 +10621,52 @@ export const setBatch = mutation({
       throw new ConvexError("Plugin not found");
     }
     const nextBatch = args.batch?.trim() || undefined;
-    const nextHighlighted = nextBatch === "highlighted";
-    const now = Date.now();
+    await setPackageFeaturedForActor(ctx, user, pkg, nextBatch === "highlighted");
+  },
+});
 
-    if (nextHighlighted) {
-      await upsertPackageBadge(ctx, pkg._id, "highlighted", user._id, now);
-    } else {
-      await removePackageBadge(ctx, pkg._id, "highlighted");
+async function setPackageFeaturedForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  pkg: Doc<"packages">,
+  featured: boolean,
+) {
+  const now = Date.now();
+  if (featured) {
+    await upsertPackageBadge(ctx, pkg._id, "highlighted", actor._id, now);
+  } else {
+    await removePackageBadge(ctx, pkg._id, "highlighted");
+  }
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "package.badge.highlighted",
+    targetType: "package",
+    targetId: pkg._id,
+    metadata: { highlighted: featured },
+    createdAt: now,
+  });
+
+  return { ok: true as const, featured, packageId: pkg._id, name: pkg.name };
+}
+
+export const setPackageFeaturedForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    featured: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertModerator(actor);
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+      throw new ConvexError("Plugin not found");
     }
 
-    await ctx.db.insert("auditLogs", {
-      actorUserId: user._id,
-      action: "package.badge.highlighted",
-      targetType: "package",
-      targetId: pkg._id,
-      metadata: { highlighted: nextHighlighted },
-      createdAt: now,
-    });
+    return await setPackageFeaturedForActor(ctx, actor, pkg, args.featured);
   },
 });
 

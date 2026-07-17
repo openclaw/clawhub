@@ -111,7 +111,7 @@ jobs:
       publish_json: ${{ steps.capture.outputs.publish_json }}
       release_id: ${{ steps.capture.outputs.release_id }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ github.sha }}
 
@@ -172,7 +172,7 @@ jobs:
               fh.write(f"ref={workflow_sha}\n")
           PY
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           repository: ${{ steps.clawhub_source.outputs.repository }}
           ref: ${{ steps.clawhub_source.outputs.ref }}
@@ -578,7 +578,7 @@ jobs:
 
       - name: Checkout publish source for plugin inspector
         if: steps.resolve_publish.outputs.inspect_checkout_repository != ''
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.0
         with:
           repository: ${{ steps.resolve_publish.outputs.inspect_checkout_repository }}
           ref: ${{ steps.resolve_publish.outputs.inspect_checkout_ref }}

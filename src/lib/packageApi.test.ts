@@ -463,6 +463,7 @@ describe("fetchPackages", () => {
             files: [],
             pluginManifestSummary: {
               schemaVersion: 1,
+              icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
               compatibility: { pluginApiRange: "^2.0.0" },
               configFields: [
                 {
@@ -493,6 +494,7 @@ describe("fetchPackages", () => {
     const result = await fetchPackageVersion("example-ai-plugin", "1.2.3");
 
     expect(result?.version?.pluginManifestSummary).toMatchObject({
+      icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
       compatibility: { pluginApiRange: "^2.0.0" },
       mcpServers: [{ name: "exampleMcp" }],
       bundledSkills: [expect.objectContaining({ skillMdPath: "skills/research/SKILL.md" })],

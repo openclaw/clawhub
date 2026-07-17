@@ -5,6 +5,7 @@ import {
   claimPrePublicationChecks,
   claimReadyPublishAttemptFinalizationRetryInternal,
   completePendingPublishAttemptChecksInternal,
+  recordSkillPublishAttemptFinalizedInternal,
   releasePackagePublishAttemptFinalizationClaimInternal,
   releaseSkillPublishAttemptFinalizationClaimInternal,
 } from "./publishAttempts";
@@ -36,6 +37,11 @@ const releaseSkillFinalizationHandler = (
 )._handler;
 const releasePackageFinalizationHandler = (
   releasePackagePublishAttemptFinalizationClaimInternal as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
+  }
+)._handler;
+const recordSkillFinalizedHandler = (
+  recordSkillPublishAttemptFinalizedInternal as unknown as {
     _handler: (ctx: unknown, args: unknown) => Promise<unknown>;
   }
 )._handler;
@@ -96,6 +102,122 @@ describe("publishAttempts", () => {
       checkClaimExpiresAt: number;
     };
     expect(patch.checkClaimExpiresAt - patch.checkClaimedAt).toBeGreaterThanOrEqual(30 * 60 * 1000);
+  });
+
+  it("claims fresh staged publishes before older scanner retries", async () => {
+    const now = Date.now();
+    const freshAttempt = {
+      _id: "publishAttempts:fresh",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      slug: "fresh-skill",
+      displayName: "Fresh Skill",
+      version: "1.0.0",
+      artifactFingerprint: "fresh-fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:fresh", size: 10, sha256: "fresh-sha" }],
+      skillInsertArgs: {
+        staticScan: { status: "clean" },
+      },
+      createdAt: now,
+    };
+    const retryAttempt = {
+      ...freshAttempt,
+      _id: "publishAttempts:retry",
+      slug: "retry-skill",
+      artifactFingerprint: "retry-fingerprint",
+      checkClaimExpiresAt: now - 1,
+      checkClaimLastError: "ClawScan judge status was failed",
+      createdAt: now - 60_000,
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn((indexName: string) => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () =>
+                indexName === "by_status_check_claim_expires_at_created"
+                  ? [freshAttempt, retryAttempt]
+                  : [retryAttempt, freshAttempt],
+              ),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, { claimId: "checks:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:fresh",
+      slug: "fresh-skill",
+    });
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:fresh",
+      expect.objectContaining({ checkClaimId: "checks:claim" }),
+    );
+  });
+
+  it("reuses a completed ClawScan verdict only for the exact staged artifact", async () => {
+    const attempt = {
+      _id: "publishAttempts:reusable",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      skillVersionId: "skillVersions:reusable",
+      slug: "reusable-skill",
+      displayName: "Reusable Skill",
+      version: "1.0.0",
+      artifactFingerprint: "exact-fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:skill", size: 10, sha256: "sha" }],
+      skillInsertArgs: {
+        staticScan: { status: "clean" },
+      },
+      createdAt: Date.now(),
+    };
+    const analysis = {
+      checkedAt: Date.now(),
+      confidence: "high",
+      status: "suspicious",
+      summary: "Completed exact-artifact review.",
+      verdict: "suspicious",
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:reusable"
+            ? { fingerprint: "exact-fingerprint", llmAnalysis: analysis }
+            : null,
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [attempt]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, { claimId: "checks:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:reusable",
+      existingClawscanAnalysis: analysis,
+    });
   });
 
   it("hydrates staged package attempts with ClawPack URL and review context", async () => {
@@ -612,6 +734,63 @@ describe("publishAttempts", () => {
     expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
   });
 
+  it("clears private pending skill metadata when finalization is recorded", async () => {
+    const now = Date.now();
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:demo"
+            ? {
+                _id: "publishAttempts:demo",
+                kind: "skill",
+                status: "finalizing",
+                skillVersionId: "skillVersions:pending",
+                followup: {},
+                finalizationClaimId: "finalize:claim",
+                finalizationClaimExpiresAt: now + 60_000,
+              }
+            : null,
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+    const result = {
+      skillId: "skills:demo",
+      versionId: "skillVersions:pending",
+      embeddingId: "skillEmbeddings:demo",
+      publicationStatus: "published",
+    };
+
+    await expect(
+      recordSkillFinalizedHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "finalize:claim",
+        result,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:demo",
+      status: "finalized",
+      result,
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:demo",
+      expect.objectContaining({
+        status: "finalized",
+        result,
+      }),
+    );
+    expect(ctx.db.patch).toHaveBeenCalledWith("skillVersions:pending", {
+      pendingPublication: undefined,
+    });
+  });
+
   it("stores suspicious analysis with the staged insert before finalization", async () => {
     const now = Date.now();
     const llmAnalysis = {
@@ -755,12 +934,19 @@ describe("publishAttempts", () => {
             kind: "skill",
             status: "pending_checks",
             userId: "users:publisher",
+            skillId: "skills:secret",
+            skillVersionId: "skillVersions:secret",
+            createdNewParent: true,
             slug: "secret-skill",
             version: "1.0.0",
             artifactFingerprint: "fingerprint",
             checkClaimId: "checks:claim",
             checkClaimExpiresAt: Date.now() + 60_000,
             files: [{ storageId: "_storage:secret-skill" }],
+          })
+          .mockResolvedValueOnce({
+            _id: "skills:secret",
+            latestVersionId: undefined,
           })
           .mockResolvedValueOnce({
             _id: "users:publisher",
@@ -771,7 +957,23 @@ describe("publishAttempts", () => {
         insert: vi.fn(),
         replace: vi.fn(),
         delete: vi.fn(),
-        query: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "skillVersionFingerprints") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: vi.fn(async () => [{ _id: "skillVersionFingerprints:secret" }]),
+              })),
+            };
+          }
+          if (table === "skillVersions") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: vi.fn(async () => []),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
         normalizeId: vi.fn(),
         system: {},
       },
@@ -802,6 +1004,9 @@ describe("publishAttempts", () => {
     });
 
     expect(ctx.storage.delete).toHaveBeenCalledWith("_storage:secret-skill");
+    expect(ctx.db.delete).toHaveBeenCalledWith("skillVersionFingerprints:secret");
+    expect(ctx.db.delete).toHaveBeenCalledWith("skillVersions:secret");
+    expect(ctx.db.delete).toHaveBeenCalledWith("skills:secret");
     expect(ctx.db.patch).toHaveBeenCalledWith(
       "publishAttempts:demo",
       expect.objectContaining({
@@ -821,6 +1026,79 @@ describe("publishAttempts", () => {
       artifact: { kind: "skill", name: "secret-skill" },
       version: "1.0.0",
     });
+  });
+
+  it("keeps existing skill parents when TruffleHog blocks a pending new version", async () => {
+    const ctx = {
+      db: {
+        get: vi
+          .fn()
+          .mockResolvedValueOnce({
+            _id: "publishAttempts:demo",
+            kind: "skill",
+            status: "pending_checks",
+            userId: "users:publisher",
+            skillId: "skills:existing",
+            skillVersionId: "skillVersions:pending",
+            createdNewParent: false,
+            slug: "existing-skill",
+            version: "2.0.0",
+            artifactFingerprint: "fingerprint",
+            checkClaimId: "checks:claim",
+            checkClaimExpiresAt: Date.now() + 60_000,
+            files: [{ storageId: "_storage:secret-skill" }],
+          })
+          .mockResolvedValueOnce({
+            _id: "users:publisher",
+            handle: "publisher",
+            email: "publisher@example.com",
+          }),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "skillVersionFingerprints") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: vi.fn(async () => [{ _id: "skillVersionFingerprints:pending" }]),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:demo",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: {
+          status: "blocked",
+          summary: "redacted TruffleHog finding",
+          redactedFindings: ["redacted-secret"],
+        },
+        clawscan: { status: "clean" },
+      }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:demo",
+      kind: "skill",
+      status: "blocked",
+    });
+
+    expect(ctx.db.delete).toHaveBeenCalledWith("skillVersionFingerprints:pending");
+    expect(ctx.db.delete).toHaveBeenCalledWith("skillVersions:pending");
+    expect(ctx.db.delete).not.toHaveBeenCalledWith("skills:existing");
   });
 
   it("keeps TruffleHog-positive attempts pending when secret storage deletion fails", async () => {

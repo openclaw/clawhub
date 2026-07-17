@@ -92,6 +92,11 @@ export const ApiCliPublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const CliSkillDeleteRequestSchema = type({
     slug: "string",
@@ -665,6 +670,11 @@ export const ApiV1PublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const ApiV1DeleteResponseSchema = type({
     ok: "true",

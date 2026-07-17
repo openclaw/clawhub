@@ -1,56 +1,32 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
-import { type PointerEvent, useEffect, useRef, useState } from "react";
+import { ArrowRight, RefreshCw } from "lucide-react";
+import { type PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisherSummary } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
-type PinnedPublisher = {
-  handle: string;
-  name: string;
-  kind: "org" | "user";
-};
+const HOME_OFFICIAL_CREATOR_LIMIT = 12;
 
-const PINNED_PUBLISHERS: PinnedPublisher[] = [
-  { handle: "openclaw", name: "OpenClaw", kind: "org" },
-  { handle: "nvidia", name: "NVIDIA", kind: "org" },
-  { handle: "steipete", name: "Peter Steinberger", kind: "user" },
-  { handle: "mvanhorn", name: "Matt Van Horn", kind: "user" },
-  { handle: "wscats", name: "enoyao", kind: "user" },
-  { handle: "ivangdavila", name: "Iván", kind: "user" },
-  { handle: "byungkyu", name: "byungkyu", kind: "user" },
-  { handle: "pskoett", name: "pskoett", kind: "user" },
-  { handle: "1kalin", name: "1kalin", kind: "user" },
-  { handle: "spclaudehome", name: "spclaudehome", kind: "user" },
-];
-
-function PopularPublisherCard({
-  pinned,
-  publisher,
-}: {
-  pinned: PinnedPublisher;
-  publisher?: PublicPublisherSummary;
-}) {
-  const name = publisher?.displayName?.trim() || pinned.name;
-  const bio = publisher?.bio?.trim() || "Publisher on ClawHub.";
-  const kind = publisher?.kind ?? pinned.kind;
-  const itemCount = publisher ? publisher.stats.skills + publisher.stats.packages : null;
+function OfficialCreatorCard({ publisher }: { publisher: PublicPublisherSummary }) {
+  const name = publisher.displayName.trim() || publisher.handle;
+  const bio = publisher.bio?.trim() || "Official creator on ClawHub.";
+  const downloads = publisher.stats.downloads;
 
   return (
     <Link
       to="/$slug"
-      params={{ slug: pinned.handle }}
+      params={{ slug: publisher.handle }}
       className="home-v2-popular-publisher-card oc-card oc-card-interactive"
-      aria-label={`${name}, @${pinned.handle}`}
+      aria-label={`${name}, @${publisher.handle}`}
       draggable={false}
     >
       <div className="home-v2-popular-publisher-head">
         <MarketplaceIcon
-          kind={kind === "org" ? "org" : "user"}
+          kind="org"
           label={name}
-          imageUrl={publisher?.image ?? `https://github.com/${pinned.handle}.png`}
+          imageUrl={publisher.image ?? `https://github.com/${publisher.handle}.png`}
           size="md"
         />
         <span className="home-v2-popular-publisher-name">{name}</span>
@@ -58,9 +34,7 @@ function PopularPublisherCard({
       <div className="home-v2-popular-publisher-copy">
         <p className="home-v2-popular-publisher-bio">{bio}</p>
         <span className="home-v2-popular-publisher-stats">
-          {itemCount === null
-            ? "Explore creator"
-            : `Explore ${formatCompactStat(itemCount)} ${itemCount === 1 ? "item" : "items"}`}
+          {formatCompactStat(downloads)} {downloads === 1 ? "download" : "downloads"}
           <ArrowRight size={13} aria-hidden="true" />
         </span>
       </div>
@@ -73,35 +47,42 @@ export function HomePopularPublishersSection() {
   const dragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
   const [dragging, setDragging] = useState(false);
   const requestedPublishersRef = useRef(false);
-  const [publishersByHandle, setPublishersByHandle] = useState<
-    Record<string, PublicPublisherSummary>
-  >({});
+  const mountedRef = useRef(true);
+  const [publishers, setPublishers] = useState<PublicPublisherSummary[]>([]);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-
-    const hydratePublishers = async () => {
-      if (requestedPublishersRef.current) return;
-      requestedPublishersRef.current = true;
-      try {
-        const publishers = (await convexHttp.query(api.publishers.getHomePublisherSummaries, {
-          handles: PINNED_PUBLISHERS.map((publisher) => publisher.handle),
-        })) as PublicPublisherSummary[];
-        if (cancelled) return;
-        setPublishersByHandle(
-          Object.fromEntries(publishers.map((publisher) => [publisher.handle, publisher])),
-        );
-      } catch {
-        // Static card metadata remains usable when summaries cannot be loaded.
-      }
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
     };
+  }, []);
 
+  const hydratePublishers = useCallback(async () => {
+    if (requestedPublishersRef.current) return;
+    requestedPublishersRef.current = true;
+    setLoadFailed(false);
+    try {
+      const result = (await convexHttp.query(api.publishers.listPublicPage, {
+        kind: "org",
+        official: true,
+        paginationOpts: { cursor: null, numItems: HOME_OFFICIAL_CREATOR_LIMIT },
+      })) as { page: PublicPublisherSummary[] };
+      if (!mountedRef.current) return;
+      setPublishers(result.page);
+    } catch {
+      requestedPublishersRef.current = false;
+      if (!mountedRef.current) return;
+      setPublishers([]);
+      setLoadFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
     const viewport = viewportRef.current;
     if (!viewport || typeof IntersectionObserver === "undefined") {
       void hydratePublishers();
-      return () => {
-        cancelled = true;
-      };
+      return () => {};
     }
 
     const observer = new IntersectionObserver(
@@ -113,12 +94,10 @@ export function HomePopularPublishersSection() {
       { rootMargin: "600px 0px" },
     );
     observer.observe(viewport);
-
     return () => {
-      cancelled = true;
       observer.disconnect();
     };
-  }, []);
+  }, [hydratePublishers]);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse" || event.button !== 0) return;
@@ -158,16 +137,20 @@ export function HomePopularPublishersSection() {
   return (
     <section
       className="home-v2-popular-publishers oc-section"
-      aria-labelledby="popular-publishers-title"
+      aria-labelledby="official-creators-title"
     >
       <header className="home-v2-popular-publishers-header oc-section-header">
         <div className="home-v2-popular-publishers-heading oc-section-heading">
-          <h2 id="popular-publishers-title" className="oc-section-title">
-            Popular creators
+          <h2 id="official-creators-title" className="oc-section-title">
+            Official creators
           </h2>
-          <p className="oc-section-copy">Explore skills and plugins from standout builders.</p>
+          <p className="oc-section-copy">Explore skills and plugins from official creators.</p>
         </div>
-        <Link to="/creators" className="home-v2-popular-publishers-link oc-action oc-action-ghost">
+        <Link
+          to="/creators"
+          search={{ official: true, kind: "orgs" }}
+          className="home-v2-popular-publishers-link oc-action oc-action-ghost"
+        >
           Browse creators <ArrowRight size={14} aria-hidden="true" />
         </Link>
       </header>
@@ -187,14 +170,20 @@ export function HomePopularPublishersSection() {
         }}
       >
         <div className="home-v2-popular-publishers-track">
-          {PINNED_PUBLISHERS.map((publisher) => (
-            <PopularPublisherCard
-              key={publisher.handle}
-              pinned={publisher}
-              publisher={publishersByHandle[publisher.handle]}
-            />
+          {publishers.map((publisher) => (
+            <OfficialCreatorCard key={publisher._id} publisher={publisher} />
           ))}
         </div>
+        {loadFailed ? (
+          <button
+            type="button"
+            className="home-v2-popular-publishers-retry oc-action oc-action-ghost"
+            onClick={() => void hydratePublishers()}
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+            Retry
+          </button>
+        ) : null}
       </div>
     </section>
   );

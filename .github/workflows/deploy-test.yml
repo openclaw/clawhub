@@ -31,7 +31,7 @@ jobs:
       deploy_sha: ${{ steps.revision.outputs.deploy_sha }}
       fixture_version: ${{ steps.revision.outputs.fixture_version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}

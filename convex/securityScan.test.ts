@@ -14,6 +14,7 @@ import {
   failCodexScanJob,
   failJobInternal,
   finalizeGitHubSkillScanRequestInternal,
+  getCodexScanQueueHealth,
   getCodexScanQueueHealthInternal,
   getJobTargetInternal,
   getBulkSkillRescanBatchStatusForAdminInternal,
@@ -24,6 +25,7 @@ import {
   pruneExpiredSkillScanRequestsInternal,
   requeueCodexScanJobLease,
   requeueExpiredCodexScanJobsInternal,
+  requeueFailedSecurityScanJobsInternal,
   requeueJobLeaseInternal,
   recordGitHubSkillScanResultInternal,
   recordSkillScanRequestFailedInternal,
@@ -86,6 +88,21 @@ const requeueExpiredCodexScanJobsInternalHandler = (
   >
 )._handler;
 
+const requeueFailedSecurityScanJobsInternalHandler = (
+  requeueFailedSecurityScanJobsInternal as unknown as WrappedHandler<
+    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number },
+    {
+      dryRun: boolean;
+      matched: number;
+      requeued: number;
+      hasMore: boolean;
+      bySource: Record<string, number>;
+      byTargetKind: Record<string, number>;
+      sampleJobIds: string[];
+    }
+  >
+)._handler;
+
 const requeueJobLeaseInternalHandler = (
   requeueJobLeaseInternal as unknown as WrappedHandler<
     { jobId: string; leaseToken: string; workerId: string },
@@ -117,6 +134,21 @@ const failJobInternalHandler = (
 const getCodexScanQueueHealthInternalHandler = (
   getCodexScanQueueHealthInternal as unknown as WrappedHandler<
     Record<string, never>,
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
+  >
+)._handler;
+
+const getCodexScanQueueHealthHandler = (
+  getCodexScanQueueHealth as unknown as WrappedHandler<
+    { token: string },
     {
       snapshotAt: number;
       queueDepth: number;
@@ -594,6 +626,109 @@ function makeQueueHealthCtx(jobs: ScanJob[]) {
   });
 
   return { db: { query } };
+}
+
+function makeFailedScanRecoveryCtx(
+  jobs: ScanJob[],
+  docs: Record<string, Record<string, unknown>> = {},
+) {
+  const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+  const patch = vi.fn(
+    async (
+      tableOrId: string,
+      idOrValue: string | Record<string, unknown>,
+      maybeValue?: Record<string, unknown>,
+    ) => {
+      const id = maybeValue ? (idOrValue as string) : tableOrId;
+      const value = maybeValue ?? (idOrValue as Record<string, unknown>);
+      patches.push({ id, patch: value });
+      docs[id] = { ...docs[id], ...value };
+    },
+  );
+  const query = vi.fn((table: string) => {
+    if (table !== "securityScanJobs") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+          order: vi.fn(() => ({ take: vi.fn(async () => []) })),
+          take: vi.fn(async () => []),
+          unique: vi.fn(async () => null),
+        })),
+      };
+    }
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: {
+            eq: (field: string, value: unknown) => unknown;
+            gte: (field: string, value: number) => unknown;
+            lt: (field: string, value: number) => unknown;
+          }) => unknown,
+        ) => {
+          expect(indexName).toBe("by_status_and_updated_at");
+          const equals = new Map<string, unknown>();
+          let updatedAfter = Number.NEGATIVE_INFINITY;
+          let updatedBefore = Number.POSITIVE_INFINITY;
+          const range = {
+            eq(field: string, value: unknown) {
+              equals.set(field, value);
+              return range;
+            },
+            gte(field: string, value: number) {
+              expect(field).toBe("updatedAt");
+              updatedAfter = value;
+              return range;
+            },
+            lt(field: string, value: number) {
+              expect(field).toBe("updatedAt");
+              updatedBefore = value;
+              return range;
+            },
+          };
+          buildRange(range);
+          const matched = jobs
+            .filter(
+              (job) =>
+                Array.from(equals.entries()).every(
+                  ([field, value]) => job[field as keyof ScanJob] === value,
+                ) &&
+                job.updatedAt >= updatedAfter &&
+                job.updatedAt < updatedBefore,
+            )
+            .sort((a, b) => a.updatedAt - b.updatedAt || a._id.localeCompare(b._id));
+          return {
+            order: vi.fn((direction: string) => {
+              expect(direction).toBe("asc");
+              return {
+                take: vi.fn(async (limit: number) => matched.slice(0, limit)),
+              };
+            }),
+          };
+        },
+      ),
+    };
+  });
+  return {
+    ctx: {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) => docs[id] ?? null),
+        insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
+          inserts.push({ table, doc });
+          return `${table}:inserted`;
+        }),
+        normalizeId: vi.fn((_table: string, id: string) => id),
+        patch,
+        query,
+        replace: vi.fn(),
+        system: {},
+      },
+    },
+    patches,
+    inserts,
+  };
 }
 
 function makeTarget(llmStatus?: string) {
@@ -1249,6 +1384,30 @@ describe("securityScan", () => {
       }),
     );
     log.mockRestore();
+  });
+
+  it("exposes queue health to the authenticated security worker", async () => {
+    const workerAuth = "fixture";
+    const rejectedAuth = "rejected-fixture";
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", workerAuth);
+    const snapshot = {
+      snapshotAt: 1_000_000,
+      queueDepth: 4,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 901,
+      oldestReadyJobNextRunAt: 99_000,
+    };
+    const runQuery = vi.fn(async () => snapshot);
+
+    await expect(
+      getCodexScanQueueHealthHandler({ runQuery }, { token: workerAuth }),
+    ).resolves.toEqual(snapshot);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {});
+    await expect(
+      getCodexScanQueueHealthHandler({ runQuery }, { ["token"]: rejectedAuth }),
+    ).rejects.toThrow("Unauthorized");
   });
 
   it("does not enqueue a duplicate publish scan after the backup delay if the first scan already finished", async () => {
@@ -2256,6 +2415,228 @@ describe("securityScan", () => {
       done: false,
       failedJobIds: ["securityScanJobs:failed"],
     });
+  });
+
+  it("dry-runs failed security scan recovery without changing jobs", async () => {
+    const { ctx, patches } = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:before-window",
+        status: "failed",
+        updatedAt: 99,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish-failed",
+        status: "failed",
+        source: "publish",
+        updatedAt: 100,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual-failed",
+        status: "failed",
+        source: "manual",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:manual",
+        updatedAt: 101,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:succeeded",
+        status: "succeeded",
+        updatedAt: 102,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:after-window",
+        status: "failed",
+        updatedAt: 103,
+      }),
+    ]);
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx, {
+      dryRun: true,
+      failedAfter: 100,
+      failedBefore: 103,
+      limit: 10,
+    });
+
+    expect(result).toEqual({
+      dryRun: true,
+      matched: 2,
+      requeued: 0,
+      hasMore: false,
+      bySource: { manual: 1, publish: 1 },
+      byTargetKind: { skillScanRequest: 1, skillVersion: 1 },
+      sampleJobIds: ["securityScanJobs:publish-failed", "securityScanJobs:manual-failed"],
+    });
+    expect(patches).toEqual([]);
+  });
+
+  it("requeues failed jobs and resets uploaded scan-request state", async () => {
+    const firstCtx = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:publish-failed",
+        status: "failed",
+        source: "publish",
+        attempts: 3,
+        updatedAt: 100,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual-failed",
+        status: "failed",
+        source: "manual",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:manual",
+        attempts: 3,
+        updatedAt: 101,
+      }),
+    ]);
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(firstCtx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+      limit: 1,
+    });
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      matched: 1,
+      requeued: 1,
+      hasMore: true,
+      sampleJobIds: ["securityScanJobs:publish-failed"],
+    });
+    expect(firstCtx.patches).toHaveLength(1);
+    expect(firstCtx.patches[0]).toMatchObject({
+      id: "securityScanJobs:publish-failed",
+      patch: {
+        status: "queued",
+        attempts: 0,
+        lastError: undefined,
+        completedAt: undefined,
+      },
+    });
+
+    const secondCtx = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:manual-failed",
+        status: "failed",
+        source: "manual",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:manual",
+        attempts: 3,
+        updatedAt: 101,
+      }),
+    ]);
+    const second = await requeueFailedSecurityScanJobsInternalHandler(secondCtx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+    });
+
+    expect(second).toMatchObject({ matched: 1, requeued: 1, hasMore: false });
+    expect(secondCtx.patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "securityScanJobs:manual-failed",
+          patch: expect.objectContaining({
+            status: "queued",
+            attempts: 0,
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skillScanRequests:manual",
+          patch: expect.objectContaining({
+            status: "queued",
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("restores failed GitHub-backed scans to pending while requeueing", async () => {
+    const ctx = makeFailedScanRecoveryCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:github-failed",
+          status: "failed",
+          source: "github",
+          targetKind: "skillScanRequest",
+          skillVersionId: undefined,
+          skillScanRequestId: "skillScanRequests:github",
+          attempts: 3,
+          updatedAt: 150,
+        }),
+      ],
+      {
+        "skillScanRequests:github": {
+          _id: "skillScanRequests:github",
+          githubSkillScanId: "githubSkillScans:github",
+          status: "failed",
+        },
+        "githubSkillScans:github": {
+          _id: "githubSkillScans:github",
+          skillId: "skills:github",
+          contentHash: "content-hash",
+          status: "failed",
+        },
+        "skills:github": {
+          _id: "skills:github",
+          installKind: "github",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+          slug: "github-skill",
+          displayName: "GitHub Skill",
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            comments: 0,
+            versions: 0,
+          },
+          moderationStatus: "hidden",
+          moderationReason: "scanner.failed",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 150,
+        },
+      },
+    );
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+    });
+
+    expect(result).toMatchObject({ matched: 1, requeued: 1, hasMore: false });
+    expect(ctx.patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "githubSkillScans:github",
+          patch: expect.objectContaining({
+            status: "pending",
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skills:github",
+          patch: expect.objectContaining({
+            githubScanStatus: "pending",
+            moderationStatus: "active",
+            moderationReason: "pending.scan",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("lets platform moderators request package rescans", async () => {

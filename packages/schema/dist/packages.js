@@ -1,6 +1,7 @@
 import { type } from "arktype";
 import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
+export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
 export function normalizePackageOwnerHandle(handle) {
     const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
     return normalized || undefined;
@@ -33,6 +34,7 @@ export const PackageCompatibilitySchema = type({
 });
 export const PluginManifestSummarySchema = type({
     schemaVersion: "number",
+    icon: "string?",
     compatibility: PackageCompatibilitySchema.optional(),
     manifestIdentity: type({
         name: "string?",
@@ -704,6 +706,8 @@ export const ApiV1PackagePublishResponseSchema = type({
     ok: "true",
     packageId: "string",
     releaseId: "string",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
     inspectorFindings: type({
         findingKind: '"warning"|"error"',
         code: "string",
