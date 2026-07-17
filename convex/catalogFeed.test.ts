@@ -191,9 +191,17 @@ describe("catalog feed projection", () => {
 
   it("projects official releases into ClawHub install candidates", async () => {
     const result = await listOfficialEntriesHandler(
-      makeCtx([makePackage()], {
-        "packageReleases:1": makeRelease(),
-      }),
+      makeCtx(
+        [
+          makePackage({
+            summary: "Search flights, stays, and travel options.",
+            icon: "https://cdn.example.test/expedia.png",
+          }),
+        ],
+        {
+          "packageReleases:1": makeRelease(),
+        },
+      ),
       { family: "code-plugin" },
     );
 
@@ -202,6 +210,8 @@ describe("catalog feed projection", () => {
         type: "plugin",
         id: "@openclaw/demo",
         title: "Demo",
+        description: "Search flights, stays, and travel options.",
+        icon: "https://cdn.example.test/expedia.png",
         version: "1.2.3",
         state: "available",
         featured: false,
@@ -296,7 +306,7 @@ describe("catalog feed projection", () => {
 
   it("projects only published skills from verified organization publishers", async () => {
     const result = (await listOfficialSkillEntriesHandler(
-      makeCtx([makeSkill()], {
+      makeCtx([makeSkill({ summary: "Deploy AIQ services.", icon: "lucide:rocket" })], {
         "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
         "skillVersions:1": makeSkillVersion(),
       }),
@@ -309,6 +319,8 @@ describe("catalog feed projection", () => {
           type: "skill",
           id: "@openclaw/demo",
           title: "Demo skill",
+          description: "Deploy AIQ services.",
+          icon: "lucide:rocket",
           version: "1.2.3",
           state: "available",
           featured: false,

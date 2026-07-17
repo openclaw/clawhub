@@ -54,6 +54,8 @@ function appendEntriesWithinFeedLimit<T>(target: T[], entries: T[]) {
 const catalogFeedEntryFields = {
   id: v.string(),
   title: v.string(),
+  description: v.optional(v.string()),
+  icon: v.optional(v.string()),
   version: v.string(),
   state: v.union(
     v.literal("available"),
@@ -117,6 +119,8 @@ async function buildEntry(
   const packageName = pkg.name.trim();
   const id = pkg.normalizedName.trim();
   const title = pkg.displayName.trim() || packageName;
+  const description = pkg.summary?.trim();
+  const icon = pkg.icon?.trim();
   const version = release.version.trim();
   if (!packageName || !id || !title || !version) return null;
   const highlighted = await ctx.db
@@ -128,6 +132,8 @@ async function buildEntry(
     type: "plugin",
     id,
     title,
+    ...(description ? { description } : {}),
+    ...(icon ? { icon } : {}),
     version,
     state: "available",
     featured: Boolean(highlighted),
@@ -202,6 +208,8 @@ async function buildSkillEntry(
   const publisherId = owner.handle?.trim();
   const slug = skill.slug.trim();
   const title = skill.displayName.trim() || slug;
+  const description = skill.summary?.trim();
+  const icon = skill.icon?.trim();
   const packageName = `@${publisherId}/${slug}`;
   if (!publisherId || !slug || !title) return null;
 
@@ -230,6 +238,8 @@ async function buildSkillEntry(
       type: "skill",
       id: packageName,
       title,
+      ...(description ? { description } : {}),
+      ...(icon ? { icon } : {}),
       version: commit,
       state: "available",
       featured: isSkillHighlighted(skill),
@@ -275,6 +285,8 @@ async function buildSkillEntry(
     type: "skill",
     id: packageName,
     title,
+    ...(description ? { description } : {}),
+    ...(icon ? { icon } : {}),
     version: versionName,
     state: "available",
     featured: isSkillHighlighted(skill),
