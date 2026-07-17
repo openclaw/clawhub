@@ -12,7 +12,6 @@ type BuildEnv = {
 type BuildStep = {
   command: string;
   args: string[];
-  retryable?: true;
 };
 
 type Sleep = (delayMs: number) => Promise<void>;
@@ -28,7 +27,7 @@ const defaultSleep: Sleep = (delayMs) =>
     setTimeout(resolve, delayMs);
   });
 
-export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
+export function resolveVercelBuildPlan(env: BuildEnv, previewNameOverride?: string): BuildStep[] {
   const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
 
   if (targetEnvironment === "production" || targetEnvironment === "test") {
@@ -48,15 +47,15 @@ export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
     throw new Error("Preview builds require a Convex Preview deploy key");
   }
 
-  const previewName = env.VERCEL_GIT_COMMIT_REF?.trim();
-  if (!previewName) {
+  const branchName = env.VERCEL_GIT_COMMIT_REF?.trim();
+  if (!branchName) {
     throw new Error("Preview builds require VERCEL_GIT_COMMIT_REF");
   }
+  const previewName = previewNameOverride?.trim() || branchName;
 
   return [
     {
       command: "bunx",
-      retryable: true,
       args: [
         "convex",
         "deploy",
@@ -77,37 +76,58 @@ export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
   ];
 }
 
+function runBuildPlan(steps: BuildStep[], spawn: typeof spawnSync) {
+  for (const step of steps) {
+    const result = spawn(step.command, step.args, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "inherit",
+    });
+    if (result.error || result.status !== 0) return result;
+  }
+
+  return null;
+}
+
 export async function main({
   env = process.env,
   sleep = defaultSleep,
   spawn = spawnSync,
 }: MainOptions = {}): Promise<number> {
-  for (const step of resolveVercelBuildPlan(env)) {
-    const maxAttempts = step.retryable ? 3 : 1;
+  const initialPlan = resolveVercelBuildPlan(env);
+  const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const result = spawn(step.command, step.args, {
-        cwd: process.cwd(),
-        env: process.env,
-        stdio: "inherit",
-      });
-      if (!result.error && result.status === 0) break;
-
-      if (attempt < maxAttempts) {
-        const delayMs = attempt * 20_000;
-        console.error(
-          `[vercel-build] convex preview deploy failed (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs / 1_000}s...`,
-        );
-        await sleep(delayMs);
-        continue;
-      }
-
-      if (result.error) throw result.error;
-      return result.status ?? 1;
-    }
+  if (targetEnvironment !== "preview") {
+    const failure = runBuildPlan(initialPlan, spawn);
+    if (!failure) return 0;
+    if (failure.error) throw failure.error;
+    return failure.status ?? 1;
   }
 
-  return 0;
+  const branchName = env.VERCEL_GIT_COMMIT_REF?.trim();
+  if (!branchName) throw new Error("Preview builds require VERCEL_GIT_COMMIT_REF");
+
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const previewName = attempt === 1 ? branchName : `${branchName}-retry-${attempt}`;
+    const plan = attempt === 1 ? initialPlan : resolveVercelBuildPlan(env, previewName);
+    const failure = runBuildPlan(plan, spawn);
+    if (!failure) return 0;
+
+    if (attempt === maxAttempts) {
+      if (failure.error) throw failure.error;
+      return failure.status ?? 1;
+    }
+
+    const delayMs = attempt * 20_000;
+    const nextPreviewName = `${branchName}-retry-${attempt + 1}`;
+    console.error(
+      `[vercel-build] convex preview pipeline failed (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs / 1_000}s with preview name ${nextPreviewName}...`,
+    );
+    await sleep(delayMs);
+  }
+
+  return 1;
 }
 
 if (import.meta.main) {
