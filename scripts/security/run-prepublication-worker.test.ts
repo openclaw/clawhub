@@ -698,6 +698,64 @@ JSON
     }
   });
 
+  it("terminates the full ClawScan process tree on timeout", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "SKILL.md"), "# Demo\n");
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFile(
+      fakeClawScan,
+      `#!/usr/bin/env bash
+set -euo pipefail
+(
+  trap '' TERM
+  exec >/dev/null 2>&1
+  while true; do sleep 1; done
+) &
+child_pid=$!
+printf '%s' "$child_pid" > "${workspace}/descendant.pid"
+wait "$child_pid"
+`,
+    );
+    await chmod(fakeClawScan, 0o755);
+    const previousCommand = process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+    const previousTimeout = process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
+    process.env.PREPUBLICATION_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = "500";
+
+    try {
+      await expect(
+        runNativeClawScan(
+          {
+            job: {
+              targetKind: "skillVersion",
+            },
+            target: {},
+          } as Parameters<typeof runNativeClawScan>[0],
+          workspace,
+        ),
+      ).rejects.toThrow("timed out");
+
+      const descendantPid = Number(await readFile(join(workspace, "descendant.pid"), "utf8"));
+      let descendantRunning = true;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          process.kill(descendantPid, 0);
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+        } catch {
+          descendantRunning = false;
+          break;
+        }
+      }
+      expect(descendantRunning).toBe(false);
+    } finally {
+      if (previousCommand === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_COMMAND;
+      else process.env.PREPUBLICATION_CLAWSCAN_COMMAND = previousCommand;
+      if (previousTimeout === undefined) delete process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
+      else process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = previousTimeout;
+    }
+  });
+
   it("maps TruffleHog verified-secret exit code to a blocked result", async () => {
     const workspace = await tempDir();
     await mkdir(join(workspace, "artifact"), { recursive: true });
