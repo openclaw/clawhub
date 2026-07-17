@@ -17,13 +17,11 @@ export type FeedSigningConfig = {
 };
 
 type SignedFeedEnvelope = {
-  schemaVersion: 1;
   payloadType: string;
   payload: string;
   signatures: readonly {
-    keyId: string;
-    algorithm: "ed25519";
-    signature: string;
+    keyid: string;
+    sig: string;
   }[];
 };
 
@@ -130,14 +128,12 @@ export async function signFeedPayload(
     ),
   );
   const envelope: SignedFeedEnvelope = {
-    schemaVersion: 1,
     payloadType,
     payload: base64UrlEncode(payloadBytes),
     signatures: [
       {
-        keyId: config.keyId,
-        algorithm: "ed25519",
-        signature: base64UrlEncode(signature),
+        keyid: config.keyId,
+        sig: base64UrlEncode(signature),
       },
     ],
   };
