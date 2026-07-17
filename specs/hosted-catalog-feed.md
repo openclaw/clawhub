@@ -181,6 +181,23 @@ returns a signed `409 resetRequired` payload whose same-origin `snapshotUrl`
 points to `/api/v1/feeds/plugins`. Invalid or expired cursors are never treated
 as unsigned pagination state.
 
+`GET /api/v1/feeds/plugins/query` accepts at least one normalized `q`, `type`,
+`state`, or `publisherId` filter plus an optional `limit=<1..200>`. The first
+request pins the latest indexed revision, materializes the complete ordered
+result in bounded database scans, and records the exact `resultCount` before
+serving a page. It never parses and filters the full stored snapshot at request
+time. Continuations supply only the opaque `cursor`; its five-minute signed
+state binds the normalized query, revision, materialization, exact count,
+database cursor, limit, page index, start index, and expiry.
+
+Query pages use the
+`openclaw.official-external-plugin-catalog-query-results.v1` DSSE payload type,
+`Cache-Control: private, no-store`, at most 200 entries, and a 1 MiB signed
+response limit. Expired or unavailable materializations return `409`; invalid
+or modified cursors return `400`. Query indexes follow the same 30-day revision
+retention as change history, while result materializations expire after five
+minutes.
+
 Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
 `/v1/feeds/promotions` through the same environment-aware Convex proxy used for
 `/api/*`. The unversioned `/feeds/*` paths permanently redirect to their

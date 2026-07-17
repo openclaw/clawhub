@@ -294,6 +294,7 @@ describe("catalog feed projection", () => {
       expect.objectContaining({
         feedId: CATALOG_SKILLS_FEED_ID,
         sequence: 1,
+        indexedEntryCount: 0,
         changeCount: 2,
         cumulativeChangeCount: 2,
       }),
@@ -710,11 +711,14 @@ describe("catalog feed projection", () => {
 
   it("caps oversized skills feeds instead of blocking plugin publication", async () => {
     const skillEntries = Array.from({ length: 1001 }, (_, index) => makeFeedSkillEntry(index));
-    const runMutation = vi.fn(
-      async (_ref: unknown, args: { feedId: string; entries: unknown[] }) => ({
-        feedId: args.feedId,
-        entryCount: args.entries.length,
-      }),
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+      "description" in args
+        ? {
+            feedId: args.feedId,
+            sequence: 1,
+            entryCount: (args.entries as unknown[]).length,
+          }
+        : {},
     );
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if ("family" in args) return [];
@@ -733,7 +737,7 @@ describe("catalog feed projection", () => {
       { expiresAt: "2026-06-30T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(8);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ feedId: CATALOG_FEED_ID, entries: [] }),
@@ -748,11 +752,24 @@ describe("catalog feed projection", () => {
     expect(
       vi
         .mocked(runMutation)
-        .mock.calls.find(([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID)?.[1].entries,
+        .mock.calls.find(
+          ([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args,
+        )?.[1].entries,
     ).toHaveLength(1000);
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.filter(([, args]) => "startOrdinal" in args)
+        .map(([, args]) => [args.startOrdinal, (args.entries as unknown[]).length]),
+    ).toEqual([
+      [0, 250],
+      [250, 250],
+      [500, 250],
+      [750, 250],
+    ]);
     expect(result).toEqual([
-      { feedId: CATALOG_FEED_ID, entryCount: 0 },
-      { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 1000 },
+      { feedId: CATALOG_FEED_ID, sequence: 1, entryCount: 0 },
+      { feedId: CATALOG_SKILLS_FEED_ID, sequence: 1, entryCount: 1000 },
     ]);
   });
 

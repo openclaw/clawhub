@@ -194,6 +194,13 @@ describe("installRateLimitedRoutes", () => {
       RATE_LIMITS.export.ip,
     ],
     [
+      "catalog query materialization",
+      "/api/v1/feeds/plugins/query",
+      "GET",
+      "https://example.com/api/v1/feeds/plugins/query?type=plugin",
+      RATE_LIMITS.export.ip,
+    ],
+    [
       "trusted publish",
       "/api/v1/publish/token/mint",
       "POST",
