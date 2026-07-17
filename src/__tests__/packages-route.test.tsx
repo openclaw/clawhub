@@ -922,6 +922,7 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Loading results")).toBeNull();
   });
 
   it("keeps plugin count copy hidden on non-first browse pages", async () => {
@@ -1131,6 +1132,7 @@ describe("plugins route", () => {
     render(<PendingComponent />);
 
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Loading results")).toBeNull();
     expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 

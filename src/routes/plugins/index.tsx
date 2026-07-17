@@ -367,9 +367,6 @@ function PluginsIndexPending() {
           disabled
         />
         <div className="browse-results">
-          <div className="browse-results-toolbar">
-            <span className="browse-results-count">Loading results</span>
-          </div>
           <BrowseResultsSkeleton label="Plugin" />
         </div>
       </div>

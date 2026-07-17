@@ -168,6 +168,13 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".clawhub-segmented")).toContain(
       "border: 1px solid var(--clawhub-segmented-border)",
     );
+    expect(cssRule(css, ".clawhub-segmented")).toContain("border-radius: var(--oc-radius-control)");
+    expect(
+      cssRule(
+        css,
+        ".clawhub-segmented-btn,\n.home-v2-listing-kind-btn,\n.home-v2-listing-view-btn,\n.browse-view-btn",
+      ),
+    ).toContain("border-radius: var(--oc-radius-inset)");
     expect(cssRule(css, ".clawhub-segmented-btn.browse-view-btn")).toContain(
       "width: var(--clawhub-segmented-seg-h)",
     );

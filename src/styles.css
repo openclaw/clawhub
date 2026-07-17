@@ -21860,7 +21860,7 @@ a.search-empty-action {
   height: var(--clawhub-segmented-h);
   padding: 3px;
   border: 1px solid var(--clawhub-segmented-border);
-  border-radius: 10px;
+  border-radius: var(--oc-radius-control);
   background: var(--clawhub-segmented-bg);
   transition:
     border-color 0.15s ease,
@@ -21876,7 +21876,7 @@ a.search-empty-action {
   justify-content: center;
   height: var(--clawhub-segmented-seg-h);
   border: none;
-  border-radius: 7px;
+  border-radius: var(--oc-radius-inset);
   background: transparent;
   color: var(--clawhub-segmented-fg);
   font-size: 14px;
@@ -29120,7 +29120,7 @@ a[class*="rounded-full"] {
   height: var(--clawhub-segmented-h);
   padding: 3px;
   border: 1px solid var(--clawhub-segmented-border);
-  border-radius: 10px;
+  border-radius: var(--oc-radius-control);
   background: var(--clawhub-segmented-bg);
 }
 
@@ -29132,7 +29132,7 @@ a[class*="rounded-full"] {
   height: var(--clawhub-segmented-seg-h);
   padding: 0 12px;
   border: none;
-  border-radius: 7px;
+  border-radius: var(--oc-radius-inset);
   background: transparent;
   color: var(--clawhub-segmented-fg);
   font-size: 14px;
