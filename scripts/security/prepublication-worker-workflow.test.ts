@@ -39,10 +39,22 @@ describe("pre-publication publish worker workflow", () => {
         schedule?: Array<{ cron?: string }>;
         workflow_dispatch?: {
           inputs?: {
+            kind?: {
+              default?: string;
+              required?: boolean;
+            };
             runner?: {
               default?: string;
               options?: string[];
               type?: string;
+            };
+            slug?: {
+              default?: string;
+              required?: boolean;
+            };
+            version?: {
+              default?: string;
+              required?: boolean;
             };
           };
         };
@@ -60,6 +72,18 @@ describe("pre-publication publish worker workflow", () => {
       type: "choice",
       options: ["blacksmith-8vcpu-ubuntu-2404", "ubuntu-latest"],
     });
+    expect(workflow.on?.workflow_dispatch?.inputs?.kind).toMatchObject({
+      required: false,
+      default: "",
+    });
+    expect(workflow.on?.workflow_dispatch?.inputs?.slug).toMatchObject({
+      required: false,
+      default: "",
+    });
+    expect(workflow.on?.workflow_dispatch?.inputs?.version).toMatchObject({
+      required: false,
+      default: "",
+    });
     expect(job.environment).toBe("Production");
     expect(job["runs-on"]).toBe("${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}");
     expect(job["timeout-minutes"]).toBe(20);
@@ -71,6 +95,9 @@ describe("pre-publication publish worker workflow", () => {
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
         "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}",
       PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '2' }}",
+      PREPUBLICATION_CHECK_KIND: "${{ inputs.kind || '' }}",
+      PREPUBLICATION_CHECK_SLUG: "${{ inputs.slug || '' }}",
+      PREPUBLICATION_CHECK_VERSION: "${{ inputs.version || '' }}",
       PREPUBLICATION_TRUFFLEHOG_IMAGE:
         "${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}",
     });
@@ -81,8 +108,11 @@ describe("pre-publication publish worker workflow", () => {
 
     const runStep = steps.find((step) => step.name === "Run pre-publication publish worker");
     expect(runStep?.run).toContain("bun run publish:prepublication-worker");
+    expect(runStep?.run).toContain('--kind "$PREPUBLICATION_CHECK_KIND"');
+    expect(runStep?.run).toContain('--slug "$PREPUBLICATION_CHECK_SLUG"');
+    expect(runStep?.run).toContain('--version "$PREPUBLICATION_CHECK_VERSION"');
     expect(steps.find((step) => step.name === "Install ClawScan CLI")?.run).toContain(
-      "npm install -g @openclaw/clawscan@0.1.2",
+      "npm install -g @openclaw/clawscan@0.1.4",
     );
     expect(steps.find((step) => step.name === "Install Codex CLI")).toBeUndefined();
     expect(steps.find((step) => step.name === "Authenticate Codex CLI")).toBeUndefined();

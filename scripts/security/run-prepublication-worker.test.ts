@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
   claimBatchDrainedQueue,
+  claimPrePublicationAttempt,
   claimPrePublicationBatch,
   processPrePublicationBatch,
   processPrePublicationAttempt,
@@ -49,6 +50,27 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("forwards targeted recovery filters when claiming an attempt", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue(attempt),
+    };
+
+    await expect(
+      claimPrePublicationAttempt(client, "fixture", {
+        kind: "skill",
+        slug: "driver",
+        version: "0.8.3",
+      }),
+    ).resolves.toEqual(attempt);
+
+    expect(client.action).toHaveBeenCalledWith(expect.anything(), {
+      token: "fixture",
+      kind: "skill",
+      slug: "driver",
+      version: "0.8.3",
+    });
+  });
+
   it("keeps claiming after partial transient claim failures", () => {
     expect(claimBatchDrainedQueue(0, 0, 6)).toBe(true);
     expect(claimBatchDrainedQueue(0, 5, 6)).toBe(true);

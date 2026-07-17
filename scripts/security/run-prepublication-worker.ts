@@ -59,6 +59,13 @@ type ProcessAttemptResult = {
 
 type PrePublicationWorkerClient = Pick<ConvexHttpClient, "action">;
 
+type PrePublicationClaimFilters = {
+  attemptId?: Id<"publishAttempts">;
+  kind?: "skill" | "package";
+  slug?: string;
+  version?: string;
+};
+
 type TruffleHogResult = WorkerCheckResult & {
   exitCode?: number | null;
 };
@@ -98,6 +105,11 @@ function parseArgs() {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   };
+  const optionalStringFrom = (value: string | undefined) => value?.trim() || undefined;
+  const kind = optionalStringFrom(get("--kind") ?? process.env.PREPUBLICATION_CHECK_KIND);
+  if (kind && kind !== "skill" && kind !== "package") {
+    throw new Error("--kind must be skill or package");
+  }
   return {
     batchLimit: numberFrom(
       get("--batch-limit") ?? process.env.PREPUBLICATION_CHECK_LIMIT,
@@ -109,6 +121,14 @@ function parseArgs() {
         get("--max-runtime-minutes") ?? process.env.PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES,
         DEFAULT_MAX_RUNTIME_MS / 60_000,
       ) * 60_000,
+    claimFilters: {
+      attemptId: optionalStringFrom(
+        get("--attempt-id") ?? process.env.PREPUBLICATION_CHECK_ATTEMPT_ID,
+      ) as Id<"publishAttempts"> | undefined,
+      kind: kind as "skill" | "package" | undefined,
+      slug: optionalStringFrom(get("--slug") ?? process.env.PREPUBLICATION_CHECK_SLUG),
+      version: optionalStringFrom(get("--version") ?? process.env.PREPUBLICATION_CHECK_VERSION),
+    } satisfies PrePublicationClaimFilters,
   };
 }
 
@@ -728,9 +748,11 @@ export async function processPrePublicationBatch(
 export async function claimPrePublicationAttempt(
   client: PrePublicationWorkerClient,
   token: string,
+  filters: PrePublicationClaimFilters = {},
 ) {
   return (await client.action(api.publishAttempts.claimPrePublicationChecks, {
     token,
+    ...filters,
   })) as ClaimedPrePublicationAttempt | null;
 }
 
@@ -738,9 +760,10 @@ export async function claimPrePublicationBatch(
   client: PrePublicationWorkerClient,
   token: string,
   limit: number,
+  filters: PrePublicationClaimFilters = {},
 ) {
   const claims = await Promise.allSettled(
-    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token)),
+    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token, filters)),
   );
   const attempts: ClaimedPrePublicationAttempt[] = [];
   const failures: unknown[] = [];
@@ -770,7 +793,7 @@ export function claimBatchDrainedQueue(
 }
 
 async function main() {
-  const { batchLimit, maxJobs, maxRuntimeMs } = parseArgs();
+  const { batchLimit, claimFilters, maxJobs, maxRuntimeMs } = parseArgs();
   maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
@@ -795,8 +818,14 @@ async function main() {
     if (totalClaimed > 0 && claimDeadline - Date.now() < CLAIM_WINDOW_SHUTDOWN_BUFFER_MS) break;
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
-    const claimLimit = Math.min(batchLimit, remainingJobs);
-    const { attempts, claimFailures } = await claimPrePublicationBatch(client, token, claimLimit);
+    const targeted = Object.values(claimFilters).some(Boolean);
+    const claimLimit = Math.min(targeted ? 1 : batchLimit, remainingJobs);
+    const { attempts, claimFailures } = await claimPrePublicationBatch(
+      client,
+      token,
+      claimLimit,
+      claimFilters,
+    );
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
     const results = await processPrePublicationBatch(attempts, (attempt) =>

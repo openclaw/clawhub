@@ -15,6 +15,18 @@ on:
         description: "Stop claiming new attempts after this many minutes"
         required: true
         default: "8"
+      kind:
+        description: "Optional targeted recovery kind: skill or package"
+        required: false
+        default: ""
+      slug:
+        description: "Optional targeted recovery slug"
+        required: false
+        default: ""
+      version:
+        description: "Optional targeted recovery version"
+        required: false
+        default: ""
       runner:
         description: "Runner label for manual recovery dispatches"
         required: true
@@ -49,6 +61,9 @@ jobs:
       PREPUBLICATION_CHECK_LIMIT: ${{ inputs['batch-limit'] || '2' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
       PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
+      PREPUBLICATION_CHECK_KIND: ${{ inputs.kind || '' }}
+      PREPUBLICATION_CHECK_SLUG: ${{ inputs.slug || '' }}
+      PREPUBLICATION_CHECK_VERSION: ${{ inputs.version || '' }}
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
@@ -60,7 +75,7 @@ jobs:
       - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          npm install -g @openclaw/clawscan@0.1.2
+          npm install -g @openclaw/clawscan@0.1.4
           clawscan --version
 
       - name: Run pre-publication publish worker
@@ -72,4 +87,7 @@ jobs:
           bun run publish:prepublication-worker -- \
             --batch-limit "$PREPUBLICATION_CHECK_LIMIT" \
             --max-jobs "$PREPUBLICATION_CHECK_MAX_JOBS" \
-            --max-runtime-minutes "$PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES"
+            --max-runtime-minutes "$PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES" \
+            --kind "$PREPUBLICATION_CHECK_KIND" \
+            --slug "$PREPUBLICATION_CHECK_SLUG" \
+            --version "$PREPUBLICATION_CHECK_VERSION"
