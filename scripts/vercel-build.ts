@@ -12,7 +12,21 @@ type BuildEnv = {
 type BuildStep = {
   command: string;
   args: string[];
+  retryable?: true;
 };
+
+type Sleep = (delayMs: number) => Promise<void>;
+
+type MainOptions = {
+  env?: BuildEnv;
+  sleep?: Sleep;
+  spawn?: typeof spawnSync;
+};
+
+const defaultSleep: Sleep = (delayMs) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
 
 export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
   const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
@@ -42,6 +56,7 @@ export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
   return [
     {
       command: "bunx",
+      retryable: true,
       args: [
         "convex",
         "deploy",
@@ -62,21 +77,43 @@ export function resolveVercelBuildPlan(env: BuildEnv): BuildStep[] {
   ];
 }
 
-function main() {
-  for (const step of resolveVercelBuildPlan(process.env)) {
-    const result = spawnSync(step.command, step.args, {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: "inherit",
-    });
-    if (result.error) throw result.error;
-    if (result.status !== 0) process.exit(result.status ?? 1);
+export async function main({
+  env = process.env,
+  sleep = defaultSleep,
+  spawn = spawnSync,
+}: MainOptions = {}): Promise<number> {
+  for (const step of resolveVercelBuildPlan(env)) {
+    const maxAttempts = step.retryable ? 3 : 1;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const result = spawn(step.command, step.args, {
+        cwd: process.cwd(),
+        env: process.env,
+        stdio: "inherit",
+      });
+      if (!result.error && result.status === 0) break;
+
+      if (attempt < maxAttempts) {
+        const delayMs = attempt * 20_000;
+        console.error(
+          `[vercel-build] convex preview deploy failed (attempt ${attempt}/${maxAttempts}); retrying in ${delayMs / 1_000}s...`,
+        );
+        await sleep(delayMs);
+        continue;
+      }
+
+      if (result.error) throw result.error;
+      return result.status ?? 1;
+    }
   }
+
+  return 0;
 }
 
 if (import.meta.main) {
   try {
-    main();
+    const exitCode = await main();
+    if (exitCode !== 0) process.exit(exitCode);
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
