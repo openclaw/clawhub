@@ -405,12 +405,18 @@ function storedAnalysisFromClawScanArtifact(artifact: unknown): {
   const judge = asRecord(record?.judge);
   const result = asRecord(judge?.result);
   const judgeStatus = readString(judge, ["status"]);
+  const judgeError = readString(judge, ["error"]);
   const scannerFailures = collectClawScanScannerFailures(asRecord(record?.scanners));
   if (scannerFailures.length > 0) {
     return { error: `ClawScan scanner did not complete: ${scannerFailures.join(", ")}` };
   }
   if (judgeStatus !== "completed") {
-    return { error: `ClawScan judge status was ${judgeStatus ?? "missing"}` };
+    return {
+      error: [
+        `ClawScan judge status was ${judgeStatus ?? "missing"}`,
+        ...(judgeError ? [judgeError] : []),
+      ].join(": "),
+    };
   }
   const verdict = readString(result, ["verdict", "status"]);
   if (!verdict) return { error: "ClawScan judge did not return a verdict" };
