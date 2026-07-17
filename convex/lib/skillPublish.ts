@@ -41,6 +41,7 @@ import {
 } from "./skills";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
+import { normalizeSkillTags } from "./skillTags";
 import { runStaticPublishScan } from "./staticPublishScan";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
@@ -435,7 +436,7 @@ async function publishVersionForUserInternal(
     changelog: changelogText,
     changelogSource,
     sourceProvenance: options.sourceProvenance,
-    tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
+    tags: normalizeSkillTags(args.tags),
     categories,
     topics: topics.length ? topics : undefined,
     fingerprint,
@@ -667,8 +668,16 @@ async function prepareSkillInsertArgsForFinalization(
     return rawInsertArgs;
   }
   const insertArgs = rawInsertArgs as Record<string, unknown>;
+  const tags = Array.isArray(insertArgs.tags)
+    ? normalizeSkillTags(insertArgs.tags.filter((tag): tag is string => typeof tag === "string"))
+    : undefined;
   const deferred = insertArgs.deferredAiEnrichment as DeferredAiEnrichment | undefined;
-  if (!deferred) return rawInsertArgs;
+  if (!deferred) {
+    return {
+      ...insertArgs,
+      ...(insertArgs.tags !== undefined ? { tags } : {}),
+    };
+  }
 
   const { deferredAiEnrichment: _deferredAiEnrichment, ...prepared } = insertArgs;
   const files = Array.isArray(prepared.files)
@@ -737,6 +746,7 @@ async function prepareSkillInsertArgsForFinalization(
 
   return {
     ...prepared,
+    ...(prepared.tags !== undefined ? { tags } : {}),
     summary,
     changelog,
     embedding,

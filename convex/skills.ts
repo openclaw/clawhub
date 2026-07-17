@@ -170,6 +170,7 @@ import {
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
 import { readCanonicalStat } from "./lib/skillStats";
+import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
@@ -12672,7 +12673,7 @@ export const insertVersion = internalMutation({
     // comparison above so that backport publishes cannot clobber the latest
     // pointer. Silently drop it (case-insensitively) from caller-provided tags
     // to prevent a trivial bypass via args.tags: ["latest"].
-    for (const tag of args.tags ?? []) {
+    for (const tag of normalizeSkillTags(args.tags) ?? []) {
       if (tag.toLowerCase() === "latest") continue;
       nextTags[tag] = versionId;
     }
@@ -12943,7 +12944,7 @@ export const publishPendingVersionInternal = internalMutation({
     if (isNewLatest) {
       nextTags.latest = version._id;
     }
-    for (const tag of publishArgs.tags ?? []) {
+    for (const tag of normalizeSkillTags(publishArgs.tags) ?? []) {
       if (tag.toLowerCase() === "latest") continue;
       nextTags[tag] = version._id;
     }

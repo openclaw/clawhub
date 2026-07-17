@@ -754,7 +754,7 @@ description: Security scanner smoke fixture.
               version: "1.0.0",
               changelog: "Initial release",
               changelogSource: "user",
-              tags: ["latest"],
+              tags: ["latest", "tax", "个体工商户", "_private"],
               files: [],
               parsed: { frontmatter: {}, license: "MIT-0" },
               staticScan: {
@@ -782,12 +782,15 @@ description: Security scanner smoke fixture.
       versionId: "skillVersions:pending",
       embeddingId: "skillEmbeddings:demo",
     });
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        versionId: "skillVersions:pending",
-      }),
+    const publishPendingCall = runMutation.mock.calls.find(
+      ([, args]) => args.versionId === "skillVersions:pending" && "publishArgs" in args,
     );
+    expect(publishPendingCall?.[1]).toMatchObject({
+      versionId: "skillVersions:pending",
+      publishArgs: {
+        tags: ["latest", "tax"],
+      },
+    });
     expect(runMutation).not.toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
