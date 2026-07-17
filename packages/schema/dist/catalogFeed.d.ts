@@ -219,4 +219,33 @@ export declare const CATALOG_FEED_GITHUB_SOURCE_REF = "public-github";
 export declare const CATALOG_SKILLS_FEED_ID = "clawhub-official-skills";
 export declare const CATALOG_SKILLS_FEED_DESCRIPTION = "Skills published by verified OpenClaw publishers on ClawHub.";
 export declare function parseCatalogFeed(value: unknown): CatalogFeed;
+export declare function normalizeCatalogFeedEntries(entries: readonly CatalogFeedEntry[]): {
+    type: "plugin" | "skill";
+    id: string;
+    title: string;
+    description?: string | undefined;
+    icon?: string | undefined;
+    version: string;
+    state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    featured?: boolean | undefined;
+    featuredAt?: number | undefined;
+    publisher: {
+        id: string;
+        trust: "community" | "official";
+    };
+    install: {
+        candidates: {
+            sourceRef: string;
+            package: string;
+            version: string;
+            integrity: string;
+            github?: {
+                repo: string;
+                path: string;
+                commit: string;
+                contentHash: string;
+            } | undefined;
+        }[];
+    };
+}[];
 export declare function serializeCatalogFeed(feed: CatalogFeed): string;

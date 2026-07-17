@@ -2,6 +2,7 @@ import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID, type CatalogFeedEntry } from "
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __test,
+  acquireCatalogFeedPublicationLease,
   listChanges,
   listOfficialEntries,
   listOfficialSkillEntries,
@@ -47,6 +48,9 @@ const storePublicationHandler = (
     },
     { sequence: number; entryCount: number }
   >
+)._handler;
+const acquirePublicationLeaseHandler = (
+  acquireCatalogFeedPublicationLease as unknown as WrappedHandler<{ leaseToken: string }, void>
 )._handler;
 const listChangesHandler = (
   listChanges as unknown as WrappedHandler<
@@ -225,6 +229,35 @@ function makeCtx(
 }
 
 describe("catalog feed projection", () => {
+  it("rejects an overlapping publication while its lease is active", async () => {
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => ({
+              _id: "catalogFeedPublicationLeases:1",
+              leaseToken: crypto.randomUUID(),
+              expirationTime: Date.now() + 60_000,
+            })),
+          })),
+        })),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        get: vi.fn(),
+        normalizeId: vi.fn(),
+        system: { get: vi.fn(), query: vi.fn() },
+      },
+    };
+
+    await expect(
+      acquirePublicationLeaseHandler(ctx, { leaseToken: crypto.randomUUID() }),
+    ).rejects.toThrow("already running");
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -268,6 +301,9 @@ describe("catalog feed projection", () => {
             if (table === "catalogFeedRevisions") {
               return { order: vi.fn(() => ({ first: vi.fn(async () => null) })) };
             }
+            if (table === "catalogFeedShardPublications") {
+              return { order: vi.fn(() => ({ first: vi.fn(async () => ({ sequence: 4 })) })) };
+            }
             return { unique: vi.fn(async () => null) };
           }),
         })),
@@ -288,12 +324,12 @@ describe("catalog feed projection", () => {
       entries: [makeFeedSkillEntry(1)],
     });
 
-    expect(result).toMatchObject({ sequence: 1, entryCount: 1 });
+    expect(result).toMatchObject({ sequence: 5, entryCount: 1 });
     expect(insert).toHaveBeenCalledWith(
       "catalogFeedRevisions",
       expect.objectContaining({
         feedId: CATALOG_SKILLS_FEED_ID,
-        sequence: 1,
+        sequence: 5,
         indexedEntryCount: 0,
         changeCount: 2,
         cumulativeChangeCount: 2,
@@ -709,17 +745,36 @@ describe("catalog feed projection", () => {
     });
   });
 
-  it("caps oversized skills feeds instead of blocking plugin publication", async () => {
+  it("publishes every eligible skill through complete shards beyond the legacy atomic limit", async () => {
     const skillEntries = Array.from({ length: 1001 }, (_, index) => makeFeedSkillEntry(index));
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
-      "description" in args
-        ? {
-            feedId: args.feedId,
-            sequence: 1,
-            entryCount: (args.entries as unknown[]).length,
-          }
-        : {},
-    );
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return {
+          sequence: 1,
+          publishedAt: 1,
+          entryCount: args.publicationId.startsWith(CATALOG_SKILLS_FEED_ID) ? 1001 : 0,
+        };
+      }
+      return {};
+    });
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if ("family" in args) return [];
       if ("publisherId" in args) {
@@ -737,39 +792,50 @@ describe("catalog feed projection", () => {
       { expiresAt: "2026-06-30T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(8);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ feedId: CATALOG_FEED_ID, entries: [] }),
-    );
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        feedId: CATALOG_SKILLS_FEED_ID,
-        entries: expect.arrayContaining([expect.objectContaining({ id: "@openclaw/demo-999" })]),
-      }),
     );
     expect(
       vi
         .mocked(runMutation)
         .mock.calls.find(
-          ([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args,
-        )?.[1].entries,
-    ).toHaveLength(1000);
+          ([, args]) =>
+            args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args && !("entries" in args),
+        )?.[1],
+    ).toMatchObject({ entryCount: 1001 });
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, args]) =>
+            args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args && "entries" in args,
+        ),
+    ).toBe(false);
     expect(
       vi
         .mocked(runMutation)
         .mock.calls.filter(([, args]) => "startOrdinal" in args)
         .map(([, args]) => [args.startOrdinal, (args.entries as unknown[]).length]),
-    ).toEqual([
-      [0, 250],
-      [250, 250],
-      [500, 250],
-      [750, 250],
-    ]);
+    ).toEqual([]);
+    const skillShardPayloads = vi
+      .mocked(runMutation)
+      .mock.calls.filter(
+        ([, args]) =>
+          args.publicationId === `${CATALOG_SKILLS_FEED_ID}:shards` && "payload" in args,
+      )
+      .map(([, args]) => JSON.parse(args.payload as string) as { entries: unknown[] });
+    expect(skillShardPayloads).toHaveLength(5);
+    expect(skillShardPayloads.flatMap((shard) => shard.entries)).toHaveLength(1001);
     expect(result).toEqual([
       { feedId: CATALOG_FEED_ID, sequence: 1, entryCount: 0 },
-      { feedId: CATALOG_SKILLS_FEED_ID, sequence: 1, entryCount: 1000 },
+      {
+        publicationId: `${CATALOG_SKILLS_FEED_ID}:shards`,
+        feedId: CATALOG_SKILLS_FEED_ID,
+        sequence: 1,
+        publishedAt: 1,
+        entryCount: 1001,
+      },
     ]);
   });
 

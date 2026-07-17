@@ -2787,6 +2787,57 @@ const catalogFeedQueryResults = defineTable({
   .index("by_materialization_ordinal", ["materializationId", "ordinal"])
   .index("by_expiration_time", ["expirationTime"]);
 
+const catalogFeedShardPublications = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  expiresAt: v.string(),
+  description: v.string(),
+  entryCount: v.number(),
+  expectedShardCount: v.optional(v.number()),
+  storedShardCount: v.number(),
+  storedEntryCount: v.number(),
+  storedByteCount: v.number(),
+  status: v.union(v.literal("building"), v.literal("ready")),
+  publishedAt: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_feed_and_sequence", ["feedId", "sequence"])
+  .index("by_feed_status_sequence", ["feedId", "status", "sequence"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedShards = defineTable({
+  publicationId: v.id("catalogFeedShardPublications"),
+  feedId: v.string(),
+  sequence: v.number(),
+  index: v.number(),
+  sha256: v.string(),
+  byteLength: v.number(),
+  entryCount: v.number(),
+  payload: v.string(),
+  expirationTime: v.number(),
+})
+  .index("by_publication_and_index", ["publicationId", "index"])
+  .index("by_sha256", ["sha256"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedShardDescriptors = defineTable({
+  publicationId: v.id("catalogFeedShardPublications"),
+  index: v.number(),
+  sha256: v.string(),
+  byteLength: v.number(),
+  entryCount: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_publication_and_index", ["publicationId", "index"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedPublicationLeases = defineTable({
+  key: v.literal("hosted-catalog"),
+  leaseToken: v.string(),
+  expirationTime: v.number(),
+}).index("by_key", ["key"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -3760,6 +3811,10 @@ export default defineSchema({
   catalogFeedIndexedEntries,
   catalogFeedQueryMaterializations,
   catalogFeedQueryResults,
+  catalogFeedShardPublications,
+  catalogFeedShards,
+  catalogFeedShardDescriptors,
+  catalogFeedPublicationLeases,
   stars,
   promotions,
   auditLogs,

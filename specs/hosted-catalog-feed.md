@@ -67,9 +67,12 @@ Suspicious GitHub-backed entries follow the same public feed visibility pattern
 as suspicious hosted packages and skills.
 Pending, failed, malicious, missing, removed, hidden, soft-deleted, or
 incomplete GitHub-backed skills are not emitted.
-Until the skills feed has pagination or sharding, it publishes at most 1000
-eligible entries per snapshot so a large skills corpus does not block the plugin
-feed publication path.
+The skills feed has no legacy 1000-entry publication cap. Complete snapshots are
+published as immutable digest-addressed shards behind a signed root. While a
+snapshot still fits the legacy atomic representation, both forms are published
+at the same sequence; once it exceeds the atomic limit, `/v1/feeds/skills`
+redirects to `/v1/feeds/skills/root` instead of returning a silently truncated
+catalog.
 
 The promotions feed uses id `clawhub-promotions`, schema version `1`, and the
 `/v1/feeds/promotions` route. Entries are declarative promotion records, not
@@ -151,8 +154,30 @@ available during rollout and signer incidents. Responses include `Vary:
 Accept`. The signed representation's ETag and
 `X-Content-SHA256` describe the signed envelope representation;
 `X-Catalog-Payload-SHA256` preserves the stored publication payload digest.
-Skills and promotions remain on their existing unsigned representations until
-their payload types and matching OpenClaw consumers are specified.
+The legacy atomic skills and promotions representations remain unsigned. The
+skills shard root has its own signed payload type; activating it as the default
+requires the matching OpenClaw shard consumer.
+
+The complete plugin and skill snapshot roots are
+`/api/v1/feeds/plugins/root` and `/api/v1/feeds/skills/root`. Roots are DSSE
+signed with distinct payload types and list absolute HTTPS shard URLs, exact raw
+byte lengths, entry counts, and lowercase SHA-256 digests. Shards are served at
+`/api/v1/feeds/{plugins|skills}/shards/sha256-<digest>.json` with one-year
+immutable caching. A consumer must verify the signed root before fetching a
+shard, then verify the shard's exact response bytes against the root descriptor
+before parsing JSON. Shards are not independently signed.
+
+Publication writes every bounded shard before marking its root ready, so a root
+never advertises an incomplete set. A recoverable 30-minute lease serializes
+scheduled and direct publication actions across the multi-mutation build. A
+shard is at most 1 MiB and 10,000 entries;
+a root is at most 1 MiB, 1,024 shards, and 1,000,000 entries; the aggregate
+described shard bytes are at most 256 MiB. Empty snapshots have an empty shard
+list. ClawHub currently targets at most 900 KiB of payload per shard so the
+containing Convex document remains below its storage limit. Ready roots and
+their immutable shards are retained for 30 days. Lightweight descriptor rows
+are stored separately from shard payloads, so serving a root does not read the
+catalog's full payload bytes into one Convex transaction.
 
 ### Activation boundary
 

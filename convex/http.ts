@@ -65,6 +65,12 @@ import {
 import { signedCatalogFeedChangesHttp } from "./httpApiV1/catalogFeedChanges";
 import { signedCatalogFeedQueryHttp } from "./httpApiV1/catalogFeedQuery";
 import { catalogFeedWithOptionalSigningV1Http } from "./httpApiV1/catalogFeedSigning";
+import {
+  catalogFeedShardHttp,
+  catalogSkillsFeedShardHttp,
+  signedCatalogFeedShardRootHttp,
+  signedCatalogSkillsFeedShardRootHttp,
+} from "./httpApiV1/catalogFeedShards";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import {
@@ -190,6 +196,30 @@ http.route({
   path: ApiRoutes.catalogFeedQuery,
   method: "GET",
   handler: signedCatalogFeedQueryHttp,
+});
+
+http.route({
+  path: ApiRoutes.catalogFeedShardRoot,
+  method: "GET",
+  handler: signedCatalogFeedShardRootHttp,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.catalogFeedShards}/`,
+  method: "GET",
+  handler: catalogFeedShardHttp,
+});
+
+http.route({
+  path: ApiRoutes.catalogSkillsFeedShardRoot,
+  method: "GET",
+  handler: signedCatalogSkillsFeedShardRootHttp,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.catalogSkillsFeedShards}/`,
+  method: "GET",
+  handler: catalogSkillsFeedShardHttp,
 });
 
 http.route({

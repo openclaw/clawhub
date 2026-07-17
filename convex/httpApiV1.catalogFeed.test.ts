@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
-import { catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
+import { catalogFeedV1Handler, catalogSkillsFeedV1Handler } from "./httpApiV1/catalogFeedV1";
 
 type QueryCtx = {
   runQuery: ReturnType<typeof vi.fn>;
@@ -91,6 +91,21 @@ describe("catalogFeedV1Handler", () => {
     );
 
     expect(response.status).toBe(503);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("redirects oversized skills snapshots to the complete signed shard root", async () => {
+    ctx.runQuery
+      .mockResolvedValueOnce({ ...publication, feedId: "clawhub-official-skills", sequence: 4 })
+      .mockResolvedValueOnce({ feedId: "clawhub-official-skills", sequence: 5 });
+
+    const response = await catalogSkillsFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/skills"),
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("/v1/feeds/skills/root");
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 });

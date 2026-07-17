@@ -25,6 +25,11 @@ describe("Convex HTTP proxy", () => {
     expect(buildConvexProxyTarget("/v1/feeds/plugins", env)).toBe(
       "https://preview-branch-123.convex.site/api/v1/feeds/plugins",
     );
+    expect(
+      buildConvexProxyTarget(`/v1/feeds/plugins/shards/sha256-${"a".repeat(64)}.json`, env),
+    ).toBe(
+      `https://preview-branch-123.convex.site/api/v1/feeds/plugins/shards/sha256-${"a".repeat(64)}.json`,
+    );
   });
 
   it("allows only read methods when the frontend is a preview", () => {
