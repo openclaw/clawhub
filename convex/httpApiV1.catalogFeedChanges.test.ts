@@ -20,7 +20,10 @@ async function signedPayload(response: Response) {
   const envelope = (await response.json()) as {
     payloadType: string;
     payload: string;
+    signatures: Array<Record<string, unknown>>;
   };
+  expect(Object.keys(envelope).sort()).toEqual(["payload", "payloadType", "signatures"]);
+  expect(Object.keys(envelope.signatures[0] ?? {}).sort()).toEqual(["keyid", "sig"]);
   expect(envelope.payloadType).toBe(CATALOG_FEED_CHANGES_PAYLOAD_TYPE);
   return JSON.parse(Buffer.from(envelope.payload, "base64url").toString("utf8")) as Record<
     string,
