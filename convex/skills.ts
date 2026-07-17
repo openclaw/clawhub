@@ -321,6 +321,18 @@ function normalizeAnalysisStatus(status: string | undefined) {
   return status?.trim().toLowerCase();
 }
 
+function hasCompletedScannerResult(
+  version: Pick<Doc<"skillVersions">, "staticScan" | "vtAnalysis" | "llmAnalysis">,
+) {
+  const completedStatuses = new Set(["clean", "benign", "safe", "suspicious", "malicious"]);
+  return [
+    version.staticScan?.status,
+    version.vtAnalysis?.status,
+    version.llmAnalysis?.status,
+    version.llmAnalysis?.verdict,
+  ].some((status) => completedStatuses.has(normalizeAnalysisStatus(status) ?? ""));
+}
+
 function hasReviewReasonCode(codes: readonly string[] | undefined) {
   return (codes ?? []).some((code) => code.startsWith("review."));
 }
@@ -8974,27 +8986,36 @@ export const restoreOwnedSkillsForModerationLiftBatchInternal = internalMutation
 
       const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
 
-      // If the skill was never scanned (or was pending scan when the hold
-      // was placed), re-queue it into the VT pipeline instead of marking it
-      // as restored. The VT queue selector only picks up "pending.scan",
-      // "pending.scan.stale", and "scanner.*" reasons, so
-      // "restored.moderation_lift" would leave these skills permanently
-      // unscanned.
-      const vtStatus = latestVersion?.vtAnalysis?.status;
-      const needsScan = !vtStatus || vtStatus === "pending" || vtStatus === "loading";
-      const nextReason = needsScan ? "pending.scan" : "restored.moderation_lift";
-      const patch: Partial<Doc<"skills">> = {
-        moderationStatus: needsScan ? "hidden" : "active",
-        moderationReason: nextReason,
-        isSuspicious: computeIsSuspicious({
-          moderationFlags: skill.moderationFlags,
-          moderationReason: nextReason,
-        }),
-        hiddenAt: undefined,
-        hiddenBy: undefined,
-        lastReviewedAt: now,
-        updatedAt: now,
-      };
+      // Restore from the current structured scanner result. VirusTotal is no
+      // longer guaranteed to run, so checking only vtAnalysis would leave
+      // clean ClawScan versions hidden as pending forever.
+      const patch: Partial<Doc<"skills">> =
+        latestVersion && hasCompletedScannerResult(latestVersion)
+          ? {
+              ...applySkillManualOverrideToSkillPatch({
+                skill,
+                basePatch: buildScannerModerationPatchFromVersion({
+                  owner: user,
+                  version: latestVersion,
+                  now,
+                }),
+                now,
+                stripUpdatedAt: true,
+              }),
+              updatedAt: now,
+            }
+          : {
+              moderationStatus: "hidden",
+              moderationReason: "pending.scan",
+              isSuspicious: computeIsSuspicious({
+                moderationFlags: skill.moderationFlags,
+                moderationReason: "pending.scan",
+              }),
+              hiddenAt: undefined,
+              hiddenBy: undefined,
+              lastReviewedAt: now,
+              updatedAt: now,
+            };
       const nextSkill = { ...skill, ...patch };
       await ctx.db.patch(skill._id, patch);
       await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
