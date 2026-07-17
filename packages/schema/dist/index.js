@@ -3,6 +3,7 @@ export * from "./claws.js";
 export * from "./clawPackage.js";
 export * from "./catalogFeed.js";
 export * from "./catalogFeedDistribution.js";
+export * from "./catalogFeedShards.js";
 export * from "./experimentalClawFeed.js";
 export * from "./catalogMetadata.js";
 export * from "./docsLinks.js";

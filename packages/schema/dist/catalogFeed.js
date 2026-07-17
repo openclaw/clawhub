@@ -90,9 +90,8 @@ export function parseCatalogFeed(value) {
     }
     return feed;
 }
-export function serializeCatalogFeed(feed) {
-    const parsed = parseCatalogFeed(feed);
-    const entries = [...parsed.entries]
+export function normalizeCatalogFeedEntries(entries) {
+    return [...entries]
         .sort((left, right) => left.id.localeCompare(right.id))
         .map((entry) => ({
         type: entry.type,
@@ -131,6 +130,10 @@ export function serializeCatalogFeed(feed) {
             })),
         },
     }));
+}
+export function serializeCatalogFeed(feed) {
+    const parsed = parseCatalogFeed(feed);
+    const entries = normalizeCatalogFeedEntries(parsed.entries);
     return JSON.stringify({
         schemaVersion: parsed.schemaVersion,
         id: parsed.id,

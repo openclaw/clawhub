@@ -1,4 +1,5 @@
 import {
+  ApiRoutes,
   CATALOG_FEED_ID,
   CATALOG_SKILLS_FEED_ID,
   EXPERIMENTAL_CLAW_FEED_ID,
@@ -130,6 +131,29 @@ export async function catalogFeedV1Handler(
 }
 
 export async function catalogSkillsFeedV1Handler(ctx: ActionCtx, request: Request) {
+  const [atomicPublication, shardPublication] = await Promise.all([
+    ctx.runQuery(internal.catalogFeed.getLatestPublication, {
+      feedId: CATALOG_SKILLS_FEED_ID,
+    }),
+    ctx.runQuery(internal.catalogFeedShards.getLatestCatalogFeedShardPublication, {
+      feedId: CATALOG_SKILLS_FEED_ID,
+    }),
+  ]);
+  if (
+    shardPublication &&
+    (!atomicPublication || shardPublication.sequence > atomicPublication.sequence)
+  ) {
+    return new Response(null, {
+      status: 308,
+      headers: mergeHeaders(
+        {
+          Location: ApiRoutes.catalogSkillsFeedShardRoot.replace(/^\/api/u, ""),
+          "Cache-Control": "no-store",
+        },
+        corsHeaders(),
+      ),
+    });
+  }
   return await catalogFeedV1Handler(ctx, request, CATALOG_SKILLS_FEED_ID);
 }
 
