@@ -1283,6 +1283,104 @@ describe("package commands", () => {
     }
   });
 
+  it("reports pending security checks for staged package publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "pending-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/pending-plugin",
+          displayName: "Pending Plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "pending.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "pending-plugin", {
+        owner: "@openclaw",
+        sourceRepo: "openclaw/pending-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "OK. Uploaded @scope/pending-plugin@1.0.0; security checks are pending before it becomes public (rel_1)",
+      );
+      expect(mockWrite).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("includes pending package publish metadata in json output", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "json-pending-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/json-pending-plugin",
+          displayName: "JSON Pending Plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "json.pending.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "json-pending-plugin", {
+        owner: "@openclaw",
+        sourceRepo: "openclaw/json-pending-plugin",
+        sourceCommit: "abc123",
+        json: true,
+      });
+
+      expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
+      expect(mockWrite).toHaveBeenCalledTimes(1);
+      const output = JSON.parse(String(mockWrite.mock.calls[0]?.[0] ?? ""));
+      expect(output).toEqual(
+        expect.objectContaining({
+          name: "@scope/json-pending-plugin",
+          releaseId: "rel_1",
+          publicationStatus: "pending",
+          attemptId: "attempt_1",
+        }),
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("sends explicit empty catalog metadata to clear existing package values", async () => {
     const workdir = await makeTmpWorkdir();
     try {

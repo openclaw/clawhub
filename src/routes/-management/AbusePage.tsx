@@ -1022,6 +1022,14 @@ function PublisherAbuseSignalInspector({
               ratio={item.signal.allTimeInstallDownloadRatio}
             />
           </div>
+          {item.signal.temporalBenchmark?.scope === "all_active_skills" ? (
+            <p className="pa-hint">
+              Platform 30d downloads across all{" "}
+              {formatWholeNumber(item.signal.temporalBenchmark.sampleSize)} active skills: P95{" "}
+              {formatWholeNumber(item.signal.temporalBenchmark.downloads30dP95)}, P99{" "}
+              {formatWholeNumber(item.signal.temporalBenchmark.downloads30dP99)}.
+            </p>
+          ) : null}
         </section>
 
         <section className="pa-zone">
@@ -1222,12 +1230,14 @@ function PublisherTemporalEvidence({ score }: { score: PublisherAbuseReviewScore
   if (!evidence.length) return null;
 
   const benchmark = score?.temporalBenchmark;
+  const isPlatformBenchmark = benchmark?.scope === "all_active_skills";
   return (
     <div className="pa-activity-evidence">
       <div className="pa-subsection-label">Temporal signal</div>
       {benchmark ? (
         <p className="pa-hint">
-          Compared with {formatWholeNumber(benchmark.sampleSize)} scanned skills: 30d download P95{" "}
+          Compared with {isPlatformBenchmark ? "all" : "a legacy cohort of"}{" "}
+          {formatWholeNumber(benchmark.sampleSize)} active skills: 30d download P95{" "}
           {formatWholeNumber(benchmark.downloads30dP95)}, P99{" "}
           {formatWholeNumber(benchmark.downloads30dP99)}.
         </p>
@@ -1254,16 +1264,22 @@ function PublisherTemporalEvidence({ score }: { score: PublisherAbuseReviewScore
             <div className="pa-temporal-metrics">
               <PublisherAbuseMetric label="30d downloads" value={item.recent30Downloads} />
               {benchmark ? (
-                <PublisherAbuseMetric label="Peer 30d P95" value={benchmark.downloads30dP95} />
+                <PublisherAbuseMetric
+                  label={`${isPlatformBenchmark ? "Platform" : "Legacy cohort"} 30d P95`}
+                  value={benchmark.downloads30dP95}
+                />
               ) : null}
               {benchmark ? (
-                <PublisherAbuseMetric label="Peer 30d P99" value={benchmark.downloads30dP99} />
+                <PublisherAbuseMetric
+                  label={`${isPlatformBenchmark ? "Platform" : "Legacy cohort"} 30d P99`}
+                  value={benchmark.downloads30dP99}
+                />
               ) : null}
               <PublisherAbuseMetric label="30d vs P95" value={item.downloads30dVsPeerP95} ratio />
               <PublisherAbuseMetric label="7d spike multiple" value={item.spikeMultiplier} ratio />
               {benchmark ? (
                 <PublisherAbuseMetric
-                  label="Peer spike P95"
+                  label={`${isPlatformBenchmark ? "Platform" : "Legacy cohort"} spike P95`}
                   value={benchmark.spikeMultiplier7dP95}
                   ratio
                 />

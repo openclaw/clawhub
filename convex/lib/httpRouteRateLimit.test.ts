@@ -23,6 +23,9 @@ function makeCtx({
       const config = args.config as { period: number };
       return allowed ? { ok: true } : { ok: false, retryAfter: config.period };
     }
+    if ("name" in args && "key" in args && "ttlMs" in args) {
+      return { action: "retained" };
+    }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
   return { ctx: { runQuery, runMutation } as unknown as ActionCtx, runQuery, runMutation };
@@ -131,7 +134,7 @@ describe("rateLimitedHttpAction", () => {
     const response = await wrapped._handler(ctx, new Request("https://example.com/api/v1/search"));
 
     expect(response.status).toBe(200);
-    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

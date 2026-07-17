@@ -7,12 +7,27 @@ import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
+const CHECK_RETRY_BACKOFF_MS = 5 * 60 * 1000;
 const FINALIZATION_CLAIM_LEASE_MS = 10 * 60 * 1000;
+const PUBLISH_ATTEMPT_STATUSES = [
+  "pending_checks",
+  "ready_to_finalize",
+  "finalizing",
+  "finalized",
+  "blocked",
+  "failed",
+  "expired",
+] as const;
 
 const publishResultValidator = v.object({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
-  embeddingId: v.id("skillEmbeddings"),
+  embeddingId: v.optional(v.id("skillEmbeddings")),
+  status: v.optional(v.union(v.literal("pending"), v.literal("published"))),
+  slug: v.optional(v.string()),
+  version: v.optional(v.string()),
+  publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
+  attemptId: v.optional(v.id("publishAttempts")),
 });
 
 const packagePublishResultValidator = v.object({
@@ -27,6 +42,27 @@ const workerCheckResultValidator = v.object({
   redactedFindings: v.optional(v.array(v.string())),
 });
 
+const workerLlmAnalysisValidator = v.object({
+  status: v.string(),
+  verdict: v.optional(v.string()),
+  confidence: v.optional(v.string()),
+  summary: v.optional(v.string()),
+  dimensions: v.optional(
+    v.array(
+      v.object({
+        name: v.string(),
+        label: v.string(),
+        rating: v.string(),
+        detail: v.string(),
+      }),
+    ),
+  ),
+  guidance: v.optional(v.string()),
+  findings: v.optional(v.string()),
+  model: v.optional(v.string()),
+  checkedAt: v.number(),
+});
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -39,11 +75,71 @@ function withoutUndefined<T extends Record<string, unknown>>(value: T) {
   ) as Partial<T>;
 }
 
+function withClawscanAnalysis(insertArgs: unknown, clawscanAnalysis: unknown) {
+  if (!clawscanAnalysis) return insertArgs;
+  return {
+    ...asRecord(insertArgs),
+    llmAnalysis: clawscanAnalysis,
+  };
+}
+
+function scannerFailureSummary(args: {
+  trufflehog: { status: string; summary?: string };
+  clawscan: { status: string; summary?: string };
+}) {
+  if (args.trufflehog.status === "failed" && args.trufflehog.summary) {
+    return args.trufflehog.summary;
+  }
+  if (args.clawscan.status === "failed" && args.clawscan.summary) {
+    return args.clawscan.summary;
+  }
+  return "Pre-publication scanner failed before returning a verdict.";
+}
+
+function isTerminalFinalizationConflict(error: string | undefined) {
+  return (
+    typeof error === "string" &&
+    (/Version .+ already exists\. Increment the version number and try again\./.test(error) ||
+      error.includes("Slug is used by multiple publishers. Use an owner-qualified skill URL.") ||
+      error.includes("Slug redirects to an existing skill. Choose a different slug.") ||
+      error.includes("Upstream skill not found"))
+  );
+}
+
+function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
+  if (!isTerminalFinalizationConflict(error)) {
+    return {
+      status: "ready_to_finalize" as const,
+      finalizationClaimId: undefined,
+      finalizationClaimedAt: undefined,
+      finalizationClaimExpiresAt: undefined,
+      finalizationLastError: error,
+      updatedAt: now,
+    };
+  }
+  return {
+    status: "failed" as const,
+    checkClaimId: undefined,
+    checkClaimedAt: undefined,
+    checkClaimExpiresAt: undefined,
+    checkClaimLastError: undefined,
+    finalizationClaimId: undefined,
+    finalizationClaimedAt: undefined,
+    finalizationClaimExpiresAt: undefined,
+    finalizationLastError: error,
+    failedAt: now,
+    updatedAt: now,
+  };
+}
+
 export const createSkillPublishAttemptInternal = internalMutation({
   args: {
     userId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
     sourceOwnerPublisherId: v.optional(v.id("publishers")),
+    skillId: v.id("skills"),
+    skillVersionId: v.id("skillVersions"),
+    createdNewParent: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
     version: v.string(),
@@ -58,7 +154,7 @@ export const createSkillPublishAttemptInternal = internalMutation({
         contentType: v.optional(v.string()),
       }),
     ),
-    skillInsertArgs: v.any(),
+    scanContext: v.optional(v.any()),
     followup: v.object({
       skipWebhook: v.optional(v.boolean()),
       ownerHandle: v.optional(v.string()),
@@ -81,6 +177,9 @@ export const createSkillPublishAttemptInternal = internalMutation({
       userId: args.userId,
       ownerPublisherId: args.ownerPublisherId,
       sourceOwnerPublisherId: args.sourceOwnerPublisherId,
+      skillId: args.skillId,
+      skillVersionId: args.skillVersionId,
+      createdNewParent: args.createdNewParent,
       slug: args.slug,
       displayName: args.displayName,
       version: args.version,
@@ -91,7 +190,7 @@ export const createSkillPublishAttemptInternal = internalMutation({
         trufflehog: { status: "pending" },
         clawscan: { status: "pending" },
       },
-      skillInsertArgs: args.skillInsertArgs,
+      scanContext: args.scanContext,
       followup: args.followup,
       createdAt: now,
       updatedAt: now,
@@ -118,11 +217,56 @@ function isTerminalRetriableAttemptStatus(status: string) {
   return status === "blocked" || status === "failed" || status === "expired";
 }
 
+export const findExistingPublishAttemptForArtifactInternal = internalQuery({
+  args: {
+    kind: v.union(v.literal("skill"), v.literal("package")),
+    slug: v.string(),
+    version: v.string(),
+    userId: v.optional(v.id("users")),
+    ownerPublisherId: v.optional(v.id("publishers")),
+  },
+  handler: async (ctx, args) => {
+    for (const status of PUBLISH_ATTEMPT_STATUSES) {
+      const attempts = await ctx.db
+        .query("publishAttempts")
+        .withIndex("by_kind_status_slug_version_created", (q) =>
+          q
+            .eq("kind", args.kind)
+            .eq("status", status)
+            .eq("slug", args.slug)
+            .eq("version", args.version),
+        )
+        .order("desc")
+        .take(25);
+      const match = attempts.find((attempt) => {
+        if (args.kind === "package") return true;
+        if (args.ownerPublisherId !== undefined) {
+          return attempt.ownerPublisherId === args.ownerPublisherId;
+        }
+        return attempt.ownerPublisherId === undefined && attempt.userId === args.userId;
+      });
+      if (match) {
+        return {
+          attemptId: match._id,
+          status: match.status,
+          kind: match.kind,
+          slug: match.slug,
+          version: match.version,
+        };
+      }
+    }
+    return null;
+  },
+});
+
 export const createPackagePublishAttemptInternal = internalMutation({
   args: {
     userId: v.id("users"),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
+    packageId: v.id("packages"),
+    packageReleaseId: v.id("packageReleases"),
+    createdNewParent: v.optional(v.boolean()),
     name: v.string(),
     displayName: v.string(),
     version: v.string(),
@@ -137,7 +281,9 @@ export const createPackagePublishAttemptInternal = internalMutation({
         contentType: v.optional(v.string()),
       }),
     ),
-    packageInsertArgs: v.any(),
+    clawpackStorageId: v.optional(v.id("_storage")),
+    scanContext: v.optional(v.any()),
+    packageInsertArgs: v.optional(v.any()),
     packageFollowup: v.any(),
   },
   handler: async (ctx, args) => {
@@ -157,6 +303,9 @@ export const createPackagePublishAttemptInternal = internalMutation({
       userId: args.userId,
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId,
+      packageId: args.packageId,
+      packageReleaseId: args.packageReleaseId,
+      createdNewParent: args.createdNewParent,
       slug: args.name,
       displayName: args.displayName,
       version: args.version,
@@ -167,6 +316,8 @@ export const createPackagePublishAttemptInternal = internalMutation({
         trufflehog: { status: "pending" },
         clawscan: { status: "pending" },
       },
+      clawpackStorageId: args.clawpackStorageId,
+      scanContext: args.scanContext,
       packageInsertArgs: args.packageInsertArgs,
       packageFollowup: args.packageFollowup,
       createdAt: now,
@@ -180,9 +331,11 @@ export const createPackagePublishAttemptInternal = internalMutation({
 
 function getSecretBlockedStorageIds(attempt: {
   files: Array<{ storageId: Id<"_storage"> }>;
+  clawpackStorageId?: Id<"_storage">;
   packageInsertArgs?: unknown;
 }) {
   const storageIds = new Set<Id<"_storage">>(attempt.files.map((file) => file.storageId));
+  if (attempt.clawpackStorageId) storageIds.add(attempt.clawpackStorageId);
   const packageInsertArgs = attempt.packageInsertArgs;
   if (packageInsertArgs && typeof packageInsertArgs === "object") {
     const clawpackStorageId = (packageInsertArgs as { clawpackStorageId?: unknown })
@@ -194,7 +347,11 @@ function getSecretBlockedStorageIds(attempt: {
   return [...storageIds];
 }
 
-function buildSkillAttemptScanContext(attempt: { skillInsertArgs?: unknown }) {
+function buildSkillAttemptScanContext(attempt: {
+  scanContext?: unknown;
+  skillInsertArgs?: unknown;
+}) {
+  if (attempt.scanContext) return attempt.scanContext;
   const skillInsertArgs = asRecord(attempt.skillInsertArgs);
   const parsed = asRecord(skillInsertArgs.parsed);
   return withoutUndefined({
@@ -211,7 +368,11 @@ function buildSkillAttemptScanContext(attempt: { skillInsertArgs?: unknown }) {
   });
 }
 
-function buildPackageAttemptScanContext(attempt: { packageInsertArgs?: unknown }) {
+function buildPackageAttemptScanContext(attempt: {
+  scanContext?: unknown;
+  packageInsertArgs?: unknown;
+}) {
+  if (attempt.scanContext) return attempt.scanContext;
   const packageInsertArgs = asRecord(attempt.packageInsertArgs);
   const verification = asRecord(packageInsertArgs.verification);
   return withoutUndefined({
@@ -229,9 +390,68 @@ function buildPackageAttemptScanContext(attempt: { packageInsertArgs?: unknown }
   });
 }
 
-function publishAttemptClawpackStorageId(attempt: { packageInsertArgs?: unknown }) {
+function publishAttemptClawpackStorageId(attempt: {
+  clawpackStorageId?: Id<"_storage">;
+  packageInsertArgs?: unknown;
+}) {
+  if (attempt.clawpackStorageId) return attempt.clawpackStorageId;
   const clawpackStorageId = asRecord(attempt.packageInsertArgs).clawpackStorageId;
   return typeof clawpackStorageId === "string" ? (clawpackStorageId as Id<"_storage">) : undefined;
+}
+
+async function deleteSecretBlockedPendingSkillArtifact(
+  ctx: MutationCtx,
+  attempt: {
+    skillId?: Id<"skills">;
+    skillVersionId?: Id<"skillVersions">;
+    createdNewParent?: boolean;
+  },
+) {
+  if (!attempt.skillVersionId) return;
+
+  const fingerprints = await ctx.db
+    .query("skillVersionFingerprints")
+    .withIndex("by_version", (q) => q.eq("versionId", attempt.skillVersionId!))
+    .take(100);
+  for (const fingerprint of fingerprints) {
+    await ctx.db.delete(fingerprint._id);
+  }
+  await ctx.db.delete(attempt.skillVersionId);
+
+  if (!attempt.createdNewParent || !attempt.skillId) return;
+  const skill = await ctx.db.get(attempt.skillId);
+  if (!skill || skill.latestVersionId) return;
+  const remainingVersions = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill", (q) => q.eq("skillId", attempt.skillId!))
+    .take(1);
+  if (remainingVersions.length === 0) {
+    await ctx.db.delete(attempt.skillId);
+  }
+}
+
+async function deleteSecretBlockedPendingPackageArtifact(
+  ctx: MutationCtx,
+  attempt: {
+    packageId?: Id<"packages">;
+    packageReleaseId?: Id<"packageReleases">;
+    createdNewParent?: boolean;
+  },
+) {
+  if (!attempt.packageReleaseId) return;
+
+  await ctx.db.delete(attempt.packageReleaseId);
+
+  if (!attempt.createdNewParent || !attempt.packageId) return;
+  const pkg = await ctx.db.get(attempt.packageId);
+  if (!pkg || pkg.latestReleaseId) return;
+  const remainingReleases = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package", (q) => q.eq("packageId", attempt.packageId!))
+    .take(1);
+  if (remainingReleases.length === 0) {
+    await ctx.db.delete(attempt.packageId);
+  }
 }
 
 export const recordSkillPublishAttemptChecksPassedInternal = internalMutation({
@@ -278,6 +498,7 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     artifactFingerprint: v.string(),
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
+    clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
   },
   handler: async (ctx, args) => {
     const attempt = await ctx.db.get(args.attemptId);
@@ -318,6 +539,11 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       await Promise.all(
         getSecretBlockedStorageIds(attempt).map((storageId) => ctx.storage.delete(storageId)),
       );
+      if (attempt.kind === "skill") {
+        await deleteSecretBlockedPendingSkillArtifact(ctx, attempt);
+      } else if (attempt.kind === "package") {
+        await deleteSecretBlockedPendingPackageArtifact(ctx, attempt);
+      }
       await ctx.db.patch(attempt._id, {
         status: "blocked",
         checks,
@@ -338,9 +564,36 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
     }
 
     if (args.clawscan.status === "blocked") {
+      if (attempt.kind === "skill" && attempt.skillVersionId) {
+        await ctx.db.patch(attempt.skillVersionId, {
+          publicationStatus: "blocked",
+          llmAnalysis: args.clawscanAnalysis,
+          publishAttemptId: attempt._id,
+        });
+      }
+      if (attempt.kind === "package" && attempt.packageReleaseId) {
+        const release = await ctx.db.get(attempt.packageReleaseId);
+        const verification = release?.verification
+          ? { ...release.verification, scanStatus: "malicious" as const }
+          : release?.verification;
+        await ctx.db.patch(attempt.packageReleaseId, {
+          publicationStatus: "blocked",
+          verification,
+          llmAnalysis: args.clawscanAnalysis,
+          publishAttemptId: attempt._id,
+        });
+      }
       await ctx.db.patch(attempt._id, {
         status: "blocked",
         checks,
+        skillInsertArgs:
+          attempt.kind === "skill"
+            ? withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis)
+            : attempt.skillInsertArgs,
+        packageInsertArgs:
+          attempt.kind === "package"
+            ? withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis)
+            : attempt.packageInsertArgs,
         checkClaimId: undefined,
         checkClaimedAt: undefined,
         checkClaimExpiresAt: undefined,
@@ -353,21 +606,42 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
 
     if (args.trufflehog.status === "failed" || args.clawscan.status === "failed") {
       await ctx.db.patch(attempt._id, {
-        status: "failed",
+        status: "pending_checks",
         checks,
         checkClaimId: undefined,
         checkClaimedAt: undefined,
-        checkClaimExpiresAt: undefined,
-        checkClaimLastError: undefined,
-        failedAt: now,
+        checkClaimExpiresAt: now + CHECK_RETRY_BACKOFF_MS,
+        checkClaimLastError: scannerFailureSummary(args),
+        failedAt: undefined,
         updatedAt: now,
       });
-      return { attemptId: attempt._id, kind: attempt.kind, status: "failed" as const };
+      return { attemptId: attempt._id, kind: attempt.kind, status: "pending_checks" as const };
+    }
+
+    if (attempt.kind === "skill" && attempt.skillVersionId && args.clawscanAnalysis) {
+      await ctx.db.patch(attempt.skillVersionId, {
+        llmAnalysis: args.clawscanAnalysis,
+        publishAttemptId: attempt._id,
+      });
+    }
+    if (attempt.kind === "package" && attempt.packageReleaseId && args.clawscanAnalysis) {
+      await ctx.db.patch(attempt.packageReleaseId, {
+        llmAnalysis: args.clawscanAnalysis,
+        publishAttemptId: attempt._id,
+      });
     }
 
     await ctx.db.patch(attempt._id, {
       status: "ready_to_finalize",
       checks,
+      skillInsertArgs:
+        attempt.kind === "skill"
+          ? withClawscanAnalysis(attempt.skillInsertArgs, args.clawscanAnalysis)
+          : attempt.skillInsertArgs,
+      packageInsertArgs:
+        attempt.kind === "package"
+          ? withClawscanAnalysis(attempt.packageInsertArgs, args.clawscanAnalysis)
+          : attempt.packageInsertArgs,
       checkClaimId: undefined,
       checkClaimedAt: undefined,
       checkClaimExpiresAt: undefined,
@@ -439,6 +713,10 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
       ownerUserId: attempt.ownerUserId,
       ownerPublisherId: attempt.ownerPublisherId,
       sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
+      skillId: attempt.skillId,
+      versionId: attempt.skillVersionId,
+      packageId: attempt.packageId,
+      releaseId: attempt.packageReleaseId,
       slug: attempt.slug,
       displayName: attempt.displayName,
       version: attempt.version,
@@ -477,6 +755,7 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
             .order("asc")
             .take(25)
         ).find((candidate) => {
+          if ((candidate.checkClaimExpiresAt ?? 0) > now) return false;
           if (args.kind && candidate.kind !== args.kind) return false;
           if (args.slug && candidate.slug !== args.slug) return false;
           if (args.version && candidate.version !== args.version) return false;
@@ -485,10 +764,19 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
 
     if (!attempt) return null;
     if (attempt.status !== "ready_to_finalize") {
-      if (args.attemptId) {
-        throw new ConvexError(`Publish attempt is ${attempt.status}, not ready to finalize.`);
-      }
       return null;
+    }
+    if (args.kind && attempt.kind !== args.kind) {
+      throw new ConvexError("Publish attempt kind does not match worker claim.");
+    }
+    if (args.slug && attempt.slug !== args.slug) {
+      throw new ConvexError("Publish attempt slug does not match worker claim.");
+    }
+    if (args.version && attempt.version !== args.version) {
+      throw new ConvexError("Publish attempt version does not match worker claim.");
+    }
+    if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
+      throw new ConvexError("Publish attempt finalization retry is already claimed.");
     }
 
     await ctx.db.patch(attempt._id, {
@@ -508,6 +796,10 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
       ownerUserId: attempt.ownerUserId,
       ownerPublisherId: attempt.ownerPublisherId,
       sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
+      skillId: attempt.skillId,
+      versionId: attempt.skillVersionId,
+      packageId: attempt.packageId,
+      releaseId: attempt.packageReleaseId,
       slug: attempt.slug,
       displayName: attempt.displayName,
       version: attempt.version,
@@ -554,6 +846,9 @@ export const claimSkillPublishAttemptForFinalizationInternal = internalMutation(
     return {
       status: "claimed" as const,
       attemptId: attempt._id,
+      createdAt: attempt.createdAt,
+      skillId: attempt.skillId,
+      versionId: attempt.skillVersionId,
       skillInsertArgs: attempt.skillInsertArgs,
       followup: buildSkillPublishFollowup(attempt),
     };
@@ -595,6 +890,8 @@ export const claimPackagePublishAttemptForFinalizationInternal = internalMutatio
     return {
       status: "claimed" as const,
       attemptId: attempt._id,
+      packageId: attempt.packageId,
+      releaseId: attempt.packageReleaseId,
       packageInsertArgs: attempt.packageInsertArgs,
       packageFollowup: attempt.packageFollowup,
     };
@@ -613,15 +910,9 @@ export const releaseSkillPublishAttemptFinalizationClaimInternal = internalMutat
       return { attemptId: attempt._id, status: attempt.status };
     }
 
-    await ctx.db.patch(attempt._id, {
-      status: "ready_to_finalize",
-      finalizationClaimId: undefined,
-      finalizationClaimedAt: undefined,
-      finalizationClaimExpiresAt: undefined,
-      finalizationLastError: args.error,
-      updatedAt: Date.now(),
-    });
-    return { attemptId: attempt._id, status: "ready_to_finalize" as const };
+    const patch = releaseFinalizationClaimPatch(args.error, Date.now());
+    await ctx.db.patch(attempt._id, patch);
+    return { attemptId: attempt._id, status: patch.status };
   },
 });
 
@@ -637,15 +928,9 @@ export const releasePackagePublishAttemptFinalizationClaimInternal = internalMut
       return { attemptId: attempt._id, status: attempt.status };
     }
 
-    await ctx.db.patch(attempt._id, {
-      status: "ready_to_finalize",
-      finalizationClaimId: undefined,
-      finalizationClaimedAt: undefined,
-      finalizationClaimExpiresAt: undefined,
-      finalizationLastError: args.error,
-      updatedAt: Date.now(),
-    });
-    return { attemptId: attempt._id, status: "ready_to_finalize" as const };
+    const patch = releaseFinalizationClaimPatch(args.error, Date.now());
+    await ctx.db.patch(attempt._id, patch);
+    return { attemptId: attempt._id, status: patch.status };
   },
 });
 
@@ -679,6 +964,11 @@ export const recordSkillPublishAttemptFinalizedInternal = internalMutation({
       finalizedAt: now,
       updatedAt: now,
     });
+    if (attempt.skillVersionId && attempt.skillVersionId === args.result.versionId) {
+      await ctx.db.patch(attempt.skillVersionId, {
+        pendingPublication: undefined,
+      });
+    }
 
     return { attemptId: attempt._id, status: "finalized" as const, result: args.result };
   },
@@ -772,6 +1062,7 @@ export const findSkillPublishAttemptPublicResultInternal = internalQuery({
       skillId: skill._id,
       versionId: version._id,
       embeddingId: embedding._id,
+      publicationStatus: "published" as const,
     };
   },
 });
@@ -804,11 +1095,11 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       version: args.version,
     };
     const claimed = ((await ctx.runMutation(
-      internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
+      internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
       claimArgs,
     )) ??
       (await ctx.runMutation(
-        internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
+        internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
         claimArgs,
       ))) as null | {
       attemptId: Id<"publishAttempts">;
@@ -819,6 +1110,10 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       ownerUserId?: Id<"users">;
       ownerPublisherId?: Id<"publishers">;
       sourceOwnerPublisherId?: Id<"publishers">;
+      skillId?: Id<"skills">;
+      versionId?: Id<"skillVersions">;
+      packageId?: Id<"packages">;
+      releaseId?: Id<"packageReleases">;
       slug: string;
       displayName: string;
       version: string;
@@ -863,6 +1158,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     artifactFingerprint: v.string(),
     trufflehog: workerCheckResultValidator,
     clawscan: workerCheckResultValidator,
+    clawscanAnalysis: v.optional(workerLlmAnalysisValidator),
   },
   handler: async (ctx, args): Promise<unknown> => {
     assertWorkerToken(args.token);
@@ -874,11 +1170,12 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
         artifactFingerprint: args.artifactFingerprint,
         trufflehog: args.trufflehog,
         clawscan: args.clawscan,
+        clawscanAnalysis: args.clawscanAnalysis,
       },
     )) as {
       attemptId: Id<"publishAttempts">;
       kind: "skill" | "package";
-      status: "blocked" | "failed" | "ready_to_finalize";
+      status: "blocked" | "pending_checks" | "ready_to_finalize";
     };
 
     if (completed.status !== "ready_to_finalize") return completed;
@@ -964,20 +1261,34 @@ async function requireSkillPublishAttempt(
     version: string;
     displayName: string;
     artifactFingerprint: string;
+    createdAt: number;
     finalizationClaimId?: string;
     finalizationClaimExpiresAt?: number;
     result?: {
       skillId: Id<"skills">;
       versionId: Id<"skillVersions">;
-      embeddingId: Id<"skillEmbeddings">;
+      embeddingId?: Id<"skillEmbeddings">;
+      status?: "pending" | "published";
+      slug?: string;
+      version?: string;
+      publicationStatus?: "pending" | "published";
+      attemptId?: Id<"publishAttempts">;
     };
+    skillId?: Id<"skills">;
+    skillVersionId?: Id<"skillVersions">;
   };
-  if (typed.kind !== "skill" || !typed.skillInsertArgs || !typed.followup) {
+  if (
+    typed.kind !== "skill" ||
+    !typed.followup ||
+    (!typed.skillVersionId && !typed.skillInsertArgs)
+  ) {
     throw new ConvexError("Skill publish attempt not found.");
   }
   return typed as typeof typed & {
     kind: "skill";
-    skillInsertArgs: unknown;
+    skillId?: Id<"skills">;
+    skillVersionId?: Id<"skillVersions">;
+    skillInsertArgs?: unknown;
     followup: { skipWebhook?: boolean; ownerHandle?: string };
   };
 }
@@ -1003,6 +1314,8 @@ async function requirePackagePublishAttempt(
       | "expired";
     packageInsertArgs?: unknown;
     packageFollowup?: unknown;
+    packageId?: Id<"packages">;
+    packageReleaseId?: Id<"packageReleases">;
     finalizationClaimId?: string;
     finalizationClaimExpiresAt?: number;
     result?: {
@@ -1011,7 +1324,7 @@ async function requirePackagePublishAttempt(
       releaseId: Id<"packageReleases">;
     };
   };
-  if (typed.kind !== "package" || !typed.packageInsertArgs) {
+  if (typed.kind !== "package" || (!typed.packageReleaseId && !typed.packageInsertArgs)) {
     throw new ConvexError("Package publish attempt not found.");
   }
   return typed;

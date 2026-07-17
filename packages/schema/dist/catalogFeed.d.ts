@@ -1,7 +1,7 @@
 import { type inferred } from "arktype";
-export declare const CatalogFeedStateSchema: import("arktype/internal/variants/string.ts").StringType<"available" | "recommended" | "disabled" | "blocked" | "deprecated", {}>;
+export declare const CatalogFeedStateSchema: import("arktype/internal/variants/string.ts").StringType<"available" | "blocked" | "deprecated" | "disabled" | "recommended", {}>;
 export type CatalogFeedState = (typeof CatalogFeedStateSchema)[inferred];
-export declare const CatalogFeedPublisherTrustSchema: import("arktype/internal/variants/string.ts").StringType<"official" | "community", {}>;
+export declare const CatalogFeedPublisherTrustSchema: import("arktype/internal/variants/string.ts").StringType<"community" | "official", {}>;
 export type CatalogFeedPublisherTrust = (typeof CatalogFeedPublisherTrustSchema)[inferred];
 export declare const CatalogFeedGitHubSourceSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     repo: string;
@@ -24,14 +24,13 @@ export declare const CatalogFeedInstallCandidateSchema: import("arktype/internal
 }, {}>;
 export type CatalogFeedInstallCandidate = (typeof CatalogFeedInstallCandidateSchema)[inferred];
 export declare const CatalogFeedPluginEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    type: "plugin";
     id: string;
     title: string;
     version: string;
-    state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
+    state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     publisher: {
         id: string;
-        trust: "official" | "community";
+        trust: "community" | "official";
     };
     install: {
         candidates: {
@@ -47,17 +46,17 @@ export declare const CatalogFeedPluginEntrySchema: import("arktype/internal/vari
             } | undefined;
         }[];
     };
+    type: "plugin";
 }, {}>;
 export type CatalogFeedPluginEntry = (typeof CatalogFeedPluginEntrySchema)[inferred];
 export declare const CatalogFeedSkillEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    type: "skill";
     id: string;
     title: string;
     version: string;
-    state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
+    state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     publisher: {
         id: string;
-        trust: "official" | "community";
+        trust: "community" | "official";
     };
     install: {
         candidates: {
@@ -73,41 +72,41 @@ export declare const CatalogFeedSkillEntrySchema: import("arktype/internal/varia
             } | undefined;
         }[];
     };
+    type: "skill";
 }, {}>;
 export type CatalogFeedSkillEntry = (typeof CatalogFeedSkillEntrySchema)[inferred];
 export declare const CatalogFeedEntrySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    id: string;
+    title: string;
+    version: string;
+    state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+    publisher: {
+        id: string;
+        trust: "community" | "official";
+    };
+    install: {
+        candidates: {
+            sourceRef: string;
+            package: string;
+            version: string;
+            integrity: string;
+            github?: {
+                repo: string;
+                path: string;
+                commit: string;
+                contentHash: string;
+            } | undefined;
+        }[];
+    };
     type: "plugin";
-    id: string;
-    title: string;
-    version: string;
-    state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
-    publisher: {
-        id: string;
-        trust: "official" | "community";
-    };
-    install: {
-        candidates: {
-            sourceRef: string;
-            package: string;
-            version: string;
-            integrity: string;
-            github?: {
-                repo: string;
-                path: string;
-                commit: string;
-                contentHash: string;
-            } | undefined;
-        }[];
-    };
 } | {
-    type: "skill";
     id: string;
     title: string;
     version: string;
-    state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
+    state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
     publisher: {
         id: string;
-        trust: "official" | "community";
+        trust: "community" | "official";
     };
     install: {
         candidates: {
@@ -123,6 +122,7 @@ export declare const CatalogFeedEntrySchema: import("arktype/internal/variants/o
             } | undefined;
         }[];
     };
+    type: "skill";
 }, {}>;
 export type CatalogFeedEntry = (typeof CatalogFeedEntrySchema)[inferred];
 export declare const CatalogFeedSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -131,56 +131,56 @@ export declare const CatalogFeedSchema: import("arktype/internal/variants/object
     generatedAt: string;
     sequence: number;
     expiresAt: string;
-    entries: ({
-        type: "plugin";
-        id: string;
-        title: string;
-        version: string;
-        state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
-        publisher: {
-            id: string;
-            trust: "official" | "community";
-        };
-        install: {
-            candidates: {
-                sourceRef: string;
-                package: string;
-                version: string;
-                integrity: string;
-                github?: {
-                    repo: string;
-                    path: string;
-                    commit: string;
-                    contentHash: string;
-                } | undefined;
-            }[];
-        };
-    } | {
-        type: "skill";
-        id: string;
-        title: string;
-        version: string;
-        state: "available" | "recommended" | "disabled" | "blocked" | "deprecated";
-        publisher: {
-            id: string;
-            trust: "official" | "community";
-        };
-        install: {
-            candidates: {
-                sourceRef: string;
-                package: string;
-                version: string;
-                integrity: string;
-                github?: {
-                    repo: string;
-                    path: string;
-                    commit: string;
-                    contentHash: string;
-                } | undefined;
-            }[];
-        };
-    })[];
     description?: string | undefined;
+    entries: ({
+        id: string;
+        title: string;
+        version: string;
+        state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+        publisher: {
+            id: string;
+            trust: "community" | "official";
+        };
+        install: {
+            candidates: {
+                sourceRef: string;
+                package: string;
+                version: string;
+                integrity: string;
+                github?: {
+                    repo: string;
+                    path: string;
+                    commit: string;
+                    contentHash: string;
+                } | undefined;
+            }[];
+        };
+        type: "plugin";
+    } | {
+        id: string;
+        title: string;
+        version: string;
+        state: "available" | "blocked" | "deprecated" | "disabled" | "recommended";
+        publisher: {
+            id: string;
+            trust: "community" | "official";
+        };
+        install: {
+            candidates: {
+                sourceRef: string;
+                package: string;
+                version: string;
+                integrity: string;
+                github?: {
+                    repo: string;
+                    path: string;
+                    commit: string;
+                    contentHash: string;
+                } | undefined;
+            }[];
+        };
+        type: "skill";
+    })[];
 }, {}>;
 export type CatalogFeed = (typeof CatalogFeedSchema)[inferred];
 /**

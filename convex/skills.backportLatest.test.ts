@@ -241,10 +241,36 @@ function buildDb(
       if (table === "skillVersions") {
         return {
           withIndex: (name: string) => {
-            if (name !== "by_skill_version") {
-              throw new Error(`unexpected skillVersions index ${name}`);
+            if (name === "by_skill_version") {
+              return { unique: async () => existingVersion ?? null };
             }
-            return { unique: async () => existingVersion ?? null };
+            if (name === "by_skill_active_created") {
+              return {
+                order: () => ({
+                  take: async (limit: number) => {
+                    const insertedVersion = captured.versionInserted
+                      ? {
+                          _id: NEW_VERSION_ID,
+                          skillId: SKILL_ID,
+                          softDeletedAt: undefined,
+                          ...captured.versionInserted,
+                        }
+                      : null;
+                    const previousVersion = {
+                      _id: PREV_LATEST_VERSION_ID,
+                      skillId: SKILL_ID,
+                      softDeletedAt: undefined,
+                      version: "2.0.0",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                    };
+                    return [insertedVersion, previousVersion].filter(Boolean).slice(0, limit);
+                  },
+                }),
+              };
+            }
+            throw new Error(`unexpected skillVersions index ${name}`);
           },
         };
       }
@@ -497,6 +523,32 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(captured.embeddingPatches[0]).toMatchObject({
       id: PREV_EMBEDDING_ID,
       value: expect.objectContaining({ isLatest: false }),
+    });
+  });
+
+  it("publishes suspicious prepublication results as active and flagged", async () => {
+    const skill = buildExistingSkill();
+    const { ctx, captured } = buildCtx(skill);
+    const llmAnalysis = {
+      status: "completed",
+      verdict: "suspicious",
+      summary: "Review before installing.",
+      checkedAt: 123,
+    };
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({
+        version: "2.1.0",
+        llmAnalysis,
+      }) as never,
+    );
+
+    expect(captured.versionInserted).toMatchObject({ llmAnalysis });
+    expect(captured.skillPatches.at(-1)).toMatchObject({
+      moderationStatus: "active",
+      moderationVerdict: "clean",
+      moderationFlags: ["flagged.review"],
     });
   });
 

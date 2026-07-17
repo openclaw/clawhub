@@ -150,9 +150,9 @@ describe("SkillDiffCard", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("diff-editor")).toBeTruthy();
+      expect(diffEditorMounts).toBe(1);
     });
 
-    expect(diffEditorMounts).toBe(1);
     expect(diffEditorUnmounts).toBe(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Inline" }));

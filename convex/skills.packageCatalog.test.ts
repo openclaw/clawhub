@@ -158,8 +158,23 @@ function makeCtx(
         }
 
         return {
-          withIndex: (indexName: string) => {
+          withIndex: (indexName: string, builder?: (q: unknown) => unknown) => {
             indexNames?.push(indexName);
+            // Capture eq constraints so by_skill unique lookups (the
+            // exact-slug direct-hit path) resolve against the seeded digests.
+            // Range operators are accepted but ignored, like before.
+            const constraints: Array<{ field: string; value: unknown }> = [];
+            const chain = {
+              eq: (field: string, value: unknown) => {
+                constraints.push({ field, value });
+                return chain;
+              },
+              gt: () => chain,
+              gte: () => chain,
+              lt: () => chain,
+              lte: () => chain,
+            };
+            builder?.(chain);
             return {
               order: () => ({
                 paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
@@ -171,7 +186,12 @@ function makeCtx(
                 (missingRecommendedScores && indexName.startsWith("by_active_recommended_")
                   ? (allDigests[0] ?? {})
                   : null),
-              unique: async () => null,
+              unique: async () =>
+                table === "skillSearchDigest" && indexName === "by_skill" && constraints.length > 0
+                  ? (allDigests.find((digest) =>
+                      constraints.every((entry) => digest[entry.field] === entry.value),
+                    ) ?? null)
+                  : null,
             };
           },
         };
@@ -825,6 +845,32 @@ describe("skills package catalog queries", () => {
       },
     });
     expect(result[0]?.score).toBeGreaterThan(0);
+  });
+
+  it("does not let a fresh exact-slug skill headline over adopted matches at limit 1", async () => {
+    // Regression for #3054: the untrusted exact slug hit fills the direct
+    // slot, but it must not satisfy the collection quota, or the fallback
+    // scan never gathers the adopted alternative it is ranked against.
+    const squat = makeDigest("youtube");
+    const adopted = makeDigest("youtube-transcript", {
+      statsDownloads: 4200,
+      statsInstallsAllTime: 800,
+    });
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [squat, adopted],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "youtube",
+        limit: 1,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["youtube-transcript"]);
   });
 
   it("uses stored categories as skill package search evidence", async () => {

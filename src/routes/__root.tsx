@@ -17,6 +17,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Footer } from "../components/Footer";
 import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
 import Header from "../components/Header";
+import { PromotionsBar } from "../components/PromotionsBar";
 import {
   BANNED_ACCOUNT_PATH,
   isBannedAccountAuthError,
@@ -24,6 +25,7 @@ import {
 } from "../lib/authErrorMessage";
 import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
 import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCookie";
+import designSystemCss from "../design-system.css?url";
 import appCss from "../styles.css?url";
 
 const OG_IMAGE_VERSION = "20260624-1";
@@ -121,6 +123,10 @@ export const Route = createRootRoute({
           href: appCss,
         },
         {
+          rel: "stylesheet",
+          href: designSystemCss,
+        },
+        {
           rel: "icon",
           href: "/favicon.ico",
           type: "image/x-icon",
@@ -189,6 +195,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <AppProviders>
           <div className="app-shell">
+            <PromotionsBar />
             <Header />
             <ClientOnly>
               <DeploymentDriftBanner />
@@ -197,14 +204,19 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <Footer />
           </div>
           <Toaster
+            closeButton
             position="bottom-right"
             toastOptions={{
+              classNames: {
+                closeButton: "clawhub-toast-close",
+              },
               style: {
-                background: "var(--surface)",
-                color: "var(--ink)",
-                border: "1px solid var(--line)",
-                borderRadius: "var(--radius-md)",
-                fontFamily: "var(--font-body)",
+                background: "var(--oc-bg-elevated)",
+                color: "var(--oc-text-primary)",
+                border: "1px solid var(--oc-border-subtle)",
+                borderRadius: "var(--oc-radius-control)",
+                fontFamily: "var(--oc-font-body)",
+                paddingRight: "48px",
               },
             }}
           />

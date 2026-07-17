@@ -330,9 +330,7 @@ function bundleFilesFromExport(value: unknown) {
 }
 
 function isExcludedSkillBundlePath(path: string) {
-  return (
-    isPrimarySkillReadmePath(path) || normalizeBundlePathForComparison(path) === "skill-card.md"
-  );
+  return normalizeBundlePathForComparison(path) === "skill-card.md";
 }
 
 function isPrimarySkillReadmePath(path: string) {

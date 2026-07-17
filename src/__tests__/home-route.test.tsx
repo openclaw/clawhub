@@ -1,26 +1,30 @@
 /* @vitest-environment jsdom */
 
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const initialListingFixture = {
-  kind: "skills",
-  tab: "popular",
+  kind: "plugins",
+  tab: "featured",
   categorySlugs: [],
   fetchLimit: 20,
   items: [
     {
-      skill: {
-        _id: "skills:initial",
-        slug: "initial-skill",
-        displayName: "Initial Skill",
-        stats: { installs: 10 },
-      },
-      ownerHandle: "builder",
+      name: "initial-plugin",
+      displayName: "Initial Plugin",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      createdAt: 1,
+      updatedAt: 2,
     },
   ],
   hasMore: false,
+  featuredAvailability: {
+    plugins: true,
+    skills: true,
+  },
 };
 
 const homeListingSectionMock = vi.fn();
@@ -86,27 +90,25 @@ describe("home route", () => {
     return (Route as unknown as { __config: { loader: () => Promise<unknown> } }).__config.loader;
   }
 
-  function clickHeroHeadlineTriple() {
-    const headline = screen.getByRole("button", { name: /Equip/ });
-    act(() => {
-      fireEvent.click(headline);
-      fireEvent.click(headline);
-      fireEvent.click(headline);
-    });
+  async function getRouteHeadLinks() {
+    const { Route } = await import("../routes/index");
+    const head = (
+      Route as unknown as {
+        __config: { head?: () => { links?: Array<{ rel?: string; as?: string; href?: string }> } };
+      }
+    ).__config.head?.();
+    return head?.links ?? [];
   }
 
-  it("renders the polished hero copy without the community eyebrow", async () => {
+  it("renders the static hero copy without the community eyebrow", async () => {
     await renderHome();
 
     expect(screen.queryByText("BUILT BY THE COMMUNITY")).toBeNull();
-    expect(
-      Array.from(document.querySelectorAll(".home-v2-cycle-word")).map((el) => el.textContent),
-    ).toEqual(["Unleash", "Ship", "Build", "Create", "Unleash"]);
+    expect(screen.getByRole("heading", { level: 1, name: "Claws for your Claws" })).toBeTruthy();
     expect(screen.getByText("Discover skills and plugins from top creators").textContent).toBe(
       "Discover skills and plugins from top creators",
     );
     expect(screen.queryByRole("link", { name: "200k+ publishers" })).toBeNull();
-    expect(screen.getByRole("button", { name: /Equip/ }).tabIndex).toBe(0);
   });
 
   it("renders the catalog and new homepage sections without the old hero search", async () => {
@@ -119,7 +121,6 @@ describe("home route", () => {
     expect(screen.queryByPlaceholderText("What are you looking for?")).toBeNull();
     expect(screen.queryByText("Featured skills")).toBeNull();
     expect(screen.queryByText("Trending Now")).toBeNull();
-    expect(screen.queryByText(/claw for your claw/i)).toBeNull();
   });
 
   it("passes the loader listing into the home listing section", async () => {
@@ -135,6 +136,15 @@ describe("home route", () => {
 
     await expect(loader()).resolves.toBe(initialListingFixture);
     expect(fetchInitialHomeListingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not prioritize offscreen app icons in the route head", async () => {
+    const links = await getRouteHeadLinks();
+
+    expect(links.some((link) => link.rel === "preload" && link.as === "image")).toBe(false);
+    expect(links.some((link) => link.rel === "preconnect" && link.href?.includes("jsdelivr"))).toBe(
+      false,
+    );
   });
 
   it("falls back to client loading when the default listing loader fails", async () => {
@@ -157,65 +167,5 @@ describe("home route", () => {
     expect(screen.queryByText("180k")).toBeNull();
     expect(screen.queryByText("12M")).toBeNull();
     expect(screen.queryByText("avg rating")).toBeNull();
-  });
-
-  it("starts the slot machine when the community label is triple-clicked", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-29T00:00:00Z"));
-    vi.spyOn(Math, "random").mockReturnValue(0.5);
-
-    await renderHome();
-    clickHeroHeadlineTriple();
-
-    expect(document.querySelector(".home-v2-headline-slots")).toBeTruthy();
-    expect(document.querySelector(".home-v2-confetti")).toBeTruthy();
-  });
-
-  it("rerolls accidental triples on non-jackpot spins", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-29T00:00:00Z"));
-    vi.spyOn(Math, "random")
-      .mockReturnValueOnce(0.5)
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0)
-      .mockReturnValueOnce(0.1)
-      .mockReturnValueOnce(0.2)
-      .mockReturnValueOnce(0.3);
-
-    await renderHome();
-    clickHeroHeadlineTriple();
-
-    act(() => {
-      vi.advanceTimersByTime(2400);
-    });
-
-    expect(
-      Array.from(document.querySelectorAll(".home-v2-slot-word")).map((el) => el.textContent),
-    ).toEqual(["Install", "Unleash", "Ship"]);
-    expect(document.querySelector(".home-v2-headline-jackpot")).toBeNull();
-  });
-
-  it("applies the Hack jackpot effect on the 1-in-100 path", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-29T00:00:00Z"));
-    vi.spyOn(Math, "random")
-      .mockReturnValueOnce(0.01)
-      .mockReturnValueOnce(0.1)
-      .mockReturnValue(0.5);
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
-
-    await renderHome();
-    clickHeroHeadlineTriple();
-
-    act(() => {
-      vi.advanceTimersByTime(2400);
-    });
-
-    expect(
-      Array.from(document.querySelectorAll(".home-v2-slot-word")).map((el) => el.textContent),
-    ).toEqual(["Hack", "Hack", "Hack"]);
-    expect(document.querySelector(".home-v2-headline-hack")).toBeTruthy();
-    expect(document.querySelector(".home-v2-hack-lobster")).toBeTruthy();
   });
 });

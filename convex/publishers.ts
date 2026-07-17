@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
@@ -60,6 +60,11 @@ const MAX_PENDING_PUBLISHER_INVITES = 100;
 const PUBLISHER_OG_AFFILIATION_LIMIT = 5;
 const PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE = 64;
 const PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT = 512;
+const MAX_HOME_PUBLISHER_SUMMARIES = 10;
+const MAX_HOME_OFFICIAL_CREATOR_SUMMARIES = 16;
+const HOME_OFFICIAL_CREATOR_PAGE_SIZE = 32;
+// Official status is staff-curated. Keep the set bounded so public home/browse reads stay predictable.
+const MAX_OFFICIAL_PUBLISHER_COUNT = 128;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -475,6 +480,110 @@ function normalizePublisherCatalogSort(sort?: PublisherCatalogSortArg): Publishe
   return sort === "recent" ? "recent" : "downloads";
 }
 
+type PublisherPageCursorMode = "indexed" | "legacy" | "preindex";
+
+function parsePublisherPageCursor(cursor: string | null): {
+  mode: PublisherPageCursorMode | null;
+  cursor: string | null;
+} {
+  if (!cursor) return { mode: null, cursor: null };
+  if (cursor.startsWith("indexed:")) {
+    return { mode: "indexed", cursor: cursor.slice("indexed:".length) };
+  }
+  if (cursor.startsWith("legacy:")) {
+    return { mode: "legacy", cursor: cursor.slice("legacy:".length) };
+  }
+  if (cursor.startsWith("preindex:")) {
+    return { mode: "preindex", cursor: cursor.slice("preindex:".length) };
+  }
+  return { mode: "preindex", cursor };
+}
+
+function encodePublisherPageCursor(mode: PublisherPageCursorMode, cursor: string, isDone: boolean) {
+  return isDone ? "" : `${mode}:${cursor}`;
+}
+
+function paginatePublisherItems(
+  items: PublisherCatalogItem[],
+  paginationOpts: { cursor: string | null; numItems: number },
+  mode: Exclude<PublisherPageCursorMode, "indexed">,
+) {
+  const offset = paginationOpts.cursor ? Number(paginationOpts.cursor) : 0;
+  const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
+  const nextOffset = safeOffset + paginationOpts.numItems;
+  const isDone = nextOffset >= items.length;
+  return {
+    page: items.slice(safeOffset, nextOffset),
+    continueCursor: encodePublisherPageCursor(mode, String(nextOffset), isDone),
+    isDone,
+  };
+}
+
+function comparePublisherIndexOrder<T extends { _creationTime: number; updatedAt: number }>(
+  sort: PublisherCatalogSort,
+  readDownloads: (row: T) => number,
+) {
+  return (a: T, b: T) =>
+    sort === "recent"
+      ? b.updatedAt - a.updatedAt || b._creationTime - a._creationTime
+      : readDownloads(b) - readDownloads(a) ||
+        b.updatedAt - a.updatedAt ||
+        b._creationTime - a._creationTime;
+}
+
+function toPublisherSkillCatalogItem(
+  publisher: Doc<"publishers">,
+  skill: Doc<"skills">,
+  publisherOfficial: boolean,
+): PublisherCatalogItem {
+  return {
+    _id: skill._id,
+    kind: "skill",
+    slug: skill.slug,
+    displayName: skill.displayName,
+    summary: skill.summary ?? null,
+    topics: skill.topics,
+    categories: skill.categories,
+    inferredCategories: skill.inferredCategories,
+    latestVersionId: skill.latestVersionId,
+    inferredFromVersionId: skill.inferredFromVersionId,
+    icon: skill.icon ?? null,
+    href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
+    installs: readCanonicalStat(skill, "installsAllTime"),
+    downloads: readCanonicalStat(skill, "downloads"),
+    stars: readCanonicalStat(skill, "stars"),
+    isOfficial: publisherOfficial || Boolean(skill.badges?.official),
+    updatedAt: skill.updatedAt,
+    sourceBacked: skill.installKind === "github",
+    sourceId: skill.githubSourceId ?? null,
+    sourceRepo: null,
+    sourcePath: skill.githubPath ?? null,
+  };
+}
+
+function toPublisherPackageCatalogItem(
+  pkg: Doc<"packages">,
+  publisherOfficial: boolean,
+): PublisherCatalogItem {
+  return {
+    _id: pkg._id,
+    kind: "plugin",
+    displayName: pkg.displayName,
+    summary: pkg.summary ?? null,
+    topics: pkg.topics,
+    icon:
+      pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)
+        ? null
+        : (pkg.icon ?? null),
+    href: buildPluginDetailHref(pkg.name),
+    installs: pkg.stats.installs,
+    downloads: pkg.stats.downloads,
+    stars: pkg.stats.stars,
+    isOfficial: publisherOfficial || pkg.isOfficial,
+    updatedAt: pkg.updatedAt,
+  };
+}
+
 function getPublisherCatalogItems(
   publisher: Doc<"publishers">,
   rows: PublisherPublishedRows,
@@ -482,46 +591,8 @@ function getPublisherCatalogItems(
   sort: PublisherCatalogSort = "downloads",
 ): PublisherCatalogItem[] {
   return [
-    ...rows.skills.map((skill) => ({
-      _id: skill._id,
-      kind: "skill" as const,
-      slug: skill.slug,
-      displayName: skill.displayName,
-      summary: skill.summary ?? null,
-      topics: skill.topics,
-      categories: skill.categories,
-      inferredCategories: skill.inferredCategories,
-      latestVersionId: skill.latestVersionId,
-      inferredFromVersionId: skill.inferredFromVersionId,
-      icon: skill.icon ?? null,
-      href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
-      installs: readCanonicalStat(skill, "installsAllTime"),
-      downloads: readCanonicalStat(skill, "downloads"),
-      stars: readCanonicalStat(skill, "stars"),
-      isOfficial: publisherOfficial || Boolean(skill.badges?.official),
-      updatedAt: skill.updatedAt,
-      sourceBacked: skill.installKind === "github",
-      sourceId: skill.githubSourceId ?? null,
-      sourceRepo: null,
-      sourcePath: skill.githubPath ?? null,
-    })),
-    ...rows.packages.map((pkg) => ({
-      _id: pkg._id,
-      kind: "plugin" as const,
-      displayName: pkg.displayName,
-      summary: pkg.summary ?? null,
-      topics: pkg.topics,
-      icon:
-        pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)
-          ? null
-          : (pkg.icon ?? null),
-      href: buildPluginDetailHref(pkg.name),
-      installs: pkg.stats.installs,
-      downloads: pkg.stats.downloads,
-      stars: pkg.stats.stars,
-      isOfficial: publisherOfficial || pkg.isOfficial,
-      updatedAt: pkg.updatedAt,
-    })),
+    ...rows.skills.map((skill) => toPublisherSkillCatalogItem(publisher, skill, publisherOfficial)),
+    ...rows.packages.map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
   ].sort(comparePublisherCatalogItems(sort));
 }
 
@@ -621,6 +692,11 @@ async function toPublisherListItem(
   };
 }
 
+function withoutPublishedItems(item: PublisherListItem) {
+  const { publishedItems: _publishedItems, ...summary } = item;
+  return summary;
+}
+
 function toPublisherListSummary(publisher: Doc<"publishers">): PublisherListSummary | null {
   const publicPublisher = toPublicPublisher(publisher);
   if (!publicPublisher) return null;
@@ -656,6 +732,27 @@ async function toVisiblePublisherListSummary(
       displayName: resolvePublisherDisplayName(visibility.publisher, visibility.linkedUser),
     },
     visibility,
+  };
+}
+
+async function toHomePublisherSummary(
+  ctx: Pick<QueryCtx, "db">,
+  publisher: Doc<"publishers"> | null,
+) {
+  if (!publisher || !isPublisherActive(publisher) || !hasPublisherStats(publisher)) return null;
+  if (publisher.kind === "user" && !publisher.linkedUserId) return null;
+
+  const visibility = await getPublicPublisherVisibility(ctx, publisher);
+  if (!visibility) return null;
+  const publicPublisher = toPublicPublisher(publisher);
+  if (!publicPublisher) return null;
+
+  return {
+    ...publicPublisher,
+    displayName: resolvePublisherDisplayName(publisher, visibility.linkedUser),
+    image: publicPublisher.image ?? visibility.linkedUser?.image,
+    bio: publicPublisher.bio ?? visibility.linkedUser?.bio,
+    stats: getPublisherDenormalizedStats(publisher),
   };
 }
 
@@ -2145,12 +2242,13 @@ export const resolvePublishTargetForUserInternal = internalMutation({
 });
 
 export const listMine = query({
-  args: {},
-  handler: async (ctx) => {
+  args: { includePublishedItems: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
     const userId = await getOptionalActiveAuthUserId(ctx);
     if (!userId) return [];
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) return [];
+    const includePublishedItems = args.includePublishedItems !== false;
     const memberships = await ctx.db
       .query("publisherMembers")
       .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -2166,14 +2264,14 @@ export const listMine = query({
         }
         const publicPublisher = publisher
           ? await toPublisherListItem(ctx, publisher, {
-              includePublishedItems: true,
-              includeAllPublishedItems: true,
+              includePublishedItems,
+              includeAllPublishedItems: includePublishedItems,
             })
           : null;
         if (!publicPublisher) return null;
         return {
           publisher: {
-            ...publicPublisher,
+            ...(includePublishedItems ? publicPublisher : withoutPublishedItems(publicPublisher)),
             imageStorageId: publisher?.imageStorageId,
           },
           role: publisher?.kind === "user" ? "owner" : membership.role,
@@ -2186,8 +2284,8 @@ export const listMine = query({
     const personalPublisherDoc = await getPersonalPublisherForUserOrFallback(ctx, user);
     const personalPublisher = personalPublisherDoc
       ? await toPublisherListItem(ctx, personalPublisherDoc, {
-          includePublishedItems: true,
-          includeAllPublishedItems: true,
+          includePublishedItems,
+          includeAllPublishedItems: includePublishedItems,
         })
       : null;
     if (
@@ -2196,13 +2294,68 @@ export const listMine = query({
     ) {
       visiblePublishers.unshift({
         publisher: {
-          ...personalPublisher,
+          ...(includePublishedItems ? personalPublisher : withoutPublishedItems(personalPublisher)),
           imageStorageId: personalPublisherDoc?.imageStorageId,
         },
         role: "owner",
       });
     }
     return visiblePublishers;
+  },
+});
+
+async function toPublisherDeletionInventory(
+  ctx: Pick<QueryCtx, "db">,
+  publisher: Doc<"publishers">,
+) {
+  if (!(await getPublicPublisherVisibility(ctx, publisher))) return null;
+  const rows = await getPublisherPublishedRows(ctx, publisher._id);
+  const stats = getIndexedPublisherStatsFromRows(rows);
+  return {
+    handle: publisher.handle,
+    stats: { skills: stats.skills, packages: stats.packages },
+    publishedItems: getPublisherPublishedItems(rows, Number.POSITIVE_INFINITY),
+  };
+}
+
+export const getDeletionInventory = query({
+  args: { publisherId: v.optional(v.id("publishers")) },
+  handler: async (ctx, args) => {
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return [];
+    const user = await ctx.db.get(userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return [];
+
+    if (args.publisherId) {
+      const publisher = await ctx.db.get(args.publisherId);
+      if (!publisher || publisher.kind !== "org") throw new ConvexError("Publisher not found");
+      const membership = await getPublisherMembership(ctx, publisher._id, userId);
+      if (!membership || membership.role !== "owner") throw new ConvexError("Forbidden");
+      const inventory = await toPublisherDeletionInventory(ctx, publisher);
+      return inventory ? [inventory] : [];
+    }
+
+    const memberships = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const publishersById = new Map<Id<"publishers">, Doc<"publishers">>();
+    const personalPublisher = await getPersonalPublisherForUserOrFallback(ctx, user);
+    if (personalPublisher) publishersById.set(personalPublisher._id, personalPublisher);
+    for (const membership of memberships) {
+      if (membership.role !== "owner") continue;
+      const publisher = await ctx.db.get(membership.publisherId);
+      if (publisher?.kind === "org" && !publisher.deletedAt && !publisher.deactivatedAt) {
+        publishersById.set(publisher._id, publisher);
+      }
+    }
+
+    const inventories = await Promise.all(
+      [...publishersById.values()].map((publisher) => toPublisherDeletionInventory(ctx, publisher)),
+    );
+    return inventories.filter((inventory): inventory is NonNullable<(typeof inventories)[number]> =>
+      Boolean(inventory),
+    );
   },
 });
 
@@ -2248,12 +2401,100 @@ export const getProfileByHandle = query({
   handler: async (ctx, args) => {
     const publisher = await getPublisherByHandle(ctx, args.handle);
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
-    return await toPublisherListItem(ctx, publisher, {
-      forceComputedStats: true,
+    const item = await toPublisherListItem(ctx, publisher, {
       includeAffiliations: true,
-      includePublishedItems: true,
-      includeStarredCount: true,
     });
+    if (!item) return null;
+    return withoutPublishedItems(item);
+  },
+});
+
+export const getHomePublisherSummaries = query({
+  args: { handles: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    if (args.handles.length > MAX_HOME_PUBLISHER_SUMMARIES) {
+      throw new ConvexError(`Expected at most ${MAX_HOME_PUBLISHER_SUMMARIES} publisher handles`);
+    }
+
+    const handles = [
+      ...new Set(
+        args.handles
+          .map((handle) => normalizePublisherHandle(handle))
+          .filter((handle): handle is string => Boolean(handle)),
+      ),
+    ];
+    const summaries = await Promise.all(
+      handles.map(async (handle) =>
+        toHomePublisherSummary(ctx, await getPublisherByHandle(ctx, handle)),
+      ),
+    );
+    return summaries.filter((summary): summary is NonNullable<typeof summary> => Boolean(summary));
+  },
+});
+
+export const getHomeOfficialCreatorSummariesPageInternal = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .paginate({ cursor: args.cursor, numItems: HOME_OFFICIAL_CREATOR_PAGE_SIZE });
+    const summaries = (
+      await Promise.all(
+        page.page.map(async (row) =>
+          toHomePublisherSummary(ctx, await ctx.db.get(row.publisherId)),
+        ),
+      )
+    ).filter(
+      (summary): summary is NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>> =>
+        Boolean(
+          summary && summary.kind === "org" && summary.stats.skills + summary.stats.packages > 0,
+        ),
+    );
+
+    return {
+      summaries,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const getHomeOfficialCreatorSummaries: ReturnType<typeof action> = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = clampInt(
+      args.limit ?? MAX_HOME_OFFICIAL_CREATOR_SUMMARIES,
+      1,
+      MAX_HOME_OFFICIAL_CREATOR_SUMMARIES,
+    );
+    const summaries: Array<NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>>> = [];
+    let cursor: string | null = null;
+    let scanned = 0;
+
+    while (scanned < MAX_OFFICIAL_PUBLISHER_COUNT) {
+      const page: {
+        summaries: Array<NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>>>;
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(internal.publishers.getHomeOfficialCreatorSummariesPageInternal, {
+        cursor,
+      });
+      summaries.push(...page.summaries);
+      scanned += HOME_OFFICIAL_CREATOR_PAGE_SIZE;
+      if (page.isDone || page.continueCursor === cursor) break;
+      if (scanned >= MAX_OFFICIAL_PUBLISHER_COUNT) {
+        throw new ConvexError("Official publisher limit exceeded");
+      }
+      cursor = page.continueCursor;
+    }
+
+    return summaries
+      .sort(
+        (left, right) =>
+          right.stats.installs - left.stats.installs || left.handle.localeCompare(right.handle),
+      )
+      .slice(0, limit);
   },
 });
 
@@ -2370,22 +2611,140 @@ export const listPublishedPage = query({
     }
     const visiblePublisher = visible.publisher;
 
-    const numItems = clampInt(args.paginationOpts.numItems, 1, 24);
-    const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
-    const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
-    const items = getPublisherCatalogItems(
-      visiblePublisher,
-      await getPublisherPublishedRows(ctx, visiblePublisher._id),
-      await isOfficialPublisher(ctx, visiblePublisher),
-      normalizePublisherCatalogSort(args.sort),
-    ).filter((item) => !args.kind || item.kind === args.kind);
-    const nextOffset = safeOffset + numItems;
-    const page = items.slice(safeOffset, nextOffset);
+    const paginationOpts = {
+      ...args.paginationOpts,
+      numItems: clampInt(args.paginationOpts.numItems, 1, 24),
+    };
+    const sort = normalizePublisherCatalogSort(args.sort);
+    const publisherOfficial = await isOfficialPublisher(ctx, visiblePublisher);
 
+    if (!args.kind) {
+      const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
+      const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
+      const items = getPublisherCatalogItems(
+        visiblePublisher,
+        await getPublisherPublishedRows(ctx, visiblePublisher._id),
+        publisherOfficial,
+        sort,
+      );
+      const nextOffset = safeOffset + paginationOpts.numItems;
+      return {
+        page: items.slice(safeOffset, nextOffset),
+        continueCursor: nextOffset < items.length ? String(nextOffset) : "",
+        isDone: nextOffset >= items.length,
+      };
+    }
+
+    const index =
+      sort === "recent"
+        ? "by_owner_publisher_active_updated"
+        : "by_owner_publisher_active_downloads";
+
+    if (args.kind === "skill") {
+      const cursorState = parsePublisherPageCursor(paginationOpts.cursor);
+      let cursorMode: PublisherPageCursorMode = cursorState.mode ?? "indexed";
+      if (sort === "downloads" && cursorState.mode === null) {
+        // Legacy rows can lack the indexed field while retaining canonical nested downloads.
+        const legacySkill = await ctx.db
+          .query("skills")
+          .withIndex("by_owner_publisher_active_downloads", (q) =>
+            q
+              .eq("ownerPublisherId", visiblePublisher._id)
+              .eq("softDeletedAt", undefined)
+              .eq("statsDownloads", undefined),
+          )
+          .first();
+        if (legacySkill) cursorMode = "legacy";
+      }
+
+      if (cursorMode !== "indexed") {
+        const skills = (
+          await ctx.db
+            .query("skills")
+            .withIndex("by_owner_publisher_active_updated", (q) =>
+              q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+            )
+            .collect()
+        ).filter(isPublicPublishedSkill);
+        const items =
+          cursorMode === "preindex"
+            ? skills
+                .map((skill) =>
+                  toPublisherSkillCatalogItem(visiblePublisher, skill, publisherOfficial),
+                )
+                .sort(comparePublisherCatalogItems(sort))
+            : skills
+                .sort(
+                  comparePublisherIndexOrder(sort, (skill) =>
+                    readCanonicalStat(skill, "downloads"),
+                  ),
+                )
+                .map((skill) =>
+                  toPublisherSkillCatalogItem(visiblePublisher, skill, publisherOfficial),
+                );
+        return paginatePublisherItems(
+          items,
+          {
+            cursor: cursorState.cursor,
+            numItems: paginationOpts.numItems,
+          },
+          cursorMode,
+        );
+      }
+
+      const result = await ctx.db
+        .query("skills")
+        .withIndex(index, (q) =>
+          q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate({ ...paginationOpts, cursor: cursorState.cursor });
+      return {
+        ...result,
+        continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+        page: result.page
+          .filter(isPublicPublishedSkill)
+          .map((skill) => toPublisherSkillCatalogItem(visiblePublisher, skill, publisherOfficial)),
+      };
+    }
+
+    const cursorState = parsePublisherPageCursor(paginationOpts.cursor);
+    if (cursorState.mode === "legacy" || cursorState.mode === "preindex") {
+      const packages = await ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+        )
+        .collect();
+      const items =
+        cursorState.mode === "preindex"
+          ? packages
+              .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial))
+              .sort(comparePublisherCatalogItems(sort))
+          : packages
+              .sort(comparePublisherIndexOrder(sort, (pkg) => pkg.stats.downloads))
+              .map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial));
+      return paginatePublisherItems(
+        items,
+        {
+          cursor: cursorState.cursor,
+          numItems: paginationOpts.numItems,
+        },
+        cursorState.mode,
+      );
+    }
+
+    const result = await ctx.db
+      .query("packages")
+      .withIndex(index, (q) =>
+        q.eq("ownerPublisherId", visiblePublisher._id).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .paginate({ ...paginationOpts, cursor: cursorState.cursor });
     return {
-      page,
-      continueCursor: nextOffset < items.length ? String(nextOffset) : "",
-      isDone: nextOffset >= items.length,
+      ...result,
+      continueCursor: encodePublisherPageCursor("indexed", result.continueCursor, result.isDone),
+      page: result.page.map((pkg) => toPublisherPackageCatalogItem(pkg, publisherOfficial)),
     };
   },
 });
@@ -3241,6 +3600,14 @@ export const addOfficialPublisherInternal = internalMutation({
         handle: publisher.handle,
         officialPublisherId: existing._id,
       };
+    }
+
+    const officialPublisherLimitProbe = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .take(MAX_OFFICIAL_PUBLISHER_COUNT);
+    if (officialPublisherLimitProbe.length >= MAX_OFFICIAL_PUBLISHER_COUNT) {
+      throw new ConvexError(`Official publisher limit reached (${MAX_OFFICIAL_PUBLISHER_COUNT})`);
     }
 
     const now = Date.now();

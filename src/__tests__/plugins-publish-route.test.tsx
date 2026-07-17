@@ -6,7 +6,8 @@ import { getFunctionName } from "convex/server";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { toastErrorMock } = vi.hoisted(() => ({
+const { navigateMock, toastErrorMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
   toastErrorMock: vi.fn(),
 }));
 
@@ -15,6 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
+  useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
 }));
 
@@ -103,6 +105,7 @@ describe("plugins publish route", () => {
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
     useSearchMock.mockReset();
+    navigateMock.mockReset();
     toastErrorMock.mockReset();
 
     useSearchMock.mockReturnValue({
@@ -165,7 +168,7 @@ describe("plugins publish route", () => {
   it("links to the plugin publishing guide", () => {
     renderPublishRoute();
 
-    const guideLink = screen.getByRole("link", { name: /Plugin publishing guide/i });
+    const guideLink = screen.getByRole("link", { name: /Plugin docs/i });
     expect(guideLink.getAttribute("href")).toBe(
       "https://docs.openclaw.ai/clawhub/publishing#plugins",
     );
@@ -185,23 +188,21 @@ describe("plugins publish route", () => {
     expect(
       screen.getByText("You need to be signed in to publish plugins on ClawHub."),
     ).toBeTruthy();
-    expect(screen.queryByText(/Upload plugin code first/i)).toBeNull();
+    expect(screen.queryByText(/Upload plugin first/i)).toBeNull();
     expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
   });
 
-  it("keeps metadata inputs locked until plugin code is uploaded", () => {
+  it("hides metadata inputs until plugin files are uploaded", () => {
     renderPublishRoute();
 
-    expect(screen.getByText(/Upload plugin code first/i)).toBeTruthy();
-    expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByText(/Upload plugin first/i)).toBeTruthy();
+    expect(screen.getByText("Drop a plugin file or folder here.")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
+    expect(screen.queryByPlaceholderText("Display name")).toBeNull();
+    expect(screen.queryByPlaceholderText("Version")).toBeNull();
     expect(screen.queryByPlaceholderText("Describe what changed in this release...")).toBeNull();
-    expect(screen.getByLabelText("Owner").textContent).toContain("@vintageayu · VintageAyu");
-    expect(document.querySelector('img[src="/clawd-logo.png"]')).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
-    ).not.toBeNull();
+    expect(screen.queryByLabelText("Owner")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish plugin" })).toBeNull();
   });
 
   it("opens only the directory picker when clicking Choose folder", () => {
@@ -219,7 +220,7 @@ describe("plugins publish route", () => {
     expect(archiveClick).not.toHaveBeenCalled();
   });
 
-  it("opens only the archive picker when clicking Choose archive", () => {
+  it("opens only the archive picker when clicking Choose file", () => {
     renderPublishRoute();
 
     const [archiveInput, directoryInput] = getFileInputs();
@@ -228,7 +229,7 @@ describe("plugins publish route", () => {
     archiveInput.click = archiveClick;
     directoryInput.click = directoryClick;
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose file" }));
 
     expect(archiveClick).toHaveBeenCalledTimes(1);
     expect(directoryClick).not.toHaveBeenCalled();
@@ -836,7 +837,7 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("shows pending verification messaging after staged plugin publish", async () => {
+  it("redirects to the dashboard after a staged plugin publish is accepted", async () => {
     publishRelease.mockResolvedValueOnce({
       ok: true,
       status: "pending",
@@ -878,12 +879,11 @@ describe("plugins publish route", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
-    expect(
-      await screen.findByText(/Running TruffleHog and ClawScan before public listing\./i),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
-    ).not.toBeNull();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({ to: "/dashboard" });
+    });
+    expect(screen.queryByText(/Running TruffleHog and ClawScan/i)).toBeNull();
+    expect(screen.queryByText("Publishing release...")).toBeNull();
   });
 
   it("warns when README references relative image paths but no source repo/commit is set", async () => {

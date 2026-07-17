@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# dashboard-update: Update an existing dashboard
+#
+# Usage: dashboard-update <deployment> <id> <json-file>
+#
+# The JSON file must contain the version field from the current dashboard
+# to avoid conflicts. Use dashboard-get to fetch the current version first.
+#
+# Examples:
+#   dashboard-get prod abc123 > dashboard.json
+#   # ... edit dashboard.json ...
+#   dashboard-update prod abc123 dashboard.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+ID="${2:-}"
+JSON_FILE="${3:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$ID" || -z "$JSON_FILE" ]]; then
+    echo "Usage: dashboard-update <deployment> <id> <json-file>" >&2
+    exit 1
+fi
+
+if [[ ! -f "$JSON_FILE" ]]; then
+    echo "Error: File not found: $JSON_FILE" >&2
+    exit 1
+fi
+
+# Validate dashboard structure before deploying
+if ! "$SCRIPT_DIR/dashboard-validate" "$JSON_FILE" --strict >&2; then
+    echo "Error: Dashboard validation failed. Fix the errors above before deploying." >&2
+    exit 1
+fi
+
+# Normalize layout for react-grid-layout
+BODY=$(jq -L "$SCRIPT_DIR" '
+  include "dashboard-normalize";
+  normalize_dashboard_layout
+' "$JSON_FILE")
+
+# Check for version field (required for PUT)
+VERSION=$(echo "$BODY" | jq -r '.version // empty')
+if [[ -z "$VERSION" ]]; then
+    echo "Error: version field is required for updates" >&2
+    echo "Fetch the current dashboard first: dashboard-get $DEPLOYMENT $ID" >&2
+    exit 1
+fi
+
+# Wrap body in v2 envelope: {dashboard: {...}, version: N}
+# Version must be a numeric int64. jq loses precision on large integers,
+# so we inject it via string substitution.
+DASHBOARD=$(echo "$BODY" | jq 'del(.version)')
+BODY="{\"dashboard\":${DASHBOARD},\"version\":${VERSION}}"
+
+RESPONSE=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" PUT "/dashboards/uid/$ID" "$BODY")
+
+echo "$RESPONSE" | jq .

@@ -35,7 +35,7 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
         variant === "warning" &&
           "bg-status-warning-bg px-3 py-1 text-status-warning-fg border border-line",
         variant === "review" &&
-          "bg-[color:color-mix(in_srgb,#6aa9ff_16%,transparent)] px-3 py-1 text-[#6aa9ff] border border-[color:color-mix(in_srgb,#6aa9ff_24%,var(--line))]",
+          "bg-[color:var(--oc-status-info-bg)] px-3 py-1 text-[color:var(--oc-status-info-fg)] border border-[color:color-mix(in_srgb,var(--oc-status-info-fg)_28%,var(--oc-border-subtle))]",
         variant === "destructive" &&
           "bg-status-error-bg px-3 py-1 text-status-error-fg border border-line",
         size === "sm" &&

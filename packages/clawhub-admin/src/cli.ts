@@ -27,11 +27,13 @@ import {
   cmdRecordContentRightsCorrespondence,
 } from "./commands/contentRights.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
+import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
 import {
   cmdBanUser,
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
+  cmdRevokeSkillVersion,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -701,6 +703,8 @@ function registerPluginGovernanceCommands(command: Command) {
 }
 
 function registerPluginModerationCommands(command: Command) {
+  registerFeaturedCommands(command, "plugin");
+
   command
     .command("reports")
     .description("List plugin reports for moderator review")
@@ -772,6 +776,22 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  registerFeaturedCommands(command, "skill");
+
+  command
+    .command("revoke-version")
+    .description("Permanently remove one skill version from public access")
+    .argument("<slug>", "Skill slug")
+    .requiredOption("--version <version>", "Exact version to revoke")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--owner <handle>", "Owner handle when the slug is shared")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRevokeSkillVersion(opts, slug, options, isInputAllowed());
+    });
+
   command
     .command("unhide")
     .description("Manually restore a hidden skill after moderator review")
@@ -876,6 +896,30 @@ function registerSkillModerationCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdTriageSkillReport(opts, reportId, options);
     });
+}
+
+function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
+  const label = kind === "plugin" ? "plugin" : "skill";
+  const argument = kind === "plugin" ? "Plugin package name" : "Skill ref, optionally @owner/slug";
+
+  for (const [name, featured] of [
+    ["feature", true],
+    ["unfeature", false],
+  ] as const) {
+    command
+      .command(name)
+      .description(`${featured ? "Add" : "Remove"} a ${label} from the Featured catalog`)
+      .argument(`<${kind}>`, argument)
+      .option("--json", "Output JSON")
+      .action(async (value, options) => {
+        const opts = await resolveGlobalOpts();
+        if (kind === "plugin") {
+          await cmdSetPackageFeatured(opts, value, featured, options);
+        } else {
+          await cmdSetSkillFeatured(opts, value, featured, options);
+        }
+      });
+  }
 }
 
 program.action(() => {

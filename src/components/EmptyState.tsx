@@ -23,8 +23,8 @@ export function EmptyState({
   children,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center gap-4 rounded-[var(--radius-md)] border border-dashed border-[color:var(--line)] bg-[color:var(--surface)] px-6 py-14 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[color:var(--surface-muted)]">
+    <div className="flex flex-col items-center justify-center gap-4 rounded-[var(--oc-radius-surface)] border border-dashed border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-surface-card)] px-6 py-14 text-center">
+      <div className="flex h-14 w-14 items-center justify-center rounded-[var(--oc-radius-inset)] bg-[color:var(--oc-bg-surface)]">
         <Icon className="h-7 w-7 text-[color:var(--ink-soft)]" />
       </div>
       <div className="flex flex-col gap-1">

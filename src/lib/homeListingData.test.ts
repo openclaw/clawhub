@@ -1,0 +1,241 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const convexQueryMock = vi.fn();
+const fetchPluginCatalogMock = vi.fn();
+
+vi.mock("../convex/client", () => ({
+  convexHttp: {
+    query: (...args: unknown[]) => convexQueryMock(...args),
+  },
+}));
+
+vi.mock("../../convex/_generated/api", () => ({
+  api: {
+    skills: {
+      listPublicPageV4: "skills:listPublicPageV4",
+      listPublicTrendingPage: "skills:listPublicTrendingPage",
+    },
+  },
+}));
+
+vi.mock("./packageApi", () => ({
+  fetchPluginCatalog: (...args: unknown[]) => fetchPluginCatalogMock(...args),
+}));
+
+import {
+  fetchHomeFeaturedAvailability,
+  fetchHomePluginListing,
+  fetchHomeSkillListing,
+  fetchInitialHomeListing,
+  HOME_LISTING_PAGE_SIZE,
+} from "./homeListingData";
+
+const featuredPlugin = {
+  name: "featured-plugin",
+  displayName: "Featured Plugin",
+  family: "code-plugin",
+  channel: "community",
+  isOfficial: false,
+  createdAt: 1,
+  updatedAt: 2,
+};
+
+describe("homeListingData", () => {
+  beforeEach(() => {
+    convexQueryMock.mockReset();
+    fetchPluginCatalogMock.mockReset();
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:featured",
+            slug: "featured-skill",
+            displayName: "Featured Skill",
+            stats: { downloads: 10 },
+          },
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+  });
+
+  it("loads Featured plugins as the initial catalog when they exist", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({
+      items: [featuredPlugin],
+      nextCursor: null,
+    });
+
+    await expect(fetchInitialHomeListing()).resolves.toEqual({
+      kind: "plugins",
+      tab: "featured",
+      categorySlugs: [],
+      fetchLimit: HOME_LISTING_PAGE_SIZE,
+      items: [featuredPlugin],
+      hasMore: false,
+      featuredAvailability: {
+        plugins: true,
+        skills: true,
+      },
+    });
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({ featured: true, limit: HOME_LISTING_PAGE_SIZE }),
+    );
+  });
+
+  it("falls back to Top plugins when no Featured plugins exist", async () => {
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({ items: [], nextCursor: null })
+      .mockResolvedValueOnce({
+        items: [{ ...featuredPlugin, name: "top-plugin" }],
+        nextCursor: null,
+      });
+
+    const result = await fetchInitialHomeListing();
+
+    expect(result.kind).toBe("plugins");
+    expect(result.tab).toBe("popular");
+    expect(result.featuredAvailability.plugins).toBe(false);
+    expect(fetchPluginCatalogMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort: "downloads", featured: undefined }),
+    );
+  });
+
+  it("uses the highlighted browse path for Featured skills", async () => {
+    await fetchHomeSkillListing("featured", [], HOME_LISTING_PAGE_SIZE);
+
+    expect(convexQueryMock).toHaveBeenCalledWith(
+      "skills:listPublicPageV4",
+      expect.objectContaining({
+        highlightedOnly: true,
+        numItems: 200,
+        sort: "downloads",
+      }),
+    );
+  });
+
+  it("uses a one-item request when probing Featured skill availability", async () => {
+    await expect(fetchHomeFeaturedAvailability("skills")).resolves.toBe(true);
+
+    expect(convexQueryMock).toHaveBeenCalledWith(
+      "skills:listPublicPageV4",
+      expect.objectContaining({
+        highlightedOnly: true,
+        numItems: 1,
+      }),
+    );
+  });
+
+  it("preserves global Trending order while filtering multiple plugin categories", async () => {
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({
+        items: [
+          { ...featuredPlugin, name: "unmatched-first", categories: ["productivity"] },
+          { ...featuredPlugin, name: "security-second", categories: ["security"] },
+          { ...featuredPlugin, name: "development-third", categories: ["development"] },
+        ],
+        nextCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        items: [
+          { ...featuredPlugin, name: "security-fourth", categories: ["security"] },
+          { ...featuredPlugin, name: "unmatched-fifth", categories: ["productivity"] },
+        ],
+        nextCursor: null,
+      });
+
+    const result = await fetchHomePluginListing("trending", ["development", "security"], 3);
+
+    expect(result.items.map((item) => item.name)).toEqual([
+      "security-second",
+      "development-third",
+      "security-fourth",
+    ]);
+    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        category: undefined,
+        sort: "trending",
+        limit: 100,
+      }),
+    );
+    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        category: undefined,
+        cursor: "page-2",
+        sort: "trending",
+      }),
+    );
+  });
+
+  it("uses the API category filter for a single Trending plugin category", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({
+      items: [{ ...featuredPlugin, name: "security-plugin", categories: ["security"] }],
+      nextCursor: null,
+    });
+
+    await fetchHomePluginListing("trending", ["security"], 3);
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "security",
+        sort: "trending",
+        limit: 3,
+      }),
+    );
+  });
+
+  it("filters the complete bounded Trending leaderboard for multiple categories", async () => {
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({
+        items: Array.from({ length: 100 }, (_, index) => ({
+          ...featuredPlugin,
+          name: `unmatched-${index}`,
+          categories: ["other"],
+        })),
+        nextCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        items: [
+          ...Array.from({ length: 99 }, (_, index) => ({
+            ...featuredPlugin,
+            name: `unmatched-${index + 100}`,
+            categories: ["other"],
+          })),
+          { ...featuredPlugin, name: "security-last", categories: ["security"] },
+        ],
+        nextCursor: null,
+      });
+
+    const result = await fetchHomePluginListing("trending", ["development", "security"], 20);
+
+    expect(result.items.map((item) => item.name)).toEqual(["security-last"]);
+    expect(result.hasMore).toBe(false);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails closed if the Trending API exceeds its shared leaderboard contract", async () => {
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({
+        items: Array.from({ length: 100 }, (_, index) => ({
+          ...featuredPlugin,
+          name: `unmatched-${index}`,
+          categories: ["other"],
+        })),
+        nextCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        items: Array.from({ length: 100 }, (_, index) => ({
+          ...featuredPlugin,
+          name: `unmatched-${index + 100}`,
+          categories: ["other"],
+        })),
+        nextCursor: "unexpected-page-3",
+      });
+
+    await expect(
+      fetchHomePluginListing("trending", ["development", "security"], 20),
+    ).rejects.toThrow("exceeded 200-item contract");
+  });
+});

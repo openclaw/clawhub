@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# datasets: List datasets in an Axiom deployment
+#
+# Usage:
+#   datasets <deployment>                  # List all datasets
+#   datasets <deployment> --kind <kind>    # Filter by kind (e.g., otel:metrics:v1)
+#
+# Examples:
+#   datasets prod
+#   datasets prod --kind otel:metrics:v1
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+shift || true
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: datasets <deployment> [--kind <kind>]" >&2
+    exit 1
+fi
+
+KIND_FILTER=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --kind) KIND_FILTER="$2"; shift 2 ;;
+        *) echo "Unknown option: $1" >&2; exit 1 ;;
+    esac
+done
+
+RESPONSE=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET /v1/datasets)
+
+if [[ -n "$KIND_FILTER" ]]; then
+    echo "$RESPONSE" | jq --arg kind "$KIND_FILTER" \
+        '[.[] | select(.kind == $kind) | {name, edgeDeployment, kind}]'
+else
+    echo "$RESPONSE" | jq '[.[] | {name, edgeDeployment, kind}]'
+fi

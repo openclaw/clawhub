@@ -43,10 +43,15 @@ export function SkillShortSummaryField({
             className="mr-auto flex min-w-0 items-center gap-1.5 text-xs leading-snug text-[color:var(--ink-soft)]"
             role="note"
           >
-            <Lightbulb className="size-3.5 shrink-0 text-[#0099ff]" aria-hidden />
+            <Lightbulb
+              className="size-3.5 shrink-0 text-[color:var(--oc-status-info-fg)]"
+              aria-hidden
+            />
             <span className="min-w-0">
-              <span className="font-semibold text-[#0099ff]">Pulled from your SKILL.md.</span> This
-              is what people see in cards and search.
+              <span className="font-semibold text-[color:var(--oc-status-info-fg)]">
+                Pulled from your SKILL.md.
+              </span>{" "}
+              This is what people see in cards and search.
             </span>
             <button
               type="button"

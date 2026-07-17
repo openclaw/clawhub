@@ -15,6 +15,14 @@ on:
         description: "Stop claiming new attempts after this many minutes"
         required: true
         default: "8"
+      runner:
+        description: "Runner label for manual recovery dispatches"
+        required: true
+        default: "blacksmith-8vcpu-ubuntu-2404"
+        type: choice
+        options:
+          - "blacksmith-8vcpu-ubuntu-2404"
+          - "ubuntu-latest"
   schedule:
     - cron: "*/5 * * * *"
 
@@ -28,7 +36,7 @@ concurrency:
 jobs:
   prepublication-publish-checks:
     name: Pre-publication publish checks shard ${{ matrix.shard }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner || 'blacksmith-8vcpu-ubuntu-2404' }}
     timeout-minutes: 20
     environment: Production
     strategy:
@@ -41,46 +49,25 @@ jobs:
       PREPUBLICATION_CHECK_LIMIT: ${{ inputs['batch-limit'] || '2' }}
       PREPUBLICATION_CHECK_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
       PREPUBLICATION_CHECK_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
-      CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
+      PREPUBLICATION_CLAWSCAN_TIMEOUT_MS: ${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}
       PREPUBLICATION_TRUFFLEHOG_IMAGE: ${{ vars.PREPUBLICATION_TRUFFLEHOG_IMAGE || 'ghcr.io/trufflesecurity/trufflehog:3.95.6@sha256:96f8429082cb2d4ae73b1096dcdb2f5aa139881d97042b0c5e5fa226a392e056' }}
       PREPUBLICATION_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
-      SKILLSPECTOR_PROVIDER: openai
     steps:
       - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-bun
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
-      - name: Install Codex CLI
+      - name: Install ClawScan CLI
         run: |
           set -euo pipefail
-          if ! command -v codex >/dev/null 2>&1; then
-            npm install -g @openai/codex@0.142.3
-          fi
-          codex --version
-
-      - name: Install SkillSpector
-        run: |
-          set -euo pipefail
-          python -m venv "$RUNNER_TEMP/skillspector-venv"
-          source "$RUNNER_TEMP/skillspector-venv/bin/activate"
-          python -m pip install --upgrade pip
-          python -m pip install 'git+https://github.com/NVIDIA/skillspector.git@8f37cfa'
-          echo "$RUNNER_TEMP/skillspector-venv/bin" >> "$GITHUB_PATH"
-          skillspector --help >/dev/null
-
-      - name: Authenticate Codex CLI
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
+          npm install -g @openclaw/clawscan@0.1.2
+          clawscan --version
 
       - name: Run pre-publication publish worker
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+          VIRUSTOTAL_API_KEY: ${{ secrets.VT_API_KEY }}
         run: |
           bun run publish:prepublication-worker -- \
             --batch-limit "$PREPUBLICATION_CHECK_LIMIT" \

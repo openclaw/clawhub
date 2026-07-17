@@ -448,6 +448,16 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const publicBrowseVersionStateValidator = v.union(
+  v.object({
+    status: v.literal("available"),
+    versionId: v.id("skillVersions"),
+  }),
+  v.object({
+    status: v.literal("unavailable"),
+  }),
+);
+
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -980,6 +990,11 @@ const skillSlugAliases = defineTable({
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
+  publicationStatus: v.optional(
+    v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
+  ),
+  publishAttemptId: v.optional(v.id("publishAttempts")),
+  pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
   sourceProvenance: v.optional(
     v.object({
@@ -1016,6 +1031,13 @@ const skillVersions = defineTable({
   softDeletedAt: v.optional(v.number()),
   ownerDeletedAt: v.optional(v.number()),
   ownerDeletedBy: v.optional(v.id("users")),
+  manualRevocation: v.optional(
+    v.object({
+      reason: v.string(),
+      reviewerUserId: v.id("users"),
+      revokedAt: v.number(),
+    }),
+  ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -1108,6 +1130,12 @@ const publishAttempts = defineTable({
   ownerUserId: v.optional(v.id("users")),
   ownerPublisherId: v.optional(v.id("publishers")),
   sourceOwnerPublisherId: v.optional(v.id("publishers")),
+  skillId: v.optional(v.id("skills")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageId: v.optional(v.id("packages")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  createdNewParent: v.optional(v.boolean()),
+  clawpackStorageId: v.optional(v.id("_storage")),
   slug: v.string(),
   displayName: v.string(),
   version: v.string(),
@@ -1120,6 +1148,7 @@ const publishAttempts = defineTable({
   }),
   skillInsertArgs: v.optional(v.any()),
   packageInsertArgs: v.optional(v.any()),
+  scanContext: v.optional(v.any()),
   followup: v.optional(
     v.object({
       skipWebhook: v.optional(v.boolean()),
@@ -1241,6 +1270,9 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  // Missing means the rollout backfill has not reached this row. New writes
+  // always store an explicit available or unavailable public-version state.
+  publicVersion: v.optional(publicBrowseVersionStateValidator),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
@@ -1616,6 +1648,11 @@ const packages = defineTable({
 const packageReleases = defineTable({
   packageId: v.id("packages"),
   version: v.string(),
+  publicationStatus: v.optional(
+    v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
+  ),
+  publishAttemptId: v.optional(v.id("publishAttempts")),
+  pendingPublication: v.optional(v.any()),
   changelog: v.string(),
   summary: v.optional(v.string()),
   icon: v.optional(v.string()),
@@ -1635,6 +1672,7 @@ const packageReleases = defineTable({
   extractedPackageJson: v.optional(v.any()),
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),
+  manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
@@ -1819,6 +1857,7 @@ const securityScanJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_status_source_created_at", ["status", "source", "createdAt"])
   .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])
@@ -1827,6 +1866,20 @@ const securityScanJobs = defineTable({
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
   .index("by_skill_scan_request", ["skillScanRequestId"]);
+
+const securityScanDispatchState = defineTable({
+  key: v.string(),
+  scheduledToken: v.optional(v.string()),
+  scheduledAt: v.optional(v.number()),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  lastDispatchAt: v.optional(v.number()),
+  lastDispatchStatus: v.optional(
+    v.union(v.literal("succeeded"), v.literal("failed"), v.literal("unknown")),
+  ),
+  lastError: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
 
 const skillScanRequests = defineTable({
   actorUserId: v.id("users"),
@@ -2010,6 +2063,7 @@ const packageSearchDigest = defineTable({
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
+  manifestSearchTerms: v.optional(v.array(v.string())),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
   recommendedScore: v.optional(v.number()),
@@ -2701,8 +2755,32 @@ const publisherAbuseScoreRuns = defineTable({
   stdDevLogPressure: v.optional(v.number()),
   temporalMode: v.optional(v.union(v.literal("current"), v.literal("backfill"))),
   temporalScanComplete: v.optional(v.boolean()),
+  temporalPipelinePhase: v.optional(
+    v.union(
+      v.literal("collecting"),
+      v.literal("downloads_percentiles"),
+      v.literal("spike_percentiles"),
+      v.literal("classifying"),
+      v.literal("completed"),
+    ),
+  ),
+  temporalTodayDay: v.optional(v.number()),
+  temporalSourceCursor: v.optional(v.string()),
+  temporalDownloadsCursor: v.optional(v.string()),
+  temporalSpikeCursor: v.optional(v.string()),
+  temporalCandidateCursor: v.optional(v.string()),
+  temporalSampleSize: v.optional(v.number()),
+  temporalDownloadsSum: v.optional(v.number()),
+  temporalDownloadsProcessed: v.optional(v.number()),
+  temporalSpikeProcessed: v.optional(v.number()),
+  temporalDownloadsMedian: v.optional(v.number()),
+  temporalDownloadsP95: v.optional(v.number()),
+  temporalDownloadsP99: v.optional(v.number()),
+  temporalSpikeP95: v.optional(v.number()),
+  temporalSpikeP99: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
+      scope: v.optional(v.literal("all_active_skills")),
       sampleSize: v.number(),
       downloads30dAverage: v.number(),
       downloads30dMedian: v.number(),
@@ -2721,6 +2799,12 @@ const publisherAbuseScoreRuns = defineTable({
   .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_model_version_and_started_at", ["modelVersion", "startedAt"])
   .index("by_model_version_and_status_and_updated_at", ["modelVersion", "status", "updatedAt"])
+  .index("by_model_version_and_status_and_trigger_and_updated_at", [
+    "modelVersion",
+    "status",
+    "trigger",
+    "updatedAt",
+  ])
   .index("by_model_status_phase_temporal_complete_started_at", [
     "modelVersion",
     "status",
@@ -2730,6 +2814,63 @@ const publisherAbuseScoreRuns = defineTable({
     "startedAt",
   ])
   .index("by_started_at", ["startedAt"]);
+
+const publisherAbuseTemporalScanSamples = defineTable({
+  runId: v.id("publisherAbuseScoreRuns"),
+  recent30Downloads: v.number(),
+  spikeMultiplier: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_run_id_and_recent30_downloads", ["runId", "recent30Downloads"])
+  .index("by_run_id_and_spike_multiplier", ["runId", "spikeMultiplier"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const publisherAbuseTemporalScanScoreValidator = v.object({
+  spike: v.boolean(),
+  sustained: v.boolean(),
+  nearConversion: v.boolean(),
+  pressure: v.number(),
+  recent7Downloads: v.number(),
+  recent7Installs: v.number(),
+  previous30Downloads: v.number(),
+  baseline7Downloads: v.number(),
+  spikeMultiplier: v.number(),
+  recent30Downloads: v.number(),
+  recent30Installs: v.number(),
+  downloadInstallRatio30: v.number(),
+  downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+  spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+  downloads30dVsPeerP95: v.optional(v.number()),
+  spikeMultiplierVsPeerP95: v.optional(v.number()),
+  installDownloadRatio7: v.number(),
+  installDownloadRatio30: v.number(),
+  installDownloadExcessZScore7: v.number(),
+  installDownloadExcessZScore30: v.number(),
+  spikeWindowStartDay: v.optional(v.number()),
+  spikeWindowEndDay: v.optional(v.number()),
+  sustainedWindowStartDay: v.optional(v.number()),
+  sustainedWindowEndDay: v.optional(v.number()),
+  nearConversionWindowStartDay: v.optional(v.number()),
+  nearConversionWindowEndDay: v.optional(v.number()),
+  reasonCodes: v.array(v.string()),
+});
+
+const publisherAbuseTemporalScanCandidates = defineTable({
+  runId: v.id("publisherAbuseScoreRuns"),
+  ownerKey: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerUserId: v.optional(v.id("users")),
+  handleSnapshot: v.string(),
+  skillId: v.id("skills"),
+  slug: v.string(),
+  displayName: v.string(),
+  totalDownloads: v.number(),
+  totalInstalls: v.number(),
+  temporalScore: publisherAbuseTemporalScanScoreValidator,
+  expirationTime: v.number(),
+})
+  .index("by_run_id", ["runId"])
+  .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseScores = defineTable({
   runId: v.id("publisherAbuseScoreRuns"),
@@ -2758,6 +2899,7 @@ const publisherAbuseScores = defineTable({
   temporalMaxPressure: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
+      scope: v.optional(v.literal("all_active_skills")),
       sampleSize: v.number(),
       downloads30dAverage: v.number(),
       downloads30dMedian: v.number(),
@@ -2908,6 +3050,18 @@ const publisherAbuseSignals = defineTable({
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
   allTimeInstallDownloadRatio: v.number(),
+  temporalBenchmark: v.optional(
+    v.object({
+      scope: v.optional(v.literal("all_active_skills")),
+      sampleSize: v.number(),
+      downloads30dAverage: v.number(),
+      downloads30dMedian: v.number(),
+      downloads30dP95: v.number(),
+      downloads30dP99: v.number(),
+      spikeMultiplier7dP95: v.number(),
+      spikeMultiplier7dP99: v.number(),
+    }),
+  ),
   reviewStatus: publisherAbuseSignalReviewStatusValidator,
   snoozedUntil: v.optional(v.number()),
   reviewedByUserId: v.optional(v.id("users")),
@@ -3189,6 +3343,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   securityScanJobs,
+  securityScanDispatchState,
   skillScanRequests,
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
@@ -3231,6 +3386,8 @@ export default defineSchema({
   auditLogs,
   systemSettings,
   publisherAbuseScoreRuns,
+  publisherAbuseTemporalScanSamples,
+  publisherAbuseTemporalScanCandidates,
   publisherAbuseScores,
   publisherAbuseReviewNominations,
   publisherAbuseReviewEvents,

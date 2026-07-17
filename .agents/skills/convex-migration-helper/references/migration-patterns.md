@@ -10,7 +10,7 @@ for Convex schema and data migrations.
 users: defineTable({
   name: v.string(),
   role: v.optional(v.union(v.literal("user"), v.literal("admin"))),
-});
+}).index("by_role", ["role"]);
 
 // Migration: backfill the field
 export const addDefaultRole = migrations.define({
@@ -225,7 +225,7 @@ export const verifyMigration = query({
   handler: async (ctx) => {
     const remaining = await ctx.db
       .query("users")
-      .filter((q) => q.eq(q.field("role"), undefined))
+      .withIndex("by_role", (q) => q.eq("role", undefined))
       .take(10);
 
     return {

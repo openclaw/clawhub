@@ -425,7 +425,9 @@ export function PromotionsPage({
           />
         </PromotionField>
       </div>
-      {formError ? <p className="section-subtitle m-0 mt-3 text-red-500">{formError}</p> : null}
+      {formError ? (
+        <p className="section-subtitle m-0 mt-3 text-status-error-fg">{formError}</p>
+      ) : null}
       <div className="mt-4 flex items-center gap-2">
         <Button type="button" onClick={submit} disabled={submitting}>
           {editingSlug ? "Save changes" : "Create draft"}

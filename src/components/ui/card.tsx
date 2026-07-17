@@ -7,7 +7,7 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
       ref={ref}
       className={cn(
         // Matches .card
-        "flex w-full flex-col gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-space-5 transition-all duration-200 ease-out",
+        "flex w-full flex-col gap-3 rounded-[var(--oc-radius-surface)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-surface-card)] p-space-5 transition-all duration-[var(--oc-duration-ui)] ease-[var(--oc-ease-out)]",
         className,
       )}
       {...props}

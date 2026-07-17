@@ -5,8 +5,8 @@ import { cn } from "../../lib/utils";
 
 const buttonVariants = cva(
   [
-    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-200 ease-out",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--bg)]",
+    "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-semibold transition-all duration-[var(--oc-duration-ui)] ease-[var(--oc-ease-out)]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--oc-focus-ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[color:var(--oc-bg-page)]",
     "cursor-pointer disabled:cursor-not-allowed disabled:pointer-events-none disabled:opacity-60",
     "!no-underline hover:!no-underline",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0",

@@ -34,11 +34,11 @@ export declare const ApiCliWhoamiResponseSchema: import("arktype/internal/varian
 }, {}>;
 export declare const ApiSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
-        score: number;
         slug?: string | undefined;
         ownerHandle?: string | null | undefined;
         displayName?: string | undefined;
         version?: string | null | undefined;
+        score: number;
     }[];
 }, {}>;
 export declare const ApiSkillMetaResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -74,18 +74,11 @@ export declare const PublishSourceSchema: import("arktype/internal/variants/obje
 export declare const CliPublishRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     slug: string;
     displayName: string;
-    version: string;
-    changelog: string;
-    files: {
-        path: string;
-        size: number;
-        storageId: string;
-        sha256: string;
-        contentType?: string | undefined;
-    }[];
     ownerHandle?: string | undefined;
     sourceOwnerHandle?: string | undefined;
     migrateOwner?: boolean | undefined;
+    version: string;
+    changelog: string;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
     categories?: string[] | undefined;
@@ -104,12 +97,24 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
         ownerHandle?: string | undefined;
         version?: string | undefined;
     } | undefined;
+    files: {
+        path: string;
+        size: number;
+        storageId: string;
+        sha256: string;
+        contentType?: string | undefined;
+    }[];
 }, {}>;
 export type CliPublishRequest = (typeof CliPublishRequestSchema)[inferred];
 export declare const ApiCliPublishResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     skillId: string;
     versionId: string;
+    status?: "pending" | "published" | undefined;
+    slug?: string | undefined;
+    version?: string | undefined;
+    publicationStatus?: "pending" | "published" | undefined;
+    attemptId?: string | undefined;
 }, {}>;
 export declare const CliSkillDeleteRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     slug: string;
@@ -150,7 +155,7 @@ export declare const ApiV1SkillInstallResolveResponseSchema: import("arktype/int
 } | {
     ok: false;
     slug: string;
-    reason: "archive_version_missing" | "github_source_missing" | "github_upstream_removed" | "github_upstream_missing" | "github_upstream_unknown" | "github_verification_pending" | "github_scan_failed";
+    reason: "archive_version_missing" | "github_scan_failed" | "github_source_missing" | "github_upstream_missing" | "github_upstream_removed" | "github_upstream_unknown" | "github_verification_pending";
     message: string;
     status: number;
 }, {}>;
@@ -158,6 +163,7 @@ export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveR
 export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     event: "install";
     slug: string;
+    ownerHandle?: string | undefined;
     version?: string | undefined;
     rootId?: string | undefined;
     rootLabel?: string | undefined;
@@ -180,7 +186,7 @@ export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variant
         handle: string | null;
         displayName?: string | null | undefined;
         image?: string | null | undefined;
-        role?: "user" | "admin" | "moderator" | null | undefined;
+        role?: "admin" | "moderator" | "user" | null | undefined;
     };
 }, {}>;
 export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -189,7 +195,7 @@ export declare const ApiV1UserSearchResponseSchema: import("arktype/internal/var
         handle: string | null;
         displayName?: string | null | undefined;
         name?: string | null | undefined;
-        role?: "user" | "admin" | "moderator" | null | undefined;
+        role?: "admin" | "moderator" | "user" | null | undefined;
     }[];
     total: number;
 }, {}>;
@@ -242,12 +248,12 @@ export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal
 export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
-        score: number;
         slug?: string | undefined;
         ownerHandle?: string | null | undefined;
         displayName?: string | undefined;
         summary?: string | null | undefined;
         version?: string | null | undefined;
+        score: number;
         downloads?: number | undefined;
         updatedAt?: number | undefined;
         owner?: {
@@ -261,13 +267,13 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
     items: {
         slug: string;
         displayName: string;
+        summary?: string | null | undefined;
+        description?: string | null | undefined;
+        topics?: string[] | undefined;
         tags: unknown;
         stats: unknown;
         createdAt: number;
         updatedAt: number;
-        summary?: string | null | undefined;
-        description?: string | null | undefined;
-        topics?: string[] | undefined;
         latestVersion?: {
             version: string;
             createdAt: number;
@@ -289,24 +295,19 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
     skill: {
         slug: string;
         displayName: string;
+        summary?: string | null | undefined;
+        description?: string | null | undefined;
+        topics?: string[] | undefined;
         tags: unknown;
         stats: unknown;
         createdAt: number;
         updatedAt: number;
-        summary?: string | null | undefined;
-        description?: string | null | undefined;
-        topics?: string[] | undefined;
     } | null;
     latestVersion: {
         version: string;
         createdAt: number;
         changelog: string;
         license?: "MIT-0" | null | undefined;
-    } | null;
-    owner: {
-        handle: string | null;
-        displayName?: string | null | undefined;
-        image?: string | null | undefined;
     } | null;
     metadata?: {
         setup: {
@@ -316,10 +317,15 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         os?: string[] | null | undefined;
         systems?: string[] | null | undefined;
     } | null | undefined;
+    owner: {
+        handle: string | null;
+        displayName?: string | null | undefined;
+        image?: string | null | undefined;
+    } | null;
     moderation?: {
         isSuspicious: boolean;
         isMalwareBlocked: boolean;
-        verdict?: "clean" | "suspicious" | "malicious" | undefined;
+        verdict?: "clean" | "malicious" | "suspicious" | undefined;
         reasonCodes?: string[] | undefined;
         updatedAt?: number | null | undefined;
         engineVersion?: string | null | undefined;
@@ -330,37 +336,54 @@ export declare const ApiV1SkillModerationResponseSchema: import("arktype/interna
     moderation: {
         isSuspicious: boolean;
         isMalwareBlocked: boolean;
-        verdict: "clean" | "suspicious" | "malicious";
+        verdict: "clean" | "malicious" | "suspicious";
         reasonCodes: string[];
+        updatedAt?: number | null | undefined;
+        engineVersion?: string | null | undefined;
+        summary?: string | null | undefined;
+        legacyReason?: string | null | undefined;
         evidence: {
             code: string;
-            severity: "info" | "warn" | "critical";
+            severity: "critical" | "info" | "warn";
             file: string;
             line: number;
             message: string;
             evidence: string;
         }[];
-        updatedAt?: number | null | undefined;
-        engineVersion?: string | null | undefined;
-        summary?: string | null | undefined;
-        legacyReason?: string | null | undefined;
     } | null;
 }, {}>;
-export declare const SkillReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed", {}>;
+export declare const SkillVersionRevokeRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    state: "revoked";
+    reason: string;
+    ownerHandle?: string | undefined;
+}, {}>;
+export type SkillVersionRevokeRequest = (typeof SkillVersionRevokeRequestSchema)[inferred];
+export declare const ApiV1SkillVersionRevokeResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    version: string;
+    skillId: string;
+    versionId: string;
+    alreadyRevoked: boolean;
+    replacementVersion: string | null;
+    skillHidden: boolean;
+}, {}>;
+export type ApiV1SkillVersionRevokeResponse = (typeof ApiV1SkillVersionRevokeResponseSchema)[inferred];
+export declare const SkillReportStatusSchema: import("arktype/internal/variants/string.ts").StringType<"confirmed" | "dismissed" | "open", {}>;
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
-export declare const SkillReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "hide", {}>;
+export declare const SkillReportFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"hide" | "none", {}>;
 export type SkillReportFinalAction = (typeof SkillReportFinalActionSchema)[inferred];
-export declare const SkillReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "confirmed" | "dismissed" | "all", {}>;
+export declare const SkillReportListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "confirmed" | "dismissed" | "open", {}>;
 export type SkillReportListStatus = (typeof SkillReportListStatusSchema)[inferred];
-export declare const SkillAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "accepted" | "rejected", {}>;
+export declare const SkillAppealStatusSchema: import("arktype/internal/variants/string.ts").StringType<"accepted" | "open" | "rejected", {}>;
 export type SkillAppealStatus = (typeof SkillAppealStatusSchema)[inferred];
 export declare const SkillAppealFinalActionSchema: import("arktype/internal/variants/string.ts").StringType<"none" | "restore", {}>;
 export type SkillAppealFinalAction = (typeof SkillAppealFinalActionSchema)[inferred];
-export declare const SkillAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "accepted" | "rejected", {}>;
+export declare const SkillAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"accepted" | "all" | "open" | "rejected", {}>;
 export type SkillAppealListStatus = (typeof SkillAppealListStatusSchema)[inferred];
 export declare const SkillAppealRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    message: string;
     version?: string | undefined;
+    message: string;
 }, {}>;
 export type SkillAppealRequest = (typeof SkillAppealRequestSchema)[inferred];
 export declare const ApiV1SkillReportResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -378,17 +401,17 @@ export declare const ApiV1SkillAppealResponseSchema: import("arktype/internal/va
     alreadyOpen: boolean;
     appealId: string;
     skillId: string;
-    status: "open" | "accepted" | "rejected";
+    status: "accepted" | "open" | "rejected";
 }, {}>;
 export type ApiV1SkillAppealResponse = (typeof ApiV1SkillAppealResponseSchema)[inferred];
 export declare const SkillReportTriageRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "open" | "confirmed" | "dismissed";
+    status: "confirmed" | "dismissed" | "open";
     note?: string | undefined;
-    finalAction?: "none" | "hide" | undefined;
+    finalAction?: "hide" | "none" | undefined;
 }, {}>;
 export type SkillReportTriageRequest = (typeof SkillReportTriageRequestSchema)[inferred];
 export declare const SkillAppealResolveRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "open" | "accepted" | "rejected";
+    status: "accepted" | "open" | "rejected";
     note?: string | undefined;
     finalAction?: "none" | "restore" | undefined;
 }, {}>;
@@ -397,22 +420,22 @@ export declare const ApiV1SkillReportListResponseSchema: import("arktype/interna
     items: {
         reportId: string;
         skillId: string;
+        skillVersionId?: string | null | undefined;
         slug: string;
         displayName: string;
-        status: "open" | "confirmed" | "dismissed";
+        version?: string | null | undefined;
+        reason?: string | null | undefined;
+        status: "confirmed" | "dismissed" | "open";
         createdAt: number;
         reporter: {
             userId: string;
             handle?: string | null | undefined;
             displayName?: string | null | undefined;
         };
-        skillVersionId?: string | null | undefined;
-        version?: string | null | undefined;
-        reason?: string | null | undefined;
         triagedAt?: number | null | undefined;
         triagedBy?: string | null | undefined;
         triageNote?: string | null | undefined;
-        actionTaken?: "none" | "hide" | null | undefined;
+        actionTaken?: "hide" | "none" | null | undefined;
     }[];
     nextCursor: string | null;
     done: boolean;
@@ -422,27 +445,27 @@ export declare const ApiV1SkillReportTriageResponseSchema: import("arktype/inter
     ok: true;
     reportId: string;
     skillId: string;
-    status: "open" | "confirmed" | "dismissed";
+    status: "confirmed" | "dismissed" | "open";
     reportCount: number;
-    actionTaken?: "none" | "hide" | undefined;
+    actionTaken?: "hide" | "none" | undefined;
 }, {}>;
 export type ApiV1SkillReportTriageResponse = (typeof ApiV1SkillReportTriageResponseSchema)[inferred];
 export declare const ApiV1SkillAppealListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
         appealId: string;
         skillId: string;
+        skillVersionId?: string | null | undefined;
         slug: string;
         displayName: string;
+        version?: string | null | undefined;
         message: string;
-        status: "open" | "accepted" | "rejected";
+        status: "accepted" | "open" | "rejected";
         createdAt: number;
         submitter: {
             userId: string;
             handle?: string | null | undefined;
             displayName?: string | null | undefined;
         };
-        skillVersionId?: string | null | undefined;
-        version?: string | null | undefined;
         resolvedAt?: number | null | undefined;
         resolvedBy?: string | null | undefined;
         resolutionNote?: string | null | undefined;
@@ -456,7 +479,7 @@ export declare const ApiV1SkillAppealResolveResponseSchema: import("arktype/inte
     ok: true;
     appealId: string;
     skillId: string;
-    status: "open" | "accepted" | "rejected";
+    status: "accepted" | "open" | "rejected";
     actionTaken?: "none" | "restore" | undefined;
 }, {}>;
 export type ApiV1SkillAppealResolveResponse = (typeof ApiV1SkillAppealResolveResponseSchema)[inferred];
@@ -474,12 +497,12 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     version: string;
     skillId: string;
     githubContentHash: string;
+    jobId?: string | undefined;
     scheduled: boolean;
     alreadyQueued: boolean;
-    jobId?: string | undefined;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
-export declare const ApiV1SkillScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"queued" | "running" | "succeeded" | "failed", {}>;
+export declare const ApiV1SkillScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"failed" | "queued" | "running" | "succeeded", {}>;
 export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
 export declare const ApiV1SkillScanSourceSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "upload";
@@ -502,63 +525,63 @@ export declare const ApiV1SkillScanSubmitRequestSchema: import("arktype/internal
 export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
 export declare const ApiV1SkillScanQueueSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     queuedAhead: number;
+    queuedAheadIsEstimate?: boolean | undefined;
     position: number | null;
     running: number;
-    note: string;
-    queuedAheadIsEstimate?: boolean | undefined;
     runningIsEstimate?: boolean | undefined;
+    note: string;
 }, {}>;
 export type ApiV1SkillScanQueue = (typeof ApiV1SkillScanQueueSchema)[inferred];
 export declare const ApiV1SkillScanSubmitResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     scanId: string;
-    status: "queued" | "running" | "succeeded" | "failed";
-    sourceKind: "upload" | "published";
-    update: boolean;
     jobId?: string | undefined;
+    status: "failed" | "queued" | "running" | "succeeded";
+    sourceKind: "published" | "upload";
+    update: boolean;
     alreadyQueued?: boolean | undefined;
     queue?: {
         queuedAhead: number;
+        queuedAheadIsEstimate?: boolean | undefined;
         position: number | null;
         running: number;
-        note: string;
-        queuedAheadIsEstimate?: boolean | undefined;
         runningIsEstimate?: boolean | undefined;
+        note: string;
     } | undefined;
 }, {}>;
 export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
 export declare const ApiV1SkillScanStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     scanId: string;
-    status: "queued" | "running" | "succeeded" | "failed";
-    sourceKind: "upload" | "published";
-    update: boolean;
-    createdAt: number;
-    updatedAt: number;
     jobId?: string | undefined;
+    status: "failed" | "queued" | "running" | "succeeded";
+    sourceKind: "published" | "upload";
+    update: boolean;
     writtenBack?: boolean | undefined;
     artifact?: unknown;
     report?: unknown;
     queue?: {
         queuedAhead: number;
+        queuedAheadIsEstimate?: boolean | undefined;
         position: number | null;
         running: number;
-        note: string;
-        queuedAheadIsEstimate?: boolean | undefined;
         runningIsEstimate?: boolean | undefined;
+        note: string;
     } | undefined;
     lastError?: string | undefined;
+    createdAt: number;
+    updatedAt: number;
     completedAt?: number | undefined;
 }, {}>;
 export type ApiV1SkillScanStatusResponse = (typeof ApiV1SkillScanStatusResponseSchema)[inferred];
 export declare const ApiV1SkillScanDownloadManifestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     scanId: string;
-    sourceKind: "upload" | "published";
+    sourceKind: "published" | "upload";
     update: boolean;
-    status: "queued" | "running" | "succeeded" | "failed";
+    status: "failed" | "queued" | "running" | "succeeded";
+    artifact?: unknown;
     createdAt: number;
     updatedAt: number;
-    artifact?: unknown;
     completedAt?: number | undefined;
     writtenBack?: boolean | undefined;
 }, {}>;
@@ -667,12 +690,12 @@ export declare const ApiV1SkillVersionListResponseSchema: import("arktype/intern
         version: string;
         createdAt: number;
         changelog: string;
-        changelogSource?: "user" | "auto" | null | undefined;
+        changelogSource?: "auto" | "user" | null | undefined;
     }[];
     nextCursor: string | null;
 }, {}>;
 export declare const SecurityStatusSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+    status: "clean" | "error" | "malicious" | "pending" | "suspicious";
     hasWarnings: boolean;
     checkedAt: number | null;
     model: string | null;
@@ -682,11 +705,11 @@ export declare const ApiV1SkillVersionResponseSchema: import("arktype/internal/v
         version: string;
         createdAt: number;
         changelog: string;
-        changelogSource?: "user" | "auto" | null | undefined;
+        changelogSource?: "auto" | "user" | null | undefined;
         license?: "MIT-0" | null | undefined;
         files?: unknown;
         security?: {
-            status: "clean" | "suspicious" | "malicious" | "pending" | "error";
+            status: "clean" | "error" | "malicious" | "pending" | "suspicious";
             hasWarnings: boolean;
             checkedAt: number | null;
             model: string | null;
@@ -717,7 +740,7 @@ export declare const ApiV1SkillVerifyResponseSchema: import("arktype/internal/va
     publisherDisplayName: string | null;
     publisherProfileUrl: string | null;
     version: string;
-    resolvedFrom: "version" | "tag" | "latest";
+    resolvedFrom: "latest" | "tag" | "version";
     tag: string | null;
     createdAt: number;
     card: unknown;
@@ -730,6 +753,11 @@ export declare const ApiV1PublishResponseSchema: import("arktype/internal/varian
     ok: true;
     skillId: string;
     versionId: string;
+    status?: "pending" | "published" | undefined;
+    slug?: string | undefined;
+    version?: string | undefined;
+    publicationStatus?: "pending" | "published" | undefined;
+    attemptId?: string | undefined;
 }, {}>;
 export declare const ApiV1DeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
@@ -766,8 +794,6 @@ export declare const ApiV1TransferListResponseSchema: import("arktype/internal/v
             slug: string;
             displayName: string;
         };
-        requestedAt: number;
-        expiresAt: number;
         fromUser?: {
             _id: string;
             handle: string | null;
@@ -779,11 +805,13 @@ export declare const ApiV1TransferListResponseSchema: import("arktype/internal/v
             displayName: string | null;
         } | undefined;
         message?: string | undefined;
+        requestedAt: number;
+        expiresAt: number;
     }[];
 }, {}>;
 export declare const ApiV1SetRoleResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
-    role: "user" | "admin" | "moderator";
+    role: "admin" | "moderator" | "user";
 }, {}>;
 export declare const ApiV1ReclassifyBanResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
@@ -805,8 +833,8 @@ export declare const ApiV1UnstarResponseSchema: import("arktype/internal/variant
     alreadyUnstarred: boolean;
 }, {}>;
 export declare const SkillInstallSpecSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    kind: "brew" | "node" | "go" | "uv";
     id?: string | undefined;
+    kind: "brew" | "go" | "node" | "uv";
     label?: string | undefined;
     bins?: string[] | undefined;
     formula?: string | undefined;
@@ -841,7 +869,7 @@ export declare const EnvVarDeclarationSchema: import("arktype/internal/variants/
 export type EnvVarDeclaration = (typeof EnvVarDeclarationSchema)[inferred];
 export declare const DependencyDeclarationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
-    type: "other" | "brew" | "go" | "pip" | "npm" | "cargo" | "apt";
+    type: "apt" | "brew" | "cargo" | "go" | "npm" | "other" | "pip";
     version?: string | undefined;
     url?: string | undefined;
     repository?: string | undefined;
@@ -869,8 +897,8 @@ export declare const ClawdisSkillMetadataSchema: import("arktype/internal/varian
         config?: string[] | undefined;
     } | undefined;
     install?: {
-        kind: "brew" | "node" | "go" | "uv";
         id?: string | undefined;
+        kind: "brew" | "go" | "node" | "uv";
         label?: string | undefined;
         bins?: string[] | undefined;
         formula?: string | undefined;
@@ -894,7 +922,7 @@ export declare const ClawdisSkillMetadataSchema: import("arktype/internal/varian
     }[] | undefined;
     dependencies?: {
         name: string;
-        type: "other" | "brew" | "go" | "pip" | "npm" | "cargo" | "apt";
+        type: "apt" | "brew" | "cargo" | "go" | "npm" | "other" | "pip";
         version?: string | undefined;
         url?: string | undefined;
         repository?: string | undefined;

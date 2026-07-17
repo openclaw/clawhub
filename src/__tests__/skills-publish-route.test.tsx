@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
 import { Upload } from "../routes/skills/publish";
 
+const navigateMock = vi.fn();
+
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   createFileRoute: () => (config: { component: unknown }) => config,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
 }));
 
@@ -61,6 +63,7 @@ describe("Upload route", () => {
     useQueryMock.mockReset();
     useAuthStatusMock.mockReset();
     useSearchMock.mockReset();
+    navigateMock.mockReset();
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: undefined });
     useActionCallCount = 0;
     useAuthStatusMock.mockReturnValue({
@@ -97,10 +100,10 @@ describe("Upload route", () => {
     vi.unstubAllGlobals();
   });
 
-  it("links to the skill publishing guide", () => {
+  it("links to the skill docs", () => {
     render(<Upload />);
 
-    const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
+    const guideLink = screen.getByRole("link", { name: /Skill docs/i });
     expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
@@ -967,7 +970,7 @@ describe("Upload route", () => {
     expect(Object.hasOwn(args!, "icon")).toBe(false);
   });
 
-  it("keeps publish disabled after staged skill publish is accepted", async () => {
+  it("redirects to the dashboard after a staged skill publish is accepted", async () => {
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishVersion.mockResolvedValueOnce({
       status: "pending",
@@ -1004,10 +1007,11 @@ describe("Upload route", () => {
     });
     fireEvent.click(publishButton);
 
-    expect(
-      await screen.findByText(/Running TruffleHog and ClawScan before public listing\./i),
-    ).toBeTruthy();
-    expect(publishButton.getAttribute("disabled")).not.toBeNull();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({ to: "/dashboard" });
+    });
+    expect(screen.queryByText(/Running TruffleHog and ClawScan/i)).toBeNull();
+    expect(screen.queryByText("Publishing…")).toBeNull();
   });
 
   it("omits icon when republishing a skill that still has a stored legacy icon", async () => {

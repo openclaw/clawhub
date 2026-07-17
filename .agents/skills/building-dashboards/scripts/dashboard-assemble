@@ -1,0 +1,248 @@
+#!/usr/bin/env bash
+# dashboard-assemble: Compose a complete Axiom dashboard JSON from chart
+# files and a layout file, plus a small set of dashboard-level flags.
+#
+# The agent never has to load chart JSON into its context — it writes each
+# chart to a temp file via `chart-add`, the layout array via `layout-pack`,
+# and passes file paths here. The whole envelope (`owner`, `schemaVersion`,
+# `qr-` time-window prefixes, `refreshTime` validation, id cross-checks)
+# is owned by this script.
+#
+# Usage:
+#   dashboard-assemble \
+#     --name <NAME> \
+#     --datasets <NAME>[,<NAME>...] \
+#     --layout <FILE> \
+#     [--description <STR>] \
+#     [--time-window <SPEC>] \
+#     [--refresh <KEY|SECONDS>] \
+#     [--owner <STR>] \
+#     <CHART_FILE> [<CHART_FILE> ...] \
+#     > dashboard.json
+#
+# Required flags:
+#   --name      Dashboard name.
+#   --datasets  Comma-separated list of dataset names this dashboard reads.
+#               (Charts that use MPL also carry their own metricsDataset
+#               on `query.metricsDataset`; this top-level field is for
+#               permissions and dataset attachment.)
+#   --layout    Path to a JSON file containing the layout array (typically
+#               the output of `layout-pack`).
+#
+# Optional flags:
+#   --description  Dashboard-level description (Markdown).
+#   --time-window  Relative window for the start of the time picker.
+#                  Examples: "1h", "30d", "7d", "24h", "now-2h", or an
+#                  already-prefixed "qr-now-1h". The script normalises:
+#                    qr-*   → used verbatim
+#                    now-*  → prefixed with "qr-"
+#                    other  → prefixed with "qr-now-"
+#                  Defaults to "1h". The end is always `qr-now`.
+#   --refresh      One of:
+#                    oncall  → 60   (1 minute)
+#                    team    → 300  (5 minutes)
+#                    exec    → 900  (15 minutes)
+#                    <int>   → use directly. Must be ≥ 60 — the API
+#                             rejects shorter values on probed deployments.
+#                  Defaults to 60.
+#   --owner        Defaults to "X-AXIOM-EVERYONE" (the only value an API
+#                  token can use; private dashboards aren't supported via
+#                  token auth).
+#
+# Positional args: one or more chart JSON files. Each file may contain
+# either a single chart object {} or an array of charts [{},{}]. They are
+# concatenated in the order given (which becomes the order of `charts[]`
+# in the dashboard).
+#
+# Validation:
+#   - Every layout entry's `i` must match a chart `id`.
+#   - Every chart `id` must appear in the layout.
+#   - No duplicate chart ids.
+#
+# Output: a single dashboard JSON object on stdout, ready for
+# `dashboard-validate` and `dashboard-create`.
+#
+# Examples:
+#   chart-add --type Note --id intro --name Notice --text "..." \
+#     > /tmp/d/c-intro.json
+#   chart-add --type Statistic --id avail --name "Availability" \
+#       --mpl '...' --dataset k8s-metrics-staging --unit "%" \
+#     > /tmp/d/c-avail.json
+#   layout-pack intro:Note avail:Statistic > /tmp/d/layout.json
+#
+#   dashboard-assemble \
+#       --name "API server v22" \
+#       --datasets k8s-metrics-staging \
+#       --time-window 30d \
+#       --refresh oncall \
+#       --layout /tmp/d/layout.json \
+#       /tmp/d/c-intro.json /tmp/d/c-avail.json \
+#     > /tmp/d/dashboard.json
+
+set -euo pipefail
+
+NAME=""
+DATASETS=""
+LAYOUT_FILE=""
+DESCRIPTION=""
+TIME_WINDOW="1h"
+REFRESH="60"
+OWNER="X-AXIOM-EVERYONE"
+CHART_FILES=()
+
+usage() {
+    sed -n '2,/^set -euo pipefail/p' "$0" | sed 's/^# \?//' | sed '$d'
+    exit "${1:-1}"
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name)         NAME="$2"; shift 2 ;;
+        --datasets)     DATASETS="$2"; shift 2 ;;
+        --layout)       LAYOUT_FILE="$2"; shift 2 ;;
+        --description)  DESCRIPTION="$2"; shift 2 ;;
+        --time-window)  TIME_WINDOW="$2"; shift 2 ;;
+        --refresh)      REFRESH="$2"; shift 2 ;;
+        --owner)        OWNER="$2"; shift 2 ;;
+        -h|--help)      usage 0 ;;
+        --*)            echo "Error: unknown flag '$1'" >&2; exit 1 ;;
+        *)              CHART_FILES+=("$1"); shift ;;
+    esac
+done
+
+# --- Required-flag / argument validation ----------------------------------
+
+[[ -z "$NAME"        ]] && { echo "Error: --name is required" >&2; usage; }
+[[ -z "$DATASETS"    ]] && { echo "Error: --datasets is required" >&2; usage; }
+[[ -z "$LAYOUT_FILE" ]] && { echo "Error: --layout is required" >&2; usage; }
+
+if [[ ${#CHART_FILES[@]} -eq 0 ]]; then
+    echo "Error: at least one chart file argument is required" >&2
+    usage
+fi
+
+[[ -f "$LAYOUT_FILE" ]] || { echo "Error: layout file not found: $LAYOUT_FILE" >&2; exit 1; }
+for f in "${CHART_FILES[@]}"; do
+    [[ -f "$f" ]] || { echo "Error: chart file not found: $f" >&2; exit 1; }
+done
+
+# --- Time-window normalisation --------------------------------------------
+
+normalise_time_window() {
+    local w="$1"
+    case "$w" in
+        qr-*)   echo "$w" ;;
+        now-*)  echo "qr-$w" ;;
+        now)    echo "Error: --time-window cannot be 'now' (zero-length window)" >&2; return 1 ;;
+        "")     echo "Error: --time-window cannot be empty" >&2; return 1 ;;
+        *)      echo "qr-now-$w" ;;
+    esac
+}
+TIME_WINDOW_START=$(normalise_time_window "$TIME_WINDOW") || exit 1
+TIME_WINDOW_END="qr-now"
+
+# --- Refresh-rate normalisation -------------------------------------------
+
+normalise_refresh() {
+    local r="$1"
+    case "$r" in
+        oncall) echo 60 ;;
+        team)   echo 300 ;;
+        exec)   echo 900 ;;
+        ''|*[!0-9]*)
+            echo "Error: --refresh must be one of oncall|team|exec or a positive integer (got '$r')" >&2
+            return 1
+            ;;
+        *)
+            if (( r < 60 )); then
+                echo "Error: --refresh must be ≥ 60 (the create API rejects shorter values; got $r)" >&2
+                return 1
+            fi
+            echo "$r"
+            ;;
+    esac
+}
+REFRESH_TIME=$(normalise_refresh "$REFRESH") || exit 1
+
+# --- Datasets list parsing ------------------------------------------------
+
+DATASETS_JSON=$(jq -nc --arg s "$DATASETS" '$s | split(",") | map(select(length > 0))')
+
+# --- Charts array assembly ------------------------------------------------
+
+# For each chart file, treat its contents as either a single object {} or
+# an array of objects [{}], and concatenate.
+CHARTS_JSON=$(jq -s '
+    map(if type == "array" then .[] else . end)
+    | map(select(. != null))
+' "${CHART_FILES[@]}")
+
+# --- Layout array load ----------------------------------------------------
+
+LAYOUT_JSON=$(jq '.' "$LAYOUT_FILE")
+
+if ! echo "$LAYOUT_JSON" | jq -e 'type == "array"' >/dev/null; then
+    echo "Error: layout file must contain a JSON array, got $(echo "$LAYOUT_JSON" | jq -r 'type')" >&2
+    exit 1
+fi
+
+# --- Cross-validation: chart ids ↔ layout i ------------------------------
+#
+# Done in pure jq for portability (avoids bash 4 mapfile / declare -A; the
+# default macOS /bin/bash is 3.2). Computes three sets in one pass:
+#   dups                  — chart ids that appear more than once
+#   layout_missing_chart  — layout `i`s with no matching chart `id`
+#   chart_missing_layout  — chart `id`s with no matching layout `i`
+
+VALIDATION=$(jq -nc \
+    --argjson charts "$CHARTS_JSON" \
+    --argjson layout "$LAYOUT_JSON" \
+    '{
+        dups: ([$charts[].id] | group_by(.) | map(select(length > 1) | .[0])),
+        layout_missing_chart: ([$layout[].i] - [$charts[].id] | unique),
+        chart_missing_layout: ([$charts[].id] - [$layout[].i] | unique)
+    }')
+
+DUPS=$(echo "$VALIDATION" | jq -r '.dups | join(", ")')
+LAYOUT_ONLY=$(echo "$VALIDATION" | jq -r '.layout_missing_chart | join(", ")')
+CHART_ONLY=$(echo "$VALIDATION" | jq -r '.chart_missing_layout | join(", ")')
+
+if [[ -n "$DUPS" ]]; then
+    echo "Error: duplicate chart id(s) across chart files: $DUPS" >&2
+    exit 1
+fi
+if [[ -n "$LAYOUT_ONLY" ]]; then
+    echo "Error: layout entry references id(s) with no matching chart: $LAYOUT_ONLY" >&2
+    exit 1
+fi
+if [[ -n "$CHART_ONLY" ]]; then
+    echo "Error: chart id(s) with no matching layout entry: $CHART_ONLY" >&2
+    exit 1
+fi
+
+# --- Emit dashboard JSON --------------------------------------------------
+
+jq -n \
+    --arg name "$NAME" \
+    --arg description "$DESCRIPTION" \
+    --arg owner "$OWNER" \
+    --argjson datasets "$DATASETS_JSON" \
+    --argjson refreshTime "$REFRESH_TIME" \
+    --arg timeWindowStart "$TIME_WINDOW_START" \
+    --arg timeWindowEnd "$TIME_WINDOW_END" \
+    --argjson charts "$CHARTS_JSON" \
+    --argjson layout "$LAYOUT_JSON" \
+    '
+    {
+      name: $name,
+      owner: $owner,
+      datasets: $datasets,
+      refreshTime: $refreshTime,
+      schemaVersion: 2,
+      timeWindowStart: $timeWindowStart,
+      timeWindowEnd: $timeWindowEnd,
+      charts: $charts,
+      layout: $layout
+    }
+    | if ($description | length) > 0 then .description = $description else . end
+    '

@@ -5,7 +5,11 @@ export function OfficialTag({ className }: { className?: string }) {
   return (
     <Badge
       variant="official"
-      className={className ? `official-tag rounded-full ${className}` : "official-tag rounded-full"}
+      className={
+        className
+          ? `official-tag rounded-[var(--oc-radius-control)] ${className}`
+          : "official-tag rounded-[var(--oc-radius-control)]"
+      }
       aria-label="Verified"
     >
       <BadgeCheck size={15} aria-hidden="true" className="official-badge-icon" />

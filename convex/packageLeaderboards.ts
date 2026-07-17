@@ -1,10 +1,10 @@
+import { PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./functions";
 import { getTrendingRange, topN, TRENDING_DAYS } from "./lib/leaderboards";
 
-const MAX_TRENDING_LIMIT = 200;
 const DAILY_STATS_PAGE_SIZE = 1_000;
 const KEEP_LEADERBOARD_ENTRIES = 3;
 export const PACKAGE_TRENDING_LEADERBOARD_KIND = "package_trending";
@@ -73,7 +73,10 @@ export const writeTrendingLeaderboard = internalMutation({
 export const rebuildTrendingLeaderboardAction = internalAction({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args): Promise<{ ok: true; count: number }> => {
-    const limit = Math.min(Math.max(args.limit ?? MAX_TRENDING_LIMIT, 1), MAX_TRENDING_LIMIT);
+    const limit = Math.min(
+      Math.max(args.limit ?? PACKAGE_TRENDING_LEADERBOARD_LIMIT, 1),
+      PACKAGE_TRENDING_LEADERBOARD_LIMIT,
+    );
     const now = Date.now();
     const { startDay, endDay } = getTrendingRange(now);
     const totals = new Map<Id<"packages">, { installs: number; downloads: number }>();
@@ -126,7 +129,10 @@ export const rebuildTrendingLeaderboardInternal = internalMutation({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     await ctx.scheduler.runAfter(0, internal.packageLeaderboards.rebuildTrendingLeaderboardAction, {
-      limit: Math.min(Math.max(args.limit ?? MAX_TRENDING_LIMIT, 1), MAX_TRENDING_LIMIT),
+      limit: Math.min(
+        Math.max(args.limit ?? PACKAGE_TRENDING_LEADERBOARD_LIMIT, 1),
+        PACKAGE_TRENDING_LEADERBOARD_LIMIT,
+      ),
     });
     return { ok: true as const, count: 0, scheduled: true as const, days: TRENDING_DAYS };
   },

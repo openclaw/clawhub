@@ -92,6 +92,11 @@ export const ApiCliPublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const CliSkillDeleteRequestSchema = type({
     slug: "string",
@@ -136,6 +141,7 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
 export const CliTelemetryInstallRequestSchema = type({
     event: '"install"',
     slug: "string",
+    ownerHandle: "string?",
     version: "string?",
     // Deprecated compatibility fields accepted and ignored by the backend.
     rootId: "string?",
@@ -328,6 +334,21 @@ export const ApiV1SkillModerationResponseSchema = type({
             evidence: "string",
         }).array(),
     }).or("null"),
+});
+export const SkillVersionRevokeRequestSchema = type({
+    state: '"revoked"',
+    reason: "string",
+    ownerHandle: "string?",
+});
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    versionId: "string",
+    alreadyRevoked: "boolean",
+    replacementVersion: "string|null",
+    skillHidden: "boolean",
 });
 export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export const SkillReportFinalActionSchema = type('"none"|"hide"');
@@ -649,6 +670,11 @@ export const ApiV1PublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const ApiV1DeleteResponseSchema = type({
     ok: "true",

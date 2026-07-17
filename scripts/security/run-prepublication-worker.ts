@@ -1,13 +1,11 @@
 import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
 import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskKnownWorkerSecrets,
@@ -15,11 +13,7 @@ import {
   redactWorkerPublicText,
 } from "../lib/workerRedaction";
 import {
-  runCodex,
-  runSkillSpector,
-  resolveSkillSpectorScanInputs,
   type ClaimedJob,
-  type SkillSpectorAnalysis,
   type StoredLlmAnalysis,
   writeArtifactWorkspace,
 } from "./run-codex-scan-worker";
@@ -58,17 +52,24 @@ type WorkerCheckResult = {
   redactedFindings?: string[];
 };
 
+type ProcessAttemptResult = {
+  completed: boolean;
+  result?: unknown;
+};
+
 type PrePublicationWorkerClient = Pick<ConvexHttpClient, "action">;
 
 type TruffleHogResult = WorkerCheckResult & {
   exitCode?: number | null;
 };
 
+type ClawScanResult = {
+  check: WorkerCheckResult;
+  analysis?: StoredLlmAnalysis;
+};
+
 type ProcessAttemptDeps = {
-  runClawHubReview?: (
-    job: ClaimedJob,
-    workspace: string,
-  ) => Promise<{ llmAnalysis: StoredLlmAnalysis; skillSpectorAnalysis?: SkillSpectorAnalysis }>;
+  runClawScan?: (job: ClaimedJob, workspace: string) => Promise<ClawScanResult>;
   runTruffleHog?: (workspace: string) => Promise<TruffleHogResult>;
   writeWorkspace?: (job: ClaimedJob, workspace: string) => Promise<void>;
 };
@@ -81,12 +82,7 @@ const DEFAULT_TRUFFLEHOG_IMAGE =
 const TRUFFLEHOG_SECRET_EXIT_CODE = 183;
 const MAX_TRUFFLEHOG_FINDINGS = 10;
 const MAX_PUBLIC_SUMMARY_CHARS = 600;
-const LOCAL_CODEX_HOME = join(rootDir(), ".codex/runtime/codex-workers/prepublication");
 const logger = createWorkerLogger({ name: "prepublication-worker" });
-
-function rootDir() {
-  return resolve(new URL("../..", import.meta.url).pathname);
-}
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -326,39 +322,178 @@ export async function runNativeTruffleHog(workspace: string): Promise<TruffleHog
   };
 }
 
-export async function runNormalClawHubReview(job: ClaimedJob, workspace: string) {
-  const skillSpectorAnalysis = await runSkillSpectorIfApplicable(job, workspace);
-  const llmAnalysis = await runCodex(job, workspace, skillSpectorAnalysis, () => {});
-  return { llmAnalysis, skillSpectorAnalysis };
+function clawScanTimeoutMs() {
+  const parsed = Number(process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 240_000;
 }
 
-async function runSkillSpectorIfApplicable(job: ClaimedJob, workspace: string) {
-  const inputs = await resolveSkillSpectorScanInputs(workspace, job);
-  if (inputs.length === 0) return undefined;
-  return await runSkillSpector(workspace, inputs, () => {});
+function clawScanCommand() {
+  return process.env.PREPUBLICATION_CLAWSCAN_COMMAND?.trim() || "clawscan";
 }
 
-function clawHubReviewCheckResult(llmAnalysis: StoredLlmAnalysis): WorkerCheckResult {
-  const status = (llmAnalysis.status || llmAnalysis.verdict || "").trim().toLowerCase();
-  const verdict = (llmAnalysis.verdict || "").trim().toLowerCase();
-  const isClean = status === "clean" || verdict === "benign";
+async function fileExists(path: string) {
+  return Boolean(await stat(path).catch(() => null));
+}
+
+async function resolveNativeClawScanTarget(workspace: string, job: ClaimedJob) {
+  if (job.job.targetKind === "packageRelease") {
+    const packageRoot = join(workspace, "artifact", "package");
+    if (await fileExists(join(packageRoot, "package.json"))) return "./artifact/package";
+  }
+  return "./artifact";
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function readString(record: Record<string, unknown> | undefined, names: string[]) {
+  if (!record) return undefined;
+  for (const name of names) {
+    const value = record[name];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function verdictToStoredStatus(verdict: string | undefined): StoredLlmAnalysis["status"] {
+  const normalized = verdict?.trim().toLowerCase();
+  if (normalized === "benign" || normalized === "clean") return "clean";
+  if (normalized === "suspicious") return "suspicious";
+  if (normalized === "malicious") return "malicious";
+  return "pending";
+}
+
+function collectClawScanScannerFailures(scanners: Record<string, unknown> | undefined) {
+  if (!scanners) return [];
+  const failures: string[] = [];
+  for (const [scanner, value] of Object.entries(scanners)) {
+    const scannerRecord = asRecord(value);
+    const status = readString(scannerRecord, ["status"]) ?? "unknown";
+    if (status !== "completed") failures.push(`${scanner}=${status}`);
+  }
+  return failures;
+}
+
+function storedAnalysisFromClawScanArtifact(artifact: unknown): {
+  analysis?: StoredLlmAnalysis;
+  error?: string;
+} {
+  const record = asRecord(artifact);
+  const judge = asRecord(record?.judge);
+  const result = asRecord(judge?.result);
+  const judgeStatus = readString(judge, ["status"]);
+  const scannerFailures = collectClawScanScannerFailures(asRecord(record?.scanners));
+  if (scannerFailures.length > 0) {
+    return { error: `ClawScan scanner did not complete: ${scannerFailures.join(", ")}` };
+  }
+  if (judgeStatus !== "completed") {
+    return { error: `ClawScan judge status was ${judgeStatus ?? "missing"}` };
+  }
+  const verdict = readString(result, ["verdict", "status"]);
+  if (!verdict) return { error: "ClawScan judge did not return a verdict" };
+
+  const dimensions = Array.isArray(result?.dimensions)
+    ? (result.dimensions as StoredLlmAnalysis["dimensions"])
+    : undefined;
+  const confidence = readString(result, ["confidence"]);
+  const findings = readString(result, ["findings"]);
+  const guidance = readString(result, ["guidance"]);
+  const model = readString(result, ["model"]);
+  const summary = readString(result, ["summary"]);
+  return {
+    analysis: {
+      checkedAt: Date.now(),
+      status: verdictToStoredStatus(verdict),
+      verdict,
+      ...(confidence ? { confidence } : {}),
+      ...(dimensions ? { dimensions } : {}),
+      ...(findings ? { findings } : {}),
+      ...(guidance ? { guidance } : {}),
+      ...(model ? { model } : {}),
+      ...(summary ? { summary } : {}),
+    },
+  };
+}
+
+function clawScanCheckResult(analysis: StoredLlmAnalysis): WorkerCheckResult {
+  const status = (analysis.status || analysis.verdict || "").trim().toLowerCase();
+  const verdict = (analysis.verdict || "").trim().toLowerCase();
+  const normalizedVerdict = verdict || status;
   const summary = publicText(
-    llmAnalysis.summary ??
-      llmAnalysis.findings ??
-      `ClawHub security review returned ${llmAnalysis.status}.`,
+    analysis.summary ?? analysis.findings ?? `ClawScan returned ${analysis.status}.`,
   );
-  if (isClean) {
+  if (status === "clean" || normalizedVerdict === "benign") {
     return {
       status: "clean",
-      summary: summary || "ClawHub security review passed.",
+      summary: summary || "ClawScan passed.",
+    };
+  }
+  if (normalizedVerdict === "suspicious") {
+    return {
+      status: "clean",
+      summary: summary || "ClawScan returned suspicious review findings.",
+      redactedFindings: [publicText(`status=${analysis.status}; verdict=${analysis.verdict}`)],
+    };
+  }
+  if (normalizedVerdict !== "malicious") {
+    return {
+      status: "failed",
+      summary: summary || "ClawScan did not return a final verdict.",
+      redactedFindings: [publicText(`status=${analysis.status}; verdict=${analysis.verdict}`)],
     };
   }
   return {
     status: "blocked",
-    summary:
-      summary ||
-      `ClawHub security review blocked the staged publish with status ${llmAnalysis.status}.`,
-    redactedFindings: [publicText(`status=${llmAnalysis.status}; verdict=${llmAnalysis.verdict}`)],
+    summary: summary || `ClawScan blocked the staged publish with status ${analysis.status}.`,
+    redactedFindings: [publicText(`status=${analysis.status}; verdict=${analysis.verdict}`)],
+  };
+}
+
+export async function runNativeClawScan(
+  job: ClaimedJob,
+  workspace: string,
+): Promise<ClawScanResult> {
+  const artifactPath = join(workspace, "clawscan-result.json");
+  const target = await resolveNativeClawScanTarget(workspace, job);
+  const command = clawScanCommand();
+  const args = [target, "--profile", "clawhub", "--output", artifactPath];
+  const sandbox = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX?.trim();
+  if (sandbox) {
+    args.push("--sandbox", sandbox);
+    const sandboxImage = process.env.PREPUBLICATION_CLAWSCAN_SANDBOX_IMAGE?.trim();
+    if (sandbox === "docker" && sandboxImage) args.push("--sandbox-image", sandboxImage);
+  }
+
+  const output = await runCommand(command, args, {
+    cwd: workspace,
+    timeoutMs: clawScanTimeoutMs(),
+  });
+  if (output.code !== 0) {
+    return {
+      check: {
+        status: "failed",
+        summary: publicText(
+          `ClawScan failed before returning a verdict: ${output.stderr || output.stdout}`,
+        ),
+      },
+    };
+  }
+
+  const raw = await readFile(artifactPath, "utf8");
+  const parsed = storedAnalysisFromClawScanArtifact(JSON.parse(raw) as unknown);
+  if (parsed.error || !parsed.analysis) {
+    return {
+      check: {
+        status: "failed",
+        summary: publicText(parsed.error ?? "ClawScan did not return a usable result."),
+      },
+    };
+  }
+  return {
+    analysis: parsed.analysis,
+    check: clawScanCheckResult(parsed.analysis),
   };
 }
 
@@ -376,6 +511,7 @@ async function completeAttempt(
   attempt: ClaimedPrePublicationAttempt,
   trufflehog: WorkerCheckResult,
   clawscan: WorkerCheckResult,
+  clawscanAnalysis?: StoredLlmAnalysis,
 ) {
   return await client.action(api.publishAttempts.completePrePublicationChecks, {
     token,
@@ -384,6 +520,7 @@ async function completeAttempt(
     artifactFingerprint: attempt.artifactFingerprint,
     trufflehog: checkResultForConvex(trufflehog),
     clawscan: checkResultForConvex(clawscan),
+    ...(clawscanAnalysis ? { clawscanAnalysis } : {}),
   });
 }
 
@@ -405,7 +542,7 @@ export async function processPrePublicationAttempt(
         },
         {
           status: "clean",
-          summary: "Pre-publication ClawHub security review already passed.",
+          summary: "Pre-publication ClawScan already passed.",
         },
       );
       logger.info(
@@ -436,17 +573,19 @@ export async function processPrePublicationAttempt(
   const startedAt = Date.now();
   const writeWorkspace = deps.writeWorkspace ?? writeArtifactWorkspace;
   const runTruffleHog = deps.runTruffleHog ?? runNativeTruffleHog;
-  const runClawHubReview = deps.runClawHubReview ?? runNormalClawHubReview;
+  const runClawScan = deps.runClawScan ?? runNativeClawScan;
   let truffleHogBlocked = false;
+  let completionStarted = false;
   try {
     const job = buildSyntheticScanJob(attempt);
     await writeWorkspace(job, workspace);
     const trufflehog = await runTruffleHog(workspace);
     if (trufflehog.status === "blocked") {
       truffleHogBlocked = true;
+      completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
-        summary: "ClawHub security review skipped because TruffleHog blocked the artifact.",
+        summary: "ClawScan skipped because TruffleHog blocked the artifact.",
       });
       logger.info(
         {
@@ -461,17 +600,20 @@ export async function processPrePublicationAttempt(
       return { completed: true, result };
     }
     if (trufflehog.status === "failed") {
+      completionStarted = true;
       const result = await completeAttempt(client, token, attempt, trufflehog, {
         status: "failed",
-        summary: "ClawHub security review skipped because TruffleHog failed.",
+        summary: "ClawScan skipped because TruffleHog failed.",
       });
       return { completed: false, result };
     }
 
     let clawscan: WorkerCheckResult;
+    let clawscanAnalysis: StoredLlmAnalysis | undefined;
     try {
-      const review = await runClawHubReview(job, workspace);
-      clawscan = clawHubReviewCheckResult(review.llmAnalysis);
+      const review = await runClawScan(job, workspace);
+      clawscanAnalysis = review.analysis;
+      clawscan = review.check;
     } catch (error) {
       clawscan = {
         status: "failed",
@@ -479,7 +621,15 @@ export async function processPrePublicationAttempt(
       };
     }
 
-    const result = await completeAttempt(client, token, attempt, trufflehog, clawscan);
+    completionStarted = true;
+    const result = await completeAttempt(
+      client,
+      token,
+      attempt,
+      trufflehog,
+      clawscan,
+      clawscanAnalysis,
+    );
     logger.info(
       {
         attemptId: attempt.attemptId,
@@ -491,7 +641,8 @@ export async function processPrePublicationAttempt(
       },
       "pre-publication attempt completed",
     );
-    return { completed: trufflehog.status === "clean" && clawscan.status === "clean", result };
+    const status = (result as { status?: string })?.status;
+    return { completed: status === "finalized" || status === "blocked", result };
   } catch (error) {
     if (truffleHogBlocked) {
       logger.error(
@@ -505,11 +656,37 @@ export async function processPrePublicationAttempt(
       );
       return { completed: false, result: undefined };
     }
+    if (completionStarted) {
+      logger.warn(
+        {
+          attemptId: attempt.attemptId,
+          durationMs: Date.now() - startedAt,
+          event: "prepublication_attempt_completion_failed",
+          kind: attempt.kind,
+        },
+        "pre-publication attempt completion failed; leaving attempt retryable",
+      );
+      return { completed: false, result: undefined };
+    }
     const failure = {
       status: "failed" as const,
       summary: publicText(error instanceof Error ? error.message : String(error)),
     };
-    const result = await completeAttempt(client, token, attempt, failure, failure);
+    let result: unknown;
+    try {
+      result = await completeAttempt(client, token, attempt, failure, failure);
+    } catch {
+      logger.warn(
+        {
+          attemptId: attempt.attemptId,
+          durationMs: Date.now() - startedAt,
+          event: "prepublication_attempt_failure_record_failed",
+          kind: attempt.kind,
+        },
+        "pre-publication attempt failure could not be recorded; leaving attempt retryable",
+      );
+      return { completed: false, result: undefined };
+    }
     logger.warn(
       {
         attemptId: attempt.attemptId,
@@ -525,6 +702,29 @@ export async function processPrePublicationAttempt(
   }
 }
 
+export async function processPrePublicationBatch(
+  attempts: ClaimedPrePublicationAttempt[],
+  processAttempt: (attempt: ClaimedPrePublicationAttempt) => Promise<ProcessAttemptResult>,
+) {
+  return await Promise.all(
+    attempts.map(async (attempt) => {
+      try {
+        return await processAttempt(attempt);
+      } catch {
+        logger.warn(
+          {
+            attemptId: attempt.attemptId,
+            event: "prepublication_attempt_unhandled_failure",
+            kind: attempt.kind,
+          },
+          "pre-publication attempt failed unexpectedly; continuing batch",
+        );
+        return { completed: false, result: undefined };
+      }
+    }),
+  );
+}
+
 export async function claimPrePublicationAttempt(
   client: PrePublicationWorkerClient,
   token: string,
@@ -534,9 +734,43 @@ export async function claimPrePublicationAttempt(
   })) as ClaimedPrePublicationAttempt | null;
 }
 
+export async function claimPrePublicationBatch(
+  client: PrePublicationWorkerClient,
+  token: string,
+  limit: number,
+) {
+  const claims = await Promise.allSettled(
+    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token)),
+  );
+  const attempts: ClaimedPrePublicationAttempt[] = [];
+  const failures: unknown[] = [];
+  for (const claim of claims) {
+    if (claim.status === "fulfilled") {
+      if (claim.value) attempts.push(claim.value);
+      continue;
+    }
+    failures.push(claim.reason);
+    logger.warn(
+      { event: "prepublication_claim_failed" },
+      "pre-publication claim failed; continuing with successful claims",
+    );
+  }
+  if (attempts.length === 0 && failures.length > 0) {
+    throw new AggregateError(failures, "Pre-publication claims failed without claiming work.");
+  }
+  return { attempts, claimFailures: failures.length };
+}
+
+export function claimBatchDrainedQueue(
+  claimFailures: number,
+  claimedAttempts: number,
+  claimLimit: number,
+) {
+  return claimFailures === 0 && claimedAttempts < claimLimit;
+}
+
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs } = parseArgs();
-  assertCodexWorkerExecutionAllowed(process.env);
   maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
@@ -561,20 +795,15 @@ async function main() {
     if (totalClaimed > 0 && claimDeadline - Date.now() < CLAIM_WINDOW_SHUTDOWN_BUFFER_MS) break;
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
-    const attempts = (
-      await Promise.all(
-        Array.from({ length: Math.min(batchLimit, remainingJobs) }, () =>
-          claimPrePublicationAttempt(client, token),
-        ),
-      )
-    ).filter((attempt): attempt is ClaimedPrePublicationAttempt => Boolean(attempt));
+    const claimLimit = Math.min(batchLimit, remainingJobs);
+    const { attempts, claimFailures } = await claimPrePublicationBatch(client, token, claimLimit);
     if (attempts.length === 0) break;
     totalClaimed += attempts.length;
-    const results = await Promise.all(
-      attempts.map((attempt) => processPrePublicationAttempt(client, token, attempt)),
+    const results = await processPrePublicationBatch(attempts, (attempt) =>
+      processPrePublicationAttempt(client, token, attempt),
     );
     totalCompleted += results.filter((result) => result.completed).length;
-    if (attempts.length < Math.min(batchLimit, remainingJobs)) break;
+    if (claimBatchDrainedQueue(claimFailures, attempts.length, claimLimit)) break;
   }
 
   logger.info(
@@ -588,15 +817,6 @@ async function main() {
   );
 }
 
-export function configurePrePublicationCodexHome(env: NodeJS.ProcessEnv = process.env) {
-  const codexHome = resolveCodexWorkerHome(env, LOCAL_CODEX_HOME);
-  if (!codexHome) return undefined;
-  env.CODEX_HOME = codexHome;
-  mkdirSync(codexHome, { recursive: true });
-  return codexHome;
-}
-
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  configurePrePublicationCodexHome();
   await main();
 }

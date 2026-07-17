@@ -4,7 +4,7 @@ import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const crons = cronJobs();
 
-if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
+if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !== "1") {
   crons.interval(
     "github-skill-source-sync",
     { minutes: 15 },
@@ -114,16 +114,15 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   crons.interval(
     "publisher-temporal-abuse-scan",
     { hours: 24 },
-    internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
-    {
-      mode: "current",
-      dryRun: true,
-      archiveDryRunSignals: true,
-      candidateLimit: 1_000,
-      batchSize: 50,
-      maxPages: 20,
-      trigger: "cron",
-    },
+    internal.publisherAbuseTemporalScan.runScheduledTemporalPublisherAbuseScanInternal,
+    {},
+  );
+
+  crons.interval(
+    "publisher-temporal-abuse-scan-row-prune",
+    { hours: 24 },
+    internal.publisherAbuseTemporalScan.pruneExpiredTemporalScanRowsInternal,
+    { batchSize: 500 },
   );
 
   crons.interval(
@@ -160,6 +159,27 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     { hours: 6 },
     internal.securityScan.pruneExpiredSkillScanRequestsInternal,
     { batchSize: 10 },
+  );
+
+  crons.interval(
+    "codex-scan-queue-health",
+    { minutes: 5 },
+    internal.securityScan.logCodexScanQueueHealthInternal,
+    {},
+  );
+
+  crons.interval(
+    "codex-scan-expired-lease-recovery",
+    { minutes: 5 },
+    internal.securityScan.requeueExpiredCodexScanJobsInternal,
+    {},
+  );
+
+  crons.interval(
+    "codex-scan-dispatch-watchdog",
+    { minutes: 5 },
+    internal.securityScanDispatch.requestSecurityScanDispatchInternal,
+    {},
   );
 
   crons.interval(

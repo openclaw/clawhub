@@ -9,11 +9,11 @@ const Textarea = React.forwardRef<
     ref={ref}
     className={cn(
       // Base styles
-      "w-full min-h-[100px] resize-y rounded-[var(--radius-sm)] border px-3.5 py-space-3 text-[color:var(--ink)] transition-all duration-[180ms] ease-out",
+      "w-full min-h-[100px] resize-y rounded-[var(--oc-radius-control)] border px-3.5 py-space-3 text-[color:var(--oc-text-primary)] transition-all duration-[var(--oc-duration-fast)] ease-[var(--oc-ease-out)]",
       "border-input-border bg-input-bg",
       "placeholder:text-input-placeholder",
       // Focus
-      "focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--input-focus-ring)]",
+      "focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--oc-input-focus-ring)]",
       // Disabled
       "disabled:cursor-not-allowed disabled:opacity-60",
       className,

@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Validate eval file structure
+# Usage: eval-validate <path-to-eval-file>
+#
+# Checks:
+#   1. File exists and has .eval.ts or .eval.js extension
+#   2. Contains Eval() call
+#   3. Contains at least one Scorer
+#   4. Uses correct import paths
+#   5. Has data array or function
+#
+# Examples:
+#   eval-validate src/my-feature.eval.ts
+
+set -euo pipefail
+
+FILE="${1:-}"
+
+if [[ -z "$FILE" ]]; then
+    echo "Usage: eval-validate <path-to-eval-file>"
+    exit 2
+fi
+
+if [[ ! -f "$FILE" ]]; then
+    echo "ERROR: File not found: $FILE"
+    exit 2
+fi
+
+errors=0
+warnings=0
+
+error() {
+    echo "ERROR: $1"
+    errors=$((errors + 1))
+}
+
+warn() {
+    echo "WARN: $1"
+    warnings=$((warnings + 1))
+}
+
+info() {
+    echo "INFO: $1"
+}
+
+# 1. Check file extension
+if [[ "$FILE" != *.eval.ts && "$FILE" != *.eval.js && "$FILE" != *.eval.mts && "$FILE" != *.eval.mjs ]]; then
+    warn "File does not have .eval.ts extension — may not be discovered by default glob patterns"
+fi
+
+# 2. Check for Eval() call
+if grep -q "Eval(" "$FILE"; then
+    info "Found Eval() call"
+else
+    error "No Eval() call found — file must call Eval() to define an evaluation"
+fi
+
+# 3. Check for Scorer
+if grep -q "Scorer(" "$FILE"; then
+    info "Found Scorer() definition"
+elif grep -q "scorers:" "$FILE"; then
+    info "Found scorers array (scorers may be imported)"
+else
+    warn "No Scorer() definition found — ensure scorers are imported"
+fi
+
+# 4. Check import paths
+if grep -q "from 'axiom/ai/evals'" "$FILE" || grep -q "from \"axiom/ai/evals\"" "$FILE"; then
+    info "Correct import: axiom/ai/evals"
+elif grep -q "Eval\|Scorer" "$FILE"; then
+    warn "Eval/Scorer used but import from 'axiom/ai/evals' not found — check import paths"
+fi
+
+# 5. Check for data
+if grep -q "data:" "$FILE"; then
+    info "Found data property"
+else
+    error "No data property found — Eval() requires a data array or function"
+fi
+
+# 6. Check for capability
+if grep -q "capability:" "$FILE"; then
+    info "Found capability property"
+else
+    error "No capability property found — Eval() requires a capability string"
+fi
+
+# 7. Check for task
+if grep -q "task:" "$FILE"; then
+    info "Found task property"
+else
+    error "No task property found — Eval() requires a task function"
+fi
+
+# 8. Check for common mistakes
+if grep -q "from 'axiom'" "$FILE" && ! grep -q "from 'axiom/ai'" "$FILE"; then
+    warn "Import from 'axiom' detected — should be 'axiom/ai' or 'axiom/ai/evals'"
+fi
+
+# Summary
+echo ""
+echo "Validation complete: $errors errors, $warnings warnings"
+
+if [[ $errors -gt 0 ]]; then
+    exit 1
+fi
+
+exit 0

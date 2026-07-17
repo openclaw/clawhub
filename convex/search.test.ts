@@ -754,6 +754,61 @@ describe("search helpers", () => {
     expect(ctx.takeLimits).toEqual([25, 25]);
   });
 
+  it("uses the digest public version without reading version history", async () => {
+    const pending = makeSkillDoc({
+      id: "skills:pending-update",
+      slug: "pending-update",
+      displayName: "Pending Update",
+      moderationReason: "pending.scan",
+      moderationSourceVersionId: "skillVersions:pending",
+      latestVersionId: "skillVersions:pending",
+      statsVersions: 2,
+      publicVersion: {
+        status: "available",
+        versionId: "skillVersions:approved",
+      },
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [pending],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "pending",
+      queryTokens: ["pending"],
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["pending-update"]);
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skillVersions");
+  });
+
+  it("fails closed from the digest without reading version history", async () => {
+    const pending = makeSkillDoc({
+      id: "skills:unavailable-update",
+      slug: "unavailable-update",
+      displayName: "Unavailable Update",
+      moderationReason: "pending.scan",
+      moderationSourceVersionId: "skillVersions:pending",
+      latestVersionId: "skillVersions:pending",
+      statsVersions: 2,
+      publicVersion: { status: "unavailable" },
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [pending],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "unavailable",
+      queryTokens: ["unavailable"],
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skillVersions");
+  });
+
   it("includes exact slug match from by_slug even when recent scan is empty", async () => {
     const exactSlugSkill = makeSkillDoc({ id: "skills:orf", slug: "orf", displayName: "ORF" });
     const ctx = makeLexicalCtx({
@@ -2339,24 +2394,31 @@ function makeSkillDoc(params: {
   topics?: string[];
   inferredCategories?: string[];
   inferredFromVersionId?: string;
+  latestVersionId?: string;
+  moderationSourceVersionId?: string;
+  statsVersions?: number;
+  publicVersion?: { status: "available"; versionId: string } | { status: "unavailable" };
 }) {
   return {
     ...makePublicSkill(params),
+    latestVersionId: params.latestVersionId ?? "skillVersions:1",
     stats: {
       downloads: params.downloads ?? 0,
       installsCurrent: 0,
       installsAllTime: params.installs ?? 0,
       stars: params.stars ?? 0,
-      versions: 1,
+      versions: params.statsVersions ?? 1,
       comments: 0,
     },
     _creationTime: 1,
     moderationStatus: "active",
     moderationFlags: params.moderationFlags ?? [],
     moderationReason: params.moderationReason,
+    moderationSourceVersionId: params.moderationSourceVersionId,
     softDeletedAt: params.softDeletedAt as number | undefined,
     inferredCategories: params.inferredCategories,
     inferredFromVersionId: params.inferredFromVersionId,
+    publicVersion: params.publicVersion,
   };
 }
 

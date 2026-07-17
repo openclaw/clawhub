@@ -1,0 +1,4 @@
+interface:
+  display_name: "ClawHub Production Release"
+  short_description: "Run ClawHub production and CLI releases"
+  default_prompt: "Use $clawhub-production-release to prepare and run this ClawHub release."

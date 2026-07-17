@@ -255,12 +255,14 @@ export function HomeAppsSection() {
   }, [activeCategoryId]);
 
   return (
-    <section className="home-v2-apps" aria-labelledby="home-v2-apps-title">
+    <section className="home-v2-apps oc-section" aria-labelledby="home-v2-apps-title">
       <div className="home-v2-apps-stage">
         <div className="home-v2-apps-workflow-header">
-          <div className="home-v2-apps-workflow-copy">
-            <h2 id="home-v2-apps-title">Skills for the apps you already use</h2>
-            <p>
+          <div className="home-v2-apps-workflow-copy oc-section-heading">
+            <h2 id="home-v2-apps-title" className="oc-section-title">
+              Skills for the apps you already use
+            </h2>
+            <p className="oc-section-copy">
               Ready-made skills and gateway plugins that plug OpenClaw straight into your everyday
               tools.
             </p>
@@ -305,7 +307,11 @@ export function HomeAppsSection() {
         </div>
 
         <div className="home-v2-apps-see-all-row">
-          <Link to="/skills" search={SKILLS_BROWSE_SEARCH} className="home-v2-apps-see-all">
+          <Link
+            to="/skills"
+            search={SKILLS_BROWSE_SEARCH}
+            className="home-v2-apps-see-all oc-action oc-action-ghost"
+          >
             Browse all skills
             <ArrowRight size={14} aria-hidden="true" />
           </Link>

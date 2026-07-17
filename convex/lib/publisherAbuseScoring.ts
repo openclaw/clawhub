@@ -90,6 +90,7 @@ export type SkillTemporalAbuseScore = {
 };
 
 export type TemporalAbuseCohortBenchmark = {
+  scope?: "all_active_skills";
   sampleSize: number;
   downloads30dAverage: number;
   downloads30dMedian: number;
@@ -126,6 +127,8 @@ const TEMPORAL_SPIKE_BASELINE_DAYS = 30;
 const TEMPORAL_SUSTAINED_DAYS = 30;
 const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
+const TEMPORAL_MIN_SPIKE_7_DOWNLOADS = 2_000;
+const TEMPORAL_MIN_SUSTAINED_30_DOWNLOADS = 3_000;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
 const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 1_000;
@@ -433,20 +436,14 @@ export function classifySkillTemporalAbuseScore(
   const spikeMultiplierVsPeerP95 =
     score.spikeMultiplier / Math.max(1, benchmark.spikeMultiplier7dP95);
   const downloads30dCohortBand =
-    score.recent30Installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS
-      ? percentileBand({
-          value: score.recent30Downloads,
-          p95: benchmark.downloads30dP95,
-          p99: benchmark.downloads30dP99,
-        })
+    score.recent30Installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
+    score.recent30Downloads >= TEMPORAL_MIN_SUSTAINED_30_DOWNLOADS
+      ? p99Band({ value: score.recent30Downloads, p99: benchmark.downloads30dP99 })
       : undefined;
   const spikeMultiplierCohortBand =
-    score.recent7Installs <= TEMPORAL_MAX_SPIKE_INSTALLS && score.recent7Downloads > 0
-      ? percentileBand({
-          value: score.spikeMultiplier,
-          p95: benchmark.spikeMultiplier7dP95,
-          p99: benchmark.spikeMultiplier7dP99,
-        })
+    score.recent7Installs <= TEMPORAL_MAX_SPIKE_INSTALLS &&
+    score.recent7Downloads >= TEMPORAL_MIN_SPIKE_7_DOWNLOADS
+      ? p99Band({ value: score.spikeMultiplier, p99: benchmark.spikeMultiplier7dP99 })
       : undefined;
   const spike = Boolean(spikeMultiplierCohortBand);
   const sustained = Boolean(downloads30dCohortBand);
@@ -732,15 +729,9 @@ function percentile(values: number[], quantile: number) {
   return sorted[index] ?? 0;
 }
 
-function percentileBand(input: {
-  value: number;
-  p95: number;
-  p99: number;
-}): "p95" | "p99" | undefined {
+function p99Band(input: { value: number; p99: number }): "p99" | undefined {
   if (input.value <= 0) return undefined;
-  if (input.p99 > 0 && input.value > input.p99) return "p99";
-  if (input.p95 > 0 && input.value > input.p95) return "p95";
-  return undefined;
+  return input.value > input.p99 ? "p99" : undefined;
 }
 
 function standardDeviation(values: number[], mean: number) {

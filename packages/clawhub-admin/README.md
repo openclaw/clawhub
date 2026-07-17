@@ -113,11 +113,15 @@ Package moderation and operations:
 
 ```bash
 bun run admin -- skills reports [--status open|confirmed|dismissed|all]
+bun run admin -- skills feature <slug|@owner/slug> [--json]
+bun run admin -- skills unfeature <slug|@owner/slug> [--json]
 bun run admin -- skills rescan <slug> [--version <version>] [--yes] [--json]
 bun run admin -- skills unhide <slug> --reason <text> [--yes]
 bun run admin -- skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]
 
 bun run admin -- plugins moderate <name> --version <version> --state approved|quarantined|revoked --reason <text>
+bun run admin -- plugins feature <name> [--json]
+bun run admin -- plugins unfeature <name> [--json]
 bun run admin -- plugins status <name>
 bun run admin -- plugins queue [--status open|blocked|manual|all]
 bun run admin -- plugins reports [--status open|confirmed|dismissed|all]

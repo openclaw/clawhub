@@ -844,14 +844,21 @@ async function createClawPackFromFolder(options: {
     fail((result.stderr || result.stdout || "npm pack failed").trim());
   }
 
-  let npmOutput: Array<{ filename?: string }> = [];
+  let npmOutput: unknown;
   try {
-    npmOutput = JSON.parse(result.stdout) as Array<{ filename?: string }>;
+    npmOutput = JSON.parse(result.stdout) as unknown;
   } catch {
     fail("npm pack did not return JSON output");
   }
-  const filename = npmOutput[0]?.filename;
-  if (!filename) fail("npm pack did not return a tarball filename");
+  const npmEntry = Array.isArray(npmOutput)
+    ? npmOutput[0]
+    : isPlainRecord(npmOutput)
+      ? Object.values(npmOutput)[0]
+      : undefined;
+  const filename = isPlainRecord(npmEntry) ? npmEntry["filename"] : undefined;
+  if (typeof filename !== "string" || !filename) {
+    fail("npm pack did not return a tarball filename");
+  }
 
   const packPath = resolve(options.packDestination, filename);
   const bytes = new Uint8Array(await readFile(packPath));
@@ -968,12 +975,15 @@ export async function cmdPublishPackage(
         ApiV1PackagePublishResponseSchema,
       );
 
+      const isPendingPublication = result.publicationStatus === "pending";
       if (options.json) {
         process.stdout.write(
           `${JSON.stringify(
             {
               ...plan.output,
               releaseId: result.releaseId,
+              publicationStatus: result.publicationStatus,
+              attemptId: result.attemptId,
               inspectorFindings: result.inspectorFindings,
             },
             null,
@@ -982,7 +992,9 @@ export async function cmdPublishPackage(
         );
       } else {
         spinner?.succeed(
-          `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
+          isPendingPublication
+            ? `OK. Uploaded ${plan.payload.name}@${plan.payload.version}; security checks are pending before it becomes public (${result.releaseId})`
+            : `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
         );
         printPackageInspectorFindings(result);
       }

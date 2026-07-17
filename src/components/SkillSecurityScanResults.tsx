@@ -289,7 +289,7 @@ export function ScanResultBadge({
   return (
     <Badge
       variant={variant as BadgeProps["variant"]}
-      className={`min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3] ${statusInfo.className}${className ? ` ${className}` : ""}`}
+      className={`min-h-0 rounded-[var(--oc-radius-control)] px-2.5 py-0.5 text-[var(--oc-font-size-xs)] leading-[1.3] ${statusInfo.className}${className ? ` ${className}` : ""}`}
     >
       {label ?? statusInfo.label}
     </Badge>

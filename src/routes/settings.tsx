@@ -121,13 +121,20 @@ type PublisherMembership = {
       downloads: number;
       stars: number;
     };
-    publishedItems?: Array<{
-      kind: "skill" | "plugin";
-      displayName: string;
-      downloads: number;
-    }>;
   };
   role: "owner" | "admin" | "publisher";
+};
+
+type PublisherDeletionInventory = {
+  handle: string;
+  stats: {
+    skills: number;
+    packages: number;
+  };
+  publishedItems: Array<{
+    kind: "skill" | "plugin";
+    displayName: string;
+  }>;
 };
 
 type OrgMembersResult = {
@@ -260,7 +267,7 @@ export function Settings() {
   const revokeToken = useMutation(api.tokens.revoke);
   const publisherMemberships = useQuery(
     api.publishers.listMine,
-    shouldLoadAccountScopedQueries ? {} : "skip",
+    shouldLoadAccountScopedQueries ? { includePublishedItems: false } : "skip",
   ) as Array<PublisherMembership> | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
@@ -368,9 +375,14 @@ export function Settings() {
       ? {}
       : "skip",
   ) as GitHubSkillSource[] | undefined;
-  const deletionPublishers = (publisherMemberships ?? []).filter(
-    (entry) => entry.publisher.kind === "user" || entry.role === "owner",
-  );
+  const deletionInventory = useQuery(
+    api.publishers.getDeletionInventory,
+    shouldLoadAccountScopedQueries && deleteOrgDialogOpen && selectedOrg
+      ? { publisherId: selectedOrg.publisher._id }
+      : shouldLoadAccountScopedQueries && deleteDialogOpen
+        ? {}
+        : "skip",
+  ) as PublisherDeletionInventory[] | undefined;
 
   useEffect(() => {
     if (!me) return;
@@ -831,7 +843,7 @@ export function Settings() {
                     </Field>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                       {hasProfileChanges ? (
-                        <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                        <span className="text-sm font-semibold text-status-error-fg">
                           You have unsaved changes.
                         </span>
                       ) : null}
@@ -1003,10 +1015,7 @@ export function Settings() {
                             </Field>
                           </div>
                           {createOrgError ? (
-                            <p
-                              className="text-sm font-medium text-red-600 dark:text-red-400"
-                              role="alert"
-                            >
+                            <p className="text-sm font-medium text-status-error-fg" role="alert">
                               {createOrgError}
                             </p>
                           ) : null}
@@ -1108,7 +1117,7 @@ export function Settings() {
                               </div>
                               <div className="flex flex-col gap-3 lg:col-span-2 lg:flex-row lg:items-center lg:justify-end">
                                 {hasOrgProfileChanges ? (
-                                  <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                                  <span className="text-sm font-semibold text-status-error-fg">
                                     You have unsaved changes.
                                   </span>
                                 ) : null}
@@ -1204,7 +1213,7 @@ export function Settings() {
                                 </div>
                                 {inviteError ? (
                                   <p
-                                    className="text-sm font-medium text-red-600 dark:text-red-400"
+                                    className="text-sm font-medium text-status-error-fg"
                                     role="alert"
                                   >
                                     {inviteError}
@@ -1310,11 +1319,11 @@ export function Settings() {
                           <SettingsBlock tone="danger">
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                               <div className="flex min-w-0 items-center gap-3">
-                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
+                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--oc-radius-inset)] border border-status-error-fg/30 bg-status-error-bg text-status-error-fg">
                                   <ShieldAlert size={17} />
                                 </span>
                                 <div className="min-w-0">
-                                  <h3 className="text-sm font-bold text-red-700 dark:text-red-300">
+                                  <h3 className="text-sm font-bold text-status-error-fg">
                                     Delete organization
                                   </h3>
                                   <p className="text-sm text-[color:var(--ink-soft)]">
@@ -1342,7 +1351,7 @@ export function Settings() {
                                     </DialogDescription>
                                   </DialogHeader>
                                   <DeletionResourceSummary
-                                    publishers={[selectedOrg]}
+                                    inventory={deletionInventory}
                                     emptyLabel="This organization has no published skills or plugins."
                                   />
                                   <DialogFooter>
@@ -1354,6 +1363,7 @@ export function Settings() {
                                     </Button>
                                     <Button
                                       variant="destructive"
+                                      disabled={deletionInventory === undefined}
                                       onClick={() => void onDeleteOrg()}
                                     >
                                       Permanently delete organization
@@ -1435,10 +1445,7 @@ export function Settings() {
                             </Field>
                           </div>
                           {createOrgError ? (
-                            <p
-                              className="text-sm font-medium text-red-600 dark:text-red-400"
-                              role="alert"
-                            >
+                            <p className="text-sm font-medium text-status-error-fg" role="alert">
                               {createOrgError}
                             </p>
                           ) : null}
@@ -1568,8 +1575,8 @@ export function Settings() {
                 </SettingsBlock>
 
                 {newToken ? (
-                  <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-amber-300/30 bg-amber-500/[0.06] p-4 dark:border-amber-500/25 dark:bg-amber-500/[0.08]">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  <div className="flex flex-col gap-3 rounded-[var(--oc-radius-surface)] border border-status-warning-fg/30 bg-status-warning-bg p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-status-warning-fg">
                       <ShieldAlert size={16} />
                       Copy this token now — it will not be shown again.
                     </div>
@@ -1699,14 +1706,18 @@ export function Settings() {
                           </DialogDescription>
                         </DialogHeader>
                         <DeletionResourceSummary
-                          publishers={deletionPublishers}
+                          inventory={deletionInventory}
                           emptyLabel="No published skills or plugins are attached to your account."
                         />
                         <DialogFooter>
                           <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
                             Cancel
                           </Button>
-                          <Button variant="destructive" onClick={() => void onDelete()}>
+                          <Button
+                            variant="destructive"
+                            disabled={deletionInventory === undefined}
+                            onClick={() => void onDelete()}
+                          >
                             Permanently delete account
                           </Button>
                         </DialogFooter>
@@ -1714,13 +1725,10 @@ export function Settings() {
                     </Dialog>
                   </div>
 
-                  <div className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-red-300/20 bg-red-500/[0.04] p-4 dark:border-red-500/20 dark:bg-red-500/[0.06]">
-                    <ShieldAlert
-                      size={18}
-                      className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
-                    />
+                  <div className="flex items-start gap-3 rounded-[var(--oc-radius-control)] border border-status-error-fg/25 bg-status-error-bg p-4">
+                    <ShieldAlert size={18} className="mt-0.5 shrink-0 text-status-error-fg" />
                     <div className="flex flex-col gap-1">
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                      <p className="text-sm font-semibold text-status-error-fg">
                         This will permanently delete your account
                       </p>
                       <p className="text-sm text-[color:var(--ink-soft)]">
@@ -1765,24 +1773,32 @@ function formatGitHubSourceSyncToast(
 }
 
 function DeletionResourceSummary({
-  publishers,
+  inventory,
   emptyLabel,
 }: {
-  publishers: PublisherMembership[];
+  inventory: PublisherDeletionInventory[] | undefined;
   emptyLabel: string;
 }) {
-  const totals = publishers.reduce(
+  if (inventory === undefined) {
+    return (
+      <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-3 text-sm text-[color:var(--ink-soft)]">
+        Loading published resources...
+      </div>
+    );
+  }
+
+  const totals = inventory.reduce(
     (acc, entry) => {
-      acc.skills += entry.publisher.stats?.skills ?? 0;
-      acc.plugins += entry.publisher.stats?.packages ?? 0;
+      acc.skills += entry.stats.skills;
+      acc.plugins += entry.stats.packages;
       return acc;
     },
     { skills: 0, plugins: 0 },
   );
-  const resources = publishers.flatMap((entry) =>
-    (entry.publisher.publishedItems ?? []).map((item) => ({
+  const resources = inventory.flatMap((entry) =>
+    entry.publishedItems.map((item) => ({
       ...item,
-      publisherHandle: entry.publisher.handle,
+      publisherHandle: entry.handle,
     })),
   );
   const totalResources = totals.skills + totals.plugins;
@@ -1794,11 +1810,9 @@ function DeletionResourceSummary({
       : emptyLabel;
 
   return (
-    <div className="overflow-hidden rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/5 text-sm dark:border-red-500/30">
-      <div className="border-b border-red-300/30 px-3 py-2 dark:border-red-500/25">
-        <p className="font-semibold text-red-700 dark:text-red-300">
-          Resources permanently deleted
-        </p>
+    <div className="overflow-hidden rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg text-sm">
+      <div className="border-b border-status-error-fg/25 px-3 py-2">
+        <p className="font-semibold text-status-error-fg">Resources permanently deleted</p>
         <p className="mt-1 text-[color:var(--ink-soft)]">{summary}</p>
       </div>
       {resources.length ? (
@@ -2055,8 +2069,8 @@ function SettingsSection({
               <span
                 className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border ${
                   tone === "danger"
-                    ? "border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300"
-                    : "border-[color:var(--line)] bg-[color:var(--surface-muted)] text-[color:var(--ink)]"
+                    ? "border-status-error-fg/30 bg-status-error-bg text-status-error-fg"
+                    : "border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-surface)] text-[color:var(--oc-text-primary)]"
                 }`}
               >
                 {icon}
@@ -2064,7 +2078,9 @@ function SettingsSection({
               <div className="min-w-0">
                 <h2
                   className={`font-display text-2xl font-black leading-none ${
-                    tone === "danger" ? "text-red-700 dark:text-red-300" : "text-[color:var(--ink)]"
+                    tone === "danger"
+                      ? "text-status-error-fg"
+                      : "text-[color:var(--oc-text-primary)]"
                   }`}
                 >
                   {title}
@@ -2093,7 +2109,7 @@ function SettingsBlock({
     <div
       className={`flex min-w-0 flex-col gap-4 rounded-[var(--radius-md)] border p-4 sm:p-5 ${
         tone === "danger"
-          ? "border-red-300/50 bg-red-500/[0.035] dark:border-red-500/35 dark:bg-red-500/[0.045]"
+          ? "border-status-error-fg/30 bg-status-error-bg"
           : "border-[color:var(--line)] bg-[color:var(--surface)]"
       } ${className}`}
     >
@@ -2256,9 +2272,9 @@ function GitHubSourceList({
                   </div>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="destructive"
                     loading={deletingSourceId === source._id}
-                    className="shrink-0 border-red-500/45 text-red-700 hover:not-disabled:border-red-500 hover:not-disabled:bg-red-500/10 dark:border-red-500/35 dark:text-red-300"
+                    className="shrink-0"
                     onClick={() => onDeleteSource(source)}
                   >
                     Delete
@@ -2398,7 +2414,7 @@ function GitHubSourceHealth({ source }: { source: GitHubSkillSource }) {
         </GitHubSourceOverviewRow>
       </div>
       {needsAttention && latestError ? (
-        <p className="border-t border-[color:var(--line)] px-3 py-2 text-sm text-red-700 dark:text-red-300">
+        <p className="border-t border-[color:var(--oc-border-subtle)] px-3 py-2 text-sm text-status-error-fg">
           <span className="font-semibold">Latest error:</span> {latestError}
         </p>
       ) : null}
@@ -2416,7 +2432,7 @@ function GitHubSourceSyncIssues({ source }: { source: GitHubSkillSource }) {
         <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
           Sync issues
         </span>
-        <span className="inline-flex h-5 items-center rounded-full border border-red-500/35 bg-red-500/10 px-2 text-[11px] font-semibold text-red-700 dark:text-red-300">
+        <span className="inline-flex h-5 items-center rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-2 text-[11px] font-semibold text-status-error-fg">
           {issues.length}
         </span>
       </div>
@@ -2435,7 +2451,7 @@ function GitHubSourceSyncIssues({ source }: { source: GitHubSkillSource }) {
                 {formatGitHubSourceIssueKind(skill.kind)}
               </div>
             </div>
-            <div className="shrink-0 text-left text-xs font-semibold text-red-700 dark:text-red-300 sm:max-w-[40%] sm:text-right">
+            <div className="shrink-0 text-left text-xs font-semibold text-status-error-fg sm:max-w-[40%] sm:text-right">
               {skill.message}
             </div>
           </div>
@@ -2489,10 +2505,10 @@ function GitHubSourceOverviewRow({ label, children }: { label: string; children:
 function GitHubSourceStatusPill({ needsAttention }: { needsAttention: boolean }) {
   return (
     <span
-      className={`inline-flex h-6 items-center rounded-full border px-2.5 text-xs font-semibold ${
+      className={`inline-flex h-6 items-center rounded-[var(--oc-radius-control)] border px-2.5 text-xs font-semibold ${
         needsAttention
-          ? "border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300"
-          : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+          ? "border-status-error-fg/30 bg-status-error-bg text-status-error-fg"
+          : "border-status-success-fg/30 bg-status-success-bg text-status-success-fg"
       }`}
     >
       {needsAttention ? "Needs attention" : "Healthy"}
@@ -2629,7 +2645,11 @@ function TokenList({
                 <td className="py-4 align-middle">
                   <div className="flex min-w-0 items-center gap-3">
                     {token.revokedAt ? (
-                      <CircleX size={16} aria-hidden="true" className="shrink-0 text-red-500" />
+                      <CircleX
+                        size={16}
+                        aria-hidden="true"
+                        className="shrink-0 text-status-error-fg"
+                      />
                     ) : (
                       <Code
                         size={16}
@@ -2672,7 +2692,7 @@ function TokenList({
                       size="sm"
                       type="button"
                       onClick={() => onRevoke?.(token._id)}
-                      className="h-8 gap-2 px-0 text-xs text-red-700 hover:bg-transparent hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                      className="h-8 gap-2 px-0 text-xs text-status-error-fg hover:bg-transparent hover:opacity-80"
                     >
                       <Trash2 size={14} />
                       Revoke
@@ -2693,7 +2713,7 @@ function TokenList({
           >
             <div className="flex min-w-0 items-center gap-2">
               {token.revokedAt ? (
-                <CircleX size={16} aria-hidden="true" className="shrink-0 text-red-500" />
+                <CircleX size={16} aria-hidden="true" className="shrink-0 text-status-error-fg" />
               ) : (
                 <Code
                   size={16}
@@ -2746,7 +2766,7 @@ function TokenList({
                   size="sm"
                   type="button"
                   onClick={() => onRevoke?.(token._id)}
-                  className="h-8 gap-2 px-0 text-xs text-red-700 hover:bg-transparent hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                  className="h-8 gap-2 px-0 text-xs text-status-error-fg hover:bg-transparent hover:opacity-80"
                 >
                   <Trash2 size={14} />
                   Revoke

@@ -80,6 +80,25 @@ describe("PluginListItem", () => {
     expect(document.querySelector(".marketplace-icon-image")).toBeNull();
     expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
   });
+
+  it.each(["list", "card"] as const)(
+    "previews long plugin names in the %s variant while retaining the full label",
+    (variant) => {
+      const displayName = "P".repeat(71);
+      const { container } = render(
+        <PluginListItem
+          item={makePlugin({ displayName })}
+          variant={variant === "list" ? undefined : variant}
+        />,
+      );
+
+      const name = container.querySelector(
+        variant === "list" ? ".skill-list-item-name" : ".skill-card-title",
+      );
+      expect(name?.textContent).toBe(`${"P".repeat(69)}…`);
+      expect(name?.getAttribute("title")).toBe(displayName);
+    },
+  );
 });
 
 function makePlugin(overrides: Partial<PackageListItem> = {}): PackageListItem {
