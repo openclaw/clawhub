@@ -70,5 +70,8 @@ describe("site helpers", () => {
     withServerEnv({ VITE_SITE_URL: "https://example.com" }, () => {
       expect(getPublicClawHubSiteUrl()).toBe("https://example.com");
     });
+    withServerEnv({ VITE_SITE_URL: "file:///tmp/clawhub" }, () => {
+      expect(getPublicClawHubSiteUrl()).toBe("https://clawhub.ai");
+    });
   });
 });

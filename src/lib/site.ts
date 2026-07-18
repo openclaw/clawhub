@@ -26,5 +26,11 @@ export function getClawHubSiteUrl() {
 
 export function getPublicClawHubSiteUrl() {
   const configured = getClawHubSiteUrl();
-  return LOCAL_SITE_HOSTS.has(new URL(configured).hostname) ? DEFAULT_CLAWHUB_SITE_URL : configured;
+  try {
+    return LOCAL_SITE_HOSTS.has(new URL(configured).hostname)
+      ? DEFAULT_CLAWHUB_SITE_URL
+      : configured;
+  } catch {
+    return DEFAULT_CLAWHUB_SITE_URL;
+  }
 }
