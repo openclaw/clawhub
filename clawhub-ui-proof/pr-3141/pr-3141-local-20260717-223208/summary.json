@@ -3,7 +3,7 @@
   "mode": "feature",
   "scenario": "PR #3141 muted submission icons",
   "provider": "local-browser",
-  "candidate": "dce5eecc",
+  "candidate": "4efe8f39",
   "lanes": [
     {
       "name": "candidate",
