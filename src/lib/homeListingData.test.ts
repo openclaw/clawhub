@@ -114,6 +114,106 @@ describe("homeListingData", () => {
     );
   });
 
+  it("sorts filtered Featured skills newest-first by featuredAt", async () => {
+    convexQueryMock
+      .mockResolvedValueOnce({
+        page: [
+          {
+            skill: {
+              _id: "skills:older",
+              slug: "older",
+              displayName: "Older Featured",
+              categories: ["development"],
+              badges: { highlighted: { at: 100 } },
+              stats: { downloads: 10_000 },
+            },
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        page: [
+          {
+            skill: {
+              _id: "skills:newest",
+              slug: "newest",
+              displayName: "Newest Featured",
+              categories: ["integrations"],
+              badges: { highlighted: { at: 200 } },
+              stats: { downloads: 1 },
+            },
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      });
+
+    const result = await fetchHomeSkillListing(
+      "featured",
+      ["development", "integrations"],
+      HOME_LISTING_PAGE_SIZE,
+    );
+
+    expect(result.page.map((entry) => entry.skill.slug)).toEqual(["newest", "older"]);
+    expect(convexQueryMock).toHaveBeenCalledTimes(2);
+    expect(convexQueryMock).toHaveBeenNthCalledWith(
+      1,
+      "skills:listPublicPageV4",
+      expect.objectContaining({ categorySlug: "development" }),
+    );
+    expect(convexQueryMock).toHaveBeenNthCalledWith(
+      2,
+      "skills:listPublicPageV4",
+      expect.objectContaining({ categorySlug: "integrations" }),
+    );
+  });
+
+  it("sorts filtered Featured plugins newest-first by featuredAt", async () => {
+    fetchPluginCatalogMock
+      .mockResolvedValueOnce({
+        items: [
+          {
+            ...featuredPlugin,
+            name: "older",
+            categories: ["tools"],
+            featuredAt: 100,
+            stats: { downloads: 10_000 },
+          },
+        ],
+        nextCursor: null,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            ...featuredPlugin,
+            name: "newest",
+            categories: ["gateway"],
+            featuredAt: 200,
+            stats: { downloads: 1 },
+          },
+        ],
+        nextCursor: null,
+      });
+
+    const result = await fetchHomePluginListing(
+      "featured",
+      ["tools", "gateway"],
+      HOME_LISTING_PAGE_SIZE,
+    );
+
+    expect(result.items.map((item) => item.name)).toEqual(["newest", "older"]);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
+    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ category: "tools" }),
+    );
+    expect(fetchPluginCatalogMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ category: "gateway" }),
+    );
+  });
+
   it("uses a one-item request when probing Featured skill availability", async () => {
     await expect(fetchHomeFeaturedAvailability("skills")).resolves.toBe(true);
 

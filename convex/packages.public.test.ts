@@ -150,7 +150,11 @@ const listPublicPageHandler = (
       sort?: "updated" | "downloads" | "recommended" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
-    { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
+    {
+      page: Array<{ name: string; featuredAt?: number }>;
+      isDone: boolean;
+      continueCursor: string;
+    }
   >
 )._handler;
 const listPageForViewerInternalHandler = (
@@ -171,7 +175,11 @@ const listPageForViewerInternalHandler = (
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
-    { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
+    {
+      page: Array<{ name: string; featuredAt?: number }>;
+      isDone: boolean;
+      continueCursor: string;
+    }
   >
 )._handler;
 const listPluginExportPageInternalHandler = (
@@ -3750,6 +3758,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["newest-featured", "older-featured"]);
+    expect(result.page.map((entry) => entry.featuredAt)).toEqual([200, 100]);
   });
 
   it("keeps official packages first without re-ranking featured recency within each group", async () => {

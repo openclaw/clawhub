@@ -93,6 +93,16 @@ function sortHomeSkillEntries(entries: HomeSkillListingEntry[]) {
   });
 }
 
+function sortFeaturedHomeSkillEntries(entries: HomeSkillListingEntry[]) {
+  return [...entries].sort((left, right) => {
+    return (right.skill.badges?.highlighted?.at ?? 0) - (left.skill.badges?.highlighted?.at ?? 0);
+  });
+}
+
+function sortFeaturedHomePlugins(items: PackageListItem[]) {
+  return [...items].sort((left, right) => (right.featuredAt ?? 0) - (left.featuredAt ?? 0));
+}
+
 export async function fetchHomeSkillListing(
   tab: HomeListingTab,
   categorySlugs: readonly string[],
@@ -146,7 +156,9 @@ export async function fetchHomeSkillListing(
     }),
   );
   const pages = results.flatMap((result) => result.page);
-  const sorted = sortHomeSkillEntries(uniqueHomeSkillEntries(pages));
+  const unique = uniqueHomeSkillEntries(pages);
+  const sorted =
+    tab === "featured" ? sortFeaturedHomeSkillEntries(unique) : sortHomeSkillEntries(unique);
   const hasMore =
     sorted.length > numItems || (tab !== "featured" && results.some((result) => result.hasMore));
   const page = sorted.slice(0, numItems);
@@ -208,7 +220,9 @@ export async function fetchHomePluginListing(
     }),
   );
   let items = uniqueHomePlugins(results.flatMap((result) => result.items));
-  if (tab === "popular" || featured) {
+  if (featured) {
+    items = sortFeaturedHomePlugins(items);
+  } else if (tab === "popular") {
     items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
   }
   const page = items.slice(0, limit);

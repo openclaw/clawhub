@@ -349,6 +349,7 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     latestVersion?: string | null | undefined;
     categories?: string[] | undefined;
     topics?: string[] | undefined;
+    featuredAt?: number | undefined;
     verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
     stats?: {
         downloads: number;
@@ -374,6 +375,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         latestVersion?: string | null | undefined;
         categories?: string[] | undefined;
         topics?: string[] | undefined;
+        featuredAt?: number | undefined;
         verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
         stats?: {
             downloads: number;
@@ -403,6 +405,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             latestVersion?: string | null | undefined;
             categories?: string[] | undefined;
             topics?: string[] | undefined;
+            featuredAt?: number | undefined;
             verificationTier?: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural" | null | undefined;
             stats?: {
                 downloads: number;

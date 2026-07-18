@@ -659,6 +659,7 @@ type PublicPackageListItem = {
   latestVersion: string | null;
   categories?: string[];
   topics?: string[];
+  featuredAt?: number;
   verificationTier: PackageVerificationTier | null;
   stats: Doc<"packages">["stats"];
 };
@@ -1415,6 +1416,7 @@ async function resolvePackageListStats(
 async function toPublicPackageListItem(
   ctx: DbReaderCtx,
   digest: PackageDigestLike,
+  featuredAt?: number,
 ): Promise<PublicPackageListItem> {
   return {
     name: digest.name,
@@ -1431,6 +1433,7 @@ async function toPublicPackageListItem(
     latestVersion: digest.latestVersion ?? null,
     categories: digest.categories,
     topics: digest.topics,
+    ...(featuredAt === undefined ? {} : { featuredAt }),
     verificationTier: digest.verificationTier ?? null,
     stats: await resolvePackageListStats(ctx, digest),
   };
@@ -2542,7 +2545,7 @@ async function takeVisiblePackageCategoryDigestPage(
   };
 }
 
-async function fetchHighlightedPackageDigests(
+async function fetchHighlightedPackageEntries(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
@@ -2561,7 +2564,7 @@ async function fetchHighlightedPackageDigests(
     .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
     .order("desc")
     .take(MAX_PUBLIC_LIST_PAGE_SIZE);
-  const digests: PackageDigestLike[] = [];
+  const entries: Array<{ digest: PackageDigestLike; featuredAt: number }> = [];
   for (const badge of badges) {
     const digest = await ctx.db
       .query("packageSearchDigest")
@@ -2570,9 +2573,9 @@ async function fetchHighlightedPackageDigests(
     if (!digest || digest.softDeletedAt) continue;
     if (!(await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
-    digests.push(digest);
+    entries.push({ digest, featuredAt: badge.at });
   }
-  return digests;
+  return entries;
 }
 
 async function fetchHighlightedPackagePage(
@@ -2590,11 +2593,13 @@ async function fetchHighlightedPackagePage(
     numItems: number;
   },
 ) {
-  const digests = await fetchHighlightedPackageDigests(ctx, args);
+  const entries = await fetchHighlightedPackageEntries(ctx, args);
   const items = await Promise.all(
-    digests.map(async (digest) => await toPublicPackageListItem(ctx, digest)),
+    entries.map(
+      async ({ digest, featuredAt }) => await toPublicPackageListItem(ctx, digest, featuredAt),
+    ),
   );
-  // fetchHighlightedPackageDigests follows the badge timestamp index newest-first.
+  // fetchHighlightedPackageEntries follows the badge timestamp index newest-first.
   // Preserve that editorial order instead of re-ranking Featured by popularity.
   if (!args.officialFirst) {
     return items.slice(0, args.numItems);
@@ -4248,17 +4253,27 @@ async function searchPackagesImpl(
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
   if (args.topic !== undefined && !topic) return [];
   if (args.highlightedOnly) {
-    const digests = await fetchHighlightedPackageDigests(ctx, { ...args, category, topic });
-    const entries = digests
+    const highlightedEntries = await fetchHighlightedPackageEntries(ctx, {
+      ...args,
+      category,
+      topic,
+    });
+    const entries = highlightedEntries
       .filter(
-        (digest) => !digest.scanStatus || !args.excludedScanStatuses?.includes(digest.scanStatus),
+        ({ digest }) =>
+          !digest.scanStatus || !args.excludedScanStatuses?.includes(digest.scanStatus),
       )
-      .map((digest) => {
+      .map(({ digest, featuredAt }) => {
         const match = packageSearchMatch(digest, queryText);
-        return match ? { ...match, package: digest } : null;
+        return match ? { ...match, package: digest, featuredAt } : null;
       })
-      .filter((entry): entry is PackageSearchMatch & { package: PackageDigestLike } =>
-        Boolean(entry),
+      .filter(
+        (
+          entry,
+        ): entry is PackageSearchMatch & {
+          package: PackageDigestLike;
+          featuredAt: number;
+        } => Boolean(entry),
       )
       .sort(comparePackageSearchMatches)
       .slice(0, targetCount);
@@ -4267,7 +4282,7 @@ async function searchPackagesImpl(
       results.push({
         score: entry.score,
         rankTier: entry.rankTier,
-        package: await toPublicPackageListItem(ctx, entry.package),
+        package: await toPublicPackageListItem(ctx, entry.package, entry.featuredAt),
       });
     }
     return results;

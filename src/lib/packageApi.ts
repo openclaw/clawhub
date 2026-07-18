@@ -24,6 +24,7 @@ export type PackageListItem = {
   latestVersion?: string | null;
   categories?: string[];
   topics?: string[];
+  featuredAt?: number;
   verificationTier?: string | null;
   stats?: {
     downloads: number;

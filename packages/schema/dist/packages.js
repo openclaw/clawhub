@@ -291,6 +291,7 @@ export const PackageListItemSchema = type({
     latestVersion: "string|null?",
     categories: "string[]?",
     topics: "string[]?",
+    featuredAt: "number?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
 });
