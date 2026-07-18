@@ -56,6 +56,7 @@ describe("SkillPublishSuccessDialog", () => {
     expect(screen.getByText("Developer tools")).toBeTruthy();
     expect(screen.getByText("#skills")).toBeTruthy();
     expect(screen.getByText("Friends of the Crustacean 🦞🤝")).toBeTruthy();
+    expect(document.querySelector(".marketplace-icon-muted")).toBeTruthy();
 
     const discordLink = screen.getByRole("link", { name: /Share on Discord/i });
     expect(discordLink.getAttribute("href")).toBe(OPENCLAW_SKILLS_DISCORD_URL);
