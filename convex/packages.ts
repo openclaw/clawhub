@@ -108,7 +108,6 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
 import {
-  compareRecommendationStats,
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
@@ -1327,6 +1326,7 @@ function digestMatchesSearchFilters(
   digest: PackageDigestLike,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: string;
@@ -1335,6 +1335,7 @@ function digestMatchesSearchFilters(
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
+  if (args.families?.length && !args.families.includes(digest.family)) return false;
   if (args.channel && digest.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) {
     return false;
@@ -2545,6 +2546,7 @@ async function fetchHighlightedPackageDigests(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: string;
@@ -2577,6 +2579,7 @@ async function fetchHighlightedPackagePage(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: string;
@@ -2591,32 +2594,14 @@ async function fetchHighlightedPackagePage(
   const items = await Promise.all(
     digests.map(async (digest) => await toPublicPackageListItem(ctx, digest)),
   );
-  return items
-    .sort((a, b) => {
-      if (args.officialFirst) {
-        const official = Number(b.isOfficial) - Number(a.isOfficial);
-        if (official !== 0) return official;
-      }
-      if (args.sort === "recommended") {
-        const recommendation = compareRecommendationStats(a.stats, b.stats);
-        if (recommendation !== 0) return recommendation;
-      }
-      if (args.sort === "installs") {
-        const installs = b.stats.installs - a.stats.installs;
-        if (installs !== 0) return installs;
-      }
-      if (args.sort === "downloads") {
-        const downloads = b.stats.downloads - a.stats.downloads;
-        if (downloads !== 0) return downloads;
-      }
-      return (
-        b.updatedAt - a.updatedAt ||
-        b.createdAt - a.createdAt ||
-        a.family.localeCompare(b.family) ||
-        a.name.localeCompare(b.name)
-      );
-    })
-    .slice(0, args.numItems);
+  // fetchHighlightedPackageDigests follows the badge timestamp index newest-first.
+  // Preserve that editorial order instead of re-ranking Featured by popularity.
+  if (!args.officialFirst) {
+    return items.slice(0, args.numItems);
+  }
+  const official = items.filter((item) => item.isOfficial);
+  const community = items.filter((item) => !item.isOfficial);
+  return [...official, ...community].slice(0, args.numItems);
 }
 
 async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedName: string) {
@@ -3651,6 +3636,9 @@ export const listPageForViewerInternal = internalQuery({
     family: v.optional(
       v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     ),
+    families: v.optional(
+      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    ),
     channel: v.optional(
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
     ),
@@ -3713,6 +3701,7 @@ async function listPackagePageImpl(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
+    families?: PackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     highlightedOnly?: boolean;
@@ -3727,6 +3716,9 @@ async function listPackagePageImpl(
 ): Promise<PublicPackageListPage> {
   if (args.channel === "private" && !args.viewerUserId) {
     return { page: [], isDone: true, continueCursor: "" };
+  }
+  if (args.families?.length && !args.highlightedOnly) {
+    throw new Error("families is only supported for highlighted package pages");
   }
   if (args.category && !isPluginCategorySlug(args.category)) {
     return { page: [], isDone: true, continueCursor: "" };

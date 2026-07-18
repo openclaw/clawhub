@@ -65,6 +65,7 @@ const catalogFeedEntryFields = {
     v.literal("deprecated"),
   ),
   featured: v.optional(v.boolean()),
+  featuredAt: v.optional(v.number()),
   publisher: v.object({
     id: v.string(),
     trust: v.union(v.literal("official"), v.literal("community")),
@@ -137,6 +138,7 @@ async function buildEntry(
     version,
     state: "available",
     featured: Boolean(highlighted),
+    ...(highlighted ? { featuredAt: highlighted.at } : {}),
     publisher: {
       id: publisherId,
       trust: "official",
@@ -210,6 +212,7 @@ async function buildSkillEntry(
   const title = skill.displayName.trim() || slug;
   const description = skill.summary?.trim();
   const icon = skill.icon?.trim();
+  const highlightedAt = skill.badges?.highlighted?.at;
   const packageName = `@${publisherId}/${slug}`;
   if (!publisherId || !slug || !title) return null;
 
@@ -243,6 +246,7 @@ async function buildSkillEntry(
       version: commit,
       state: "available",
       featured: isSkillHighlighted(skill),
+      ...(highlightedAt !== undefined ? { featuredAt: highlightedAt } : {}),
       publisher: {
         id: publisherId,
         trust: "official",
@@ -290,6 +294,7 @@ async function buildSkillEntry(
     version: versionName,
     state: "available",
     featured: isSkillHighlighted(skill),
+    ...(highlightedAt !== undefined ? { featuredAt: highlightedAt } : {}),
     publisher: {
       id: publisherId,
       trust: "official",

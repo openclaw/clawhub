@@ -157,6 +157,7 @@ const listPageForViewerInternalHandler = (
   listPageForViewerInternal as unknown as WrappedHandler<
     {
       family?: "skill" | "code-plugin" | "bundle-plugin";
+      families?: Array<"skill" | "code-plugin" | "bundle-plugin">;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       executesCode?: boolean;
@@ -3719,31 +3720,71 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
   });
 
-  it("sorts highlighted package pages by the requested install order", async () => {
-    const lowerInstall = makeDigest("lower-install", {
+  it("keeps highlighted package pages in newest-featured order", async () => {
+    const newestFeatured = makeDigest("newest-featured", {
       updatedAt: 20,
       stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
     });
-    const higherInstall = makeDigest("higher-install", {
+    const olderFeatured = makeDigest("older-featured", {
       updatedAt: 10,
       stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
     });
+    const newerSkill = makeDigest("newer-skill", {
+      family: "skill",
+      updatedAt: 30,
+    });
     const { ctx } = makeDigestCtx({
       highlightedBadges: [
-        { packageId: lowerInstall.packageId },
-        { packageId: higherInstall.packageId },
+        { packageId: newerSkill.packageId, at: 300 },
+        { packageId: newestFeatured.packageId, at: 200 },
+        { packageId: olderFeatured.packageId, at: 100 },
       ],
-      exactDigests: [lowerInstall, higherInstall],
+      exactDigests: [newerSkill, newestFeatured, olderFeatured],
     });
 
     const result = await listPageForViewerInternalHandler(ctx, {
-      family: "code-plugin",
+      families: ["code-plugin", "bundle-plugin"],
       highlightedOnly: true,
       sort: "installs",
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["higher-install", "lower-install"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["newest-featured", "older-featured"]);
+  });
+
+  it("keeps official packages first without re-ranking featured recency within each group", async () => {
+    const newestCommunity = makeDigest("newest-community", {
+      isOfficial: false,
+      updatedAt: 30,
+    });
+    const newestOfficial = makeDigest("newest-official", {
+      isOfficial: true,
+      updatedAt: 20,
+    });
+    const olderOfficial = makeDigest("older-official", {
+      isOfficial: true,
+      updatedAt: 10,
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [
+        { packageId: newestCommunity.packageId, at: 300 },
+        { packageId: newestOfficial.packageId, at: 200 },
+        { packageId: olderOfficial.packageId, at: 100 },
+      ],
+      exactDigests: [newestCommunity, newestOfficial, olderOfficial],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      highlightedOnly: true,
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "newest-official",
+      "older-official",
+      "newest-community",
+    ]);
   });
 
   it("does not let stale personal ownerUserId expose private package digests", async () => {

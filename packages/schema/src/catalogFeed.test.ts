@@ -151,6 +151,7 @@ describe("catalog feed schema", () => {
       entries: makeFeed().entries.map((entry, index) => ({
         ...entry,
         featured: index === 0,
+        ...(index === 0 ? { featuredAt: 1_784_280_000_000 } : {}),
       })),
     });
 
@@ -158,8 +159,25 @@ describe("catalog feed schema", () => {
 
     expect(parsed.schemaVersion).toBe(1);
     expect(parsed.entries.find((entry) => entry.id === "zeta")?.featured).toBe(true);
+    expect(parsed.entries.find((entry) => entry.id === "zeta")?.featuredAt).toBe(1_784_280_000_000);
     expect(parsed.entries.find((entry) => entry.id === "alpha")?.featured).toBe(false);
     expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("featured");
+    expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("featuredAt");
+  });
+
+  it("rejects featured timestamps on entries that are not featured", () => {
+    expect(() =>
+      parseCatalogFeed({
+        ...makeFeed(),
+        entries: [
+          {
+            ...makeFeed().entries[0],
+            featured: false,
+            featuredAt: 1_784_280_000_000,
+          },
+        ],
+      }),
+    ).toThrow("featuredAt");
   });
 
   it("round-trips optional listing metadata without changing schema version 1", () => {

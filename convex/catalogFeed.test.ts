@@ -135,7 +135,7 @@ function makeFeedSkillEntry(index: number) {
 function makeCtx(
   packages: unknown[],
   records: Record<string, unknown>,
-  options: { packageHighlighted?: boolean } = {},
+  options: { packageHighlightedAt?: number } = {},
 ) {
   return {
     db: {
@@ -149,12 +149,12 @@ function makeCtx(
               apply(query);
               return {
                 unique: vi.fn(async () =>
-                  options.packageHighlighted
+                  options.packageHighlightedAt !== undefined
                     ? {
                         packageId: "packages:1",
                         kind: "highlighted",
                         byUserId: "users:moderator",
-                        at: 1,
+                        at: options.packageHighlightedAt,
                       }
                     : null,
                 ),
@@ -237,7 +237,7 @@ describe("catalog feed projection", () => {
         {
           "packageReleases:1": makeRelease(),
         },
-        { packageHighlighted: true },
+        { packageHighlightedAt: 1_784_280_000_000 },
       ),
       { family: "code-plugin" },
     );
@@ -247,6 +247,7 @@ describe("catalog feed projection", () => {
         id: "@openclaw/demo",
         state: "available",
         featured: true,
+        featuredAt: 1_784_280_000_000,
         install: {
           candidates: [
             expect.objectContaining({
@@ -343,10 +344,19 @@ describe("catalog feed projection", () => {
 
   it("projects highlighted official skills as featured install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
-      makeCtx([makeSkill({ badges: { highlighted: { byUserId: "users:moderator", at: 1 } } })], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
-        "skillVersions:1": makeSkillVersion(),
-      }),
+      makeCtx(
+        [
+          makeSkill({
+            badges: {
+              highlighted: { byUserId: "users:moderator", at: 1_784_280_000_000 },
+            },
+          }),
+        ],
+        {
+          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "skillVersions:1": makeSkillVersion(),
+        },
+      ),
       { publisherId: "publishers:1", cursor: null },
     )) as { entries: unknown[]; isDone: boolean };
 
@@ -355,6 +365,7 @@ describe("catalog feed projection", () => {
         id: "@openclaw/demo",
         state: "available",
         featured: true,
+        featuredAt: 1_784_280_000_000,
       }),
     ]);
   });

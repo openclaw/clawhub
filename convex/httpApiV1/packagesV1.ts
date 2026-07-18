@@ -1777,6 +1777,32 @@ async function listPackages(
     );
   }
 
+  if (!effectiveFamily && options?.pluginFamilies?.length && highlightedOnly) {
+    const result = await runQueryRef<{
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string | null;
+    }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+      families: options.pluginFamilies,
+      channel: channelParam.value,
+      isOfficial: isOfficial.value,
+      highlightedOnly: true,
+      category,
+      topic,
+      excludedScanStatuses: excludedScanStatuses.value,
+      viewerUserId: viewerUserId ?? undefined,
+      paginationOpts: { cursor: rawCursor, numItems: limit },
+    });
+    return json(
+      {
+        items: result.page,
+        nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
+  }
+
   if (!effectiveFamily && options?.pluginFamilies?.length) {
     const shouldMarkDefaultDownloadCursor =
       !sortParam.value && pluginDefaultSort === RECOMMENDED_FALLBACK_SORT;

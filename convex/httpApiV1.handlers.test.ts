@@ -9708,14 +9708,31 @@ describe("httpApiV1 handlers", () => {
     expect(codePluginCursors).toEqual([null, "downloads-cursor"]);
   });
 
-  it("plugins list defaults featured browse to downloads sort", async () => {
-    const readinessCalls: unknown[] = [];
+  it("plugins list preserves combined newest-featured order across plugin families", async () => {
+    const newestFeatured = makeCatalogItem("newest-featured", {
+      family: "bundle-plugin",
+      updatedAt: 20,
+      stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
+    });
+    const olderPopular = makeCatalogItem("older-popular", {
+      family: "code-plugin",
+      updatedAt: 10,
+      stats: { downloads: 100, installs: 100, stars: 0, versions: 1 },
+    });
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (hasPluginRecommendedScoreReadinessArgs(args)) {
-        readinessCalls.push(args);
-        return false;
-      }
-      return { page: [], isDone: true, continueCursor: "" };
+      expect(args).toEqual(
+        expect.objectContaining({
+          families: ["code-plugin", "bundle-plugin"],
+          highlightedOnly: true,
+          paginationOpts: { cursor: null, numItems: 7 },
+        }),
+      );
+      expect(args).not.toHaveProperty("family");
+      return {
+        page: [newestFeatured, olderPopular],
+        isDone: true,
+        continueCursor: "",
+      };
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
@@ -9725,17 +9742,11 @@ describe("httpApiV1 handlers", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(readinessCalls).toEqual([]);
-    for (const [, args] of runQuery.mock.calls) {
-      if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
-      expect(args).toEqual(
-        expect.objectContaining({
-          highlightedOnly: true,
-          sort: "downloads",
-          paginationOpts: { cursor: null, numItems: 7 },
-        }),
-      );
-    }
+    await expect(response.json()).resolves.toMatchObject({
+      items: [{ name: "newest-featured" }, { name: "older-popular" }],
+      nextCursor: null,
+    });
+    expect(runQuery).toHaveBeenCalledTimes(1);
   });
 
   it("plugins list downloads sort forwards to both plugin families and merges by downloads", async () => {

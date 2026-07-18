@@ -105,36 +105,36 @@ describe("skills.listPublicPageV4", () => {
     });
   });
 
-  it("sorts highlighted recommended results by weighted score, then updatedAt", async () => {
+  it("keeps highlighted results in newest-featured order", async () => {
     const result = await listPublicPageV4Handler(
       makeHighlightedCtx([
         makeDigest({
-          id: "updated",
-          slug: "updated-skill",
+          id: "newest",
+          slug: "newest-featured",
           stars: 2,
           installsAllTime: 10,
           downloads: 10,
           updatedAt: 400,
         }),
         makeDigest({
-          id: "downloads",
-          slug: "downloads-skill",
+          id: "older-popular",
+          slug: "older-popular",
           stars: 2,
           installsAllTime: 10,
           downloads: 50,
           updatedAt: 100,
         }),
         makeDigest({
-          id: "installs",
-          slug: "installs-skill",
+          id: "older-installed",
+          slug: "older-installed",
           stars: 2,
           installsAllTime: 20,
           downloads: 0,
           updatedAt: 100,
         }),
         makeDigest({
-          id: "stars",
-          slug: "stars-skill",
+          id: "oldest-starred",
+          slug: "oldest-starred",
           stars: 3,
           installsAllTime: 0,
           downloads: 0,
@@ -145,10 +145,10 @@ describe("skills.listPublicPageV4", () => {
     );
 
     expect(result.page.map((entry) => entry.skill.slug)).toEqual([
-      "downloads-skill",
-      "installs-skill",
-      "updated-skill",
-      "stars-skill",
+      "newest-featured",
+      "older-popular",
+      "older-installed",
+      "oldest-starred",
     ]);
   });
 

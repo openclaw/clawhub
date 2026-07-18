@@ -106,10 +106,7 @@ import {
   normalizePublisherHandle,
   requirePublisherRole,
 } from "./lib/publishers";
-import {
-  computeRecommendationScore,
-  RECOMMENDATION_SCORE_VERSION,
-} from "./lib/recommendationScore";
+import { RECOMMENDATION_SCORE_VERSION } from "./lib/recommendationScore";
 import {
   AUTO_HIDE_REPORT_THRESHOLD,
   MAX_ACTIVE_REPORTS_PER_USER,
@@ -7154,57 +7151,6 @@ function readDigestRankStat(
   return digest.statsInstallsAllTime ?? digest.stats.installsAllTime ?? 0;
 }
 
-function readDigestRecommendationScore(digest: Doc<"skillSearchDigest">): number {
-  return (
-    (digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
-      ? digest.recommendedScore
-      : undefined) ??
-    computeRecommendationScore(
-      {
-        downloads: readDigestRankStat(digest, "downloads"),
-        installs: readDigestRankStat(digest, "installsAllTime"),
-        stars: readDigestRankStat(digest, "stars"),
-      },
-      {
-        createdAt: digest.createdAt,
-        updatedAt: digest.updatedAt,
-      },
-    )
-  );
-}
-
-function compareSkillDigestsForPublicSort(
-  a: Doc<"skillSearchDigest">,
-  b: Doc<"skillSearchDigest">,
-  sort: PublicListSort,
-  dir: "asc" | "desc",
-) {
-  const multiplier = dir === "asc" ? 1 : -1;
-  switch (sort) {
-    case "downloads":
-      return (readDigestRankStat(a, "downloads") - readDigestRankStat(b, "downloads")) * multiplier;
-    case "recommended":
-      return (
-        (readDigestRecommendationScore(a) - readDigestRecommendationScore(b)) * multiplier ||
-        (a.updatedAt - b.updatedAt) * multiplier
-      );
-    case "stars":
-      return (readDigestRankStat(a, "stars") - readDigestRankStat(b, "stars")) * multiplier;
-    case "installs":
-      return (
-        (readDigestRankStat(a, "installsAllTime") - readDigestRankStat(b, "installsAllTime")) *
-        multiplier
-      );
-    case "updated":
-      return (a.updatedAt - b.updatedAt) * multiplier;
-    case "name":
-      return a.displayName.localeCompare(b.displayName) * multiplier;
-    case "newest":
-    default:
-      return (a.createdAt - b.createdAt) * multiplier;
-  }
-}
-
 type OfficialFirstSkillCategoryPageOptions = {
   sort: PublicListSort;
   dir: "asc" | "desc";
@@ -7476,7 +7422,7 @@ async function listOfficialFirstSkillCategoryPage(
   };
 }
 
-/** Fetch highlighted skills via the skillBadges index, then sort in JS. */
+/** Fetch highlighted skills newest-first via the skillBadges timestamp index. */
 async function fetchHighlightedPage(
   ctx: QueryCtx,
   opts: {
@@ -7518,8 +7464,6 @@ async function fetchHighlightedPage(
     }
     digests.push(digest);
   }
-
-  digests.sort((a, b) => compareSkillDigestsForPublicSort(a, b, opts.sort, opts.dir));
 
   const trimmed = digests.slice(0, opts.numItems);
 
