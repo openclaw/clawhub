@@ -73,6 +73,7 @@ type DeletedAccountCleanupResult = {
   authVerificationCodes: number;
   authSessions: number;
   authRefreshTokens: number;
+  githubOrgMemberships: number;
   apiTokens: number;
   personalPublisherDeleted: boolean;
 };
@@ -360,6 +361,11 @@ async function hardDeleteSelfDeletedAccountState(
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
   for (const token of tokens) await ctx.db.delete(token._id);
+  const githubOrgMemberships = await ctx.db
+    .query("githubOrgMemberships")
+    .withIndex("by_user", (q) => q.eq("userId", user._id))
+    .collect();
+  for (const membership of githubOrgMemberships) await ctx.db.delete(membership._id);
 
   const personalPublisher = user.personalPublisherId
     ? await ctx.db.get(user.personalPublisherId)
@@ -405,7 +411,12 @@ async function hardDeleteSelfDeletedAccountState(
   });
   await ctx.runMutation(internal.telemetry.clearUserTelemetryInternal, { userId: user._id });
   const authState = await purgeAuthStateForUser(ctx, user._id);
-  return { ...authState, apiTokens: tokens.length, personalPublisherDeleted };
+  return {
+    ...authState,
+    githubOrgMemberships: githubOrgMemberships.length,
+    apiTokens: tokens.length,
+    personalPublisherDeleted,
+  };
 }
 
 async function scrubDeletedUserTombstone(ctx: MutationCtx, user: Doc<"users">, deletedAt: number) {
@@ -426,6 +437,8 @@ async function scrubDeletedUserTombstone(ctx: MutationCtx, user: Doc<"users">, d
     isAnonymous: undefined,
     bio: undefined,
     githubCreatedAt: undefined,
+    githubOrgMembershipsSyncedAt: undefined,
+    githubOrgMembershipsTruncated: undefined,
     updatedAt: deletedAt,
   });
 }
@@ -463,6 +476,20 @@ const DEV_OFFICIAL_ORG = {
   displayName: "Local Official Org",
   reason: "dev-persona.official-org-member",
 } as const;
+const DEV_GITHUB_ORGS = [
+  {
+    githubOrgId: "100000001",
+    login: "openclaw",
+    avatarUrl: "https://avatars.githubusercontent.com/u/188567264?v=4",
+    role: "admin" as const,
+  },
+  {
+    githubOrgId: "100000002",
+    login: "trycua",
+    avatarUrl: "https://avatars.githubusercontent.com/u/175698028?v=4",
+    role: "member" as const,
+  },
+];
 
 type DevPersona = keyof typeof DEV_PERSONAS;
 
@@ -540,10 +567,34 @@ export const upsertDevPersonaInternal = internalMutation({
     });
     if (args.persona === "officialOrgMember") {
       await ensureDevOfficialOrgMembership(ctx, user, now);
+      await replaceDevGitHubOrgMemberships(ctx, user._id, now);
     }
     return userId;
   },
 });
+
+async function replaceDevGitHubOrgMemberships(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  syncedAt: number,
+) {
+  const existing = await ctx.db
+    .query("githubOrgMemberships")
+    .withIndex("by_user", (q) => q.eq("userId", userId))
+    .collect();
+  for (const membership of existing) await ctx.db.delete(membership._id);
+  for (const membership of DEV_GITHUB_ORGS) {
+    await ctx.db.insert("githubOrgMemberships", {
+      userId,
+      ...membership,
+      syncedAt,
+    });
+  }
+  await ctx.db.patch(userId, {
+    githubOrgMembershipsSyncedAt: syncedAt,
+    githubOrgMembershipsTruncated: undefined,
+  });
+}
 
 async function ensureDevOfficialOrgMembership(ctx: MutationCtx, user: Doc<"users">, now: number) {
   let publisher = await getPublisherByHandle(ctx, DEV_OFFICIAL_ORG.handle);
@@ -1071,6 +1122,8 @@ export const deleteAccount = mutation({
       isAnonymous: undefined,
       bio: undefined,
       githubCreatedAt: undefined,
+      githubOrgMembershipsSyncedAt: undefined,
+      githubOrgMembershipsTruncated: undefined,
       updatedAt: now,
     });
     await ctx.db.insert("auditLogs", {

@@ -377,6 +377,7 @@ const updateProfileHandler = (
     image?: string;
     imageStorageId?: string;
     imageUploadTicket?: string;
+    githubOrgId?: string | null;
   }>
 )._handler;
 
@@ -6352,6 +6353,138 @@ describe("publishers membership controls", () => {
         targetId: "publishers:org",
       }),
     );
+  });
+
+  it("links only a freshly verified GitHub organization membership", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const publisher = {
+      _id: "publishers:org",
+      kind: "org",
+      handle: "cua",
+      displayName: "Cua",
+      image: undefined,
+      bio: undefined,
+    };
+    const patch = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") return publisher;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publisherMembers:admin",
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "githubOrgMemberships") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  userId: "users:admin",
+                  githubOrgId: "42",
+                  login: "trycua",
+                  role: "member",
+                  syncedAt: Date.now(),
+                }),
+              })),
+            };
+          }
+          if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert: vi.fn(async () => "auditLogs:1"),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await updateProfileHandler(ctx as never, {
+      publisherId: "publishers:org",
+      displayName: "Cua",
+      githubOrgId: "42",
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:org",
+      expect.objectContaining({
+        githubHandle: "trycua",
+        githubOrgId: "42",
+        githubVerifiedAt: expect.any(Number),
+        githubVerifiedByUserId: "users:admin",
+      }),
+    );
+  });
+
+  it("rejects stale GitHub organization membership verification", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "cua",
+              displayName: "Cua",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "githubOrgMemberships") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  userId: "users:admin",
+                  githubOrgId: "42",
+                  login: "trycua",
+                  role: "member",
+                  syncedAt: Date.now() - 16 * 60 * 1000,
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      updateProfileHandler(ctx as never, {
+        publisherId: "publishers:org",
+        displayName: "Cua",
+        githubOrgId: "42",
+      }),
+    ).rejects.toThrow("Reconnect GitHub to verify your organization membership");
   });
 
   it("issues logo upload tickets only to org admins", async () => {

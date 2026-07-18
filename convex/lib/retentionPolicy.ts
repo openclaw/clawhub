@@ -66,6 +66,10 @@ export const RETENTION_POLICIES = {
     retention: "Convex Auth session total duration.",
   }),
   authAccounts: permanent("Provider account links for active users."),
+  githubOrgMemberships: derived(
+    "Active GitHub organization memberships synced during OAuth.",
+    "Reconnect the GitHub account with read:org access.",
+  ),
   authRefreshTokens: ephemeral("Convex Auth refresh tokens expire after inactive duration.", {
     expirationField: "expirationTime",
     expirationIndex: "by_expiration_time",

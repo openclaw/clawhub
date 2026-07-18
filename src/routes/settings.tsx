@@ -16,6 +16,7 @@ import {
   Package,
   Palette,
   Plus,
+  RefreshCw,
   Save,
   Send,
   ShieldAlert,
@@ -113,6 +114,9 @@ type PublisherMembership = {
     image?: string | null;
     imageStorageId?: Id<"_storage"> | null;
     bio?: string | null;
+    githubHandle?: string | null;
+    githubOrgId?: string | null;
+    githubVerifiedAt?: number | null;
     official?: boolean;
     stats?: {
       skills: number;
@@ -123,6 +127,18 @@ type PublisherMembership = {
     };
   };
   role: "owner" | "admin" | "publisher";
+};
+
+type GitHubOrgMembershipsResult = {
+  syncedAt: number | null;
+  truncated: boolean;
+  memberships: Array<{
+    githubOrgId: string;
+    login: string;
+    avatarUrl: string | null;
+    role: "admin" | "member";
+    syncedAt: number;
+  }>;
 };
 
 type PublisherDeletionInventory = {
@@ -253,7 +269,7 @@ const themeToggleItemClass =
 
 export function Settings() {
   const navigate = useNavigate();
-  const { signOut } = useAuthActions();
+  const { signIn, signOut } = useAuthActions();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
@@ -269,6 +285,10 @@ export function Settings() {
     api.publishers.listMine,
     shouldLoadAccountScopedQueries ? { includePublishedItems: false } : "skip",
   ) as Array<PublisherMembership> | undefined;
+  const githubOrgMemberships = useQuery(
+    api.githubOrgMemberships.listMine,
+    shouldLoadAccountScopedQueries ? {} : "skip",
+  ) as GitHubOrgMembershipsResult | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
@@ -295,6 +315,7 @@ export function Settings() {
   const [selectedOrgImage, setSelectedOrgImage] = useState("");
   const [selectedOrgImageFile, setSelectedOrgImageFile] = useState<File | null>(null);
   const [selectedOrgImagePreview, setSelectedOrgImagePreview] = useState<string | null>(null);
+  const [selectedGitHubOrgId, setSelectedGitHubOrgId] = useState("");
   const [isUploadingOrgImage, setIsUploadingOrgImage] = useState(false);
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
@@ -334,10 +355,25 @@ export function Settings() {
     null;
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
+  const githubOrgMembershipsFresh = Boolean(
+    githubOrgMemberships?.syncedAt && Date.now() - githubOrgMemberships.syncedAt <= 15 * 60 * 1000,
+  );
+  const selectedGitHubOrgMembership = githubOrgMemberships?.memberships.find(
+    (membership) => membership.githubOrgId === selectedGitHubOrgId,
+  );
+  const linkedGitHubHandleNeedsRefresh = Boolean(
+    githubOrgMembershipsFresh &&
+    selectedGitHubOrgId &&
+    selectedGitHubOrgId === selectedOrg?.publisher.githubOrgId &&
+    selectedGitHubOrgMembership &&
+    selectedGitHubOrgMembership?.login !== selectedOrg.publisher.githubHandle,
+  );
   const hasOrgProfileChanges = selectedOrg
     ? selectedOrgDisplayName !== (selectedOrg.publisher.displayName ?? "") ||
       selectedOrgBio !== (selectedOrg.publisher.bio ?? "") ||
       selectedOrgImage !== (selectedOrg.publisher.image ?? "") ||
+      selectedGitHubOrgId !== (selectedOrg.publisher.githubOrgId ?? "") ||
+      linkedGitHubHandleNeedsRefresh ||
       selectedOrgImageFile !== null
     : false;
   const hasProfileChanges = me
@@ -427,12 +463,14 @@ export function Settings() {
       setSelectedOrgDisplayName("");
       setSelectedOrgBio("");
       setSelectedOrgImage("");
+      setSelectedGitHubOrgId("");
       setSelectedOrgImageFile(null);
       return;
     }
     setSelectedOrgDisplayName(selectedOrg.publisher.displayName ?? "");
     setSelectedOrgBio(selectedOrg.publisher.bio ?? "");
     setSelectedOrgImage(selectedOrg.publisher.image ?? "");
+    setSelectedGitHubOrgId(selectedOrg.publisher.githubOrgId ?? "");
     setSelectedOrgImageFile(null);
   }, [selectedOrg]);
 
@@ -466,6 +504,7 @@ export function Settings() {
   const activeSectionLoading =
     (activeView === "organizations" &&
       (publisherMemberships === undefined ||
+        githubOrgMemberships === undefined ||
         (selectedOrg && selectedOrg.role !== "publisher" && orgMembers === undefined))) ||
     (activeView === "tokens" && tokens === undefined);
 
@@ -535,6 +574,11 @@ export function Settings() {
     if (!selectedOrg) return;
     setIsUploadingOrgImage(true);
     try {
+      const githubOrgId =
+        selectedGitHubOrgId === (selectedOrg.publisher.githubOrgId ?? "") &&
+        !linkedGitHubHandleNeedsRefresh
+          ? undefined
+          : selectedGitHubOrgId || null;
       if (selectedOrgImageFile) {
         const upload = await createOrgImageUpload({
           publisherId: selectedOrg.publisher._id,
@@ -546,6 +590,7 @@ export function Settings() {
           bio: selectedOrgBio || undefined,
           imageStorageId: imageStorageId as Id<"_storage">,
           imageUploadTicket: upload.uploadTicket,
+          githubOrgId,
         });
       } else {
         await updateOrgProfile({
@@ -556,6 +601,7 @@ export function Settings() {
           imageStorageId: selectedOrgImage
             ? (selectedOrg.publisher.imageStorageId ?? undefined)
             : undefined,
+          githubOrgId,
         });
       }
       setSelectedOrgImageFile(null);
@@ -565,6 +611,13 @@ export function Settings() {
     } finally {
       setIsUploadingOrgImage(false);
     }
+  }
+
+  async function onConnectGitHubOrganizations() {
+    const ownerHandle = selectedOrg?.publisher.handle;
+    const search = new URLSearchParams({ view: "organizations" });
+    if (ownerHandle) search.set("ownerHandle", ownerHandle);
+    await signIn("github", { redirectTo: `/settings?${search.toString()}` });
   }
 
   function onOrgImageFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -1103,6 +1156,105 @@ export function Settings() {
                                     <X size={15} />
                                   </Button>
                                 ) : null}
+                              </div>
+                              <div className="lg:col-span-2">
+                                <Field
+                                  label="GitHub organization"
+                                  htmlFor="settings-selected-org-github"
+                                >
+                                  {githubOrgMemberships?.syncedAt ||
+                                  selectedOrg.publisher.githubOrgId ? (
+                                    <>
+                                      <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                                        <Select
+                                          value={selectedGitHubOrgId || "__none__"}
+                                          onValueChange={(value) =>
+                                            setSelectedGitHubOrgId(
+                                              value === "__none__" ? "" : value,
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger
+                                            id="settings-selected-org-github"
+                                            className="h-11 min-w-0 flex-1"
+                                          >
+                                            <SelectValue placeholder="Select a GitHub organization" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="__none__">
+                                              No GitHub organization
+                                            </SelectItem>
+                                            {selectedOrg.publisher.githubOrgId &&
+                                            !(githubOrgMemberships?.memberships ?? []).some(
+                                              (membership) =>
+                                                membership.githubOrgId ===
+                                                selectedOrg.publisher.githubOrgId,
+                                            ) ? (
+                                              <SelectItem
+                                                value={selectedOrg.publisher.githubOrgId}
+                                                disabled
+                                              >
+                                                @{selectedOrg.publisher.githubHandle} · unavailable
+                                              </SelectItem>
+                                            ) : null}
+                                            {(githubOrgMemberships?.memberships ?? []).map(
+                                              (membership) => (
+                                                <SelectItem
+                                                  key={membership.githubOrgId}
+                                                  value={membership.githubOrgId}
+                                                  disabled={!githubOrgMembershipsFresh}
+                                                >
+                                                  <span className="flex min-w-0 items-center gap-2">
+                                                    <OrgLogoSmall
+                                                      image={membership.avatarUrl}
+                                                      name={membership.login}
+                                                      handle={membership.login}
+                                                      className="h-6 w-6"
+                                                    />
+                                                    <span className="truncate">
+                                                      @{membership.login} · {membership.role}
+                                                    </span>
+                                                  </span>
+                                                </SelectItem>
+                                              ),
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          className="h-11 shrink-0"
+                                          onClick={() => void onConnectGitHubOrganizations()}
+                                        >
+                                          <RefreshCw size={16} />
+                                          Refresh
+                                        </Button>
+                                      </div>
+                                      <p className="text-xs text-[color:var(--ink-soft)]">
+                                        {githubOrgMembershipsFresh
+                                          ? "Only organizations where your GitHub account is an active member are shown."
+                                          : "Reconnect GitHub to choose another organization. You can still remove the current link."}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <div className="flex min-w-0 flex-col items-start gap-2">
+                                      <Button
+                                        id="settings-selected-org-github"
+                                        type="button"
+                                        variant="outline"
+                                        aria-label="Connect GitHub organizations"
+                                        onClick={() => void onConnectGitHubOrganizations()}
+                                      >
+                                        <GitHubIcon size={16} />
+                                        Connect GitHub
+                                      </Button>
+                                      <p className="text-xs text-[color:var(--ink-soft)]">
+                                        GitHub will ask for read-only access to your organization
+                                        memberships.
+                                      </p>
+                                    </div>
+                                  )}
+                                </Field>
                               </div>
                               <div className="lg:col-span-2">
                                 <Field label="Bio" htmlFor="settings-selected-org-bio">
@@ -2799,6 +2951,14 @@ function Field({
       </Label>
       {children}
     </div>
+  );
+}
+
+function GitHubIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.02c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.39.96.1-.75.4-1.26.74-1.55-2.57-.3-5.28-1.29-5.28-5.73 0-1.27.45-2.3 1.2-3.12-.12-.3-.52-1.48.11-3.08 0 0 .98-.31 3.16 1.19a10.9 10.9 0 0 1 5.75 0c2.18-1.5 3.16-1.19 3.16-1.19.63 1.6.23 2.78.11 3.08.75.82 1.2 1.85 1.2 3.12 0 4.46-2.71 5.43-5.3 5.72.42.36.79 1.07.79 2.16v3.02c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z" />
+    </svg>
   );
 }
 

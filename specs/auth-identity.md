@@ -40,6 +40,20 @@ derive the actor server-side from Convex Auth (`getAuthUserId` via
 `requireUser`/`getOptionalActiveAuthUserId`). They must not accept client-supplied
 user ids, usernames, handles, or emails for authorization.
 
+## Organization GitHub profile verification
+
+Organization publisher GitHub links are profile metadata, not ClawHub account
+identity or artifact provenance. GitHub OAuth requests `read:org` and uses the
+access token only during the OAuth callback to fetch the signed-in user's active
+organization memberships. ClawHub stores the resulting immutable GitHub
+organization ids and current logins, but never stores the provider access token.
+
+Changing an organization publisher's GitHub link requires both ClawHub
+owner/admin access and a fresh server-side GitHub membership snapshot for the
+selected immutable organization id. The stored login may determine the public
+profile URL, but it must not grant publishing authority, Official status,
+trusted-publishing authority, or source/artifact provenance.
+
 Staff recovery for a personal publisher whose GitHub principal is no longer
 accessible must not rewrite or merge Convex Auth `authAccounts` rows. The only
 supported permanent recovery path is an admin-only personal publisher recovery

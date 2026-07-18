@@ -9,7 +9,16 @@ export type PublicUser = Pick<
 
 export type PublicPublisher = Pick<
   Doc<"publishers">,
-  "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
+  | "_id"
+  | "_creationTime"
+  | "kind"
+  | "handle"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "linkedUserId"
+  | "githubHandle"
+  | "githubVerifiedAt"
 > & { official?: boolean };
 
 export type PublicSkillStats = {
@@ -130,6 +139,8 @@ export function toPublicPublisher(
     image: publisher.image,
     bio: publisher.bio,
     linkedUserId: publisher.linkedUserId,
+    githubHandle: publisher.githubHandle,
+    githubVerifiedAt: publisher.githubVerifiedAt,
     ...(options?.official ? { official: true } : {}),
   };
 }

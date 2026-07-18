@@ -173,6 +173,8 @@ const users = defineTable({
   githubCreatedAt: v.optional(v.number()),
   githubFetchedAt: v.optional(v.number()),
   githubProfileSyncedAt: v.optional(v.number()),
+  githubOrgMembershipsSyncedAt: v.optional(v.number()),
+  githubOrgMembershipsTruncated: v.optional(v.boolean()),
   trustedPublisher: v.optional(v.boolean()),
   publishedSkills: v.optional(v.number()),
   totalStars: v.optional(v.number()),
@@ -218,6 +220,10 @@ const publishers = defineTable({
   bio: v.optional(v.string()),
   image: v.optional(v.string()),
   imageStorageId: v.optional(v.id("_storage")),
+  githubHandle: v.optional(v.string()),
+  githubOrgId: v.optional(v.string()),
+  githubVerifiedAt: v.optional(v.number()),
+  githubVerifiedByUserId: v.optional(v.id("users")),
   linkedUserId: v.optional(v.id("users")),
   trustedPublisher: v.optional(v.boolean()),
   publishedSkills: v.optional(v.number()),
@@ -253,6 +259,17 @@ const publishers = defineTable({
     "totalInstalls",
     "updatedAt",
   ]);
+
+const githubOrgMemberships = defineTable({
+  userId: v.id("users"),
+  githubOrgId: v.string(),
+  login: v.string(),
+  avatarUrl: v.optional(v.string()),
+  role: v.union(v.literal("admin"), v.literal("member")),
+  syncedAt: v.number(),
+})
+  .index("by_user", ["userId"])
+  .index("by_user_and_github_org", ["userId", "githubOrgId"]);
 
 const publisherMembers = defineTable({
   publisherId: v.id("publishers"),
@@ -3329,6 +3346,7 @@ export default defineSchema({
   authRefreshTokens,
   users,
   publishers,
+  githubOrgMemberships,
   publisherMembers,
   publisherInvites,
   publisherImageUploadTickets,

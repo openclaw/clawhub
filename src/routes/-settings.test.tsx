@@ -65,6 +65,8 @@ const orgMembership = {
     kind: "org",
     image: null,
     bio: "OpenClaw publisher",
+    githubHandle: null as string | null,
+    githubOrgId: null as string | null,
     official: true,
   },
   role: "owner",
@@ -78,6 +80,8 @@ const personalMembership = {
     kind: "user",
     image: null,
     bio: null,
+    githubHandle: null as string | null,
+    githubOrgId: null as string | null,
     official: false,
   },
   role: "owner",
@@ -136,6 +140,11 @@ function mockSignedInSettings({
   githubSources = [],
   pendingInvites = [],
   myInvites = [],
+  githubOrgMemberships = {
+    syncedAt: null,
+    truncated: false,
+    memberships: [],
+  },
   membersLoading = false,
   deletionInventoryLoading = false,
 }: {
@@ -146,6 +155,17 @@ function mockSignedInSettings({
   deletionInventoryLoading?: boolean;
   pendingInvites?: PublisherInviteFixture[];
   myInvites?: PublisherInviteFixture[];
+  githubOrgMemberships?: {
+    syncedAt: number | null;
+    truncated: boolean;
+    memberships: Array<{
+      githubOrgId: string;
+      login: string;
+      avatarUrl: string | null;
+      role: "admin" | "member";
+      syncedAt: number;
+    }>;
+  };
   githubSources?: Array<{
     _id: string;
     repo: string;
@@ -198,6 +218,7 @@ function mockSignedInSettings({
     if (args === "skip") return undefined;
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
+    if (queryName === "githubOrgMemberships:listMine") return githubOrgMemberships;
     if (queryName === "publishers:getDeletionInventory") {
       return deletionInventoryLoading ? undefined : [];
     }
@@ -223,6 +244,7 @@ function getLastQueryArgs(functionName: string) {
 
 describe("Settings", () => {
   beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
     window.history.replaceState(null, "", "/settings");
     useQueryMock.mockReset();
     useMutationMock.mockReset();
@@ -313,6 +335,199 @@ describe("Settings", () => {
     expect(screen.getByText("Patrick")).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "openclaw",
+    });
+  });
+
+  it("connects GitHub from organization settings when memberships are unavailable", () => {
+    const signIn = vi.fn().mockResolvedValue(undefined);
+    useAuthActionsMock.mockReturnValue({
+      signIn,
+      signOut: vi.fn().mockResolvedValue(undefined),
+    });
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub organizations" }));
+
+    expect(signIn).toHaveBeenCalledWith("github", {
+      redirectTo: "/settings?view=organizations&ownerHandle=openclaw",
+    });
+  });
+
+  it("selects a verified GitHub organization and saves its immutable id", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    const syncedAt = Date.now();
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      githubOrgMemberships: {
+        syncedAt,
+        truncated: false,
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: null,
+            role: "member",
+            syncedAt,
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByLabelText("GitHub organization"));
+    fireEvent.click(await screen.findByText("@trycua · member"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          publisherId: "publisher_openclaw",
+          githubOrgId: "42",
+        }),
+      );
+    });
+  });
+
+  it("refreshes a linked GitHub organization handle after a rename", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    const syncedAt = Date.now();
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [
+        {
+          ...orgMembership,
+          publisher: {
+            ...orgMembership.publisher,
+            githubHandle: "old-cua",
+            githubOrgId: "42",
+          },
+        },
+      ],
+      githubOrgMemberships: {
+        syncedAt,
+        truncated: false,
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: null,
+            role: "member",
+            syncedAt,
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          publisherId: "publisher_openclaw",
+          githubOrgId: "42",
+        }),
+      );
+    });
+  });
+
+  it("saves unrelated profile changes when the linked GitHub organization is unavailable", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [
+        {
+          ...orgMembership,
+          publisher: {
+            ...orgMembership.publisher,
+            githubHandle: "trycua",
+            githubOrgId: "42",
+          },
+        },
+      ],
+      githubOrgMemberships: {
+        syncedAt: Date.now(),
+        truncated: false,
+        memberships: [],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Renamed publisher" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          displayName: "Renamed publisher",
+          githubOrgId: undefined,
+        }),
+      );
+    });
+  });
+
+  it("allows removing a GitHub organization after membership verification expires", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    const staleSyncedAt = Date.now() - 16 * 60 * 1000;
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [
+        {
+          ...orgMembership,
+          publisher: {
+            ...orgMembership.publisher,
+            githubHandle: "trycua",
+            githubOrgId: "42",
+          },
+        },
+      ],
+      githubOrgMemberships: {
+        syncedAt: staleSyncedAt,
+        truncated: false,
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: null,
+            role: "member",
+            syncedAt: staleSyncedAt,
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByLabelText("GitHub organization"));
+    fireEvent.click(await screen.findByText("No GitHub organization"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          publisherId: "publisher_openclaw",
+          githubOrgId: null,
+        }),
+      );
     });
   });
 

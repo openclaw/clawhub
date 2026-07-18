@@ -156,6 +156,14 @@ describe("handleDeletedUserSignIn", () => {
 });
 
 describe("GitHub auth provider", () => {
+  it("requests read-only GitHub organization membership access", () => {
+    const provider = createGitHubAuthProvider() as {
+      options?: { authorization?: { params?: { scope?: string } } };
+    };
+
+    expect(provider.options?.authorization?.params?.scope?.split(" ")).toContain("read:org");
+  });
+
   it("does not link ClawHub accounts by GitHub profile email", () => {
     const provider = createGitHubAuthProvider() as {
       options?: { allowDangerousEmailAccountLinking?: boolean };
@@ -181,19 +189,74 @@ describe("GitHub auth provider", () => {
     );
   });
 
-  it("fails closed when the GitHub provider receives a malformed profile", () => {
+  it("fails closed when the GitHub provider receives a malformed profile", async () => {
     const provider = createGitHubAuthProvider() as {
-      options?: { profile?: (profile: Record<string, unknown>) => Record<string, unknown> };
+      options?: {
+        profile?: (
+          profile: Record<string, unknown>,
+          tokens: { access_token?: string },
+        ) => Promise<Record<string, unknown>>;
+      };
     };
 
-    expect(() => provider.options?.profile?.({ message: "Bad credentials" })).toThrow(
+    await expect(provider.options?.profile?.({ message: "Bad credentials" }, {})).rejects.toThrow(
       "GitHub OAuth profile is missing a valid numeric id",
     );
-    expect(provider.options?.profile?.({ id: 123456, login: "fixture-user" })).toEqual({
+    await expect(
+      provider.options?.profile?.({ id: 123456, login: "fixture-user" }, {}),
+    ).resolves.toEqual({
       id: "123456",
       name: "fixture-user",
       email: undefined,
       image: undefined,
     });
+  });
+
+  it("adds a verified GitHub organization snapshot to the OAuth profile", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            state: "active",
+            role: "member",
+            organization: { id: 42, login: "trycua" },
+          },
+        ]),
+        { status: 200 },
+      ),
+    );
+    const provider = createGitHubAuthProvider() as {
+      options?: {
+        profile?: (
+          profile: Record<string, unknown>,
+          tokens: { access_token?: string },
+        ) => Promise<Record<string, unknown>>;
+      };
+    };
+
+    await expect(
+      provider.options?.profile?.(
+        { id: 123456, login: "fixture-user" },
+        { access_token: "test-token-placeholder" },
+      ),
+    ).resolves.toEqual({
+      id: "123456",
+      name: "fixture-user",
+      email: undefined,
+      image: undefined,
+      githubOrgMembershipSync: {
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: undefined,
+            role: "member",
+          },
+        ],
+        syncedAt: expect.any(Number),
+        truncated: false,
+      },
+    });
+    fetchMock.mockRestore();
   });
 });

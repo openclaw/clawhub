@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -2273,6 +2274,7 @@ export const listMine = query({
           publisher: {
             ...(includePublishedItems ? publicPublisher : withoutPublishedItems(publicPublisher)),
             imageStorageId: publisher?.imageStorageId,
+            githubOrgId: publisher?.githubOrgId,
           },
           role: publisher?.kind === "user" ? "owner" : membership.role,
         };
@@ -2296,6 +2298,7 @@ export const listMine = query({
         publisher: {
           ...(includePublishedItems ? personalPublisher : withoutPublishedItems(personalPublisher)),
           imageStorageId: personalPublisherDoc?.imageStorageId,
+          githubOrgId: personalPublisherDoc?.githubOrgId,
         },
         role: "owner",
       });
@@ -3095,6 +3098,7 @@ export const updateProfile = mutation({
     image: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
     imageUploadTicket: v.optional(v.id("publisherImageUploadTickets")),
+    githubOrgId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
@@ -3178,11 +3182,59 @@ export const updateProfile = mutation({
     }
 
     const now = Date.now();
+    let githubPatch:
+      | {
+          githubHandle: string;
+          githubOrgId: string;
+          githubVerifiedAt: number;
+          githubVerifiedByUserId: Id<"users">;
+        }
+      | {
+          githubHandle: undefined;
+          githubOrgId: undefined;
+          githubVerifiedAt: undefined;
+          githubVerifiedByUserId: undefined;
+        }
+      | undefined;
+    if (args.githubOrgId === null) {
+      githubPatch = {
+        githubHandle: undefined,
+        githubOrgId: undefined,
+        githubVerifiedAt: undefined,
+        githubVerifiedByUserId: undefined,
+      };
+    } else if (args.githubOrgId !== undefined) {
+      const githubOrgId = args.githubOrgId.trim();
+      if (!/^[1-9]\d*$/.test(githubOrgId)) {
+        throw new ConvexError("Select a GitHub organization from your connected account");
+      }
+      const githubMembership = await ctx.db
+        .query("githubOrgMemberships")
+        .withIndex("by_user_and_github_org", (q) =>
+          q.eq("userId", userId).eq("githubOrgId", githubOrgId),
+        )
+        .unique();
+      if (
+        !githubMembership ||
+        now - githubMembership.syncedAt > GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS
+      ) {
+        throw new ConvexError("Reconnect GitHub to verify your organization membership");
+      }
+      githubPatch = {
+        githubHandle: githubMembership.login,
+        githubOrgId: githubMembership.githubOrgId,
+        githubVerifiedAt: now,
+        githubVerifiedByUserId: userId,
+      };
+    }
+    const nextGithubHandle = githubPatch ? githubPatch.githubHandle : publisher.githubHandle;
+    const nextGithubOrgId = githubPatch ? githubPatch.githubOrgId : publisher.githubOrgId;
     await ctx.db.patch(publisher._id, {
       displayName,
       bio,
       image: imageUrl,
       imageStorageId,
+      ...githubPatch,
       updatedAt: now,
     });
     if (
@@ -3202,6 +3254,8 @@ export const updateProfile = mutation({
         bio,
         image: imageUrl,
         imageStorageId,
+        githubHandle: nextGithubHandle,
+        githubOrgId: nextGithubOrgId,
       },
       createdAt: now,
     });

@@ -7,7 +7,16 @@ export type PublicUser = Pick<
 
 export type PublicPublisher = Pick<
   Doc<"publishers">,
-  "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
+  | "_id"
+  | "_creationTime"
+  | "kind"
+  | "handle"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "linkedUserId"
+  | "githubHandle"
+  | "githubVerifiedAt"
 > & { official?: boolean };
 
 type PublicPublisherStats = {

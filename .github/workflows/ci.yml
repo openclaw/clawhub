@@ -163,6 +163,7 @@ jobs:
             specs: |
               e2e/local-auth/header-profile-link.pw.test.ts
               e2e/local-auth/manage-context-proof.pw.test.ts
+              e2e/local-auth/publisher-github-profile.pw.test.ts
           - name: moderation-malicious
             specs: e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
           - name: star-sync

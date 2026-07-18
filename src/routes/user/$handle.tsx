@@ -547,6 +547,7 @@ export function PublisherProfilePage({
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  const githubHandle = publisher?.kind === "org" ? publisher.githubHandle : publisher?.handle;
 
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
@@ -827,28 +828,30 @@ export function PublisherProfilePage({
                     </section>
                   ) : null}
 
-                  <section
-                    className="publisher-profile-detail-block publisher-profile-details-links"
-                    aria-label="Links"
-                  >
-                    <h2 className="publisher-profile-detail-label">Links</h2>
-                    <div className="publisher-profile-meta-row">
-                      <a
-                        className="publisher-profile-meta-link"
-                        href={`https://github.com/${publisher.handle}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <GitHubIcon size={14} />
-                        GitHub
-                        <ArrowUpRight
-                          className="publisher-profile-meta-link-external-icon"
-                          size={12}
-                          aria-hidden="true"
-                        />
-                      </a>
-                    </div>
-                  </section>
+                  {githubHandle ? (
+                    <section
+                      className="publisher-profile-detail-block publisher-profile-details-links"
+                      aria-label="Links"
+                    >
+                      <h2 className="publisher-profile-detail-label">Links</h2>
+                      <div className="publisher-profile-meta-row">
+                        <a
+                          className="publisher-profile-meta-link"
+                          href={`https://github.com/${githubHandle}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <GitHubIcon size={14} />
+                          GitHub · @{githubHandle}
+                          <ArrowUpRight
+                            className="publisher-profile-meta-link-external-icon"
+                            size={12}
+                            aria-hidden="true"
+                          />
+                        </a>
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
               </div>
             </div>

@@ -27,6 +27,8 @@ const FINGERPRINT_SALT_LINES = [
   "### Local browser release evidence and storage handoff notes",
 ] as const;
 
+type LocalAuthPersona = DevPersona | "officialOrgMember";
+
 function hashFixtureInput(value: string) {
   let hash = 0;
   for (const char of value) {
@@ -273,15 +275,17 @@ export async function completeMockPrePublicationChecks(args: {
   return { ...completion, claim };
 }
 
-function devPersonaHeaderPattern(persona: DevPersona, expectedHandle: string) {
+function devPersonaHeaderPattern(persona: LocalAuthPersona, expectedHandle: string) {
   const displayName =
     persona === "owner"
       ? "Local Owner"
       : persona === "user"
         ? "Local User"
-        : persona === "abusePublisher"
-          ? "Local Abuse Test Publisher"
-          : "Local Admin";
+        : persona === "officialOrgMember"
+          ? "Local Official Org Member"
+          : persona === "abusePublisher"
+            ? "Local Abuse Test Publisher"
+            : "Local Admin";
   const displayNamePattern =
     persona === "abusePublisher"
       ? `${escapeRegExp("Local Abuse Test Publishe")}.*`
@@ -293,8 +297,9 @@ function devPersonaHeaderPattern(persona: DevPersona, expectedHandle: string) {
   return new RegExp(`@(?:${exactHandle}|${displayNamePattern})`, "i");
 }
 
-function devPersonaMenuLabel(persona: DevPersona) {
+function devPersonaMenuLabel(persona: LocalAuthPersona) {
   if (persona === "abusePublisher") return "abuse publisher";
+  if (persona === "officialOrgMember") return "org member";
   return persona;
 }
 
@@ -309,12 +314,14 @@ function parseSkillDetailPath(pathname: string) {
   throw new Error(`Expected skill detail path, received ${pathname}`);
 }
 
-function devPersonaHandle(persona: DevPersona) {
+function devPersonaHandle(persona: LocalAuthPersona) {
   return persona === "owner"
     ? "local"
-    : persona === "abusePublisher"
-      ? "local-abuse"
-      : `local-${persona}`;
+    : persona === "officialOrgMember"
+      ? "local-official-member"
+      : persona === "abusePublisher"
+        ? "local-abuse"
+        : `local-${persona}`;
 }
 
 export {
@@ -358,20 +365,15 @@ export function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export async function expectLocalPersonaActive(page: Page, persona: DevPersona) {
-  const expectedHandle =
-    persona === "owner"
-      ? "local"
-      : persona === "abusePublisher"
-        ? "local-abuse"
-        : `local-${persona}`;
+export async function expectLocalPersonaActive(page: Page, persona: LocalAuthPersona) {
+  const expectedHandle = devPersonaHandle(persona);
   await expect(page.locator("header .user-trigger")).toContainText(
     devPersonaHeaderPattern(persona, expectedHandle),
     { timeout: 15_000 },
   );
 }
 
-export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
+export async function signInAsLocalPersona(page: Page, persona: LocalAuthPersona) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
@@ -512,7 +514,7 @@ async function waitForPublishSkillMetadataForm(page: Page) {
   await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
 }
 
-export async function signInAsLocalPublisher(page: Page, persona: DevPersona) {
+export async function signInAsLocalPublisher(page: Page, persona: LocalAuthPersona) {
   await signInAsLocalPersona(page, persona);
   await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
   await waitForPublishSkillForm(page);
