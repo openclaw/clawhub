@@ -212,6 +212,22 @@ export const RETENTION_POLICIES = {
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   publisherFollows: permanent("User publisher follow preference records."),
   publisherActivity: permanent("Public publisher release activity timeline."),
+  feedItemWatches: permanent("Private user feed-item watch preferences."),
+  feedNotificationInbox: ephemeral("Private feed notification inbox entries expire.", {
+    expirationField: "expiresAt",
+    expirationIndex: "by_expiresAt",
+    prune: "feedItemNotifications.pruneExpiredInboxInternal",
+    retention: "Ninety days after event creation.",
+  }),
+  feedNotificationMaterializations: ephemeral(
+    "Temporary bounded fan-out state for committed catalog revisions.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expiresAt",
+      prune: "feedItemNotifications.pruneExpiredInboxInternal",
+      retention: "Seven days after catalog publication, or deleted immediately on completion.",
+    },
+  ),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),

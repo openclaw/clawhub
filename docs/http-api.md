@@ -125,6 +125,50 @@ optional `limit`, `cursor`, and `q`. `POST` accepts `{ "publisherId": "..." }`;
 idempotent, users cannot follow their own personal publisher, and each user may
 follow up to 100 publishers.
 
+### `/api/v1/feed-item-watches`
+
+API token required. Private item-watch state is separate from public publisher
+follows.
+
+- `GET` lists watches with optional `limit` and opaque `cursor`.
+- `POST` idempotently creates an explicit watch from `feedId`,
+  `representation: "catalog"`, `itemKind` (`plugin` or
+  `skill`), and stable `itemId`.
+
+V1 accepts `clawhub-official` with `itemKind: "plugin"` and
+`clawhub-official-skills` with `itemKind: "skill"`. Other catalog identities
+are rejected until they have a committed signed-state producer.
+
+- `DELETE` idempotently removes the same identity supplied as query parameters.
+
+An account may retain up to 500 item watches. The `source` returned by list
+responses is `explicit` or `installed-sync`; installed synchronization is a
+separate opt-in client workflow.
+
+Publisher item watches are reserved for the signed publisher-feed follow-up
+and are rejected by the public create API until that producer is available.
+
+### `/api/v1/feed-notifications`
+
+API token required. `GET` returns the private, durable inbox with optional
+`limit` and opaque `cursor`. Every row identifies the feed, representation,
+item, sequence, bounded reason, and HTTPS signed-state reference that a client
+must verify before presenting an actionable update.
+
+`PATCH` accepts a notification id and `action: "read" | "dismiss"`. Operations
+are account-owned and idempotent. The active inbox retains the newest 200 rows;
+older active rows are archived, dismissed rows leave the active inbox, and all
+rows expire after 90 days. Inbox delivery does not install, update, enable,
+approve, or remove content.
+
+Official catalog publications compare the previous and newly committed
+revision. Version/install changes produce `updated`, removals produce
+`removed`, and represented trust/state transitions produce `blocked` or
+`security-state-changed`. First publications, new entries, and title-only
+changes do not notify. Fan-out is durable, retry-safe, and processed in bounded
+watcher batches. The state URL becomes actionable only when the corresponding
+ClawHub signing route is configured; clients must reject an unsigned response.
+
 ### `GET /api/v1/search`
 
 Query params:

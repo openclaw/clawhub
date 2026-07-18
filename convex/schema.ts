@@ -2738,6 +2738,75 @@ const publisherActivity = defineTable({
   .index("by_publisher_and_sortKey", ["publisherId", "sortKey"])
   .index("by_dedupeKey", ["dedupeKey"]);
 
+const feedItemWatches = defineTable({
+  userId: v.id("users"),
+  feedId: v.string(),
+  representation: v.union(v.literal("catalog"), v.literal("publisher")),
+  itemKind: v.union(v.literal("plugin"), v.literal("skill")),
+  itemId: v.string(),
+  source: v.union(v.literal("explicit"), v.literal("installed-sync")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_user_and_updatedAt", ["userId", "updatedAt"])
+  .index("by_user_feed_representation_kind_item", [
+    "userId",
+    "feedId",
+    "representation",
+    "itemKind",
+    "itemId",
+  ])
+  .index("by_feed_representation_kind_item", ["feedId", "representation", "itemKind", "itemId"]);
+
+const feedNotificationInbox = defineTable({
+  userId: v.id("users"),
+  eventId: v.string(),
+  feedId: v.string(),
+  representation: v.union(v.literal("catalog"), v.literal("publisher")),
+  itemKind: v.union(v.literal("plugin"), v.literal("skill")),
+  itemId: v.string(),
+  sequence: v.number(),
+  reason: v.union(
+    v.literal("updated"),
+    v.literal("removed"),
+    v.literal("blocked"),
+    v.literal("security-state-changed"),
+  ),
+  signedStateUrl: v.string(),
+  archived: v.boolean(),
+  readAt: v.optional(v.number()),
+  dismissedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+})
+  .index("by_user_and_eventId", ["userId", "eventId"])
+  .index("by_user_archived_createdAt", ["userId", "archived", "createdAt"])
+  .index("by_expiresAt", ["expiresAt"]);
+
+const feedNotificationMaterializations = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  itemKind: v.union(v.literal("plugin"), v.literal("skill")),
+  signedStateUrl: v.string(),
+  changes: v.array(
+    v.object({
+      itemId: v.string(),
+      reason: v.union(
+        v.literal("updated"),
+        v.literal("removed"),
+        v.literal("blocked"),
+        v.literal("security-state-changed"),
+      ),
+    }),
+  ),
+  nextChangeIndex: v.number(),
+  watchCursor: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+}).index("by_expiresAt", ["expiresAt"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -3414,6 +3483,9 @@ export default defineSchema({
   promotions,
   publisherFollows,
   publisherActivity,
+  feedItemWatches,
+  feedNotificationInbox,
+  feedNotificationMaterializations,
   auditLogs,
   systemSettings,
   publisherAbuseScoreRuns,

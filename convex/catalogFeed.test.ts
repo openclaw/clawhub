@@ -1,6 +1,19 @@
-import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID } from "clawhub-schema";
+import {
+  CATALOG_FEED_ID,
+  CATALOG_FEED_SCHEMA_VERSION,
+  CATALOG_SKILLS_FEED_ID,
+  serializeCatalogFeed,
+  type CatalogFeed,
+  type CatalogFeedEntry,
+} from "clawhub-schema";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listOfficialEntries, listOfficialSkillEntries, publish } from "./catalogFeed";
+import {
+  buildCatalogNotificationChanges,
+  listOfficialEntries,
+  listOfficialSkillEntries,
+  publish,
+  storePublication,
+} from "./catalogFeed";
 
 vi.mock("./lib/publishers", () => ({
   getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
@@ -27,6 +40,18 @@ const listOfficialSkillEntriesHandler = (
 )._handler;
 const publishHandler = (
   publish as unknown as WrappedHandler<{ expiresAt: string }, Array<{ feedId: string }>>
+)._handler;
+const storePublicationHandler = (
+  storePublication as unknown as WrappedHandler<
+    {
+      feedId: typeof CATALOG_FEED_ID;
+      description: string;
+      generatedAt: string;
+      expiresAt: string;
+      entries: CatalogFeedEntry[];
+    },
+    { sequence: number; notificationChangeCount: number }
+  >
 )._handler;
 
 function makePackage(overrides: Record<string, unknown> = {}) {
@@ -132,6 +157,39 @@ function makeFeedSkillEntry(index: number) {
   };
 }
 
+function makeCatalogFeed(entries: CatalogFeedEntry[], sequence = 1): CatalogFeed {
+  return {
+    schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
+    id: CATALOG_FEED_ID,
+    generatedAt: "2026-07-17T00:00:00.000Z",
+    sequence,
+    expiresAt: "2026-07-24T00:00:00.000Z",
+    entries,
+  };
+}
+
+function makePluginEntry(overrides: Partial<CatalogFeedEntry> = {}): CatalogFeedEntry {
+  return {
+    type: "plugin",
+    id: "@openclaw/demo",
+    title: "Demo",
+    version: "1.0.0",
+    state: "available",
+    publisher: { id: "openclaw", trust: "official" },
+    install: {
+      candidates: [
+        {
+          sourceRef: "public-clawhub",
+          package: "@openclaw/demo",
+          version: "1.0.0",
+          integrity: "sha256:one",
+        },
+      ],
+    },
+    ...overrides,
+  } as CatalogFeedEntry;
+}
+
 function makeCtx(packages: unknown[], records: Record<string, unknown>) {
   return {
     db: {
@@ -194,6 +252,84 @@ describe("catalog feed projection", () => {
         },
       },
     ]);
+  });
+
+  it("classifies material catalog changes and suppresses cosmetic churn", () => {
+    const prior = makePluginEntry();
+    expect(
+      buildCatalogNotificationChanges(makeCatalogFeed([prior]), makeCatalogFeed([], 2)),
+    ).toEqual([{ itemId: "@openclaw/demo", reason: "removed" }]);
+    expect(
+      buildCatalogNotificationChanges(
+        makeCatalogFeed([prior]),
+        makeCatalogFeed([makePluginEntry({ state: "blocked" })], 2),
+      ),
+    ).toEqual([{ itemId: "@openclaw/demo", reason: "blocked" }]);
+    expect(
+      buildCatalogNotificationChanges(
+        makeCatalogFeed([prior]),
+        makeCatalogFeed([makePluginEntry({ version: "2.0.0" })], 2),
+      ),
+    ).toEqual([{ itemId: "@openclaw/demo", reason: "updated" }]);
+    expect(
+      buildCatalogNotificationChanges(
+        makeCatalogFeed([prior]),
+        makeCatalogFeed([makePluginEntry({ title: "Renamed" })], 2),
+      ),
+    ).toEqual([]);
+    expect(
+      buildCatalogNotificationChanges(makeCatalogFeed([]), makeCatalogFeed([prior], 2)),
+    ).toEqual([]);
+  });
+
+  it("queues bounded fan-out only after a changed catalog revision is committed", async () => {
+    const prior = makePluginEntry();
+    const latest = {
+      _id: "catalogFeedPublications:1",
+      sequence: 1,
+      payload: serializeCatalogFeed(makeCatalogFeed([prior])),
+    };
+    const insert = vi.fn(async (table: string) =>
+      table === "feedNotificationMaterializations"
+        ? "feedNotificationMaterializations:1"
+        : "catalogFeedPublications:1",
+    );
+    const patch = vi.fn();
+    const runAfter = vi.fn();
+    const query = vi.fn(() => ({
+      withIndex: (_index: string, build: (q: { eq: () => unknown }) => unknown) => {
+        const q = { eq: vi.fn() };
+        q.eq.mockReturnValue(q);
+        build(q);
+        return { unique: async () => latest };
+      },
+    }));
+
+    const result = await storePublicationHandler(
+      { db: { query, patch, insert }, scheduler: { runAfter } },
+      {
+        feedId: CATALOG_FEED_ID,
+        description: "Official plugins",
+        generatedAt: "2026-07-18T00:00:00.000Z",
+        expiresAt: "2026-07-25T00:00:00.000Z",
+        entries: [makePluginEntry({ version: "2.0.0" })],
+      },
+    );
+
+    expect(result).toMatchObject({ sequence: 2, notificationChangeCount: 1 });
+    expect(insert).toHaveBeenCalledWith(
+      "feedNotificationMaterializations",
+      expect.objectContaining({
+        feedId: CATALOG_FEED_ID,
+        sequence: 2,
+        itemKind: "plugin",
+        signedStateUrl: "https://clawhub.ai/v1/feeds/plugins",
+        changes: [{ itemId: "@openclaw/demo", reason: "updated" }],
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      materializationId: "feedNotificationMaterializations:1",
+    });
   });
 
   it("excludes non-official, blocked, deleted, and undigested releases", async () => {

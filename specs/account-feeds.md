@@ -80,8 +80,18 @@ characters before clients resolve them against the feed request origin.
 
 Following is social discovery only. Public follower/following lists and a
 pull-based activity timeline belong in the follow stack. ClawHub should not
-send one notification for every publisher upload. OpenClaw or Control UI may
-notify locally when an update affects content installed in that instance.
+send one notification for every publisher upload.
+
+Explicit item watches are separate private account state. Official catalog
+watches can produce a durable inbox event that references the signed feed
+sequence containing the change. Publisher item watches remain unavailable
+until signed publisher publication materialization lands. Push or channel
+delivery is a wake-up hint; clients verify signed feed state before presenting
+an actionable update. A notification never installs, updates, enables,
+approves, or removes content.
+
+Installed-item watch synchronization is opt-in because it discloses local
+inventory. Publisher follows never create item watches implicitly.
 
 ## Future Signing
 

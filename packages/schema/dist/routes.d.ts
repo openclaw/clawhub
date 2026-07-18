@@ -30,6 +30,8 @@ export declare const ApiRoutes: {
     readonly transfers: "/api/v1/transfers";
     readonly publishers: "/api/v1/publishers";
     readonly publisherFollows: "/api/v1/publisher-follows";
+    readonly feedItemWatches: "/api/v1/feed-item-watches";
+    readonly feedNotifications: "/api/v1/feed-notifications";
     readonly users: "/api/v1/users";
     readonly contentRights: "/api/v1/content-rights";
     readonly whoami: "/api/v1/whoami";

@@ -31,6 +31,8 @@ export const ApiRoutes = {
   transfers: "/api/v1/transfers",
   publishers: "/api/v1/publishers",
   publisherFollows: "/api/v1/publisher-follows",
+  feedItemWatches: "/api/v1/feed-item-watches",
+  feedNotifications: "/api/v1/feed-notifications",
   users: "/api/v1/users",
   contentRights: "/api/v1/content-rights",
   whoami: "/api/v1/whoami",

@@ -218,6 +218,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "feed-notification-inbox-retention-prune",
+    { hours: 24 },
+    internal.feedItemNotifications.pruneExpiredInboxInternal,
+    {},
+  );
+
+  crons.interval(
     "http-rate-limit-keys-prune",
     { hours: 1 },
     internal.rateLimits.pruneHttpRateLimitKeysInternal,

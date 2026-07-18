@@ -32,6 +32,11 @@ import {
   publisherFollowsDeleteV1Http,
   publisherFollowsGetV1Http,
   publisherFollowsPostV1Http,
+  feedItemWatchesDeleteV1Http,
+  feedItemWatchesGetV1Http,
+  feedItemWatchesPostV1Http,
+  feedNotificationsGetV1Http,
+  feedNotificationsPatchV1Http,
   createPublisherV1Http,
   publishersGetRouterV1Http,
   publishPackageV1Http,
@@ -338,6 +343,36 @@ http.route({
   path: ApiRoutes.publisherFollows,
   method: "DELETE",
   handler: publisherFollowsDeleteV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedItemWatches,
+  method: "GET",
+  handler: feedItemWatchesGetV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedItemWatches,
+  method: "POST",
+  handler: feedItemWatchesPostV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedItemWatches,
+  method: "DELETE",
+  handler: feedItemWatchesDeleteV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedNotifications,
+  method: "GET",
+  handler: feedNotificationsGetV1Http,
+});
+
+http.route({
+  path: ApiRoutes.feedNotifications,
+  method: "PATCH",
+  handler: feedNotificationsPatchV1Http,
 });
 
 http.route({

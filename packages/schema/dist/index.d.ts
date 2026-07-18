@@ -4,6 +4,7 @@ export * from "./accountFeed.js";
 export * from "./catalogFeed.js";
 export * from "./catalogMetadata.js";
 export * from "./docsLinks.js";
+export * from "./feedNotifications.js";
 export * from "./license.js";
 export * from "./openclawContract.js";
 export * from "./openClawExtensionSlugs.js";

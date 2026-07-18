@@ -1676,6 +1676,90 @@
           },
           "nextCursor": { "type": ["string", "null"] }
         }
+      },
+      "FeedItemWatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "watchId",
+          "feedId",
+          "representation",
+          "itemKind",
+          "itemId",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "watchId": { "type": "string" },
+          "feedId": { "type": "string" },
+          "representation": { "type": "string", "enum": ["catalog", "publisher"] },
+          "itemKind": { "type": "string", "enum": ["plugin", "skill"] },
+          "itemId": { "type": "string" },
+          "source": { "type": "string", "enum": ["explicit", "installed-sync"] },
+          "createdAt": { "type": "number" },
+          "updatedAt": { "type": "number" }
+        }
+      },
+      "FeedItemWatchList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok", "items", "nextCursor"],
+        "properties": {
+          "ok": { "type": "boolean", "const": true },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/FeedItemWatch" } },
+          "nextCursor": { "type": ["string", "null"] }
+        }
+      },
+      "FeedNotificationInboxItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "notificationId",
+          "eventId",
+          "feedId",
+          "representation",
+          "itemKind",
+          "itemId",
+          "sequence",
+          "reason",
+          "signedStateUrl",
+          "createdAt",
+          "updatedAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "notificationId": { "type": "string" },
+          "eventId": { "type": "string" },
+          "feedId": { "type": "string" },
+          "representation": { "type": "string", "enum": ["catalog", "publisher"] },
+          "itemKind": { "type": "string", "enum": ["plugin", "skill"] },
+          "itemId": { "type": "string" },
+          "sequence": { "type": "integer", "minimum": 0 },
+          "reason": {
+            "type": "string",
+            "enum": ["updated", "removed", "blocked", "security-state-changed"]
+          },
+          "signedStateUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+          "readAt": { "type": "number" },
+          "dismissedAt": { "type": "number" },
+          "createdAt": { "type": "number" },
+          "updatedAt": { "type": "number" },
+          "expiresAt": { "type": "number" }
+        }
+      },
+      "FeedNotificationInboxList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ok", "items", "nextCursor"],
+        "properties": {
+          "ok": { "type": "boolean", "const": true },
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/FeedNotificationInboxItem" }
+          },
+          "nextCursor": { "type": ["string", "null"] }
+        }
       }
     }
   },
@@ -2976,6 +3060,184 @@
           },
           "401": {
             "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/feed-item-watches": {
+      "get": {
+        "summary": "List private feed item watches",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Private item watches",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/FeedItemWatchList" } }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      },
+      "post": {
+        "summary": "Watch one stable feed item",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["feedId", "representation", "itemKind", "itemId"],
+                    "properties": {
+                      "feedId": { "type": "string", "const": "clawhub-official" },
+                      "representation": { "type": "string", "const": "catalog" },
+                      "itemKind": { "type": "string", "const": "plugin" },
+                      "itemId": { "type": "string" }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["feedId", "representation", "itemKind", "itemId"],
+                    "properties": {
+                      "feedId": { "type": "string", "const": "clawhub-official-skills" },
+                      "representation": { "type": "string", "const": "catalog" },
+                      "itemKind": { "type": "string", "const": "skill" },
+                      "itemId": { "type": "string" }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Watch created or already present" },
+          "400": {
+            "description": "Invalid identity or account watch limit reached",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Stop watching one stable feed item",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "feedId", "in": "query", "required": true, "schema": { "type": "string" } },
+          {
+            "name": "representation",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "enum": ["catalog", "publisher"] }
+          },
+          {
+            "name": "itemKind",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string", "enum": ["plugin", "skill"] }
+          },
+          { "name": "itemId", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Watch removed or already absent" },
+          "400": {
+            "description": "Invalid item identity",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/feed-notifications": {
+      "get": {
+        "summary": "List the private feed notification inbox",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }
+          },
+          { "name": "cursor", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active private inbox rows",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/FeedNotificationInboxList" }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid cursor or limit",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Acknowledge or dismiss one private feed notification",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["notificationId", "action"],
+                "properties": {
+                  "notificationId": { "type": "string" },
+                  "action": { "type": "string", "enum": ["read", "dismiss"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Notification acknowledged idempotently" },
+          "400": {
+            "description": "Invalid acknowledgement",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
+          },
+          "404": {
+            "description": "Notification not found for this account",
             "content": { "text/plain": { "schema": { "$ref": "#/components/schemas/PlainTextError" } } }
           }
         }

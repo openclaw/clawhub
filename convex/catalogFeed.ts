@@ -6,7 +6,9 @@ import {
   CATALOG_SKILLS_FEED_DESCRIPTION,
   CATALOG_SKILLS_FEED_ID,
   PROMOTIONS_FEED_ID,
+  parseCatalogFeed,
   serializeCatalogFeed,
+  type CatalogFeed,
   type CatalogFeedEntry,
   type CatalogFeedSkillEntry,
 } from "clawhub-schema";
@@ -32,6 +34,15 @@ const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub
 const CATALOG_FEED_PAGE_SIZE = 100;
 const MAX_CATALOG_FEED_ENTRIES = 1000;
 const CATALOG_FEED_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+const NOTIFICATION_MATERIALIZATION_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
+
+type CatalogNotificationReason = "updated" | "removed" | "blocked" | "security-state-changed";
+type CatalogNotificationChange = { itemId: string; reason: CatalogNotificationReason };
+
+const CATALOG_SIGNED_STATE_URLS = {
+  [CATALOG_FEED_ID]: "https://clawhub.ai/v1/feeds/plugins",
+  [CATALOG_SKILLS_FEED_ID]: "https://clawhub.ai/v1/feeds/skills",
+} as const;
 
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
 type CatalogFeedPublicationResult = {
@@ -41,7 +52,55 @@ type CatalogFeedPublicationResult = {
   payloadSha256: string;
   publishedAt: number;
   entryCount: number;
+  notificationChangeCount: number;
 };
+
+function installFingerprint(entry: CatalogFeedEntry) {
+  return JSON.stringify(entry.install);
+}
+
+export function buildCatalogNotificationChanges(
+  previous: CatalogFeed,
+  next: CatalogFeed,
+): CatalogNotificationChange[] {
+  const nextById = new Map(next.entries.map((entry) => [entry.id, entry]));
+  const changes: CatalogNotificationChange[] = [];
+  for (const prior of previous.entries) {
+    const current = nextById.get(prior.id);
+    if (!current) {
+      changes.push({ itemId: prior.id, reason: "removed" });
+      continue;
+    }
+    if (current.state === "blocked" && prior.state !== "blocked") {
+      changes.push({ itemId: prior.id, reason: "blocked" });
+      continue;
+    }
+    if (
+      current.state !== prior.state ||
+      current.publisher.id !== prior.publisher.id ||
+      current.publisher.trust !== prior.publisher.trust
+    ) {
+      changes.push({ itemId: prior.id, reason: "security-state-changed" });
+      continue;
+    }
+    if (
+      current.version !== prior.version ||
+      installFingerprint(current) !== installFingerprint(prior)
+    ) {
+      changes.push({ itemId: prior.id, reason: "updated" });
+    }
+  }
+  return changes;
+}
+
+function parsePreviousCatalogFeed(payload: string) {
+  try {
+    return parseCatalogFeed(JSON.parse(payload));
+  } catch {
+    // Notification history must not prevent a fresh catalog publication.
+    return null;
+  }
+}
 
 function appendEntriesWithinFeedLimit<T>(target: T[], entries: T[]) {
   const remaining = MAX_CATALOG_FEED_ENTRIES - target.length;
@@ -372,7 +431,7 @@ export const storePublication = internalMutation({
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
       .unique();
     const sequence = (latest?.sequence ?? 0) + 1;
-    const payload = serializeCatalogFeed({
+    const nextFeed: CatalogFeed = {
       schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
       id: args.feedId,
       generatedAt: args.generatedAt,
@@ -380,7 +439,12 @@ export const storePublication = internalMutation({
       expiresAt: args.expiresAt,
       description: args.description,
       entries: args.entries,
-    });
+    };
+    const payload = serializeCatalogFeed(nextFeed);
+    const previousFeed = latest ? parsePreviousCatalogFeed(latest.payload) : null;
+    const notificationChanges = previousFeed
+      ? buildCatalogNotificationChanges(previousFeed, nextFeed)
+      : [];
     const payloadSha256 = await sha256Hex(new TextEncoder().encode(payload));
     const publishedAt = Date.now();
     const publication = {
@@ -395,6 +459,24 @@ export const storePublication = internalMutation({
     const publicationId = latest
       ? (await ctx.db.patch(latest._id, publication), latest._id)
       : await ctx.db.insert("catalogFeedPublications", publication);
+    if (notificationChanges.length > 0) {
+      const materializationId = await ctx.db.insert("feedNotificationMaterializations", {
+        feedId: args.feedId,
+        sequence,
+        itemKind: args.feedId === CATALOG_SKILLS_FEED_ID ? "skill" : "plugin",
+        signedStateUrl: CATALOG_SIGNED_STATE_URLS[args.feedId],
+        changes: notificationChanges,
+        nextChangeIndex: 0,
+        createdAt: publishedAt,
+        updatedAt: publishedAt,
+        expiresAt: publishedAt + NOTIFICATION_MATERIALIZATION_RETENTION_MS,
+      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.feedItemNotifications.processCatalogMaterializationInternal,
+        { materializationId },
+      );
+    }
     return {
       publicationId,
       feedId: args.feedId,
@@ -402,6 +484,7 @@ export const storePublication = internalMutation({
       payloadSha256,
       publishedAt,
       entryCount: args.entries.length,
+      notificationChangeCount: notificationChanges.length,
     };
   },
 });

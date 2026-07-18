@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => {
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
+  const feedNotificationInboxPruneRef = Symbol("feed-notification-inbox-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
   const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
   const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
@@ -34,6 +35,7 @@ const mocks = vi.hoisted(() => {
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
+    feedNotificationInboxPruneRef,
     promotionsFeedPublishRef,
     securityScanExpiredLeaseRecoveryRef,
     securityScanDispatchWatchdogRef,
@@ -104,6 +106,9 @@ vi.mock("./_generated/api", () => ({
       pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
       pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
       pruneExpiredPublisherInvitesInternal: mocks.publisherInvitesPruneRef,
+    },
+    feedItemNotifications: {
+      pruneExpiredInboxInternal: mocks.feedNotificationInboxPruneRef,
     },
   },
 }));
@@ -281,6 +286,17 @@ describe("crons", () => {
       { hours: 6 },
       mocks.publisherInvitesPruneRef,
       { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired feed notification inbox rows daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "feed-notification-inbox-retention-prune",
+      { hours: 24 },
+      mocks.feedNotificationInboxPruneRef,
+      {},
     );
   });
 

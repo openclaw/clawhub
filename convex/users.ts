@@ -77,6 +77,9 @@ type DeletedAccountCleanupResult = {
   personalPublisherDeleted: boolean;
   publisherFollows: number;
   publisherFollowsCleanupScheduled: boolean;
+  feedItemWatches: number;
+  feedNotificationInbox: number;
+  feedNotificationCleanupScheduled: boolean;
 };
 type AccountRecoveryPurgeEligibilityReason =
   | "self_delete_audit"
@@ -367,6 +370,10 @@ async function hardDeleteSelfDeletedAccountState(
     internal.publisherFollows.deletePublisherFollowsForFollowerInternal,
     { followerUserId: user._id },
   );
+  const deletedNotificationState = await ctx.runMutation(
+    internal.feedItemNotifications.deleteAccountNotificationStateInternal,
+    { userId: user._id },
+  );
 
   const personalPublisher = user.personalPublisherId
     ? await ctx.db.get(user.personalPublisherId)
@@ -418,6 +425,9 @@ async function hardDeleteSelfDeletedAccountState(
     personalPublisherDeleted,
     publisherFollows: deletedFollows.deleted,
     publisherFollowsCleanupScheduled: deletedFollows.scheduled,
+    feedItemWatches: deletedNotificationState.feedItemWatches,
+    feedNotificationInbox: deletedNotificationState.feedNotificationInbox,
+    feedNotificationCleanupScheduled: deletedNotificationState.scheduled,
   };
 }
 
