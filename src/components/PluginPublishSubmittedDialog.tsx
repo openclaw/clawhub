@@ -155,7 +155,7 @@ export function PluginPublishSubmittedDialog({
             <div>
               <div className="relative z-10 rounded-t-[var(--radius-md)] rounded-b-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-muted)_78%,var(--surface))] px-3.5 pb-3.5 pt-3">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <MarketplaceIcon kind="plugin" label={pluginName} />
+                  <MarketplaceIcon kind="plugin" label={pluginName} tone="muted" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[0.8125rem] font-bold text-[color:var(--ink)]">
                       {pluginName}

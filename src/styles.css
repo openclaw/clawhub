@@ -3910,6 +3910,15 @@ code {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--marketplace-icon-accent) 20%, transparent);
 }
 
+.marketplace-icon-muted,
+.marketplace-icon-muted:hover {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 7%, transparent);
+  color: var(--ink-soft);
+  transform: none;
+  box-shadow: none;
+}
+
 .marketplace-icon-xs {
   width: 26px;
   height: 26px;

@@ -71,4 +71,14 @@ describe("MarketplaceIcon", () => {
     expect(glyph?.classList.contains("lucide-package")).toBe(true);
     expect(glyph?.classList.contains("lucide-slash")).toBe(false);
   });
+
+  it("exposes a muted treatment for neutral marketplace contexts", () => {
+    const { container } = render(
+      <MarketplaceIcon kind="plugin" label="Muted Plugin" tone="muted" />,
+    );
+
+    expect(
+      container.querySelector(".marketplace-icon")?.classList.contains("marketplace-icon-muted"),
+    ).toBe(true);
+  });
 });

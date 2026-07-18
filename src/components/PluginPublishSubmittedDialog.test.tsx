@@ -42,6 +42,7 @@ describe("PluginPublishSubmittedDialog", () => {
     expect(screen.getByRole("button", { name: "Copy plugin link" })).not.toBe(
       document.activeElement,
     );
+    expect(document.querySelector(".marketplace-icon-muted")).toBeTruthy();
   });
 
   it.each(["http://127.0.0.1:3030", "http://localhost:3030", "http://[::1]:3030"])(

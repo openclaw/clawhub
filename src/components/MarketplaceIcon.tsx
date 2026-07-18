@@ -20,6 +20,7 @@ type MarketplaceIconProps = {
     summary?: string | null;
   } | null;
   size?: "xs" | "sm" | "md";
+  tone?: "default" | "muted";
 };
 
 const TONES = [
@@ -42,6 +43,7 @@ export function MarketplaceIcon({
   categorySlug,
   skill,
   size = "sm",
+  tone = "default",
 }: MarketplaceIconProps) {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -56,16 +58,18 @@ export function MarketplaceIcon({
       : kind === "plugin" && pluginCategory
         ? (getCategoryIconComponent(pluginCategory.icon) ?? MARKETPLACE_KIND_ICONS.plugin)
         : MARKETPLACE_KIND_ICONS[kind];
-  const tone = hashTone(label);
+  const hashedTone = hashTone(label);
   const visibleImageUrl = imageUrl && failedImageUrl !== imageUrl ? imageUrl : null;
 
   return (
     <span
-      className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}`}
+      className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
+        tone === "muted" ? " marketplace-icon-muted" : ""
+      }`}
       style={
         {
-          "--marketplace-icon-accent": tone.accent,
-          "--marketplace-icon-wash": tone.wash,
+          "--marketplace-icon-accent": hashedTone.accent,
+          "--marketplace-icon-wash": hashedTone.wash,
         } as CSSProperties
       }
       aria-hidden="true"
