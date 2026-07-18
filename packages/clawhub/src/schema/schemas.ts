@@ -647,6 +647,26 @@ export const ApiV1SkillRescanResponseSchema = type({
 });
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 
+export const ApiV1SkillHardDeleteRequestSchema = type({
+  ownerHandle: "string",
+  reason: "string",
+  dryRun: "boolean?",
+  confirmationToken: "string?",
+});
+export type ApiV1SkillHardDeleteRequest = (typeof ApiV1SkillHardDeleteRequestSchema)[inferred];
+
+export const ApiV1SkillHardDeleteResponseSchema = type({
+  ok: "true",
+  skillId: "string",
+  slug: "string",
+  ownerHandle: "string",
+  displayName: "string",
+  dryRun: "boolean",
+  scheduled: "boolean",
+  confirmationToken: "string",
+});
+export type ApiV1SkillHardDeleteResponse = (typeof ApiV1SkillHardDeleteResponseSchema)[inferred];
+
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
 export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
 

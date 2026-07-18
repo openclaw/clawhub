@@ -55,6 +55,7 @@ skills|skill
 `bun run admin -- skills --help` exposes:
 
 ```text
+hard-delete <skill>
 unhide <slug>
 revoke-version <slug>
 rescan <slug>
@@ -65,6 +66,8 @@ triage-report <report-id>
 Examples:
 
 ```sh
+bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>"                    # dry-run
+bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- skills unhide <slug> --reason "<reason>" --yes
 bun run admin -- skills revoke-version <slug> --version <version> --reason "<reason>" --yes
 bun run admin -- skills rescan <slug> --reason "<reason>" --yes
@@ -72,7 +75,11 @@ bun run admin -- skills reports --status open
 bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
 
-Pass `--owner <handle>` to `revoke-version` when more than one publisher uses the same slug.
+`hard-delete` requires an owner-qualified ref and defaults to a dry-run. Apply
+only with the exact confirmation token returned by that dry-run.
+
+Pass `--owner <handle>` to `revoke-version` when more than one publisher uses
+the same slug.
 
 ### Users
 
@@ -193,6 +200,7 @@ only after admin auth succeeds.
 ## Verification
 
 - For skills, inspect the page/API status after `skills unhide`.
+- For `skills hard-delete`, verify owner-scoped page/API reads return not found.
 - For users, prefer user search/admin surfaces for target accounts where
   available.
 - For orgs and packages, use the public publisher/plugin pages and the relevant

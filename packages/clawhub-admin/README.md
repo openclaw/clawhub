@@ -116,6 +116,7 @@ Package moderation and operations:
 bun run admin -- skills reports [--status open|confirmed|dismissed|all]
 bun run admin -- skills feature <slug|@owner/slug> [--json]
 bun run admin -- skills unfeature <slug|@owner/slug> [--json]
+bun run admin -- skills hard-delete @owner/slug --reason <text> [--apply --confirm <token> --yes] [--json]
 bun run admin -- skills rescan <slug> [--version <version>] [--yes] [--json]
 bun run admin -- skills unhide <slug> --reason <text> [--yes]
 bun run admin -- skills triage-report <report-id> --status open|confirmed|dismissed [--note <text>] [--action none|hide] [--yes]

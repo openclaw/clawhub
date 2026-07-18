@@ -467,6 +467,22 @@ export const ApiV1SkillRescanResponseSchema = type({
     scheduled: "boolean",
     alreadyQueued: "boolean",
 });
+export const ApiV1SkillHardDeleteRequestSchema = type({
+    ownerHandle: "string",
+    reason: "string",
+    dryRun: "boolean?",
+    confirmationToken: "string?",
+});
+export const ApiV1SkillHardDeleteResponseSchema = type({
+    ok: "true",
+    skillId: "string",
+    slug: "string",
+    ownerHandle: "string",
+    displayName: "string",
+    dryRun: "boolean",
+    scheduled: "boolean",
+    confirmationToken: "string",
+});
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
 export const ApiV1SkillScanSourceSchema = type({
     kind: '"upload"',

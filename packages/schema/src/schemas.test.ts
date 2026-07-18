@@ -11,6 +11,7 @@ import {
 } from "./packages";
 import {
   ApiSearchResponseSchema,
+  ApiV1SkillHardDeleteResponseSchema,
   ApiV1SkillInstallResolveResponseSchema,
   ApiV1SkillRescanResponseSchema,
   ApiV1SearchResponseSchema,
@@ -23,6 +24,27 @@ import {
 } from "./schemas";
 
 describe("clawhub-schema", () => {
+  it("parses skill hard-delete responses", () => {
+    const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:demo";
+    const response = parseArk(
+      ApiV1SkillHardDeleteResponseSchema,
+      {
+        ok: true,
+        skillId: "skills:demo",
+        slug: "demo",
+        ownerHandle: "openclaw",
+        displayName: "Demo",
+        dryRun: true,
+        scheduled: false,
+        confirmationToken: generated_token_reference,
+      },
+      "Skill hard-delete response",
+    );
+
+    expect(response.ownerHandle).toBe("openclaw");
+    expect(response.scheduled).toBe(false);
+  });
+
   it("parses lockfile records", () => {
     const lock = parseArk(
       LockfileSchema,

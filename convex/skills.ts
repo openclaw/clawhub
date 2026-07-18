@@ -1615,6 +1615,7 @@ type HardDeleteSource = "admin" | "account.delete" | "publisher.delete";
 type HardDeleteScope = {
   source?: HardDeleteSource;
   ownerPublisherId?: Id<"publishers">;
+  reason?: string;
 };
 
 const hardDeleteSourceValidator = v.optional(
@@ -1639,6 +1640,7 @@ async function scheduleHardDelete(
     phase,
     source: scope.source,
     ownerPublisherId: scope.ownerPublisherId,
+    reason: scope.reason,
   });
 }
 
@@ -1916,7 +1918,11 @@ async function hardDeleteSkillStep(
         action: "skill.hard_delete",
         targetType: "skill",
         targetId: skill._id,
-        metadata: { slug: skill.slug },
+        metadata: {
+          slug: skill.slug,
+          source: scope.source ?? "admin",
+          ...(scope.reason ? { reason: scope.reason } : {}),
+        },
         createdAt: now,
       });
       return;
@@ -11925,6 +11931,83 @@ export const hardDelete = mutation({
   },
 });
 
+export const hardDeleteForAdminInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    ownerHandle: v.string(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const slug = normalizeSkillSlugKey(args.slug);
+    const ownerHandle = normalizePublisherHandle(args.ownerHandle);
+    const reason = args.reason.trim();
+    if (!slug) throw new ConvexError("Slug required");
+    if (!ownerHandle) throw new ConvexError("Owner handle required");
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle, {
+      includeSoftDeleted: true,
+    });
+    const skill = resolved.skill;
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const generated_token_reference = `hard-delete-skill:@${ownerHandle}/${skill.slug}:${skill._id}`;
+    const baseResult = {
+      ok: true as const,
+      skillId: skill._id,
+      slug: skill.slug,
+      ownerHandle,
+      displayName: skill.displayName,
+      confirmationToken: generated_token_reference,
+    };
+    const dryRun = args.dryRun !== false;
+    if (dryRun) {
+      return {
+        ...baseResult,
+        dryRun: true,
+        scheduled: false,
+      };
+    }
+
+    if (args.confirmationToken !== generated_token_reference) {
+      throw new ConvexError(`Confirmation token must be "${generated_token_reference}"`);
+    }
+
+    const now = Date.now();
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "skill.hard_delete.requested",
+      targetType: "skill",
+      targetId: skill._id,
+      metadata: {
+        slug: skill.slug,
+        ownerHandle,
+        reason,
+        source: "clawhub-admin",
+      },
+      createdAt: now,
+    });
+    await hardDeleteSkillStep(ctx, skill, args.actorUserId, "versions", {
+      source: "admin",
+      reason,
+    });
+
+    return {
+      ...baseResult,
+      dryRun: false,
+      scheduled: true,
+    };
+  },
+});
+
 export const hardDeleteInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
@@ -11932,6 +12015,7 @@ export const hardDeleteInternal = internalMutation({
     phase: v.optional(v.string()),
     source: hardDeleteSourceValidator,
     ownerPublisherId: v.optional(v.id("publishers")),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
@@ -11965,6 +12049,7 @@ export const hardDeleteInternal = internalMutation({
     await hardDeleteSkillStep(ctx, skill, args.actorUserId, phase, {
       source,
       ownerPublisherId: args.ownerPublisherId,
+      reason: args.reason,
     });
   },
 });

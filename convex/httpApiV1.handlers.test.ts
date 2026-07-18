@@ -7366,6 +7366,86 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe(message);
   });
 
+  it("skill hard-delete dry-runs through the admin-only API", async () => {
+    const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:1";
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        skillId: "skills:1",
+        slug: "demo",
+        ownerHandle: "openclaw",
+        displayName: "Demo",
+        dryRun: true,
+        scheduled: false,
+        confirmationToken: generated_token_reference,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/hard-delete", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          ownerHandle: "openclaw",
+          reason: "Owner-requested cleanup",
+          dryRun: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      dryRun: true,
+      scheduled: false,
+      confirmationToken: generated_token_reference,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .hardDeleteForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        slug: "demo",
+        ownerHandle: "openclaw",
+        reason: "Owner-requested cleanup",
+        dryRun: true,
+      },
+    );
+  });
+
+  it("skill hard-delete forbids non-admin API tokens", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not hard-delete");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/hard-delete", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          ownerHandle: "openclaw",
+          reason: "Owner-requested cleanup",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("skill rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",

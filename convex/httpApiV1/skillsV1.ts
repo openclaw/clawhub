@@ -2,6 +2,7 @@ import {
   ApiRoutes,
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
+  ApiV1SkillHardDeleteRequestSchema,
   ApiV1SkillRepairVtPendingRequestSchema,
   ApiV1SkillScanBatchRequestSchema,
   ApiV1SkillScanBatchStatusRequestSchema,
@@ -353,6 +354,7 @@ const internalRefs = internal as unknown as {
     getSkillBySlugInternal: unknown;
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
+    hardDeleteForAdminInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -3043,6 +3045,38 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     }
   }
 
+  if (segments.length === 2 && action === "hard-delete") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      const payload = parseArk(
+        ApiV1SkillHardDeleteRequestSchema,
+        await request.json(),
+        "Skill hard-delete payload",
+      ) as {
+        ownerHandle: string;
+        reason: string;
+        dryRun?: boolean;
+        confirmationToken?: string;
+      };
+      const result = await runMutationRef(ctx, internalRefs.skills.hardDeleteForAdminInternal, {
+        actorUserId: auth.userId,
+        slug,
+        ownerHandle: payload.ownerHandle,
+        reason: payload.reason,
+        ...(payload.dryRun !== undefined ? { dryRun: payload.dryRun } : {}),
+        ...(payload.confirmationToken ? { confirmationToken: payload.confirmationToken } : {}),
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillHardDeleteErrorToResponse(error, rate.headers);
+    }
+  }
+
   if (
     segments[0] === "-" &&
     segments[1] === "reports" &&
@@ -3279,6 +3313,15 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
 
 function skillVersionModerationErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Skill version moderation failed";
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized")) return text(message, 401, headers);
+  if (lower.includes("forbidden")) return text(message, 403, headers);
+  if (lower.includes("not found")) return text(message, 404, headers);
+  return text(message, 400, headers);
+}
+
+function skillHardDeleteErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : "Skill hard delete failed";
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized")) return text(message, 401, headers);
   if (lower.includes("forbidden")) return text(message, 403, headers);

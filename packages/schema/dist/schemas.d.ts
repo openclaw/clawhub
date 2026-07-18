@@ -502,6 +502,24 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     alreadyQueued: boolean;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+export declare const ApiV1SkillHardDeleteRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ownerHandle: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+    confirmationToken?: string | undefined;
+}, {}>;
+export type ApiV1SkillHardDeleteRequest = (typeof ApiV1SkillHardDeleteRequestSchema)[inferred];
+export declare const ApiV1SkillHardDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    skillId: string;
+    slug: string;
+    ownerHandle: string;
+    displayName: string;
+    dryRun: boolean;
+    scheduled: boolean;
+    confirmationToken: string;
+}, {}>;
+export type ApiV1SkillHardDeleteResponse = (typeof ApiV1SkillHardDeleteResponseSchema)[inferred];
 export declare const ApiV1SkillScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"failed" | "queued" | "running" | "succeeded", {}>;
 export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
 export declare const ApiV1SkillScanSourceSchema: import("arktype/internal/variants/object.ts").ObjectType<{

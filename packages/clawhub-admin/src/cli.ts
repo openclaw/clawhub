@@ -69,6 +69,7 @@ import {
   cmdSetPromotionStatus,
   cmdUpdatePromotion,
 } from "./commands/promotions.js";
+import { cmdHardDeleteSkill } from "./commands/skills.js";
 
 const program = new Command()
   .name("clawhub-admin")
@@ -792,6 +793,20 @@ function registerPluginOperations(command: Command) {
 
 function registerSkillModerationCommands(command: Command) {
   registerFeaturedCommands(command, "skill");
+
+  command
+    .command("hard-delete")
+    .description("Permanently delete one owner-qualified skill and all related history")
+    .argument("<skill>", "Owner-qualified skill ref: @owner/slug")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Schedule deletion; defaults to dry-run")
+    .option("--confirm <token>", "Confirmation token returned by the dry-run")
+    .option("--yes", "Skip confirmation for --apply")
+    .option("--json", "Output JSON")
+    .action(async (skill, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdHardDeleteSkill(opts, skill, options, isInputAllowed());
+    });
 
   command
     .command("revoke-version")
