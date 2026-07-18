@@ -1123,6 +1123,11 @@ describe("plugins publish route", () => {
     expect(screen.getByRole("link", { name: "View plugin" }).getAttribute("href")).toBe(
       "/vintageayu/plugins/demo-plugin",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByText("Publish received. Security checks are running.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
   });
 
   it("shows a canonical submitted modal for an existing plugin uploaded from the generic route", async () => {

@@ -969,8 +969,10 @@ export function PublishPluginRoute() {
                         const hasSubmittedPluginPage =
                           publishResult.hasPluginPage || existingPluginHasPage;
                         if (publishResult.isPending) {
-                          setStatus(null);
-                          if (!hasSubmittedPluginPage) {
+                          if (hasSubmittedPluginPage) {
+                            setStatus("Publish received. Security checks are running.");
+                          } else {
+                            setStatus(null);
                             void navigate({ to: "/dashboard" });
                           }
                         } else {
