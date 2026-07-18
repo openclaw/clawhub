@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getClawHubSiteUrl } from "../lib/site";
+import { getPublicClawHubSiteUrl } from "../lib/site";
 import { cn } from "../lib/utils";
 import { copyText } from "./InstallCopyButton";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -19,9 +19,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dial
 
 export const OPENCLAW_SKILLS_DISCORD_URL =
   "https://discord.com/channels/1456350064065904867/1456891440897724637";
-const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
-const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
-
 type CopyState = "idle" | "copied" | "failed";
 
 type SkillPublishSuccessDialogProps = {
@@ -47,17 +44,6 @@ type SkillPublishSuccessDialogProps = {
   categoryLabel?: string | null;
   onDismiss: () => void;
 };
-
-function getPublicClawHubSiteUrl() {
-  const configured = getClawHubSiteUrl();
-  try {
-    const hostname = new URL(configured).hostname;
-    if (LOCAL_SHARE_HOSTS.has(hostname)) return PUBLIC_CLAWHUB_SITE_URL;
-  } catch {
-    return PUBLIC_CLAWHUB_SITE_URL;
-  }
-  return configured;
-}
 
 function buildAbsoluteSkillUrl(skillPath: string) {
   return new URL(skillPath, getPublicClawHubSiteUrl()).toString();

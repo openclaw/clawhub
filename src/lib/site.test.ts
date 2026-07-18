@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "./site";
+import { getClawHubSiteUrl, getPublicClawHubSiteUrl, normalizeClawHubSiteOrigin } from "./site";
 
 function withServerEnv<T>(values: Record<string, string | undefined>, run: () => T): T {
   const previous = new Map<string, string | undefined>();
@@ -60,6 +60,15 @@ describe("site helpers", () => {
     });
     withServerEnv({ VITE_SITE_URL: "not a url" }, () => {
       expect(getClawHubSiteUrl()).toBe("https://clawhub.ai");
+    });
+  });
+
+  it("keeps shareable URLs public during local development", () => {
+    withServerEnv({ VITE_SITE_URL: "http://localhost:3030" }, () => {
+      expect(getPublicClawHubSiteUrl()).toBe("https://clawhub.ai");
+    });
+    withServerEnv({ VITE_SITE_URL: "https://example.com" }, () => {
+      expect(getPublicClawHubSiteUrl()).toBe("https://example.com");
     });
   });
 });
