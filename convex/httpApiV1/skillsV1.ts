@@ -3165,12 +3165,20 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     if (!parsed.ok) return parsed.response;
     const reason = typeof parsed.payload.reason === "string" ? parsed.payload.reason : "";
     const version = typeof parsed.payload.version === "string" ? parsed.payload.version : undefined;
+    const url = new URL(request.url);
+    const ownerHandle =
+      optionalStringField(parsed.payload, "ownerHandle") ??
+      optionalStringField(parsed.payload, "owner") ??
+      getOwnerHandleParam(url);
+    const skillIdRaw = optionalStringField(parsed.payload, "skillId");
     try {
       const result = await runMutationRef(ctx, internalRefs.skills.reportSkillForUserInternal, {
         actorUserId: auth.userId,
         slug,
         reason,
         ...(version ? { version } : {}),
+        ...(ownerHandle ? { ownerHandle } : {}),
+        ...(skillIdRaw ? { skillId: skillIdRaw as Id<"skills"> } : {}),
       });
       return json(result, 200, rate.headers);
     } catch (error) {

@@ -3519,6 +3519,53 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("skill report forwards owner query/body and skillId for ambiguous slugs", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:reporter",
+      user: { _id: "users:reporter", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        reported: true,
+        alreadyReported: false,
+        reportId: "skillReports:2",
+        skillId: "skills:owner-scoped",
+        reportCount: 1,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/wp-multi-tool/report?owner=kingaiwork",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({
+            reason: "impersonation",
+            ownerHandle: "kingaiwork",
+            skillId: "skills:owner-scoped",
+          }),
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .reportSkillForUserInternal,
+      {
+        actorUserId: "users:reporter",
+        slug: "wp-multi-tool",
+        reason: "impersonation",
+        ownerHandle: "kingaiwork",
+        skillId: "skills:owner-scoped",
+      },
+    );
+  });
+
   it("skill report triage posts moderator decisions", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
