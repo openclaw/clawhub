@@ -18,6 +18,8 @@ const RAW_TEXT_FILE_EXTENSIONS = [
     "ps1",
     "psm1",
     "psd1",
+    "tf",
+    "tfvars",
     "r",
     "rb",
     "go",

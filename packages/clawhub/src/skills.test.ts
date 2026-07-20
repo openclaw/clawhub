@@ -147,6 +147,24 @@ describe("skills", () => {
     expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe("text/plain");
   });
 
+  it("includes Terraform source and variable files", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-terraform-"));
+    await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
+    await writeFile(join(workdir, "main.tf"), "terraform {}", "utf8");
+    await writeFile(join(workdir, "terraform.tfvars"), 'region = "us-west-2"', "utf8");
+
+    const files = await listTextFiles(workdir);
+    expect(files.map((file) => file.relPath).sort()).toEqual([
+      "SKILL.md",
+      "main.tf",
+      "terraform.tfvars",
+    ]);
+    expect(files.find((file) => file.relPath === "main.tf")?.contentType).toBe("text/plain");
+    expect(files.find((file) => file.relPath === "terraform.tfvars")?.contentType).toBe(
+      "text/plain",
+    );
+  });
+
   it("includes tsv and extensionless text files while skipping extensionless binaries", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-extensionless-"));
     await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");

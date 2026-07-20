@@ -6819,7 +6819,7 @@ describe("httpApiV1 handlers", () => {
     expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
-  it("publish multipart succeeds", async () => {
+  it("publish multipart accepts multiple Terraform files", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
@@ -6848,6 +6848,8 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     form.append("files", new Blob(["hello"], { type: "text/plain" }), "SKILL.md");
+    form.append("files", new Blob(["terraform {}"]), "infra/main.tf");
+    form.append("files", new Blob(['region = "us-west-2"']), "infra/terraform.tfvars");
     const response = await __handlers.publishSkillV1Handler(
       makeCtx({ runMutation, storage: { store: vi.fn().mockResolvedValue("storage:1") } }),
       new Request("https://example.com/api/v1/skills", {
@@ -6859,6 +6861,18 @@ describe("httpApiV1 handlers", () => {
     if (response.status !== 200) {
       throw new Error(await response.text());
     }
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "users:1",
+      expect.objectContaining({
+        files: expect.arrayContaining([
+          expect.objectContaining({ path: "SKILL.md" }),
+          expect.objectContaining({ path: "infra/main.tf" }),
+          expect.objectContaining({ path: "infra/terraform.tfvars" }),
+        ]),
+      }),
+      { ownerPublisherId: "publishers:me" },
+    );
   });
 
   it("publish multipart resolves requested owner publisher", async () => {

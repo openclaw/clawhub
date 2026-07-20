@@ -1060,6 +1060,46 @@ description: Security scanner smoke fixture.
     ]);
   });
 
+  it("accepts multiple Terraform files with generic stored content types", async () => {
+    const blobs = new Map([
+      ["_storage:skill", new Blob(["# Demo"], { type: "text/markdown" })],
+      ["_storage:tf", new Blob(["terraform {}"])],
+      ["_storage:tfvars", new Blob(['region = "us-west-2"'])],
+    ]);
+    const storage = {
+      get: vi.fn(async (storageId: string) => blobs.get(storageId) ?? null),
+    };
+
+    const files = await __test.derivePublishFilesFromStorage({ storage } as never, [
+      {
+        path: "SKILL.md",
+        size: 1,
+        storageId: "_storage:skill" as never,
+        sha256: "caller-supplied",
+        contentType: "text/markdown",
+      },
+      {
+        path: "infra/main.tf",
+        size: 1,
+        storageId: "_storage:tf" as never,
+        sha256: "caller-supplied",
+        contentType: "application/octet-stream",
+      },
+      {
+        path: "infra/terraform.tfvars",
+        size: 1,
+        storageId: "_storage:tfvars" as never,
+        sha256: "caller-supplied",
+      },
+    ]);
+
+    expect(files).toEqual([
+      expect.objectContaining({ path: "SKILL.md", contentType: "text/markdown" }),
+      expect.objectContaining({ path: "infra/main.tf", contentType: "text/plain" }),
+      expect.objectContaining({ path: "infra/terraform.tfvars", contentType: "text/plain" }),
+    ]);
+  });
+
   it("rejects oversized stored files even when caller metadata is small", async () => {
     const storage = {
       get: vi.fn(async () => new Blob([new Uint8Array(MAX_PUBLISH_FILE_BYTES + 1)])),

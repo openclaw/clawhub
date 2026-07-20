@@ -39,6 +39,8 @@ describe("uploadUtils", () => {
   it("detects text files via MIME type and extension", () => {
     expect(isTextFile(new File(["x"], "data.bin", { type: "text/plain" }))).toBe(true);
     expect(isTextFile(new File(["x"], "README.md", { type: "" }))).toBe(true);
+    expect(isTextFile(new File(["x"], "infra/main.tf", { type: "" }))).toBe(true);
+    expect(isTextFile(new File(["x"], "infra/terraform.tfvars", { type: "" }))).toBe(true);
     expect(isTextFile(new File(["x"], "image.png", { type: "" }))).toBe(false);
   });
 
