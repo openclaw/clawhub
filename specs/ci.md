@@ -16,6 +16,10 @@ the short non-browser gates into one Blacksmith runner registration. The
 - `types-build` typechecks the app, schema package, and CLI package, then builds
   the app.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
+  GitHub-backed package publish fixtures use bounded retries for network errors,
+  HTTP 408/5xx responses, and server-declared 403/429 rate limits whose retry
+  window fits the five-second CI budget. Longer rate limits and deterministic
+  client errors such as a missing repository fail immediately.
 
 The `static`, `unit`, `packages`, `types-build`, and `e2e-http` jobs are
 hosted-runner compatibility mirrors of `pr-gates` so existing branch protection
@@ -28,10 +32,10 @@ failing command.
   Convex backend with dev auth, then runs the chromium specs under
   `e2e/local-auth/`. Related low-risk specs are grouped so the matrix spends
   fewer Blacksmith runner registrations while keeping publish lifecycle checks
-  isolated for easier failure triage. The account cleanup and moderation/star
-  shards use 8-vCPU runners because their browser flows share the machine with
-  the local Convex backend; the remaining shards use 4-vCPU runners. The matrix
-  keeps `max-parallel: 3` to cap organization-level runner registrations.
+  isolated for easier failure triage. Every shard requests the
+  `blacksmith-16vcpu-ubuntu-2404` runner label and records actual CPU count,
+  load, cgroup CPU statistics, memory pressure, and free memory before and after
+  the test. The matrix runs at most eight shards concurrently.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the

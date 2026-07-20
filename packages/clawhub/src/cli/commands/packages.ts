@@ -62,6 +62,7 @@ import {
   styleText,
 } from "../ui.js";
 import {
+  createGitHubRetryBudget,
   fetchGitHubSource,
   normalizeGitHubRepo,
   resolveLocalGitInfo,
@@ -2225,9 +2226,11 @@ async function preparePackagePublishPlan(
   sourceArg: string,
   options: PackagePublishOptions,
 ): Promise<PackagePublishPlan> {
+  const githubRetryBudget = createGitHubRetryBudget();
   const resolvedSource = await resolveSourceInput(sourceArg, {
     workdir: opts.workdir,
     localWorkdirs: [process.cwd(), opts.workdir],
+    retryBudget: githubRetryBudget,
   });
   const sourceForFetch = applyGitHubSourcePath(resolvedSource, options.sourcePath);
   let folder = sourceForFetch.kind === "local" ? sourceForFetch.path : "";
@@ -2248,7 +2251,7 @@ async function preparePackagePublishPlan(
       ? null
       : createCrabLoader(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
     try {
-      const fetched = await fetchGitHubSource(sourceForFetch);
+      const fetched = await fetchGitHubSource(sourceForFetch, githubRetryBudget);
       folder = fetched.dir;
       cleanup = fetched.cleanup;
       inferredSource = fetched.source;
