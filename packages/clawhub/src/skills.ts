@@ -92,7 +92,9 @@ export async function listSkillFiles(root: string) {
 }
 
 /** @deprecated Use listSkillFiles. */
-export const listTextFiles = listSkillFiles;
+export async function listTextFiles(root: string) {
+  return await listSkillFiles(root);
+}
 
 type SkillFileHash = { path: string; sha256: string; size: number };
 
