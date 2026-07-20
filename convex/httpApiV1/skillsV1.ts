@@ -67,8 +67,9 @@ import {
   getPathSegments,
   json,
   parseJsonPayload,
-  parseMultipartPublish,
+  parseMultipartPublishForm,
   parsePublishBody,
+  parseStagedBundlePublish,
   publicApiOrigin,
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
@@ -2558,6 +2559,22 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   return text("Not found", 404, rate.headers);
 }
 
+// Mint a one-shot upload URL + ticket for staging a large skill bundle in
+// Convex storage. The CLI PUTs the bundle zip to the returned uploadUrl, then
+// references it from POST /api/v1/skills via bundleStorageId + bundleUploadTicket.
+export async function publishSkillUploadUrlV1Handler(ctx: ActionCtx, request: Request) {
+  const rate = await applyRateLimit(ctx, request, "write");
+  if (!rate.ok) return rate.response;
+
+  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+  if (!auth.ok) return auth.response;
+
+  const upload = await ctx.runMutation(internal.uploads.createSkillPublishUploadForUserInternal, {
+    userId: auth.userId,
+  });
+  return json(upload, 200, rate.headers);
+}
+
 export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "write");
   if (!rate.ok) return rate.response;
@@ -2578,7 +2595,8 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
     }
 
     if (contentType.includes("multipart/form-data")) {
-      const payload = await parseMultipartPublish(ctx, request);
+      const form = await request.formData();
+      const payload = await parseSkillPublishForm(ctx, auth.userId, form);
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
         return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
       }
@@ -2591,6 +2609,44 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
   }
 
   return text("Unsupported content type", 415, rate.headers);
+}
+
+// Route a multipart skill publish to either the inline path (individual `files`
+// parts) or the staged path (a single `bundle` zip staged in storage via an
+// upload ticket, referenced by `bundleStorageId` + `bundleUploadTicket`). The
+// staged path exists so large bundles avoid the ~4.5MB edge multipart body cap:
+// the bytes are PUT straight to Convex storage, and this request only carries
+// the small JSON payload plus the reference fields.
+async function parseSkillPublishForm(ctx: ActionCtx, userId: Id<"users">, form: FormData) {
+  const bundleStorageIdRaw = form.get("bundleStorageId");
+  const bundleTicketRaw = form.get("bundleUploadTicket");
+  const hasBundleRef = typeof bundleStorageIdRaw === "string" && bundleStorageIdRaw.length > 0;
+  const hasBundleTicket = typeof bundleTicketRaw === "string" && bundleTicketRaw.length > 0;
+
+  if (hasBundleRef || hasBundleTicket) {
+    if (!hasBundleRef || !hasBundleTicket) {
+      throw new Error("Staged skill bundle requires both bundleStorageId and bundleUploadTicket");
+    }
+    if (form.getAll("files").some((entry) => typeof entry !== "string")) {
+      throw new Error("Upload either a staged skill bundle or individual files, not both");
+    }
+    const payloadRaw = form.get("payload");
+    if (typeof payloadRaw !== "string" || payloadRaw.length === 0) {
+      throw new Error("Missing payload");
+    }
+    const storageId = bundleStorageIdRaw as Id<"_storage">;
+    await ctx.runMutation(internal.uploads.consumeSkillPublishUploadTicketInternal, {
+      uploadTicket: bundleTicketRaw as Id<"skillPublishUploadTickets">,
+      storageId,
+      userId,
+    });
+    const bundleBlob = await ctx.storage.get(storageId);
+    if (!bundleBlob) throw new Error("Staged skill bundle no longer exists");
+    const bundleBytes = new Uint8Array(await bundleBlob.arrayBuffer());
+    return parseStagedBundlePublish(ctx, { payloadRaw, bundleBytes });
+  }
+
+  return parseMultipartPublishForm(ctx, form);
 }
 
 async function publishSkillPayloadForApiUser(

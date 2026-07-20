@@ -6,6 +6,7 @@
 
 - Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.
 - Web/API: make default skill and plugin discovery freshness-aware, add seven-day trending views for both catalogs, and use verified status plus usage as search tie-breakers within direct matches.
+- CLI/API: publish large skill bundles via a staged upload. `clawhub publish` now zips and stages bundles that exceed the inline multipart limit (~4MB) through `POST /api/v1/skills/-/upload-url`, then publishes by reference — fixing the edge `413 Request Entity Too Large` that previously blocked large skills. Small bundles keep the inline multipart path unchanged.
 
 ### Fixes
 

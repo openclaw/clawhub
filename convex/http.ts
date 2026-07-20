@@ -31,6 +31,7 @@ import {
   pluginsGetRouterV1Http,
   createPublisherV1Http,
   publishPackageV1Http,
+  publishSkillUploadUrlV1Http,
   publishSkillV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
@@ -208,6 +209,12 @@ http.route({
   path: ApiRoutes.skills,
   method: "POST",
   handler: publishSkillV1Http,
+});
+
+http.route({
+  path: ApiRoutes.skillsUploadUrl,
+  method: "POST",
+  handler: publishSkillUploadUrlV1Http,
 });
 
 http.route({
