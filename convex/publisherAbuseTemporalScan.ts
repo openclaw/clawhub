@@ -2,7 +2,8 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { internalAction, internalMutation, internalQuery } from "./functions";
+import { action, internalAction, internalMutation, internalQuery } from "./functions";
+import { assertModerator, requireUserFromAction } from "./lib/access";
 import { toDayKey } from "./lib/leaderboards";
 import {
   classifySkillTemporalAbuseScore,
@@ -85,18 +86,32 @@ function isActiveScheduledTemporalRun(run: TemporalScanRun, now: number) {
   return run.status === "running" && now - run.startedAt < TEMPORAL_SCAN_RETENTION_MS;
 }
 
-export async function getOrStartScheduledTemporalScanInternalHandler(ctx: MutationCtx) {
+export async function getOrStartScheduledTemporalScanInternalHandler(
+  ctx: MutationCtx,
+  args: { trigger?: "cron" | "manual"; actorUserId?: Id<"users"> },
+) {
   const now = Date.now();
-  const existing = await ctx.db
+  const currentPipeline = await ctx.db
     .query("publisherAbuseScoreRuns")
-    .withIndex("by_model_version_and_status_and_trigger_and_updated_at", (q) =>
-      q
-        .eq("modelVersion", PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION)
-        .eq("status", "running")
-        .eq("trigger", "cron"),
+    .withIndex("by_temporal_pipeline_kind_and_status_and_updated_at", (q) =>
+      q.eq("temporalPipelineKind", "signals").eq("status", "running"),
     )
     .order("desc")
     .first();
+  const legacyCronPipeline = currentPipeline
+    ? null
+    : await ctx.db
+        .query("publisherAbuseScoreRuns")
+        .withIndex("by_model_version_and_status_and_trigger_and_updated_at", (q) =>
+          q
+            .eq("modelVersion", PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION)
+            .eq("status", "running")
+            .eq("trigger", "cron"),
+        )
+        .order("desc")
+        .first();
+  const existing =
+    currentPipeline ?? (legacyCronPipeline?.temporalPipelinePhase ? legacyCronPipeline : null);
   if (
     existing?.temporalPipelinePhase &&
     existing.temporalPipelinePhase !== "completed" &&
@@ -114,7 +129,9 @@ export async function getOrStartScheduledTemporalScanInternalHandler(ctx: Mutati
   const runId = await ctx.db.insert("publisherAbuseScoreRuns", {
     modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
     modelConfig: DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
-    trigger: "cron",
+    trigger: args.trigger ?? "cron",
+    ...(args.actorUserId ? { actorUserId: args.actorUserId } : {}),
+    temporalPipelineKind: "signals",
     status: "running",
     phase: "collecting",
     startedAt: now,
@@ -141,7 +158,10 @@ export async function getOrStartScheduledTemporalScanInternalHandler(ctx: Mutati
 }
 
 export const getOrStartScheduledTemporalScanInternal = internalMutation({
-  args: {},
+  args: {
+    trigger: v.optional(v.union(v.literal("cron"), v.literal("manual"))),
+    actorUserId: v.optional(v.id("users")),
+  },
   handler: getOrStartScheduledTemporalScanInternalHandler,
 });
 
@@ -521,6 +541,7 @@ type ScheduledTemporalScanResult =
       runId: Id<"publisherAbuseScoreRuns">;
       completed: false;
       phase: Exclude<TemporalScanRun["temporalPipelinePhase"], "completed">;
+      alreadyRunning?: true;
     };
 
 async function runScheduledTemporalPublisherAbuseScanStep(
@@ -679,14 +700,44 @@ async function runScheduledTemporalPublisherAbuseScanStep(
 
 export async function runScheduledTemporalPublisherAbuseScanInternalHandler(
   ctx: ActionCtx,
-  args: { runId?: Id<"publisherAbuseScoreRuns"> },
+  args: {
+    runId?: Id<"publisherAbuseScoreRuns">;
+    trigger?: "cron" | "manual";
+    actorUserId?: Id<"users">;
+  },
 ): Promise<ScheduledTemporalScanResult> {
-  const start: { runId: Id<"publisherAbuseScoreRuns"> } = args.runId
+  const start: { runId: Id<"publisherAbuseScoreRuns">; resumed?: boolean } = args.runId
     ? { runId: args.runId }
     : await ctx.runMutation(
         internal.publisherAbuseTemporalScan.getOrStartScheduledTemporalScanInternal,
-        {},
+        {
+          ...(args.trigger ? { trigger: args.trigger } : {}),
+          ...(args.actorUserId ? { actorUserId: args.actorUserId } : {}),
+        },
       );
+  if (start.resumed) {
+    const run: TemporalScanRun = await ctx.runQuery(
+      internal.publisherAbuseTemporalScan.getScheduledTemporalScanStateInternal,
+      { runId: start.runId },
+    );
+    if (run.status === "failed") {
+      throw new Error(run.errorMessage ?? "Signal scan failed before it could be resumed.");
+    }
+    if (
+      run.status === "completed" ||
+      !run.temporalPipelinePhase ||
+      run.temporalPipelinePhase === "completed"
+    ) {
+      return { ok: true, runId: run._id, completed: true };
+    }
+    return {
+      ok: true,
+      runId: run._id,
+      completed: false,
+      phase: run.temporalPipelinePhase,
+      alreadyRunning: true,
+    };
+  }
   try {
     return await runScheduledTemporalPublisherAbuseScanStep(ctx, start.runId);
   } catch (error) {
@@ -707,8 +758,28 @@ export async function runScheduledTemporalPublisherAbuseScanInternalHandler(
 }
 
 export const runScheduledTemporalPublisherAbuseScanInternal = internalAction({
-  args: { runId: v.optional(v.id("publisherAbuseScoreRuns")) },
+  args: {
+    runId: v.optional(v.id("publisherAbuseScoreRuns")),
+    trigger: v.optional(v.union(v.literal("cron"), v.literal("manual"))),
+    actorUserId: v.optional(v.id("users")),
+  },
   handler: runScheduledTemporalPublisherAbuseScanInternalHandler,
+});
+
+export async function startPublisherAbuseSignalScanHandler(
+  ctx: ActionCtx,
+): Promise<ScheduledTemporalScanResult> {
+  const { userId, user } = await requireUserFromAction(ctx);
+  assertModerator(user);
+  return await runScheduledTemporalPublisherAbuseScanInternalHandler(ctx, {
+    trigger: "manual",
+    actorUserId: userId,
+  });
+}
+
+export const startPublisherAbuseSignalScan = action({
+  args: {},
+  handler: startPublisherAbuseSignalScanHandler,
 });
 
 export async function pruneExpiredTemporalScanRowsInternalHandler(

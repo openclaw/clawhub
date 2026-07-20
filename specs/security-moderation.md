@@ -69,6 +69,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   resumes through percentile and classification phases. Temporary scan rows
   expire after seven days. A scheduled scan step that fails validation or throws
   must persist a terminal failed state instead of leaving a resumable running run.
+  Moderators can start this same full signal pipeline from the staff Signals tab.
+  New manual starts record the actor; requests made while a temporal scan is
+  already active return that run without starting a competing worker.
   Explicitly bounded manual scans remain diagnostic-only.
   The `review` label remains a calibration/manual-review signal. The
   `potential_ban_candidate` label is an

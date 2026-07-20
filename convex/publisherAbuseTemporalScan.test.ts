@@ -1,7 +1,8 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { assertModerator, requireUserFromAction } from "./lib/access";
 import {
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
@@ -10,14 +11,21 @@ import {
 import type { TemporalSkillCandidate } from "./publisherAbuse";
 import {
   advanceScheduledTemporalCandidatesInternalHandler,
+  getOrStartScheduledTemporalScanInternalHandler,
   markScheduledTemporalScanFailedInternalHandler,
   percentileIndex,
   pruneExpiredTemporalScanRowsInternalHandler,
   runScheduledTemporalPublisherAbuseScanInternalHandler,
+  startPublisherAbuseSignalScanHandler,
   storeScheduledTemporalScanPageInternalHandler,
   temporalBenchmarkFromRun,
   valueAtGlobalIndex,
 } from "./publisherAbuseTemporalScan";
+
+vi.mock("./lib/access", () => ({
+  assertModerator: vi.fn(),
+  requireUserFromAction: vi.fn(),
+}));
 
 function temporalScore(overrides: Partial<SkillTemporalAbuseScore> = {}): SkillTemporalAbuseScore {
   return {
@@ -83,6 +91,7 @@ function temporalRun(
     potentialBanCandidateCount: 0,
     sumLogPressure: 0,
     sumSquaredLogPressure: 0,
+    temporalPipelineKind: "signals",
     temporalMode: "current",
     temporalScanComplete: false,
     temporalPipelinePhase: "collecting",
@@ -96,6 +105,211 @@ function temporalRun(
 }
 
 describe("scheduled temporal publisher abuse scan", () => {
+  it("starts every signal check as a moderator-audited manual scan", async () => {
+    const runId = "publisherAbuseScoreRuns:manual-signals" as Id<"publisherAbuseScoreRuns">;
+    const actorUserId = "users:moderator" as Id<"users">;
+    vi.mocked(requireUserFromAction).mockResolvedValue({
+      userId: actorUserId,
+      user: { _id: actorUserId, role: "moderator" },
+    } as never);
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ runId, resumed: false })
+      .mockResolvedValueOnce({ applied: true });
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(temporalRun({ _id: runId, trigger: "manual", actorUserId }))
+      .mockResolvedValueOnce({
+        benchmarkScores: [],
+        candidates: [],
+        cursor: "next-page",
+        isDone: false,
+        scannedSkills: 0,
+      });
+    const scheduler = { runAfter: vi.fn(async () => null) };
+
+    await expect(
+      startPublisherAbuseSignalScanHandler({
+        runMutation,
+        runQuery,
+        scheduler,
+      } as unknown as ActionCtx),
+    ).resolves.toEqual({
+      ok: true,
+      runId,
+      completed: false,
+      phase: "collecting",
+    });
+
+    expect(assertModerator).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: actorUserId, role: "moderator" }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
+      trigger: "manual",
+      actorUserId,
+    });
+  });
+
+  it("does not start signal checks for non-moderators", async () => {
+    const actorUserId = "users:viewer" as Id<"users">;
+    vi.mocked(requireUserFromAction).mockResolvedValue({
+      userId: actorUserId,
+      user: { _id: actorUserId, role: "user" },
+    } as never);
+    vi.mocked(assertModerator).mockImplementationOnce(() => {
+      throw new Error("Forbidden");
+    });
+    const runMutation = vi.fn();
+
+    await expect(
+      startPublisherAbuseSignalScanHandler({ runMutation } as unknown as ActionCtx),
+    ).rejects.toThrow("Forbidden");
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("records the moderator on a new manual signal scan", async () => {
+    const actorUserId = "users:moderator" as Id<"users">;
+    const runId = "publisherAbuseScoreRuns:manual-signals" as Id<"publisherAbuseScoreRuns">;
+    const constraints: Record<string, unknown> = {};
+    const q = {
+      eq(field: string, value: unknown) {
+        constraints[field] = value;
+        return q;
+      },
+    };
+    const insert = vi.fn(async () => runId);
+    let queryCount = 0;
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn((indexName: string, build: (builder: typeof q) => unknown) => {
+            queryCount += 1;
+            if (queryCount === 1) {
+              expect(indexName).toBe("by_temporal_pipeline_kind_and_status_and_updated_at");
+              build(q);
+            } else {
+              expect(indexName).toBe("by_model_version_and_status_and_trigger_and_updated_at");
+            }
+            return {
+              order: vi.fn(() => ({ first: vi.fn(async () => null) })),
+            };
+          }),
+        })),
+        insert,
+      },
+    };
+
+    await expect(
+      getOrStartScheduledTemporalScanInternalHandler(ctx as unknown as MutationCtx, {
+        trigger: "manual",
+        actorUserId,
+      }),
+    ).resolves.toEqual({ runId, resumed: false });
+
+    expect(constraints).toEqual({
+      temporalPipelineKind: "signals",
+      status: "running",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns",
+      expect.objectContaining({
+        trigger: "manual",
+        actorUserId,
+        temporalPipelineKind: "signals",
+      }),
+    );
+  });
+
+  it("does not take over an active cron scan when a moderator requests a rescan", async () => {
+    const actorUserId = "users:moderator" as Id<"users">;
+    const existing = temporalRun({ trigger: "cron", actorUserId: undefined });
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({ first: vi.fn(async () => existing) })),
+          })),
+        })),
+        patch,
+      },
+    };
+
+    await expect(
+      getOrStartScheduledTemporalScanInternalHandler(ctx as unknown as MutationCtx, {
+        trigger: "manual",
+        actorUserId,
+      }),
+    ).resolves.toEqual({ runId: existing._id, resumed: true });
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not launch a second worker for an already-running signal scan", async () => {
+    const existing = temporalRun({ trigger: "cron" });
+    const runMutation = vi.fn(async () => ({ runId: existing._id, resumed: true }));
+    const runQuery = vi.fn(async () => existing);
+    const scheduler = { runAfter: vi.fn(async () => null) };
+
+    await expect(
+      runScheduledTemporalPublisherAbuseScanInternalHandler(
+        { runMutation, runQuery, scheduler } as unknown as ActionCtx,
+        { trigger: "manual", actorUserId: "users:moderator" as Id<"users"> },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      runId: existing._id,
+      completed: false,
+      phase: "collecting",
+      alreadyRunning: true,
+    });
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runQuery).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("reports an active scan that failed before the rescan state check", async () => {
+    const failed = temporalRun({
+      status: "failed",
+      errorMessage: "source page failed",
+    });
+    const runMutation = vi.fn().mockResolvedValueOnce({ runId: failed._id, resumed: true });
+    const runQuery = vi.fn(async () => failed);
+    const scheduler = { runAfter: vi.fn(async () => null) };
+
+    await expect(
+      runScheduledTemporalPublisherAbuseScanInternalHandler(
+        { runMutation, runQuery, scheduler } as unknown as ActionCtx,
+        { trigger: "manual", actorUserId: "users:moderator" as Id<"users"> },
+      ),
+    ).rejects.toThrow("source page failed");
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("does not fail an active scan when its read-only state check errors", async () => {
+    const existing = temporalRun();
+    const runMutation = vi.fn(async () => ({ runId: existing._id, resumed: true }));
+    const runQuery = vi.fn(async () => {
+      throw new Error("transient state read failure");
+    });
+
+    await expect(
+      runScheduledTemporalPublisherAbuseScanInternalHandler(
+        {
+          runMutation,
+          runQuery,
+          scheduler: { runAfter: vi.fn(async () => null) },
+        } as unknown as ActionCtx,
+        { trigger: "manual", actorUserId: "users:moderator" as Id<"users"> },
+      ),
+    ).rejects.toThrow("transient state read failure");
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("uses nearest-rank percentile indexes across bounded pages", () => {
     expect(percentileIndex(100, 0.5)).toBe(49);
     expect(percentileIndex(100, 0.95)).toBe(94);

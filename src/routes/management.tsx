@@ -287,6 +287,9 @@ export function Management() {
   const dismissPublisherAbuseSignal = useMutation(api.publisherAbuse.dismissPublisherAbuseSignal);
   const reopenPublisherAbuseSignal = useMutation(api.publisherAbuse.reopenPublisherAbuseSignal);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
+  const startPublisherAbuseSignalScan = useAction(
+    api.publisherAbuseTemporalScan.startPublisherAbuseSignalScan,
+  );
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState<Id<"users"> | "">("");
@@ -869,6 +872,25 @@ export function Management() {
               }
             }}
             onRefresh={() => {
+              if (publisherAbuseTab === "signals") {
+                setConfirmRequest({
+                  title: "Rescan publisher abuse signals?",
+                  body: "Re-checks every active skill for all download/install signal types and refreshes the Signals tab. This can take a while.",
+                  confirmLabel: "Run signal scan",
+                  onConfirm: () => {
+                    void startPublisherAbuseSignalScan({})
+                      .then((result) =>
+                        toast.success(
+                          "alreadyRunning" in result && result.alreadyRunning
+                            ? "Signal scan is already running."
+                            : "Signal scan started.",
+                        ),
+                      )
+                      .catch((error) => toast.error(formatMutationError(error)));
+                  },
+                });
+                return;
+              }
               setConfirmRequest({
                 title: "Run a new abuse scan?",
                 body: "Re-scores every publisher in the catalog against the latest model. This normally runs automatically every few days; a manual run can take a while.",

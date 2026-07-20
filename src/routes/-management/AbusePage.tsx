@@ -293,9 +293,11 @@ export function AbusePage({
           <div className="pa-rescan">
             <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
               <RefreshCcw size={14} />
-              Run new scan
+              {tab === "signals" ? "Rescan signals" : "Run new scan"}
             </Button>
-            <span className="pa-rescan-hint">Re-scores every publisher</span>
+            <span className="pa-rescan-hint">
+              {tab === "signals" ? "Re-checks every active skill" : "Re-scores every publisher"}
+            </span>
           </div>
           <div className="pa-autoban" aria-label="Publisher abuse auto-ban">
             <span className={autobanEnabled ? "pa-autoban-status is-on" : "pa-autoban-status"}>

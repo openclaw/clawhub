@@ -2772,6 +2772,7 @@ const publisherAbuseScoreRuns = defineTable({
   sumSquaredLogPressure: v.number(),
   meanLogPressure: v.optional(v.number()),
   stdDevLogPressure: v.optional(v.number()),
+  temporalPipelineKind: v.optional(v.literal("signals")),
   temporalMode: v.optional(v.union(v.literal("current"), v.literal("backfill"))),
   temporalScanComplete: v.optional(v.boolean()),
   temporalPipelinePhase: v.optional(
@@ -2822,6 +2823,11 @@ const publisherAbuseScoreRuns = defineTable({
     "modelVersion",
     "status",
     "trigger",
+    "updatedAt",
+  ])
+  .index("by_temporal_pipeline_kind_and_status_and_updated_at", [
+    "temporalPipelineKind",
+    "status",
     "updatedAt",
   ])
   .index("by_model_status_phase_temporal_complete_started_at", [

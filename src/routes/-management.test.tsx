@@ -994,6 +994,36 @@ describe("Management", () => {
     });
   });
 
+  it("runs every signal check from the Signals tab rescan control", async () => {
+    searchState = { view: "abuse", tab: "signals" };
+    const startScoreScan = vi.fn();
+    const startSignalScan = vi.fn(async () => ({
+      ok: true,
+      runId: "publisherAbuseScoreRuns:signals",
+      completed: false,
+      phase: "collecting",
+    }));
+    useActionMock.mockImplementation((action) => {
+      const name = getFunctionName(action);
+      if (name === "publisherAbuse:startPublisherAbuseScoreRun") return startScoreScan;
+      if (name === "publisherAbuseTemporalScan:startPublisherAbuseSignalScan") {
+        return startSignalScan;
+      }
+      return vi.fn();
+    });
+
+    render(<Management />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Rescan signals" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run signal scan" }));
+
+    await waitFor(() => {
+      expect(startSignalScan).toHaveBeenCalledWith({});
+    });
+    expect(startScoreScan).not.toHaveBeenCalled();
+    expect(screen.getByText("Re-checks every active skill")).toBeTruthy();
+  });
+
   it("shows users as a separate management view", () => {
     searchState = { view: "users" };
 
