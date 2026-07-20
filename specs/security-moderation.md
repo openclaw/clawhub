@@ -311,7 +311,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Convex emits the narrowly typed `clawhub-security-scan`
   `repository_dispatch` event using the production GitHub App. Event-driven
   dispatch stays disabled until that installation is verified to have Contents
-  write permission.
+  write permission. GitHub Actions concurrency is scoped per worker shard so a
+  delayed runner allocation cannot block every shard; each shard still keeps at
+  most one running and one pending drain wave.
 - Queue source priority is `manual`, `backfill`, `publish`, `vt-update`, then
   `bulk-rescan`. A later VirusTotal update may make a waiting publish job
   claimable immediately, but it must not demote that job from publish priority.

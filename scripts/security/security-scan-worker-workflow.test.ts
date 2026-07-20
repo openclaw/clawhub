@@ -32,8 +32,16 @@ describe("security-scan-codex workflow", () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/security-scan-codex.yml", "utf8"),
     ) as {
+      concurrency?: {
+        "cancel-in-progress"?: boolean;
+        group?: string;
+      };
       jobs: {
         "codex-security-scan": {
+          concurrency?: {
+            "cancel-in-progress"?: boolean;
+            group?: string;
+          };
           env?: Record<string, unknown>;
           steps: WorkflowStep[];
           strategy?: {
@@ -81,6 +89,11 @@ describe("security-scan-codex workflow", () => {
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);
     expect(workflow.on?.schedule).toBeUndefined();
+    expect(workflow.concurrency).toBeUndefined();
+    expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
+      group: "clawhub-security-scan-${{ matrix.shard }}",
+      "cancel-in-progress": false,
+    });
     expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(10);
     expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.include).toEqual([
       { lane: "priority", shard: "priority-0" },

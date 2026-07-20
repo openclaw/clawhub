@@ -24,16 +24,15 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: clawhub-security-scan
-  cancel-in-progress: false
-
 jobs:
   codex-security-scan:
     name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
     runs-on: blacksmith-16vcpu-ubuntu-2404
     timeout-minutes: 40
     environment: Production
+    concurrency:
+      group: clawhub-security-scan-${{ matrix.shard }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       max-parallel: 10
