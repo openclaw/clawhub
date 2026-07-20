@@ -1,21 +1,15 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, open, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 import ignore from "ignore";
 import mime from "mime";
-import {
-  type Lockfile,
-  LockfileSchema,
-  parseArk,
-  TEXT_FILE_EXTENSION_SET,
-} from "./schema/index.js";
+import { type Lockfile, LockfileSchema, parseArk } from "./schema/index.js";
 
 const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
-const TEXT_SAMPLE_BYTES = 4096;
 
 export type SkillOrigin = {
   version: 1;
@@ -70,7 +64,7 @@ export async function extractGitHubZipPathToDir(
   }
 }
 
-export async function listTextFiles(root: string) {
+export async function listSkillFiles(root: string) {
   const files: Array<{ relPath: string; bytes: Uint8Array; contentType?: string }> = [];
   const absRoot = resolve(root);
   const ig = ignore();
@@ -84,11 +78,8 @@ export async function listTextFiles(root: string) {
     if (!relPath) return;
     if (ig.ignores(relPath)) return;
     if (hasDotPathSegment(relPath)) return;
-    const ext = getFileExtension(relPath);
-    if (ext && !TEXT_FILE_EXTENSION_SET.has(ext)) return;
-    if (!ext && !(await isLikelyTextFile(absPath))) return;
     const buffer = await readFile(absPath);
-    const contentType = mime.getType(relPath) ?? "text/plain";
+    const contentType = mime.getType(relPath) ?? "application/octet-stream";
     files.push({ relPath, bytes: new Uint8Array(buffer), contentType });
   });
   return files;
@@ -125,9 +116,6 @@ export function hashSkillZip(zipBytes: Uint8Array) {
       const safePath = sanitizeZipPath(rawPath);
       if (!safePath) return null;
       if (hasDotPathSegment(safePath)) return null;
-      const ext = getFileExtension(safePath);
-      if (ext && !TEXT_FILE_EXTENSION_SET.has(ext)) return null;
-      if (!ext && !isLikelyTextBytes(bytes)) return null;
       return { path: safePath, sha256: sha256Hex(bytes), size: bytes.byteLength };
     })
     .filter(Boolean) as SkillFileHash[];
@@ -198,36 +186,8 @@ function normalizePath(path: string) {
     .replace(/^\.\/+/, "");
 }
 
-function getFileExtension(path: string) {
-  const name = path.split("/").at(-1) ?? path;
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
-}
-
 function hasDotPathSegment(path: string) {
   return path.split("/").some((segment) => segment.startsWith("."));
-}
-
-async function isLikelyTextFile(path: string) {
-  const handle = await open(path, "r");
-  try {
-    const sample = new Uint8Array(TEXT_SAMPLE_BYTES);
-    const { bytesRead } = await handle.read(sample, 0, sample.byteLength, 0);
-    return isLikelyTextBytes(sample.subarray(0, bytesRead));
-  } finally {
-    await handle.close();
-  }
-}
-
-function isLikelyTextBytes(bytes: Uint8Array) {
-  const sample = bytes.slice(0, TEXT_SAMPLE_BYTES);
-  if (sample.includes(0)) return false;
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(sample);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function sanitizeRelPath(path: string) {

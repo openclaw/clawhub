@@ -13,7 +13,7 @@ import {
   detectGitHubImportCandidates,
   fetchGitHubZipBytes,
   isGitHubSkillFilePath,
-  listTextFilesUnderCandidate,
+  listFilesUnderCandidate,
   normalizeRepoPath,
   parseGitHubImportUrl,
   resolveGitHubCommit,
@@ -22,7 +22,7 @@ import {
   suggestVersion,
 } from "./lib/githubImport";
 import { publishVersionForUser } from "./lib/skillPublish";
-import { isMacJunkPath, isTextFile, sanitizePath } from "./lib/skills";
+import { isMacJunkPath, sanitizePath } from "./lib/skills";
 
 const MAX_SELECTED_BYTES = 50 * 1024 * 1024;
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
@@ -183,7 +183,7 @@ async function previewGitHubImportCandidateForUser(
   const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
   if (!candidate) throw new ConvexError("Candidate not found");
 
-  const files = listTextFilesUnderCandidate(entries, candidate.path);
+  const files = listFilesUnderCandidate(entries, candidate.path);
   const defaultSelectedPaths = computeDefaultSelectedPaths({ candidate, files });
   const fileList = buildGitHubImportFileList({
     candidate,
@@ -291,7 +291,7 @@ async function importGitHubSkillForUser(
   const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
   if (!candidate) throw new ConvexError("Candidate not found");
 
-  const filesUnderCandidate = listTextFilesUnderCandidate(entries, candidate.path);
+  const filesUnderCandidate = listFilesUnderCandidate(entries, candidate.path);
   const byPath = new Map(filesUnderCandidate.map((file) => [file.path, file.bytes]));
 
   const selected = Array.from(
@@ -332,7 +332,9 @@ async function importGitHubSkillForUser(
     const safeBytes = new Uint8Array(bytes);
     let storageId: Id<"_storage">;
     try {
-      storageId = await ctx.storage.store(new Blob([safeBytes], { type: "text/plain" }));
+      storageId = await ctx.storage.store(
+        new Blob([safeBytes], { type: "application/octet-stream" }),
+      );
     } catch (error) {
       throw new ConvexError(buildStoreFailureMessage(sanitized, bytes.byteLength, error));
     }
@@ -341,7 +343,7 @@ async function importGitHubSkillForUser(
       size: bytes.byteLength,
       storageId,
       sha256,
-      contentType: "text/plain",
+      contentType: "application/octet-stream",
     });
   }
 
@@ -737,7 +739,6 @@ function toImportableTreeBlob(entry: GitHubTreeEntryPayload, prefix: string) {
   const path = normalizeRepoPath(entry.path);
   if (!path || !path.startsWith(prefix)) return null;
   if (isMacJunkPath(path)) return null;
-  if (!isPreviewFetchableTextPath(path)) return null;
   const size = typeof entry.size === "number" && Number.isFinite(entry.size) ? entry.size : 0;
   return { path, sha: entry.sha, size };
 }
@@ -752,10 +753,6 @@ async function fetchGitHubBlobBytes(
   const response = await fetchGitHubApi(url, fetcher, "application/vnd.github.raw");
   if (!response.ok) throwGitHubApiError(response.status);
   return new Uint8Array(await response.arrayBuffer());
-}
-
-function isPreviewFetchableTextPath(path: string) {
-  return isTextFile(path);
 }
 
 async function fetchGitHubRepoTree(
@@ -993,7 +990,6 @@ export const __test = {
   buildPublishFailureMessage,
   buildStoreFailureMessage,
   importGitHubSkillForUser,
-  isPreviewFetchableTextPath,
   listOwnedPublicGitHubReposForUser,
   listSkillCandidatesForRepo,
   previewGitHubImportCandidateForUser,

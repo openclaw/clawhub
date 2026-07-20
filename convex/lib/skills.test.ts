@@ -5,7 +5,6 @@ import {
   getFrontmatterValue,
   hashSkillFiles,
   isMacJunkPath,
-  isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
   sanitizePath,
@@ -143,14 +142,6 @@ describe("skills utils", () => {
     expect(sanitizePath("/rooted.txt")).toBe("rooted.txt");
     expect(sanitizePath("bad\\path.txt")).toBeNull();
     expect(sanitizePath("")).toBeNull();
-  });
-
-  it("detects text files", () => {
-    expect(isTextFile("SKILL.md")).toBe(true);
-    expect(isTextFile("image.png")).toBe(false);
-    expect(isTextFile("note.txt", "text/plain")).toBe(true);
-    expect(isTextFile("data.any", "application/json")).toBe(true);
-    expect(isTextFile("data.json")).toBe(true);
   });
 
   it("detects mac junk paths", () => {

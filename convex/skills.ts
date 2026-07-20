@@ -1,11 +1,12 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import {
+  decodeUtf8Text,
   getCatalogTopicSlugs,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
-  normalizeTextContentType,
+  normalizeContentType,
   resolveSkillCategories,
   resolveStoredSkillCategories,
   type SkillCategorySlug,
@@ -183,6 +184,13 @@ type FileTextResult = {
   text: string;
   size: number;
   sha256: string;
+};
+type FilePreviewResult = {
+  path: string;
+  text: string | null;
+  size: number;
+  sha256: string;
+  downloadUrl: string;
 };
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -2239,7 +2247,7 @@ function toPublicSkillVersion(
       path: file.path,
       size: file.size,
       sha256: file.sha256,
-      contentType: normalizeTextContentType(file.path, file.contentType),
+      contentType: normalizeContentType(file.contentType),
     })),
     parsed: version.parsed
       ? {
@@ -2309,7 +2317,7 @@ function toPublicSkillCardFile(file: Doc<"skillVersions">["files"][number]) {
     path: file.path,
     size: file.size,
     sha256: file.sha256,
-    contentType: normalizeTextContentType(file.path, file.contentType),
+    contentType: normalizeContentType(file.contentType),
   };
 }
 
@@ -10171,6 +10179,43 @@ export const getFileText: ReturnType<typeof action> = action({
 
     const text = await fetchText(ctx, file.storageId);
     return { path: file.path, text, size: file.size, sha256: file.sha256 };
+  },
+});
+
+export const getFilePreview: ReturnType<typeof action> = action({
+  args: { versionId: v.id("skillVersions"), path: v.string() },
+  handler: async (ctx, args): Promise<FilePreviewResult> => {
+    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+      versionId: args.versionId,
+    })) as Doc<"skillVersions"> | null;
+    if (!version) throw new ConvexError("Version not found");
+    if (!(await canReadSkillVersionFiles(ctx, version))) {
+      throw new ConvexError("Version not available");
+    }
+
+    const normalizedPath = args.path.trim();
+    const normalizedLower = normalizedPath.toLowerCase();
+    const file =
+      version.files.find((entry) => entry.path === normalizedPath) ??
+      version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
+    if (!file) throw new ConvexError("File not found");
+
+    const downloadUrl = await ctx.storage.getUrl(file.storageId);
+    if (!downloadUrl) throw new ConvexError("File missing in storage");
+    if (file.size > MAX_DIFF_FILE_BYTES) {
+      return {
+        path: file.path,
+        text: null,
+        size: file.size,
+        sha256: file.sha256,
+        downloadUrl,
+      };
+    }
+
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) throw new ConvexError("File missing in storage");
+    const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
+    return { path: file.path, text, size: file.size, sha256: file.sha256, downloadUrl };
   },
 });
 

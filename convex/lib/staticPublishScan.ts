@@ -1,7 +1,9 @@
+import { decodeUtf8Text } from "clawhub-schema";
 import type { ActionCtx } from "../_generated/server";
 import { runStaticModerationScan, type StaticScanResult } from "./moderationEngine";
-import { readStorageText } from "./packageRegistry";
-import { isTextFile } from "./skills";
+
+const MAX_STATIC_SCAN_TEXT_FILES = 200;
+const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
 
 type PublishFile = {
   path: string;
@@ -25,8 +27,13 @@ export async function runStaticPublishScan(
 ): Promise<StaticScanResult> {
   const fileContents: Array<{ path: string; content: string }> = [];
   for (const file of input.files) {
-    if (!isTextFile(file.path, file.contentType ?? undefined)) continue;
-    const content = await readStorageText(ctx, file.storageId);
+    if (fileContents.length >= MAX_STATIC_SCAN_TEXT_FILES) break;
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) throw new Error(`File missing in storage: ${file.path}`);
+    if (blob.size > MAX_STATIC_SCAN_TEXT_FILE_BYTES) continue;
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const content = decodeUtf8Text(bytes);
+    if (content === null) continue;
     fileContents.push({ path: file.path, content });
   }
 

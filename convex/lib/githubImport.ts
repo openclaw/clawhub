@@ -1,4 +1,3 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
 import { zipSync } from "fflate";
 import semver from "semver";
 import { parseFrontmatter } from "./skills";
@@ -279,7 +278,7 @@ function uniqCandidates(candidates: GitHubImportCandidate[]) {
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function listTextFilesUnderCandidate(
+export function listFilesUnderCandidate(
   entries: ZipEntryMap,
   candidatePath: string,
 ): Array<{ path: string; bytes: Uint8Array }> {
@@ -288,7 +287,6 @@ export function listTextFilesUnderCandidate(
   for (const [path, bytes] of Object.entries(entries)) {
     const normalized = normalizeRepoPath(path);
     if (!isUnderRoot(normalized, root)) continue;
-    if (!isTextPath(normalized)) continue;
     out.push({ path: normalized, bytes });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
@@ -381,13 +379,6 @@ export function normalizeCandidateRoot(candidatePath: string) {
 function isUnderRoot(path: string, rootWithSlash: string) {
   if (!rootWithSlash) return true;
   return path === rootWithSlash.slice(0, -1) || path.startsWith(rootWithSlash);
-}
-
-function isTextPath(path: string) {
-  const lower = path.toLowerCase();
-  const ext = lower.split(".").at(-1) ?? "";
-  if (!ext) return false;
-  return TEXT_FILE_EXTENSION_SET.has(ext);
 }
 
 export function suggestDisplayName(candidate: GitHubImportCandidate, fallbackBase: string) {

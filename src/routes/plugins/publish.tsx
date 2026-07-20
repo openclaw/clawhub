@@ -426,9 +426,7 @@ export function PublishPluginRoute() {
   }, [readmeAssetReport, sourceRepo, sourceCommit, sourcePath]);
 
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
-    const expanded = await expandFilesWithReport(selected, {
-      includeBinaryArchiveFiles: true,
-    });
+    const expanded = await expandFilesWithReport(selected);
     const filtered = await filterIgnoredPackageFiles(expanded.files);
     const normalized = normalizePackageUploadFiles(filtered.files);
     const nextIgnoredPaths = [

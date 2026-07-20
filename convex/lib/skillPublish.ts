@@ -1,7 +1,8 @@
 import {
+  decodeUtf8Text,
   normalizeCatalogTopics,
+  normalizeContentType,
   normalizeSkillCategories,
-  normalizeTextContentType,
   resolveSkillCategories,
 } from "clawhub-schema";
 import { ConvexError } from "convex/values";
@@ -34,7 +35,6 @@ import {
   getFrontmatterValue,
   hashSkillFiles,
   isMacJunkPath,
-  isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
   sanitizePath,
@@ -46,6 +46,7 @@ import { runStaticPublishScan } from "./staticPublishScan";
 import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
+const MAX_ANALYZED_FILE_BYTES = 256 * 1024;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -253,7 +254,7 @@ async function publishVersionForUserInternal(
   const sanitizedFiles = args.files.map((file) => ({
     ...file,
     path: sanitizePath(file.path),
-    contentType: normalizeTextContentType(file.path, file.contentType),
+    contentType: normalizeContentType(file.contentType),
   }));
   if (sanitizedFiles.some((file) => !file.path)) {
     throw new ConvexError("Invalid file paths");
@@ -366,8 +367,8 @@ async function publishVersionForUserInternal(
   ];
   for (const file of publishFiles) {
     if (!file.path || file.storageId === readmeFile.storageId) continue;
-    if (!isTextFile(file.path, file.contentType ?? undefined)) continue;
-    const content = await fetchText(ctx, file.storageId);
+    const content = await fetchPreviewText(ctx, file.storageId);
+    if (content === null) continue;
     fileContents.push({ path: file.path, content });
   }
 
@@ -713,13 +714,9 @@ async function prepareSkillInsertArgsForFinalization(
   const otherFiles: Array<{ path: string; content: string }> = [];
   for (const file of files) {
     if (file === readmeFile || typeof file.path !== "string") continue;
-    if (
-      !isTextFile(file.path, typeof file.contentType === "string" ? file.contentType : undefined)
-    ) {
-      continue;
-    }
     if (!file.storageId || typeof file.storageId !== "string") continue;
-    const content = await fetchText(ctx, file.storageId as Id<"_storage">);
+    const content = await fetchPreviewText(ctx, file.storageId as Id<"_storage">);
+    if (content === null) continue;
     otherFiles.push({ path: file.path, content });
     if (otherFiles.length >= MAX_FILES_FOR_EMBEDDING) break;
   }
@@ -957,7 +954,20 @@ export async function fetchText(
 ) {
   const blob = await ctx.storage.get(storageId);
   if (!blob) throw new Error("File missing in storage");
-  return blob.text();
+  const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
+  if (text === null) throw new Error("File is not valid UTF-8 text");
+  return text;
+}
+
+async function fetchPreviewText(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  storageId: Id<"_storage">,
+) {
+  const blob = await ctx.storage.get(storageId);
+  if (!blob) throw new Error("File missing in storage");
+  if (blob.size > MAX_ANALYZED_FILE_BYTES) return null;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return decodeUtf8Text(bytes);
 }
 
 async function loadPublishFileBlobs(
@@ -968,8 +978,8 @@ async function loadPublishFileBlobs(
   for (const file of files) {
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) throw new ConvexError("File missing in storage");
-    const storedContentType = blob.type || file.contentType;
-    const contentType = normalizeTextContentType(file.path, storedContentType) ?? storedContentType;
+    const storedContentType = blob.type || file.contentType || "application/octet-stream";
+    const contentType = normalizeContentType(storedContentType);
     filesWithBlobs.push({
       blob,
       file: {
@@ -988,13 +998,6 @@ async function derivePublishFilesFromStorage(
 ) {
   const publishFileBlobs = await loadPublishFileBlobs(ctx, files);
   const publishFilesWithStorageMetadata = publishFileBlobs.map(({ file }) => file);
-  if (
-    publishFilesWithStorageMetadata.some(
-      (file) => !isTextFile(file.path, file.contentType ?? undefined),
-    )
-  ) {
-    throw new ConvexError("Only text-based files are allowed");
-  }
 
   const oversizedFile = findOversizedPublishFile(publishFilesWithStorageMetadata);
   if (oversizedFile) {

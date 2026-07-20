@@ -67,7 +67,7 @@ const mockHashSkillFiles = vi.fn((files: Array<{ relPath: string; bytes: Uint8Ar
 }));
 const mockReadSkillOrigin = vi.fn(async (_folder?: string): Promise<SkillOrigin | null> => null);
 vi.mock("../../skills.js", () => ({
-  listTextFiles: (folder: string) => mockListTextFiles(folder),
+  listSkillFiles: (folder: string) => mockListTextFiles(folder),
   hashSkillFiles: (files: Array<{ relPath: string; bytes: Uint8Array }>) =>
     mockHashSkillFiles(files),
   readSkillOrigin: (folder: string) => mockReadSkillOrigin(folder),

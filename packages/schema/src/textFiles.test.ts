@@ -2,56 +2,25 @@
 
 import { describe, expect, it } from "vitest";
 import * as schema from ".";
-import {
-  guessTextContentType,
-  isTextContentType,
-  normalizeTextContentType,
-  TEXT_FILE_EXTENSION_SET,
-} from "./textFiles";
+import { decodeUtf8Text, normalizeContentType } from "./textFiles";
 
 describe("clawhub-schema textFiles", () => {
-  it("exports text-file extension set", () => {
-    expect(TEXT_FILE_EXTENSION_SET.has("md")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("r")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("ps1")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("psm1")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("psd1")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("tsv")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("conf")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("properties")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("dat")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("exe")).toBe(false);
-  });
-
-  it("detects text content types with parameters", () => {
-    expect(isTextContentType("text/plain; charset=utf-8")).toBe(true);
-    expect(isTextContentType("application/json; charset=utf-8")).toBe(true);
-    expect(isTextContentType("application/octet-stream")).toBe(false);
-  });
-
-  it("guesses canonical content types for text files", () => {
-    expect(guessTextContentType("src/index.ts")).toBe("application/typescript");
-    expect(guessTextContentType("README.md")).toBe("text/markdown");
-    expect(guessTextContentType("data/table.csv")).toBe("text/csv");
-    expect(guessTextContentType("data/table.tsv")).toBe("text/tab-separated-values");
-    expect(guessTextContentType("analysis/model.R")).toBe("text/plain");
-    expect(guessTextContentType("scripts/setup.ps1")).toBe("text/plain");
-    expect(guessTextContentType("image.png")).toBeUndefined();
-  });
-
-  it("normalizes misleading MIME types for text files", () => {
-    expect(normalizeTextContentType("src/index.ts", "video/mp2t")).toBe("application/typescript");
-    expect(normalizeTextContentType("README.md", "text/markdown; charset=utf-8")).toBe(
-      "text/markdown",
+  it("detects UTF-8 text from bytes instead of file extensions", () => {
+    expect(decodeUtf8Text(new TextEncoder().encode('resource "null_resource" "demo" {}'))).toBe(
+      'resource "null_resource" "demo" {}',
     );
-    expect(normalizeTextContentType("image.png", "image/png")).toBe("image/png");
+    expect(decodeUtf8Text(Uint8Array.from([0, 1, 2, 255]))).toBeNull();
+    expect(decodeUtf8Text(Uint8Array.from([0xc3, 0x28]))).toBeNull();
+  });
+
+  it("normalizes supplied MIME types without consulting file extensions", () => {
+    expect(normalizeContentType("video/mp2t")).toBe("video/mp2t");
+    expect(normalizeContentType("text/markdown; charset=utf-8")).toBe("text/markdown");
+    expect(normalizeContentType("image/png")).toBe("image/png");
   });
 
   it("re-exports helpers from index", () => {
-    expect(typeof schema.isTextContentType).toBe("function");
-    expect(schema.isTextContentType("application/markdown")).toBe(true);
-    expect(schema.normalizeTextContentType("src/index.ts", "video/mp2t")).toBe(
-      "application/typescript",
-    );
+    expect(schema.normalizeContentType("video/mp2t")).toBe("video/mp2t");
+    expect(schema.decodeUtf8Text(new TextEncoder().encode("hello"))).toBe("hello");
   });
 });

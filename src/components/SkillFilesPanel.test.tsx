@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillFilesPanel } from "./SkillFilesPanel";
 
-const getFileTextMock = vi.fn();
+const getFilePreviewMock = vi.fn();
 
 vi.mock("convex/react", () => ({
-  useAction: () => getFileTextMock,
+  useAction: () => getFilePreviewMock,
 }));
 
 type SkillFile = Doc<"skillVersions">["files"][number];
@@ -17,11 +17,12 @@ function makeFile(path: string, size: number): SkillFile {
 
 describe("SkillFilesPanel", () => {
   beforeEach(() => {
-    getFileTextMock.mockReset();
-    getFileTextMock.mockResolvedValue({
+    getFilePreviewMock.mockReset();
+    getFilePreviewMock.mockResolvedValue({
       text: "",
       size: 0,
       sha256: "0".repeat(64),
+      downloadUrl: "https://example.com/empty.txt",
     });
   });
 
@@ -30,10 +31,11 @@ describe("SkillFilesPanel", () => {
   });
 
   it("caches loaded files and avoids duplicate fetches", async () => {
-    getFileTextMock.mockResolvedValue({
+    getFilePreviewMock.mockResolvedValue({
       text: "echo hello",
       size: 10,
       sha256: "a".repeat(64),
+      downloadUrl: "https://example.com/run.sh",
     });
 
     render(
@@ -51,14 +53,19 @@ describe("SkillFilesPanel", () => {
     fireEvent.click(fileButton);
 
     await waitFor(() => {
-      expect(getFileTextMock).toHaveBeenCalledTimes(1);
+      expect(getFilePreviewMock).toHaveBeenCalledTimes(1);
     });
   });
 
   it("shows a loading skeleton while fetching uncached file content", () => {
-    getFileTextMock.mockImplementation(
+    getFilePreviewMock.mockImplementation(
       () =>
-        new Promise<{ text: string; size: number; sha256: string }>(() => {
+        new Promise<{
+          text: string | null;
+          size: number;
+          sha256: string;
+          downloadUrl: string;
+        }>(() => {
           /* never resolves */
         }),
     );
@@ -78,10 +85,11 @@ describe("SkillFilesPanel", () => {
   });
 
   it("clears the loading min-height after file content resolves", async () => {
-    getFileTextMock.mockResolvedValue({
+    getFilePreviewMock.mockResolvedValue({
       text: "echo hello",
       size: 10,
       sha256: "a".repeat(64),
+      downloadUrl: "https://example.com/run.sh",
     });
 
     const { container } = render(
@@ -114,15 +122,47 @@ describe("SkillFilesPanel", () => {
     expect(container.querySelector("pre.file-viewer-code")?.textContent).toBe("");
   });
 
+  it("offers opaque files as download-only and caches the result", async () => {
+    getFilePreviewMock.mockResolvedValue({
+      text: null,
+      size: 4,
+      sha256: "d".repeat(64),
+      downloadUrl: "https://example.com/payload.bin",
+    });
+
+    render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        latestFiles={[makeFile("assets/payload.bin", 4)]}
+      />,
+    );
+
+    const fileButton = screen.getByRole("button", { name: /assets\/payload\.bin/i });
+    fireEvent.click(fileButton);
+
+    await screen.findByText(/available to download but cannot be previewed as text/i);
+    expect(screen.getByRole("link", { name: "Download payload.bin" }).getAttribute("href")).toBe(
+      "https://example.com/payload.bin",
+    );
+
+    fireEvent.click(fileButton);
+    expect(getFilePreviewMock).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores stale responses when newer file selection is active", async () => {
     const resolvers: Record<
       string,
-      (value: { text: string; size: number; sha256: string }) => void
+      (value: { text: string | null; size: number; sha256: string; downloadUrl: string }) => void
     > = {};
 
-    getFileTextMock.mockImplementation(
+    getFilePreviewMock.mockImplementation(
       ({ path }: { path: string }) =>
-        new Promise<{ text: string; size: number; sha256: string }>((resolve) => {
+        new Promise<{
+          text: string | null;
+          size: number;
+          sha256: string;
+          downloadUrl: string;
+        }>((resolve) => {
           resolvers[path] = resolve;
         }),
     );
@@ -138,8 +178,18 @@ describe("SkillFilesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to file list" }));
     fireEvent.click(screen.getByRole("button", { name: /b\.txt/i }));
 
-    resolvers["a.txt"]({ text: "alpha", size: 5, sha256: "b".repeat(64) });
-    resolvers["b.txt"]({ text: "beta", size: 6, sha256: "c".repeat(64) });
+    resolvers["a.txt"]({
+      text: "alpha",
+      size: 5,
+      sha256: "b".repeat(64),
+      downloadUrl: "https://example.com/a.txt",
+    });
+    resolvers["b.txt"]({
+      text: "beta",
+      size: 6,
+      sha256: "c".repeat(64),
+      downloadUrl: "https://example.com/b.txt",
+    });
 
     await screen.findByText("beta");
     expect(screen.queryByText("alpha")).toBeNull();

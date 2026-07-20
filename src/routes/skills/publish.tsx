@@ -5,7 +5,7 @@ import {
   PLATFORM_SKILL_LICENSE_NAME,
   PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema/licenseConstants";
-import { normalizeTextContentType } from "clawhub-schema/textFiles";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Check,
@@ -54,14 +54,7 @@ import {
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
-import {
-  formatBytes,
-  formatPublishError,
-  hashFile,
-  isTextFile,
-  readText,
-  uploadFile,
-} from "../upload/-utils";
+import { formatBytes, formatPublishError, hashFile, readText, uploadFile } from "../upload/-utils";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
@@ -226,10 +219,6 @@ export function Upload() {
         const rightRank = requiredFileSortRank(right.path);
         return leftRank === rightRank ? left.index - right.index : leftRank - rightRank;
       }),
-    [normalizedFileEntries],
-  );
-  const unsupportedFileEntries = useMemo(
-    () => normalizedFileEntries.filter((entry) => !isTextFile(entry.file)),
     [normalizedFileEntries],
   );
   const hasRequiredFile = useMemo(
@@ -499,14 +488,6 @@ export function Upload() {
         `Confirm the ownership move from @${existingOwnerHandle} to @${ownerHandle} to publish.`,
       );
     }
-    if (unsupportedFileEntries.length > 0) {
-      issues.push(
-        `Remove unsupported files: ${unsupportedFileEntries
-          .slice(0, 3)
-          .map((entry) => entry.path)
-          .join(", ")}${unsupportedFileEntries.length > 3 ? ", ..." : ""}`,
-      );
-    }
     if (oversizedFiles.length > 0) {
       issues.push(`Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`);
     }
@@ -530,7 +511,6 @@ export function Upload() {
     parsedTags.length,
     acceptedLicenseTerms,
     files,
-    unsupportedFileEntries,
     hasRequiredFile,
     totalBytes,
     oversizedFiles.length,
@@ -585,7 +565,6 @@ export function Upload() {
   const visibleFileIssues = validation.issues.filter((issue) => {
     if (issue.startsWith("Add at least one file")) return hasAttempted;
     if (issue === REQUIRED_FILE_ISSUE) return false;
-    if (issue.startsWith("Remove unsupported files")) return shouldShowFileIssues;
     if (issue.startsWith("Each file")) return shouldShowFileIssues;
     if (issue.startsWith("Total file size")) return shouldShowFileIssues;
     return false;
@@ -674,12 +653,6 @@ export function Upload() {
     resetFileInput();
   }
 
-  function removeUnsupportedFiles() {
-    setFiles((current) => current.filter((file) => isTextFile(file)));
-    setPendingFileRemovalIndex(null);
-    resetFileInput();
-  }
-
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setHasAttempted(true);
@@ -744,7 +717,7 @@ export function Upload() {
           size: file.size,
           storageId,
           sha256,
-          contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
+          contentType: normalizeContentType(file.type) ?? file.type ?? undefined,
         });
       }
 
@@ -902,26 +875,9 @@ export function Upload() {
                         {files.length} files · {sizeLabel}
                       </span>
                     </div>
-                    {unsupportedFileEntries.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        <Badge variant="warning" size="sm">
-                          {unsupportedFileEntries.length} unsupported
-                        </Badge>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-4 md:justify-end">
-                  {unsupportedFileEntries.length > 0 ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      onClick={removeUnsupportedFiles}
-                    >
-                      Remove unsupported
-                    </Button>
-                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"
@@ -951,25 +907,16 @@ export function Upload() {
                       </Badge>
                     </div>
                   ) : null}
-                  {visibleFileEntries.map(({ file, index, path }) => {
-                    const isUnsupported = !isTextFile(file);
+                  {visibleFileEntries.map(({ index, path }) => {
                     const isConfirmingRemoval = pendingFileRemovalIndex === index;
                     return (
                       <div
                         key={`${index}:${path}`}
-                        className={[
-                          "flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm bg-[color:var(--surface-muted)]",
-                          isUnsupported ? "text-status-error-fg" : "text-[color:var(--ink-soft)]",
-                        ].join(" ")}
+                        className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-sm text-[color:var(--ink-soft)]"
                       >
                         <span className="min-w-0 flex-1 truncate font-mono" title={path}>
                           {path}
                         </span>
-                        {isUnsupported ? (
-                          <Badge variant="warning" size="sm">
-                            Unsupported
-                          </Badge>
-                        ) : null}
                         {isConfirmingRemoval ? (
                           <div className="flex shrink-0 items-center gap-1">
                             <span className="text-xs font-medium text-status-error-fg">
@@ -1019,16 +966,7 @@ export function Upload() {
                     <div className="flex flex-col gap-1">
                       {ignoredLocalMetadataNote ? <p>{ignoredLocalMetadataNote}</p> : null}
                       {visibleFileIssues.map((issue) => (
-                        <p
-                          key={issue}
-                          className={
-                            issue.startsWith("Remove unsupported files")
-                              ? "text-status-error-fg"
-                              : undefined
-                          }
-                        >
-                          {issue}
-                        </p>
+                        <p key={issue}>{issue}</p>
                       ))}
                     </div>
                   </div>

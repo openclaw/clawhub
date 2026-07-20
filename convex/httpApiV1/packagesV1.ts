@@ -64,7 +64,7 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
-import { isMacJunkPath, isTextFile } from "../lib/skills";
+import { isMacJunkPath } from "../lib/skills";
 import {
   buildDeterministicPackageZip,
   buildMergedExportZip,
@@ -82,7 +82,7 @@ import {
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
-  safeTextFileResponse,
+  safeStoredFileResponse,
   softDeleteErrorToResponse,
   ambiguousSkillSlugResponse,
   type AmbiguousSkillSlugChoice,
@@ -1273,7 +1273,6 @@ function inferStoredPackageContentType(path: string) {
   if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
     return "text/javascript; charset=utf-8";
   }
-  if (isTextFile(path)) return "text/plain; charset=utf-8";
   return "application/octet-stream";
 }
 
@@ -4044,14 +4043,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       if (!file) return text("File not found", 404, rate.headers);
       if (!("storageId" in file) || !file.storageId)
         return text("File not found", 404, rate.headers);
-      if (!isTextFile(file.path, file.contentType)) {
-        return text("Binary files are not served inline", 415, rate.headers);
-      }
       if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
       const blob = await ctx.storage.get(file.storageId);
       if (!blob) return text("File not found", 404, rate.headers);
-      return safeTextFileResponse({
-        textContent: await blob.text(),
+      return await safeStoredFileResponse({
+        blob,
         path: file.path,
         contentType: file.contentType,
         sha256: file.sha256,
@@ -4065,15 +4061,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
     const file = resolvePackageFilePath(release, path);
     if (!file) return text("File not found", 404, rate.headers);
-    if (!isTextFile(file.path, file.contentType)) {
-      return text("Binary files are not served inline", 415, rate.headers);
-    }
     if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File not found", 404, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    return await safeStoredFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType,
       sha256: file.sha256,

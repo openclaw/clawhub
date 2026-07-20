@@ -1,3 +1,4 @@
+import { decodeUtf8Text } from "clawhub-schema";
 import { ConvexError, v } from "convex/values";
 import { unzipSync, type UnzipFileInfo } from "fflate";
 import { internal } from "./_generated/api";
@@ -27,7 +28,7 @@ import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { requirePublisherRole } from "./lib/publishers";
-import { isMacJunkPath, isTextFile, parseFrontmatter } from "./lib/skills";
+import { isMacJunkPath, parseFrontmatter } from "./lib/skills";
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
@@ -1298,10 +1299,12 @@ function listGitHubSkillTextContents(entries: Record<string, Uint8Array>, folder
   const textFiles = [];
   for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
     if (textFiles.length >= MAX_STATIC_SCAN_TEXT_FILES) break;
-    if (!isTextFile(path, undefined)) continue;
+    if (bytes.byteLength > MAX_STATIC_SCAN_TEXT_FILE_BYTES) continue;
+    const content = decodeUtf8Text(bytes);
+    if (content === null) continue;
     textFiles.push({
       path,
-      content: new TextDecoder().decode(bytes.slice(0, MAX_STATIC_SCAN_TEXT_FILE_BYTES)),
+      content,
     });
   }
   return textFiles;

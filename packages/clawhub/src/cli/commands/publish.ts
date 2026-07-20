@@ -8,7 +8,7 @@ import {
   ApiV1SkillResolveResponseSchema,
   ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
-import { hashSkillFiles, listTextFiles } from "../../skills.js";
+import { hashSkillFiles, listSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
@@ -189,7 +189,9 @@ export async function cmdPublish(
     for (const file of filesOnDisk) {
       index += 1;
       if (spinner) spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
-      const blob = new Blob([Buffer.from(file.bytes)], { type: file.contentType ?? "text/plain" });
+      const blob = new Blob([Buffer.from(file.bytes)], {
+        type: file.contentType ?? "application/octet-stream",
+      });
       form.append("files", blob, file.relPath);
     }
 
@@ -298,17 +300,17 @@ function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPub
 
 export async function prepareSkillFilesForPublish(folder: string) {
   return stripGeneratedSkillCards(
-    await ensureRootManifestFile(folder, await listTextFiles(folder)),
+    await ensureRootManifestFile(folder, await listSkillFiles(folder)),
   );
 }
 
-function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {
+function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listSkillFiles>>) {
   return files.filter((file) => file.relPath.trim().toLowerCase() !== "skill-card.md");
 }
 
 async function ensureRootManifestFile(
   folder: string,
-  files: Awaited<ReturnType<typeof listTextFiles>>,
+  files: Awaited<ReturnType<typeof listSkillFiles>>,
 ) {
   if (
     files.some((file) => {

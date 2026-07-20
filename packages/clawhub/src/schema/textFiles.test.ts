@@ -2,30 +2,16 @@
 
 import { describe, expect, it } from "vitest";
 import * as schema from ".";
-import { isTextContentType, TEXT_FILE_EXTENSION_SET } from "./textFiles";
+import { decodeUtf8Text, normalizeContentType } from "./textFiles";
 
 describe("packages/clawhub schema textFiles", () => {
-  it("exports text-file extension set", () => {
-    expect(TEXT_FILE_EXTENSION_SET.has("md")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("r")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("ps1")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("psm1")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("psd1")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("tsv")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("conf")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("properties")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("dat")).toBe(true);
-    expect(TEXT_FILE_EXTENSION_SET.has("exe")).toBe(false);
-  });
-
-  it("detects text content types with parameters", () => {
-    expect(isTextContentType("text/plain; charset=utf-8")).toBe(true);
-    expect(isTextContentType("application/json; charset=utf-8")).toBe(true);
-    expect(isTextContentType("application/octet-stream")).toBe(false);
-  });
-
   it("re-exports helpers from index", () => {
-    expect(typeof schema.isTextContentType).toBe("function");
-    expect(schema.isTextContentType("application/markdown")).toBe(true);
+    expect(schema.normalizeContentType("text/markdown; charset=utf-8")).toBe("text/markdown");
+  });
+
+  it("detects previewable UTF-8 bytes without an extension allowlist", () => {
+    expect(decodeUtf8Text(new TextEncoder().encode("main.tf"))).toBe("main.tf");
+    expect(decodeUtf8Text(Uint8Array.from([0, 1, 2, 255]))).toBeNull();
+    expect(normalizeContentType("")).toBeUndefined();
   });
 });

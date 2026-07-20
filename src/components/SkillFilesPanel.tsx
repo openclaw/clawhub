@@ -1,5 +1,5 @@
 import { useAction } from "convex/react";
-import { ArrowLeft, FileText, Fingerprint, Folder } from "lucide-react";
+import { ArrowLeft, Download, FileText, Fingerprint, Folder } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
@@ -111,16 +111,19 @@ function FileViewerSkeleton() {
 }
 
 export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
-  const getFileText = useAction(api.skills.getFileText);
+  const getFilePreview = useAction(api.skills.getFilePreview);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileMeta, setFileMeta] = useState<{ size: number; sha256: string } | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const isMounted = useRef(true);
   const requestId = useRef(0);
   const fileListRef = useRef<HTMLDivElement>(null);
-  const fileCache = useRef(new Map<string, { text: string; size: number; sha256: string }>());
+  const fileCache = useRef(
+    new Map<string, { text: string | null; size: number; sha256: string; downloadUrl: string }>(),
+  );
   const [viewerMinHeight, setViewerMinHeight] = useState<number | undefined>();
   const { preRef, isWrapped, canWrap, toggleWrap } = useCodeWrapToggle(fileContent ?? "");
 
@@ -141,6 +144,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     setSelectedPath(null);
     setFileContent(null);
     setFileMeta(null);
+    setDownloadUrl(null);
     setFileError(null);
     setIsLoading(false);
     setViewerMinHeight(undefined);
@@ -151,7 +155,8 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const handleSelect = useCallback(
     (path: string) => {
       if (!versionId) return;
-      if (selectedPath === path && (isLoading || fileContent !== null)) return;
+      if (selectedPath === path && (isLoading || fileContent !== null || downloadUrl !== null))
+        return;
       const cacheKey = `${versionId}:${path}`;
       const cached = fileCache.current.get(cacheKey);
 
@@ -163,6 +168,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
         setViewerMinHeight(undefined);
         setFileContent(cached.text);
         setFileMeta({ size: cached.size, sha256: cached.sha256 });
+        setDownloadUrl(cached.downloadUrl);
         setIsLoading(false);
         return;
       }
@@ -172,14 +178,16 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
       }
       setFileContent(null);
       setFileMeta(null);
+      setDownloadUrl(null);
       setIsLoading(true);
-      void getFileText({ versionId, path })
+      void getFilePreview({ versionId, path })
         .then((data) => {
           if (!isMounted.current) return;
           if (requestId.current !== current) return;
           fileCache.current.set(cacheKey, data);
           setFileContent(data.text);
           setFileMeta({ size: data.size, sha256: data.sha256 });
+          setDownloadUrl(data.downloadUrl);
           setIsLoading(false);
           setViewerMinHeight(undefined);
         })
@@ -191,7 +199,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
           setViewerMinHeight(undefined);
         });
     },
-    [fileContent, getFileText, isLoading, selectedPath, versionId],
+    [downloadUrl, fileContent, getFilePreview, isLoading, selectedPath, versionId],
   );
 
   const handleBack = () => {
@@ -199,6 +207,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     setSelectedPath(null);
     setFileContent(null);
     setFileMeta(null);
+    setDownloadUrl(null);
     setFileError(null);
     setIsLoading(false);
     setViewerMinHeight(undefined);
@@ -273,6 +282,17 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
                 ) : null}
               </div>
               <div className="file-viewer-header-end">
+                {downloadUrl ? (
+                  <a
+                    className="file-viewer-download"
+                    href={downloadUrl}
+                    download={selectedFileName}
+                    aria-label={`Download ${selectedFileName}`}
+                    title={`Download ${selectedFileName}`}
+                  >
+                    <Download size={15} aria-hidden="true" />
+                  </a>
+                ) : null}
                 {canWrap ? (
                   <span className="markdown-code-block-actions">
                     <CodeWrapToggleButton isWrapped={isWrapped} onToggle={toggleWrap} />
@@ -291,6 +311,13 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
                 <pre ref={preRef} className="file-viewer-code" data-wrap={isWrapped}>
                   {fileContent}
                 </pre>
+              ) : downloadUrl ? (
+                <div className="file-viewer-empty">
+                  <Download className="file-viewer-empty-icon" size={22} aria-hidden="true" />
+                  <p className="file-viewer-empty-text">
+                    This file is available to download but cannot be previewed as text.
+                  </p>
+                </div>
               ) : null}
             </div>
             {isViewerLoading ? (

@@ -316,15 +316,22 @@ describe("cmdPublish", () => {
     }
   });
 
-  it("publishes SKILL.md from disk (mocked HTTP)", async () => {
+  it("publishes Terraform and opaque files with exact bytes (mocked HTTP)", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "my-skill");
+      const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
       await mkdir(folder, { recursive: true });
+      await mkdir(join(folder, "assets"), { recursive: true });
       const skillContent = "# Skill\n\nHello\n";
       const notesContent = "notes\n";
+      const terraformContent = 'resource "null_resource" "demo" {}\n';
+      const variablesContent = 'region = "us-east-1"\n';
       await writeFile(join(folder, "SKILL.md"), skillContent, "utf8");
       await writeFile(join(folder, "notes.md"), notesContent, "utf8");
+      await writeFile(join(folder, "main.tf"), terraformContent, "utf8");
+      await writeFile(join(folder, "terraform.tfvars"), variablesContent, "utf8");
+      await writeFile(join(folder, "assets", "payload.bin"), opaqueBytes);
 
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
@@ -363,7 +370,21 @@ describe("cmdPublish", () => {
       expect(payload.categories).toEqual(["automation", "development"]);
       expect(payload.topics).toEqual(["React", "GPU development"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
-      expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+      expect(files.map((file) => file.name ?? "").sort()).toEqual([
+        "SKILL.md",
+        "assets/payload.bin",
+        "main.tf",
+        "notes.md",
+        "terraform.tfvars",
+      ]);
+      const byName = new Map(files.map((file) => [file.name ?? "", file]));
+      expect(await byName.get("main.tf")?.text()).toBe(terraformContent);
+      expect(await byName.get("terraform.tfvars")?.text()).toBe(variablesContent);
+      expect(
+        new Uint8Array(
+          (await byName.get("assets/payload.bin")?.arrayBuffer()) ?? new ArrayBuffer(0),
+        ),
+      ).toEqual(opaqueBytes);
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

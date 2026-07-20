@@ -11,7 +11,7 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
-  normalizeTextContentType,
+  normalizeContentType,
   parseArk,
   type SkillAppealListStatus,
   type SkillReportListStatus,
@@ -73,6 +73,7 @@ import {
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
+  safeStoredFileResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
   text,
@@ -821,7 +822,7 @@ function sourceFilesForVerify(
     path: file.path,
     size: file.size,
     sha256: file.sha256,
-    contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+    contentType: normalizeContentType(file.contentType) ?? null,
   }));
 }
 
@@ -2142,7 +2143,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             path: file.path,
             size: file.size,
             sha256: file.sha256,
-            contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+            contentType: normalizeContentType(file.contentType) ?? null,
           })),
           security: security ?? undefined,
         },
@@ -2544,9 +2545,8 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    return await safeStoredFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType ?? undefined,
       sha256: file.sha256,

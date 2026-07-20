@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, relative, resolve, sep } from "node:path";
+import { decodeUtf8Text } from "clawhub-schema";
 import ignore from "ignore";
 import mime from "mime";
 import { runStaticModerationScan, type StaticScanResult } from "../convex/lib/moderationEngine";
@@ -21,7 +22,6 @@ import {
 import {
   getFrontmatterMetadata,
   getFrontmatterValue,
-  isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
 } from "../convex/lib/skills";
@@ -224,9 +224,7 @@ async function buildPluginArtifact(source: string, now: () => number) {
 
   if (!findFile(files, ["openclaw.plugin.json"])) throw new Error("openclaw.plugin.json required");
 
-  const textFiles = decodeTextFiles(
-    files.filter((file) => isTextFile(file.path, file.contentType)),
-  );
+  const textFiles = decodeTextFiles(files);
   const readme =
     findFile(files, ["readme.md", "readme.mdx", "readme.markdown"]) ??
     findFile(files, ["package.json"]);
@@ -353,7 +351,7 @@ function verdictToStatus(verdict: LlmEvalResponse["verdict"]): LocalLlmAnalysis[
 
 async function listTextFiles(root: string) {
   const files = await listPackageFiles(root);
-  return files.filter((file) => isTextFile(file.path, file.contentType));
+  return files.filter((file) => decodeUtf8Text(file.bytes) !== null);
 }
 
 async function listPackageFiles(root: string) {
@@ -401,7 +399,10 @@ async function addIgnoreFile(ig: ReturnType<typeof ignore>, path: string) {
 }
 
 function decodeTextFiles(files: LocalFile[]): TextFile[] {
-  return files.map((file) => ({ path: file.path, content: textDecoder.decode(file.bytes) }));
+  return files.flatMap((file) => {
+    const content = decodeUtf8Text(file.bytes);
+    return content === null ? [] : [{ path: file.path, content }];
+  });
 }
 
 function findFile(files: LocalFile[], names: string[]) {

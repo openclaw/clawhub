@@ -4961,7 +4961,7 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe("Version not found");
   });
 
-  it("returns raw file content", async () => {
+  it("returns UTF-8 Terraform file content", async () => {
     const internalVersion = {
       skillId: "skills:1",
       version: "1.0.0",
@@ -4969,11 +4969,11 @@ describe("httpApiV1 handlers", () => {
       changelog: "c",
       files: [
         {
-          path: "SKILL.md",
-          size: 5,
+          path: "main.tf",
+          size: 37,
           storageId: "storage:1",
           sha256: "abcd",
-          contentType: "text/plain",
+          contentType: "application/octet-stream",
         },
       ],
       softDeletedAt: undefined,
@@ -5002,16 +5002,78 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
+    const terraform = 'resource "null_resource" "demo" {}\n';
     const storage = {
-      get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
+      get: vi.fn().mockResolvedValue(new Blob([terraform], { type: "application/octet-stream" })),
     };
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage }),
-      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
+      new Request("https://example.com/api/v1/skills/demo/file?path=main.tf"),
     );
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("hello");
+    expect(await response.text()).toBe(terraform);
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
+    expect(response.headers.get("Content-Disposition")).toBeNull();
+  });
+
+  it("returns opaque skill files as exact-byte attachments", async () => {
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    const internalVersion = {
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [
+        {
+          path: "assets/payload.bin",
+          size: opaqueBytes.byteLength,
+          storageId: "storage:opaque",
+          sha256: "opaque-sha",
+          contentType: "application/octet-stream",
+        },
+      ],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation: vi.fn().mockResolvedValue(okRate()),
+        storage: {
+          get: vi
+            .fn()
+            .mockResolvedValue(new Blob([opaqueBytes], { type: "application/octet-stream" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=assets%2Fpayload.bin"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(opaqueBytes);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''payload.bin",
+    );
+    expect(response.headers.get("X-Content-SHA256")).toBe("opaque-sha");
   });
 
   it("looks up raw files in the requested owner namespace", async () => {
@@ -6819,7 +6881,7 @@ describe("httpApiV1 handlers", () => {
     expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
-  it("publish multipart succeeds", async () => {
+  it("publish multipart preserves Terraform and opaque files", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
@@ -6847,9 +6909,24 @@ describe("httpApiV1 handlers", () => {
         tags: ["latest"],
       }),
     );
-    form.append("files", new Blob(["hello"], { type: "text/plain" }), "SKILL.md");
+    const terraform = 'resource "null_resource" "demo" {}\n';
+    const variables = 'region = "us-east-1"\n';
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    form.append("files", new Blob(["# Demo\n"], { type: "text/markdown" }), "SKILL.md");
+    form.append("files", new Blob([terraform]), "main.tf");
+    form.append("files", new Blob([variables]), "terraform.tfvars");
+    form.append(
+      "files",
+      new Blob([opaqueBytes], { type: "application/octet-stream" }),
+      "assets/payload.bin",
+    );
+    const storedBlobs: Blob[] = [];
+    const store = vi.fn(async (blob: Blob) => {
+      storedBlobs.push(blob);
+      return `storage:${storedBlobs.length}`;
+    });
     const response = await __handlers.publishSkillV1Handler(
-      makeCtx({ runMutation, storage: { store: vi.fn().mockResolvedValue("storage:1") } }),
+      makeCtx({ runMutation, storage: { store } }),
       new Request("https://example.com/api/v1/skills", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
@@ -6859,6 +6936,21 @@ describe("httpApiV1 handlers", () => {
     if (response.status !== 200) {
       throw new Error(await response.text());
     }
+    expect(store).toHaveBeenCalledTimes(4);
+    const publishArgs = vi.mocked(publishVersionForUser).mock.calls[0]?.[2] as {
+      files?: Array<{ path: string; storageId: string; size: number; contentType?: string }>;
+    };
+    expect(publishArgs.files?.map((file) => file.path)).toEqual([
+      "SKILL.md",
+      "main.tf",
+      "terraform.tfvars",
+      "assets/payload.bin",
+    ]);
+    expect(await storedBlobs[1]?.text()).toBe(terraform);
+    expect(await storedBlobs[2]?.text()).toBe(variables);
+    expect(new Uint8Array((await storedBlobs[3]?.arrayBuffer()) ?? new ArrayBuffer(0))).toEqual(
+      opaqueBytes,
+    );
   });
 
   it("publish multipart resolves requested owner publisher", async () => {

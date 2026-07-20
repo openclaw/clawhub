@@ -73,22 +73,29 @@ describe("expandFiles", () => {
     expect(result.map((file) => file.name)).toEqual(["SKILL.md", "docs/readme.txt"]);
   });
 
-  it("unwraps top-level folders in zip archives", async () => {
+  it("unwraps top-level folders and preserves mixed skill artifacts", async () => {
     const zip = zipSync({
       "hetzner-cloud-skill/SKILL.md": strToU8("hello"),
       "hetzner-cloud-skill/docs/readme.txt": strToU8("doc"),
+      "hetzner-cloud-skill/main.tf": strToU8('resource "null_resource" "demo" {}\n'),
       "__MACOSX/._SKILL.md": strToU8("junk"),
       "hetzner-cloud-skill/._notes.txt": strToU8("junk3"),
       "hetzner-cloud-skill/.DS_Store": strToU8("junk2"),
-      "hetzner-cloud-skill/screenshot.png": strToU8("not-really-a-png"),
+      "hetzner-cloud-skill/assets/payload.bin": Uint8Array.from([0, 1, 2, 255]),
     });
     const zipFile = new File([Uint8Array.from(zip).buffer], "pack.zip", {
       type: "application/zip",
     });
     const result = await expandFiles([zipFile]);
-    expect(result.map((file) => file.name)).toEqual(["SKILL.md", "docs/readme.txt"]);
-    const png = result.find((file) => file.name.endsWith(".png"));
-    expect(png).toBeUndefined();
+    expect(result.map((file) => file.name)).toEqual([
+      "SKILL.md",
+      "docs/readme.txt",
+      "main.tf",
+      "assets/payload.bin",
+    ]);
+    await expect(result.at(-1)?.arrayBuffer()).resolves.toEqual(
+      Uint8Array.from([0, 1, 2, 255]).buffer,
+    );
   });
 
   it("keeps binary files from archives when requested", async () => {
@@ -99,9 +106,7 @@ describe("expandFiles", () => {
     const zipFile = new File([Uint8Array.from(zip).buffer], "pack.zip", {
       type: "application/zip",
     });
-    const report = await expandFilesWithReport([zipFile], {
-      includeBinaryArchiveFiles: true,
-    });
+    const report = await expandFilesWithReport([zipFile]);
 
     expect(report.files.map((file) => file.name)).toEqual(["package.json", "dist/module.wasm"]);
   });
@@ -157,9 +162,7 @@ describe("expandFiles", () => {
     const tgzFile = new File([Uint8Array.from(tgz).buffer], "bundle.tgz", {
       type: "application/gzip",
     });
-    const report = await expandFilesWithReport([tgzFile], {
-      includeBinaryArchiveFiles: true,
-    });
+    const report = await expandFilesWithReport([tgzFile]);
 
     expect(report.files.map((file) => file.name)).toEqual(["package.json", "dist/loader.node"]);
   });

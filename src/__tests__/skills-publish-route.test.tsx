@@ -534,7 +534,9 @@ describe("Upload route", () => {
     expect(Object.hasOwn(args ?? {}, "topics")).toBe(false);
   });
 
-  it("blocks non-text folder uploads (png)", async () => {
+  it("publishes a mixed skill artifact containing Terraform and opaque files", async () => {
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValue({ status: "pending" });
     render(<Upload />);
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {
       target: { value: "cool-skill" },
@@ -549,24 +551,43 @@ describe("Upload route", () => {
       target: { value: "latest" },
     });
 
-    const skill = new File(["hello"], "SKILL.md", { type: "text/markdown" });
-    const png = new File([new Uint8Array([137, 80, 78, 71]).buffer], "screenshot.png", {
-      type: "image/png",
+    const skill = new File(["# Terraform skill\n"], "SKILL.md", { type: "text/markdown" });
+    const terraform = new File(['resource "null_resource" "demo" {}\n'], "main.tf", { type: "" });
+    const variables = new File(['region = "us-east-1"\n'], "terraform.tfvars", { type: "" });
+    const opaque = new File([Uint8Array.from([0, 1, 2, 255]).buffer], "assets/payload.bin", {
+      type: "application/octet-stream",
     });
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
-    fireEvent.change(input, { target: { files: [skill, png] } });
+    fireEvent.change(input, { target: { files: [skill, terraform, variables, opaque] } });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i have the rights to publish this skill under mit-0/i,
+      }),
+    );
 
-    expect(await screen.findByText("screenshot.png")).toBeTruthy();
-    expect(
-      (await screen.findAllByText(/Remove unsupported files: screenshot\.png/i)).length,
-    ).toBeGreaterThan(0);
-    expect(screen.getByText("screenshot.png")).toBeTruthy();
+    expect(await screen.findByText("main.tf")).toBeTruthy();
+    expect(screen.getByText("terraform.tfvars")).toBeTruthy();
+    expect(screen.getByText("assets/payload.bin")).toBeTruthy();
+    expect(screen.queryByText(/unsupported/i)).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove unsupported" }));
+    fireEvent.click(screen.getByRole("button", { name: /publish skill/i }));
 
     await waitFor(() => {
-      expect(screen.queryByText("screenshot.png")).toBeNull();
+      expect(publishVersion).toHaveBeenCalled();
     });
+    const publishArgs = publishVersion.mock.calls.at(-1)?.[0] as {
+      files: Array<{ path: string; contentType?: string }>;
+    };
+    expect(publishArgs.files.map((file) => file.path)).toEqual([
+      "SKILL.md",
+      "main.tf",
+      "terraform.tfvars",
+      "assets/payload.bin",
+    ]);
+    expect(publishArgs.files.find((file) => file.path === "main.tf")?.contentType).toBe("");
+    expect(publishArgs.files.find((file) => file.path === "assets/payload.bin")?.contentType).toBe(
+      "application/octet-stream",
+    );
   });
 
   it("surfaces file validation next to the upload input", async () => {
