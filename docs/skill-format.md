@@ -1,5 +1,5 @@
 ---
-summary: "Skill folder format, required files, allowed file types, limits."
+summary: "Skill folder format, required files, supporting artifacts, limits."
 read_when:
   - Publishing skills
   - Debugging publish failures
@@ -17,7 +17,7 @@ Required:
 
 Optional:
 
-- any supporting _text-based_ files (see “Allowed files”)
+- any supporting regular files (see “Skill files”)
 - `.clawhubignore` (ignore patterns for publishing, legacy `.clawdhubignore`)
 - `.gitignore` (also honored)
 

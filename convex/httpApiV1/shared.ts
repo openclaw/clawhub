@@ -20,8 +20,21 @@ const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-function isSvgLike(contentType: string | undefined, path: string) {
-  return contentType?.toLowerCase().includes("svg") || path.toLowerCase().endsWith(".svg");
+function isActiveDocumentLike(contentType: string | undefined, path: string) {
+  const normalizedType = normalizeContentType(contentType) ?? "";
+  const normalizedPath = path.toLowerCase();
+  return (
+    normalizedType === "text/html" ||
+    normalizedType === "application/xhtml+xml" ||
+    normalizedType === "image/svg+xml" ||
+    normalizedType === "application/xml" ||
+    normalizedType === "text/xml" ||
+    /\.(?:html?|xhtml|svg|xml|xsl|xslt)$/u.test(normalizedPath)
+  );
+}
+
+function attachmentDisposition(path: string) {
+  return `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").at(-1) || "download")}`;
 }
 
 export function safeTextFileResponse(params: {
@@ -33,7 +46,7 @@ export function safeTextFileResponse(params: {
   headers?: HeadersInit;
 }) {
   const contentType = normalizeContentType(params.contentType) ?? params.contentType;
-  const isSvg = isSvgLike(contentType, params.path);
+  const forceAttachment = isActiveDocumentLike(contentType, params.path);
 
   // For any text response that a browser might try to render, lock it down.
   // In particular, this prevents SVG <foreignObject> script execution from reading
@@ -49,7 +62,7 @@ export function safeTextFileResponse(params: {
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Content-Security-Policy": SAFE_TEXT_FILE_CSP,
-      ...(isSvg ? { "Content-Disposition": "attachment" } : {}),
+      ...(forceAttachment ? { "Content-Disposition": attachmentDisposition(params.path) } : {}),
     },
     corsHeaders(),
   );
@@ -67,26 +80,19 @@ export async function safeStoredFileResponse(params: {
 }) {
   const bytes = new Uint8Array(await params.blob.arrayBuffer());
   const textContent = decodeUtf8Text(bytes);
-  if (textContent !== null) {
-    return safeTextFileResponse({
-      textContent,
-      path: params.path,
-      contentType: params.contentType,
-      sha256: params.sha256,
-      size: params.size,
-      headers: params.headers,
-    });
-  }
+  const contentType = normalizeContentType(params.contentType) ?? params.contentType;
+  const forceAttachment = textContent === null || isActiveDocumentLike(contentType, params.path);
 
   return new Response(bytes, {
     status: 200,
     headers: mergeHeaders(
       params.headers,
       {
-        "Content-Type": params.contentType || "application/octet-stream",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(
-          params.path.split("/").at(-1) || "download",
-        )}`,
+        "Content-Type":
+          textContent !== null && contentType
+            ? `${contentType}; charset=utf-8`
+            : contentType || "application/octet-stream",
+        ...(forceAttachment ? { "Content-Disposition": attachmentDisposition(params.path) } : {}),
         "Cache-Control": "private, max-age=60",
         ETag: params.sha256,
         "X-Content-SHA256": params.sha256,

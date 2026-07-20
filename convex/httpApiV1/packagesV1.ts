@@ -16,6 +16,7 @@ import {
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
+  decodeUtf8Text,
   isPluginCategorySlug,
   parseArk,
   type PackagePublishMetadata,
@@ -83,6 +84,7 @@ import {
   requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
   safeStoredFileResponse,
+  safeTextFileResponse,
   softDeleteErrorToResponse,
   ambiguousSkillSlugResponse,
   type AmbiguousSkillSlugChoice,
@@ -4064,8 +4066,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File not found", 404, rate.headers);
-    return await safeStoredFileResponse({
-      blob,
+    const textContent = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
+    if (textContent === null) return text("Binary files are not served inline", 415, rate.headers);
+    return safeTextFileResponse({
+      textContent,
       path: file.path,
       contentType: file.contentType,
       sha256: file.sha256,

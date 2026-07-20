@@ -9,6 +9,9 @@ describe("clawhub-schema textFiles", () => {
     expect(decodeUtf8Text(new TextEncoder().encode('resource "null_resource" "demo" {}'))).toBe(
       'resource "null_resource" "demo" {}',
     );
+    expect(decodeUtf8Text(new TextEncoder().encode("hé😀"))).toBe("hé😀");
+    expect(decodeUtf8Text(Uint8Array.from([0xef, 0xbb, 0xbf, 0x61]))).toBe("a");
+    expect(decodeUtf8Text(Uint8Array.from([0]))).toBe("\0");
     expect(decodeUtf8Text(Uint8Array.from([0, 1, 2, 255]))).toBeNull();
     expect(decodeUtf8Text(Uint8Array.from([0xc3, 0x28]))).toBeNull();
   });

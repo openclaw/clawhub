@@ -22,7 +22,6 @@ describe("SkillFilesPanel", () => {
       text: "",
       size: 0,
       sha256: "0".repeat(64),
-      downloadUrl: "https://example.com/empty.txt",
     });
   });
 
@@ -35,13 +34,13 @@ describe("SkillFilesPanel", () => {
       text: "echo hello",
       size: 10,
       sha256: "a".repeat(64),
-      downloadUrl: "https://example.com/run.sh",
     });
 
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
+        skillSlug="demo"
       />,
     );
 
@@ -64,7 +63,6 @@ describe("SkillFilesPanel", () => {
           text: string | null;
           size: number;
           sha256: string;
-          downloadUrl: string;
         }>(() => {
           /* never resolves */
         }),
@@ -74,6 +72,7 @@ describe("SkillFilesPanel", () => {
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
+        skillSlug="demo"
       />,
     );
 
@@ -89,13 +88,13 @@ describe("SkillFilesPanel", () => {
       text: "echo hello",
       size: 10,
       sha256: "a".repeat(64),
-      downloadUrl: "https://example.com/run.sh",
     });
 
     const { container } = render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
+        skillSlug="demo"
       />,
     );
 
@@ -111,6 +110,7 @@ describe("SkillFilesPanel", () => {
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
         latestFiles={[makeFile("empty.txt", 0)]}
+        skillSlug="demo"
       />,
     );
 
@@ -127,13 +127,14 @@ describe("SkillFilesPanel", () => {
       text: null,
       size: 4,
       sha256: "d".repeat(64),
-      downloadUrl: "https://example.com/payload.bin",
     });
 
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
         latestFiles={[makeFile("assets/payload.bin", 4)]}
+        skillSlug="demo"
+        ownerHandle="acme"
       />,
     );
 
@@ -142,7 +143,7 @@ describe("SkillFilesPanel", () => {
 
     await screen.findByText(/available to download but cannot be previewed as text/i);
     expect(screen.getByRole("link", { name: "Download payload.bin" }).getAttribute("href")).toBe(
-      "https://example.com/payload.bin",
+      "/api/v1/skills/demo/file?path=assets%2Fpayload.bin&ownerHandle=acme",
     );
 
     fireEvent.click(fileButton);
@@ -152,7 +153,7 @@ describe("SkillFilesPanel", () => {
   it("ignores stale responses when newer file selection is active", async () => {
     const resolvers: Record<
       string,
-      (value: { text: string | null; size: number; sha256: string; downloadUrl: string }) => void
+      (value: { text: string | null; size: number; sha256: string }) => void
     > = {};
 
     getFilePreviewMock.mockImplementation(
@@ -161,7 +162,6 @@ describe("SkillFilesPanel", () => {
           text: string | null;
           size: number;
           sha256: string;
-          downloadUrl: string;
         }>((resolve) => {
           resolvers[path] = resolve;
         }),
@@ -171,6 +171,7 @@ describe("SkillFilesPanel", () => {
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
         latestFiles={[makeFile("a.txt", 5), makeFile("b.txt", 6)]}
+        skillSlug="demo"
       />,
     );
 
@@ -182,13 +183,11 @@ describe("SkillFilesPanel", () => {
       text: "alpha",
       size: 5,
       sha256: "b".repeat(64),
-      downloadUrl: "https://example.com/a.txt",
     });
     resolvers["b.txt"]({
       text: "beta",
       size: 6,
       sha256: "c".repeat(64),
-      downloadUrl: "https://example.com/b.txt",
     });
 
     await screen.findByText("beta");
@@ -211,7 +210,11 @@ describe("SkillFilesPanel", () => {
       makeFile(`folder/file-${index + 1}.md`, index + 1),
     );
     render(
-      <SkillFilesPanel versionId={"skillVersions:1" as Id<"skillVersions">} latestFiles={files} />,
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        latestFiles={files}
+        skillSlug="demo"
+      />,
     );
 
     expect(screen.getByRole("button", { name: /folder\/file-10\.md/i })).toBeTruthy();

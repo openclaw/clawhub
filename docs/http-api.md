@@ -520,7 +520,8 @@ Response:
 
 ### `GET /api/v1/skills/{slug}/file`
 
-Returns raw text content.
+Returns exact stored file bytes. Valid UTF-8 source files can be read inline; opaque and active
+document formats are returned as attachments with `X-Content-Type-Options: nosniff`.
 
 Query params:
 

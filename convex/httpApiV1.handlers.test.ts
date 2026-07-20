@@ -5016,6 +5016,84 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("Content-Disposition")).toBeNull();
   });
 
+  it("preserves UTF-8 bytes exactly and attaches active documents", async () => {
+    const bomBytes = Uint8Array.from([0xef, 0xbb, 0xbf, 0x61]);
+    const htmlBytes = new TextEncoder().encode("<script>alert(1)</script>");
+    const internalVersion = {
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [
+        {
+          path: "bom.txt",
+          size: bomBytes.byteLength,
+          storageId: "storage:bom",
+          sha256: "bom-sha",
+          contentType: "text/plain",
+        },
+        {
+          path: "demo.html",
+          size: htmlBytes.byteLength,
+          storageId: "storage:html",
+          sha256: "html-sha",
+          contentType: "text/html",
+        },
+      ],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const storage = {
+      get: vi.fn(async (storageId: string) =>
+        storageId === "storage:bom"
+          ? new Blob([bomBytes], { type: "text/plain" })
+          : new Blob([htmlBytes], { type: "text/html" }),
+      ),
+    };
+    const ctx = makeCtx({
+      runQuery,
+      runMutation: vi.fn().mockResolvedValue(okRate()),
+      storage,
+    });
+
+    const bomResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=bom.txt"),
+    );
+    expect(new Uint8Array(await bomResponse.arrayBuffer())).toEqual(bomBytes);
+    expect(bomResponse.headers.get("Content-Disposition")).toBeNull();
+
+    const htmlResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=demo.html"),
+    );
+    expect(new Uint8Array(await htmlResponse.arrayBuffer())).toEqual(htmlBytes);
+    expect(htmlResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''demo.html",
+    );
+    expect(htmlResponse.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  });
+
   it("returns opaque skill files as exact-byte attachments", async () => {
     const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
     const internalVersion = {

@@ -190,7 +190,6 @@ type FilePreviewResult = {
   text: string | null;
   size: number;
   sha256: string;
-  downloadUrl: string;
 };
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
@@ -10200,22 +10199,19 @@ export const getFilePreview: ReturnType<typeof action> = action({
       version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
     if (!file) throw new ConvexError("File not found");
 
-    const downloadUrl = await ctx.storage.getUrl(file.storageId);
-    if (!downloadUrl) throw new ConvexError("File missing in storage");
     if (file.size > MAX_DIFF_FILE_BYTES) {
       return {
         path: file.path,
         text: null,
         size: file.size,
         sha256: file.sha256,
-        downloadUrl,
       };
     }
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) throw new ConvexError("File missing in storage");
     const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
-    return { path: file.path, text, size: file.size, sha256: file.sha256, downloadUrl };
+    return { path: file.path, text, size: file.size, sha256: file.sha256 };
   },
 });
 

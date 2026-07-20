@@ -11,6 +11,8 @@ describe("packages/clawhub schema textFiles", () => {
 
   it("detects previewable UTF-8 bytes without an extension allowlist", () => {
     expect(decodeUtf8Text(new TextEncoder().encode("main.tf"))).toBe("main.tf");
+    expect(decodeUtf8Text(new TextEncoder().encode("hé😀"))).toBe("hé😀");
+    expect(decodeUtf8Text(Uint8Array.from([0]))).toBe("\0");
     expect(decodeUtf8Text(Uint8Array.from([0, 1, 2, 255]))).toBeNull();
     expect(normalizeContentType("")).toBeUndefined();
   });

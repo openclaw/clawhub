@@ -162,7 +162,7 @@ describe("github import", () => {
     expect(candidates.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
   });
 
-  it("computes default selection via markdown references", () => {
+  it("selects the complete candidate artifact by default", () => {
     const entries = {
       "skill/SKILL.md": `---\nname: demo\n---\nSee [usage](docs/usage.md) and ![logo](img/logo.svg).\nIgnore [web](https://example.com).`,
       "skill/docs/usage.md": `See [more](more.md)`,
@@ -188,7 +188,7 @@ describe("github import", () => {
     expect(selected).toContain("skill/docs/usage.md");
     expect(selected).toContain("skill/docs/more.md");
     expect(selected).toContain("skill/img/logo.svg");
-    expect(selected).not.toContain("skill/extra.txt");
+    expect(selected).toContain("skill/extra.txt");
   });
 
   it("does not select files outside skill folder (even when referenced)", () => {
@@ -207,6 +207,7 @@ describe("github import", () => {
     const files = Object.entries(stripped).map(([path, bytes]) => ({ path, bytes }));
     const selected = computeDefaultSelectedPaths({ candidate, files });
     expect(selected).toContain("skill/SKILL.md");
+    expect(selected).toContain("skill/docs/usage.md");
     expect(selected).not.toContain("outside.md");
   });
 

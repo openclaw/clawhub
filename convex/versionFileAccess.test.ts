@@ -48,7 +48,6 @@ function makeActionCtx(args: {
   publisherMemberRole?: "owner" | "admin" | "publisher" | null;
   publisherAccess?: boolean;
   storedBlob?: Blob | null;
-  downloadUrl?: string | null;
 }) {
   return {
     runQuery: vi.fn(async (_endpoint: unknown, payload: Record<string, unknown>) => {
@@ -69,7 +68,6 @@ function makeActionCtx(args: {
     }),
     storage: {
       get: vi.fn().mockResolvedValue(args.storedBlob ?? new Blob(["# skill"])),
-      getUrl: vi.fn().mockResolvedValue(args.downloadUrl ?? "https://example.com/file"),
     },
   } as never;
 }
@@ -323,7 +321,6 @@ describe("version file access actions", () => {
       storedBlob: new Blob([Uint8Array.from([0, 1, 2, 255])], {
         type: "application/octet-stream",
       }),
-      downloadUrl: "https://example.com/payload.bin",
       skill: {
         _id: "skills:1",
         ownerUserId: "users:owner",
@@ -344,7 +341,6 @@ describe("version file access actions", () => {
       text: null,
       size: 4,
       sha256: "d".repeat(64),
-      downloadUrl: "https://example.com/payload.bin",
     });
   });
 
