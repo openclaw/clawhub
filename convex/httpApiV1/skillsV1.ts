@@ -142,7 +142,7 @@ type PublicSkillVersionFile = {
 
 type PublicSkillVersionParsed = {
   description?: string;
-  license?: "MIT-0";
+  license?: "MIT-0" | "MIT";
   clawdis?: {
     os?: string[];
     nix?: { plugin?: boolean; systems?: string[] };
@@ -2571,7 +2571,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
       const body = await request.json();
       const payload = parsePublishBody(body);
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
-        return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
+        return text("Skill license terms must be accepted to publish skills", 400, rate.headers);
       }
       const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);
@@ -2580,7 +2580,7 @@ export async function publishSkillV1Handler(ctx: ActionCtx, request: Request) {
     if (contentType.includes("multipart/form-data")) {
       const payload = await parseMultipartPublish(ctx, request);
       if (!hasAcceptedLegacyLicenseTerms(payload.acceptLicenseTerms)) {
-        return text("MIT-0 license terms must be accepted to publish skills", 400, rate.headers);
+        return text("Skill license terms must be accepted to publish skills", 400, rate.headers);
       }
       const result = await publishSkillPayloadForApiUser(ctx, auth.userId, payload);
       return json({ ok: true, ...result }, 200, rate.headers);

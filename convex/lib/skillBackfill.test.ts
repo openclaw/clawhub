@@ -31,4 +31,21 @@ describe("skill backfill", () => {
     expect(patch.summary).toBeUndefined();
     expect(patch.parsed?.frontmatter.description).toBe("Hello");
   });
+
+  it("updates a previously defaulted license when storage metadata declares MIT", () => {
+    const patch = buildSkillSummaryBackfillPatch({
+      readmeText: `---\ndescription: Hello\n---\nBody`,
+      currentSummary: "Hello",
+      currentParsed: {
+        frontmatter: { description: "Hello" },
+        metadata: undefined,
+        clawdis: undefined,
+        license: "MIT-0",
+      },
+      detectedLicense: "MIT",
+    });
+
+    expect(patch.summary).toBeUndefined();
+    expect(patch.parsed?.license).toBe("MIT");
+  });
 });

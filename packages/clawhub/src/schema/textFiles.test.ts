@@ -2,7 +2,11 @@
 
 import { describe, expect, it } from "vitest";
 import * as schema from ".";
-import { isTextContentType, TEXT_FILE_EXTENSION_SET } from "./textFiles";
+import {
+  isExtensionlessTextFilePath,
+  isTextContentType,
+  TEXT_FILE_EXTENSION_SET,
+} from "./textFiles";
 
 describe("packages/clawhub schema textFiles", () => {
   it("exports text-file extension set", () => {
@@ -24,8 +28,15 @@ describe("packages/clawhub schema textFiles", () => {
     expect(isTextContentType("application/octet-stream")).toBe(false);
   });
 
+  it("recognizes extensionless license files as text", () => {
+    expect(isExtensionlessTextFilePath("LICENSE")).toBe(true);
+    expect(isExtensionlessTextFilePath("docs/COPYING")).toBe(true);
+    expect(isExtensionlessTextFilePath("license.json")).toBe(false);
+  });
+
   it("re-exports helpers from index", () => {
     expect(typeof schema.isTextContentType).toBe("function");
     expect(schema.isTextContentType("application/markdown")).toBe(true);
+    expect(schema.isExtensionlessTextFilePath("LICENSE")).toBe(true);
   });
 });

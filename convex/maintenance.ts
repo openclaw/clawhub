@@ -22,6 +22,7 @@ import {
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
 import { isSkillCardPath } from "./lib/skillCards";
+import { detectDeclaredStoredSkillLicense } from "./lib/skillLicense";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -39,6 +40,7 @@ const MAX_MAX_BATCHES = 200;
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const skillLicenseValidator = v.union(v.literal(PLATFORM_SKILL_LICENSE), v.literal("MIT"));
 const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM = "repair-legacy-plugin-skillspector";
 const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY =
@@ -80,6 +82,7 @@ type BackfillPageItem =
       skillSummary: Doc<"skills">["summary"];
       versionParsed: Doc<"skillVersions">["parsed"];
       readmeStorageId: Id<"_storage">;
+      versionFiles: Array<{ path: string; storageId: Id<"_storage"> }>;
     }
   | { kind: "missingLatestVersion"; skillId: Id<"skills"> }
   | { kind: "missingVersionDoc"; skillId: Id<"skills">; versionId: Id<"skillVersions"> }
@@ -226,6 +229,10 @@ export const getSkillBackfillPageInternal = internalQuery({
         skillSummary: skill.summary,
         versionParsed: version.parsed,
         readmeStorageId: readmeFile.storageId,
+        versionFiles: version.files.map((file) => ({
+          path: file.path,
+          storageId: file.storageId,
+        })),
       });
     }
 
@@ -243,7 +250,7 @@ export const applySkillBackfillPatchInternal = internalMutation({
         frontmatter: v.record(v.string(), v.any()),
         metadata: v.optional(v.any()),
         clawdis: v.optional(v.any()),
-        license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+        license: v.optional(skillLicenseValidator),
       }),
     ),
   },
@@ -447,10 +454,12 @@ export async function backfillSkillSummariesInternalHandler(
       }
 
       const readmeText = await blob.text();
+      const detectedLicense = await detectDeclaredStoredSkillLicense(ctx, item.versionFiles);
       const patch = buildSkillSummaryBackfillPatch({
         readmeText,
         currentSummary: item.skillSummary ?? undefined,
         currentParsed: item.versionParsed as ParsedSkillData,
+        detectedLicense,
       });
 
       let nextSummary = patch.summary;

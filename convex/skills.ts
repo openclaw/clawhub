@@ -185,6 +185,7 @@ type FileTextResult = {
   sha256: string;
 };
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const skillLicenseValidator = v.union(v.literal(PLATFORM_SKILL_LICENSE), v.literal("MIT"));
 
 const MAX_DIFF_FILE_BYTES = 200 * 1024;
 const MAX_LIST_LIMIT = 50;
@@ -1962,7 +1963,7 @@ type PublicSkillListVersion = Pick<
 };
 
 type PublicSkillVersionParsed = {
-  license?: typeof PLATFORM_SKILL_LICENSE;
+  license?: typeof PLATFORM_SKILL_LICENSE | "MIT";
   description?: string;
   clawdis?: {
     os?: string[];
@@ -9930,7 +9931,7 @@ export const publishVersion: ReturnType<typeof action> = action({
   },
   handler: async (ctx, args): Promise<SkillPublishResult> => {
     if (args.acceptLicenseTerms !== true) {
-      throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
+      throw new ConvexError("Skill license terms must be accepted to publish skills");
     }
     const { userId, user } = await requireUserFromAction(ctx);
     const target = (await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
@@ -12104,7 +12105,7 @@ export const insertVersion = internalMutation({
       frontmatter: v.record(v.string(), v.any()),
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
-      license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+      license: v.optional(skillLicenseValidator),
     }),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(

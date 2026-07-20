@@ -2,11 +2,11 @@ import {
   type ClawdbotConfigSpec,
   type ClawdisSkillMetadata,
   ClawdisSkillMetadataSchema,
+  guessTextContentType,
   isTextContentType,
   type NixPluginSpec,
   parseArk,
   type SkillInstallSpec,
-  TEXT_FILE_EXTENSION_SET,
 } from "clawhub-schema";
 import { parse as parseYaml } from "yaml";
 
@@ -155,12 +155,10 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
 export function isTextFile(path: string, contentType?: string | null) {
   const trimmed = path.trim().toLowerCase();
   if (!trimmed) return false;
-  const parts = trimmed.split(".");
-  const extension = parts.length > 1 ? (parts.at(-1) ?? "") : "";
   if (contentType) {
     if (isTextContentType(contentType)) return true;
   }
-  if (extension && TEXT_FILE_EXTENSION_SET.has(extension)) return true;
+  if (guessTextContentType(trimmed)) return true;
   return false;
 }
 

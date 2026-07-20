@@ -21,6 +21,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
 import { isSkillCardPath } from "./skillCards";
+import { detectLicenseFromText, detectStoredSkillLicense } from "./skillLicense";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -48,7 +49,6 @@ import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 const MAX_FILES_FOR_EMBEDDING = 40;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
-const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
 const MAX_PUBLISH_SUMMARY_LENGTH = 300;
 
@@ -360,6 +360,7 @@ async function publishVersionForUserInternal(
   }
 
   const metadata = mergeSourceIntoMetadata(frontmatterMetadata, args.source, qualityAssessment);
+  const skillLicense = await detectPublishedSkillLicense(ctx, publishFiles);
 
   const fileContents: Array<{ path: string; content: string }> = [
     { path: readmeFile.path, content: readmeText },
@@ -456,7 +457,7 @@ async function publishVersionForUserInternal(
       frontmatter,
       metadata,
       clawdis,
-      license: PLATFORM_SKILL_LICENSE,
+      license: skillLicense,
     },
     summary,
     staticScan,
@@ -872,6 +873,13 @@ function mergeSourceIntoMetadata(
   return Object.keys(base).length ? base : undefined;
 }
 
+async function detectPublishedSkillLicense(
+  ctx: { storage: { get: (id: Id<"_storage">) => Promise<Blob | null> } },
+  files: SafePublishFile[],
+) {
+  return detectStoredSkillLicense(ctx, files);
+}
+
 function buildSkillPublishAttemptIdempotencyKey(args: {
   userId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
@@ -908,6 +916,8 @@ async function buildPublishSourceFingerprint(files: FingerprintFile[]) {
 
 export const __test = {
   buildPublishSourceFingerprint,
+  detectLicenseFromText,
+  detectPublishedSkillLicense,
   mergeSourceIntoMetadata,
   computeQualitySignals,
   evaluateQuality,

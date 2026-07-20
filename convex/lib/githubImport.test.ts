@@ -8,6 +8,7 @@ import {
   detectGitHubImportCandidates,
   extractMarkdownRelativeTargets,
   fetchGitHubZipBytes,
+  listTextFilesUnderCandidate,
   parseGitHubImportUrl,
   resolveGitHubCommit,
   resolveMarkdownTarget,
@@ -162,6 +163,37 @@ describe("github import", () => {
     expect(selected).toContain("skill/docs/more.md");
     expect(selected).toContain("skill/img/logo.svg");
     expect(selected).not.toContain("skill/extra.txt");
+  });
+
+  it("includes root license metadata in GitHub import previews", () => {
+    const files = listTextFilesUnderCandidate(
+      {
+        "skill/SKILL.md": new TextEncoder().encode("# Skill"),
+        "skill/LICENSE": new TextEncoder().encode("MIT License"),
+        "skill/package.json": new TextEncoder().encode('{"license":"MIT"}'),
+        "skill/vendor/LICENSE": new TextEncoder().encode("MIT License"),
+        "skill/image.png": new Uint8Array([1, 2, 3]),
+      },
+      "skill",
+    );
+    const candidate = {
+      path: "skill",
+      readmePath: "skill/SKILL.md",
+    };
+
+    expect(files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        "skill/LICENSE",
+        "skill/SKILL.md",
+        "skill/package.json",
+        "skill/vendor/LICENSE",
+      ]),
+    );
+    expect(files.map((file) => file.path)).not.toContain("skill/image.png");
+    const selected = computeDefaultSelectedPaths({ candidate, files });
+    expect(selected).toContain("skill/LICENSE");
+    expect(selected).toContain("skill/package.json");
+    expect(selected).not.toContain("skill/vendor/LICENSE");
   });
 
   it("does not select files outside skill folder (even when referenced)", () => {

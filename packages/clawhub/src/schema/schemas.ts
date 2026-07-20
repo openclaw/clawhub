@@ -395,7 +395,7 @@ export const ApiV1SkillListResponseSchema = type({
       version: "string",
       createdAt: "number",
       changelog: "string",
-      license: '"MIT-0"|null?',
+      license: '"MIT-0"|"MIT"|null?',
     }).optional(),
     metadata: type({
       setup: type({
@@ -427,7 +427,7 @@ export const ApiV1SkillResponseSchema = type({
     version: "string",
     createdAt: "number",
     changelog: "string",
-    license: '"MIT-0"|null?',
+    license: '"MIT-0"|"MIT"|null?',
   }).or("null"),
   metadata: type({
     setup: type({
@@ -870,7 +870,7 @@ export const ApiV1SkillVersionResponseSchema = type({
     createdAt: "number",
     changelog: "string",
     changelogSource: '"auto"|"user"|null?',
-    license: '"MIT-0"|null?',
+    license: '"MIT-0"|"MIT"|null?',
     files: "unknown?",
   }).or("null"),
   skill: type({

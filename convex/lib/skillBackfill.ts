@@ -7,12 +7,13 @@ import {
 } from "./skills";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+type SkillLicense = typeof PLATFORM_SKILL_LICENSE | "MIT";
 
 export type ParsedSkillData = {
   frontmatter: ParsedSkillFrontmatter;
   metadata?: unknown;
   clawdis?: unknown;
-  license?: typeof PLATFORM_SKILL_LICENSE;
+  license?: SkillLicense;
 };
 
 export type SkillSummaryBackfillPatch = {
@@ -24,6 +25,7 @@ export function buildSkillSummaryBackfillPatch(args: {
   readmeText: string;
   currentSummary?: string;
   currentParsed?: ParsedSkillData;
+  detectedLicense?: SkillLicense | null;
 }): SkillSummaryBackfillPatch {
   const frontmatter = parseFrontmatter(args.readmeText);
   const summary = getFrontmatterValue(frontmatter, "description") ?? undefined;
@@ -33,7 +35,7 @@ export function buildSkillSummaryBackfillPatch(args: {
     frontmatter,
     metadata,
     clawdis,
-    license: PLATFORM_SKILL_LICENSE,
+    license: args.detectedLicense ?? args.currentParsed?.license ?? PLATFORM_SKILL_LICENSE,
   };
 
   const patch: SkillSummaryBackfillPatch = {};

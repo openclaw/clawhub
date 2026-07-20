@@ -1,4 +1,4 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
+import { guessTextContentType } from "clawhub-schema";
 import { zipSync } from "fflate";
 import semver from "semver";
 import { parseFrontmatter } from "./skills";
@@ -318,6 +318,11 @@ export function computeDefaultSelectedPaths(params: {
   };
 
   add(params.candidate.readmePath);
+  for (const file of params.files) {
+    if (isRootSkillMetadataPath(file.path, candidateRoot)) {
+      add(file.path);
+    }
+  }
 
   const visited = new Set<string>();
   const queue: Array<{ path: string; depth: number }> = [
@@ -384,10 +389,27 @@ function isUnderRoot(path: string, rootWithSlash: string) {
 }
 
 function isTextPath(path: string) {
-  const lower = path.toLowerCase();
-  const ext = lower.split(".").at(-1) ?? "";
-  if (!ext) return false;
-  return TEXT_FILE_EXTENSION_SET.has(ext);
+  return Boolean(guessTextContentType(path));
+}
+
+function isRootSkillMetadataPath(path: string, rootWithSlash: string) {
+  const normalized = normalizeRepoPath(path);
+  if (!isUnderRoot(normalized, rootWithSlash)) return false;
+  const relative = rootWithSlash ? normalized.slice(rootWithSlash.length) : normalized;
+  if (!relative || relative.includes("/")) return false;
+  const lower = relative.toLowerCase();
+  return lower === "package.json" || isRootLicenseFileName(lower);
+}
+
+function isRootLicenseFileName(filename: string) {
+  return (
+    filename === "license" ||
+    filename === "license.md" ||
+    filename === "license.txt" ||
+    filename === "copying" ||
+    filename === "copying.md" ||
+    filename === "copying.txt"
+  );
 }
 
 export function suggestDisplayName(candidate: GitHubImportCandidate, fallbackBase: string) {

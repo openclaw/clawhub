@@ -50,6 +50,11 @@ const RAW_TEXT_FILE_EXTENSIONS = [
 export const TEXT_FILE_EXTENSIONS = RAW_TEXT_FILE_EXTENSIONS;
 export const TEXT_FILE_EXTENSION_SET = new Set<string>(TEXT_FILE_EXTENSIONS);
 
+const EXTENSIONLESS_TEXT_FILE_BASENAMES = ["license", "copying"] as const;
+export const EXTENSIONLESS_TEXT_FILE_BASENAME_SET = new Set<string>(
+  EXTENSIONLESS_TEXT_FILE_BASENAMES,
+);
+
 const RAW_TEXT_CONTENT_TYPES = [
   "application/json",
   "application/xml",
@@ -71,4 +76,9 @@ export function isTextContentType(contentType: string) {
   if (!normalized) return false;
   if (normalized.startsWith("text/")) return true;
   return TEXT_CONTENT_TYPE_SET.has(normalized);
+}
+
+export function isExtensionlessTextFilePath(path: string) {
+  const basename = path.trim().replace(/\\/g, "/").split("/").at(-1)?.toLowerCase() ?? "";
+  return EXTENSIONLESS_TEXT_FILE_BASENAME_SET.has(basename);
 }

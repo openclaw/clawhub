@@ -188,8 +188,10 @@ Stores your API token + cached registry URL.
 - `--migrate-owner` moves an existing skill to `--owner` while publishing a new
   version. Requires admin/owner access on both publishers.
 - Owner and review behavior is explained in `docs/publishing.md`.
-- Publishing a skill means it is released under `MIT-0` on ClawHub.
-- Published skills are free to use, modify, and redistribute without attribution.
+- ClawHub records `MIT` when a skill package declares standard MIT in package.json
+  or LICENSE; otherwise published skills default to `MIT-0`.
+- Published skills are free to use, modify, and redistribute according to the
+  license shown for that version.
 - ClawHub does not support paid skills or per-skill pricing.
 - Legacy alias: `publish <path>`.
 

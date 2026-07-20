@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import * as schema from ".";
 import {
   guessTextContentType,
+  isExtensionlessTextFilePath,
   isTextContentType,
   normalizeTextContentType,
   TEXT_FILE_EXTENSION_SET,
@@ -36,7 +37,15 @@ describe("clawhub-schema textFiles", () => {
     expect(guessTextContentType("data/table.tsv")).toBe("text/tab-separated-values");
     expect(guessTextContentType("analysis/model.R")).toBe("text/plain");
     expect(guessTextContentType("scripts/setup.ps1")).toBe("text/plain");
+    expect(guessTextContentType("LICENSE")).toBe("text/plain");
+    expect(guessTextContentType("COPYING")).toBe("text/plain");
     expect(guessTextContentType("image.png")).toBeUndefined();
+  });
+
+  it("recognizes extensionless license files as text", () => {
+    expect(isExtensionlessTextFilePath("LICENSE")).toBe(true);
+    expect(isExtensionlessTextFilePath("docs/COPYING")).toBe(true);
+    expect(isExtensionlessTextFilePath("license.json")).toBe(false);
   });
 
   it("normalizes misleading MIME types for text files", () => {
@@ -44,6 +53,7 @@ describe("clawhub-schema textFiles", () => {
     expect(normalizeTextContentType("README.md", "text/markdown; charset=utf-8")).toBe(
       "text/markdown",
     );
+    expect(normalizeTextContentType("LICENSE", "")).toBe("text/plain");
     expect(normalizeTextContentType("image.png", "image/png")).toBe("image/png");
   });
 
