@@ -143,6 +143,7 @@ import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packageLeaderboards from "../packageLeaderboards.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
+import type * as prepublicationObservability from "../prepublicationObservability.js";
 import type * as promotions from "../promotions.js";
 import type * as promotionsFeed from "../promotionsFeed.js";
 import type * as publishAttempts from "../publishAttempts.js";
@@ -312,6 +313,7 @@ declare const fullApi: ApiFromModules<{
   packageLeaderboards: typeof packageLeaderboards;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
+  prepublicationObservability: typeof prepublicationObservability;
   promotions: typeof promotions;
   promotionsFeed: typeof promotionsFeed;
   publishAttempts: typeof publishAttempts;
