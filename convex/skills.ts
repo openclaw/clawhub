@@ -4376,28 +4376,21 @@ export const reportSkillForUserInternal = internalMutation({
     version: v.optional(v.string()),
     // Owner qualifier for ambiguous slugs (mirrors GET /skills/{slug}?owner=).
     ownerHandle: v.optional(v.string()),
-    // Direct id path used by the signed-in web dialog; also works for ambiguous slugs.
-    skillId: v.optional(v.id("skills")),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
 
-    let skill: Doc<"skills"> | null = null;
-    if (args.skillId) {
-      skill = await ctx.db.get(args.skillId);
-    } else {
-      const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
-      const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, ownerHandle);
-      if (resolved.ambiguous) {
-        // Prefer the same guidance used by other slug-only endpoints instead of
-        // collapsing collisions into a misleading "Skill not found".
-        throw new ConvexError(
-          "Slug is used by multiple publishers. Use an owner-qualified skill URL.",
-        );
-      }
-      skill = resolved.skill;
+    const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, ownerHandle);
+    if (resolved.ambiguous) {
+      // Prefer the same guidance used by other slug-only endpoints instead of
+      // collapsing collisions into a misleading "Skill not found".
+      throw new ConvexError(
+        "Slug is used by multiple publishers. Use an owner-qualified skill URL.",
+      );
     }
+    const skill = resolved.skill;
     if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
       throw new ConvexError("Skill not found");
     }

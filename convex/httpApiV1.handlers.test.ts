@@ -3519,7 +3519,7 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("skill report forwards owner query/body and skillId for ambiguous slugs", async () => {
+  it("skill report forwards owner query for ambiguous slugs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:reporter",
       user: { _id: "users:reporter", role: "user" },
@@ -3538,18 +3538,13 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
-      new Request(
-        "https://example.com/api/v1/skills/wp-multi-tool/report?owner=kingaiwork",
-        {
-          method: "POST",
-          headers: { Authorization: "Bearer clh_test" },
-          body: JSON.stringify({
-            reason: "impersonation",
-            ownerHandle: "kingaiwork",
-            skillId: "skills:owner-scoped",
-          }),
-        },
-      ),
+      new Request("https://example.com/api/v1/skills/wp-multi-tool/report?owner=kingaiwork", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          reason: "impersonation",
+        }),
+      }),
     );
 
     expect(response.status).toBe(200);
@@ -3561,7 +3556,6 @@ describe("httpApiV1 handlers", () => {
         slug: "wp-multi-tool",
         reason: "impersonation",
         ownerHandle: "kingaiwork",
-        skillId: "skills:owner-scoped",
       },
     );
   });

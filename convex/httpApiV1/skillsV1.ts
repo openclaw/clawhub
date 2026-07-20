@@ -3170,7 +3170,6 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       optionalStringField(parsed.payload, "ownerHandle") ??
       optionalStringField(parsed.payload, "owner") ??
       getOwnerHandleParam(url);
-    const skillIdRaw = optionalStringField(parsed.payload, "skillId");
     try {
       const result = await runMutationRef(ctx, internalRefs.skills.reportSkillForUserInternal, {
         actorUserId: auth.userId,
@@ -3178,7 +3177,6 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         reason,
         ...(version ? { version } : {}),
         ...(ownerHandle ? { ownerHandle } : {}),
-        ...(skillIdRaw ? { skillId: skillIdRaw as Id<"skills"> } : {}),
       });
       return json(result, 200, rate.headers);
     } catch (error) {
