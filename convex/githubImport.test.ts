@@ -467,6 +467,12 @@ describe("githubImport", () => {
       full_name: "vyctorbrzezowski/colliding-skills",
       html_url: "https://github.com/vyctorbrzezowski/colliding-skills",
     };
+    const truncatedRepo = {
+      ...ownedRepo,
+      name: "large-skills",
+      full_name: "vyctorbrzezowski/large-skills",
+      html_url: "https://github.com/vyctorbrzezowski/large-skills",
+    };
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -484,6 +490,7 @@ describe("githubImport", () => {
             { path: "SKILL.md", repository: ownedRepo },
             { path: "tools/review/SKILL.md", repository: ownedRepo },
             { path: "skills/broken/SKILL.md", repository: collidingRepo },
+            { path: "skills/large/SKILL.md", repository: truncatedRepo },
             { path: ".agents/skills/internal/SKILL.md", repository: ownedRepo },
             {
               path: "SKILL.md",
@@ -524,6 +531,13 @@ describe("githubImport", () => {
             { path: "skills/broken/skill.md", type: "blob" },
           ],
         }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: true,
+          tree: [{ path: "skills/large/SKILL.md", type: "blob" }],
+        }),
       });
 
     const result = await __test.listOwnedPublicGitHubReposForUser(
@@ -553,7 +567,7 @@ describe("githubImport", () => {
         skillPath: "legacy/skills.md",
       }),
     ]);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     const searchUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
     expect(searchUrl.pathname).toBe("/search/code");
     expect(searchUrl.searchParams.get("q")).toBe("filename:SKILL.md user:vyctorbrzezowski");

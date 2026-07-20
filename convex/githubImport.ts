@@ -664,7 +664,7 @@ async function listOwnedPublicSkillCandidatesWithCodeSearch(
   >();
   const filteredCandidates: OwnedPublicRepoListItem[] = [];
   for (const candidate of candidates) {
-    if (await ownedPublicSkillCandidateHasCaseCollision(candidate, fetcher, treeCache)) continue;
+    if (await shouldExcludeOwnedPublicSkillCandidate(candidate, fetcher, treeCache)) continue;
     filteredCandidates.push(candidate);
   }
 
@@ -820,12 +820,12 @@ function normalizeSkillTreePath(entry: GitHubTreeEntryPayload) {
   return isGitHubSkillFilePath(path) ? path : null;
 }
 
-async function ownedPublicSkillCandidateHasCaseCollision(
+async function shouldExcludeOwnedPublicSkillCandidate(
   candidate: OwnedPublicRepoListItem,
   fetcher: typeof fetch,
   treeCache: Map<string, Promise<{ entries: GitHubTreeEntryPayload[]; truncated: boolean } | null>>,
 ) {
-  if (!candidate.defaultBranch) return false;
+  if (!candidate.defaultBranch) return true;
   const cacheKey = `${candidate.owner}/${candidate.repoName}@${candidate.defaultBranch}`;
   let treePromise = treeCache.get(cacheKey);
   if (!treePromise) {
@@ -838,7 +838,8 @@ async function ownedPublicSkillCandidateHasCaseCollision(
     treeCache.set(cacheKey, treePromise);
   }
   const tree = await treePromise;
-  if (!tree || tree.truncated) return false;
+  // A partial tree cannot prove the package portable, and path imports reject truncated trees too.
+  if (!tree || tree.truncated) return true;
   const fileCaseCollisions = findSkillPackageFileCaseCollisions(
     tree.entries.flatMap((entry) =>
       entry.type === "blob" && typeof entry.path === "string" ? [entry.path] : [],
