@@ -74,6 +74,7 @@ import {
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
+  safeStoredFilePreviewResponse,
   safeStoredFileResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
@@ -2483,6 +2484,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   if (second === "file" && segments.length === 2) {
     const path = url.searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
+    const preview = url.searchParams.get("preview") === "1";
     const versionParam = url.searchParams.get("version")?.trim();
     const tagParam = url.searchParams.get("tag")?.trim();
 
@@ -2542,12 +2544,27 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       version.files.find((entry) => entry.path === normalized) ??
       version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
     if (!file) return text("File not found", 404, rate.headers);
-    if (file.size > MAX_PUBLISH_FILE_BYTES) {
-      return text("File exceeds 10MB limit", 413, rate.headers);
+    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+    if (file.size > maxBytes) {
+      return text(
+        preview ? "File exceeds 200KB preview limit" : "File exceeds 10MB limit",
+        413,
+        rate.headers,
+      );
     }
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);
+    if (preview) {
+      return await safeStoredFilePreviewResponse({
+        blob,
+        path: file.path,
+        contentType: file.contentType ?? undefined,
+        sha256: file.sha256,
+        size: file.size,
+        headers: rate.headers,
+      });
+    }
     return await safeStoredFileResponse({
       blob,
       path: file.path,

@@ -173,7 +173,8 @@ metadata:
 Publish accepts all regular files in the skill folder, regardless of extension. Ignore files,
 hidden paths, symlinks, macOS metadata, and server-side size limits still apply.
 
-- UTF-8 text files can be previewed in ClawHub and are included in bounded text analysis.
+- Bounded files that contain valid UTF-8 can be previewed as escaped plain text and are included
+  in bounded text analysis.
 - Other files keep their exact bytes and are available to download.
 - Security scanners receive the complete stored artifact; text detection is a rendering and
   analysis concern, not an upload allowlist.

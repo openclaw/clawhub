@@ -597,6 +597,7 @@ describe("package commands", () => {
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("tag")).toBe("latest");
     expect(url.searchParams.get("version")).toBeNull();
+    expect(url.searchParams.get("preview")).toBe("1");
   });
 
   it("downloads a ClawPack artifact through the explicit artifact resolver", async () => {

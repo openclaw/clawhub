@@ -4961,7 +4961,7 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe("Version not found");
   });
 
-  it("returns UTF-8 Terraform file content", async () => {
+  it("previews UTF-8 Terraform by bytes and downloads the raw file", async () => {
     const internalVersion = {
       skillId: "skills:1",
       version: "1.0.0",
@@ -5006,19 +5006,33 @@ describe("httpApiV1 handlers", () => {
     const storage = {
       get: vi.fn().mockResolvedValue(new Blob([terraform], { type: "application/octet-stream" })),
     };
-    const response = await __handlers.skillsGetRouterV1Handler(
+    const previewResponse = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=main.tf&preview=1"),
+    );
+    expect(previewResponse.status).toBe(200);
+    expect(await previewResponse.text()).toBe(terraform);
+    expect(previewResponse.headers.get("X-Content-SHA256")).toBe("abcd");
+    expect(previewResponse.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(previewResponse.headers.get("Content-Disposition")).toBeNull();
+
+    const rawResponse = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage }),
       new Request("https://example.com/api/v1/skills/demo/file?path=main.tf"),
     );
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe(terraform);
-    expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
-    expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
-    expect(response.headers.get("Content-Disposition")).toBeNull();
+    expect(rawResponse.status).toBe(200);
+    expect(new Uint8Array(await rawResponse.arrayBuffer())).toEqual(
+      new TextEncoder().encode(terraform),
+    );
+    expect(rawResponse.headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(rawResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''main.tf",
+    );
   });
 
-  it("preserves UTF-8 bytes exactly and attaches active documents", async () => {
+  it("preserves raw UTF-8 bytes exactly and downloads every file type", async () => {
     const bomBytes = Uint8Array.from([0xef, 0xbb, 0xbf, 0x61]);
+    const markdownBytes = new TextEncoder().encode("# Demo\n");
     const htmlBytes = new TextEncoder().encode("<script>alert(1)</script>");
     const pdfBytes = new TextEncoder().encode("%PDF-1.7\n");
     const internalVersion = {
@@ -5033,6 +5047,13 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:bom",
           sha256: "bom-sha",
           contentType: "text/plain",
+        },
+        {
+          path: "README.md",
+          size: markdownBytes.byteLength,
+          storageId: "storage:markdown",
+          sha256: "markdown-sha",
+          contentType: "text/markdown",
         },
         {
           path: "demo.html",
@@ -5075,6 +5096,9 @@ describe("httpApiV1 handlers", () => {
     const storage = {
       get: vi.fn(async (storageId: string) => {
         if (storageId === "storage:bom") return new Blob([bomBytes], { type: "text/plain" });
+        if (storageId === "storage:markdown") {
+          return new Blob([markdownBytes], { type: "text/markdown" });
+        }
         if (storageId === "storage:html") return new Blob([htmlBytes], { type: "text/html" });
         return new Blob([pdfBytes], { type: "application/pdf" });
       }),
@@ -5090,7 +5114,18 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/demo/file?path=bom.txt"),
     );
     expect(new Uint8Array(await bomResponse.arrayBuffer())).toEqual(bomBytes);
-    expect(bomResponse.headers.get("Content-Disposition")).toBeNull();
+    expect(bomResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''bom.txt",
+    );
+
+    const markdownResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=README.md"),
+    );
+    expect(new Uint8Array(await markdownResponse.arrayBuffer())).toEqual(markdownBytes);
+    expect(markdownResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''README.md",
+    );
 
     const htmlResponse = await __handlers.skillsGetRouterV1Handler(
       ctx,
@@ -5100,7 +5135,7 @@ describe("httpApiV1 handlers", () => {
     expect(htmlResponse.headers.get("Content-Disposition")).toBe(
       "attachment; filename*=UTF-8''demo.html",
     );
-    expect(htmlResponse.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
+    expect(htmlResponse.headers.get("Content-Type")).toBe("text/html");
     expect(htmlResponse.headers.get("X-Content-Type-Options")).toBe("nosniff");
 
     const pdfResponse = await __handlers.skillsGetRouterV1Handler(
@@ -13552,7 +13587,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("package file keeps opaque plugin artifacts unavailable inline", async () => {
+  it("package file previews UTF-8 by bytes and downloads opaque artifacts", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args) {
@@ -13581,6 +13616,13 @@ describe("httpApiV1 handlers", () => {
           changelog: "init",
           files: [
             {
+              path: "main.tf",
+              size: 37,
+              sha256: "b".repeat(64),
+              storageId: "storage:text",
+              contentType: "application/octet-stream",
+            },
+            {
               path: "assets/payload.bin",
               size: 4,
               sha256: "a".repeat(64),
@@ -13592,16 +13634,42 @@ describe("httpApiV1 handlers", () => {
       }
       return null;
     });
-    const storage = { get: vi.fn() };
+    const terraform = 'resource "null_resource" "demo" {}\n';
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    const storage = {
+      get: vi.fn(async (storageId: string) =>
+        storageId === "storage:text"
+          ? new Blob([terraform], { type: "application/octet-stream" })
+          : new Blob([opaqueBytes], { type: "application/octet-stream" }),
+      ),
+    };
 
-    const response = await __handlers.packagesGetRouterV1Handler(
+    const previewResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/file?path=main.tf&preview=1"),
+    );
+    expect(previewResponse.status).toBe(200);
+    await expect(previewResponse.text()).resolves.toBe(terraform);
+    expect(previewResponse.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+
+    const opaquePreviewResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request(
+        "https://example.com/api/v1/packages/demo-plugin/file?path=assets%2Fpayload.bin&preview=1",
+      ),
+    );
+    expect(opaquePreviewResponse.status).toBe(415);
+    await expect(opaquePreviewResponse.text()).resolves.toBe("File cannot be previewed as text");
+
+    const rawResponse = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage }),
       new Request("https://example.com/api/v1/packages/demo-plugin/file?path=assets%2Fpayload.bin"),
     );
-
-    expect(response.status).toBe(415);
-    await expect(response.text()).resolves.toBe("Binary files are not served inline");
-    expect(storage.get).not.toHaveBeenCalled();
+    expect(rawResponse.status).toBe(200);
+    expect(new Uint8Array(await rawResponse.arrayBuffer())).toEqual(opaqueBytes);
+    expect(rawResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''payload.bin",
+    );
   });
 
   it("package file resolves lowercase readme variants from the canonical request path", async () => {

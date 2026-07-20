@@ -520,6 +520,48 @@ describe("SecurityScanResults static guidance", () => {
     ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
+  it("loads plugin SkillSpector snippets through the package text-preview contract", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("first\nmatched line\nthird\n"));
+    const analysis: SkillSpectorAnalysis = {
+      ...skillSpectorAnalysis,
+      issues: [
+        {
+          ...skillSpectorAnalysis.issues[0],
+          file: "main.tf",
+          startLine: 2,
+          endLine: 2,
+          codeSnippet: undefined,
+        },
+      ],
+    };
+
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "plugin",
+          title: "Terraform Plugin",
+          name: "terraform-plugin",
+          version: "2.0.0",
+          detailPath: "/plugins/terraform-plugin",
+        }}
+        skillSpectorAnalysis={analysis}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const requestInput = fetchMock.mock.calls[0]?.[0];
+    expect(typeof requestInput).toBe("string");
+    if (typeof requestInput !== "string") throw new Error("Expected a string request URL");
+    const requestUrl = new URL(requestInput, "https://clawhub.ai");
+    expect(requestUrl.pathname).toBe("/api/v1/packages/terraform-plugin/file");
+    expect(requestUrl.searchParams.get("path")).toBe("main.tf");
+    expect(requestUrl.searchParams.get("version")).toBe("2.0.0");
+    expect(requestUrl.searchParams.get("preview")).toBe("1");
+    expect(await screen.findByText("matched line")).toBeTruthy();
+  });
+
   it("uses ClawScan only for the security audit outcome", () => {
     const { container } = render(
       <SecurityAuditPage

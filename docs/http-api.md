@@ -520,19 +520,22 @@ Response:
 
 ### `GET /api/v1/skills/{slug}/file`
 
-Returns exact stored file bytes. Valid UTF-8 source files can be read inline; opaque and active
-document formats are returned as attachments with `X-Content-Type-Options: nosniff`.
+Returns exact stored file bytes as a download. Add `preview=1` to request a bounded escaped-text
+preview; any file with valid UTF-8 bytes can be previewed, regardless of its extension or MIME
+metadata.
 
 Query params:
 
 - `path` (required)
 - `version` (optional)
 - `tag` (optional)
+- `preview=1` (optional; returns `text/plain` or `415` when the bytes are not valid UTF-8)
 
 Notes:
 
 - Defaults to latest version.
-- File size limit: 200KB.
+- Raw download limit: 10MB.
+- Text preview limit: 200KB.
 
 ### `GET /api/v1/packages`
 
@@ -1198,20 +1201,22 @@ Every change writes an audit log entry.
 
 ### `GET /api/v1/packages/{name}/file`
 
-Returns raw text content for a package file.
+Returns exact stored package file bytes as a download. Add `preview=1` to request the same bounded
+UTF-8 text preview used for skill files.
 
 Query params:
 
 - `path` (required)
 - `version` (optional)
 - `tag` (optional)
+- `preview=1` (optional; returns `text/plain` or `415` when the bytes are not valid UTF-8)
 
 Notes:
 
 - Defaults to the latest release.
 - Uses the read rate bucket, not the download bucket.
-- Binary files return `415`.
-- File size limit: 200KB.
+- Raw download limit: 10MB.
+- Text preview limit: 200KB; opaque files return `415` only for preview requests.
 - Pending VirusTotal scans do not block reads; malicious releases may still be withheld elsewhere.
 - Private packages return `404` unless the caller can read the owning publisher.
 

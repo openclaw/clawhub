@@ -350,7 +350,7 @@ describe("version file access actions", () => {
     ["diagram.svg", "image/svg+xml"],
     ["config.xml", "application/xml"],
   ])(
-    "returns rich document %s as download-only even when it is valid UTF-8",
+    "previews valid UTF-8 document %s as escaped text regardless of extension",
     async (path, contentType) => {
       const text = "<root>valid UTF-8</root>";
       const version = {
@@ -385,7 +385,7 @@ describe("version file access actions", () => {
         } as never),
       ).resolves.toEqual({
         path,
-        text: null,
+        text,
         size: text.length,
         sha256: "e".repeat(64),
       });

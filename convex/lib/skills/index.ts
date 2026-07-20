@@ -2,11 +2,9 @@ import {
   type ClawdbotConfigSpec,
   type ClawdisSkillMetadata,
   ClawdisSkillMetadataSchema,
-  isTextContentType,
   type NixPluginSpec,
   parseArk,
   type SkillInstallSpec,
-  TEXT_FILE_EXTENSION_SET,
 } from "clawhub-schema";
 import { parse as parseYaml } from "yaml";
 
@@ -150,15 +148,6 @@ export function parseClawdisMetadata(frontmatter: ParsedSkillFrontmatter) {
   } catch {
     return undefined;
   }
-}
-
-export function isTextFile(path: string, contentType?: string | null) {
-  const trimmed = path.trim().toLowerCase();
-  if (!trimmed) return false;
-  const parts = trimmed.split(".");
-  const extension = parts.length > 1 ? (parts.at(-1) ?? "") : "";
-  if (contentType && isTextContentType(contentType)) return true;
-  return Boolean(extension && TEXT_FILE_EXTENSION_SET.has(extension));
 }
 
 export function isMacJunkPath(path: string) {

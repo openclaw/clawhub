@@ -140,12 +140,14 @@ describe("skills", () => {
     );
   });
 
-  it("falls back to text/plain for unknown text extensions", async () => {
+  it("uses a generic MIME fallback for unknown extensions", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-env-"));
     await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
     await writeFile(join(workdir, "config.env"), "SETTING=demo", "utf8");
     const files = await listTextFiles(workdir);
-    expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe("text/plain");
+    expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe(
+      "application/octet-stream",
+    );
   });
 
   it("includes every eligible regular file with exact bytes", async () => {

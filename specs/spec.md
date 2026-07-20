@@ -118,11 +118,11 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 ## Upload flow (50MB per version)
 
 1. Client requests upload session.
-2. Client uploads each file via Convex upload URLs (no binaries, text only).
+2. Client uploads each bounded regular file via Convex upload URLs.
 3. Client submits metadata + file list + changelog + version + tags.
 4. Server validates:
    - total size ≤ 50MB
-   - file extensions/text content
+   - path and size limits
    - SKILL.md exists and frontmatter parseable
    - version uniqueness
    - GitHub account age ≥ 14 days

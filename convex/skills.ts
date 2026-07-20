@@ -3,7 +3,6 @@ import {
   decodeUtf8Text,
   getCatalogTopicSlugs,
   INTERNAL_UNCATEGORIZED_CATEGORY,
-  isRichOrActiveDocument,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
@@ -10201,15 +10200,6 @@ export const getFilePreview: ReturnType<typeof action> = action({
     if (!file) throw new ConvexError("File not found");
 
     if (file.size > MAX_DIFF_FILE_BYTES) {
-      return {
-        path: file.path,
-        text: null,
-        size: file.size,
-        sha256: file.sha256,
-      };
-    }
-
-    if (isRichOrActiveDocument(file.path, file.contentType)) {
       return {
         path: file.path,
         text: null,

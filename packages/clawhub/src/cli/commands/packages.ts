@@ -438,6 +438,7 @@ export async function cmdInspectPackage(
         registry,
       );
       url.searchParams.set("path", options.file);
+      url.searchParams.set("preview", "1");
       if (options.version) {
         url.searchParams.set("version", options.version);
       } else if (options.tag) {
