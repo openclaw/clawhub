@@ -22,6 +22,7 @@ import {
 import {
   getFrontmatterMetadata,
   getFrontmatterValue,
+  isTextFile,
   parseClawdisMetadata,
   parseFrontmatter,
 } from "../convex/lib/skills";
@@ -224,7 +225,9 @@ async function buildPluginArtifact(source: string, now: () => number) {
 
   if (!findFile(files, ["openclaw.plugin.json"])) throw new Error("openclaw.plugin.json required");
 
-  const textFiles = decodeTextFiles(files);
+  const textFiles = decodeTextFiles(
+    files.filter((file) => isTextFile(file.path, file.contentType)),
+  );
   const readme =
     findFile(files, ["readme.md", "readme.mdx", "readme.markdown"]) ??
     findFile(files, ["package.json"]);

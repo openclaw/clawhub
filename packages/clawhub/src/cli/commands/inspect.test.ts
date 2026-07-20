@@ -110,16 +110,54 @@ describe("cmdInspect", () => {
         skill: { slug: "demo", displayName: "Demo" },
         version: { version: "2.0.0", createdAt: 3, changelog: "init", files: [] },
       });
-    httpMocks.fetchText.mockResolvedValue("content");
+    const fileBytes = new TextEncoder().encode("content");
+    httpMocks.fetchBinary.mockResolvedValue(fileBytes);
 
     await cmdInspect(makeGlobalOpts(), "demo", { file: "SKILL.md", tag: "latest" });
 
-    const fetchArgs = httpMocks.fetchText.mock.calls[0]?.[1];
+    const fetchArgs = httpMocks.fetchBinary.mock.calls[0]?.[1];
     const url = new URL(String(fetchArgs?.url));
     expect(url.pathname).toBe("/api/v1/skills/demo/file");
     expect(url.searchParams.get("path")).toBe("SKILL.md");
     expect(url.searchParams.get("tag")).toBe("latest");
     expect(url.searchParams.get("version")).toBeNull();
+    expect(mockWrite).toHaveBeenCalledTimes(1);
+    expect(mockWrite).toHaveBeenCalledWith(fileBytes);
+  });
+
+  it("represents opaque file bytes losslessly in JSON", async () => {
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: { latest: "2.0.0" },
+          stats: {},
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        latestVersion: { version: "2.0.0", createdAt: 3, changelog: "init", license: "MIT-0" },
+        owner: null,
+      })
+      .mockResolvedValueOnce({
+        skill: { slug: "demo", displayName: "Demo" },
+        version: { version: "2.0.0", createdAt: 3, changelog: "init", files: [] },
+      });
+    httpMocks.fetchBinary.mockResolvedValue(opaqueBytes);
+
+    await cmdInspect(makeGlobalOpts(), "demo", { file: "payload.bin", json: true });
+
+    const output = JSON.parse(String(mockLog.mock.calls.at(-1)?.[0])) as {
+      file: { content: string | null; contentBase64: string };
+    };
+    expect(output.file).toEqual({
+      path: "payload.bin",
+      content: null,
+      contentBase64: "AAEC/w==",
+    });
+    expect(mockWrite).not.toHaveBeenCalled();
   });
 
   it("prints security summary when version security metadata exists", async () => {

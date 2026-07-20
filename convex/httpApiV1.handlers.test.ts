@@ -5019,6 +5019,7 @@ describe("httpApiV1 handlers", () => {
   it("preserves UTF-8 bytes exactly and attaches active documents", async () => {
     const bomBytes = Uint8Array.from([0xef, 0xbb, 0xbf, 0x61]);
     const htmlBytes = new TextEncoder().encode("<script>alert(1)</script>");
+    const pdfBytes = new TextEncoder().encode("%PDF-1.7\n");
     const internalVersion = {
       skillId: "skills:1",
       version: "1.0.0",
@@ -5038,6 +5039,13 @@ describe("httpApiV1 handlers", () => {
           storageId: "storage:html",
           sha256: "html-sha",
           contentType: "text/html",
+        },
+        {
+          path: "demo.pdf",
+          size: pdfBytes.byteLength,
+          storageId: "storage:pdf",
+          sha256: "pdf-sha",
+          contentType: "application/pdf",
         },
       ],
       softDeletedAt: undefined,
@@ -5064,11 +5072,11 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const storage = {
-      get: vi.fn(async (storageId: string) =>
-        storageId === "storage:bom"
-          ? new Blob([bomBytes], { type: "text/plain" })
-          : new Blob([htmlBytes], { type: "text/html" }),
-      ),
+      get: vi.fn(async (storageId: string) => {
+        if (storageId === "storage:bom") return new Blob([bomBytes], { type: "text/plain" });
+        if (storageId === "storage:html") return new Blob([htmlBytes], { type: "text/html" });
+        return new Blob([pdfBytes], { type: "application/pdf" });
+      }),
     };
     const ctx = makeCtx({
       runQuery,
@@ -5092,6 +5100,15 @@ describe("httpApiV1 handlers", () => {
       "attachment; filename*=UTF-8''demo.html",
     );
     expect(htmlResponse.headers.get("X-Content-Type-Options")).toBe("nosniff");
+
+    const pdfResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=demo.pdf"),
+    );
+    expect(new Uint8Array(await pdfResponse.arrayBuffer())).toEqual(pdfBytes);
+    expect(pdfResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''demo.pdf",
+    );
   });
 
   it("returns opaque skill files as exact-byte attachments", async () => {
@@ -13522,6 +13539,58 @@ describe("httpApiV1 handlers", () => {
       name: "readIp",
       config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
     });
+  });
+
+  it("package file keeps opaque plugin artifacts unavailable inline", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "assets/payload.bin",
+              size: 4,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/octet-stream",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storage = { get: vi.fn() };
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/file?path=assets%2Fpayload.bin"),
+    );
+
+    expect(response.status).toBe(415);
+    await expect(response.text()).resolves.toBe("Binary files are not served inline");
+    expect(storage.get).not.toHaveBeenCalled();
   });
 
   it("package file resolves lowercase readme variants from the canonical request path", async () => {

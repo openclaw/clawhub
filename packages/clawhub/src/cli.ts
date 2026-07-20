@@ -369,7 +369,7 @@ registerCommand(program, ["inspect"])
   .option("--versions", "List version history (first page)")
   .option("--limit <n>", "Max versions to list (1-200)", (value) => Number.parseInt(value, 10))
   .option("--files", "List files for the selected version")
-  .option("--file <path>", "Fetch raw file content (text <= 200KB)")
+  .option("--file <path>", "Fetch raw file bytes (<= 200KB)")
   .option("--json", "Output JSON")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();

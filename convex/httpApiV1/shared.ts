@@ -27,9 +27,10 @@ function isActiveDocumentLike(contentType: string | undefined, path: string) {
     normalizedType === "text/html" ||
     normalizedType === "application/xhtml+xml" ||
     normalizedType === "image/svg+xml" ||
+    normalizedType === "application/pdf" ||
     normalizedType === "application/xml" ||
     normalizedType === "text/xml" ||
-    /\.(?:html?|xhtml|svg|xml|xsl|xslt)$/u.test(normalizedPath)
+    /\.(?:html?|xhtml|svg|pdf|xml|xsl|xslt)$/u.test(normalizedPath)
   );
 }
 

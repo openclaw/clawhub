@@ -126,7 +126,7 @@ Stores your API token + cached registry URL.
 - `--limit <n>`: max versions to list (1-200).
 - `--files`: list files for the selected version.
 - `--file <path>`: fetch raw file bytes (200KB limit; opaque files download as attachments).
-- `--json`: machine-readable output.
+- `--json`: machine-readable output; `--file` includes exact bytes as base64 and UTF-8 text when available.
 
 ### `install @owner/slug`
 
