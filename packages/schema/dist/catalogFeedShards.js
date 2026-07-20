@@ -214,7 +214,9 @@ export function serializeCatalogFeedShardRoot(root) {
     return payload;
 }
 async function sha256Hex(bytes) {
-    const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
+    const input = new Uint8Array(bytes.byteLength);
+    input.set(bytes);
+    const digest = await crypto.subtle.digest("SHA-256", input);
     return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 export async function validateCatalogFeedShardSet(rootValue, shardPayloads) {

@@ -64,13 +64,13 @@ import {
 } from "./httpApiV1";
 import { signedCatalogFeedChangesHttp } from "./httpApiV1/catalogFeedChanges";
 import { signedCatalogFeedQueryHttp } from "./httpApiV1/catalogFeedQuery";
-import { catalogFeedWithOptionalSigningV1Http } from "./httpApiV1/catalogFeedSigning";
 import {
   catalogFeedShardHttp,
   catalogSkillsFeedShardHttp,
   signedCatalogFeedShardRootHttp,
   signedCatalogSkillsFeedShardRootHttp,
 } from "./httpApiV1/catalogFeedShards";
+import { catalogFeedWithOptionalSigningV1Http } from "./httpApiV1/catalogFeedSigning";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import {
