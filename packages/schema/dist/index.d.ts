@@ -3,6 +3,7 @@ export { formatArkErrors, parseArk } from "./ark.js";
 export * from "./claws.js";
 export * from "./clawPackage.js";
 export * from "./catalogFeed.js";
+export * from "./experimentalClawFeed.js";
 export * from "./catalogMetadata.js";
 export * from "./docsLinks.js";
 export * from "./license.js";

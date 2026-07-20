@@ -117,3 +117,37 @@ When `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled, explicit `family=claw` filters
 are rejected, unscoped list and search results omit Claws, and named Claw reads
 return not found. Full manifests remain in exact artifacts and are never
 projected through public release responses.
+
+## Consume the experimental feed
+
+Enabled deployments publish eligible official Claws as a separate hosted feed:
+
+```bash
+curl "https://clawhub.ai/v1/feeds/claws"
+```
+
+This uses a dedicated experimental Claw feed contract rather than extending
+the stable plugin/skill catalog feed v1 schema.
+
+Each entry provides the exact package version, artifact SHA-256, publisher
+trust, and `clawManifestSummary`. Consumers resolve and verify that artifact,
+unpack it as a normal Claw package directory, and pass the directory to
+OpenClaw for local inspection or `claws add --dry-run`. ClawHub does not bypass
+OpenClaw's preview or consent boundary.
+
+The route returns `404` while `CLAWHUB_EXPERIMENTAL_CLAWS` is disabled and is
+not advertised in the registry discovery document until the experimental gate
+is removed.
+
+Run the repeatable registry-to-OpenClaw proof against an OpenClaw Claws
+checkout with:
+
+```bash
+OPENCLAW_CLAWS_CHECKOUT=/path/to/openclaw \
+  bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
+```
+
+The proof serves a deterministic hosted feed and package artifact, verifies the
+feed and downloaded digests, extracts the package, and invokes the actual
+OpenClaw source CLI with `claws add --dry-run --json` in an isolated state
+directory.

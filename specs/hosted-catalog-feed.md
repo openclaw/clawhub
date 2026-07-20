@@ -1,5 +1,5 @@
 ---
-summary: "ClawHub publication contract for the OpenClaw hosted plugin, skill, and promotions feeds."
+summary: "ClawHub publication contract for the stable OpenClaw hosted plugin, skill, and promotions feeds."
 read_when:
   - Publishing an OpenClaw hosted feed
   - Changing feed entries, cache headers, or publication workflow
@@ -9,9 +9,9 @@ read_when:
 # Hosted Feeds
 
 ClawHub is the canonical producer for the initial OpenClaw plugin and skill
-feeds and the runtime promotions feed. The feeds are projections of existing
-public package, release, skill, and promotion records; they are not second
-catalogs.
+feeds and the runtime promotions feed. The feeds
+are projections of existing public package, release, skill, and promotion
+records; they are not second catalogs.
 
 ## Contract
 
@@ -71,6 +71,10 @@ Until the skills feed has pagination or sharding, it publishes at most 1000
 eligible entries per snapshot so a large skills corpus does not block the plugin
 feed publication path.
 
+The experimental Claws feed is deliberately not an additive entry type in this
+stable v1 contract. Its separately gated parser, serializer, and route are
+specified in [Experimental Claw Feed](experimental-claw-feed.md).
+
 The promotions feed uses id `clawhub-promotions`, schema version `1`, and the
 `/v1/feeds/promotions` route. Entries are declarative promotion records, not
 commands or executable content. They may identify providers, auth choices,
@@ -97,8 +101,9 @@ outside the promotion's declared provider.
 
 ## Publication
 
-`convex/catalogFeed.ts` builds both feeds from indexed package/skill queries and
-stores one current publication row per feed in `catalogFeedPublications`.
+`convex/catalogFeed.ts` builds the package, skill, and gated Claws feeds from
+indexed package/skill queries and stores one current publication row per feed
+in `catalogFeedPublications`.
 Keeping one row per feed avoids an unbounded publication log while preserving
 the sequence and exact payload needed for validators.
 
@@ -119,9 +124,9 @@ snapshot inside its 24-hour `expiresAt` horizon.
 
 ## Edge delivery
 
-The HTTP endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`, and
-`/api/v1/feeds/promotions`. Each returns its stored bytes unchanged and
-provides:
+The stable HTTP endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`,
+and `/api/v1/feeds/promotions`. Each enabled endpoint
+returns its stored bytes unchanged and provides:
 
 - `ETag: "sha256:<payload hash>"`
 - `Last-Modified`
@@ -131,7 +136,7 @@ provides:
 
 Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
 `/v1/feeds/promotions` through the same environment-aware Convex proxy used for
-`/api/*`. The unversioned `/feeds/*` paths permanently redirect to their
+`/api/*`. Their unversioned `/feeds/*` paths permanently redirect to the
 versioned paths. The `registry.openclaw.ai` custom domain must point at the same
 Vercel project before the public RFC URLs are enabled.
 

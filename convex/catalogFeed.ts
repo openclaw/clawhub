@@ -6,9 +6,15 @@ import {
   CATALOG_SKILLS_FEED_DESCRIPTION,
   CATALOG_SKILLS_FEED_ID,
   PROMOTIONS_FEED_ID,
+  EXPERIMENTAL_CLAW_FEED_DESCRIPTION,
+  EXPERIMENTAL_CLAW_FEED_ID,
+  EXPERIMENTAL_CLAW_FEED_SCHEMA_VERSION,
   serializeCatalogFeed,
+  serializeExperimentalClawFeed,
   type CatalogFeedEntry,
+  type CatalogFeedPluginEntry,
   type CatalogFeedSkillEntry,
+  type ExperimentalClawFeedEntry,
 } from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
@@ -17,6 +23,7 @@ import { internalAction, internalMutation, internalQuery } from "./_generated/se
 import type { QueryCtx } from "./_generated/server";
 import { isSkillHighlighted } from "./lib/badges";
 import { sha256Hex } from "./lib/clawpack";
+import { experimentalClawsEnabled } from "./lib/experimentalClaws";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
@@ -33,6 +40,7 @@ const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub
 const CATALOG_FEED_PAGE_SIZE = 100;
 const MAX_CATALOG_FEED_ENTRIES = 1000;
 const CATALOG_FEED_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+const CATALOG_CLAW_FAMILY = "claw" as const;
 
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
 type CatalogFeedPublicationResult = {
@@ -93,11 +101,40 @@ const catalogFeedEntryValidator = v.union(
   v.object({ type: v.literal("plugin"), ...catalogFeedEntryFields }),
   v.object({ type: v.literal("skill"), ...catalogFeedEntryFields }),
 );
+const clawFeedEntryValidator = v.object({
+  type: v.literal("claw"),
+  ...catalogFeedEntryFields,
+  install: v.object({
+    candidates: v.array(
+      v.object({
+        sourceRef: v.literal(CATALOG_FEED_SOURCE_REF),
+        package: v.string(),
+        version: v.string(),
+        integrity: v.string(),
+      }),
+    ),
+  }),
+  clawManifestSummary: v.object({
+    schemaVersion: v.literal(1),
+    agent: v.object({
+      id: v.string(),
+      name: v.optional(v.string()),
+      description: v.optional(v.string()),
+    }),
+    workspace: v.object({
+      bootstrapFiles: v.array(v.string()),
+      fileCount: v.number(),
+    }),
+    packages: v.object({ skillCount: v.number(), pluginCount: v.number() }),
+    mcpServerCount: v.number(),
+    cronJobCount: v.number(),
+  }),
+});
 
 async function buildEntry(
   ctx: CatalogQueryCtx,
   pkg: Doc<"packages">,
-): Promise<CatalogFeedEntry | null> {
+): Promise<CatalogFeedPluginEntry | ExperimentalClawFeedEntry | null> {
   if (pkg.softDeletedAt || pkg.channel !== "official" || !pkg.latestReleaseId) return null;
   const release = await ctx.db.get(pkg.latestReleaseId);
   if (!release || release.packageId !== pkg._id || release.softDeletedAt) return null;
@@ -129,6 +166,32 @@ async function buildEntry(
     .withIndex("by_package_kind", (q) => q.eq("packageId", pkg._id).eq("kind", "highlighted"))
     .unique();
 
+  if (pkg.family === "claw") {
+    if (!release.clawManifestSummary) return null;
+    return {
+      type: "claw",
+      id,
+      title,
+      version,
+      state: "available",
+      publisher: {
+        id: publisherId,
+        trust: "official",
+      },
+      clawManifestSummary: release.clawManifestSummary,
+      install: {
+        candidates: [
+          {
+            sourceRef: CATALOG_FEED_SOURCE_REF,
+            package: packageName,
+            version,
+            integrity: `sha256:${artifactSha256}`,
+          },
+        ],
+      },
+    } satisfies ExperimentalClawFeedEntry;
+  }
+
   return {
     type: "plugin",
     id,
@@ -158,9 +221,9 @@ async function buildEntry(
 
 async function listFamilyEntries(
   ctx: CatalogQueryCtx,
-  family: (typeof CATALOG_FEED_FAMILIES)[number],
+  family: (typeof CATALOG_FEED_FAMILIES)[number] | typeof CATALOG_CLAW_FAMILY,
 ) {
-  const entries: CatalogFeedEntry[] = [];
+  const entries: Array<CatalogFeedPluginEntry | ExperimentalClawFeedEntry> = [];
   let cursor: string | null = null;
 
   while (true) {
@@ -341,7 +404,25 @@ export const listOfficialEntries = internalQuery({
   args: {
     family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
   },
-  handler: async (ctx, args) => await listFamilyEntries(ctx, args.family),
+  handler: async (ctx, args) => {
+    const entries = await listFamilyEntries(ctx, args.family);
+    if (entries.some((entry) => entry.type !== "plugin")) {
+      throw new Error("Plugin feed projection returned a mismatched entry type");
+    }
+    return entries as CatalogFeedPluginEntry[];
+  },
+});
+
+export const listOfficialClawEntries = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    if (!experimentalClawsEnabled()) return [];
+    const entries = await listFamilyEntries(ctx, CATALOG_CLAW_FAMILY);
+    if (entries.some((entry) => entry.type !== "claw")) {
+      throw new Error("Claw feed projection returned a mismatched entry type");
+    }
+    return entries as ExperimentalClawFeedEntry[];
+  },
 });
 
 export const listOfficialSkillEntries = internalQuery({
@@ -432,6 +513,53 @@ export const storePublication = internalMutation({
   },
 });
 
+export const storeClawPublication = internalMutation({
+  args: {
+    generatedAt: v.string(),
+    expiresAt: v.string(),
+    entries: v.array(clawFeedEntryValidator),
+  },
+  handler: async (ctx, args) => {
+    if (!experimentalClawsEnabled()) throw new Error("Experimental Claw feeds are disabled");
+    const latest = await ctx.db
+      .query("catalogFeedPublications")
+      .withIndex("by_feed", (q) => q.eq("feedId", EXPERIMENTAL_CLAW_FEED_ID))
+      .unique();
+    const sequence = (latest?.sequence ?? 0) + 1;
+    const payload = serializeExperimentalClawFeed({
+      schemaVersion: EXPERIMENTAL_CLAW_FEED_SCHEMA_VERSION,
+      id: EXPERIMENTAL_CLAW_FEED_ID,
+      generatedAt: args.generatedAt,
+      sequence,
+      expiresAt: args.expiresAt,
+      description: EXPERIMENTAL_CLAW_FEED_DESCRIPTION,
+      entries: args.entries,
+    });
+    const payloadSha256 = await sha256Hex(new TextEncoder().encode(payload));
+    const publishedAt = Date.now();
+    const publication = {
+      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      sequence,
+      generatedAt: args.generatedAt,
+      expiresAt: args.expiresAt,
+      payload,
+      payloadSha256,
+      publishedAt,
+    };
+    const publicationId = latest
+      ? (await ctx.db.patch(latest._id, publication), latest._id)
+      : await ctx.db.insert("catalogFeedPublications", publication);
+    return {
+      publicationId,
+      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      sequence,
+      payloadSha256,
+      publishedAt,
+      entryCount: args.entries.length,
+    };
+  },
+});
+
 export const publish = internalAction({
   args: {
     expiresAt: v.string(),
@@ -506,7 +634,25 @@ export const publish = internalAction({
         entries: skillEntries.sort((left, right) => left.id.localeCompare(right.id)),
       },
     );
-    return [pluginResult, skillsResult];
+    if (!experimentalClawsEnabled()) {
+      return [pluginResult, skillsResult];
+    }
+    const clawEntries: ExperimentalClawFeedEntry[] = await ctx.runQuery(
+      internal.catalogFeed.listOfficialClawEntries,
+      {},
+    );
+    if (clawEntries.length > MAX_CATALOG_FEED_ENTRIES) {
+      throw new Error(`Catalog feed exceeds ${MAX_CATALOG_FEED_ENTRIES} entries`);
+    }
+    const clawsResult: CatalogFeedPublicationResult = await ctx.runMutation(
+      internal.catalogFeed.storeClawPublication,
+      {
+        generatedAt,
+        expiresAt: args.expiresAt,
+        entries: clawEntries.sort((left, right) => left.id.localeCompare(right.id)),
+      },
+    );
+    return [pluginResult, skillsResult, clawsResult];
   },
 });
 
@@ -515,6 +661,7 @@ export const getLatestPublication = internalQuery({
     feedId: v.union(
       v.literal(CATALOG_FEED_ID),
       v.literal(CATALOG_SKILLS_FEED_ID),
+      v.literal(EXPERIMENTAL_CLAW_FEED_ID),
       v.literal(PROMOTIONS_FEED_ID),
     ),
   },

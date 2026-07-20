@@ -40,8 +40,13 @@ namespaced key or define their own profile-pointer contract.
    ([PR #3090](https://github.com/openclaw/clawhub/pull/3090)).
 3. Add feature-gated search, detail, and API surfaces
    ([PR #3091](https://github.com/openclaw/clawhub/pull/3091)).
-4. Add hosted feed export and a published-package end-to-end proof through
-   OpenClaw `claws add --dry-run`.
+4. Add a separately gated hosted Claws feed and a repeatable published-package
+   proof through OpenClaw `claws add --dry-run`
+   ([PR #3092](https://github.com/openclaw/clawhub/pull/3092)).
+
+The hosted projection uses the separate
+[experimental Claw feed contract](experimental-claw-feed.md), not an extension
+of the stable plugin/skill catalog feed v1 schema.
 
 The shared validator follows the RFC's strict v1 contract: strings are not
 trimmed into validity, MCP package selectors must resolve exact versions,

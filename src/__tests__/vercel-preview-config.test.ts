@@ -6,6 +6,7 @@ describe("Vercel preview configuration", () => {
     const configText = await readFile("vercel.json", "utf8");
     const config = JSON.parse(configText) as {
       buildCommand?: string;
+      redirects?: Array<{ source?: string; destination?: string; statusCode?: number }>;
       rewrites?: unknown[];
     };
     const packageJson = JSON.parse(await readFile("package.json", "utf8")) as {
