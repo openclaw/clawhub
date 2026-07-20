@@ -48,8 +48,8 @@ import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublis
 import { buildPluginDetailHref, displayPluginPackageName } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { expandFilesWithReport } from "../../lib/uploadFiles";
+import { formatPublishError, hashFile, uploadFile } from "../../lib/uploadUtils";
 import { useAuthStatus } from "../../lib/useAuthStatus";
-import { formatPublishError, hashFile, uploadFile } from "../upload/-utils";
 
 export const Route = createFileRoute("/plugins/publish")({
   validateSearch: (search) => ({

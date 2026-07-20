@@ -53,8 +53,14 @@ import {
 } from "../../lib/skillFrontmatter";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
+import {
+  formatBytes,
+  formatPublishError,
+  hashFile,
+  readText,
+  uploadFile,
+} from "../../lib/uploadUtils";
 import { useAuthStatus } from "../../lib/useAuthStatus";
-import { formatBytes, formatPublishError, hashFile, readText, uploadFile } from "../upload/-utils";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";

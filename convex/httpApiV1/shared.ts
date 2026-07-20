@@ -25,24 +25,23 @@ function attachmentDisposition(path: string) {
   return `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").at(-1) || "download")}`;
 }
 
-export function safeTextFileResponse(params: {
-  textContent: string;
+type SafeFileResponseParams = {
   path: string;
   contentType?: string;
   sha256: string;
   size: number;
   headers?: HeadersInit;
-}) {
-  const contentType = normalizeContentType(params.contentType) ?? params.contentType;
-  const forceAttachment = isRichOrActiveDocument(params.path, contentType);
+};
 
-  // For any text response that a browser might try to render, lock it down.
-  // In particular, this prevents SVG <foreignObject> script execution from reading
-  // localStorage tokens on this origin.
-  const headers = mergeHeaders(
+function safeFileResponseHeaders(
+  params: SafeFileResponseParams,
+  contentType: string,
+  forceAttachment: boolean,
+) {
+  return mergeHeaders(
     params.headers,
     {
-      "Content-Type": contentType ? `${contentType}; charset=utf-8` : "text/plain; charset=utf-8",
+      "Content-Type": contentType,
       "Cache-Control": "private, max-age=60",
       ETag: params.sha256,
       "X-Content-SHA256": params.sha256,
@@ -54,43 +53,37 @@ export function safeTextFileResponse(params: {
     },
     corsHeaders(),
   );
+}
+
+export function safeTextFileResponse(params: SafeFileResponseParams & { textContent: string }) {
+  const contentType = normalizeContentType(params.contentType) ?? params.contentType;
+  const forceAttachment = isRichOrActiveDocument(params.path, contentType);
+  const headers = safeFileResponseHeaders(
+    params,
+    contentType ? `${contentType}; charset=utf-8` : "text/plain; charset=utf-8",
+    forceAttachment,
+  );
 
   return new Response(params.textContent, { status: 200, headers });
 }
 
-export async function safeStoredFileResponse(params: {
-  blob: Blob;
-  path: string;
-  contentType?: string;
-  sha256: string;
-  size: number;
-  headers?: HeadersInit;
-}) {
+export async function safeStoredFileResponse(
+  params: SafeFileResponseParams & {
+    blob: Blob;
+  },
+) {
   const bytes = new Uint8Array(await params.blob.arrayBuffer());
   const textContent = decodeUtf8Text(bytes);
   const contentType = normalizeContentType(params.contentType) ?? params.contentType;
   const forceAttachment = textContent === null || isRichOrActiveDocument(params.path, contentType);
+  const responseContentType =
+    textContent !== null && contentType
+      ? `${contentType}; charset=utf-8`
+      : contentType || "application/octet-stream";
 
   return new Response(bytes, {
     status: 200,
-    headers: mergeHeaders(
-      params.headers,
-      {
-        "Content-Type":
-          textContent !== null && contentType
-            ? `${contentType}; charset=utf-8`
-            : contentType || "application/octet-stream",
-        ...(forceAttachment ? { "Content-Disposition": attachmentDisposition(params.path) } : {}),
-        "Cache-Control": "private, max-age=60",
-        ETag: params.sha256,
-        "X-Content-SHA256": params.sha256,
-        "X-Content-Size": String(params.size),
-        "X-Content-Type-Options": "nosniff",
-        "X-Frame-Options": "DENY",
-        "Content-Security-Policy": SAFE_TEXT_FILE_CSP,
-      },
-      corsHeaders(),
-    ),
+    headers: safeFileResponseHeaders(params, responseContentType, forceAttachment),
   });
 }
 
