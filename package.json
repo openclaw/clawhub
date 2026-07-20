@@ -93,7 +93,7 @@
     "@fontsource/manrope": "5.2.8",
     "@fontsource/noto-sans-sc": "5.2.9",
     "@monaco-editor/react": "4.7.0",
-    "@openclaw/design-system": "git+https://github.com/openclaw/design-system.git#v0.0.1",
+    "@openclaw/design-system": "git+https://github.com/openclaw/design-system.git#7b097d79eef6e9a0a4632f72727ac7450f07a1f2",
     "@openclaw/plugin-inspector": "0.3.17",
     "@radix-ui/react-avatar": "1.2.2",
     "@radix-ui/react-dialog": "1.1.19",
