@@ -39,7 +39,7 @@ import {
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
 const CATALOG_FEED_PAGE_SIZE = 100;
-const MAX_CATALOG_FEED_ENTRIES = 1000;
+const MAX_ATOMIC_CATALOG_FEED_ENTRIES = 1000;
 const CATALOG_FEED_CHANGE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 const CATALOG_FEED_CHANGE_PAGE_SIZE = 500;
 const CATALOG_FEED_QUERY_SCAN_PAGE_SIZE = 250;
@@ -235,9 +235,6 @@ async function listFamilyEntries(
     for (const pkg of page.page) {
       const entry = await buildEntry(ctx, pkg);
       if (entry) entries.push(entry);
-      if (entries.length > MAX_CATALOG_FEED_ENTRIES) {
-        throw new Error(`Catalog feed exceeds ${MAX_CATALOG_FEED_ENTRIES} entries`);
-      }
     }
     if (page.isDone) return entries;
     cursor = page.continueCursor;
@@ -1240,9 +1237,6 @@ export const publish = internalAction({
         }),
       );
       const entries = familyEntries.flat();
-      if (entries.length > MAX_CATALOG_FEED_ENTRIES) {
-        throw new Error(`Catalog feed exceeds ${MAX_CATALOG_FEED_ENTRIES} entries`);
-      }
       const skillEntries: CatalogFeedSkillEntry[] = [];
       const seenPublisherIds = new Set<string>();
       let publisherCursor: string | null = null;
@@ -1280,18 +1274,18 @@ export const publish = internalAction({
       const sortedSkillEntries = skillEntries.sort((left, right) =>
         left.id.localeCompare(right.id),
       );
-      const pluginResult: CatalogFeedPublicationResult = await ctx.runMutation(
-        internal.catalogFeed.storePublication,
-        {
-          feedId: CATALOG_FEED_ID,
-          description: CATALOG_FEED_DESCRIPTION,
-          generatedAt,
-          expiresAt: args.expiresAt,
-          entries: pluginEntries,
-        },
-      );
+      const pluginResult: CatalogFeedPublicationResult | null =
+        pluginEntries.length <= MAX_ATOMIC_CATALOG_FEED_ENTRIES
+          ? await ctx.runMutation(internal.catalogFeed.storePublication, {
+              feedId: CATALOG_FEED_ID,
+              description: CATALOG_FEED_DESCRIPTION,
+              generatedAt,
+              expiresAt: args.expiresAt,
+              entries: pluginEntries,
+            })
+          : null;
       const skillsResult: CatalogFeedPublicationResult | null =
-        sortedSkillEntries.length <= MAX_CATALOG_FEED_ENTRIES
+        sortedSkillEntries.length <= MAX_ATOMIC_CATALOG_FEED_ENTRIES
           ? await ctx.runMutation(internal.catalogFeed.storePublication, {
               feedId: CATALOG_SKILLS_FEED_ID,
               description: CATALOG_SKILLS_FEED_DESCRIPTION,
@@ -1301,7 +1295,8 @@ export const publish = internalAction({
             })
           : null;
       const legacyPublications: Array<readonly [CatalogFeedPublicationResult, CatalogFeedEntry[]]> =
-        [[pluginResult, pluginEntries]];
+        [];
+      if (pluginResult) legacyPublications.push([pluginResult, pluginEntries]);
       if (skillsResult) legacyPublications.push([skillsResult, sortedSkillEntries]);
       for (const [result, feedEntries] of legacyPublications) {
         for (
@@ -1326,13 +1321,14 @@ export const publish = internalAction({
         });
       }
 
+      let completePluginResult: CatalogFeedPublicationResult | null = pluginResult;
       let completeSkillsResult: CatalogFeedPublicationResult | null = skillsResult;
       for (const shardInput of [
         {
           feedId: CATALOG_FEED_ID,
           description: CATALOG_FEED_DESCRIPTION,
           entries: pluginEntries,
-          requestedSequence: pluginResult.sequence,
+          requestedSequence: pluginResult?.sequence,
         },
         {
           feedId: CATALOG_SKILLS_FEED_ID,
@@ -1373,6 +1369,15 @@ export const publish = internalAction({
           internal.catalogFeedShards.finalizeCatalogFeedShardPublication,
           { publicationId: begun.publicationId },
         );
+        if (shardInput.feedId === CATALOG_FEED_ID && !completePluginResult) {
+          completePluginResult = {
+            publicationId: begun.publicationId,
+            feedId: CATALOG_FEED_ID,
+            sequence: completed.sequence,
+            publishedAt: completed.publishedAt,
+            entryCount: completed.entryCount,
+          };
+        }
         if (shardInput.feedId === CATALOG_SKILLS_FEED_ID && !completeSkillsResult) {
           completeSkillsResult = {
             publicationId: begun.publicationId,
@@ -1383,9 +1388,10 @@ export const publish = internalAction({
           };
         }
       }
-      if (!completeSkillsResult)
-        throw new Error("Catalog skills shard publication did not complete");
-      return [pluginResult, completeSkillsResult];
+      if (!completePluginResult || !completeSkillsResult) {
+        throw new Error("Catalog shard publication did not complete");
+      }
+      return [completePluginResult, completeSkillsResult];
     } finally {
       await ctx.runMutation(internal.catalogFeed.releaseCatalogFeedPublicationLease, {
         leaseToken,

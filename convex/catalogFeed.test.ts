@@ -176,6 +176,28 @@ function makeFeedSkillEntry(index: number): CatalogFeedEntry {
   };
 }
 
+function makeFeedPluginEntry(index: number): CatalogFeedEntry {
+  const id = `@openclaw/plugin-${index.toString().padStart(4, "0")}`;
+  return {
+    type: "plugin",
+    id,
+    title: `Plugin ${index}`,
+    version: "1.0.0",
+    state: "available",
+    publisher: { id: "openclaw", trust: "official" },
+    install: {
+      candidates: [
+        {
+          sourceRef: "public-clawhub",
+          package: id,
+          version: "1.0.0",
+          integrity: `sha256:plugin-${index}`,
+        },
+      ],
+    },
+  };
+}
+
 function makeCtx(
   packages: unknown[],
   records: Record<string, unknown>,
@@ -837,6 +859,69 @@ describe("catalog feed projection", () => {
         entryCount: 1001,
       },
     ]);
+  });
+
+  it("publishes plugins through shards beyond the legacy atomic limit", async () => {
+    const pluginEntries = Array.from({ length: 1001 }, (_, index) => makeFeedPluginEntry(index));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return {
+          sequence: 1,
+          publishedAt: 1,
+          entryCount: args.publicationId.startsWith(CATALOG_FEED_ID) ? 1001 : 0,
+        };
+      }
+      return {};
+    });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") return pluginEntries;
+      if ("family" in args) return [];
+      return { publishers: [], isDone: true, continueCursor: "" };
+    });
+
+    const result = await publishHandler(
+      { runQuery, runMutation },
+      { expiresAt: "2026-06-30T00:00:00.000Z" },
+    );
+
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, args]) =>
+            args.feedId === CATALOG_FEED_ID && "description" in args && "entries" in args,
+        ),
+    ).toBe(false);
+    const pluginShardPayloads = vi
+      .mocked(runMutation)
+      .mock.calls.filter(
+        ([, args]) => args.publicationId === `${CATALOG_FEED_ID}:shards` && "payload" in args,
+      )
+      .map(([, args]) => JSON.parse(args.payload as string) as { entries: unknown[] });
+    expect(pluginShardPayloads.flatMap((shard) => shard.entries)).toHaveLength(1001);
+    expect(result[0]).toMatchObject({
+      feedId: CATALOG_FEED_ID,
+      sequence: 1,
+      entryCount: 1001,
+    });
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {

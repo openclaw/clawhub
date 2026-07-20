@@ -195,6 +195,23 @@ describe("signed catalog feed", () => {
     expect(ignoredLastModified.status).toBe(200);
   });
 
+  it("redirects an oversized plugin catalog to its signed shard root", async () => {
+    const { env } = await signingFixture();
+    ctx.runQuery
+      .mockResolvedValueOnce(publication)
+      .mockResolvedValueOnce({ feedId: "clawhub-official", sequence: 5 });
+
+    const response = await signedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins"),
+      env,
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location")).toBe("/v1/feeds/plugins/root");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
   it.each([
     {},
     { CLAWHUB_FEED_SIGNING_CONFIG: "not-json" },
