@@ -7899,7 +7899,13 @@ async function publishPackageImpl(
     }
 
     if (staged.status === "finalized" && staged.result) {
-      return inspectorFindings.length > 0 ? { ...staged.result, inspectorFindings } : staged.result;
+      const finalizedResult = {
+        ...staged.result,
+        publicationStatus: "published" as const,
+      };
+      return inspectorFindings.length > 0
+        ? { ...finalizedResult, inspectorFindings }
+        : finalizedResult;
     }
 
     return {
@@ -8003,7 +8009,11 @@ async function publishPackageImpl(
     source: "publish",
   });
 
-  return inspectorFindings.length > 0 ? { ...publishResult, inspectorFindings } : publishResult;
+  const publishedResult = {
+    ...publishResult,
+    publicationStatus: "published" as const,
+  };
+  return inspectorFindings.length > 0 ? { ...publishedResult, inspectorFindings } : publishedResult;
 }
 
 function toPackageInspectorPublishResponseFinding(

@@ -9009,7 +9009,12 @@ describe("packages public queries", () => {
           },
         },
       }),
-    ).resolves.toEqual({ ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" });
+    ).resolves.toEqual({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "releases:demo-1",
+      publicationStatus: "published",
+    });
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),

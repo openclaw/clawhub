@@ -197,6 +197,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           alreadySynced: synced.map(formatSyncedJson),
           wouldPublish,
           published: [],
+          submitted: [],
           failed: [],
         }),
       );
@@ -209,6 +210,13 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   const tags = options.tags ?? "latest";
   const failedUploads: Array<{ slug: string; message: string }> = [];
   const published: Array<{ slug: string; folder: string; version: string }> = [];
+  const submitted: Array<{
+    slug: string;
+    folder: string;
+    version: string;
+    status: "pending-publication" | "submitted";
+    publicationStatus?: "pending";
+  }> = [];
   const racedNoOps: Array<{ slug: string; folder: string; version: string }> = [];
 
   for (const { skill, source } of plannedPublishes) {
@@ -254,11 +262,20 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         });
         continue;
       }
-      published.push({
+      const output = {
         slug: skill.slug,
         folder: skill.folder,
         version: result?.version ?? publishVersion,
-      });
+      };
+      if (result?.status === "published") {
+        published.push(output);
+      } else {
+        submitted.push({
+          ...output,
+          status: result?.status === "pending-publication" ? "pending-publication" : "submitted",
+          ...(result?.publicationStatus === "pending" ? { publicationStatus: "pending" } : {}),
+        });
+      }
     } catch (error) {
       failedUploads.push({ slug: skill.slug, message: formatError(error) });
     }
@@ -277,6 +294,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           alreadySynced: [...synced.map(formatSyncedJson), ...racedNoOps],
           wouldPublish: [],
           published,
+          submitted,
           failed: failedUploads,
         }),
       );
@@ -290,9 +308,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         20,
       ),
     );
-    outro(
-      `Published ${published.length} of ${selected.length} skill(s). ${failedUploads.length} failed.`,
-    );
+    outro(formatSyncPublishSummary({ published, submitted, selected, failedUploads }));
     process.exitCode = 1;
     return;
   }
@@ -309,6 +325,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         alreadySynced: [...synced.map(formatSyncedJson), ...racedNoOps],
         wouldPublish: [],
         published,
+        submitted,
         failed: [],
       }),
     );
@@ -316,11 +333,9 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   }
 
   if (racedNoOps.length > 0) {
-    outro(
-      `Published ${published.length} of ${selected.length} skill(s). ${racedNoOps.length} already synced.`,
-    );
+    outro(formatSyncPublishSummary({ published, submitted, selected, racedNoOps }));
   } else {
-    outro(`Published ${published.length} skill(s).`);
+    outro(formatSyncPublishSummary({ published, submitted }));
   }
 }
 
@@ -346,6 +361,7 @@ function writeNoActionOutput(params: {
         alreadySynced: params.synced.map(formatSyncedJson),
         wouldPublish: [],
         published: [],
+        submitted: [],
         failed: [],
       }),
     );
@@ -479,6 +495,13 @@ function buildSyncJsonOutput(params: {
   alreadySynced: Array<{ slug: string; folder: string; version: string }>;
   wouldPublish: Array<ReturnType<typeof formatPublishJson>>;
   published: Array<{ slug: string; folder: string; version: string }>;
+  submitted: Array<{
+    slug: string;
+    folder: string;
+    version: string;
+    status: "pending-publication" | "submitted";
+    publicationStatus?: "pending";
+  }>;
   failed: Array<{ slug: string; message: string }>;
 }) {
   const skipped = params.duplicates.map((duplicate) => ({
@@ -495,16 +518,39 @@ function buildSyncJsonOutput(params: {
     summary: {
       wouldPublish: params.wouldPublish.length,
       published: params.published.length,
+      submitted: params.submitted.length,
       alreadySynced: params.alreadySynced.length,
       skipped: skipped.length,
       failed: params.failed.length,
     },
     wouldPublish: params.wouldPublish,
     published: params.published,
+    submitted: params.submitted,
     alreadySynced: params.alreadySynced,
     skipped,
     failed: params.failed,
   };
+}
+
+function formatSyncPublishSummary(params: {
+  published: unknown[];
+  submitted: unknown[];
+  selected?: unknown[];
+  racedNoOps?: unknown[];
+  failedUploads?: unknown[];
+}) {
+  const selectedSuffix = params.selected ? ` of ${params.selected.length}` : "";
+  const parts = [`Published ${params.published.length}${selectedSuffix} skill(s).`];
+  if (params.submitted.length > 0) {
+    parts.push(`Submitted ${params.submitted.length} update(s).`);
+  }
+  if (params.racedNoOps && params.racedNoOps.length > 0) {
+    parts.push(`${params.racedNoOps.length} already synced.`);
+  }
+  if (params.failedUploads && params.failedUploads.length > 0) {
+    parts.push(`${params.failedUploads.length} failed.`);
+  }
+  return parts.join(" ");
 }
 
 function writeSyncJson(value: unknown) {

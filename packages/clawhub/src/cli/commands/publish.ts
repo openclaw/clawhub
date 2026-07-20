@@ -18,7 +18,7 @@ import { normalizeGitHubRepo } from "./github.js";
 
 type SkillPublishResult = {
   ok: true;
-  status: "unchanged" | "would-publish" | "published" | "pending-publication";
+  status: "unchanged" | "would-publish" | "submitted" | "published" | "pending-publication";
   slug: string;
   displayName: string;
   folder: string;
@@ -200,9 +200,14 @@ export async function cmdPublish(
       ApiV1PublishResponseSchema,
     );
 
-    const isPendingPublication = result.publicationStatus === "pending";
+    const publicationStatus = result.publicationStatus;
     const publishResult = buildPublishResult({
-      status: isPendingPublication ? "pending-publication" : "published",
+      status:
+        publicationStatus === "pending"
+          ? "pending-publication"
+          : publicationStatus === "published"
+            ? "published"
+            : "submitted",
       slug,
       displayName,
       folder,
@@ -214,11 +219,17 @@ export async function cmdPublish(
       publicationStatus: result.publicationStatus,
       attemptId: result.attemptId,
     });
-    spinner?.succeed(
-      isPendingPublication
-        ? `OK. Uploaded ${slug}@${version}; security checks are pending before it becomes public (${result.versionId})`
-        : `OK. Published ${slug}@${version} (${result.versionId})`,
-    );
+    if (publicationStatus === "pending") {
+      spinner?.succeed(
+        `Update submitted for ${slug}@${version}; pending security scans before it becomes public.`,
+      );
+    } else if (publicationStatus === "published") {
+      spinner?.succeed(`OK. Published ${slug}@${version} (${result.versionId})`);
+    } else {
+      spinner?.succeed(
+        `Update submitted for ${slug}@${version}; publication status was not reported.`,
+      );
+    }
     writePublishJsonIfRequested(options.json, publishResult);
     return publishResult;
   } catch (error) {

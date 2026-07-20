@@ -147,6 +147,10 @@ description: Automation workflow for recurring reports.
       skillId: "skills:demo",
       versionId: "skillVersions:demo",
       embeddingId: "skillEmbeddings:demo",
+      status: "published",
+      slug: "automation-helper",
+      version: "1.0.0",
+      publicationStatus: "published",
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),

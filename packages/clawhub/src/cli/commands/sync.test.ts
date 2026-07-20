@@ -345,7 +345,9 @@ describe("cmdSync", () => {
         process.stdout.write("child publish output\n");
       }
       return {
+        status: "published",
         version: (options as { version?: string } | undefined)?.version ?? "1.0.0",
+        publicationStatus: "published",
       };
     });
 
@@ -366,6 +368,97 @@ describe("cmdSync", () => {
     expect(mockCmdPublish.mock.calls.map((call) => (call[2] as { quiet?: boolean }).quiet)).toEqual(
       [true, true],
     );
+  });
+
+  it("keeps pending sync submissions out of the published json summary", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
+        options?.slug === "new-skill"
+          ? {
+              status: "pending-publication",
+              version: options.version,
+              publicationStatus: "pending",
+            }
+          : {
+              status: "published",
+              version: options?.version,
+              publicationStatus: "published",
+            },
+    );
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, json: true }, false);
+      output = String(stdoutWrite.mock.calls[0]?.[0] ?? "");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output);
+    expect(parsed.summary).toMatchObject({ published: 1, submitted: 1, failed: 0 });
+    expect(parsed.published).toEqual([
+      expect.objectContaining({ slug: "update-skill", version: "1.0.1" }),
+    ]);
+    expect(parsed.submitted).toEqual([
+      expect.objectContaining({
+        slug: "new-skill",
+        version: "1.0.0",
+        status: "pending-publication",
+        publicationStatus: "pending",
+      }),
+    ]);
+  });
+
+  it("does not call pending sync submissions published in human summaries", async () => {
+    interactive = false;
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
+        options?.slug === "new-skill"
+          ? {
+              status: "pending-publication",
+              version: options.version,
+              publicationStatus: "pending",
+            }
+          : {
+              status: "published",
+              version: options?.version,
+              publicationStatus: "published",
+            },
+    );
+
+    await cmdSync(makeOpts(), { root: ["/scan"], all: true }, false);
+
+    expect(mockOutro).toHaveBeenCalledWith("Published 1 skill(s). Submitted 1 update(s).");
   });
 
   it("does not report a raced unchanged publish as uploaded", async () => {

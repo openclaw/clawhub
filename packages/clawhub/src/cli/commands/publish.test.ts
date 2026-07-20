@@ -82,6 +82,7 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
+        publicationStatus: "published",
       });
 
       const result = await cmdPublish(makeOpts(workdir), "metadata-update", {
@@ -117,6 +118,7 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
+        publicationStatus: "published",
       });
 
       const result = await cmdPublish(makeOpts(workdir), "new-skill", {});
@@ -160,7 +162,67 @@ describe("cmdPublish", () => {
         attemptId: "attempt_1",
       });
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
-        "OK. Uploaded pending-skill@1.0.0; security checks are pending before it becomes public (ver_pending)",
+        "Update submitted for pending-skill@1.0.0; pending security scans before it becomes public.",
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("makes pending publication unambiguous in json output", async () => {
+    const workdir = await makeTmpWorkdir();
+    const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      const folder = join(workdir, "json-pending-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockRejectedValueOnce(
+        new Error("Skill not found or unavailable to this account."),
+      );
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_pending",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "json-pending-skill", { json: true });
+
+      expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
+      expect(writeSpy).toHaveBeenCalledTimes(1);
+      const output = JSON.parse(String(writeSpy.mock.calls[0]?.[0] ?? ""));
+      expect(output).toMatchObject({
+        status: "pending-publication",
+        slug: "json-pending-skill",
+        version: "1.0.0",
+        publicationStatus: "pending",
+        attemptId: "attempt_1",
+      });
+      expect(output.status).not.toBe("published");
+    } finally {
+      writeSpy.mockRestore();
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not claim a skill was published when the server omits publication status", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "unknown-status-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "unknown-status-skill", {});
+
+      expect(result.status).toBe("submitted");
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "Update submitted for unknown-status-skill@1.0.0; publication status was not reported.",
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -181,6 +243,7 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
+        publicationStatus: "published",
       });
 
       const result = await cmdPublish(makeOpts(workdir), "changed-skill", {});
@@ -210,6 +273,7 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_2",
+        publicationStatus: "published",
       });
 
       const result = await cmdPublish(makeOpts(workdir), "explicit-version", {

@@ -510,7 +510,13 @@ async function publishVersionForUserInternal(
       skillInsertArgs,
     )) as PublishResult;
     await scheduleSkillPublishFollowups(ctx, publishResult, followup);
-    return publishResult;
+    return {
+      ...publishResult,
+      status: "published",
+      slug,
+      version,
+      publicationStatus: "published",
+    };
   }
 
   const pendingInsertArgs = {
@@ -565,7 +571,13 @@ async function publishVersionForUserInternal(
   };
 
   if (staged.status === "finalized" && staged.result) {
-    return staged.result;
+    return {
+      ...staged.result,
+      status: "published",
+      slug,
+      version,
+      publicationStatus: "published",
+    };
   }
 
   return {
