@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- Security: recover scheduled temporal publisher-abuse scans from strict Convex payload validation failures without leaving zombie running runs (thanks @jesse-merhi).
 - CI: retry transient Convex preview provisioning failures under fresh deployment names during Vercel preview builds.
 - Web: keep CLI device login codes out of the GitHub OAuth code handler — the device page no longer loses its prefilled code, bounces through a surprise GitHub redirect, or drops an active session; device links now use `user_code`.
 - API: keep successful rate-limit checks available when retention metadata writes contend, while preserving fail-closed enforcement for authoritative counter conflicts.

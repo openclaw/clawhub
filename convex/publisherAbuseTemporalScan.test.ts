@@ -222,7 +222,7 @@ describe("scheduled temporal publisher abuse scan", () => {
         isDone: false,
         scannedSkills: 1,
       });
-    const runMutation = vi.fn(async () => ({ applied: true }));
+    const runMutation = vi.fn(async (_target: unknown, _args: unknown) => ({ applied: true }));
     const scheduler = { runAfter: vi.fn(async () => null) };
     const handler = runScheduledTemporalPublisherAbuseScanInternalHandler as unknown as (
       ctx: {
@@ -235,7 +235,7 @@ describe("scheduled temporal publisher abuse scan", () => {
 
     await handler({ runQuery, runMutation, scheduler }, { runId: run._id });
 
-    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+    expect(runMutation.mock.calls[0]?.[1]).toEqual({
       runId: run._id,
       expectedCursor: undefined,
       nextCursor: "next-page",

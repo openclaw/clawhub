@@ -67,7 +67,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   opts into archived dry-run signal rows for the staff Signals tab. It persists
   bounded source pages, exact percentile samples, and review candidates, then
   resumes through percentile and classification phases. Temporary scan rows
-  expire after seven days. Explicitly bounded manual scans remain diagnostic-only.
+  expire after seven days. A scheduled scan step that fails validation or throws
+  must persist a terminal failed state instead of leaving a resumable running run.
+  Explicitly bounded manual scans remain diagnostic-only.
   The `review` label remains a calibration/manual-review signal. The
   `potential_ban_candidate` label is an
   enforcement signal only for pressure-score nominations: the first eligible
