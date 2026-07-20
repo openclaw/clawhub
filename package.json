@@ -146,6 +146,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@faker-js/faker": "^10.5.0",
     "@playwright/test": "^1.61.1",
     "@react-email/ui": "^6.9.0",
@@ -161,6 +162,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.0.3",
     "@vitest/coverage-v8": "4.1.10",
+    "convex-test": "^0.0.54",
     "jsdom": "29.1.1",
     "nitro": "3.0.260610-beta",
     "only-allow": "1.2.2",

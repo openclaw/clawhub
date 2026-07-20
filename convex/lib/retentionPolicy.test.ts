@@ -53,6 +53,12 @@ describe("retention policies", () => {
     });
   });
 
+  it("keeps skills.sh scan attempts as durable exact-hash deduplication records", () => {
+    expect(getRetentionPolicy("skillsShCatalogScanAttempts")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
   it("documents publisher abuse signals as durable review evidence", () => {
     expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
       classification: "permanent",
