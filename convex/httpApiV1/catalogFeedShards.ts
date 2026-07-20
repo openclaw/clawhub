@@ -14,8 +14,8 @@ import { httpAction } from "../functions";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { resolveFeedSigningConfig, signFeedPayload } from "./catalogFeedSigning";
 import { catalogFeedUnavailableResponse, matchesEtag } from "./catalogFeedV1";
+import { publicApiOrigin } from "./shared";
 
-const PUBLIC_FEED_ORIGIN = "https://clawhub.ai";
 const MAX_SIGNED_ROOT_BYTES = 1024 * 1024;
 
 type FeedId = typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID;
@@ -32,9 +32,9 @@ function shardApiRoute(feedId: FeedId) {
     : ApiRoutes.catalogSkillsFeedShards;
 }
 
-function publicShardUrl(feedId: FeedId, sha256: string) {
+function publicShardUrl(feedId: FeedId, sha256: string, origin: string) {
   const publicPath = `${shardApiRoute(feedId).replace(/^\/api/u, "")}/sha256-${sha256}.json`;
-  return new URL(publicPath, PUBLIC_FEED_ORIGIN).toString();
+  return new URL(publicPath, origin).toString();
 }
 
 export async function signedCatalogFeedShardRootHandler(
@@ -57,6 +57,7 @@ export async function signedCatalogFeedShardRootHandler(
     { feedId },
   );
   if (!publication) return catalogFeedUnavailableResponse("Catalog shard root is not published");
+  const requestOrigin = publicApiOrigin(request);
   const payload = serializeCatalogFeedShardRoot({
     schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
     feedId,
@@ -68,7 +69,7 @@ export async function signedCatalogFeedShardRootHandler(
     shards: publication.shards.map(
       (shard: { index: number; sha256: string; byteLength: number; entryCount: number }) => ({
         ...shard,
-        url: publicShardUrl(feedId, shard.sha256),
+        url: publicShardUrl(feedId, shard.sha256, requestOrigin),
       }),
     ),
   });

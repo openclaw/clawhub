@@ -67,6 +67,36 @@ describe("catalog feed shard HTTP delivery", () => {
     );
   });
 
+  it("uses the serving origin for preview shard URLs", async () => {
+    ctx.runQuery.mockResolvedValue({
+      feedId: "clawhub-official",
+      sequence: 8,
+      generatedAt: "2026-07-17T00:00:00.000Z",
+      expiresAt: "2026-07-18T00:00:00.000Z",
+      description: "Official plugins",
+      entryCount: 1,
+      shards: [{ index: 0, sha256: "c".repeat(64), byteLength: 123, entryCount: 1 }],
+    });
+
+    vi.stubEnv("SITE_URL", "https://preview.example");
+    try {
+      const response = await signedCatalogFeedShardRootHandler(
+        ctx as never,
+        new Request("https://paired-preview-123.convex.site/api/v1/feeds/plugins/root"),
+        "clawhub-official",
+        signingEnv(),
+      );
+
+      const envelope = (await response.json()) as { payload: string };
+      const root = JSON.parse(Buffer.from(envelope.payload, "base64url").toString("utf8"));
+      expect(root.shards[0].url).toBe(
+        `https://preview.example/v1/feeds/plugins/shards/sha256-${"c".repeat(64)}.json`,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("serves exact shard bytes with immutable validators", async () => {
     const payload = '{"schemaVersion":1,"feedId":"clawhub-official"}';
     ctx.runQuery.mockResolvedValue({

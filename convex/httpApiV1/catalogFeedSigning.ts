@@ -1,7 +1,8 @@
-import { CATALOG_FEED_ID } from "clawhub-schema";
+import { ApiRoutes, CATALOG_FEED_ID } from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { httpAction } from "../functions";
+import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import {
   catalogFeedV1Handler,
   catalogFeedResponseHeaders,
@@ -166,9 +167,26 @@ export async function signedCatalogFeedV1Handler(
     return catalogFeedUnavailableResponse("Signed catalog feed is unavailable");
   }
 
-  const publication = await ctx.runQuery(internal.catalogFeed.getLatestPublication, {
-    feedId: CATALOG_FEED_ID,
-  });
+  const [publication, shardPublication] = await Promise.all([
+    ctx.runQuery(internal.catalogFeed.getLatestPublication, {
+      feedId: CATALOG_FEED_ID,
+    }),
+    ctx.runQuery(internal.catalogFeedShards.getLatestCatalogFeedShardPublication, {
+      feedId: CATALOG_FEED_ID,
+    }),
+  ]);
+  if (shardPublication && (!publication || shardPublication.sequence > publication.sequence)) {
+    return new Response(null, {
+      status: 308,
+      headers: mergeHeaders(
+        {
+          Location: ApiRoutes.catalogFeedShardRoot.replace(/^\/api/u, ""),
+          "Cache-Control": "no-store",
+        },
+        corsHeaders(),
+      ),
+    });
+  }
   if (!publication) return catalogFeedUnavailableResponse();
 
   const signed = await signCatalogFeedPayload(publication.payload, signingConfig);
