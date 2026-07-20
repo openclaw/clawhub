@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
-import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
+import { buildSkillFileHref } from "../lib/skillReadmeLinks";
 import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 import { formatBytes } from "./skillDetailUtils";
 
@@ -147,7 +147,7 @@ export function SkillFilesPanel({
   const fileTree = useMemo(() => buildFileTree(latestFiles), [latestFiles]);
   const selectedFileName = selectedPath?.split("/").pop() ?? selectedPath ?? "";
   const downloadUrl = selectedPath
-    ? resolveSkillReadmeHref(selectedPath, skillSlug, ownerHandle, version)
+    ? buildSkillFileHref(selectedPath, skillSlug, ownerHandle, version)
     : null;
 
   useEffect(() => {

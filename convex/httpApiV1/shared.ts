@@ -2,7 +2,9 @@ import {
   CliPublishRequestSchema,
   decodeUtf8Text,
   isRichOrActiveDocument,
+  isTextContentType,
   normalizeContentType,
+  normalizeTextContentType,
   parseArk,
 } from "clawhub-schema";
 import { internal } from "../_generated/api";
@@ -33,6 +35,19 @@ type SafeFileResponseParams = {
   headers?: HeadersInit;
 };
 
+function textResponseContentType(path: string, contentType?: string) {
+  const normalized = normalizeContentType(contentType);
+  if (isRichOrActiveDocument(path, normalized)) {
+    if (!normalized) return "application/octet-stream";
+    return isTextContentType(normalized) ? `${normalized}; charset=utf-8` : normalized;
+  }
+
+  const textual = normalizeTextContentType(path, normalized);
+  return textual && isTextContentType(textual)
+    ? `${textual}; charset=utf-8`
+    : "text/plain; charset=utf-8";
+}
+
 function safeFileResponseHeaders(
   params: SafeFileResponseParams,
   contentType: string,
@@ -60,7 +75,7 @@ export function safeTextFileResponse(params: SafeFileResponseParams & { textCont
   const forceAttachment = isRichOrActiveDocument(params.path, contentType);
   const headers = safeFileResponseHeaders(
     params,
-    contentType ? `${contentType}; charset=utf-8` : "text/plain; charset=utf-8",
+    textResponseContentType(params.path, contentType),
     forceAttachment,
   );
 
@@ -77,8 +92,8 @@ export async function safeStoredFileResponse(
   const contentType = normalizeContentType(params.contentType) ?? params.contentType;
   const forceAttachment = textContent === null || isRichOrActiveDocument(params.path, contentType);
   const responseContentType =
-    textContent !== null && contentType
-      ? `${contentType}; charset=utf-8`
+    textContent !== null
+      ? textResponseContentType(params.path, contentType)
       : contentType || "application/octet-stream";
 
   return new Response(bytes, {

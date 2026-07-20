@@ -155,6 +155,31 @@ describe("SkillFilesPanel", () => {
     expect(getFilePreviewMock).toHaveBeenCalledTimes(1);
   });
 
+  it("encodes URL syntax in literal artifact download paths", async () => {
+    getFilePreviewMock.mockResolvedValue({
+      text: null,
+      size: 4,
+      sha256: "d".repeat(64),
+    });
+
+    render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        version="1.2.3"
+        latestFiles={[makeFile("docs/spec#draft?.bin", 4)]}
+        skillSlug="demo"
+        ownerHandle="acme"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /docs\/spec#draft\?\.bin/i }));
+
+    const downloadLink = await screen.findByRole("link", { name: "Download spec#draft?.bin" });
+    expect(downloadLink.getAttribute("href")).toBe(
+      "/api/v1/skills/demo/file?path=docs%2Fspec%23draft%3F.bin&ownerHandle=acme&version=1.2.3",
+    );
+  });
+
   it("ignores stale responses when newer file selection is active", async () => {
     const resolvers: Record<
       string,

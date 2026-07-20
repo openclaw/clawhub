@@ -67,6 +67,22 @@ export function resolveSkillReadmeHref(
   )}${ownerQuery}${versionQuery}${fragment}`;
 }
 
+export function buildSkillFileHref(
+  path: string,
+  skillSlug: string,
+  ownerHandle?: string | null,
+  version?: string | null,
+) {
+  if (!path) return "";
+  const ownerQuery = ownerHandle?.trim()
+    ? `&ownerHandle=${encodeURIComponent(ownerHandle.trim().replace(/^@+/, ""))}`
+    : "";
+  const versionQuery = version?.trim() ? `&version=${encodeURIComponent(version.trim())}` : "";
+  return `/api/v1/skills/${encodeURIComponent(skillSlug)}/file?path=${encodeURIComponent(
+    path,
+  )}${ownerQuery}${versionQuery}`;
+}
+
 export function resolveGitHubSkillReadmeHref(href: string, sourceBaseUrl: string) {
   const safeHref = defaultUrlTransform(href);
   if (!safeHref) return "";

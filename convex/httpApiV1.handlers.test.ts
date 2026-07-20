@@ -5013,6 +5013,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe(terraform);
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
+    expect(response.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
     expect(response.headers.get("Content-Disposition")).toBeNull();
   });
 
@@ -5099,6 +5100,7 @@ describe("httpApiV1 handlers", () => {
     expect(htmlResponse.headers.get("Content-Disposition")).toBe(
       "attachment; filename*=UTF-8''demo.html",
     );
+    expect(htmlResponse.headers.get("Content-Type")).toBe("text/html; charset=utf-8");
     expect(htmlResponse.headers.get("X-Content-Type-Options")).toBe("nosniff");
 
     const pdfResponse = await __handlers.skillsGetRouterV1Handler(
@@ -5109,6 +5111,7 @@ describe("httpApiV1 handlers", () => {
     expect(pdfResponse.headers.get("Content-Disposition")).toBe(
       "attachment; filename*=UTF-8''demo.pdf",
     );
+    expect(pdfResponse.headers.get("Content-Type")).toBe("application/pdf");
   });
 
   it("returns opaque skill files as exact-byte attachments", async () => {
