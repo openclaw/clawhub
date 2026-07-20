@@ -10,7 +10,7 @@ import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
-import { getPublicPublisherVisibility } from "./lib/publishers";
+import { getPublicPublisherVisibility, normalizePublisherHandle } from "./lib/publishers";
 
 const PUBLISHER_FEED_MAX_SOURCE_PAGES = 3;
 const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
@@ -37,6 +37,21 @@ async function safeGetPublisher(ctx: PublisherFeedReadCtx, id: string) {
   if (!publisherId) return null;
   try {
     return await ctx.db.get(publisherId);
+  } catch {
+    return null;
+  }
+}
+
+async function safeResolvePublisherDetail(ctx: PublisherFeedReadCtx, reference: string) {
+  const byId = await safeGetPublisher(ctx, reference);
+  if (byId || reference.includes(":")) return byId;
+  const handle = normalizePublisherHandle(reference);
+  if (!handle || new TextEncoder().encode(handle).length > 64) return null;
+  try {
+    return await ctx.db
+      .query("publishers")
+      .withIndex("by_handle", (q) => q.eq("handle", handle))
+      .unique();
   } catch {
     return null;
   }
@@ -301,7 +316,7 @@ async function buildPublisherFeed(
 export const getPublisherDetail = internalQuery({
   args: { publisherId: v.string() },
   handler: async (ctx, args) => {
-    const publisher = await safeGetPublisher(ctx, args.publisherId);
+    const publisher = await safeResolvePublisherDetail(ctx, args.publisherId);
     const visibility = await getPublicPublisherVisibility(ctx, publisher);
     if (!visibility) return null;
     return {
