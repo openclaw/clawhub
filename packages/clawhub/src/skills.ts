@@ -4,7 +4,12 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 import ignore from "ignore";
 import mime from "mime";
-import { type Lockfile, LockfileSchema, parseArk } from "./schema/index.js";
+import {
+  type Lockfile,
+  LockfileSchema,
+  normalizeTextContentType,
+  parseArk,
+} from "./schema/index.js";
 
 const DOT_DIR = ".clawhub";
 const LEGACY_DOT_DIR = ".clawdhub";
@@ -79,11 +84,15 @@ export async function listSkillFiles(root: string) {
     if (ig.ignores(relPath)) return;
     if (hasDotPathSegment(relPath)) return;
     const buffer = await readFile(absPath);
-    const contentType = mime.getType(relPath) ?? "application/octet-stream";
+    const contentType =
+      normalizeTextContentType(relPath, mime.getType(relPath)) ?? "application/octet-stream";
     files.push({ relPath, bytes: new Uint8Array(buffer), contentType });
   });
   return files;
 }
+
+/** @deprecated Use listSkillFiles. */
+export const listTextFiles = listSkillFiles;
 
 type SkillFileHash = { path: string; sha256: string; size: number };
 

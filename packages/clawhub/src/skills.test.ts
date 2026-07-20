@@ -13,6 +13,7 @@ import {
   hashSkillZip,
   listManualSkills,
   listSkillFiles,
+  listTextFiles,
   readLockfile,
   readSkillOrigin,
   sha256Hex,
@@ -142,11 +143,9 @@ describe("skills", () => {
   it("falls back to text/plain for unknown text extensions", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-env-"));
     await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
-    await writeFile(join(workdir, "config.env"), "SETTING=demo", "utf8");
-    const files = await listSkillFiles(workdir);
-    expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe(
-      "application/octet-stream",
-    );
+    await writeFile(join(workdir, "config.env"), "TOKEN=demo", "utf8");
+    const files = await listTextFiles(workdir);
+    expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe("text/plain");
   });
 
   it("includes every eligible regular file with exact bytes", async () => {
