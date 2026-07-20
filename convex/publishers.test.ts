@@ -680,6 +680,17 @@ function emptyOfficialPublishersQuery() {
   };
 }
 
+function emptyPublisherFeedPublicationsQuery() {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      if (indexName !== "by_publisher") {
+        throw new Error(`unexpected publisherFeedPublications index ${indexName}`);
+      }
+      return { unique: vi.fn(async () => null) };
+    }),
+  };
+}
+
 function emptyOwnedResourcesQuery() {
   return {
     withIndex: vi.fn(() => ({
@@ -1088,6 +1099,9 @@ describe("publishers membership controls", () => {
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
           }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
+          }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
             withIndex: vi.fn((indexName: string) => ({
@@ -1185,6 +1199,9 @@ describe("publishers membership controls", () => {
           }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
@@ -1312,6 +1329,9 @@ describe("publishers membership controls", () => {
         return emptyOwnedResourcesQuery();
       }
       if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      if (table === "publisherFeedPublications") {
+        return emptyPublisherFeedPublicationsQuery();
+      }
       throw new Error(`unexpected table ${table}`);
     });
     return {
@@ -1483,6 +1503,9 @@ describe("publishers membership controls", () => {
           }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
