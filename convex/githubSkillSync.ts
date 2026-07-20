@@ -1,4 +1,3 @@
-import { decodeUtf8Text } from "clawhub-schema";
 import { ConvexError, v } from "convex/values";
 import { unzipSync, type UnzipFileInfo } from "fflate";
 import { internal } from "./_generated/api";
@@ -6,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
+import { decodeBoundedUtf8Text } from "./lib/artifactText";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
 import {
   fetchGitHubZipBytes,
@@ -1299,8 +1299,7 @@ function listGitHubSkillTextContents(entries: Record<string, Uint8Array>, folder
   const textFiles = [];
   for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
     if (textFiles.length >= MAX_STATIC_SCAN_TEXT_FILES) break;
-    if (bytes.byteLength > MAX_STATIC_SCAN_TEXT_FILE_BYTES) continue;
-    const content = decodeUtf8Text(bytes);
+    const content = decodeBoundedUtf8Text(bytes, MAX_STATIC_SCAN_TEXT_FILE_BYTES);
     if (content === null) continue;
     textFiles.push({
       path,

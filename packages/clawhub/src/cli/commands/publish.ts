@@ -16,6 +16,9 @@ import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
+const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_PUBLISH_TOTAL_BYTES = 50 * 1024 * 1024;
+
 type SkillPublishResult = {
   ok: true;
   status: "unchanged" | "would-publish" | "submitted" | "published" | "pending-publication";
@@ -300,7 +303,13 @@ function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPub
 
 export async function prepareSkillFilesForPublish(folder: string) {
   return stripGeneratedSkillCards(
-    await ensureRootManifestFile(folder, await listSkillFiles(folder)),
+    await ensureRootManifestFile(
+      folder,
+      await listSkillFiles(folder, {
+        maxFileBytes: MAX_PUBLISH_FILE_BYTES,
+        maxTotalBytes: MAX_PUBLISH_TOTAL_BYTES,
+      }),
+    ),
   );
 }
 

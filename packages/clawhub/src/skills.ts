@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { unzipSync } from "fflate";
 import ignore from "ignore";
@@ -24,6 +24,24 @@ export type SkillOrigin = {
   installedVersion: string;
   installedAt: number;
   fingerprint?: string;
+};
+
+type SkillFileEntry = {
+  absPath: string;
+  relPath: string;
+  size: number;
+  contentType?: string;
+};
+
+type SkillFile = {
+  relPath: string;
+  bytes: Uint8Array;
+  contentType?: string;
+};
+
+type SkillFileLimits = {
+  maxFileBytes: number;
+  maxTotalBytes: number;
 };
 
 export async function extractZipToDir(zipBytes: Uint8Array, targetDir: string) {
@@ -69,8 +87,8 @@ export async function extractGitHubZipPathToDir(
   }
 }
 
-export async function listSkillFiles(root: string) {
-  const files: Array<{ relPath: string; bytes: Uint8Array; contentType?: string }> = [];
+export async function listSkillFiles(root: string, limits?: SkillFileLimits): Promise<SkillFile[]> {
+  const entries: SkillFileEntry[] = [];
   const absRoot = resolve(root);
   const ig = ignore();
   ig.add([".git/", "node_modules/", `${DOT_DIR}/`, `${LEGACY_DOT_DIR}/`]);
@@ -83,12 +101,32 @@ export async function listSkillFiles(root: string) {
     if (!relPath) return;
     if (ig.ignores(relPath)) return;
     if (hasDotPathSegment(relPath)) return;
-    const buffer = await readFile(absPath);
+    const fileStat = await stat(absPath);
     const contentType =
       normalizeTextContentType(relPath, mime.getType(relPath)) ?? "application/octet-stream";
-    files.push({ relPath, bytes: new Uint8Array(buffer), contentType });
+    entries.push({ absPath, relPath, size: fileStat.size, contentType });
   });
-  return files;
+
+  if (limits) {
+    const oversized = entries.find((entry) => entry.size > limits.maxFileBytes);
+    if (oversized) {
+      throw new Error(
+        `File "${oversized.relPath}" exceeds ${formatByteLimit(limits.maxFileBytes)}`,
+      );
+    }
+    const totalBytes = entries.reduce((total, entry) => total + entry.size, 0);
+    if (totalBytes > limits.maxTotalBytes) {
+      throw new Error(`Skill bundle exceeds ${formatByteLimit(limits.maxTotalBytes)}`);
+    }
+  }
+
+  return await Promise.all(
+    entries.map(async (entry) => ({
+      relPath: entry.relPath,
+      bytes: new Uint8Array(await readFile(entry.absPath)),
+      contentType: entry.contentType,
+    })),
+  );
 }
 
 /** @deprecated Use listSkillFiles. */
@@ -199,6 +237,12 @@ function normalizePath(path: string) {
 
 function hasDotPathSegment(path: string) {
   return path.split("/").some((segment) => segment.startsWith("."));
+}
+
+function formatByteLimit(bytes: number) {
+  if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)}MB limit`;
+  if (bytes % 1024 === 0) return `${bytes / 1024}KB limit`;
+  return `${bytes} byte limit`;
 }
 
 function sanitizeRelPath(path: string) {

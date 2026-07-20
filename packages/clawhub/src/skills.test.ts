@@ -182,6 +182,19 @@ describe("skills", () => {
     expect(files.find((file) => file.relPath === "bin/binary")?.bytes).toEqual(largeBinary);
   });
 
+  it("checks publish limits before reading skill artifacts", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-publish-limits-"));
+    await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
+    await writeFile(join(workdir, "payload.bin"), "12345", "utf8");
+
+    await expect(listSkillFiles(workdir, { maxFileBytes: 4, maxTotalBytes: 100 })).rejects.toThrow(
+      'File "payload.bin" exceeds 4 byte limit',
+    );
+    await expect(listSkillFiles(workdir, { maxFileBytes: 10, maxTotalBytes: 6 })).rejects.toThrow(
+      "Skill bundle exceeds 6 byte limit",
+    );
+  });
+
   it("hashes skill files deterministically", async () => {
     const { fingerprint } = hashSkillFiles([
       { relPath: "b.txt", bytes: strToU8("b") },
