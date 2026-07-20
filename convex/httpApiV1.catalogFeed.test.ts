@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
-import { catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
+import { catalogClawsFeedV1Handler, catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
 
 type QueryCtx = {
   runQuery: ReturnType<typeof vi.fn>;
@@ -21,6 +21,10 @@ describe("catalogFeedV1Handler", () => {
 
   beforeEach(() => {
     ctx = { runQuery: vi.fn().mockResolvedValue(publication) };
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("serves the exact published payload with edge cache validators", async () => {
@@ -92,5 +96,29 @@ describe("catalogFeedV1Handler", () => {
 
     expect(response.status).toBe(503);
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("hides the Claws feed while the experiment is disabled", async () => {
+    const response = await catalogClawsFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/claws"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(ctx.runQuery).not.toHaveBeenCalled();
+  });
+
+  it("serves the Claws publication while the experiment is enabled", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const response = await catalogClawsFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/claws"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.runQuery).toHaveBeenCalledWith(internal.catalogFeed.getLatestPublication, {
+      feedId: "clawhub-official-claws",
+    });
   });
 });

@@ -1,5 +1,6 @@
 import { httpAction } from "./functions";
 import {
+  catalogClawsFeedV1Handler,
   catalogFeedV1Handler,
   catalogSkillsFeedV1Handler,
   promotionsFeedV1Handler,
@@ -75,6 +76,7 @@ export const skillsShCatalogTestV1Http = httpAction(skillsShCatalogTestV1Handler
 export const skillsShCatalogPublicV1Http = httpAction(skillsShCatalogPublicV1Handler);
 export const catalogFeedV1Http = httpAction(catalogFeedV1Handler);
 export const catalogSkillsFeedV1Http = httpAction(catalogSkillsFeedV1Handler);
+export const catalogClawsFeedV1Http = httpAction(catalogClawsFeedV1Handler);
 export const promotionsFeedV1Http = httpAction(promotionsFeedV1Handler);
 
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
@@ -126,6 +128,7 @@ export const __handlers = {
   skillsShCatalogPublicV1Handler,
   catalogFeedV1Handler,
   catalogSkillsFeedV1Handler,
+  catalogClawsFeedV1Handler,
   searchSkillsV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,
