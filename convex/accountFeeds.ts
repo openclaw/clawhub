@@ -11,6 +11,7 @@ import {
   type PublisherFeedQuery,
 } from "clawhub-schema";
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
@@ -21,6 +22,8 @@ import { getPublicPublisherVisibility, normalizePublisherHandle } from "./lib/pu
 const PUBLISHER_FEED_MAX_SOURCE_PAGES = 3;
 const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
 const PUBLISHER_FEED_SUMMARY_MAX_CHARS = 500;
+const PUBLISHER_FEED_RETAINED_REVISIONS = 256;
+const PUBLISHER_FEED_HISTORY_PRUNE_BATCH_SIZE = 100;
 type PublisherFeedReadCtx = Pick<QueryCtx | MutationCtx, "db">;
 
 function publisherMetadata(params: {
@@ -642,6 +645,47 @@ type PublishPublisherFeedRevisionArgs = {
   entries: PublisherFeedEntry[];
 };
 
+type PublisherFeedHistoryPrunePhase = "revisions" | "changes";
+
+export async function prunePublisherFeedHistoryImpl(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  args: {
+    publisherId: Id<"publishers">;
+    cutoffSequence: number;
+    phase: PublisherFeedHistoryPrunePhase;
+  },
+) {
+  const rows = await ctx.db
+    .query(args.phase === "revisions" ? "publisherFeedRevisions" : "publisherFeedChanges")
+    .withIndex("by_publisher_and_sequence", (q) =>
+      q.eq("publisherId", args.publisherId).lte("sequence", args.cutoffSequence),
+    )
+    .order("asc")
+    .take(PUBLISHER_FEED_HISTORY_PRUNE_BATCH_SIZE);
+  for (const row of rows) await ctx.db.delete(row._id);
+
+  const nextPhase =
+    rows.length === PUBLISHER_FEED_HISTORY_PRUNE_BATCH_SIZE ? args.phase : "changes";
+  const complete =
+    args.phase === "changes" && rows.length < PUBLISHER_FEED_HISTORY_PRUNE_BATCH_SIZE;
+  if (!complete) {
+    await ctx.scheduler.runAfter(0, internal.accountFeeds.prunePublisherFeedHistoryInternal, {
+      ...args,
+      phase: nextPhase,
+    });
+  }
+  return { deleted: rows.length, phase: args.phase, complete };
+}
+
+export const prunePublisherFeedHistoryInternal = internalMutation({
+  args: {
+    publisherId: v.id("publishers"),
+    cutoffSequence: v.number(),
+    phase: v.union(v.literal("revisions"), v.literal("changes")),
+  },
+  handler: async (ctx, args) => await prunePublisherFeedHistoryImpl(ctx, args),
+});
+
 async function ensurePublisherFeedRevisionBaseline(
   ctx: Pick<MutationCtx, "db">,
   publication: Doc<"publisherFeedPublications">,
@@ -676,7 +720,7 @@ async function ensurePublisherFeedRevisionBaseline(
 }
 
 export async function publishPublisherFeedRevisionImpl(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
   args: PublishPublisherFeedRevisionArgs,
 ) {
   const publisher = await ctx.db.get(args.publisherId);
@@ -764,6 +808,14 @@ export async function publishPublisherFeedRevisionImpl(
     cumulativeChangeCount: nextCumulativeChangeCount,
     publishedAt: publication.publishedAt,
   });
+  const cutoffSequence = sequence - PUBLISHER_FEED_RETAINED_REVISIONS;
+  if (cutoffSequence > 0) {
+    await prunePublisherFeedHistoryImpl(ctx, {
+      publisherId: args.publisherId,
+      cutoffSequence,
+      phase: "revisions",
+    });
+  }
   return buildFeed({
     publisherId: String(args.publisherId),
     feedId: args.feedId,
@@ -776,7 +828,7 @@ export async function publishPublisherFeedRevisionImpl(
 }
 
 export async function refreshPublisherFeedImpl(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
   args: { publisherId: string },
 ) {
   const projection = await buildPublisherFeedProjectionImpl(ctx, args);

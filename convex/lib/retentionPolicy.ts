@@ -212,8 +212,20 @@ export const RETENTION_POLICIES = {
   officialPluginMigrations: permanent("Official plugin migration state."),
   catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
   publisherFeedPublications: permanent("Current coherent publisher feed revision."),
-  publisherFeedRevisions: permanent("Publisher feed revision and delta continuity history."),
-  publisherFeedChanges: permanent("Publisher feed entry and metadata change history."),
+  publisherFeedRevisions: ephemeral(
+    "Publisher feed revisions are retained only for bounded delta continuity.",
+    {
+      prune: "accountFeeds.prunePublisherFeedHistoryInternal",
+      retention: "Newest 256 publisher feed revisions.",
+    },
+  ),
+  publisherFeedChanges: ephemeral(
+    "Publisher feed changes are retained only while a retained revision can reference them.",
+    {
+      prune: "accountFeeds.prunePublisherFeedHistoryInternal",
+      retention: "Changes newer than the oldest retained publisher feed revision.",
+    },
+  ),
   stars: permanent("User star records."),
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),

@@ -4,6 +4,7 @@ import {
   buildPublisherFeedProjectionImpl,
   getPublisherDetail,
   getPublisherFeedChanges,
+  prunePublisherFeedHistoryImpl,
   publishPublisherFeedRevisionImpl,
   queryPublisherFeedPublicationImpl,
 } from "./accountFeeds";
@@ -53,6 +54,46 @@ function makePublisher() {
 }
 
 describe("publisher feed projection", () => {
+  it("prunes revision markers before their bounded change journal", async () => {
+    const revision = { _id: "publisherFeedRevisions:1" };
+    const change = { _id: "publisherFeedChanges:1" };
+    const deleted: string[] = [];
+    const runAfter = vi.fn();
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        order: vi.fn(() => ({
+          take: vi.fn(async () => (table === "publisherFeedRevisions" ? [revision] : [change])),
+        })),
+      })),
+    }));
+    const ctx = {
+      db: { query, delete: vi.fn(async (id: string) => deleted.push(id)) },
+      scheduler: { runAfter },
+    } as never;
+
+    const revisions = await prunePublisherFeedHistoryImpl(ctx, {
+      publisherId: doc<"publishers">("publishers:alice"),
+      cutoffSequence: 3,
+      phase: "revisions",
+    });
+
+    expect(revisions).toEqual({ deleted: 1, phase: "revisions", complete: false });
+    expect(deleted).toEqual(["publisherFeedRevisions:1"]);
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      publisherId: "publishers:alice",
+      cutoffSequence: 3,
+      phase: "changes",
+    });
+
+    const changes = await prunePublisherFeedHistoryImpl(ctx, {
+      publisherId: doc<"publishers">("publishers:alice"),
+      cutoffSequence: 3,
+      phase: "changes",
+    });
+    expect(changes).toEqual({ deleted: 1, phase: "changes", complete: true });
+    expect(deleted).toEqual(["publisherFeedRevisions:1", "publisherFeedChanges:1"]);
+  });
+
   it("rejects ids that do not normalize to the publishers table", async () => {
     const get = vi.fn();
     const normalizeId = vi.fn((table: string, id: string) =>
