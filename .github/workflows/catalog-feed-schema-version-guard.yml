@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - name: Test schema-version parser
         run: node --test .github/scripts/catalog-feed-schema-version-guard.test.cjs

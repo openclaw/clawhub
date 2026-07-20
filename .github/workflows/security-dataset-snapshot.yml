@@ -87,7 +87,7 @@ jobs:
       SNAPSHOT_HARD_MAX_SHARDS_PER_SOURCE: "64"
       SNAPSHOT_HARD_MAX_MATRIX_JOBS: "128"
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
 
@@ -204,7 +204,7 @@ jobs:
       SNAPSHOT_PAGE_TIMEOUT_MS: ${{ inputs['page-timeout-ms'] || '600000' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/shard
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
 
@@ -266,11 +266,11 @@ jobs:
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
       WORK_DIR: /tmp/clawhub-security-dataset
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: ${{ env.HF_UPLOAD == 'true' }}
         with:
           python-version: "3.12"
@@ -352,11 +352,11 @@ jobs:
       SOURCE_SHARDS_RUN_ID: ${{ inputs['reuse-shards-run-id'] }}
       WORK_DIR: /tmp/clawhub-security-dataset
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         if: ${{ env.HF_UPLOAD == 'true' }}
         with:
           python-version: "3.12"

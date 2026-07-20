@@ -104,7 +104,7 @@ jobs:
           echo "Deploy target: ${{ needs.validate-deploy-request.outputs.target }}"
           echo "Allow deleting large Convex indexes: ${{ inputs.allow_deleting_large_indexes }}"
 
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
@@ -234,7 +234,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
