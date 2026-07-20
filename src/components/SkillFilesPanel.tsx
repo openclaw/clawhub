@@ -12,6 +12,7 @@ type SkillFile = Doc<"skillVersions">["files"][number];
 
 type SkillFilesPanelProps = {
   versionId: Id<"skillVersions"> | null;
+  version: string | null;
   latestFiles: SkillFile[];
   skillSlug: string;
   ownerHandle?: string | null;
@@ -115,6 +116,7 @@ function FileViewerSkeleton() {
 
 export function SkillFilesPanel({
   versionId,
+  version,
   latestFiles,
   skillSlug,
   ownerHandle,
@@ -145,7 +147,7 @@ export function SkillFilesPanel({
   const fileTree = useMemo(() => buildFileTree(latestFiles), [latestFiles]);
   const selectedFileName = selectedPath?.split("/").pop() ?? selectedPath ?? "";
   const downloadUrl = selectedPath
-    ? resolveSkillReadmeHref(selectedPath, skillSlug, ownerHandle)
+    ? resolveSkillReadmeHref(selectedPath, skillSlug, ownerHandle, version)
     : null;
 
   useEffect(() => {

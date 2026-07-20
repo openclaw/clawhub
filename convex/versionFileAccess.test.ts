@@ -344,6 +344,54 @@ describe("version file access actions", () => {
     });
   });
 
+  it.each([
+    ["report.pdf", "application/pdf"],
+    ["page.html", "text/html"],
+    ["diagram.svg", "image/svg+xml"],
+    ["config.xml", "application/xml"],
+  ])(
+    "returns rich document %s as download-only even when it is valid UTF-8",
+    async (path, contentType) => {
+      const text = "<root>valid UTF-8</root>";
+      const version = {
+        ...makeSkillVersion(),
+        files: [
+          {
+            path,
+            size: text.length,
+            storageId: "_storage:rich",
+            sha256: "e".repeat(64),
+            contentType,
+          },
+        ],
+      };
+      const ctx = makeActionCtx({
+        version,
+        storedBlob: new Blob([text], { type: contentType }),
+        skill: {
+          _id: "skills:1",
+          ownerUserId: "users:owner",
+          stats: {},
+          softDeletedAt: undefined,
+          moderationStatus: "active",
+          moderationFlags: [],
+        },
+      });
+
+      await expect(
+        getSkillFilePreviewHandler._handler(ctx, {
+          versionId: "skillVersions:1",
+          path,
+        } as never),
+      ).resolves.toEqual({
+        path,
+        text: null,
+        size: text.length,
+        sha256: "e".repeat(64),
+      });
+    },
+  );
+
   it("blocks unauthenticated file reads from hidden skill versions", async () => {
     const ctx = makeActionCtx({
       version: makeSkillVersion(),

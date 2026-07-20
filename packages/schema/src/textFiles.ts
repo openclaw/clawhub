@@ -3,6 +3,21 @@ export function normalizeContentType(contentType?: string | null) {
   return normalized || undefined;
 }
 
+const RICH_OR_ACTIVE_DOCUMENT_TYPES = new Set([
+  "application/pdf",
+  "application/xhtml+xml",
+  "application/xml",
+  "image/svg+xml",
+  "text/html",
+  "text/xml",
+]);
+
+export function isRichOrActiveDocument(path: string, contentType?: string | null) {
+  const normalizedType = normalizeContentType(contentType) ?? "";
+  if (RICH_OR_ACTIVE_DOCUMENT_TYPES.has(normalizedType)) return true;
+  return /\.(?:html?|xhtml|svg|pdf|xml|xsl|xslt)$/u.test(path.trim().toLowerCase());
+}
+
 export function decodeUtf8Text(bytes: Uint8Array) {
   const chunks: string[] = [];
   const codeUnits: number[] = [];

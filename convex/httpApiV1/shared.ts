@@ -1,6 +1,7 @@
 import {
   CliPublishRequestSchema,
   decodeUtf8Text,
+  isRichOrActiveDocument,
   normalizeContentType,
   parseArk,
 } from "clawhub-schema";
@@ -20,20 +21,6 @@ const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-function isActiveDocumentLike(contentType: string | undefined, path: string) {
-  const normalizedType = normalizeContentType(contentType) ?? "";
-  const normalizedPath = path.toLowerCase();
-  return (
-    normalizedType === "text/html" ||
-    normalizedType === "application/xhtml+xml" ||
-    normalizedType === "image/svg+xml" ||
-    normalizedType === "application/pdf" ||
-    normalizedType === "application/xml" ||
-    normalizedType === "text/xml" ||
-    /\.(?:html?|xhtml|svg|pdf|xml|xsl|xslt)$/u.test(normalizedPath)
-  );
-}
-
 function attachmentDisposition(path: string) {
   return `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").at(-1) || "download")}`;
 }
@@ -47,7 +34,7 @@ export function safeTextFileResponse(params: {
   headers?: HeadersInit;
 }) {
   const contentType = normalizeContentType(params.contentType) ?? params.contentType;
-  const forceAttachment = isActiveDocumentLike(contentType, params.path);
+  const forceAttachment = isRichOrActiveDocument(params.path, contentType);
 
   // For any text response that a browser might try to render, lock it down.
   // In particular, this prevents SVG <foreignObject> script execution from reading
@@ -82,7 +69,7 @@ export async function safeStoredFileResponse(params: {
   const bytes = new Uint8Array(await params.blob.arrayBuffer());
   const textContent = decodeUtf8Text(bytes);
   const contentType = normalizeContentType(params.contentType) ?? params.contentType;
-  const forceAttachment = textContent === null || isActiveDocumentLike(contentType, params.path);
+  const forceAttachment = textContent === null || isRichOrActiveDocument(params.path, contentType);
 
   return new Response(bytes, {
     status: 200,

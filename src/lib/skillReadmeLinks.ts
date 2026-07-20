@@ -46,6 +46,7 @@ export function resolveSkillReadmeHref(
   href: string,
   skillSlug: string,
   ownerHandle?: string | null,
+  version?: string | null,
 ) {
   const safeHref = defaultUrlTransform(href);
   if (!safeHref) return "";
@@ -60,9 +61,10 @@ export function resolveSkillReadmeHref(
   const ownerQuery = ownerHandle?.trim()
     ? `&ownerHandle=${encodeURIComponent(ownerHandle.trim().replace(/^@+/, ""))}`
     : "";
+  const versionQuery = version?.trim() ? `&version=${encodeURIComponent(version.trim())}` : "";
   return `/api/v1/skills/${encodeURIComponent(skillSlug)}/file?path=${encodeURIComponent(
     normalizedPath,
-  )}${ownerQuery}${fragment}`;
+  )}${ownerQuery}${versionQuery}${fragment}`;
 }
 
 export function resolveGitHubSkillReadmeHref(href: string, sourceBaseUrl: string) {

@@ -6572,7 +6572,8 @@ describe("httpApiV1 handlers", () => {
     expect(body).toContain("/api/v1/skills/demo/file?ownerHandle=<owner>&path=SKILL.md");
   });
 
-  it("returns 413 when raw file too large", async () => {
+  it("serves raw skill files above the preview limit", async () => {
+    const fileBytes = new Uint8Array(210 * 1024).fill(97);
     const internalVersion = {
       skillId: "skills:1",
       version: "1.0.0",
@@ -6581,7 +6582,7 @@ describe("httpApiV1 handlers", () => {
       files: [
         {
           path: "SKILL.md",
-          size: 210 * 1024,
+          size: fileBytes.byteLength,
           storageId: "storage:1",
           sha256: "abcd",
           contentType: "text/plain",
@@ -6614,10 +6615,17 @@ describe("httpApiV1 handlers", () => {
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn().mockResolvedValue(new Blob([fileBytes], { type: "text/plain" })),
+        },
+      }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
     );
-    expect(response.status).toBe(413);
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(fileBytes);
   });
 
   it("publish json succeeds", async () => {

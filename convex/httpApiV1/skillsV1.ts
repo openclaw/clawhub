@@ -36,6 +36,7 @@ import {
   type InstallResolverSource,
   type SkillInstallResolution,
 } from "../lib/installResolver";
+import { MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
@@ -2541,7 +2542,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       version.files.find((entry) => entry.path === normalized) ??
       version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
     if (!file) return text("File not found", 404, rate.headers);
-    if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
+    if (file.size > MAX_PUBLISH_FILE_BYTES) {
+      return text("File exceeds 10MB limit", 413, rate.headers);
+    }
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);

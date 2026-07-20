@@ -1,4 +1,5 @@
 export declare function normalizeContentType(contentType?: string | null): string | undefined;
+export declare function isRichOrActiveDocument(path: string, contentType?: string | null): boolean;
 export declare function decodeUtf8Text(bytes: Uint8Array): string | null;
 export declare const TEXT_FILE_EXTENSIONS: readonly ["md", "mdx", "txt", "json", "json5", "yaml", "yml", "toml", "js", "cjs", "mjs", "ts", "tsx", "jsx", "py", "sh", "ps1", "psm1", "psd1", "r", "rb", "go", "rs", "swift", "kt", "java", "cs", "cpp", "c", "h", "hpp", "sql", "csv", "tsv", "ini", "cfg", "conf", "env", "properties", "dat", "xml", "html", "css", "scss", "sass", "svg"];
 export declare const TEXT_FILE_EXTENSION_SET: Set<string>;

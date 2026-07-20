@@ -90,6 +90,7 @@ type SkillDetailTabsProps = {
   hasSkillCard: boolean;
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
+  latestVersion?: string | null;
   canDeleteVersions?: boolean;
   skill: Doc<"skills">;
   ownerHandle?: string | null;
@@ -115,6 +116,7 @@ export function SkillDetailTabs({
   hasSkillCard,
   latestFiles,
   latestVersionId,
+  latestVersion,
   canDeleteVersions = false,
   skill,
   ownerHandle,
@@ -337,6 +339,7 @@ export function SkillDetailTabs({
           <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
             <SkillFilesPanel
               versionId={latestVersionId}
+              version={latestVersion ?? null}
               latestFiles={latestFiles}
               skillSlug={skill.slug}
               ownerHandle={ownerHandle}

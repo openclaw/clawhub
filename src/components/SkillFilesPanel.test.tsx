@@ -39,6 +39,7 @@ describe("SkillFilesPanel", () => {
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
         skillSlug="demo"
       />,
@@ -71,6 +72,7 @@ describe("SkillFilesPanel", () => {
     const { container } = render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
         skillSlug="demo"
       />,
@@ -93,6 +95,7 @@ describe("SkillFilesPanel", () => {
     const { container } = render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("scripts/run.sh", 10)]}
         skillSlug="demo"
       />,
@@ -109,6 +112,7 @@ describe("SkillFilesPanel", () => {
     const { container } = render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("empty.txt", 0)]}
         skillSlug="demo"
       />,
@@ -132,6 +136,7 @@ describe("SkillFilesPanel", () => {
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version="1.2.3"
         latestFiles={[makeFile("assets/payload.bin", 4)]}
         skillSlug="demo"
         ownerHandle="acme"
@@ -143,7 +148,7 @@ describe("SkillFilesPanel", () => {
 
     await screen.findByText(/available to download but cannot be previewed as text/i);
     expect(screen.getByRole("link", { name: "Download payload.bin" }).getAttribute("href")).toBe(
-      "/api/v1/skills/demo/file?path=assets%2Fpayload.bin&ownerHandle=acme",
+      "/api/v1/skills/demo/file?path=assets%2Fpayload.bin&ownerHandle=acme&version=1.2.3",
     );
 
     fireEvent.click(fileButton);
@@ -170,6 +175,7 @@ describe("SkillFilesPanel", () => {
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={[makeFile("a.txt", 5), makeFile("b.txt", 6)]}
         skillSlug="demo"
       />,
@@ -212,6 +218,7 @@ describe("SkillFilesPanel", () => {
     render(
       <SkillFilesPanel
         versionId={"skillVersions:1" as Id<"skillVersions">}
+        version={null}
         latestFiles={files}
         skillSlug="demo"
       />,
