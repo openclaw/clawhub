@@ -103,7 +103,7 @@ describe("pre-publication publish worker workflow", () => {
       CONVEX_URL:
         "${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}",
       PREPUBLICATION_CLAWSCAN_TIMEOUT_MS:
-        "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '240000' }}",
+        "${{ vars.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS || '900000' }}",
       PREPUBLICATION_CHECK_ATTEMPT_ID: "${{ inputs['attempt-id'] || '' }}",
       PREPUBLICATION_CHECK_LIMIT: "${{ inputs['batch-limit'] || '4' }}",
       PREPUBLICATION_CHECK_KIND: "${{ inputs.kind || '' }}",

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import {
+  DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS,
   claimBatchDrainedQueue,
   claimPrePublicationAttempt,
   claimPrePublicationBatch,
@@ -63,6 +64,10 @@ const attempt = {
 };
 
 describe("pre-publication worker", () => {
+  it("allows production ClawScan runs up to 15 minutes by default", () => {
+    expect(DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS).toBe(900_000);
+  });
+
   it("treats empty scheduled recovery flags as absent", () => {
     expect(
       parseArgs(
