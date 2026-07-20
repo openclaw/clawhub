@@ -63,6 +63,28 @@ describe("publisher feed projection", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("resolves public publisher details by mutable handle", async () => {
+    const publisher = makePublisher();
+    const unique = vi.fn(async () => publisher);
+    const eq = vi.fn(() => ({ unique }));
+    const withIndex = vi.fn((_name: string, apply: (q: { eq: typeof eq }) => unknown) =>
+      apply({ eq }),
+    );
+    const query = vi.fn(() => ({ withIndex }));
+
+    const result = await getPublisherDetailHandler(
+      { db: { get: vi.fn(), normalizeId: vi.fn(() => null), query } },
+      { publisherId: "@Alice" },
+    );
+
+    expect(result).toMatchObject({
+      publisher: { _id: publisher._id, handle: "alice" },
+      feedUrl: "/api/v1/publishers/publishers%3Aalice/feed",
+    });
+    expect(withIndex).toHaveBeenCalledWith("by_handle", expect.any(Function));
+    expect(eq).toHaveBeenCalledWith("handle", "alice");
+  });
+
   it("does not expose personal publishers with inactive linked users", async () => {
     const user = {
       _id: doc<"users">("users:alice"),
