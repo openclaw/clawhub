@@ -305,7 +305,7 @@ async function main() {
     maxEntriesPerBatch: 125,
     maxWritesPerBatch: 100,
     maxPlannedScans: 500,
-    maxScanAdmissionsPerBatch: 50,
+    maxScanAdmissionsPerBatch: 49,
     maxScanAdmissionsPerRun: 500,
     maxScanAdmissionsPerDay: 500,
     maxCatalogQueued: 50,
@@ -395,7 +395,7 @@ async function main() {
       .map((entry) => entry.externalId)
       .filter((externalId) => externalId !== changedExternalId),
   ].slice(0, 496);
-  for (const externalIds of chunks(initialAdmissionIds, 50)) {
+  for (const externalIds of chunks(initialAdmissionIds, 49)) {
     await mutation(() =>
       client.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
         runId: firstStart.runId,

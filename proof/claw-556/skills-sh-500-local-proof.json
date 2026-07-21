@@ -1,27 +1,27 @@
 {
   "verdict": "pass",
-  "generatedAt": "2026-07-21T04:16:44.885Z",
+  "generatedAt": "2026-07-21T08:17:39.475Z",
   "deployment": {
     "kind": "disposable-local-convex",
-    "name": "local-amantus-clawdhub-5574",
+    "name": "local-amantus-clawdhub-4741",
     "cloudUrl": "http://127.0.0.1:3210",
     "permanentTestDeployed": false,
     "productionDeployed": false
   },
   "runtime": {
-    "elapsedMs": 61487,
+    "elapsedMs": 42779,
     "memory": {
-      "backendPid": 17807,
-      "backendRssStartKiB": 930640,
-      "backendRssPeakKiB": 932400,
-      "backendRssEndKiB": 860352,
-      "driverRssStartBytes": 53936128,
-      "driverRssPeakBytes": 79069184,
-      "driverRssEndBytes": 79069184,
-      "driverHeapPeakBytes": 9479037
+      "backendPid": 83106,
+      "backendRssStartKiB": 841376,
+      "backendRssPeakKiB": 845024,
+      "backendRssEndKiB": 733648,
+      "driverRssStartBytes": 50855936,
+      "driverRssPeakBytes": 74940416,
+      "driverRssEndBytes": 74940416,
+      "driverHeapPeakBytes": 6005526
     },
     "clientCalls": {
-      "mutation": 277,
+      "mutation": 279,
       "query": 297,
       "expectedErrors": 8,
       "unexpectedErrors": 0
@@ -83,7 +83,7 @@
       "maxEntriesPerBatch": 125,
       "maxEntriesPerRun": 500,
       "maxPlannedScans": 500,
-      "maxScanAdmissionsPerBatch": 50,
+      "maxScanAdmissionsPerBatch": 49,
       "maxScanAdmissionsPerDay": 500,
       "maxScanAdmissionsPerRun": 500,
       "maxWritesPerBatch": 100
@@ -119,14 +119,14 @@
         "entriesObserved": 500,
         "lastBatchReads": 7,
         "lastBatchWrites": 6,
-        "scanAdmissionBatches": 10,
+        "scanAdmissionBatches": 11,
         "scansAdmitted": 496,
         "scansPlanned": 500
       },
       "operationEstimates": {
-        "dbReads": 2149,
-        "dbWrites": 2513,
-        "functionCalls": 29
+        "dbReads": 2163,
+        "dbWrites": 2515,
+        "functionCalls": 31
       }
     },
     "pauseResume": {
@@ -221,7 +221,7 @@
   "admissionContainment": {
     "deterministicOnlyInLocalProof": true,
     "realDispatchOutsideStagingLiveRejected": true,
-    "realDispatchRejection": "[Request ID: cf394376940c17d1] Server Error\nUncaught ConvexError: real skills.sh scan admission requires staging-live controls\n    at handler (../convex/skillsShCatalog.ts:638:22)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n"
+    "realDispatchRejection": "[Request ID: 58d934fc5d9e4965] Server Error\nUncaught ConvexError: real skills.sh scan admission requires staging-live controls\n    at handler (../convex/skillsShCatalog.ts:913:14)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n"
   },
   "lifecycleContainment": {
     "canceledRunningAttempts": 1,
@@ -237,9 +237,9 @@
       }
     ],
     "canceledRunAdmissionRejected": true,
-    "canceledRunAdmissionRejection": "[Request ID: eb1d99caef6190f1] Server Error\nUncaught ConvexError: Cannot admit scans for canceled run\n    at handler (../convex/skillsShCatalog.ts:625:24)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n",
+    "canceledRunAdmissionRejection": "[Request ID: 86d0064d754a2652] Server Error\nUncaught ConvexError: Cannot admit scans for canceled run\n    at handler (../convex/skillsShCatalog.ts:900:24)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n",
     "killSwitchAdmissionRejected": true,
-    "killSwitchAdmissionRejection": "[Request ID: b390ad2c4e851de1] Server Error\nUncaught ConvexError: skills.sh catalog controls are disabled\n    at assertCatalogActive (../convex/skillsShCatalog.ts:132:14)\n    at assertScanAdmissionEnabled (../convex/skillsShCatalog.ts:154:14)\n    at handler (../convex/skillsShCatalog.ts:616:24)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n"
+    "killSwitchAdmissionRejection": "[Request ID: cd1d48a0a49f6d2a] Server Error\nUncaught ConvexError: skills.sh catalog controls are disabled\n    at assertCatalogActive (../convex/skillsShCatalog.ts:157:14)\n    at assertScanAdmissionEnabled (../convex/skillsShCatalog.ts:179:14)\n    at handler (../convex/skillsShCatalog.ts:891:24)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n"
   },
   "rollback": {
     "controls": {
@@ -251,7 +251,7 @@
       "maxNativeInFlight": 0,
       "maxNativeQueued": 0,
       "maxPlannedScans": 500,
-      "maxScanAdmissionsPerBatch": 50,
+      "maxScanAdmissionsPerBatch": 49,
       "maxScanAdmissionsPerDay": 500,
       "maxScanAdmissionsPerRun": 500,
       "maxWritesPerBatch": 100,
@@ -262,7 +262,7 @@
       "reason": "visibility and control rollback proof",
       "scanAdmissionEnabled": false,
       "scanPlanningEnabled": false,
-      "updatedAt": 1784607404533,
+      "updatedAt": 1784621859235,
       "updatedBy": "claw-556-local-proof",
       "writesEnabled": false
     },
