@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- Integrations: truncate publisher-controlled Discord webhook titles to the platform's 256-character embed limit.
 - Security: recover scheduled temporal publisher-abuse scans from strict Convex payload validation failures without leaving zombie running runs (thanks @jesse-merhi).
 - CI: retry transient Convex preview provisioning failures under fresh deployment names during Vercel preview builds.
 - Web: keep CLI device login codes out of the GitHub OAuth code handler — the device page no longer loses its prefilled code, bounces through a surprise GitHub redirect, or drops an active session; device links now use `user_code`.
