@@ -662,6 +662,9 @@ export const processFixtureBatchInternal = internalMutation({
     if (run.status === "paused") throw new ConvexError("skills.sh catalog run is paused");
     if (run.status !== "running") return summarizeRun(run);
 
+    if (run.fixtureId === "skills-sh-test-live-500") {
+      throw new ConvexError("skills.sh fixture work requires a fixture run");
+    }
     const fixture = getSkillsShCatalogFixture(run.fixtureId);
     let cursor = run.cursor;
     let writesUsed = 0;
