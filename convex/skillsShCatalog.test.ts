@@ -221,6 +221,56 @@ describe("skills.sh catalog overload control plane", () => {
     });
   });
 
+  it("plans a changed hash once when the previous hash is still unadmitted", async () => {
+    useEnvironment(LOCAL_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      scanAdmissionEnabled: false,
+      maxScanAdmissionsPerBatch: 0,
+      maxScanAdmissionsPerRun: 0,
+      maxScanAdmissionsPerDay: 0,
+      maxCatalogQueued: 0,
+      maxCatalogInFlight: 0,
+    });
+    const first = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "nvidia-small-v1",
+      actor: "codex-test",
+      reason: "leave the first hash planned and unadmitted",
+    });
+    await processToTerminal(t, first.runId);
+
+    const changed = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "nvidia-small-v2",
+      actor: "codex-test",
+      reason: "plan the changed hash exactly once",
+    });
+    const changedRun = await processToTerminal(t, changed.runId);
+    expect(changedRun.counts).toMatchObject({
+      observed: 1,
+      wouldUpdate: 1,
+      updated: 1,
+      scansPlanned: 1,
+      scansAdmitted: 0,
+    });
+
+    const repeated = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "nvidia-small-v2",
+      actor: "codex-test",
+      reason: "do not replan the unchanged hash",
+    });
+    const repeatedRun = await processToTerminal(t, repeated.runId);
+    expect(repeatedRun.counts).toMatchObject({
+      observed: 1,
+      unchanged: 1,
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(await collectAttempts(t, first.runId)).toHaveLength(0);
+    expect(await collectAttempts(t, changed.runId)).toHaveLength(0);
+    expect(await collectAttempts(t, repeated.runId)).toHaveLength(0);
+  });
+
   it("plans a bounded 20,000-row discovery without writing entries or enqueueing scans", async () => {
     useEnvironment(LOCAL_ENV);
     const t = convexTest(schema, modules);
@@ -362,6 +412,8 @@ describe("skills.sh catalog overload control plane", () => {
     });
     expect(await collectAttempts(t, runId)).toHaveLength(500);
 
+    const repeatedAt = new Date("2026-07-21T04:00:00.000Z");
+    vi.setSystemTime(repeatedAt);
     const repeated = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
       fixtureId: "skills-sh-500-2026-07-21",
       actor: "codex-test",
@@ -382,6 +434,9 @@ describe("skills.sh catalog overload control plane", () => {
       scansCanceled: 0,
     });
     expect(await collectAttempts(t, repeated.runId)).toHaveLength(0);
+    expect(
+      (await collectEntries(t)).every((entry) => entry.lastObservedAt === repeatedAt.getTime()),
+    ).toBe(true);
 
     vi.setSystemTime(new Date("2026-07-22T03:00:00.000Z"));
     const changed = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
@@ -420,7 +475,30 @@ describe("skills.sh catalog overload control plane", () => {
     expect(changedAttempts[0]?.sourceContentHash).toBe(planned[0]?.sourceContentHash);
     expect(changedAttempts[0]?.artifactContentHash).toBeUndefined();
 
+    vi.setSystemTime(new Date("2026-07-23T03:00:00.000Z"));
+    const reverted = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "skills-sh-500-2026-07-21",
+      actor: "codex-test",
+      reason: "reuse the original exact-hash verdict",
+    });
+    const revertedRun = await processToTerminal(t, reverted.runId);
+    expect(revertedRun.counts).toMatchObject({
+      observed: 500,
+      wouldUpdate: 2,
+      updated: 2,
+      unchanged: 498,
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(await collectAttempts(t, reverted.runId)).toHaveLength(0);
     const allEntries = await collectEntries(t);
+    const revertedEntry = allEntries.find((entry) => entry.externalId === planned[0]!.externalId);
+    const originalEntry = entries.find((entry) => entry.externalId === planned[0]!.externalId);
+    expect(revertedEntry).toMatchObject({
+      sourceContentHash: originalEntry?.sourceContentHash,
+      scanStatus: "clean",
+      publicVisible: false,
+    });
     expect(allEntries).toHaveLength(500);
     expect(allEntries.every((entry) => !entry.publicVisible)).toBe(true);
     expect(await collectNativeState(t)).toEqual(nativeBefore);

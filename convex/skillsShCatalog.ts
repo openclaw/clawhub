@@ -440,12 +440,8 @@ export const processFixtureBatchInternal = internalMutation({
         Boolean(control?.scanPlanningEnabled) &&
         counts.scansPlanned < run.budgets.maxPlannedScans &&
         !existingAttempt &&
-        (!existing || existing.scanStatus !== "planned");
-      const entryWriteRequired =
-        !run.dryRun &&
-        (!existing ||
-          !observationUnchanged ||
-          (shouldPlanScan && existing.scanStatus !== "planned"));
+        (!existing || contentChanged || existing.scanStatus !== "planned");
+      const entryWriteRequired = !run.dryRun;
       if (entryWriteRequired && writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
 
       counts.observed += 1;
@@ -471,12 +467,15 @@ export const processFixtureBatchInternal = internalMutation({
             sourceContentHash: row.sourceContentHash,
             installs: row.installs,
             sourceSnapshotId: fixture.snapshotId,
+            // This gate has no publication seam; every catalog write reasserts dark visibility.
             publicVisible: false,
             scanStatus: shouldPlanScan
               ? "planned"
-              : contentChanged
-                ? "not-planned"
-                : existing.scanStatus,
+              : contentChanged && existingAttempt
+                ? scanStatusFromAttempt(existingAttempt)
+                : contentChanged
+                  ? "not-planned"
+                  : existing.scanStatus,
             lastObservedAt: now,
             updatedAt: now,
           });
@@ -1240,6 +1239,14 @@ function sameFixtureObservation(
     existing.sourceContentHash === row.sourceContentHash &&
     existing.installs === row.installs
   );
+}
+
+function scanStatusFromAttempt(
+  attempt: Doc<"skillsShCatalogScanAttempts">,
+): Doc<"skillsShCatalogEntries">["scanStatus"] {
+  if (attempt.status === "queued" || attempt.status === "running") return "queued";
+  if (attempt.status === "canceled") return "canceled";
+  return attempt.verdict ?? "failed";
 }
 
 function fixtureObservationConflicts(
