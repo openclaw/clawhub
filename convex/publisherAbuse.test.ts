@@ -686,6 +686,7 @@ function makeEmptyPublisherAbuseScoreRunsQuery() {
       expect([
         "by_model_version_and_started_at",
         "by_temporal_pipeline_kind_and_started_at",
+        "by_model_version_and_temporal_pipeline_kind_and_phase_started_at",
       ]).toContain(indexName);
       const constraints: Record<string, unknown> = {};
       const q = {
@@ -697,6 +698,10 @@ function makeEmptyPublisherAbuseScoreRunsQuery() {
       build(q);
       if (indexName === "by_model_version_and_started_at") {
         expect(constraints.modelVersion).toBeTypeOf("string");
+      } else if (indexName === "by_model_version_and_temporal_pipeline_kind_and_phase_started_at") {
+        expect(constraints.modelVersion).toBeTypeOf("string");
+        expect(constraints.temporalPipelineKind).toBeUndefined();
+        expect(constraints.temporalPipelinePhase).toBeTypeOf("string");
       } else {
         expect(constraints).toEqual({ temporalPipelineKind: "signals" });
       }
@@ -1699,7 +1704,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(db.get).not.toHaveBeenCalled();
   });
 
-  it("keeps a resumable legacy signal scan visible on the dashboard", async () => {
+  it("keeps a resumable legacy signal scan visible behind a newer diagnostic run", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -1713,6 +1718,13 @@ describe("publisher abuse dry-run persistence", () => {
       startedAt: 200,
       updatedAt: 200,
       temporalPipelinePhase: "collecting",
+    };
+    const newerDiagnosticRun = {
+      ...legacySignalRun,
+      _id: "publisherAbuseScoreRuns:newer-diagnostic",
+      startedAt: 300,
+      updatedAt: 300,
+      temporalPipelinePhase: undefined,
     };
     const db = {
       get: vi.fn(async () => null),
@@ -1735,8 +1747,18 @@ describe("publisher abuse dry-run persistence", () => {
                 order: () => ({
                   first: async () => {
                     if (indexName === "by_temporal_pipeline_kind_and_started_at") return null;
+                    if (
+                      indexName ===
+                      "by_model_version_and_temporal_pipeline_kind_and_phase_started_at"
+                    ) {
+                      return constraints.modelVersion === "publisher-abuse-temporal.v1" &&
+                        constraints.temporalPipelineKind === undefined &&
+                        constraints.temporalPipelinePhase === "collecting"
+                        ? legacySignalRun
+                        : null;
+                    }
                     return constraints.modelVersion === "publisher-abuse-temporal.v1"
-                      ? legacySignalRun
+                      ? newerDiagnosticRun
                       : null;
                   },
                 }),

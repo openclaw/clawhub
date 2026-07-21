@@ -335,7 +335,7 @@ export function AbusePage({
             </span>
           </div>
         </div>
-      ) : tab === "signals" && signalFailureCount > 0 ? (
+      ) : tab === "signals" && latestSignalRun?.status === "running" && signalFailureCount > 0 ? (
         <div className="pa-scan-retrying" role="status">
           <RefreshCcw aria-hidden="true" size={18} />
           <div>
