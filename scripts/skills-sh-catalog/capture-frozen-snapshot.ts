@@ -134,10 +134,11 @@ async function main() {
         candidate,
       ): candidate is {
         row: ReturnType<typeof normalizeRow>;
-        detail: NonNullable<(typeof details)[number]>;
+        detail: NonNullable<(typeof details)[number]> & { hash: string };
       } =>
         candidate.detail !== null &&
         candidate.detail.id.toLowerCase() === candidate.row.id &&
+        typeof candidate.detail.hash === "string" &&
         /^[a-f0-9]{64}$/i.test(candidate.detail.hash),
     )
     .slice(0, ROW_LIMIT);
