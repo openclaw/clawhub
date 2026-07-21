@@ -1,8 +1,9 @@
 import { paginationOptsValidator } from "convex/server";
-import { ConvexError, v } from "convex/values";
+import { ConvexError, type Infer, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery } from "./functions";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
   assertSkillsShCatalogControlMutationAllowed,
   assertSkillsShFixtureEnvironmentAllowed,
@@ -12,6 +13,7 @@ import {
   getSkillsShCatalogFixture,
   type SkillsShCatalogFixtureRow,
 } from "./lib/skillsShCatalogFixtures";
+import { validateFilePath } from "./lib/skillZip";
 import { enqueueSkillsShCatalogScanRequest } from "./securityScan";
 
 const CONTROL_KEY = "global";
@@ -64,6 +66,7 @@ const stagingLiveArtifactValidator = v.object({
   artifactContentHash: v.string(),
   files: v.array(scanRequestFileValidator),
 });
+type StagingLiveArtifact = Infer<typeof stagingLiveArtifactValidator>;
 
 const DEFAULT_CONTROL = {
   mode: "off" as const,
@@ -511,7 +514,7 @@ export const processStagingLiveBatchInternal = internalMutation({
         .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
         .unique();
       readsUsed += 1;
-      if (existing && fixtureObservationConflicts(existing, row)) {
+      if (existing && fixtureObservationConflicts(existing, row, "staging-live")) {
         counts.observed += 1;
         counts.rejected += 1;
         cursor += 1;
@@ -665,7 +668,7 @@ export const processFixtureBatchInternal = internalMutation({
         .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
         .unique();
       readsUsed += 1;
-      if (existing && fixtureObservationConflicts(existing, row)) {
+      if (existing && fixtureObservationConflicts(existing, row, fixture.sourceKind)) {
         counts.observed += 1;
         counts.rejected += 1;
         cursor += 1;
@@ -879,15 +882,15 @@ async function readQueueHealth(ctx: MutationCtx, control: Doc<"skillsShCatalogCo
   };
 }
 
-export const admitFixtureScansInternal = internalMutation({
-  args: {
-    runId: v.id("skillsShCatalogRuns"),
-    externalIds: v.array(v.string()),
-    dispatchKind: dispatchKindValidator,
-    actorUserId: v.optional(v.id("users")),
-    artifacts: v.optional(v.array(stagingLiveArtifactValidator)),
-  },
-  handler: async (ctx, args) => {
+type AdmitScansArgs = {
+  runId: Id<"skillsShCatalogRuns">;
+  externalIds: string[];
+  dispatchKind: "deterministic" | "real";
+  actorUserId?: Id<"users">;
+  artifacts?: StagingLiveArtifact[];
+};
+
+async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     const environment = assertSkillsShFixtureEnvironmentAllowed();
     const control = assertScanAdmissionEnabled(await getControlDoc(ctx));
     const run = await ctx.db.get(args.runId);
@@ -930,6 +933,10 @@ export const admitFixtureScansInternal = internalMutation({
       if (!args.actorUserId) {
         throw new ConvexError("real Test scan admission requires an authenticated operator");
       }
+      const actor = await ctx.db.get(args.actorUserId);
+      if (actor?.role !== "admin") {
+        throw new ConvexError("real Test scan admission requires an admin operator");
+      }
     }
     const artifactInputs = args.artifacts ?? [];
     const artifacts = new Map(
@@ -963,7 +970,7 @@ export const admitFixtureScansInternal = internalMutation({
     let admitted = 0;
     let skipped = 0;
     const admittedExternalIds: string[] = [];
-    let readsUsed = 7;
+    let readsUsed = args.dispatchKind === "real" ? 8 : 7;
     let writesUsed = 0;
     const runWriteCount = 1;
     for (const externalId of externalIds) {
@@ -1082,6 +1089,74 @@ export const admitFixtureScansInternal = internalMutation({
       queueHealth,
       counts: nextCounts,
     };
+}
+
+export const admitFixtureScansInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShCatalogRuns"),
+    externalIds: v.array(v.string()),
+    dispatchKind: dispatchKindValidator,
+    actorUserId: v.optional(v.id("users")),
+    artifacts: v.optional(v.array(stagingLiveArtifactValidator)),
+  },
+  handler: async (ctx, args) => {
+    if (args.dispatchKind !== "deterministic") {
+      throw new ConvexError("real skills.sh scan admission requires stored artifact validation");
+    }
+    return await admitScans(ctx, args);
+  },
+});
+
+export const admitValidatedRealScansInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShCatalogRuns"),
+    externalIds: v.array(v.string()),
+    actorUserId: v.id("users"),
+    artifacts: v.array(stagingLiveArtifactValidator),
+  },
+  handler: async (ctx, args) => {
+    return await admitScans(ctx, {
+      ...args,
+      dispatchKind: "real",
+    });
+  },
+});
+
+export const admitRealScansInternal: ReturnType<typeof internalAction> = internalAction({
+  args: {
+    runId: v.id("skillsShCatalogRuns"),
+    externalIds: v.array(v.string()),
+    actorUserId: v.id("users"),
+    artifacts: v.array(stagingLiveArtifactValidator),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    if (environment.environment !== "test") {
+      throw new ConvexError("real skills.sh scan admission requires the permanent Test environment");
+    }
+    const externalIds = Array.from(
+      new Set(args.externalIds.map((externalId) => externalId.trim().toLowerCase())),
+    ).filter(Boolean);
+    assertIntegerInRange(
+      "externalIds.length",
+      externalIds.length,
+      1,
+      MAX_REAL_TEST_ADMISSIONS,
+    );
+    const artifactInputs = args.artifacts;
+    const artifacts = new Map(
+      artifactInputs.map((artifact) => [artifact.externalId.trim().toLowerCase(), artifact]),
+    );
+    if (artifactInputs.length !== externalIds.length || artifacts.size !== externalIds.length) {
+      throw new ConvexError("real Test scan admission requires exactly one artifact per skill");
+    }
+    const validatedArtifacts = await validateRealScanArtifacts(ctx, externalIds, artifacts);
+    return await ctx.runMutation(internal.skillsShCatalog.admitValidatedRealScansInternal, {
+      runId: args.runId,
+      externalIds,
+      actorUserId: args.actorUserId,
+      artifacts: Array.from(validatedArtifacts.values()),
+    });
   },
 });
 
@@ -1238,7 +1313,8 @@ export const recordRealScanResultInternal = internalMutation({
       throw new ConvexError("skills.sh real scan artifact hash mismatch");
     }
     const run = await ctx.db.get(attempt.runId);
-    if (run?.status === "canceling" || run?.status === "canceled") {
+    if (!run) throw new ConvexError("skills.sh real scan run not found");
+    if (run.status === "canceling" || run.status === "canceled") {
       const now = Date.now();
       const canceledOperations = await cancelAttempt(ctx, attempt, now, {
         allowRunningRealJob: true,
@@ -1267,20 +1343,18 @@ export const recordRealScanResultInternal = internalMutation({
         completedAt: now,
         updatedAt: now,
       });
-      if (run) {
-        await ctx.db.patch(run._id, {
-          counts: {
-            ...run.counts,
-            scansCanceled: run.counts.scansCanceled + 1,
-          },
-          operations: addOperations(run.operations, {
-            functionCalls: 1,
-            dbReads: 3,
-            dbWrites: 2,
-          }),
-          updatedAt: now,
-        });
-      }
+      await ctx.db.patch(run._id, {
+        counts: {
+          ...run.counts,
+          scansCanceled: run.counts.scansCanceled + 1,
+        },
+        operations: addOperations(run.operations, {
+          functionCalls: 1,
+          dbReads: 3,
+          dbWrites: 2,
+        }),
+        updatedAt: now,
+      });
       return { applied: false, reason: "stale-attempt" };
     }
     const now = Date.now();
@@ -1296,20 +1370,18 @@ export const recordRealScanResultInternal = internalMutation({
       publicVisible: false,
       updatedAt: now,
     });
-    if (run) {
-      await ctx.db.patch(run._id, {
-        counts: {
-          ...run.counts,
-          scansCompleted: run.counts.scansCompleted + 1,
-        },
-        operations: addOperations(run.operations, {
-          functionCalls: 1,
-          dbReads: 3,
-          dbWrites: 3,
-        }),
-        updatedAt: now,
-      });
-    }
+    await ctx.db.patch(run._id, {
+      counts: {
+        ...run.counts,
+        scansCompleted: run.counts.scansCompleted + 1,
+      },
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: 3,
+        dbWrites: 3,
+      }),
+      updatedAt: now,
+    });
     return { applied: true, publicVisible: false };
   },
 });
@@ -1719,8 +1791,67 @@ function scanStatusFromAttempt(
 function fixtureObservationConflicts(
   existing: Doc<"skillsShCatalogEntries">,
   row: ReturnType<typeof normalizeIdentity>,
+  sourceKind: Doc<"skillsShCatalogEntries">["sourceKind"],
 ) {
-  return existing.githubOwnerId !== row.githubOwnerId;
+  return existing.sourceKind !== sourceKind || existing.githubOwnerId !== row.githubOwnerId;
+}
+
+async function sha256Hex(bytes: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes).buffer);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function validateRealScanArtifacts(
+  ctx: ActionCtx,
+  externalIds: string[],
+  artifacts: Map<string, StagingLiveArtifact>,
+) {
+  const validated = new Map<string, StagingLiveArtifact>();
+  for (const externalId of externalIds) {
+    const artifact = artifacts.get(externalId);
+    if (!artifact || !/^[a-f0-9]{64}$/i.test(artifact.artifactContentHash)) {
+      throw new ConvexError(`real Test scan admission requires a fetched artifact: ${externalId}`);
+    }
+    const paths = new Set<string>();
+    const files = [];
+    for (const file of artifact.files) {
+      if (file.path !== file.path.trim() || !validateFilePath(file.path) || paths.has(file.path)) {
+        throw new ConvexError(`real Test scan artifact has an unsafe or duplicate path: ${file.path}`);
+      }
+      paths.add(file.path);
+      if (!Number.isSafeInteger(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/i.test(file.sha256)) {
+        throw new ConvexError(`real Test scan artifact has invalid file metadata: ${file.path}`);
+      }
+      const blob = await ctx.storage.get(file.storageId);
+      if (!blob) {
+        throw new ConvexError(`real Test scan artifact file is missing from storage: ${file.path}`);
+      }
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (bytes.byteLength !== file.size) {
+        throw new ConvexError(`real Test scan artifact file size mismatch: ${file.path}`);
+      }
+      const sha256 = await sha256Hex(bytes);
+      if (sha256 !== file.sha256.toLowerCase()) {
+        throw new ConvexError(`real Test scan artifact file hash mismatch: ${file.path}`);
+      }
+      files.push({ ...file, sha256 });
+    }
+    if (files.length === 0) {
+      throw new ConvexError(`real Test scan admission requires a fetched artifact: ${externalId}`);
+    }
+    files.sort((left, right) => left.path.localeCompare(right.path));
+    const manifest = files.map((file) => `${file.path}\0${file.sha256}\n`).join("");
+    const artifactContentHash = await sha256Hex(new TextEncoder().encode(manifest));
+    if (artifactContentHash !== artifact.artifactContentHash.toLowerCase()) {
+      throw new ConvexError(`real Test scan artifact manifest hash mismatch: ${externalId}`);
+    }
+    validated.set(externalId, {
+      externalId,
+      artifactContentHash,
+      files,
+    });
+  }
+  return validated;
 }
 
 async function insertCatalogScanAttempt(

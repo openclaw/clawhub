@@ -60,7 +60,7 @@ describe("skills.sh catalog Test HTTP API", () => {
     const storedIds = ["storage:linked", "storage:skipped"];
     const store = vi.fn(async () => storedIds.shift()!);
     const deleteStorage = vi.fn(async () => undefined);
-    const runMutation = vi.fn(async (_ref, args: Record<string, unknown>) => {
+    const runAction = vi.fn(async (_ref, args: Record<string, unknown>) => {
       expect(args).toMatchObject({
         externalIds: ["nvidia/skills/aiq-deploy", "nvidia/skills/aiq-toolkit"],
       });
@@ -78,7 +78,7 @@ describe("skills.sh catalog Test HTTP API", () => {
         buildSha: "test-sha",
         control: {},
       })),
-      runMutation,
+      runAction,
       storage: {
         store,
         delete: deleteStorage,
@@ -119,7 +119,7 @@ describe("skills.sh catalog Test HTTP API", () => {
         buildSha: "test-sha",
         control: {},
       })),
-      runMutation: vi.fn(async () => ({
+      runAction: vi.fn(async () => ({
         requested: 2,
         admitted: 1,
         skipped: 1,

@@ -7,7 +7,7 @@ import { json, requireAdminOrResponse, requireApiTokenUserOrResponse, text } fro
 
 const internalRefs = internal as unknown as {
   skillsShCatalog: {
-    admitFixtureScansInternal: unknown;
+    admitRealScansInternal: unknown;
     getStagingLiveControlInternal: unknown;
     processStagingLiveBatchInternal: unknown;
     startStagingLiveRunInternal: unknown;
@@ -22,6 +22,10 @@ async function runMutationRef<T>(
   args: Record<string, unknown>,
 ): Promise<T> {
   return (await ctx.runMutation(ref as never, args as never)) as T;
+}
+
+async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: Record<string, unknown>) {
+  return (await ctx.runAction(ref as never, args as never)) as T;
 }
 
 async function runQueryRef<T>(
@@ -260,10 +264,9 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         [key: string]: unknown;
       };
       try {
-        result = await runMutationRef(ctx, internalRefs.skillsShCatalog.admitFixtureScansInternal, {
+        result = await runActionRef(ctx, internalRefs.skillsShCatalog.admitRealScansInternal, {
           runId: requireString(body, "runId"),
           externalIds: body.externalIds,
-          dispatchKind: "real",
           actorUserId: auth.userId,
           artifacts: stored.artifacts,
         });

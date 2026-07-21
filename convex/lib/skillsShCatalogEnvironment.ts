@@ -24,6 +24,13 @@ const TEST_DEPLOYMENT = "academic-chihuahua-392";
 const TEST_CLOUD_URL = `https://${TEST_DEPLOYMENT}.convex.cloud`;
 const TEST_SITE_URL = `https://${TEST_DEPLOYMENT}.convex.site`;
 
+function populatedRuntimeUrls(env: SkillsShCatalogEnvironment) {
+  return [
+    { actual: env.CONVEX_CLOUD_URL?.trim(), expectedTest: TEST_CLOUD_URL },
+    { actual: env.CONVEX_SITE_URL?.trim(), expectedTest: TEST_SITE_URL },
+  ].filter((entry): entry is { actual: string; expectedTest: string } => Boolean(entry.actual));
+}
+
 function isLocalRuntimeUrl(value: string | undefined) {
   if (!value) return false;
   try {
@@ -74,7 +81,11 @@ export function getSkillsShFixtureEnvironmentPolicy(
         reason: `skills.sh Test fixture work requires CLAWHUB_DEPLOYMENT_NAME=${TEST_DEPLOYMENT}`,
       };
     }
-    if (env.CONVEX_CLOUD_URL !== TEST_CLOUD_URL && env.CONVEX_SITE_URL !== TEST_SITE_URL) {
+    const runtimeUrls = populatedRuntimeUrls(env);
+    if (
+      runtimeUrls.length === 0 ||
+      runtimeUrls.some((entry) => entry.actual !== entry.expectedTest)
+    ) {
       return {
         allowed: false,
         environment: "test",
@@ -91,7 +102,8 @@ export function getSkillsShFixtureEnvironmentPolicy(
       reason: "skills.sh catalog fixture work is disabled in production",
     };
   }
-  if (isLocalRuntimeUrl(env.CONVEX_CLOUD_URL) || isLocalRuntimeUrl(env.CONVEX_SITE_URL)) {
+  const runtimeUrls = populatedRuntimeUrls(env);
+  if (runtimeUrls.length > 0 && runtimeUrls.every((entry) => isLocalRuntimeUrl(entry.actual))) {
     return { allowed: true, environment: "local" };
   }
   return {

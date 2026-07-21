@@ -314,4 +314,34 @@ describe("skills.sh permanent Test operator route", () => {
       message: expect.stringContaining("did not admit the complete allowlist"),
     });
   });
+
+  it("uses the normalized deduplicated allowlist for capture, admission, and accounting", async () => {
+    readBodyMock.mockResolvedValue({
+      allowlist: [
+        " NVIDIA/SKILLS/AIQ-DEPLOY ",
+        "",
+        "nvidia/skills/aiq-deploy",
+        " nvidia/skills/aiq-deploy ",
+      ],
+    });
+    const handler = (await import("./routes/ops/skills-sh/catalog-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(captureSnapshotMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        admitExternalIds: ["nvidia/skills/aiq-deploy"],
+      }),
+    );
+    const admitCall = vi.mocked(fetch).mock.calls.find(([, init]) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : null;
+      return body?.operation === "admit";
+    });
+    expect(JSON.parse(String(admitCall?.[1]?.body))).toMatchObject({
+      externalIds: ["nvidia/skills/aiq-deploy"],
+    });
+    expect(await response.json()).toMatchObject({
+      convex: { admission: { requested: 1, admitted: 1, skipped: 0 } },
+    });
+  });
 });
