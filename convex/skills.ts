@@ -12070,6 +12070,24 @@ type SkillPendingPublishArgs = {
   embedding: number[];
 };
 
+type PendingOwnerDeleteRestoreState = Pick<
+  Doc<"skills">,
+  | "softDeletedAt"
+  | "moderationStatus"
+  | "moderationReason"
+  | "moderationNotes"
+  | "unpublishedSlugReservedUntil"
+  | "unpublishedSlugReleasedAt"
+  | "unpublishedOriginalSlug"
+  | "updatedAt"
+>;
+
+const OWNER_RESTORE_DENIED_REASONS = new Set<string>([
+  "owner.merged",
+  "user.banned",
+  "security.redaction",
+]);
+
 function asSkillPendingPublishArgs(value: unknown): SkillPendingPublishArgs {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ConvexError("Pending skill publication metadata is missing.");
@@ -12086,6 +12104,113 @@ function stripUndefinedForStoredPublication(value: unknown): unknown {
     if (nested !== undefined) result[key] = stripUndefinedForStoredPublication(nested);
   }
   return result;
+}
+
+function pendingOwnerDeleteRestoreState(value: unknown): PendingOwnerDeleteRestoreState | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const state = value as Partial<PendingOwnerDeleteRestoreState>;
+  if (typeof state.softDeletedAt !== "number" || typeof state.updatedAt !== "number") return null;
+  return {
+    softDeletedAt: state.softDeletedAt,
+    moderationStatus: state.moderationStatus,
+    moderationReason: state.moderationReason,
+    moderationNotes: state.moderationNotes,
+    unpublishedSlugReservedUntil: state.unpublishedSlugReservedUntil,
+    unpublishedSlugReleasedAt: state.unpublishedSlugReleasedAt,
+    unpublishedOriginalSlug: state.unpublishedOriginalSlug,
+    updatedAt: state.updatedAt,
+  };
+}
+
+function pendingOwnerDeleteRestoreStateFromVersion(version: Doc<"skillVersions">) {
+  if (
+    !version.pendingPublication ||
+    typeof version.pendingPublication !== "object" ||
+    Array.isArray(version.pendingPublication)
+  ) {
+    return null;
+  }
+  return pendingOwnerDeleteRestoreState(
+    (version.pendingPublication as { ownerDeleteRestoreState?: unknown }).ownerDeleteRestoreState,
+  );
+}
+
+async function getOwnerDeleteRestoreStateForPublish(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  userId: Id<"users">,
+): Promise<PendingOwnerDeleteRestoreState | null> {
+  if (!skill.softDeletedAt) {
+    if (skill.moderationStatus !== "hidden" || skill.moderationReason !== "pending.publication") {
+      return null;
+    }
+    const pendingVersions = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(25);
+    for (const version of pendingVersions) {
+      if (version.publicationStatus !== "pending") continue;
+      const restoreState = pendingOwnerDeleteRestoreStateFromVersion(version);
+      if (restoreState) return restoreState;
+    }
+    return null;
+  }
+  const moderationFlags = (skill.moderationFlags as string[] | undefined) ?? [];
+  const reason = skill.moderationReason as string | undefined;
+  const ownerInitiated =
+    (await canUserManageSkillOwner(ctx, skill, userId)) &&
+    (await isOwnerInitiatedSkillHideForActor(ctx, skill, userId)) &&
+    !OWNER_RESTORE_DENIED_REASONS.has(reason ?? "");
+  if (
+    !ownerInitiated ||
+    moderationFlags.includes("blocked.malware") ||
+    skill.moderationVerdict === "malicious"
+  ) {
+    throw new ConvexError(
+      "Forbidden: This skill was hidden by moderation and cannot be restored by publishing. Please contact a moderator.",
+    );
+  }
+  return {
+    softDeletedAt: skill.softDeletedAt,
+    moderationStatus: skill.moderationStatus,
+    moderationReason: skill.moderationReason,
+    moderationNotes: skill.moderationNotes,
+    unpublishedSlugReservedUntil: skill.unpublishedSlugReservedUntil,
+    unpublishedSlugReleasedAt: skill.unpublishedSlugReleasedAt,
+    unpublishedOriginalSlug: skill.unpublishedOriginalSlug,
+    updatedAt: skill.updatedAt,
+  };
+}
+
+async function restoreDiscardedPendingOwnerDelete(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  state: PendingOwnerDeleteRestoreState,
+) {
+  const skill = await ctx.db.get(skillId);
+  if (
+    !skill ||
+    skill.softDeletedAt ||
+    skill.moderationStatus !== "hidden" ||
+    skill.moderationReason !== "pending.publication"
+  ) {
+    return;
+  }
+  const otherPendingVersions = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_active_created", (q) =>
+      q.eq("skillId", skillId).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .take(25);
+  if (otherPendingVersions.some((version) => version.publicationStatus === "pending")) return;
+
+  const nextSkill = { ...skill, ...state };
+  await ctx.db.patch(skillId, state);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
 }
 
 export const insertVersion = internalMutation({
@@ -12683,13 +12808,14 @@ export const insertVersion = internalMutation({
         `Version ${args.version} already exists. Increment the version number and try again.`,
       );
     }
+    const ownerDeleteRestoreState = await getOwnerDeleteRestoreStateForPublish(ctx, skill, userId);
 
     const versionId = await ctx.db.insert("skillVersions", {
       skillId: skill._id,
       version: args.version,
       publicationStatus: args.publicationStatus ?? "published",
       pendingPublication: isPendingPublication
-        ? stripUndefinedForStoredPublication({ skillInsertArgs: args })
+        ? stripUndefinedForStoredPublication({ skillInsertArgs: args, ownerDeleteRestoreState })
         : undefined,
       fingerprint: args.fingerprint,
       sourceProvenance: args.sourceProvenance,
@@ -12713,6 +12839,21 @@ export const insertVersion = internalMutation({
         kind: "source",
         createdAt: now,
       });
+      if (ownerDeleteRestoreState && skill.softDeletedAt) {
+        const patch = {
+          softDeletedAt: undefined,
+          moderationStatus: "hidden" as const,
+          moderationReason: "pending.publication",
+          moderationNotes: "Pre-publication security checks are pending.",
+          unpublishedSlugReservedUntil: undefined,
+          unpublishedSlugReleasedAt: undefined,
+          unpublishedOriginalSlug: undefined,
+          updatedAt: now,
+        };
+        const nextSkill = { ...skill, ...patch };
+        await ctx.db.patch(skill._id, patch);
+        await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+      }
       return {
         skillId: skill._id,
         versionId,
@@ -12830,6 +12971,8 @@ export const insertVersion = internalMutation({
       moderationStatus: initialModerationStatus,
       moderationReason,
       moderationNotes,
+      hiddenAt: initialModerationStatus === "hidden" ? now : undefined,
+      hiddenBy: undefined,
       moderationVerdict: moderationSnapshot.verdict,
       moderationReasonCodes: moderationSnapshot.reasonCodes.length
         ? moderationSnapshot.reasonCodes
@@ -12951,8 +13094,12 @@ export const discardPendingPublicationInternal = internalMutation({
     for (const fingerprint of fingerprints) {
       await ctx.db.delete(fingerprint._id);
     }
+    const ownerDeleteRestoreState = pendingOwnerDeleteRestoreStateFromVersion(version);
     await ctx.db.delete(version._id);
     await Promise.allSettled([...storageIds].map((storageId) => ctx.storage.delete(storageId)));
+    if (ownerDeleteRestoreState) {
+      await restoreDiscardedPendingOwnerDelete(ctx, args.skillId, ownerDeleteRestoreState);
+    }
 
     let parentDeleted = false;
     if (args.createdNewParent) {
@@ -13124,6 +13271,8 @@ export const publishPendingVersionInternal = internalMutation({
       moderationStatus: initialModerationStatus,
       moderationReason,
       moderationNotes,
+      hiddenAt: initialModerationStatus === "hidden" ? now : undefined,
+      hiddenBy: undefined,
       moderationVerdict: moderationSnapshot.verdict,
       moderationReasonCodes: moderationSnapshot.reasonCodes.length
         ? moderationSnapshot.reasonCodes
@@ -13364,6 +13513,32 @@ async function setSkillSoftDeletedByActor(
   if (args.deleted && skill.moderationStatus === "removed") {
     throw new ConvexError("Forbidden: Removed skills cannot be deleted.");
   }
+  if (
+    args.deleted &&
+    isOwner &&
+    !isModeratorOrAdmin &&
+    !skill.softDeletedAt &&
+    skill.moderationStatus === "hidden" &&
+    skill.moderationReason === "pending.publication"
+  ) {
+    const pendingVersions = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(25);
+    const hasPendingOwnerRestore = pendingVersions.some(
+      (version) =>
+        version.publicationStatus === "pending" &&
+        pendingOwnerDeleteRestoreStateFromVersion(version) !== null,
+    );
+    if (hasPendingOwnerRestore) {
+      throw new ConvexError(
+        "Forbidden: This skill has a republish awaiting security checks and cannot be deleted yet.",
+      );
+    }
+  }
 
   // Owner-delete provenance guard: an owner must NOT be able to "re-delete"
   // a skill that is currently in a non-owner-initiated hidden state. Such
@@ -13473,15 +13648,10 @@ async function setSkillSoftDeletedByActor(
     // therefore cannot survive as stale historical metadata on an
     // owner-initiated hide. See the block comment above for why each is
     // included, and why report-related reasons are intentionally NOT.
-    const OWNER_UNDELETE_DENIED_REASONS = new Set<string>([
-      "owner.merged",
-      "user.banned",
-      "security.redaction",
-    ]);
     const reason = skill.moderationReason as string | undefined;
     const ownerInitiatedHide =
       (await isOwnerInitiatedSkillHideForActor(ctx, skill, args.userId)) &&
-      (reason === undefined || !OWNER_UNDELETE_DENIED_REASONS.has(reason));
+      (reason === undefined || !OWNER_RESTORE_DENIED_REASONS.has(reason));
     if (!ownerInitiatedHide) {
       // Prefix with "Forbidden:" so HTTP boundary mappers
       // (softDeleteErrorToResponse) deterministically return 403 instead of

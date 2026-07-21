@@ -1,9 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const CHECK_CLAIM_LEASE_MS = 30 * 60 * 1000;
@@ -418,6 +419,9 @@ async function deleteSecretBlockedPendingSkillArtifact(
   },
 ) {
   if (!attempt.skillVersionId) return;
+  const version = !attempt.createdNewParent ? await ctx.db.get(attempt.skillVersionId) : null;
+  const pendingPublication = asRecord(version?.pendingPublication);
+  const restoreState = asRecord(pendingPublication.ownerDeleteRestoreState);
 
   const fingerprints = await ctx.db
     .query("skillVersionFingerprints")
@@ -427,6 +431,57 @@ async function deleteSecretBlockedPendingSkillArtifact(
     await ctx.db.delete(fingerprint._id);
   }
   await ctx.db.delete(attempt.skillVersionId);
+
+  if (
+    attempt.skillId &&
+    typeof restoreState.softDeletedAt === "number" &&
+    typeof restoreState.updatedAt === "number"
+  ) {
+    const skill = await ctx.db.get(attempt.skillId);
+    const otherPendingVersions = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", attempt.skillId!).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(25);
+    if (
+      skill &&
+      !skill.softDeletedAt &&
+      skill.moderationStatus === "hidden" &&
+      skill.moderationReason === "pending.publication" &&
+      !otherPendingVersions.some((candidate) => candidate.publicationStatus === "pending")
+    ) {
+      const patch: Partial<Doc<"skills">> = {
+        softDeletedAt: restoreState.softDeletedAt,
+        moderationStatus: restoreState.moderationStatus as Doc<"skills">["moderationStatus"],
+        moderationReason:
+          typeof restoreState.moderationReason === "string"
+            ? restoreState.moderationReason
+            : undefined,
+        moderationNotes:
+          typeof restoreState.moderationNotes === "string"
+            ? restoreState.moderationNotes
+            : undefined,
+        unpublishedSlugReservedUntil:
+          typeof restoreState.unpublishedSlugReservedUntil === "number"
+            ? restoreState.unpublishedSlugReservedUntil
+            : undefined,
+        unpublishedSlugReleasedAt:
+          typeof restoreState.unpublishedSlugReleasedAt === "number"
+            ? restoreState.unpublishedSlugReleasedAt
+            : undefined,
+        unpublishedOriginalSlug:
+          typeof restoreState.unpublishedOriginalSlug === "string"
+            ? restoreState.unpublishedOriginalSlug
+            : undefined,
+        updatedAt: restoreState.updatedAt,
+      };
+      const nextSkill = { ...skill, ...patch };
+      await ctx.db.patch(skill._id, patch);
+      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+    }
+  }
 
   if (!attempt.createdNewParent || !attempt.skillId) return;
   const skill = await ctx.db.get(attempt.skillId);

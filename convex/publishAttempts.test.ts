@@ -1028,31 +1028,75 @@ describe("publishAttempts", () => {
     });
   });
 
-  it("keeps existing skill parents when TruffleHog blocks a pending new version", async () => {
+  it("restores an owner-delete tombstone when TruffleHog blocks its pending republish", async () => {
+    const deletedAt = 1_700_000_000_000;
+    const reservedUntil = deletedAt + 30 * 24 * 60 * 60 * 1000;
     const ctx = {
       db: {
-        get: vi
-          .fn()
-          .mockResolvedValueOnce({
-            _id: "publishAttempts:demo",
-            kind: "skill",
-            status: "pending_checks",
-            userId: "users:publisher",
-            skillId: "skills:existing",
-            skillVersionId: "skillVersions:pending",
-            createdNewParent: false,
-            slug: "existing-skill",
-            version: "2.0.0",
-            artifactFingerprint: "fingerprint",
-            checkClaimId: "checks:claim",
-            checkClaimExpiresAt: Date.now() + 60_000,
-            files: [{ storageId: "_storage:secret-skill" }],
-          })
-          .mockResolvedValueOnce({
-            _id: "users:publisher",
-            handle: "publisher",
-            email: "publisher@example.com",
-          }),
+        get: vi.fn(async (id: string) => {
+          if (id === "publishAttempts:demo") {
+            return {
+              _id: "publishAttempts:demo",
+              kind: "skill",
+              status: "pending_checks",
+              userId: "users:publisher",
+              skillId: "skills:existing",
+              skillVersionId: "skillVersions:pending",
+              createdNewParent: false,
+              slug: "existing-skill",
+              version: "2.0.0",
+              artifactFingerprint: "fingerprint",
+              checkClaimId: "checks:claim",
+              checkClaimExpiresAt: Date.now() + 60_000,
+              files: [{ storageId: "_storage:secret-skill" }],
+            };
+          }
+          if (id === "skillVersions:pending") {
+            return {
+              _id: "skillVersions:pending",
+              skillId: "skills:existing",
+              publicationStatus: "pending",
+              pendingPublication: {
+                ownerDeleteRestoreState: {
+                  softDeletedAt: deletedAt,
+                  moderationStatus: "hidden",
+                  unpublishedSlugReservedUntil: reservedUntil,
+                  updatedAt: deletedAt,
+                },
+              },
+            };
+          }
+          if (id === "skills:existing") {
+            return {
+              _id: "skills:existing",
+              ownerUserId: "users:publisher",
+              softDeletedAt: undefined,
+              moderationStatus: "hidden",
+              moderationReason: "pending.publication",
+              statsDownloads: 0,
+              statsStars: 0,
+              statsInstallsCurrent: 0,
+              statsInstallsAllTime: 0,
+              stats: {
+                downloads: 0,
+                stars: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 1,
+                comments: 0,
+              },
+            };
+          }
+          if (id === "users:publisher") {
+            return {
+              _id: "users:publisher",
+              handle: "publisher",
+              email: "publisher@example.com",
+              publishedSkills: 1,
+            };
+          }
+          return null;
+        }),
         patch: vi.fn(),
         insert: vi.fn(),
         replace: vi.fn(),
@@ -1062,6 +1106,15 @@ describe("publishAttempts", () => {
             return {
               withIndex: vi.fn(() => ({
                 take: vi.fn(async () => [{ _id: "skillVersionFingerprints:pending" }]),
+              })),
+            };
+          }
+          if (table === "skillVersions") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => []),
+                })),
               })),
             };
           }
@@ -1099,6 +1152,15 @@ describe("publishAttempts", () => {
     expect(ctx.db.delete).toHaveBeenCalledWith("skillVersionFingerprints:pending");
     expect(ctx.db.delete).toHaveBeenCalledWith("skillVersions:pending");
     expect(ctx.db.delete).not.toHaveBeenCalledWith("skills:existing");
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "skills:existing",
+      expect.objectContaining({
+        softDeletedAt: deletedAt,
+        moderationStatus: "hidden",
+        unpublishedSlugReservedUntil: reservedUntil,
+        updatedAt: deletedAt,
+      }),
+    );
   });
 
   it("keeps TruffleHog-positive attempts pending when secret storage deletion fails", async () => {

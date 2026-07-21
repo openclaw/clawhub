@@ -432,6 +432,97 @@ test("clean skill publish stays private until TruffleHog and ClawScan pass", asy
   await expectHealthyPublishPage(page, errors);
 });
 
+test("owner republish restores a deleted skill only after a new version passes checks", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-restore-${Date.now().toString(36)}`;
+  const displayName = "Playwright Restored Skill";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version: "1.0.0",
+    versionLabel: "published before owner deletion",
+    changelog: "Initial release before testing owner restore by republish.",
+  });
+
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByRole("heading", { name: /Skill settings/i })).toBeVisible();
+  await page.getByRole("button", { name: "Delete skill" }).click();
+  const deleteDialog = page.getByRole("dialog", { name: "Delete skill" });
+  await expect(deleteDialog).toBeVisible();
+  await deleteDialog.getByRole("button", { name: "Delete skill" }).click();
+  await expect(page).toHaveURL("/");
+
+  await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.getByText(displayName, { exact: true })).toHaveCount(0);
+
+  await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version: "1.0.0",
+    versionLabel: "rejected duplicate after owner deletion",
+    changelog: "An immutable version cannot be reused after deletion.",
+    completeChecks: false,
+  });
+  await expect(page.getByRole("alert")).toContainText(
+    "Version 1.0.0 already exists. Increment the version number and try again.",
+  );
+  errors.length = 0;
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version: "1.0.1",
+    versionLabel: "pending owner restore",
+    changelog: "A new version restores the deleted parent through staged publication.",
+    completeChecks: false,
+  });
+
+  await expect(page).toHaveURL("/dashboard");
+  await expect(page.getByText(displayName, { exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(
+    await publicSkillVersionExists(request, {
+      ownerHandle,
+      slug,
+      version: "1.0.1",
+    }),
+  ).toBe(false);
+
+  const result = (await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version: "1.0.1",
+  })) as { status?: string };
+  expect(result.status).toBe("finalized");
+
+  await expect
+    .poll(
+      () =>
+        publicSkillVersionExists(request, {
+          ownerHandle,
+          slug,
+          version: "1.0.1",
+        }),
+      { timeout: 60_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBe(true);
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expectCurrentVersion(page, "1.0.1");
+  await expectHealthyPublishPage(page, errors);
+});
+
 test("mocked TruffleHog deletes a secret-positive pending skill upload before it becomes public", async ({
   page,
   request,

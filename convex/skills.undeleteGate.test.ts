@@ -51,11 +51,13 @@ function makeCtx({
   actor,
   hiddenBy,
   membership,
+  pendingVersions,
 }: {
   skill: Record<string, unknown> | null;
   actor: { _id: string; role?: UserRole };
   hiddenBy?: { _id: string; role?: UserRole } | null;
   membership?: Record<string, unknown> | null;
+  pendingVersions?: Record<string, unknown>[];
 }) {
   const patch = vi.fn(async () => {});
   const insert = vi.fn(async () => "auditLogs:1");
@@ -80,6 +82,13 @@ function makeCtx({
       if (table === "skillEmbeddings") {
         return {
           withIndex: () => ({ collect: async () => [] }),
+        };
+      }
+      if (table === "skillVersions") {
+        return {
+          withIndex: () => ({
+            order: () => ({ take: async () => pendingVersions ?? [] }),
+          }),
         };
       }
       if (table === "skillSlugAliases") {
@@ -1094,6 +1103,46 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         hiddenBy: "users:owner",
       }),
     );
+  });
+
+  it("rejects owner delete while a deleted-skill republish is awaiting checks", async () => {
+    const deletedAt = 1_700_000_000_000;
+    const skill = makeSkill({
+      moderationStatus: "hidden",
+      moderationReason: "pending.publication",
+      softDeletedAt: undefined,
+      hiddenAt: deletedAt,
+      hiddenBy: "users:owner",
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+      pendingVersions: [
+        {
+          _id: "skillVersions:pending",
+          skillId: "skills:1",
+          publicationStatus: "pending",
+          softDeletedAt: undefined,
+          pendingPublication: {
+            ownerDeleteRestoreState: {
+              softDeletedAt: deletedAt,
+              moderationStatus: "hidden",
+              updatedAt: deletedAt,
+            },
+          },
+        },
+      ],
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:owner",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow("republish awaiting security checks");
+
+    expect(patch).not.toHaveBeenCalled();
   });
 
   // Moderators and admins must retain full access via this internal entry
