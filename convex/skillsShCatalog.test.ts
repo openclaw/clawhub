@@ -134,6 +134,40 @@ async function collectEntries(t: CatalogTest) {
   return entries;
 }
 
+async function insertCatalogEntry(
+  t: CatalogTest,
+  input: {
+    externalId: string;
+    owner: string;
+    githubOwnerId: number;
+    sourceKind?: "fixture" | "frozen-snapshot" | "staging-live";
+  },
+) {
+  const [, repo, slug] = input.externalId.split("/");
+  await t.run(async (ctx) => {
+    await ctx.db.insert("skillsShCatalogEntries", {
+      externalId: input.externalId,
+      sourceKind: input.sourceKind ?? "staging-live",
+      githubOwnerId: input.githubOwnerId,
+      owner: input.owner,
+      repo,
+      slug,
+      displayName: slug,
+      sourceUrl: `https://skills.sh/${input.externalId}`,
+      githubRepoUrl: `https://github.com/${input.owner}/${repo}`,
+      sourceContentHash: `hash-${input.externalId}`,
+      installs: 1,
+      sourceSnapshotId: "authenticated-live-snapshot",
+      publicVisible: false,
+      scanStatus: "planned",
+      firstObservedAt: 1,
+      lastObservedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+  });
+}
+
 async function collectAttempts(t: CatalogTest, runId: Id<"skillsShCatalogRuns">) {
   const attempts: Doc<"skillsShCatalogScanAttempts">[] = [];
   let cursor: string | null = null;
@@ -189,6 +223,82 @@ describe("skills.sh catalog overload control plane", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it("resolves only complete authenticated staging-live owner mappings", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    await insertCatalogEntry(t, {
+      externalId: "nvidia/skills/aiq-deploy",
+      owner: "nvidia",
+      githubOwnerId: 1_728_152,
+    });
+    await insertCatalogEntry(t, {
+      externalId: "nvidia/skills/aiq-toolkit",
+      owner: "nvidia",
+      githubOwnerId: 1_728_152,
+    });
+    await insertCatalogEntry(t, {
+      externalId: "anthropics/skills/frontend-design",
+      owner: "anthropics",
+      githubOwnerId: 76_263_028,
+      sourceKind: "fixture",
+    });
+
+    await expect(
+      t.query(internal.skillsShCatalog.resolveKnownGitHubOwnersInternal, {
+        owners: [" NVIDIA ", "anthropics", "missing-owner", "nvidia"],
+      }),
+    ).resolves.toEqual({
+      provenance: "stored-authenticated-staging-live",
+      owners: [{ owner: "nvidia", login: "nvidia", id: 1_728_152 }],
+      missingOwners: ["anthropics", "missing-owner"],
+    });
+  });
+
+  it("rejects conflicting authenticated staging-live owner ids", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    await insertCatalogEntry(t, {
+      externalId: "nvidia/skills/aiq-deploy",
+      owner: "nvidia",
+      githubOwnerId: 1_728_152,
+    });
+    await insertCatalogEntry(t, {
+      externalId: "nvidia/other/aiq-deploy",
+      owner: "nvidia",
+      githubOwnerId: 9_999_999,
+    });
+
+    await expect(
+      t.query(internal.skillsShCatalog.resolveKnownGitHubOwnersInternal, {
+        owners: ["nvidia"],
+      }),
+    ).rejects.toThrow("Conflicting authenticated GitHub owner ids for nvidia");
+  });
+
+  it("rejects a fresh owner assignment that reuses an established owner id", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    await insertCatalogEntry(t, {
+      externalId: "nvidia/skills/aiq-deploy",
+      owner: "nvidia",
+      githubOwnerId: 1_728_152,
+    });
+
+    await expect(
+      t.query(internal.skillsShCatalog.assertFreshGitHubOwnerAssignmentsInternal, {
+        owners: [{ owner: "renamed-nvidia", id: 1_728_152 }],
+      }),
+    ).rejects.toThrow("Authenticated GitHub owner id 1728152 is already assigned to another owner");
+    await expect(
+      t.query(internal.skillsShCatalog.assertFreshGitHubOwnerAssignmentsInternal, {
+        owners: [{ owner: "new-owner", id: 9_999_999 }],
+      }),
+    ).resolves.toEqual({
+      provenance: "stored-authenticated-staging-live-assignment-check",
+      checked: 1,
+    });
   });
 
   it("fails closed without controls and rejects spoofed Preview/Test environments", async () => {

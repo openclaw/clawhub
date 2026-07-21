@@ -151,7 +151,53 @@ describe("skills.sh catalog Test HTTP API", () => {
     expect(deleteStorage).toHaveBeenCalledWith("storage:skipped");
   });
 
-  it("resolves immutable owner ids through authenticated ClawHub GitHub headers", async () => {
+  it("reuses authenticated staging-live owner ids without a GitHub fetch", async () => {
+    const githubFetch = vi.fn();
+    vi.stubGlobal("fetch", githubFetch);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environment: "test",
+          deploymentName: "academic-chihuahua-392",
+          buildSha: "test-sha",
+          control: {},
+        })
+        .mockResolvedValueOnce({
+          provenance: "stored-authenticated-staging-live",
+          owners: [
+            { owner: "anthropics", login: "anthropics", id: 76_263_028 },
+            { owner: "nvidia", login: "nvidia", id: 1_728_152 },
+          ],
+          missingOwners: [],
+        }),
+    } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "resolve-owners",
+        owners: ["nvidia", "anthropics"],
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      authentication: "clawhub-github-authenticated",
+      provenance: "stored-authenticated-staging-live",
+      fetches: 0,
+      reused: 2,
+      owners: [
+        { owner: "anthropics", login: "anthropics", id: 76_263_028 },
+        { owner: "nvidia", login: "nvidia", id: 1_728_152 },
+      ],
+    });
+    expect(githubFetch).not.toHaveBeenCalled();
+    expect(buildGitHubApiHeaders).not.toHaveBeenCalled();
+  });
+
+  it("fetches only owners missing from authenticated staging-live state", async () => {
     const githubFetch = vi.fn(async (url: string, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ Authorization: "Bearer placeholder" });
       const owner = url.split("/").at(-1)!;
@@ -164,12 +210,23 @@ describe("skills.sh catalog Test HTTP API", () => {
     });
     vi.stubGlobal("fetch", githubFetch);
     const ctx = {
-      runQuery: vi.fn(async () => ({
-        environment: "test",
-        deploymentName: "academic-chihuahua-392",
-        buildSha: "test-sha",
-        control: {},
-      })),
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environment: "test",
+          deploymentName: "academic-chihuahua-392",
+          buildSha: "test-sha",
+          control: {},
+        })
+        .mockResolvedValueOnce({
+          provenance: "stored-authenticated-staging-live",
+          owners: [{ owner: "nvidia", login: "nvidia", id: 1_728_152 }],
+          missingOwners: ["anthropics"],
+        })
+        .mockResolvedValueOnce({
+          provenance: "stored-authenticated-staging-live-assignment-check",
+          checked: 1,
+        }),
     } as never;
     const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
       method: "POST",
@@ -185,12 +242,15 @@ describe("skills.sh catalog Test HTTP API", () => {
     const body = await response.json();
     expect(body).toEqual({
       authentication: "clawhub-github-authenticated",
-      fetches: 2,
+      provenance: "stored-authenticated-staging-live+live-github",
+      fetches: 1,
+      reused: 1,
       owners: [
         { owner: "anthropics", login: "anthropics", id: 76_263_028 },
         { owner: "nvidia", login: "nvidia", id: 1_728_152 },
       ],
     });
+    expect(githubFetch).toHaveBeenCalledTimes(1);
     expect(buildGitHubApiHeaders).toHaveBeenCalledWith({
       userAgent: "clawhub/skills-sh-catalog-test",
       allowAnonymous: false,
@@ -205,12 +265,19 @@ describe("skills.sh catalog Test HTTP API", () => {
       vi.fn(async () => new Response("token=secret-response-body", { status: 404 })),
     );
     const ctx = {
-      runQuery: vi.fn(async () => ({
-        environment: "test",
-        deploymentName: "academic-chihuahua-392",
-        buildSha: "test-sha",
-        control: {},
-      })),
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environment: "test",
+          deploymentName: "academic-chihuahua-392",
+          buildSha: "test-sha",
+          control: {},
+        })
+        .mockResolvedValueOnce({
+          provenance: "stored-authenticated-staging-live",
+          owners: [],
+          missingOwners: ["neondatabase"],
+        }),
     } as never;
     const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
       method: "POST",
@@ -227,5 +294,84 @@ describe("skills.sh catalog Test HTTP API", () => {
     expect(body).toBe("Authenticated GitHub owner lookup failed with HTTP 404: neondatabase");
     expect(body).not.toContain("secret-response-body");
     expect(body).not.toContain("Bearer placeholder");
+  });
+
+  it("fails closed when a new owner lacks authenticated GitHub access", async () => {
+    vi.mocked(buildGitHubApiHeaders).mockRejectedValueOnce(
+      new Error("GitHub API authentication is not configured"),
+    );
+    const githubFetch = vi.fn();
+    vi.stubGlobal("fetch", githubFetch);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environment: "test",
+          deploymentName: "academic-chihuahua-392",
+          buildSha: "test-sha",
+          control: {},
+        })
+        .mockResolvedValueOnce({
+          provenance: "stored-authenticated-staging-live",
+          owners: [],
+          missingOwners: ["new-owner"],
+        }),
+    } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "resolve-owners",
+        owners: ["new-owner"],
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("GitHub API authentication is not configured");
+    expect(githubFetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fetched owner id already assigned to another login", async () => {
+    const githubFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ id: 1_728_152, login: "renamed-nvidia" }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", githubFetch);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          environment: "test",
+          deploymentName: "academic-chihuahua-392",
+          buildSha: "test-sha",
+          control: {},
+        })
+        .mockResolvedValueOnce({
+          provenance: "stored-authenticated-staging-live",
+          owners: [],
+          missingOwners: ["renamed-nvidia"],
+        })
+        .mockRejectedValueOnce(
+          new Error("Authenticated GitHub owner id 1728152 is already assigned to another owner"),
+        ),
+    } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "resolve-owners",
+        owners: ["renamed-nvidia"],
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(
+      "Authenticated GitHub owner id 1728152 is already assigned to another owner",
+    );
+    expect(githubFetch).toHaveBeenCalledTimes(1);
   });
 });

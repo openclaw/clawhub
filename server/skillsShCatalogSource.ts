@@ -213,7 +213,12 @@ type SkillsShCatalogTestControl = {
 
 export type SkillsShCatalogGitHubOwnerProof = {
   authentication: "clawhub-github-authenticated";
+  provenance:
+    | "live-github"
+    | "stored-authenticated-staging-live"
+    | "stored-authenticated-staging-live+live-github";
   fetches: number;
+  reused: number;
   owners: Array<{ owner: string; id: number; login: string }>;
 };
 
@@ -242,9 +247,20 @@ export function validateSkillsShCatalogGitHubOwnerProof(
   selectedOwners: readonly string[],
   proof: SkillsShCatalogGitHubOwnerProof,
 ) {
+  const expectedProvenance =
+    proof.reused === 0
+      ? "live-github"
+      : proof.fetches === 0
+        ? "stored-authenticated-staging-live"
+        : "stored-authenticated-staging-live+live-github";
   if (
     proof.authentication !== "clawhub-github-authenticated" ||
-    proof.fetches !== selectedOwners.length ||
+    !Number.isInteger(proof.fetches) ||
+    proof.fetches < 0 ||
+    !Number.isInteger(proof.reused) ||
+    proof.reused < 0 ||
+    proof.fetches + proof.reused !== selectedOwners.length ||
+    proof.provenance !== expectedProvenance ||
     proof.owners.length !== selectedOwners.length
   ) {
     throw new Error("skills.sh live Test source lacks complete authenticated GitHub owner proof");
@@ -654,6 +670,8 @@ export async function captureSkillsShCatalogTestSnapshot(options: {
       searchFetches: 1,
       detailFetches: selection.detailFetches,
       githubOwnerFetches: githubOwnerProof.fetches,
+      githubOwnerIdsReused: githubOwnerProof.reused,
+      githubOwnerProofProvenance: githubOwnerProof.provenance,
       skippedIncompleteDetails: selection.skippedIncompleteDetails,
     },
   };

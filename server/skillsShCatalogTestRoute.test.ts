@@ -50,7 +50,9 @@ describe("skills.sh permanent Test operator route", () => {
       expect(options.admitExternalIds).toEqual(["nvidia/skills/aiq-deploy"]);
       expect(await options.resolveGitHubOwners(["anthropics", "nvidia"])).toEqual({
         authentication: "clawhub-github-authenticated",
-        fetches: 2,
+        provenance: "stored-authenticated-staging-live",
+        fetches: 0,
+        reused: 2,
         owners: [
           { owner: "anthropics", login: "anthropics", id: 76_263_028 },
           { owner: "nvidia", login: "nvidia", id: 1_728_152 },
@@ -85,7 +87,9 @@ describe("skills.sh permanent Test operator route", () => {
           listFetches: 1,
           searchFetches: 1,
           detailFetches: 500,
-          githubOwnerFetches: 2,
+          githubOwnerFetches: 0,
+          githubOwnerIdsReused: 2,
+          githubOwnerProofProvenance: "stored-authenticated-staging-live",
         },
       };
     });
@@ -118,7 +122,9 @@ describe("skills.sh permanent Test operator route", () => {
           return new Response(
             JSON.stringify({
               authentication: "clawhub-github-authenticated",
-              fetches: 2,
+              provenance: "stored-authenticated-staging-live",
+              fetches: 0,
+              reused: 2,
               owners: [
                 { owner: "anthropics", login: "anthropics", id: 76_263_028 },
                 { owner: "nvidia", login: "nvidia", id: 1_728_152 },
@@ -153,7 +159,15 @@ describe("skills.sh permanent Test operator route", () => {
     const body = await response.json();
     expect(body).toMatchObject({
       ok: true,
-      source: { selection: { rows: 500 }, fetches: { skillsShFetches: 502 } },
+      source: {
+        selection: { rows: 500 },
+        fetches: {
+          skillsShFetches: 502,
+          githubOwnerFetches: 0,
+          githubOwnerIdsReused: 2,
+          githubOwnerProofProvenance: "stored-authenticated-staging-live",
+        },
+      },
       convex: {
         firstRun: { runId: "skillsShCatalogRuns:test" },
         identicalRerun: { runId: "skillsShCatalogRuns:test" },
@@ -245,7 +259,9 @@ describe("skills.sh permanent Test operator route", () => {
           return new Response(
             JSON.stringify({
               authentication: "clawhub-github-authenticated",
-              fetches: 2,
+              provenance: "stored-authenticated-staging-live",
+              fetches: 0,
+              reused: 2,
               owners: [
                 { owner: "anthropics", login: "anthropics", id: 76_263_028 },
                 { owner: "nvidia", login: "nvidia", id: 1_728_152 },

@@ -2887,6 +2887,8 @@ const skillsShCatalogEntries = defineTable({
   updatedAt: v.number(),
 })
   .index("by_external_id", ["externalId"])
+  .index("by_owner_and_source_kind_and_github_owner_id", ["owner", "sourceKind", "githubOwnerId"])
+  .index("by_source_kind_and_github_owner_id_and_owner", ["sourceKind", "githubOwnerId", "owner"])
   .index("by_scan_status_and_updated_at", ["scanStatus", "updatedAt"]);
 
 const skillsShCatalogScanAttempts = defineTable({

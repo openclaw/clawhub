@@ -130,7 +130,9 @@ describe("skills.sh Vercel source boundary", () => {
       Array.from(
         validateSkillsShCatalogGitHubOwnerProof(["anthropics", "nvidia"], {
           authentication: "clawhub-github-authenticated",
+          provenance: "live-github",
           fetches: 2,
+          reused: 0,
           owners: [
             { owner: "anthropics", login: "anthropics", id: 76_263_028 },
             { owner: "nvidia", login: "nvidia", id: 1_728_152 },
@@ -145,14 +147,18 @@ describe("skills.sh Vercel source boundary", () => {
     expect(() =>
       validateSkillsShCatalogGitHubOwnerProof(["anthropics", "nvidia"], {
         authentication: "clawhub-github-authenticated",
+        provenance: "live-github",
         fetches: 1,
+        reused: 0,
         owners: [{ owner: "nvidia", login: "nvidia", id: 1_728_152 }],
       }),
     ).toThrow("lacks complete authenticated GitHub owner proof");
     expect(() =>
       validateSkillsShCatalogGitHubOwnerProof(["nvidia"], {
         authentication: "clawhub-github-authenticated",
-        fetches: 1,
+        provenance: "stored-authenticated-staging-live",
+        fetches: 0,
+        reused: 1,
         owners: [{ owner: "nvidia", login: "renamed-owner", id: 1_728_152 }],
       }),
     ).toThrow("invalid authenticated GitHub owner proof");
@@ -340,7 +346,9 @@ describe("skills.sh Vercel source boundary", () => {
       ...options,
       githubOwnerProof: {
         authentication: "clawhub-github-authenticated",
-        fetches: 3,
+        provenance: "stored-authenticated-staging-live",
+        fetches: 0,
+        reused: 3,
         owners: [
           { owner: "anthropics", login: "anthropics", id: 76_263_028 },
           { owner: "nvidia", login: "nvidia", id: 1_728_152 },
@@ -365,7 +373,9 @@ describe("skills.sh Vercel source boundary", () => {
       listFetches: 1,
       searchFetches: 1,
       detailFetches: 504,
-      githubOwnerFetches: 3,
+      githubOwnerFetches: 0,
+      githubOwnerIdsReused: 3,
+      githubOwnerProofProvenance: "stored-authenticated-staging-live",
       skippedIncompleteDetails: 1,
     });
     expect(detailUrls).toHaveLength(504);

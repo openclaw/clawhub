@@ -8,8 +8,10 @@ import { json, requireAdminOrResponse, requireApiTokenUserOrResponse, text } fro
 const internalRefs = internal as unknown as {
   skillsShCatalog: {
     admitRealScansInternal: unknown;
+    assertFreshGitHubOwnerAssignmentsInternal: unknown;
     getStagingLiveControlInternal: unknown;
     processStagingLiveBatchInternal: unknown;
+    resolveKnownGitHubOwnersInternal: unknown;
     startStagingLiveRunInternal: unknown;
   };
 };
@@ -64,7 +66,7 @@ function decodeBase64(value: string) {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-async function resolveAuthenticatedGitHubOwners(ownersValue: unknown) {
+function normalizeGitHubOwners(ownersValue: unknown) {
   if (!Array.isArray(ownersValue)) throw new Error("owners is required");
   const owners = Array.from(
     new Set(
@@ -79,6 +81,11 @@ async function resolveAuthenticatedGitHubOwners(ownersValue: unknown) {
   if (owners.length < 1 || owners.length > MAX_GITHUB_OWNER_RESOLUTIONS) {
     throw new Error(`owners must contain between 1 and ${MAX_GITHUB_OWNER_RESOLUTIONS} entries`);
   }
+  return owners;
+}
+
+async function fetchAuthenticatedGitHubOwners(owners: string[]) {
+  if (owners.length === 0) return [];
   const headers = await buildGitHubApiHeaders({
     userAgent: "clawhub/skills-sh-catalog-test",
     allowAnonymous: false,
@@ -114,9 +121,38 @@ async function resolveAuthenticatedGitHubOwners(ownersValue: unknown) {
       )),
     );
   }
+  return resolved;
+}
+
+async function resolveAuthenticatedGitHubOwners(ctx: ActionCtx, ownersValue: unknown) {
+  const owners = normalizeGitHubOwners(ownersValue);
+  const known = await runQueryRef<{
+    provenance: "stored-authenticated-staging-live";
+    owners: Array<{ owner: string; id: number; login: string }>;
+    missingOwners: string[];
+  }>(ctx, internalRefs.skillsShCatalog.resolveKnownGitHubOwnersInternal, { owners });
+  const fetched = await fetchAuthenticatedGitHubOwners(known.missingOwners);
+  if (fetched.length > 0) {
+    await runQueryRef(ctx, internalRefs.skillsShCatalog.assertFreshGitHubOwnerAssignmentsInternal, {
+      owners: fetched.map(({ owner, id }) => ({ owner, id })),
+    });
+  }
+  const resolved = [...known.owners, ...fetched].sort((left, right) =>
+    left.owner.localeCompare(right.owner),
+  );
+  if (resolved.length !== owners.length) {
+    throw new Error("GitHub owner resolution did not return complete coverage");
+  }
   return {
     authentication: "clawhub-github-authenticated" as const,
-    fetches: resolved.length,
+    provenance:
+      known.owners.length === 0
+        ? ("live-github" as const)
+        : fetched.length === 0
+          ? ("stored-authenticated-staging-live" as const)
+          : ("stored-authenticated-staging-live+live-github" as const),
+    fetches: fetched.length,
+    reused: known.owners.length,
     owners: resolved,
   };
 }
@@ -229,7 +265,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
     if (!body) return text("Invalid JSON", 400, rate.headers);
     const operation = requireString(body, "operation");
     if (operation === "resolve-owners") {
-      return json(await resolveAuthenticatedGitHubOwners(body.owners), 200, rate.headers);
+      return json(await resolveAuthenticatedGitHubOwners(ctx, body.owners), 200, rate.headers);
     }
     if (operation === "start") {
       const result = await runMutationRef(

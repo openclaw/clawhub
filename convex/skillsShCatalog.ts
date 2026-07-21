@@ -1636,6 +1636,141 @@ export const listEntriesPageInternal = internalQuery({
   },
 });
 
+export const resolveKnownGitHubOwnersInternal = internalQuery({
+  args: {
+    owners: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    if (environment.environment !== "test") {
+      throw new ConvexError(
+        "skills.sh stored owner resolution is available only in permanent Test",
+      );
+    }
+    const owners = Array.from(
+      new Set(
+        args.owners.map((owner) => {
+          const normalized = owner.trim().toLowerCase();
+          if (!normalized) throw new ConvexError("GitHub owner must be a non-empty string");
+          return normalized;
+        }),
+      ),
+    ).sort();
+    assertIntegerInRange("owners.length", owners.length, 1, 500);
+
+    const resolved: Array<{ owner: string; login: string; id: number }> = [];
+    const missingOwners: string[] = [];
+    for (const owner of owners) {
+      // Staging-live rows preserve the immutable GitHub identity established by
+      // the authenticated first import. A mutable login must not silently
+      // reassign existing catalog ownership during an identical refresh.
+      const [first, last] = await Promise.all([
+        ctx.db
+          .query("skillsShCatalogEntries")
+          .withIndex("by_owner_and_source_kind_and_github_owner_id", (q) =>
+            q.eq("owner", owner).eq("sourceKind", "staging-live"),
+          )
+          .order("asc")
+          .first(),
+        ctx.db
+          .query("skillsShCatalogEntries")
+          .withIndex("by_owner_and_source_kind_and_github_owner_id", (q) =>
+            q.eq("owner", owner).eq("sourceKind", "staging-live"),
+          )
+          .order("desc")
+          .first(),
+      ]);
+      if (first?.githubOwnerId !== last?.githubOwnerId) {
+        throw new ConvexError(`Conflicting authenticated GitHub owner ids for ${owner}`);
+      }
+      const id = first?.githubOwnerId;
+      if (!id) {
+        missingOwners.push(owner);
+        continue;
+      }
+      if (!Number.isSafeInteger(id) || id <= 0) {
+        throw new ConvexError(`Invalid authenticated GitHub owner id for ${owner}`);
+      }
+      resolved.push({ owner, login: owner, id });
+    }
+    return {
+      provenance: "stored-authenticated-staging-live" as const,
+      owners: resolved,
+      missingOwners,
+    };
+  },
+});
+
+export const assertFreshGitHubOwnerAssignmentsInternal = internalQuery({
+  args: {
+    owners: v.array(
+      v.object({
+        owner: v.string(),
+        id: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    if (environment.environment !== "test") {
+      throw new ConvexError(
+        "skills.sh owner assignment validation is available only in permanent Test",
+      );
+    }
+    assertIntegerInRange("owners.length", args.owners.length, 1, 500);
+
+    const byOwner = new Map<string, number>();
+    const byId = new Map<number, string>();
+    for (const assignment of args.owners) {
+      const owner = assignment.owner.trim().toLowerCase();
+      if (!owner) throw new ConvexError("GitHub owner must be a non-empty string");
+      if (!Number.isSafeInteger(assignment.id) || assignment.id <= 0) {
+        throw new ConvexError(`Invalid authenticated GitHub owner id for ${owner}`);
+      }
+      const existingId = byOwner.get(owner);
+      if (existingId !== undefined && existingId !== assignment.id) {
+        throw new ConvexError(`Conflicting authenticated GitHub owner ids for ${owner}`);
+      }
+      const existingOwner = byId.get(assignment.id);
+      if (existingOwner !== undefined && existingOwner !== owner) {
+        throw new ConvexError(
+          `Authenticated GitHub owner id ${assignment.id} is assigned to multiple owners`,
+        );
+      }
+      byOwner.set(owner, assignment.id);
+      byId.set(assignment.id, owner);
+    }
+
+    for (const [owner, id] of byOwner) {
+      const [first, last] = await Promise.all([
+        ctx.db
+          .query("skillsShCatalogEntries")
+          .withIndex("by_source_kind_and_github_owner_id_and_owner", (q) =>
+            q.eq("sourceKind", "staging-live").eq("githubOwnerId", id),
+          )
+          .order("asc")
+          .first(),
+        ctx.db
+          .query("skillsShCatalogEntries")
+          .withIndex("by_source_kind_and_github_owner_id_and_owner", (q) =>
+            q.eq("sourceKind", "staging-live").eq("githubOwnerId", id),
+          )
+          .order("desc")
+          .first(),
+      ]);
+      if ((first !== null && first.owner !== owner) || (last !== null && last.owner !== owner)) {
+        throw new ConvexError(
+          `Authenticated GitHub owner id ${id} is already assigned to another owner`,
+        );
+      }
+    }
+    return {
+      provenance: "stored-authenticated-staging-live-assignment-check" as const,
+      checked: byOwner.size,
+    };
+  },
+});
+
 export const getRunInternal = internalQuery({
   args: {
     runId: v.id("skillsShCatalogRuns"),
