@@ -2719,10 +2719,9 @@ export const claimQueuedJobsInternal = internalMutation({
         ) {
           return [];
         }
-        takeLimit = Math.max(
-          takeLimit,
-          Math.min(MAX_CODEX_SCAN_CLAIM_LIMIT, gate.control.maxCatalogQueued),
-        );
+        // Scan a bounded window independent of the current admission cap so paused
+        // or canceled jobs cannot hide later runnable backlog after the cap is lowered.
+        takeLimit = MAX_CODEX_SCAN_CLAIM_LIMIT;
       }
       return await ctx.db
         .query("securityScanJobs")

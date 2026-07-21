@@ -15,6 +15,23 @@ type CatalogTestRequest = {
   reason?: string;
 };
 
+function parseCatalogTestRequest(value: unknown): CatalogTestRequest | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  if (
+    (body.allowlist !== undefined &&
+      (!Array.isArray(body.allowlist) ||
+        !body.allowlist.every((externalId) => typeof externalId === "string"))) ||
+    (body.reason !== undefined && typeof body.reason !== "string")
+  ) {
+    return null;
+  }
+  return {
+    ...(body.allowlist !== undefined ? { allowlist: body.allowlist as string[] } : {}),
+    ...(body.reason !== undefined ? { reason: body.reason as string } : {}),
+  };
+}
+
 function jsonResponse(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -111,7 +128,14 @@ export default defineEventHandler(async (event) => {
   if (!authorization.toLowerCase().startsWith("bearer ")) {
     return jsonResponse({ error: "operator_authorization_required" }, 401);
   }
-  const body = ((await readBody<CatalogTestRequest>(event)) ?? {}) as CatalogTestRequest;
+  let rawBody: unknown;
+  try {
+    rawBody = await readBody(event);
+  } catch {
+    return jsonResponse({ error: "invalid_request_body" }, 400);
+  }
+  const body = parseCatalogTestRequest(rawBody);
+  if (!body) return jsonResponse({ error: "invalid_request_body" }, 400);
   const allowlist = Array.from(
     new Set((body.allowlist ?? []).map((externalId) => externalId.trim().toLowerCase())),
   ).filter(Boolean);

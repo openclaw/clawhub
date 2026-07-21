@@ -3899,7 +3899,7 @@ describe("securityScan", () => {
       scanAdmissionEnabled: true,
       maxNativeQueued: 10,
       maxNativeInFlight: 10,
-      maxCatalogQueued: 2,
+      maxCatalogQueued: 1,
       maxCatalogInFlight: 1,
     });
 

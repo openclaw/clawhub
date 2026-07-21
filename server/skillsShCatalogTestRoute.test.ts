@@ -190,6 +190,22 @@ describe("skills.sh permanent Test operator route", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { body: [], label: "array body" },
+    { body: { allowlist: {} }, label: "non-array allowlist" },
+    { body: { allowlist: [null] }, label: "non-string allowlist member" },
+    { body: { reason: 42 }, label: "non-string reason" },
+  ])("rejects a malformed $label before calling any backend", async ({ body }) => {
+    readBodyMock.mockResolvedValue(body);
+    const handler = (await import("./routes/ops/skills-sh/catalog-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request_body" });
+    expect(captureSnapshotMock).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("sizes persistence batches from the active Convex row and write budgets", async () => {
     readBodyMock.mockResolvedValue({
       allowlist: ["nvidia/skills/aiq-deploy"],
