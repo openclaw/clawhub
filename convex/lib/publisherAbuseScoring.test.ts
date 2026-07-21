@@ -449,24 +449,27 @@ describe("publisher abuse scoring", () => {
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
   });
 
-  it("flags sustained high downloads with flat installs", () => {
+  it("flags sustained flat-install traffic one download above six times platform P99", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
       benchmark: temporalBenchmark({
-        downloads30dP95: 3_000,
-        downloads30dP99: 3_000,
+        downloads30dP95: 284,
+        downloads30dP99: 600,
         spikeMultiplier7dP95: 20,
         spikeMultiplier7dP99: 50,
       }),
-      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+      dailyStats: [
+        ...dailyRange(71, 29, { downloads: 120, installs: 0 }),
+        { day: 100, downloads: 121, installs: 0 },
+      ],
     });
 
     expect(score.spike).toBe(false);
     expect(score.sustained).toBe(true);
-    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.recent30Downloads).toBe(3_601);
     expect(score.recent30Installs).toBe(0);
-    expect(score.downloadInstallRatio30).toBe(3_600);
+    expect(score.downloadInstallRatio30).toBe(3_601);
     expect(score.downloads30dCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
   });
@@ -486,17 +489,17 @@ describe("publisher abuse scoring", () => {
     expect(score.downloads30dCohortBand).toBeUndefined();
   });
 
-  it("keeps sub-3000 P99 download traffic below the absolute review floor", () => {
+  it("keeps downloads at exactly six times platform P99 below the sustained threshold", () => {
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay: 100,
       benchmark: temporalBenchmark({
-        downloads30dP95: 1_000,
-        downloads30dP99: 2_000,
+        downloads30dP95: 284,
+        downloads30dP99: 600,
       }),
-      dailyStats: dailyRange(71, 30, { downloads: 90, installs: 0 }),
+      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
     });
 
-    expect(score.recent30Downloads).toBe(2_700);
+    expect(score.recent30Downloads).toBe(3_600);
     expect(score.sustained).toBe(false);
     expect(score.downloads30dCohortBand).toBeUndefined();
   });
@@ -611,8 +614,8 @@ describe("publisher abuse scoring", () => {
   it("finds historical spike and sustained windows for backfill scans", () => {
     const score = computeHistoricalSkillTemporalAbuseScore({
       benchmark: temporalBenchmark({
-        downloads30dP95: 3_000,
-        downloads30dP99: 10_000,
+        downloads30dP95: 284,
+        downloads30dP99: 1_000,
         spikeMultiplier7dP95: 5,
         spikeMultiplier7dP99: 25,
       }),

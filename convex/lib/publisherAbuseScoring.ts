@@ -128,7 +128,7 @@ const TEMPORAL_SUSTAINED_DAYS = 30;
 const TEMPORAL_MAX_SPIKE_INSTALLS = 2;
 const TEMPORAL_MAX_SUSTAINED_INSTALLS = 5;
 const TEMPORAL_MIN_SPIKE_7_DOWNLOADS = 2_000;
-const TEMPORAL_MIN_SUSTAINED_30_DOWNLOADS = 3_000;
+const TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER = 6;
 const TEMPORAL_MIN_BASELINE_7_DOWNLOADS = 100;
 const TEMPORAL_MIN_NEAR_CONVERSION_7_DOWNLOADS = 500;
 const TEMPORAL_MIN_NEAR_CONVERSION_30_DOWNLOADS = 1_000;
@@ -437,7 +437,8 @@ export function classifySkillTemporalAbuseScore(
     score.spikeMultiplier / Math.max(1, benchmark.spikeMultiplier7dP95);
   const downloads30dCohortBand =
     score.recent30Installs <= TEMPORAL_MAX_SUSTAINED_INSTALLS &&
-    score.recent30Downloads >= TEMPORAL_MIN_SUSTAINED_30_DOWNLOADS
+    score.recent30Downloads >
+      benchmark.downloads30dP99 * TEMPORAL_SUSTAINED_DOWNLOADS_P99_MULTIPLIER
       ? p99Band({ value: score.recent30Downloads, p99: benchmark.downloads30dP99 })
       : undefined;
   const spikeMultiplierCohortBand =

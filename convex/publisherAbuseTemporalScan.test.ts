@@ -655,8 +655,8 @@ describe("scheduled temporal publisher abuse scan", () => {
       sampleSize: 1_000,
       downloads30dAverage: 180,
       downloads30dMedian: 45,
-      downloads30dP95: 900,
-      downloads30dP99: 3_000,
+      downloads30dP95: 284,
+      downloads30dP99: 600,
       spikeMultiplier7dP95: 4,
       spikeMultiplier7dP99: 12,
     };
@@ -667,7 +667,7 @@ describe("scheduled temporal publisher abuse scan", () => {
     });
     const candidate = temporalCandidate(
       "skills:anysearch" as Id<"skills">,
-      temporalScore({ recent30Downloads: 3_370, recent30Installs: 4 }),
+      temporalScore({ recent30Downloads: 3_700, recent30Installs: 4 }),
     );
     const runQuery = vi
       .fn()

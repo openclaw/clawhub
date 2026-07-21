@@ -94,10 +94,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   Partial scans must not archive signals or present their top-download slice as
   a platform percentile.
 - Flat-install temporal review signals are deliberately high-confidence:
-  sustained volume must exceed the platform P99, reach at least 3,000 downloads
-  in 30 days, and have at most 5 installs; a spike must exceed the platform P99,
-  reach at least 2,000 downloads in 7 days, and have at most 2 installs. These
-  signals indicate anomalous traffic for manual review, not publisher attribution.
+  sustained volume must exceed six times the platform 30-day download P99 and
+  have at most 5 installs; a spike must exceed the platform P99, reach at least
+  2,000 downloads in 7 days, and have at most 2 installs. These signals indicate
+  anomalous traffic for manual review, not publisher attribution.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score
