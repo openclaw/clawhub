@@ -21,6 +21,7 @@ const {
   listHighlightedPublic,
   listVersions,
   listVersionsPage,
+  listWithdrawnVersionsForManager,
   listWithLatest,
 } = await import("./skills");
 
@@ -59,6 +60,13 @@ const listVersionsPageHandler = (
     skillId: string;
     cursor?: string;
     limit?: number;
+  }>
+)._handler;
+
+const listWithdrawnVersionsForManagerHandler = (
+  listWithdrawnVersionsForManager as unknown as WrappedHandler<{
+    skillId: string;
+    paginationOpts: { cursor: string | null; numItems: number };
   }>
 )._handler;
 
@@ -523,7 +531,7 @@ describe("public skill version queries", () => {
     },
   );
 
-  it("shows active pending version history to owners through the bounded active index", async () => {
+  it("keeps owner version history within the requested active-version limit", async () => {
     const version = makeVersion();
     const pendingVersion = {
       ...makeVersion(),
@@ -574,10 +582,10 @@ describe("public skill version queries", () => {
 
     const result = (await listVersionsHandler(ctx, {
       skillId: "skills:1",
-      limit: 50,
+      limit: 1,
     } as never)) as Array<{ version: string }>;
 
-    expect(result.map((item) => item.version)).toEqual(["2.0.0", "1.0.0"]);
+    expect(result.map((item) => item.version)).toEqual(["2.0.0"]);
     expect(indexNames).toEqual(["by_skill_active_created"]);
     expect(filters).toEqual(
       new Map<string, unknown>([
@@ -585,7 +593,86 @@ describe("public skill version queries", () => {
         ["softDeletedAt", undefined],
       ]),
     );
-    expect(take).toHaveBeenCalledWith(50);
+    expect(take).toHaveBeenCalledOnce();
+    expect(take).toHaveBeenCalledWith(1);
+  });
+
+  it("paginates owner-withdrawn versions through the owner provenance index", async () => {
+    const withdrawnVersion = {
+      ...makeVersion(),
+      softDeletedAt: 123,
+      ownerDeletedAt: 123,
+      ownerDeletedBy: "users:owner",
+    };
+    const indexNames: string[] = [];
+    const filters = new Map<string, unknown>();
+    const paginate = vi.fn().mockResolvedValue({
+      page: [withdrawnVersion],
+      isDone: true,
+      continueCursor: "",
+    });
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id, role: "user" };
+          if (id === "skills:1") {
+            return {
+              _id: id,
+              ownerUserId: "users:owner",
+              ownerPublisherId: undefined,
+              softDeletedAt: undefined,
+              moderationStatus: "active",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(
+              (
+                index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                indexNames.push(index);
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return { order: vi.fn(() => ({ paginate })) };
+              },
+            ),
+          };
+        }),
+      },
+    } as never;
+
+    const result = (await listWithdrawnVersionsForManagerHandler(ctx, {
+      skillId: "skills:1",
+      paginationOpts: { cursor: null, numItems: 20 },
+    } as never)) as {
+      page: Array<{ version: string; softDeletedAt?: number; ownerDeletedAt?: number }>;
+    };
+
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        version: "1.0.0",
+        softDeletedAt: 123,
+        ownerDeletedAt: 123,
+      }),
+    ]);
+    expect(indexNames).toEqual(["by_skill_owner_deleted_created"]);
+    expect(filters).toEqual(
+      new Map<string, unknown>([
+        ["skillId", "skills:1"],
+        ["ownerDeletedBy", "users:owner"],
+      ]),
+    );
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 20 });
   });
 
   it("keeps soft-deleted versions from consuming an ordinary viewer's limit", async () => {

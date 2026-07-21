@@ -351,6 +351,7 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     deleteOwnedVersionForUserInternal: unknown;
+    restoreOwnedVersionForUserInternal: unknown;
     revokeSkillVersionForUserInternal: unknown;
     getSecurityVerdictTargetInternal: unknown;
     getVerifyTargetBySlugInternal: unknown;
@@ -3317,6 +3318,34 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
       return json(result, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("skill", error, rate.headers);
+    }
+  }
+
+  if (
+    segments.length === 4 &&
+    segments[1] === "versions" &&
+    segments[2] &&
+    segments[3] === "restore"
+  ) {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request);
+      const body = await readOptionalJson(request);
+      const ownerHandle =
+        optionalStringField(body, "ownerHandle") ?? getOwnerHandleParam(new URL(request.url));
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.restoreOwnedVersionForUserInternal,
+        {
+          actorUserId: userId,
+          slug,
+          version: segments[2],
+          ...(ownerHandle ? { ownerHandle } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillVersionDeleteErrorToResponse(error, rate.headers);
     }
   }
 

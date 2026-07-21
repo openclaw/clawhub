@@ -7640,6 +7640,68 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe(message);
   });
 
+  it("restores an exact owner-withdrawn skill version", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { ok: true, skillId: "skills:1", versionId: "skillVersions:1" };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/demo/versions/1.2.3/restore?ownerHandle=openclaw",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: JSON.stringify({ ownerHandle: "openclaw" }),
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .restoreOwnedVersionForUserInternal,
+      {
+        actorUserId: "users:1",
+        slug: "demo",
+        version: "1.2.3",
+        ownerHandle: "openclaw",
+      },
+    );
+  });
+
+  it("maps non-owner skill version restore to forbidden", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { handle: "stranger" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("Forbidden");
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.2.3/restore", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden");
+  });
+
   it("skill hard-delete dry-runs through the admin-only API", async () => {
     const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:1";
     vi.mocked(requireApiTokenUser).mockResolvedValue({
@@ -15852,6 +15914,69 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(400);
     expect(await response.text()).toBe(message);
+  });
+
+  it("restores an exact owner-withdrawn package release", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { ok: true, packageId: "packages:1", releaseId: "packageReleases:1" };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/versions/1.2.3/restore",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:1",
+      releaseId: "packageReleases:1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { packages: Record<string, unknown> }).packages
+        .restoreOwnedReleaseForUserInternal,
+      {
+        actorUserId: "users:1",
+        name: "@openclaw/demo-plugin",
+        version: "1.2.3",
+      },
+    );
+  });
+
+  it("maps non-owner package release restore to forbidden", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:stranger",
+      user: { _id: "users:stranger", handle: "stranger" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("Forbidden");
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/versions/1.2.3/restore",
+        {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+        },
+      ),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe("Forbidden");
   });
 
   it("undeletes a package", async () => {

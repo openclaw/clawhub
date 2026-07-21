@@ -233,7 +233,7 @@ type PackageDeleteOptions = {
   version?: string;
 };
 
-type PackageUndeleteOptions = Omit<PackageDeleteOptions, "version">;
+type PackageUndeleteOptions = PackageDeleteOptions;
 
 type PackageTransferOptions = {
   to: string;
@@ -1324,7 +1324,7 @@ export async function cmdDeletePackage(
     if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
       version
-        ? `Delete ${name} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`
+        ? `Delete ${name} version ${version}? (withdraws public access; the exact retained artifact can be restored, but the version number remains reserved; publish a replacement first if deleting the current latest version)`
         : `Delete ${name}? (soft delete package and all releases)`,
     );
     if (!ok) return undefined;
@@ -1373,27 +1373,36 @@ export async function cmdUndeletePackage(
 ) {
   const name = nameArg.trim();
   if (!name) fail("Package name required");
+  const version = normalizeDeleteVersion(options.version);
 
   if (!options.yes) {
     if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(`Restore ${name}? (restore package and releases)`);
+    const ok = await promptConfirm(
+      version
+        ? `Restore ${name} version ${version}? (restores the exact retained artifact; does not make it latest or restore tags or dist-tags)`
+        : `Restore ${name}? (restore package and releases)`,
+    );
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createCrabLoader(`Restoring ${name}`);
+  const target = version ? `${name} version ${version}` : name;
+  const spinner = createCrabLoader(`Restoring ${target}`);
   try {
     const result = await apiRequest(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/undelete`,
+        path: version
+          ? `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/restore`
+          : `${ApiRoutes.packages}/${encodeURIComponent(name)}/undelete`,
         token,
+        ...(version ? { retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. Restored ${name}`);
+    spinner.succeed(`OK. Restored ${target}`);
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     }

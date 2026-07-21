@@ -124,6 +124,7 @@ const internalRefs = internal as unknown as {
     transferPackageOwnerForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
     deleteOwnedReleaseForUserInternal: unknown;
+    restoreOwnedReleaseForUserInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -3050,6 +3051,33 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("package", error, rate.headers);
+    }
+  }
+
+  if (
+    packageSegments[0] === "versions" &&
+    packageSegments[1] &&
+    packageSegments[2] === "restore" &&
+    packageSegments.length === 3
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.restoreOwnedReleaseForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          version: packageSegments[1],
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return packageOperationErrorToResponse(error, rate.headers, "Package version restore failed");
     }
   }
 

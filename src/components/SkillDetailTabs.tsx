@@ -368,6 +368,7 @@ export function SkillDetailTabs({
       {showArchiveTabs && activeTab === "versions" ? (
         <div role="tabpanel" id="skill-tabpanel-versions" aria-labelledby="skill-tab-versions">
           <SkillVersionsPanel
+            skillId={skill._id}
             versions={versions}
             latestVersionId={latestVersionId}
             latestTaggedVersionId={skill.tags.latest ?? null}

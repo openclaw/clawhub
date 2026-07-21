@@ -77,14 +77,17 @@ describe("delete/undelete", () => {
     expect(httpMocks.apiRequest.mock.calls[0]?.[1]).not.toHaveProperty("retryCount");
   });
 
-  it("confirms that skill version deletion is permanent", async () => {
+  it("confirms that skill version deletion is a reversible withdrawal", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
 
     await cmdDeleteSkill(makeGlobalOpts(), "demo", { version: "1.2.3" }, true);
 
     expect(uiMocks.promptConfirm).toHaveBeenCalledWith(expect.stringContaining("version 1.2.3"));
     expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
-      expect.stringContaining("cannot be restored or republished"),
+      expect.stringContaining("exact retained artifact can be restored"),
+    );
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("version number remains reserved"),
     );
     expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
       expect.stringContaining("publish a replacement first"),
@@ -189,6 +192,38 @@ describe("delete/undelete", () => {
       expect.objectContaining({ method: "POST", path: "/api/v1/skills/demo/undelete" }),
       expect.anything(),
     );
+  });
+
+  it("restores an owner-withdrawn skill version without retrying", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+    await cmdUndeleteSkill(
+      makeGlobalOpts(),
+      "@Alice/Demo",
+      { yes: true, version: " 1.2.3 " },
+      false,
+    );
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/versions/1.2.3/restore",
+        body: { ownerHandle: "alice", version: "1.2.3" },
+        retryCount: 0,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("rejects whole-skill moderation reasons on version restore", async () => {
+    await expect(
+      cmdUndeleteSkill(
+        makeGlobalOpts(),
+        "demo",
+        { yes: true, version: "1.2.3", reason: "reviewed" },
+        false,
+      ),
+    ).rejects.toThrow(/whole-skill restoration/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
   it("passes a moderation reason on undelete", async () => {

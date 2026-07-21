@@ -4486,11 +4486,11 @@ description: Disposable local-auth version deletion fixture skill.
 
 # ${args.skillDisplayName}
 
-This fixture proves one-way owner deletion of an older skill version.
+This fixture proves reversible owner withdrawal of an older skill version.
 `;
     const pluginReadme = `# ${args.packageDisplayName}
 
-This fixture proves one-way owner deletion of an older plugin release.
+This fixture proves reversible owner withdrawal of an older plugin release.
 `;
     const [skillStorageId, pluginReadmeStorageId] = await Promise.all([
       ctx.storage.store(new Blob([skillMd], { type: "text/markdown" })),
@@ -4855,6 +4855,14 @@ export const getVersionDeletionFixtureState: ReturnType<typeof rawInternalMutati
           q.eq("targetType", "packageRelease").eq("targetId", args.olderPackageReleaseId),
         )
         .take(10);
+      const skillDigest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+        .unique();
+      const packageDigest = await ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+        .unique();
 
       return {
         ok: true as const,
@@ -4863,6 +4871,9 @@ export const getVersionDeletionFixtureState: ReturnType<typeof rawInternalMutati
         skillLatestTagVersionId: skill?.tags.latest ?? null,
         skillLatestSummaryVersion: skill?.latestVersionSummary?.version ?? null,
         skillStatsVersions: skill?.stats.versions ?? null,
+        skillDigestLatestVersionId: skillDigest?.latestVersionId ?? null,
+        skillDigestLatestSummaryVersion: skillDigest?.latestVersionSummary?.version ?? null,
+        skillDigestTags: skillDigest?.tags ?? null,
         skillActiveVersions: skillActiveVersions.map((version) => version.version),
         olderSkillVersion: versionDeletionRowState(olderSkillVersion),
         latestSkillVersion: versionDeletionRowState(latestSkillVersion),
@@ -4871,7 +4882,9 @@ export const getVersionDeletionFixtureState: ReturnType<typeof rawInternalMutati
         packageLatestTagReleaseId: pkg?.tags.latest ?? null,
         packageLatestSummaryVersion: pkg?.latestVersionSummary?.version ?? null,
         packageStatsVersions: pkg?.stats.versions ?? null,
+        packageDigestLatestVersion: packageDigest?.latestVersion ?? null,
         packageActiveVersions: packageActiveReleases.map((release) => release.version),
+        olderPackageDistTags: olderPackageRelease?.distTags ?? null,
         olderPackageRelease: versionDeletionRowState(olderPackageRelease),
         latestPackageRelease: versionDeletionRowState(latestPackageRelease),
         packageAuditActions: packageAuditLogs.map((log) => log.action),

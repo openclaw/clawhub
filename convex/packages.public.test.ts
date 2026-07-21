@@ -50,6 +50,7 @@ import {
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
+  listVersionsForManager,
   updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
@@ -206,6 +207,19 @@ const listVersionsHandler = (
     },
     {
       page: Array<{ version: string }>;
+      isDone: boolean;
+      continueCursor: string;
+    }
+  >
+)._handler;
+const listVersionsForManagerHandler = (
+  listVersionsForManager as unknown as WrappedHandler<
+    {
+      name: string;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ version: string; softDeletedAt?: number; ownerDeletedAt?: number }>;
       isDone: boolean;
       continueCursor: string;
     }
@@ -13231,6 +13245,91 @@ describe("packages public queries", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  it("paginates owner-withdrawn releases with explicit restore markers", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const indexNames: string[] = [];
+    const filters = new Map<string, unknown>();
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "packageReleases:withdrawn",
+          packageId: "packages:demo",
+          version: "0.8.0",
+          changelog: "Withdrawn release",
+          distTags: [],
+          files: [],
+          integritySha256: "sha256:withdrawn",
+          compatibility: null,
+          verification: null,
+          createdBy: "users:owner",
+          publishActor: { kind: "user", userId: "users:owner" },
+          createdAt: 1,
+          softDeletedAt: 123,
+          ownerDeletedAt: 123,
+          ownerDeletedBy: "users:owner",
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "users:owner" ? { _id: id, role: "user" } : null)),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(makePackageDoc()),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(
+                (
+                  index: string,
+                  buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+                ) => {
+                  indexNames.push(index);
+                  const query = {
+                    eq(field: string, value: unknown) {
+                      filters.set(field, value);
+                      return query;
+                    },
+                  };
+                  buildQuery?.(query);
+                  return { order: vi.fn(() => ({ paginate })) };
+                },
+              ),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    } as never;
+
+    const result = await listVersionsForManagerHandler(ctx, {
+      name: "demo-plugin",
+      paginationOpts: { cursor: null, numItems: 20 },
+    });
+
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        version: "0.8.0",
+        softDeletedAt: 123,
+        ownerDeletedAt: 123,
+      }),
+    ]);
+    expect(indexNames).toEqual(["by_package_owner_deleted_created"]);
+    expect(filters).toEqual(
+      new Map<string, unknown>([
+        ["packageId", "packages:demo"],
+        ["ownerDeletedBy", "users:owner"],
+      ]),
+    );
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 20 });
   });
 
   it("allows direct package owners to delete versions", async () => {

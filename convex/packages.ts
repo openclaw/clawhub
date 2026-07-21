@@ -1222,6 +1222,14 @@ function toPublicPackageRelease(release: Doc<"packageReleases">) {
   };
 }
 
+function toManagerPackageRelease(release: Doc<"packageReleases">) {
+  return {
+    ...toPublicPackageRelease(release),
+    softDeletedAt: release.softDeletedAt,
+    ownerDeletedAt: release.ownerDeletedAt,
+  };
+}
+
 async function paginatePublishedPackageReleases(
   ctx: QueryCtx,
   packageId: Id<"packages">,
@@ -3031,6 +3039,48 @@ export const listVersionsForViewerInternal = internalQuery({
     return {
       ...result,
       page: result.page.map(toPublicPackageRelease),
+    };
+  },
+});
+
+export const listVersionsForManager = query({
+  args: {
+    name: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    if (!viewerUserId) return { page: [], isDone: true, continueCursor: "" };
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(args.name));
+    if (
+      !pkg ||
+      pkg.softDeletedAt ||
+      pkg.family === "skill" ||
+      isPackageBlockedFromPublic(pkg.scanStatus)
+    ) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+    if (!(await viewerCanManagePackageOwner(ctx, pkg, viewerUserId))) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const result = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_owner_deleted_created", (q) =>
+        q.eq("packageId", pkg._id).eq("ownerDeletedBy", actor._id),
+      )
+      .order("desc")
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page
+        .filter((release) => isPackageReleaseRestorableByOwner(release, pkg._id, actor._id))
+        .map(toManagerPackageRelease),
     };
   },
 });
@@ -6006,6 +6056,106 @@ export const deleteOwnedRelease = mutation({
   handler: async (ctx, args) => {
     const { user } = await requireUser(ctx);
     return await deleteOwnedPackageReleaseForActor(ctx, user, args);
+  },
+});
+
+function isPackageReleaseRestorableByOwner(
+  release: Doc<"packageReleases"> | null | undefined,
+  packageId: Id<"packages">,
+  actorUserId: Id<"users">,
+): release is Doc<"packageReleases"> {
+  return Boolean(
+    release &&
+    release.packageId === packageId &&
+    release.softDeletedAt !== undefined &&
+    release.ownerDeletedAt !== undefined &&
+    release.softDeletedAt === release.ownerDeletedAt &&
+    release.ownerDeletedBy === actorUserId &&
+    resolvePackageReleaseScanStatus(release) !== "malicious" &&
+    release.manualModeration?.state !== "quarantined" &&
+    release.manualModeration?.state !== "revoked",
+  );
+}
+
+export async function restoreOwnedPackageReleaseForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  args: { name: string; version: string },
+) {
+  const normalizedName = normalizePackageName(args.name);
+  const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+  if (!pkg || pkg.softDeletedAt || isPackageBlockedFromPublic(pkg.scanStatus)) {
+    throw new ConvexError("This package is unavailable and its releases cannot be restored.");
+  }
+  if (pkg.family === "skill") {
+    throw new ConvexError("Skill packages must use the skills restore flow.");
+  }
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
+    .unique();
+  if (!isPackageReleaseRestorableByOwner(release, pkg._id, actor._id)) {
+    throw new ConvexError(
+      "This package release was not withdrawn by this owner and cannot be restored.",
+    );
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(release._id, {
+    softDeletedAt: undefined,
+    ownerDeletedAt: undefined,
+    ownerDeletedBy: undefined,
+    distTags: [],
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "package.release.restore",
+    targetType: "packageRelease",
+    targetId: release._id,
+    metadata: {
+      packageId: pkg._id,
+      name: pkg.name,
+      version: release.version,
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, packageId: pkg._id, releaseId: release._id };
+}
+
+export const restoreOwnedReleaseForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const version = args.version.trim();
+    if (!version) throw new ConvexError("Version required");
+
+    return await restoreOwnedPackageReleaseForActor(ctx, actor, {
+      name: args.name,
+      version,
+    });
+  },
+});
+
+export const restoreOwnedRelease = mutation({
+  args: { name: v.string(), version: v.string() },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await restoreOwnedPackageReleaseForActor(ctx, user, args);
   },
 });
 

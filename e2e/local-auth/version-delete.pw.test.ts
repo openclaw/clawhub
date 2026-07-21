@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, type APIRequestContext, type APIResponse, test } from "@playwright/test";
 import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { buildPluginDetailHref } from "../../src/lib/pluginRoutes";
 import {
@@ -103,6 +103,9 @@ type VersionDeletionFixtureState = {
   skillLatestTagVersionId: string | null;
   skillLatestSummaryVersion: string | null;
   skillStatsVersions: number | null;
+  skillDigestLatestVersionId: string | null;
+  skillDigestLatestSummaryVersion: string | null;
+  skillDigestTags: Record<string, string> | null;
   skillActiveVersions: string[];
   olderSkillVersion: {
     exists: boolean;
@@ -121,7 +124,9 @@ type VersionDeletionFixtureState = {
   packageLatestTagReleaseId: string | null;
   packageLatestSummaryVersion: string | null;
   packageStatsVersions: number | null;
+  packageDigestLatestVersion: string | null;
   packageActiveVersions: string[];
+  olderPackageDistTags: string[] | null;
   olderPackageRelease: {
     exists: boolean;
     softDeletedAt: number | null;
@@ -136,6 +141,114 @@ type VersionDeletionFixtureState = {
   };
   packageAuditActions: string[];
 };
+
+type PublicVersionSurfaceState = {
+  skillListVersions: string[];
+  skillExactStatus: number;
+  skillDownloadStatus: number;
+  skillSearchVersion: string | null;
+  packageListVersions: string[];
+  packageExactStatus: number;
+  packageDownloadStatus: number;
+  packageLatestVersion: string | null;
+  packageTags: Record<string, unknown> | null;
+  packageSearchVersion: string | null;
+};
+
+function convexSiteUrl() {
+  const value = process.env.VITE_CONVEX_SITE_URL;
+  if (!value) throw new Error("VITE_CONVEX_SITE_URL is required");
+  return value.replace(/\/$/u, "");
+}
+
+async function getWithRetry(request: APIRequestContext, url: string): Promise<APIResponse> {
+  let lastResponse: APIResponse | null = null;
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    lastResponse = await request.get(url);
+    if (lastResponse.status() < 500) return lastResponse;
+    await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
+  if (!lastResponse) throw new Error(`No response from ${url}`);
+  return lastResponse;
+}
+
+async function getPublicVersionSurfaceState(
+  request: APIRequestContext,
+  fixture: VersionDeletionFixture,
+): Promise<PublicVersionSurfaceState> {
+  const site = convexSiteUrl();
+  const owner = encodeURIComponent(fixture.handle);
+  const slug = encodeURIComponent(fixture.skillSlug);
+  const packageName = encodeURIComponent(fixture.packageName);
+  const skillListResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/skills/${slug}/versions?ownerHandle=${owner}`,
+  );
+  const skillExactResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/skills/${slug}/versions/${OLDER_VERSION}?ownerHandle=${owner}`,
+  );
+  const skillDownloadResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/download?slug=${slug}&ownerHandle=${owner}&version=${OLDER_VERSION}`,
+  );
+  const skillSearchResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/packages/search?q=${slug}&family=skill`,
+  );
+  const packageListResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/packages/${packageName}/versions`,
+  );
+  const packageExactResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/packages/${packageName}/versions/${OLDER_VERSION}`,
+  );
+  const packageDownloadResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/packages/${packageName}/download?version=${OLDER_VERSION}`,
+  );
+  const packageDetailResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/packages/${packageName}`,
+  );
+  const packageSearchResponse = await getWithRetry(
+    request,
+    `${site}/api/v1/packages/search?q=${packageName}&family=code-plugin`,
+  );
+  const skillList = (await skillListResponse.json()) as { items?: Array<{ version?: string }> };
+  const skillSearch = (await skillSearchResponse.json()) as {
+    results?: Array<{ package?: { name?: string; latestVersion?: string | null } }>;
+  };
+  const packageList = (await packageListResponse.json()) as {
+    items?: Array<{ version?: string }>;
+  };
+  const packageDetail = (await packageDetailResponse.json()) as {
+    package?: {
+      latestVersion?: string | null;
+      tags?: Record<string, unknown>;
+    } | null;
+  };
+  const packageSearch = (await packageSearchResponse.json()) as {
+    results?: Array<{ package?: { name?: string; latestVersion?: string | null } }>;
+  };
+  return {
+    skillListVersions: skillList.items?.flatMap((item) => item.version ?? []) ?? [],
+    skillExactStatus: skillExactResponse.status(),
+    skillDownloadStatus: skillDownloadResponse.status(),
+    skillSearchVersion:
+      skillSearch.results?.find((result) => result.package?.name === fixture.skillSlug)?.package
+        ?.latestVersion ?? null,
+    packageListVersions: packageList.items?.flatMap((item) => item.version ?? []) ?? [],
+    packageExactStatus: packageExactResponse.status(),
+    packageDownloadStatus: packageDownloadResponse.status(),
+    packageLatestVersion: packageDetail.package?.latestVersion ?? null,
+    packageTags: packageDetail.package?.tags ?? null,
+    packageSearchVersion:
+      packageSearch.results?.find((result) => result.package?.name === fixture.packageName)?.package
+        ?.latestVersion ?? null,
+  };
+}
 
 function seedVersionDeletionFixture(args: {
   skillSlug: string;
@@ -212,13 +325,23 @@ async function expectDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>[
     dialog.getByRole("heading", { name: `Delete version ${OLDER_VERSION}?` }),
   ).toBeVisible({ timeout: 30_000 });
   await expect(dialog).toContainText(
-    `Deletion is permanent. Version ${OLDER_VERSION} cannot be restored or republished, and the version number remains reserved. Recovery is publishing a new version.`,
+    "This withdraws the version from public use. You can restore the exact retained artifact later, but the version number remains reserved and cannot be republished with different contents.",
   );
   await expect(dialog.getByRole("button", { name: "Delete version" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(dialog.getByRole("button", { name: /restore/i })).toHaveCount(0);
   await expect(dialog).toHaveAttribute("data-state", "open");
+  return dialog;
+}
+
+async function expectRestoreDialog(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
+  const dialog = page.getByRole("dialog");
+  await expect(
+    dialog.getByRole("heading", { name: `Restore version ${OLDER_VERSION}?` }),
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(dialog).toContainText(
+    "This restores the exact retained artifact. It will not become latest or regain removed tags automatically.",
+  );
   return dialog;
 }
 
@@ -289,6 +412,18 @@ async function confirmDeleteDialog(page: Parameters<typeof expectNoFatalErrorUi>
   throw lastError;
 }
 
+async function restoreOlderVersion(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
+  const restoreButton = page.getByRole("button", { name: `Restore version ${OLDER_VERSION}` });
+  await expect(restoreButton).toBeVisible({ timeout: 30_000 });
+  await restoreButton.click();
+  const dialog = await expectRestoreDialog(page);
+  await dialog.getByRole("button", { name: "Restore version" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole("button", { name: `Delete version ${OLDER_VERSION}` })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 async function expectVersionsList(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
   let lastError: unknown;
   for (let attempt = 1; attempt <= 4; attempt += 1) {
@@ -327,13 +462,13 @@ async function expectVersionsList(page: Parameters<typeof expectNoFatalErrorUi>[
 
 async function expectPublicVersionsList(page: Parameters<typeof expectNoFatalErrorUi>[0]) {
   await ensureVersionsTab(page);
-  await expect(versionToggle(page, OLDER_VERSION)).toHaveCount(0);
+  await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
   await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(page.getByRole("button", { name: /delete version/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
 }
 
-test("owners can permanently delete individual non-latest skill and plugin versions", async ({
+test("owners can withdraw and restore individual non-latest skill and plugin versions", async ({
   baseURL,
   browser,
   page,
@@ -354,7 +489,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   expect(fixture.publisherPublishedSkills).toBeGreaterThanOrEqual(1);
   expect(fixture.publisherPublishedPackages).toBeGreaterThanOrEqual(1);
   console.log(
-    `CLAW-333 fixture ${JSON.stringify({
+    `CLAW-575 fixture ${JSON.stringify({
       appUrl: testInfo.project.use.baseURL,
       handle: fixture.handle,
       packageName: fixture.packageName,
@@ -368,6 +503,9 @@ test("owners can permanently delete individual non-latest skill and plugin versi
     skillLatestTagVersionId: fixture.latestSkillVersionId,
     skillLatestSummaryVersion: LATEST_VERSION,
     skillStatsVersions: 2,
+    skillDigestLatestVersionId: fixture.latestSkillVersionId,
+    skillDigestLatestSummaryVersion: LATEST_VERSION,
+    skillDigestTags: { latest: fixture.latestSkillVersionId },
     skillActiveVersions: [LATEST_VERSION, OLDER_VERSION],
     olderSkillVersion: {
       exists: true,
@@ -386,7 +524,9 @@ test("owners can permanently delete individual non-latest skill and plugin versi
     packageLatestTagReleaseId: fixture.latestPackageReleaseId,
     packageLatestSummaryVersion: LATEST_VERSION,
     packageStatsVersions: 2,
+    packageDigestLatestVersion: LATEST_VERSION,
     packageActiveVersions: [LATEST_VERSION, OLDER_VERSION],
+    olderPackageDistTags: [],
     olderPackageRelease: {
       exists: true,
       softDeletedAt: null,
@@ -427,12 +567,33 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   await confirmDeleteDialog(page);
   await expect(skillDialog).toHaveCount(0);
   await ensureVersionsTab(page);
-  await expect(versionToggle(page, OLDER_VERSION)).toHaveCount(0);
+  await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
   await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
-  await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: `Restore version ${OLDER_VERSION}` }),
+  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("skill-version-delete-after.png"),
     fullPage: true,
+  });
+  expect(await getPublicVersionSurfaceState(page.request, fixture)).toMatchObject({
+    skillListVersions: [LATEST_VERSION],
+    skillExactStatus: 404,
+    skillDownloadStatus: 410,
+    skillSearchVersion: LATEST_VERSION,
+    packageLatestVersion: LATEST_VERSION,
+    packageSearchVersion: LATEST_VERSION,
+  });
+  await restoreOlderVersion(page);
+  await page.screenshot({
+    path: testInfo.outputPath("skill-version-restore-after.png"),
+    fullPage: true,
+  });
+  expect(await getPublicVersionSurfaceState(page.request, fixture)).toMatchObject({
+    skillListVersions: [LATEST_VERSION, OLDER_VERSION],
+    skillExactStatus: 200,
+    skillDownloadStatus: 200,
+    skillSearchVersion: LATEST_VERSION,
   });
 
   await page.goto(pluginDetailHref, {
@@ -457,12 +618,35 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   await confirmDeleteDialog(page);
   await expect(packageDialog).toHaveCount(0);
   await ensureVersionsTab(page);
-  await expect(versionToggle(page, OLDER_VERSION)).toHaveCount(0);
+  await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
   await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
-  await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: `Restore version ${OLDER_VERSION}` }),
+  ).toBeVisible();
   await page.screenshot({
     path: testInfo.outputPath("plugin-version-delete-after.png"),
     fullPage: true,
+  });
+  expect(await getPublicVersionSurfaceState(page.request, fixture)).toMatchObject({
+    packageListVersions: [LATEST_VERSION],
+    packageExactStatus: 404,
+    packageDownloadStatus: 404,
+    packageLatestVersion: LATEST_VERSION,
+    packageTags: { latest: LATEST_VERSION },
+    packageSearchVersion: LATEST_VERSION,
+  });
+  await restoreOlderVersion(page);
+  await page.screenshot({
+    path: testInfo.outputPath("plugin-version-restore-after.png"),
+    fullPage: true,
+  });
+  expect(await getPublicVersionSurfaceState(page.request, fixture)).toMatchObject({
+    packageListVersions: [LATEST_VERSION, OLDER_VERSION],
+    packageExactStatus: 200,
+    packageDownloadStatus: 200,
+    packageLatestVersion: LATEST_VERSION,
+    packageTags: { latest: LATEST_VERSION },
+    packageSearchVersion: LATEST_VERSION,
   });
 
   await expect
@@ -475,12 +659,15 @@ test("owners can permanently delete individual non-latest skill and plugin versi
       skillLatestTagVersionId: fixture.latestSkillVersionId,
       skillLatestSummaryVersion: LATEST_VERSION,
       skillStatsVersions: 2,
-      skillActiveVersions: [LATEST_VERSION],
+      skillDigestLatestVersionId: fixture.latestSkillVersionId,
+      skillDigestLatestSummaryVersion: LATEST_VERSION,
+      skillDigestTags: { latest: fixture.latestSkillVersionId },
+      skillActiveVersions: [LATEST_VERSION, OLDER_VERSION],
       olderSkillVersion: {
         exists: true,
-        softDeletedAt: expect.any(Number),
-        ownerDeletedAt: expect.any(Number),
-        ownerDeletedBy: fixture.userId,
+        softDeletedAt: null,
+        ownerDeletedAt: null,
+        ownerDeletedBy: null,
       },
       latestSkillVersion: {
         exists: true,
@@ -488,17 +675,19 @@ test("owners can permanently delete individual non-latest skill and plugin versi
         ownerDeletedAt: null,
         ownerDeletedBy: null,
       },
-      skillAuditActions: ["skill.version.delete"],
+      skillAuditActions: ["skill.version.delete", "skill.version.restore"],
       packageLatestReleaseId: fixture.latestPackageReleaseId,
       packageLatestTagReleaseId: fixture.latestPackageReleaseId,
       packageLatestSummaryVersion: LATEST_VERSION,
       packageStatsVersions: 2,
-      packageActiveVersions: [LATEST_VERSION],
+      packageDigestLatestVersion: LATEST_VERSION,
+      packageActiveVersions: [LATEST_VERSION, OLDER_VERSION],
+      olderPackageDistTags: [],
       olderPackageRelease: {
         exists: true,
-        softDeletedAt: expect.any(Number),
-        ownerDeletedAt: expect.any(Number),
-        ownerDeletedBy: fixture.userId,
+        softDeletedAt: null,
+        ownerDeletedAt: null,
+        ownerDeletedBy: null,
       },
       latestPackageRelease: {
         exists: true,
@@ -506,15 +695,11 @@ test("owners can permanently delete individual non-latest skill and plugin versi
         ownerDeletedAt: null,
         ownerDeletedBy: null,
       },
-      packageAuditActions: ["package.release.delete"],
+      packageAuditActions: ["package.release.delete", "package.release.restore"],
     });
   const finalState = getVersionDeletionFixtureState(fixture);
-  expect(finalState.olderSkillVersion.softDeletedAt).toBe(
-    finalState.olderSkillVersion.ownerDeletedAt,
-  );
-  expect(finalState.olderPackageRelease.softDeletedAt).toBe(
-    finalState.olderPackageRelease.ownerDeletedAt,
-  );
+  expect(finalState.olderSkillVersion.softDeletedAt).toBeNull();
+  expect(finalState.olderPackageRelease.softDeletedAt).toBeNull();
 
   if (!baseURL) throw new Error("Playwright base URL was not available");
   const publicContext = await browser.newContext({ baseURL });

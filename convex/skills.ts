@@ -2282,6 +2282,13 @@ function toPublicSkillVersion(
   };
 }
 
+function toManagerSkillVersion(version: Doc<"skillVersions">) {
+  return {
+    ...toPublicSkillVersion(version)!,
+    ownerDeletedAt: version.ownerDeletedAt,
+  };
+}
+
 function toPublicGitHubSkillScan(
   scan: Doc<"githubSkillScans"> | null | undefined,
   version: string | undefined,
@@ -7613,6 +7620,45 @@ export const listVersions = query({
   },
 });
 
+export const listWithdrawnVersionsForManager = query({
+  args: {
+    skillId: v.id("skills"),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const authUserId = await getAuthUserId(ctx);
+    if (!authUserId) return { page: [], isDone: true, continueCursor: "" };
+    const actor = await ctx.db.get(authUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const skill = await ctx.db.get(args.skillId);
+    if (
+      !skill ||
+      skill.softDeletedAt ||
+      (skill.moderationStatus ?? "active") !== "active" ||
+      !(await canManageSkillOwnerForActor(ctx, actor, skill))
+    ) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+
+    const result = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_owner_deleted_created", (q) =>
+        q.eq("skillId", skill._id).eq("ownerDeletedBy", actor._id),
+      )
+      .order("desc")
+      .paginate(args.paginationOpts);
+    return {
+      ...result,
+      page: result.page
+        .filter((version) => isSkillVersionRestorableByOwner(version, skill._id, actor._id))
+        .map(toManagerSkillVersion),
+    };
+  },
+});
+
 export const listVersionsPage = query({
   args: {
     skillId: v.id("skills"),
@@ -9748,6 +9794,130 @@ export const deleteOwnedVersionForUserInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     return await deleteOwnedSkillVersionForUser(ctx, args);
+  },
+});
+
+function isSkillVersionRestorableByOwner(
+  version: Doc<"skillVersions"> | null | undefined,
+  skillId: Id<"skills">,
+  actorUserId: Id<"users">,
+): version is Doc<"skillVersions"> {
+  return Boolean(
+    version &&
+    version.skillId === skillId &&
+    version.softDeletedAt !== undefined &&
+    version.ownerDeletedAt !== undefined &&
+    version.softDeletedAt === version.ownerDeletedAt &&
+    version.ownerDeletedBy === actorUserId &&
+    !version.manualRevocation &&
+    !isKnownMaliciousSkillVersion(version),
+  );
+}
+
+export async function restoreOwnedSkillVersionForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  args: { versionId: Id<"skillVersions"> },
+) {
+  const version = await ctx.db.get(args.versionId);
+  if (!version) throw new ConvexError("Forbidden");
+
+  const skill = await ctx.db.get(version.skillId);
+  if (!skill) throw new ConvexError("Forbidden");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  if (skill.softDeletedAt || (skill.moderationStatus ?? "active") !== "active") {
+    throw new ConvexError("This skill is unavailable and its versions cannot be restored.");
+  }
+  if (!isSkillVersionRestorableByOwner(version, skill._id, actor._id)) {
+    throw new ConvexError(
+      "This skill version was not withdrawn by this owner and cannot be restored.",
+    );
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(version._id, {
+    softDeletedAt: undefined,
+    ownerDeletedAt: undefined,
+    ownerDeletedBy: undefined,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "skill.version.restore",
+    targetType: "skillVersion",
+    targetId: version._id,
+    metadata: {
+      skillId: skill._id,
+      slug: skill.slug,
+      version: version.version,
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, skillId: skill._id, versionId: version._id };
+}
+
+export async function restoreOwnedSkillVersionForUser(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    slug: string;
+    version: string;
+    ownerHandle?: string;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+  const slug = args.slug.trim().toLowerCase();
+  if (!slug) throw new ConvexError("Slug required");
+  const version = args.version.trim();
+  if (!version) throw new ConvexError("Version required");
+  const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+
+  const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, ownerHandle);
+  const skill = resolved.skill;
+  if (!skill) throw new ConvexError("Skill not found");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  const skillVersion = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", version))
+    .unique();
+  if (!skillVersion) throw new ConvexError("Skill version not found");
+
+  return await restoreOwnedSkillVersionForActor(ctx, actor, { versionId: skillVersion._id });
+}
+
+export const restoreOwnedVersionForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+    ownerHandle: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await restoreOwnedSkillVersionForUser(ctx, args);
+  },
+});
+
+export const restoreOwnedVersion = mutation({
+  args: { versionId: v.id("skillVersions") },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await restoreOwnedSkillVersionForActor(ctx, user, args);
   },
 });
 

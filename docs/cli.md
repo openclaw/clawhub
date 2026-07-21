@@ -311,10 +311,10 @@ Notes:
 - Without `--version`, soft-delete a skill (owner, moderator, or admin).
 - Calls `DELETE /api/v1/skills/{slug}`.
 - Owner-initiated soft deletes reserve the slug for 30 days; the command prints the expiry time.
-- `--version <version>` permanently deletes one owned non-latest version through a fail-closed,
-  version-specific route.
-  Deleted versions cannot be restored or republished. Publish a replacement before deleting the
-  current latest version. Platform staff do not bypass ownership for this version-only flow.
+- `--version <version>` withdraws one owned non-latest version through a fail-closed,
+  version-specific route. The version number remains reserved and cannot be republished with
+  different contents. Publish a replacement before deleting the current latest version. Platform
+  staff do not bypass ownership for this version-only flow.
 - `--reason <text>` records a moderation note on a whole-skill soft-delete and audit log.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
@@ -322,8 +322,10 @@ Notes:
 ### `undelete <skill>`
 
 - Restore a hidden skill (owner, moderator, or admin).
-- There is no version undelete; permanently deleted versions cannot be restored.
 - Calls `POST /api/v1/skills/{slug}/undelete`.
+- `--version <version>` restores only the exact retained artifact previously withdrawn by the same
+  owner actor. It does not make the restored version latest or recreate removed tags.
+- Version restore calls `POST /api/v1/skills/{slug}/versions/{version}/restore`.
 - `--reason <text>` records a moderation note on the skill and audit log.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
@@ -483,15 +485,15 @@ If validation reports a package, manifest, SDK import, or artifact finding, see
 ### `package delete <name>`
 
 - Without `--version`, soft-deletes a package and all releases.
-- `--version <version>` permanently deletes one owned non-latest release through a fail-closed,
-  version-specific route.
-  Deleted versions cannot be restored or republished. Publish a replacement before deleting the
-  current latest version. This version-only flow requires the package owner or an org publisher
-  admin; platform staff do not bypass package ownership.
+- `--version <version>` withdraws one owned non-latest release through a fail-closed,
+  version-specific route. The version number remains reserved and cannot be republished with
+  different contents. Publish a replacement before deleting the current latest version. This
+  version-only flow requires the package owner or an org publisher admin; platform staff do not
+  bypass package ownership.
 - Whole-package soft-delete requires the package owner, an org publisher owner/admin, platform
   moderator, or platform admin.
 - Flags:
-  - `--version <version>`: permanently delete one non-latest version.
+  - `--version <version>`: withdraw one non-latest version.
   - `--yes`: skip confirmation.
   - `--json`: machine-readable output.
 
@@ -505,11 +507,14 @@ clawhub package delete @openclaw/example-plugin --version 1.2.3 --yes
 ### `package undelete <name>`
 
 - Restores a soft-deleted package and releases.
-- There is no version undelete; permanently deleted versions cannot be restored.
 - Requires the package owner, an org publisher owner/admin, platform moderator,
   or platform admin.
 - Calls `POST /api/v1/packages/{name}/undelete`.
+- `--version <version>` restores only the exact retained release previously withdrawn by the same
+  owner actor. It does not make the release latest or recreate removed package tags/dist-tags.
+- Version restore calls `POST /api/v1/packages/{name}/versions/{version}/restore`.
 - Flags:
+  - `--version <version>`: restore one owner-withdrawn release.
   - `--yes`: skip confirmation.
   - `--json`: machine-readable output.
 

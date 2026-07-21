@@ -3344,14 +3344,17 @@ describe("package commands", () => {
     expect(httpMocks.apiRequest.mock.calls[0]?.[1]).not.toHaveProperty("retryCount");
   });
 
-  it("confirms that package version deletion is permanent", async () => {
+  it("confirms that package version deletion is a reversible withdrawal", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
 
     await cmdDeletePackage(makeOpts(), "@openclaw/zalo", { version: "1.2.3" }, true);
 
     expect(uiMocks.promptConfirm).toHaveBeenCalledWith(expect.stringContaining("version 1.2.3"));
     expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
-      expect.stringContaining("cannot be restored or republished"),
+      expect.stringContaining("exact retained artifact can be restored"),
+    );
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("version number remains reserved"),
     );
     expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
       expect.stringContaining("publish a replacement first"),
@@ -3412,6 +3415,28 @@ describe("package commands", () => {
         method: "POST",
         path: "/api/v1/packages/%40openclaw%2Fzalo/undelete",
         token: "tkn",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("restores an owner-withdrawn package release without retrying", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdUndeletePackage(
+      makeOpts(),
+      "@openclaw/zalo",
+      { yes: true, version: " 1.2.3 " },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/%40openclaw%2Fzalo/versions/1.2.3/restore",
+        token: "tkn",
+        retryCount: 0,
       }),
       expect.anything(),
     );

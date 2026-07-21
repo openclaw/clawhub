@@ -8,41 +8,40 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 
-type VersionDeleteDialogProps = {
+type VersionRestoreDialogProps = {
   version: string | null;
-  isDeleting: boolean;
+  isRestoring: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 };
 
-export function VersionDeleteDialog({
+export function VersionRestoreDialog({
   version,
-  isDeleting,
+  isRestoring,
   onCancel,
   onConfirm,
-}: VersionDeleteDialogProps) {
+}: VersionRestoreDialogProps) {
   return (
     <Dialog
       open={version !== null}
       onOpenChange={(open) => {
-        if (!open && !isDeleting) onCancel();
+        if (!open && !isRestoring) onCancel();
       }}
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete version {version}?</DialogTitle>
+          <DialogTitle>Restore version {version}?</DialogTitle>
           <DialogDescription>
-            This withdraws the version from public use. You can restore the exact retained artifact
-            later, but the version number remains reserved and cannot be republished with different
-            contents.
+            This restores the exact retained artifact. It will not become latest or regain removed
+            tags automatically.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="ghost" onClick={onCancel} disabled={isDeleting}>
+          <Button variant="ghost" onClick={onCancel} disabled={isRestoring}>
             Cancel
           </Button>
-          <Button variant="destructive" loading={isDeleting} onClick={onConfirm}>
-            Delete version
+          <Button loading={isRestoring} onClick={onConfirm}>
+            Restore version
           </Button>
         </DialogFooter>
       </DialogContent>

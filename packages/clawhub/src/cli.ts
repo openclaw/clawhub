@@ -431,11 +431,11 @@ registerCommand(scanCmd, ["scan", "download"])
   });
 
 registerCommand(program, ["delete"])
-  .description("Soft-delete a skill or permanently delete one version")
+  .description("Soft-delete a skill or withdraw one version")
   .argument("<skill>", "Skill ref")
   .option(
     "--version <version>",
-    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+    "Withdraw one non-latest version; the retained artifact can be restored, but the version number remains reserved",
   )
   .option("--reason <text>", "Whole-skill moderation note/reason")
   .option("--note <text>", "Alias for --reason")
@@ -457,8 +457,12 @@ registerCommand(program, ["hide"])
   });
 
 registerCommand(program, ["undelete"])
-  .description("Restore one of your hidden skills")
+  .description("Restore a hidden skill or an owner-withdrawn version")
   .argument("<skill>", "Skill to restore")
+  .option(
+    "--version <version>",
+    "Restore the exact retained version without changing latest or tags",
+  )
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -628,11 +632,11 @@ registerCommand(packageCmd, ["package", "validate"])
   });
 
 registerCommand(packageCmd, ["package", "delete"])
-  .description("Soft-delete a package or permanently delete one version")
+  .description("Soft-delete a package or withdraw one version")
   .argument("<name>", "Package name")
   .option(
     "--version <version>",
-    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+    "Withdraw one non-latest version; the retained artifact can be restored, but the version number remains reserved",
   )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
@@ -642,8 +646,12 @@ registerCommand(packageCmd, ["package", "delete"])
   });
 
 registerCommand(packageCmd, ["package", "undelete"])
-  .description("Restore a soft-deleted package and releases")
+  .description("Restore a soft-deleted package or an owner-withdrawn release")
   .argument("<name>", "Package name")
+  .option(
+    "--version <version>",
+    "Restore the exact retained release without changing latest or dist-tags",
+  )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
   .action(async (name, options) => {

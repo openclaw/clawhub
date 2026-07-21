@@ -1,5 +1,5 @@
 import type { ApiV1PackageVersionListResponse } from "clawhub-schema";
-import { useMutation } from "convex/react";
+import { useMutation, usePaginatedQuery } from "convex/react";
 import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -12,8 +12,14 @@ import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
 import { VersionDeleteDialog } from "./VersionDeleteDialog";
 import { VersionReleaseRow } from "./VersionReleaseRow";
+import { VersionRestoreDialog } from "./VersionRestoreDialog";
 
 export const PLUGIN_VERSIONS_PAGE_SIZE = 20;
+
+type PluginVersionItem = ApiV1PackageVersionListResponse["items"][number] & {
+  softDeletedAt?: number;
+  ownerDeletedAt?: number;
+};
 
 type PluginVersionsPanelProps = {
   packageName: string;
@@ -34,6 +40,17 @@ function buildPluginDownloadHref(packageName: string, version: string) {
   return `${convexSiteUrl}/api/v1/packages/${packagePath}/download?${params.toString()}`;
 }
 
+function mergePluginVersions(...groups: PluginVersionItem[][]) {
+  return [
+    ...new Map(
+      groups
+        .flat()
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((release) => [release.version, release]),
+    ).values(),
+  ];
+}
+
 export function PluginVersionsPanel({
   packageName,
   versions,
@@ -48,16 +65,32 @@ export function PluginVersionsPanel({
   const isLoading = versions === undefined;
   const isUnavailable = versions === null;
   const deleteOwnedRelease = useMutation(api.packages.deleteOwnedRelease);
-  const [releases, setReleases] = useState(versions?.items ?? []);
+  const restoreOwnedRelease = useMutation(api.packages.restoreOwnedRelease);
+  const {
+    results: managerVersionResults,
+    status: managerVersionsStatus,
+    loadMore: loadMoreManagerVersions,
+  } = usePaginatedQuery(
+    api.packages.listVersionsForManager,
+    canDeleteVersions ? { name: packageName } : "skip",
+    { initialNumItems: PLUGIN_VERSIONS_PAGE_SIZE },
+  );
+  const managerVersions = managerVersionResults as PluginVersionItem[];
+  const [releases, setReleases] = useState<PluginVersionItem[]>(versions?.items ?? []);
   const [nextCursor, setNextCursor] = useState(versions?.nextCursor ?? null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [deletingVersion, setDeletingVersion] = useState<string | null>(null);
+  const [restoringVersion, setRestoringVersion] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [withdrawnVersions, setWithdrawnVersions] = useState<Set<string>>(() => new Set());
+  const [restoredVersions, setRestoredVersions] = useState<Set<string>>(() => new Set());
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => new Set());
   const loadMoreInFlightRef = useRef(false);
   const loadMoreAbortControllerRef = useRef<AbortController | null>(null);
   const requestGenerationRef = useRef(0);
+  const visibleReleases = mergePluginVersions(releases, managerVersions);
 
   useEffect(() => {
     loadMoreAbortControllerRef.current?.abort();
@@ -68,7 +101,11 @@ export function PluginVersionsPanel({
     setIsLoadingMore(false);
     setLoadMoreError(null);
     setDeletingVersion(null);
+    setRestoringVersion(null);
     setIsDeleting(false);
+    setIsRestoring(false);
+    setWithdrawnVersions(new Set());
+    setRestoredVersions(new Set());
     setExpandedVersions(new Set());
     return () => loadMoreAbortControllerRef.current?.abort();
   }, [packageName, versions]);
@@ -86,7 +123,10 @@ export function PluginVersionsPanel({
   };
 
   const loadMore = async () => {
-    if (!nextCursor || loadMoreInFlightRef.current) return;
+    const canLoadMoreManagerVersions = managerVersionsStatus === "CanLoadMore";
+    if ((!nextCursor && !canLoadMoreManagerVersions) || loadMoreInFlightRef.current) return;
+    if (canLoadMoreManagerVersions) loadMoreManagerVersions(PLUGIN_VERSIONS_PAGE_SIZE);
+    if (!nextCursor) return;
     const cursor = nextCursor;
     const requestGeneration = requestGenerationRef.current;
     const controller = new AbortController();
@@ -101,7 +141,7 @@ export function PluginVersionsPanel({
         signal: controller.signal,
       });
       if (requestGeneration !== requestGenerationRef.current) return;
-      setReleases((current) => [...current, ...page.items]);
+      setReleases((current) => mergePluginVersions(current, page.items));
       setNextCursor(page.nextCursor);
     } catch {
       if (requestGeneration !== requestGenerationRef.current || controller.signal.aborted) return;
@@ -125,7 +165,12 @@ export function PluginVersionsPanel({
     try {
       await deleteOwnedRelease({ name: packageName, version });
       if (requestGeneration !== requestGenerationRef.current) return;
-      setReleases((current) => current.filter((release) => release.version !== version));
+      setWithdrawnVersions((current) => new Set(current).add(version));
+      setRestoredVersions((current) => {
+        const next = new Set(current);
+        next.delete(version);
+        return next;
+      });
       toast.success(`Deleted version ${version}.`);
       setDeletingVersion(null);
       void (async () => {
@@ -140,6 +185,41 @@ export function PluginVersionsPanel({
       toast.error(getUserFacingConvexError(error, "Version could not be deleted. Try again."));
     } finally {
       if (requestGeneration === requestGenerationRef.current) setIsDeleting(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoringVersion) return;
+    const requestGeneration = requestGenerationRef.current;
+    const version = restoringVersion;
+    const restoredRelease = visibleReleases.find((release) => release.version === version);
+    setIsRestoring(true);
+    try {
+      await restoreOwnedRelease({ name: packageName, version });
+      if (requestGeneration !== requestGenerationRef.current) return;
+      setWithdrawnVersions((current) => {
+        const next = new Set(current);
+        next.delete(version);
+        return next;
+      });
+      setRestoredVersions((current) => new Set(current).add(version));
+      if (restoredRelease) {
+        setReleases((current) => mergePluginVersions(current, [restoredRelease]));
+      }
+      toast.success(`Restored version ${version}.`);
+      setRestoringVersion(null);
+      void (async () => {
+        try {
+          await onVersionDeleted?.();
+        } catch {
+          // Local state already reflects the restore; a later route refresh can retry metadata.
+        }
+      })();
+    } catch (error) {
+      if (requestGeneration !== requestGenerationRef.current) return;
+      toast.error(getUserFacingConvexError(error, "Version could not be restored. Try again."));
+    } finally {
+      if (requestGeneration === requestGenerationRef.current) setIsRestoring(false);
     }
   };
 
@@ -170,7 +250,10 @@ export function PluginVersionsPanel({
               <p className="empty-state-body">Try again later.</p>
             )}
           </div>
-        ) : releases.length > 0 || nextCursor ? (
+        ) : visibleReleases.length > 0 ||
+          nextCursor ||
+          managerVersionsStatus === "CanLoadMore" ||
+          managerVersionsStatus === "LoadingMore" ? (
           <div className="skill-versions-scroll">
             <div className="skill-versions-list skill-versions-list-plugins">
               <div
@@ -186,9 +269,13 @@ export function PluginVersionsPanel({
                 </span>
                 <span className="skill-versions-col-expand" />
               </div>
-              {releases.map((release) => {
+              {visibleReleases.map((release) => {
                 const hasLatestTag = release.distTags?.includes("latest");
                 const isLatest = release.version === latestVersion || hasLatestTag;
+                const isWithdrawn =
+                  !restoredVersions.has(release.version) &&
+                  (withdrawnVersions.has(release.version) ||
+                    (release.softDeletedAt !== undefined && release.ownerDeletedAt !== undefined));
                 const isExpanded = expandedVersions.has(release.version);
                 const changelogId = `version-changelog-${release.version}`;
                 return (
@@ -226,18 +313,20 @@ export function PluginVersionsPanel({
                     }
                     actions={
                       <>
-                        <a
-                          href={buildPluginDownloadHref(packageName, release.version)}
-                          className="skill-version-release-download"
-                          aria-label={`Download .zip for v${release.version}`}
-                        >
-                          <Download
-                            className="skill-version-release-download-icon"
-                            size={14}
-                            aria-hidden="true"
-                          />
-                        </a>
-                        {canDeleteVersions && !isLatest ? (
+                        {!isWithdrawn ? (
+                          <a
+                            href={buildPluginDownloadHref(packageName, release.version)}
+                            className="skill-version-release-download"
+                            aria-label={`Download .zip for v${release.version}`}
+                          >
+                            <Download
+                              className="skill-version-release-download-icon"
+                              size={14}
+                              aria-hidden="true"
+                            />
+                          </a>
+                        ) : null}
+                        {canDeleteVersions && !isWithdrawn && !isLatest ? (
                           <Button
                             type="button"
                             variant="destructive"
@@ -246,6 +335,17 @@ export function PluginVersionsPanel({
                             onClick={() => setDeletingVersion(release.version)}
                           >
                             Delete
+                          </Button>
+                        ) : null}
+                        {canDeleteVersions && isWithdrawn ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Restore version ${release.version}`}
+                            onClick={() => setRestoringVersion(release.version)}
+                          >
+                            Restore
                           </Button>
                         ) : null}
                       </>
@@ -261,13 +361,15 @@ export function PluginVersionsPanel({
                 {loadMoreError}
               </p>
             ) : null}
-            {nextCursor ? (
+            {nextCursor ||
+            managerVersionsStatus === "CanLoadMore" ||
+            managerVersionsStatus === "LoadingMore" ? (
               <div className="mt-3 flex justify-center">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  loading={isLoadingMore}
+                  loading={isLoadingMore || managerVersionsStatus === "LoadingMore"}
                   onClick={() => void loadMore()}
                 >
                   Load more
@@ -287,6 +389,14 @@ export function PluginVersionsPanel({
         onCancel={() => setDeletingVersion(null)}
         onConfirm={() => {
           void handleDelete();
+        }}
+      />
+      <VersionRestoreDialog
+        version={restoringVersion}
+        isRestoring={isRestoring}
+        onCancel={() => setRestoringVersion(null)}
+        onConfirm={() => {
+          void handleRestore();
         }}
       />
     </>

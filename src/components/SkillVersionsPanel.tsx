@@ -1,4 +1,4 @@
-import { useMutation } from "convex/react";
+import { useMutation, usePaginatedQuery } from "convex/react";
 import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -12,8 +12,10 @@ import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
 import { VersionDeleteDialog } from "./VersionDeleteDialog";
 import { VersionReleaseRow } from "./VersionReleaseRow";
+import { VersionRestoreDialog } from "./VersionRestoreDialog";
 
 type SkillVersionsPanelProps = {
+  skillId: Id<"skills">;
   versions: Doc<"skillVersions">[] | undefined;
   latestVersionId: Id<"skillVersions"> | null;
   latestTaggedVersionId?: Id<"skillVersions"> | null;
@@ -24,6 +26,17 @@ type SkillVersionsPanelProps = {
   suppressScanResults: boolean;
   suppressedMessage: string | null;
 };
+
+function mergeSkillVersions(...groups: Doc<"skillVersions">[][]) {
+  return [
+    ...new Map(
+      groups
+        .flat()
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((version) => [version._id, version]),
+    ).values(),
+  ];
+}
 
 function buildVersionDownloadHref(
   convexSiteUrl: string,
@@ -39,6 +52,7 @@ function buildVersionDownloadHref(
 }
 
 export function SkillVersionsPanel({
+  skillId,
   versions,
   latestVersionId,
   latestTaggedVersionId = null,
@@ -50,22 +64,43 @@ export function SkillVersionsPanel({
 }: SkillVersionsPanelProps) {
   const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
   const deleteOwnedVersion = useMutation(api.skills.deleteOwnedVersion);
+  const restoreOwnedVersion = useMutation(api.skills.restoreOwnedVersion);
+  const {
+    results: managerVersionResults,
+    status: managerVersionsStatus,
+    loadMore: loadMoreManagerVersions,
+  } = usePaginatedQuery(
+    api.skills.listWithdrawnVersionsForManager,
+    canDeleteVersions ? { skillId } : "skip",
+    { initialNumItems: 20 },
+  );
   const [deletingVersion, setDeletingVersion] = useState<Doc<"skillVersions"> | null>(null);
+  const [restoringVersion, setRestoringVersion] = useState<Doc<"skillVersions"> | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [removedVersionIds, setRemovedVersionIds] = useState<Set<Id<"skillVersions">>>(
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [withdrawnVersionIds, setWithdrawnVersionIds] = useState<Set<Id<"skillVersions">>>(
+    () => new Set(),
+  );
+  const [restoredVersionIds, setRestoredVersionIds] = useState<Set<Id<"skillVersions">>>(
     () => new Set(),
   );
   const [expandedVersionIds, setExpandedVersionIds] = useState<Set<string>>(() => new Set());
   const deleteContextIdRef = useRef(0);
-  const visibleVersions = (versions ?? []).filter((version) => !removedVersionIds.has(version._id));
+  const visibleVersions = mergeSkillVersions(
+    versions ?? [],
+    managerVersionResults as Doc<"skillVersions">[],
+  );
 
   useEffect(() => {
     deleteContextIdRef.current += 1;
     setDeletingVersion(null);
+    setRestoringVersion(null);
     setIsDeleting(false);
-    setRemovedVersionIds(new Set());
+    setIsRestoring(false);
+    setWithdrawnVersionIds(new Set());
+    setRestoredVersionIds(new Set());
     setExpandedVersionIds(new Set());
-  }, [skillSlug]);
+  }, [skillId]);
 
   const toggleVersion = (versionId: string) => {
     setExpandedVersionIds((current) => {
@@ -87,7 +122,12 @@ export function SkillVersionsPanel({
     try {
       await deleteOwnedVersion({ versionId: version._id });
       if (deleteContextIdRef.current !== deleteContextId) return;
-      setRemovedVersionIds((current) => new Set(current).add(version._id));
+      setWithdrawnVersionIds((current) => new Set(current).add(version._id));
+      setRestoredVersionIds((current) => {
+        const next = new Set(current);
+        next.delete(version._id);
+        return next;
+      });
       toast.success(`Deleted version ${version.version}.`);
       setDeletingVersion(null);
     } catch (error) {
@@ -95,6 +135,30 @@ export function SkillVersionsPanel({
       toast.error(getUserFacingConvexError(error, "Version could not be deleted. Try again."));
     } finally {
       if (deleteContextIdRef.current === deleteContextId) setIsDeleting(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (!restoringVersion) return;
+    const restoreContextId = deleteContextIdRef.current;
+    const version = restoringVersion;
+    setIsRestoring(true);
+    try {
+      await restoreOwnedVersion({ versionId: version._id });
+      if (deleteContextIdRef.current !== restoreContextId) return;
+      setWithdrawnVersionIds((current) => {
+        const next = new Set(current);
+        next.delete(version._id);
+        return next;
+      });
+      setRestoredVersionIds((current) => new Set(current).add(version._id));
+      toast.success(`Restored version ${version.version}.`);
+      setRestoringVersion(null);
+    } catch (error) {
+      if (deleteContextIdRef.current !== restoreContextId) return;
+      toast.error(getUserFacingConvexError(error, "Version could not be restored. Try again."));
+    } finally {
+      if (deleteContextIdRef.current === restoreContextId) setIsRestoring(false);
     }
   };
 
@@ -121,8 +185,14 @@ export function SkillVersionsPanel({
             {visibleVersions.map((version) => {
               const isLatest =
                 version._id === latestVersionId || version._id === latestTaggedVersionId;
+              const isWithdrawn =
+                !restoredVersionIds.has(version._id) &&
+                (withdrawnVersionIds.has(version._id) ||
+                  (version.softDeletedAt !== undefined && version.ownerDeletedAt !== undefined));
               const isAvailable =
-                version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
+                !isWithdrawn &&
+                version.softDeletedAt === undefined &&
+                version.ownerDeletedAt === undefined;
               const isExpanded = expandedVersionIds.has(version._id);
               const isAutoChangelog = version.changelogSource === "auto";
               const changelogId = `version-changelog-${version._id}`;
@@ -180,6 +250,17 @@ export function SkillVersionsPanel({
                           Delete
                         </Button>
                       ) : null}
+                      {canDeleteVersions && isWithdrawn ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          aria-label={`Restore version ${version.version}`}
+                          onClick={() => setRestoringVersion(version)}
+                        >
+                          Restore
+                        </Button>
+                      ) : null}
                     </>
                   }
                   onToggle={() => toggleVersion(version._id)}
@@ -188,6 +269,20 @@ export function SkillVersionsPanel({
               );
             })}
           </div>
+          {canDeleteVersions &&
+          (managerVersionsStatus === "CanLoadMore" || managerVersionsStatus === "LoadingMore") ? (
+            <div className="mt-3 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={managerVersionsStatus === "LoadingMore"}
+                onClick={() => loadMoreManagerVersions(20)}
+              >
+                Load more
+              </Button>
+            </div>
+          ) : null}
         </div>
       </div>
       <VersionDeleteDialog
@@ -196,6 +291,14 @@ export function SkillVersionsPanel({
         onCancel={() => setDeletingVersion(null)}
         onConfirm={() => {
           void handleDelete();
+        }}
+      />
+      <VersionRestoreDialog
+        version={restoringVersion?.version ?? null}
+        isRestoring={isRestoring}
+        onCancel={() => setRestoringVersion(null)}
+        onConfirm={() => {
+          void handleRestore();
         }}
       />
     </>
