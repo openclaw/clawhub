@@ -103,10 +103,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   `potential_ban_candidate` pressure nominations without waiting for the score
   run to finish. It must not warn or autoban `review` nominations, historical
   backfill temporal nominations, partial current temporal nominations,
-  nominations without a linked user account, or candidates whose linked user has
-  no email address. Skipped pending nominations must be moved out of pending
-  status with an explanatory review event so the cron does not retry them
-  forever.
+  org publisher nominations, non-org nominations without a linked user account,
+  or candidates whose linked user has no email address. Skipped pending
+  nominations must be moved out of pending status with an explanatory review
+  event so the cron does not retry them forever. Org publisher nominations are
+  tracked as `candidate_for_future_action` so staff can review org suspension or
+  member-specific account action separately from the user-ban flow.
 - Publisher abuse automatic bans must still use the account ban flow, including
   token revocation, owned listing hiding, audit logging, and the normal
   suspension/appeal email.

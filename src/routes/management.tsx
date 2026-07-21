@@ -280,6 +280,9 @@ export function Management() {
   const markPublisherAbuseNominationReviewed = useMutation(
     api.publisherAbuse.markPublisherAbuseNominationReviewed,
   );
+  const markOrgPublisherAbuseNominationForFutureAction = useMutation(
+    api.publisherAbuse.markOrgPublisherAbuseNominationForFutureAction,
+  );
   const setPublisherAbuseAutobanEnabled = useMutation(
     api.publisherAbuse.setPublisherAbuseAutobanEnabled,
   );
@@ -706,6 +709,32 @@ export function Management() {
     });
   };
 
+  const requestMarkOrgPublisherAbuseNominationForFutureAction = (
+    item: PublisherAbuseReviewItem,
+  ) => {
+    const label = item.nomination.handleSnapshot;
+    const note = publisherAbuseNotes.trim() || undefined;
+    setConfirmRequest({
+      title: `Track ${label} for org action?`,
+      body: "Moves this org publisher nomination out of the active queue without banning a user. Staff can review org suspension or member-level action separately.",
+      confirmLabel: "Track org action",
+      onConfirm: () => {
+        void markOrgPublisherAbuseNominationForFutureAction({
+          nominationId: item.nomination._id,
+          expectedLatestScoreId: item.nomination.latestScoreId,
+          expectedUpdatedAt: item.nomination.updatedAt,
+          note,
+        })
+          .then(() => {
+            toast.success("Org nomination tracked for future action.");
+            setPublisherAbuseNotes("");
+            setSelectedPublisherAbuseNominationId(null);
+          })
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
   const requestDismissPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Dismiss ${item.signal.skillDisplayName}?`,
@@ -863,6 +892,7 @@ export function Management() {
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
             onDismissSignal={requestDismissPublisherAbuseSignal}
+            onMarkOrgFutureAction={requestMarkOrgPublisherAbuseNominationForFutureAction}
             onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {

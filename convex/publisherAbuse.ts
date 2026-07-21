@@ -100,6 +100,8 @@ const MISSING_PUBLISHER_AUTOBAN_SKIP_NOTE =
 const INACTIVE_PUBLISHER_AUTOBAN_SKIP_NOTE = "Autoban skipped: publisher is inactive.";
 const STALE_PUBLISHER_LINK_AUTOBAN_SKIP_NOTE =
   "Autoban skipped: publisher is not linked to the nominated user account; manual review required.";
+const ORG_PUBLISHER_AUTOBAN_SKIP_NOTE =
+  "Autoban skipped: org publisher nominations require org-level review.";
 const MISSING_WARNING_EMAIL_AUTOBAN_SKIP_NOTE =
   "Autoban warning skipped: linked user has no email address; manual review required.";
 const FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE =
@@ -702,6 +704,13 @@ export const banPublisherAbuseOwner = mutation({
     if (!nomination) throw new Error("Publisher abuse nomination not found");
     requireFreshPublisherAbuseReviewNomination(nomination, args);
     requireActionablePublisherAbuseReviewNomination(nomination);
+    await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
+    const targetPublisher = await getPublisherAbuseNominationPublisher(ctx, nomination);
+    if (targetPublisher?.kind === "org") {
+      throw new Error(
+        "Org publisher nominations require org-level review; user bans must target a specific member.",
+      );
+    }
     if (!nomination.ownerUserId) {
       throw new Error("Cannot ban publisher abuse nomination without a linked user");
     }
@@ -710,7 +719,6 @@ export const banPublisherAbuseOwner = mutation({
     if (ownerUser.role === "admin" || ownerUser.role === "moderator") {
       throw new Error("Cannot ban staff accounts through publisher abuse workflow");
     }
-    await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
     await requirePublisherAbuseNominationStillTargetsLinkedUser(ctx, nomination);
 
     const reason = normalizeBanReason(args.reason);
@@ -730,6 +738,47 @@ export const banPublisherAbuseOwner = mutation({
     });
 
     return { ok: true, status: "banned" as const };
+  },
+});
+
+export const markOrgPublisherAbuseNominationForFutureAction = mutation({
+  args: {
+    nominationId: v.id("publisherAbuseReviewNominations"),
+    expectedLatestScoreId: v.id("publisherAbuseScores"),
+    expectedUpdatedAt: v.number(),
+    note: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+
+    const nomination = await ctx.db.get(args.nominationId);
+    if (!nomination) throw new Error("Publisher abuse nomination not found");
+    requireFreshPublisherAbuseReviewNomination(nomination, args);
+    if (nomination.label === "pass") {
+      throw new Error(
+        "Only flagged org publisher abuse nominations can be tracked for future action.",
+      );
+    }
+    if (nomination.status !== "pending") {
+      throw new Error(
+        "Only pending org publisher abuse nominations can be tracked for future action.",
+      );
+    }
+    await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
+    await requireOrgPublisherAbuseNominationTarget(ctx, nomination);
+
+    const now = Date.now();
+    const notes = normalizePublisherAbuseReviewNote(args.note);
+    await setPublisherAbuseReviewStatusWithActor(ctx, {
+      nomination,
+      status: "candidate_for_future_action",
+      notes,
+      actorUserId: user._id,
+      now,
+    });
+
+    return { ok: true, status: "candidate_for_future_action" as const };
   },
 });
 
@@ -1238,6 +1287,17 @@ export async function autoBanPublisherAbuseCandidatesPageInternalHandler(
         nomination,
         status: "reviewed_no_action",
         notes: "Autoban skipped: publisher is excluded from publisher abuse enforcement.",
+        now,
+      });
+      skipped += 1;
+      continue;
+    }
+
+    if (publisher.kind === "org") {
+      await setPublisherAbuseReviewStatusWithActor(ctx, {
+        nomination,
+        status: "candidate_for_future_action",
+        notes: ORG_PUBLISHER_AUTOBAN_SKIP_NOTE,
         now,
       });
       skipped += 1;
@@ -3777,6 +3837,28 @@ async function requirePublisherAbuseNominationNotExcluded(
   const publisher = await ctx.db.get(nomination.ownerPublisherId);
   if (!(await isPublisherExcludedFromPublisherAbuse(ctx, publisher))) return;
   throw new Error("Excluded publisher abuse nominations cannot be acted on.");
+}
+
+async function getPublisherAbuseNominationPublisher(
+  ctx: Pick<MutationCtx, "db">,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+) {
+  if (!nomination.ownerPublisherId) return null;
+  return await ctx.db.get(nomination.ownerPublisherId);
+}
+
+async function requireOrgPublisherAbuseNominationTarget(
+  ctx: Pick<MutationCtx, "db">,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+) {
+  const publisher = await getPublisherAbuseNominationPublisher(ctx, nomination);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+    throw new Error("Org publisher abuse nomination target is inactive.");
+  }
+  if (publisher.kind !== "org") {
+    throw new Error("Only org publisher abuse nominations can be tracked for org-level action.");
+  }
+  return publisher;
 }
 
 async function requirePublisherAbuseNominationStillTargetsLinkedUser(

@@ -22,6 +22,8 @@ function makePublisherAbuseItem({
   id = "1",
   label = "potential_ban_candidate",
   ownerKey = "user:spammy",
+  ownerPublisherId,
+  ownerPublisherKind = "user",
   ownerRole = "user",
   ownerUserId = "users:spammy",
   openedByRun = null,
@@ -30,12 +32,27 @@ function makePublisherAbuseItem({
   scoreRunId = "publisherAbuseScoreRuns:1",
   status = "pending",
   zScore = 3.1,
+}: {
+  handle?: string;
+  id?: string;
+  label?: "potential_ban_candidate" | "review" | "pass";
+  ownerKey?: string;
+  ownerPublisherId?: string;
+  ownerPublisherKind?: "user" | "org";
+  ownerRole?: "admin" | "moderator" | "user";
+  ownerUserId?: string;
+  openedByRun?: unknown;
+  rank?: number;
+  scoreOverrides?: Record<string, unknown>;
+  scoreRunId?: string;
+  status?: string;
+  zScore?: number;
 } = {}) {
   const score = {
     _id: `publisherAbuseScores:${id}`,
     runId: scoreRunId,
     ownerKey,
-    ownerPublisherId: undefined,
+    ownerPublisherId,
     ownerUserId,
     handleSnapshot: handle,
     modelVersion: "v1",
@@ -76,14 +93,34 @@ function makePublisherAbuseItem({
   return {
     nomination,
     latestScore: score,
-    publisher: null,
-    ownerUser: {
-      _id: ownerUserId,
-      handle: ownerUserId.split(":").at(-1) ?? "spammy",
-      name: handle,
-      displayName: null,
-      role: ownerRole,
-    },
+    publisher: ownerPublisherId
+      ? {
+          _id: ownerPublisherId,
+          handle,
+          displayName: handle,
+          kind: ownerPublisherKind,
+          linkedUserId: ownerPublisherKind === "user" ? ownerUserId : null,
+          publishedSkills: score.publishedSkills,
+          publishedPackages: 0,
+          totalInstalls: score.totalInstalls,
+          totalStars: score.totalStars,
+          totalDownloads: score.totalDownloads,
+          skillTotalInstalls: score.totalInstalls,
+          skillTotalStars: score.totalStars,
+          skillTotalDownloads: score.totalDownloads,
+          deletedAt: null,
+          deactivatedAt: null,
+        }
+      : null,
+    ownerUser: ownerUserId
+      ? {
+          _id: ownerUserId,
+          handle: ownerUserId.split(":").at(-1) ?? "spammy",
+          name: handle,
+          displayName: null,
+          role: ownerRole,
+        }
+      : null,
     openedByRun,
   };
 }
@@ -1857,6 +1894,73 @@ describe("Management", () => {
     const banButton = screen.getByRole("button", { name: "Ban user" }) as HTMLButtonElement;
     expect(banButton.disabled).toBe(true);
     fireEvent.click(banButton);
+    expect(banPublisherAbuseOwner).not.toHaveBeenCalled();
+  });
+
+  it("does not offer user bans for org publisher abuse nominations", async () => {
+    const banPublisherAbuseOwner = vi.fn(async () => ({ ok: true }));
+    const markOrgFutureAction = vi.fn(async () => ({
+      ok: true,
+      status: "candidate_for_future_action",
+    }));
+    const item = makePublisherAbuseItem({
+      handle: "oomol",
+      ownerKey: "publisher:oomol",
+      ownerPublisherId: "publishers:oomol",
+      ownerPublisherKind: "org",
+      ownerUserId: undefined,
+    });
+    useMutationMock.mockImplementation((mutation) => {
+      const name = getFunctionName(mutation);
+      if (name === "publisherAbuse:banPublisherAbuseOwner") {
+        return banPublisherAbuseOwner;
+      }
+      if (name === "publisherAbuse:markOrgPublisherAbuseNominationForFutureAction") {
+        return markOrgFutureAction;
+      }
+      return vi.fn(async () => ({ ok: true }));
+    });
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [item],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    fireEvent.click(screen.getByText("oomol"));
+
+    expect(screen.queryByRole("button", { name: "Ban user" })).toBeNull();
+    expect(screen.getByText(/Org publisher nominations need org-level review/i)).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("What should staff review next? (optional)"), {
+      target: { value: "consider org suspension" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Track org action" }));
+    expect(screen.getByRole("heading", { name: "Track oomol for org action?" })).toBeTruthy();
+    const trackButtons = screen.getAllByRole("button", { name: "Track org action" });
+    fireEvent.click(trackButtons[trackButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(markOrgFutureAction).toHaveBeenCalledWith({
+        nominationId: item.nomination._id,
+        expectedLatestScoreId: item.nomination.latestScoreId,
+        expectedUpdatedAt: item.nomination.updatedAt,
+        note: "consider org suspension",
+      });
+    });
     expect(banPublisherAbuseOwner).not.toHaveBeenCalled();
   });
 });

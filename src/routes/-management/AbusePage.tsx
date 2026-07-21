@@ -66,6 +66,7 @@ export function AbusePage({
   onChangeTab,
   onClose,
   onDismissSignal,
+  onMarkOrgFutureAction,
   onMarkReviewed,
   onLoadMore,
   onRefresh,
@@ -103,6 +104,7 @@ export function AbusePage({
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
   onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
+  onMarkOrgFutureAction: (item: PublisherAbuseReviewItem) => void;
   onMarkReviewed: (item: PublisherAbuseReviewItem) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
@@ -140,6 +142,7 @@ export function AbusePage({
   const signalFailureCount = latestSignalRun?.transientErrorCount ?? 0;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
+  const selectedIsOrgPublisher = selectedPublisher?.kind === "org";
   const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId);
   const visiblePending = dashboard ? getPublisherAbuseVisiblePendingItems(dashboard) : [];
   const visiblePotentialBan = visiblePending.filter(
@@ -726,6 +729,31 @@ export function AbusePage({
                       {selectedItem.nomination.notes?.trim() ||
                         "This nomination is no longer in the pending queue."}
                     </p>
+                  </section>
+                ) : selectedIsOrgPublisher ? (
+                  <section className="pa-zone pa-review">
+                    <div className="pa-section-label">Org review</div>
+                    <p className="pa-hint">
+                      Org publisher nominations need org-level review. Track this for future
+                      org-publisher action or review the responsible members separately.
+                    </p>
+                    <Textarea
+                      maxLength={USER_BAN_REASON_MAX_LENGTH}
+                      placeholder="What should staff review next? (optional)"
+                      value={notes}
+                      onChange={(event) => onChangeNotes(event.target.value)}
+                    />
+                    <div className="pa-actions">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onMarkOrgFutureAction(selectedItem)}
+                      >
+                        <Clock3 size={14} />
+                        Track org action
+                      </Button>
+                    </div>
                   </section>
                 ) : selectedItem.nomination.label === "potential_ban_candidate" ? (
                   <section className="pa-zone pa-review">
@@ -1414,6 +1442,7 @@ export function canBanPublisherAbuseOwner(
   item: PublisherAbuseReviewItem | null,
   currentUserId: Id<"users"> | null,
 ) {
+  if (item?.publisher?.kind === "org") return false;
   const ownerUser = item?.ownerUser;
   if (!ownerUser?._id) return false;
   if (ownerUser._id === currentUserId) return false;
