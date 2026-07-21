@@ -2047,7 +2047,7 @@ describe("skills.sh catalog overload control plane", () => {
     );
   });
 
-  it("admits one real scan within seven writes and terminalizes a failed verdict", async () => {
+  it("terminalizes a failed exact hash without automatically replanning it", async () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);
     const actorUserId = await t.run(
@@ -2147,6 +2147,33 @@ describe("skills.sh catalog overload control plane", () => {
         lastError: "Catalog scan analysis failed",
       },
     );
+    const unchanged = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-six-write-operator",
+      reason: "do not automatically retry a failed exact hash",
+      snapshotId: "skills-sh-test-live-500:failed-unchanged",
+      sourceCapturedAt: "2026-07-21T00:05:00.000Z",
+      snapshotCaptureFetches: 528,
+      fixtureLength: 500,
+    });
+    const unchangedRun = await t.mutation(
+      internal.skillsShCatalog.processStagingLiveBatchInternal,
+      {
+        runId: unchanged.runId,
+        cursor: 0,
+        rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
+      },
+    );
+    expect(unchangedRun.counts).toMatchObject({
+      observed: 1,
+      unchanged: 1,
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(await collectAttempts(t, unchanged.runId)).toEqual([]);
+    expect(await t.run(async (ctx) => await ctx.db.get(attempt!.entryId))).toMatchObject({
+      scanStatus: "failed",
+      publicVisible: false,
+    });
     const runAfterCompletion = await t.query(internal.skillsShCatalog.getRunInternal, { runId });
     const repeated = await t.mutation(internal.securityScan.completeCatalogSkillScanJobInternal, {
       attemptId: attempt!._id,

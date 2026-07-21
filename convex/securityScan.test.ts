@@ -4033,6 +4033,74 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:catalog"]);
   });
 
+  it("drains an admitted catalog backlog above a lowered queue cap", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const jobs = [0, 1].map((index) =>
+      makeScanJob({
+        _id: `securityScanJobs:catalog-${index}`,
+        source: "skills-sh-catalog-test",
+        targetKind: "skillScanRequest",
+        skillScanRequestId: `skillScanRequests:catalog-${index}`,
+        createdAt: index,
+        nextRunAt: index,
+      }),
+    );
+    const docs = Object.fromEntries(
+      jobs.flatMap((job, index) => [
+        [
+          `skillScanRequests:catalog-${index}`,
+          {
+            _id: `skillScanRequests:catalog-${index}`,
+            sourceKind: "skills-sh-catalog",
+            skillsShCatalogAttemptId: `skillsShCatalogScanAttempts:catalog-${index}`,
+          },
+        ],
+        [
+          `skillsShCatalogScanAttempts:catalog-${index}`,
+          {
+            _id: `skillsShCatalogScanAttempts:catalog-${index}`,
+            runId: "skillsShCatalogRuns:catalog",
+            dispatchKind: "real",
+            skillScanRequestId: `skillScanRequests:catalog-${index}`,
+            securityScanJobId: job._id,
+            status: "queued",
+          },
+        ],
+      ]),
+    );
+    docs["skillsShCatalogRuns:catalog"] = {
+      _id: "skillsShCatalogRuns:catalog",
+      status: "completed",
+    };
+    const { ctx } = makeClaimCtx(jobs, docs, {
+      key: "global",
+      mode: "staging-live",
+      paused: false,
+      scanAdmissionEnabled: true,
+      maxNativeQueued: 10,
+      maxNativeInFlight: 10,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+    });
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 2,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:catalog-0"]);
+    expect(docs["skillsShCatalogScanAttempts:catalog-0"]).toMatchObject({
+      status: "running",
+    });
+    expect(docs["skillsShCatalogScanAttempts:catalog-1"]).toMatchObject({
+      status: "queued",
+    });
+  });
+
   it("caps catalog claims at the configured in-flight capacity", async () => {
     vi.stubEnv("CLAWHUB_ENV", "test");
     vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");

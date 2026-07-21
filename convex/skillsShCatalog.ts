@@ -553,6 +553,8 @@ export const processStagingLiveBatchInternal = internalMutation({
       const shouldPlanScan =
         control.scanPlanningEnabled &&
         counts.scansPlanned < run.budgets.maxPlannedScans &&
+        // Exact-hash terminal attempts are durable. Only canceled work is eligible
+        // for automatic replanning; failed hashes require an explicit retry policy.
         !existingAttempt &&
         (!existing || contentChanged || existing.scanStatus !== "planned");
       if (writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
@@ -711,6 +713,8 @@ export const processFixtureBatchInternal = internalMutation({
       const shouldPlanScan =
         Boolean(control?.scanPlanningEnabled) &&
         counts.scansPlanned < run.budgets.maxPlannedScans &&
+        // Exact-hash terminal attempts are durable. Only canceled work is eligible
+        // for automatic replanning; failed hashes require an explicit retry policy.
         !existingAttempt &&
         (!existing || contentChanged || existing.scanStatus !== "planned");
       const entryWriteRequired = !run.dryRun;

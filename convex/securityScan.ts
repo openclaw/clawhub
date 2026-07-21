@@ -2715,7 +2715,7 @@ export const claimQueuedJobsInternal = internalMutation({
           gate.control.mode !== "staging-live" ||
           gate.control.paused ||
           !gate.control.scanAdmissionEnabled ||
-          !gate.health.healthy
+          !gate.health.claimable
         ) {
           return [];
         }
@@ -2792,7 +2792,7 @@ export const claimQueuedJobsInternal = internalMutation({
           control.mode !== "staging-live" ||
           control.paused ||
           !control.scanAdmissionEnabled ||
-          !health?.healthy ||
+          !health?.claimable ||
           health.catalogInFlight + catalogClaims >= control.maxCatalogInFlight
         ) {
           continue;
@@ -2886,10 +2886,11 @@ async function readCatalogClaimHealth(ctx: MutationCtx, control: Doc<"skillsShCa
     nativeInFlight,
     catalogQueued: catalogQueued.length,
     catalogInFlight: catalogRunning.length,
-    healthy:
+    // Queued depth is an admission limit, not a drain limit. Already admitted work
+    // must remain claimable after an operator lowers maxCatalogQueued.
+    claimable:
       nativeQueued <= control.maxNativeQueued &&
       nativeInFlight <= control.maxNativeInFlight &&
-      catalogQueued.length <= control.maxCatalogQueued &&
       catalogRunning.length <= control.maxCatalogInFlight,
   };
 }
