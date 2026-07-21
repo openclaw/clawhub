@@ -113,4 +113,31 @@ describe("payload building", () => {
     expect(payload.embeds[0].title).toHaveLength(256);
     expect(payload.embeds[0].title.endsWith("…")).toBe(true);
   });
+
+  it("does not split an emoji at the Discord title boundary", () => {
+    const payload = buildDiscordPayload(
+      "skill.publish",
+      {
+        slug: "emoji-boundary",
+        displayName: `${"a".repeat(254)}😀tail`,
+      },
+      { url: "https://example.com", highlightedOnly: false, siteUrl: "https://clawhub.ai" },
+    );
+
+    expect(payload.embeds[0].title).toBe(`${"a".repeat(254)}…`);
+    expect(payload.embeds[0].title).not.toContain("�");
+  });
+
+  it("does not split a compound emoji at the Discord title boundary", () => {
+    const payload = buildDiscordPayload(
+      "skill.publish",
+      {
+        slug: "flag-boundary",
+        displayName: `${"a".repeat(252)}🇺🇸tail`,
+      },
+      { url: "https://example.com", highlightedOnly: false, siteUrl: "https://clawhub.ai" },
+    );
+
+    expect(payload.embeds[0].title).toBe(`${"a".repeat(252)}…`);
+  });
 });
