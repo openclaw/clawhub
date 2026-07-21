@@ -615,6 +615,16 @@ export async function recordScheduledTemporalScanFailureInternalHandler(
       errorMessage: args.errorMessage,
       nextTransientRetryAt: undefined,
     });
+    await ctx.scheduler.runAfter(
+      0,
+      internal.publisherAbuse.notifyPublisherAbuseSignalScanFailureInternal,
+      {
+        runId: run._id,
+        failureCount,
+        errorMessage: args.errorMessage,
+        failedAt: now,
+      },
+    );
     console.error("[publisher-temporal-abuse-scan] retry budget exhausted", {
       event: "publisher_temporal_abuse_scan_failed",
       runId: run._id,

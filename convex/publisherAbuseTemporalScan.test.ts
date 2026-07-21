@@ -127,7 +127,9 @@ describe("scheduled temporal publisher abuse scan", () => {
         isDone: false,
         scannedSkills: 0,
       });
-    const scheduler = { runAfter: vi.fn(async () => null) };
+    const scheduler = {
+      runAfter: vi.fn(async (_delay: number, _target: unknown, _args: unknown) => null),
+    };
 
     await expect(
       startPublisherAbuseSignalScanHandler({
@@ -567,7 +569,9 @@ describe("scheduled temporal publisher abuse scan", () => {
       lastTransientError: "fourth failure",
     });
     const patch = vi.fn(async () => null);
-    const scheduler = { runAfter: vi.fn(async () => null) };
+    const scheduler = {
+      runAfter: vi.fn(async (_delay: number, _target: unknown, _args: unknown) => null),
+    };
     const ctx = { db: { get: vi.fn(async () => run), patch }, scheduler };
 
     await expect(
@@ -588,7 +592,15 @@ describe("scheduled temporal publisher abuse scan", () => {
         errorMessage: "fifth failure",
       }),
     );
-    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(1);
+    const [delay, _target, alertArgs] = scheduler.runAfter.mock.calls[0] ?? [];
+    expect(delay).toBe(0);
+    expect(alertArgs).toEqual({
+      runId: run._id,
+      failureCount: 5,
+      errorMessage: "fifth failure",
+      failedAt: expect.any(Number),
+    });
   });
 
   it("schedules the next saved-page attempt after a non-terminal failure", async () => {

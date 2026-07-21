@@ -133,6 +133,10 @@ export function AbusePage({
   const latestRun = dashboard?.latestRun ?? null;
   const latestSignalRun = dashboard?.latestSignalRun ?? null;
   const displayedRun = tab === "signals" ? latestSignalRun : latestRun;
+  const displayedScannedCount =
+    tab === "signals"
+      ? (latestSignalRun?.temporalSampleSize ?? latestSignalRun?.scannedPublishers)
+      : displayedRun?.scannedPublishers;
   const signalFailureCount = latestSignalRun?.transientErrorCount ?? 0;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
@@ -286,7 +290,7 @@ export function AbusePage({
             </div>
             <div>
               <dt>Scanned</dt>
-              <dd>{formatWholeNumber(displayedRun?.scannedPublishers)}</dd>
+              <dd>{formatWholeNumber(displayedScannedCount)}</dd>
             </div>
             <div>
               <dt>Scored</dt>

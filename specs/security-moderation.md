@@ -71,8 +71,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   with bounded backoff; any successfully persisted page resets the consecutive
   failure count. A watchdog treats fifteen minutes without persisted progress as
   a failed attempt. After five consecutive failed attempts, the run becomes
-  terminal, retains the last error for the staff UI, and emits the structured
-  `publisher_temporal_abuse_scan_failed` operator-alert event.
+  terminal, retains the last error for the staff UI, emits the structured
+  `publisher_temporal_abuse_scan_failed` operator event, and sends a Hermit
+  alert to the configured ClawHub review channel.
   Moderators can start this same full signal pipeline from the staff Signals tab.
   New manual starts record the actor; requests made while a temporal scan is
   already active return that run without starting a competing worker. Stale

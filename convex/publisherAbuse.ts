@@ -75,6 +75,8 @@ const MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH = 1000;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE = 10;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_MAX_BATCH_SIZE = 25;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_RETRY_MS = 60 * 60 * 1000;
+const PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_RETRY_MS = 5 * 60 * 1000;
+const MAX_PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_ATTEMPTS = 5;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN = 100;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_READS_PER_PAGE = 2_000;
 const STAFF_PUBLISHER_MANAGER_ROLES = ["owner", "admin"] as const;
@@ -1672,6 +1674,17 @@ export const notifyPublisherAbuseSignalChangesInternal = internalAction({
   handler: notifyPublisherAbuseSignalChangesInternalHandler,
 });
 
+export const notifyPublisherAbuseSignalScanFailureInternal = internalAction({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    failureCount: v.number(),
+    errorMessage: v.string(),
+    failedAt: v.number(),
+    deliveryAttempt: v.optional(v.number()),
+  },
+  handler: notifyPublisherAbuseSignalScanFailureInternalHandler,
+});
+
 export const processPublisherAbuseAutobansInternal = internalAction({
   args: {
     batchSize: v.optional(v.number()),
@@ -2747,6 +2760,65 @@ export async function notifyPublisherAbuseSignalChangesInternalHandler(
       internal.publisherAbuse.notifyPublisherAbuseSignalChangesInternal,
       { limit: args.limit },
     );
+    return { ok: false as const, sent: false as const, error: message };
+  }
+}
+
+export async function notifyPublisherAbuseSignalScanFailureInternalHandler(
+  ctx: Pick<ActionCtx, "scheduler">,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    failureCount: number;
+    errorMessage: string;
+    failedAt: number;
+    deliveryAttempt?: number;
+  },
+) {
+  const config = getHermitPublisherAbuseSignalConfig();
+  if (!config) {
+    console.error("[publisher-temporal-abuse-scan] Hermit failure alert skipped: missing config", {
+      runId: args.runId,
+    });
+    return { ok: false as const, sent: false as const, skipped: true as const };
+  }
+
+  const payload = {
+    kind: "publisher_abuse_signal_scan_failed" as const,
+    runId: args.runId,
+    failureCount: args.failureCount,
+    errorMessage: args.errorMessage,
+    failedAt: args.failedAt,
+    dashboardUrl: `${config.siteUrl}/management?view=abuse&tab=signals`,
+  };
+  try {
+    const response = await fetch(config.digestUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Hermit publisher abuse scan alert failed: ${response.status} ${body}`);
+    }
+    return { ok: true as const, sent: true as const };
+  } catch (error) {
+    const message = errorMessageFromUnknown(error);
+    const deliveryAttempt = (args.deliveryAttempt ?? 0) + 1;
+    console.error("[publisher-temporal-abuse-scan] Hermit failure alert failed", {
+      runId: args.runId,
+      deliveryAttempt,
+      message,
+    });
+    if (deliveryAttempt < MAX_PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_ATTEMPTS) {
+      await ctx.scheduler.runAfter(
+        PUBLISHER_ABUSE_SIGNAL_SCAN_FAILURE_NOTIFICATION_RETRY_MS,
+        internal.publisherAbuse.notifyPublisherAbuseSignalScanFailureInternal,
+        { ...args, deliveryAttempt },
+      );
+    }
     return { ok: false as const, sent: false as const, error: message };
   }
 }

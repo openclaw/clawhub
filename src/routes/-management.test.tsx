@@ -1091,6 +1091,39 @@ describe("Management", () => {
     expect(screen.queryByText("Retrying after 1 of 5 failed attempts")).toBeNull();
   });
 
+  it("shows the number of skills processed by a running signal scan", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          latestSignalRun: {
+            status: "running",
+            scannedPublishers: 0,
+            scoredPublishers: 0,
+            temporalSampleSize: 4_600,
+            transientErrorCount: 0,
+          },
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    expect(screen.getByText("4,600")).toBeTruthy();
+  });
+
   it("shows users as a separate management view", () => {
     searchState = { view: "users" };
 

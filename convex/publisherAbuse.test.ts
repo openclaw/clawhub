@@ -50,6 +50,9 @@ vi.mock("./_generated/api", () => ({
       notifyPublisherAbuseSignalChangesInternal: Symbol(
         "notifyPublisherAbuseSignalChangesInternal",
       ),
+      notifyPublisherAbuseSignalScanFailureInternal: Symbol(
+        "notifyPublisherAbuseSignalScanFailureInternal",
+      ),
       persistTemporalPublisherAbuseCandidatesInternal: Symbol(
         "persistTemporalPublisherAbuseCandidatesInternal",
       ),
@@ -396,6 +399,19 @@ const notifyPublisherAbuseSignalChangesHandler = (
   publisherAbuse.notifyPublisherAbuseSignalChangesInternal as unknown as Wrapped<
     { limit?: number },
     { ok: boolean; sent?: boolean; skipped?: boolean; count?: number; error?: string }
+  >
+)._handler;
+
+const notifyPublisherAbuseSignalScanFailureHandler = (
+  publisherAbuse.notifyPublisherAbuseSignalScanFailureInternal as unknown as Wrapped<
+    {
+      runId: string;
+      failureCount: number;
+      errorMessage: string;
+      failedAt: number;
+      deliveryAttempt?: number;
+    },
+    { ok: boolean; sent: boolean; skipped?: boolean; error?: string }
   >
 )._handler;
 
@@ -1194,6 +1210,57 @@ describe("publisher abuse dry-run persistence", () => {
           now: expect.any(Number),
         }),
       );
+      expect(scheduler.runAfter).not.toHaveBeenCalled();
+    } finally {
+      process.env = previousEnv;
+      globalThis.fetch = previousFetch;
+    }
+  });
+
+  it("sends terminal signal scan failures through the Hermit publisher abuse endpoint", async () => {
+    const previousEnv = { ...process.env };
+    const previousFetch = globalThis.fetch;
+    process.env.CLAWHUB_HERMIT_TOKEN = "test-token-placeholder";
+    process.env.HERMIT_PUBLISHER_ABUSE_BASE_URL = "https://forms.example.test";
+    process.env.SITE_URL = "https://clawhub.example.test";
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("ok", { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const scheduler = { runAfter: vi.fn(async () => null) };
+
+    try {
+      await expect(
+        notifyPublisherAbuseSignalScanFailureHandler(
+          { scheduler },
+          {
+            runId: "publisherAbuseScoreRuns:failed-run",
+            failureCount: 5,
+            errorMessage: "Query exceeded the document read limit.",
+            failedAt: 1716000000000,
+          },
+        ),
+      ).resolves.toEqual({ ok: true, sent: true });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://forms.example.test/api/clawhub-publisher-abuse/signals/digest",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${process.env.CLAWHUB_HERMIT_TOKEN}`,
+            "Content-Type": "application/json",
+          }),
+        }),
+      );
+      const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+      const requestBody = (requestInit as RequestInit | undefined)?.body;
+      if (typeof requestBody !== "string") throw new Error("Expected Hermit request body");
+      expect(JSON.parse(requestBody)).toEqual({
+        kind: "publisher_abuse_signal_scan_failed",
+        runId: "publisherAbuseScoreRuns:failed-run",
+        failureCount: 5,
+        errorMessage: "Query exceeded the document read limit.",
+        failedAt: 1716000000000,
+        dashboardUrl: "https://clawhub.example.test/management?view=abuse&tab=signals",
+      });
       expect(scheduler.runAfter).not.toHaveBeenCalled();
     } finally {
       process.env = previousEnv;
