@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
@@ -743,8 +743,19 @@ export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string)
   };
   await writeFile(join(workspace, "metadata.json"), `${JSON.stringify(metadata, null, 2)}\n`);
 
-  for (const file of job.target.files ?? []) {
-    const out = safeOutputPath(workspace, file.path);
+  const files = (job.target.files ?? []).map((file) => ({
+    file,
+    out: safeOutputPath(workspace, file.path),
+  }));
+  for (const candidate of files) {
+    const isDirectoryMarker =
+      candidate.file.size === 0 &&
+      files.some(
+        (other) => other.out !== candidate.out && other.out.startsWith(`${candidate.out}${sep}`),
+      );
+    if (isDirectoryMarker) continue;
+
+    const { file, out } = candidate;
     await mkdir(dirname(out), { recursive: true });
     await writeFile(out, await download(file.url, { kind: "file", path: file.path }));
   }

@@ -412,6 +412,51 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(metadata.target.files).toEqual([{ path: "SKILL.md", sha256: "abc123", size: 42 }]);
   });
 
+  it("materializes zero-byte directory markers with descendant files", async () => {
+    const workspace = await tempDir();
+
+    await writeArtifactWorkspace(
+      {
+        job: {
+          _id: "job-directory-marker",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "pre-publication",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {
+          files: [
+            {
+              path: "scripts",
+              sha256: "empty",
+              size: 0,
+              url: "data:application/octet-stream,",
+            },
+            {
+              path: "scripts/run.sh",
+              sha256: "script",
+              size: 18,
+              url: "data:text/plain,echo%20ready%0A",
+            },
+            {
+              path: "EMPTY",
+              sha256: "empty",
+              size: 0,
+              url: "data:application/octet-stream,",
+            },
+          ],
+        },
+      },
+      workspace,
+    );
+
+    expect(await readFile(join(workspace, "artifact", "scripts", "run.sh"), "utf8")).toBe(
+      "echo ready\n",
+    );
+    expect(await readFile(join(workspace, "artifact", "EMPTY"))).toHaveLength(0);
+  });
+
   it("omits signed artifact URLs from download failure errors", async () => {
     const unsafeLabels = unsafeFixtureLabels();
     const fetchMock = vi
