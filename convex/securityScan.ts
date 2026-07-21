@@ -2637,11 +2637,15 @@ async function readCatalogClaimHealth(ctx: MutationCtx, control: Doc<"skillsShCa
       ),
       ctx.db
         .query("skillsShCatalogScanAttempts")
-        .withIndex("by_status_and_created_at", (q) => q.eq("status", "queued"))
+        .withIndex("by_dispatch_kind_and_status_and_created_at", (q) =>
+          q.eq("dispatchKind", "real").eq("status", "queued"),
+        )
         .take(control.maxCatalogQueued + 1),
       ctx.db
         .query("skillsShCatalogScanAttempts")
-        .withIndex("by_status_and_created_at", (q) => q.eq("status", "running"))
+        .withIndex("by_dispatch_kind_and_status_and_created_at", (q) =>
+          q.eq("dispatchKind", "real").eq("status", "running"),
+        )
         .take(control.maxCatalogInFlight + 1),
     ]);
   const nativeQueued = Math.min(

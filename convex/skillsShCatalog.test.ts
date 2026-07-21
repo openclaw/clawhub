@@ -1252,6 +1252,182 @@ describe("skills.sh catalog overload control plane", () => {
     });
   });
 
+  it("fixture queue cleanup leaves real staging attempts untouched", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const seeded = await t.run(async (ctx) => {
+      const counts = {
+        observed: 1,
+        wouldInsert: 1,
+        wouldUpdate: 0,
+        inserted: 1,
+        updated: 0,
+        unchanged: 0,
+        rejected: 0,
+        scansPlanned: 1,
+        scansAdmitted: 1,
+        scansCompleted: 0,
+        scansCanceled: 0,
+      };
+      const budgets = {
+        maxEntriesPerRun: 1,
+        maxEntriesPerBatch: 1,
+        maxWritesPerBatch: 10,
+        maxPlannedScans: 1,
+        maxScanAdmissionsPerBatch: 1,
+        maxScanAdmissionsPerRun: 1,
+        maxScanAdmissionsPerDay: 2,
+      };
+      const operations = { functionCalls: 1, dbReads: 1, dbWrites: 1 };
+      const deterministicRunId = await ctx.db.insert("skillsShCatalogRuns", {
+        fixtureId: "nvidia-small-v1",
+        snapshotId: "nvidia-small-v1",
+        sourceKind: "fixture",
+        snapshotCaptureFetches: 0,
+        dryRun: false,
+        status: "completed",
+        cursor: 1,
+        scanCursor: 1,
+        fixtureLength: 1,
+        counts,
+        budgets,
+        operations,
+        actor: "codex-test",
+        reason: "fixture cleanup regression",
+        batchesProcessed: 1,
+        scanAdmissionBatches: 1,
+        lastBatchWrites: 1,
+        lastBatchReads: 1,
+        startedAt: 1,
+        completedAt: 1,
+        updatedAt: 1,
+      });
+      const realRunId = await ctx.db.insert("skillsShCatalogRuns", {
+        fixtureId: "skills-sh-test-live-500",
+        snapshotId: "skills-sh-test-live-500:cleanup-regression",
+        sourceKind: "staging-live",
+        sourceCapturedAt: "2026-07-21T00:00:00.000Z",
+        snapshotCaptureFetches: 1,
+        dryRun: false,
+        status: "completed",
+        cursor: 1,
+        scanCursor: 1,
+        fixtureLength: 1,
+        counts,
+        budgets,
+        operations,
+        actor: "codex-test",
+        reason: "real cleanup regression",
+        batchesProcessed: 1,
+        scanAdmissionBatches: 1,
+        lastBatchWrites: 1,
+        lastBatchReads: 1,
+        startedAt: 2,
+        completedAt: 2,
+        updatedAt: 2,
+      });
+      const deterministicEntryId = await ctx.db.insert("skillsShCatalogEntries", {
+        externalId: "fixture/fixture/deterministic",
+        sourceKind: "fixture",
+        githubOwnerId: 1,
+        owner: "fixture",
+        repo: "fixture",
+        slug: "deterministic",
+        displayName: "Deterministic",
+        sourceUrl: "https://example.invalid/deterministic",
+        githubRepoUrl: "https://github.com/fixture/fixture",
+        sourceContentHash: "deterministic-hash",
+        installs: 0,
+        sourceSnapshotId: "nvidia-small-v1",
+        publicVisible: false,
+        scanStatus: "queued",
+        firstObservedAt: 1,
+        lastObservedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const realEntryId = await ctx.db.insert("skillsShCatalogEntries", {
+        externalId: "nvidia/skills/aiq-deploy",
+        sourceKind: "staging-live",
+        githubOwnerId: 1_728_152,
+        owner: "nvidia",
+        repo: "skills",
+        slug: "aiq-deploy",
+        displayName: "AIQ Deploy",
+        sourceUrl: "https://skills.sh/nvidia/skills/aiq-deploy",
+        githubRepoUrl: "https://github.com/nvidia/skills",
+        sourceContentHash: "real-hash",
+        installs: 0,
+        sourceSnapshotId: "skills-sh-test-live-500:cleanup-regression",
+        publicVisible: false,
+        scanStatus: "queued",
+        firstObservedAt: 2,
+        lastObservedAt: 2,
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      const deterministicAttemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
+        entryId: deterministicEntryId,
+        runId: deterministicRunId,
+        externalId: "fixture/fixture/deterministic",
+        sourceContentHash: "deterministic-hash",
+        source: "skills-sh-catalog-fixture",
+        dispatchKind: "deterministic",
+        priority: "low",
+        status: "queued",
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      const realAttemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
+        entryId: realEntryId,
+        runId: realRunId,
+        externalId: "nvidia/skills/aiq-deploy",
+        sourceContentHash: "real-hash",
+        artifactContentHash: "a".repeat(64),
+        source: "skills-sh-catalog-test",
+        dispatchKind: "real",
+        priority: "low",
+        status: "queued",
+        createdAt: 2,
+        updatedAt: 2,
+      });
+      return {
+        deterministicAttemptId,
+        deterministicEntryId,
+        deterministicRunId,
+        realAttemptId,
+        realEntryId,
+        realRunId,
+      };
+    });
+
+    const result = await t.mutation(internal.skillsShCatalog.cancelQueuedFixtureScansInternal, {
+      limit: 100,
+    });
+
+    expect(result).toEqual({ matched: 1, canceled: 1 });
+    expect(
+      await t.run(async (ctx) => await ctx.db.get(seeded.deterministicAttemptId)),
+    ).toMatchObject({ status: "canceled" });
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.realAttemptId))).toMatchObject({
+      status: "queued",
+    });
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.deterministicEntryId))).toMatchObject(
+      {
+        scanStatus: "canceled",
+      },
+    );
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.realEntryId))).toMatchObject({
+      scanStatus: "queued",
+    });
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.deterministicRunId))).toMatchObject({
+      counts: { scansCanceled: 1 },
+    });
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.realRunId))).toMatchObject({
+      counts: { scansCanceled: 0 },
+    });
+  });
+
   it("rejects real admission when only six writes remain in the batch budget", async () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);

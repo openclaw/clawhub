@@ -265,4 +265,53 @@ describe("skills.sh permanent Test operator route", () => {
     expect(Math.max(...batchSizes)).toBe(15);
     expect(batchSizes.reduce((sum, size) => sum + size, 0)).toBe(1_000);
   });
+
+  it.each([
+    { status: "running", cursor: 500 },
+    { status: "completed", cursor: 499 },
+  ])("fails closed when a snapshot run ends at $status with cursor $cursor", async (terminal) => {
+    const baseFetch = vi.mocked(fetch);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        const body = init.body ? (JSON.parse(String(init.body)) as { operation?: string }) : null;
+        if (body?.operation === "batch") {
+          return new Response(JSON.stringify(terminal));
+        }
+        return await baseFetch(url, init);
+      }),
+    );
+
+    const handler = (await import("./routes/ops/skills-sh/catalog-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      error: "skills_sh_catalog_test_failed",
+      message: expect.stringContaining("did not complete all 500 rows"),
+    });
+  });
+
+  it("fails closed when any allowlisted real scan is skipped", async () => {
+    const baseFetch = vi.mocked(fetch);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        const body = init.body ? (JSON.parse(String(init.body)) as { operation?: string }) : null;
+        if (body?.operation === "admit") {
+          return new Response(JSON.stringify({ requested: 1, admitted: 0, skipped: 1 }));
+        }
+        return await baseFetch(url, init);
+      }),
+    );
+
+    const handler = (await import("./routes/ops/skills-sh/catalog-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      error: "skills_sh_catalog_test_failed",
+      message: expect.stringContaining("did not admit the complete allowlist"),
+    });
+  });
 });

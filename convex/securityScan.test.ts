@@ -3970,6 +3970,69 @@ describe("securityScan", () => {
     expect(claimed).toEqual([]);
   });
 
+  it("ignores deterministic attempts when checking real catalog claim capacity", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const catalogJob = makeScanJob({
+      _id: "securityScanJobs:catalog",
+      source: "skills-sh-catalog-test",
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:catalog",
+    });
+    const { ctx } = makeClaimCtx(
+      [catalogJob],
+      {
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          dispatchKind: "real",
+          skillScanRequestId: "skillScanRequests:catalog",
+          securityScanJobId: catalogJob._id,
+          status: "queued",
+        },
+        "skillsShCatalogScanAttempts:deterministic-queued": {
+          _id: "skillsShCatalogScanAttempts:deterministic-queued",
+          dispatchKind: "deterministic",
+          status: "queued",
+        },
+        "skillsShCatalogScanAttempts:deterministic-running": {
+          _id: "skillsShCatalogScanAttempts:deterministic-running",
+          dispatchKind: "deterministic",
+          status: "running",
+        },
+        "skillsShCatalogRuns:catalog": {
+          _id: "skillsShCatalogRuns:catalog",
+          status: "completed",
+        },
+      },
+      {
+        key: "global",
+        mode: "staging-live",
+        paused: false,
+        scanAdmissionEnabled: true,
+        maxNativeQueued: 10,
+        maxNativeInFlight: 10,
+        maxCatalogQueued: 1,
+        maxCatalogInFlight: 1,
+      },
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 1,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:catalog"]);
+  });
+
   it("caps catalog claims at the configured in-flight capacity", async () => {
     vi.stubEnv("CLAWHUB_ENV", "test");
     vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");

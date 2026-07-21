@@ -1467,12 +1467,17 @@ export const cancelQueuedFixtureScansInternal = internalMutation({
     assertIntegerInRange("limit", args.limit, 1, 100);
     const queued = await ctx.db
       .query("skillsShCatalogScanAttempts")
-      .withIndex("by_status_and_created_at", (q) => q.eq("status", "queued"))
+      .withIndex("by_dispatch_kind_and_status_and_created_at", (q) =>
+        q.eq("dispatchKind", "deterministic").eq("status", "queued"),
+      )
       .order("asc")
       .take(args.limit);
     const now = Date.now();
+    let canceled = 0;
     for (const attempt of queued) {
-      await cancelAttempt(ctx, attempt, now);
+      const result = await cancelAttempt(ctx, attempt, now);
+      if (!result.canceled) continue;
+      canceled += 1;
       const run = await ctx.db.get(attempt.runId);
       if (run) {
         await ctx.db.patch(run._id, {
@@ -1484,7 +1489,7 @@ export const cancelQueuedFixtureScansInternal = internalMutation({
         });
       }
     }
-    return { matched: queued.length, canceled: queued.length };
+    return { matched: queued.length, canceled };
   },
 });
 

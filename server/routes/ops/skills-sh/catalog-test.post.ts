@@ -82,6 +82,9 @@ async function executeSnapshotRun(
       },
     });
   }
+  if (run?.status !== "completed" || run.cursor !== snapshot.rows.length) {
+    throw new Error(`Convex Test snapshot run did not complete all ${snapshot.rows.length} rows`);
+  }
   return { runId, run };
 }
 
@@ -168,6 +171,13 @@ export default defineEventHandler(async (event) => {
             },
           })
         : { requested: 0, admitted: 0, skipped: 0 };
+    if (
+      admission.requested !== allowlist.length ||
+      admission.admitted !== allowlist.length ||
+      admission.skipped !== 0
+    ) {
+      throw new Error("Convex Test did not admit the complete allowlist");
+    }
     const memoryEnd = process.memoryUsage();
     return jsonResponse({
       ok: true,
