@@ -151,7 +151,7 @@ async function main() {
         row: ReturnType<typeof normalizeRow>;
         detail: NonNullable<(typeof details)[number]>;
       } =>
-        Boolean(candidate.detail) &&
+        candidate.detail !== null &&
         candidate.detail.id.toLowerCase() === candidate.row.id &&
         /^[a-f0-9]{64}$/i.test(candidate.detail.hash),
     )
