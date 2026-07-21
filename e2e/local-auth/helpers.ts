@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
@@ -550,6 +550,7 @@ export async function publishSkillVersion(
     versionExists?: () => Promise<boolean>;
     skillMarkdown?: string;
     completeChecks?: boolean;
+    files?: Array<{ path: string; contents: string | Uint8Array }>;
   },
 ) {
   const skillDir = testInfo.outputPath(`${args.slug}-${args.version}`);
@@ -564,6 +565,11 @@ export async function publishSkillVersion(
       }),
     "utf8",
   );
+  for (const file of args.files ?? []) {
+    const filePath = join(skillDir, file.path);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, file.contents);
+  }
 
   await waitForPublishSkillForm(page);
   const publishButton = page.getByRole("button", { name: "Publish skill" });

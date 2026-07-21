@@ -1,4 +1,4 @@
-import { apiRequest, fetchText, registryUrl } from "../../http.js";
+import { apiRequest, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
@@ -8,6 +8,7 @@ import {
   ApiV1SkillVerifyResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  decodeUtf8Text,
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
@@ -162,7 +163,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       );
     }
 
-    let fileContent: string | null = null;
+    let fileBytes: Uint8Array | null = null;
     if (options.file) {
       const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/file`, registry);
       if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
@@ -175,7 +176,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         url.searchParams.set("version", latestVersion);
       }
       spinner.text = `Fetching ${options.file}`;
-      fileContent = await fetchText(registry, { url: url.toString(), token });
+      fileBytes = await fetchBinary(registry, { url: url.toString(), token });
     }
 
     spinner.stop();
@@ -187,7 +188,14 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       moderation: moderationDiagnostics?.moderation ?? skillResult.moderation ?? null,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
-      file: options.file ? { path: options.file, content: fileContent } : null,
+      file:
+        options.file && fileBytes
+          ? {
+              path: options.file,
+              content: decodeUtf8Text(fileBytes),
+              contentBase64: Buffer.from(fileBytes).toString("base64"),
+            }
+          : null,
     };
 
     if (options.json) {
@@ -238,10 +246,9 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       }
     }
 
-    if (options.file && fileContent !== null) {
+    if (options.file && fileBytes !== null) {
       if (shouldPrintMeta) console.log(`\n${options.file}:\n`);
-      process.stdout.write(fileContent);
-      if (!fileContent.endsWith("\n")) process.stdout.write("\n");
+      process.stdout.write(fileBytes);
     }
   } catch (error) {
     spinner.fail(formatError(error));

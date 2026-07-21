@@ -1304,6 +1304,7 @@ describe("skills ownership", () => {
 
   it("allows publisher admins to move a skill into an org they administer", async () => {
     const patch = vi.fn(async () => {});
+    const deleteDoc = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");
     const skill = {
       _id: "skills:source",
@@ -1425,10 +1426,10 @@ describe("skills ownership", () => {
                     unique: async () =>
                       name === "by_owner_publisher_slug" &&
                       constraints.ownerPublisherId === "publishers:org" &&
-                      constraints.slug === "source-namespace-redirect"
+                      constraints.slug === "portable"
                         ? {
                             _id: "skillSlugAliases:destination-conflict",
-                            slug: "source-namespace-redirect",
+                            slug: "portable",
                             skillId: "skills:destination",
                             ownerUserId: "users:actor",
                             ownerPublisherId: "publishers:org",
@@ -1451,6 +1452,7 @@ describe("skills ownership", () => {
             throw new Error(`unexpected table ${table}`);
           }),
           patch,
+          delete: deleteDoc,
           insert,
         },
       } as never,
@@ -1478,6 +1480,7 @@ describe("skills ownership", () => {
     );
     expect(patch).not.toHaveBeenCalledWith("skillSlugAliases:old", expect.anything());
     expect(patch).not.toHaveBeenCalledWith("skillSlugAliases:source-owned", expect.anything());
+    expect(deleteDoc).toHaveBeenCalledWith("skillSlugAliases:destination-conflict");
     expect(patch).toHaveBeenCalledWith(
       "skillSearchDigest:source",
       expect.objectContaining({
@@ -1485,6 +1488,16 @@ describe("skills ownership", () => {
         ownerPublisherId: "publishers:org",
         ownerHandle: "team",
         ownerKind: "org",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "skill.owner.transfer",
+        metadata: expect.objectContaining({
+          replacedDestinationAliasId: "skillSlugAliases:destination-conflict",
+          replacedDestinationAliasSkillId: "skills:destination",
+        }),
       }),
     );
   });

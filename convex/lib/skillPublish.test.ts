@@ -147,6 +147,10 @@ description: Automation workflow for recurring reports.
       skillId: "skills:demo",
       versionId: "skillVersions:demo",
       embeddingId: "skillEmbeddings:demo",
+      status: "published",
+      slug: "automation-helper",
+      version: "1.0.0",
+      publicationStatus: "published",
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -1056,6 +1060,65 @@ description: Security scanner smoke fixture.
         storageId: "_storage:skill",
         size: 5,
         sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      }),
+    ]);
+  });
+
+  it("accepts Terraform and opaque files and hashes their exact stored bytes", async () => {
+    const stored = new Map([
+      ["_storage:skill", new Blob(["# Terraform skill\n"], { type: "text/markdown" })],
+      [
+        "_storage:tf",
+        new Blob(['resource "null_resource" "demo" {}\n'], {
+          type: "application/octet-stream",
+        }),
+      ],
+      [
+        "_storage:binary",
+        new Blob([Uint8Array.from([0, 1, 2, 255])], {
+          type: "application/octet-stream",
+        }),
+      ],
+    ]);
+    const storage = {
+      get: vi.fn(async (storageId: string) => stored.get(storageId) ?? null),
+    };
+
+    const files = await __test.derivePublishFilesFromStorage({ storage } as never, [
+      {
+        path: "SKILL.md",
+        size: 1,
+        storageId: "_storage:skill" as never,
+        sha256: "caller-supplied",
+        contentType: "text/markdown",
+      },
+      {
+        path: "main.tf",
+        size: 1,
+        storageId: "_storage:tf" as never,
+        sha256: "caller-supplied",
+        contentType: "application/octet-stream",
+      },
+      {
+        path: "assets/payload.bin",
+        size: 1,
+        storageId: "_storage:binary" as never,
+        sha256: "caller-supplied",
+        contentType: "application/octet-stream",
+      },
+    ]);
+
+    expect(files).toEqual([
+      expect.objectContaining({ path: "SKILL.md", size: 18 }),
+      expect.objectContaining({
+        path: "main.tf",
+        size: 35,
+        sha256: "e286a58e2e9cd9eabd8dea398e791be6683e3c72183fdc06ce9748964e156961",
+      }),
+      expect.objectContaining({
+        path: "assets/payload.bin",
+        size: 4,
+        sha256: "3d1f57c984978ef98a18378c8166c1cb8ede02c03eeb6aee7e2f121dfeee3e56",
       }),
     ]);
   });

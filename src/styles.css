@@ -11300,6 +11300,22 @@ code {
   gap: 4px;
 }
 
+.file-viewer-download {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: var(--r-btn);
+  color: var(--ink-soft);
+}
+
+.file-viewer-download:hover,
+.file-viewer-download:focus-visible {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  outline: none;
+}
+
 .file-viewer-body {
   min-height: 0;
   max-height: min(66vh, 720px);

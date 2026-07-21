@@ -16,6 +16,7 @@ import {
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
+  normalizeContentType,
   isPluginCategorySlug,
   parseArk,
   type PackagePublishMetadata,
@@ -64,7 +65,7 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
-import { isMacJunkPath, isTextFile } from "../lib/skills";
+import { isMacJunkPath } from "../lib/skills";
 import {
   buildDeterministicPackageZip,
   buildMergedExportZip,
@@ -82,7 +83,8 @@ import {
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
-  safeTextFileResponse,
+  safeStoredFilePreviewResponse,
+  safeStoredFileResponse,
   softDeleteErrorToResponse,
   ambiguousSkillSlugResponse,
   type AmbiguousSkillSlugChoice,
@@ -1267,13 +1269,7 @@ type PackagePublishTarballPart =
       uploadTicket: Id<"packagePublishUploadTickets">;
     };
 
-function inferStoredPackageContentType(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".json")) return "application/json";
-  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
-    return "text/javascript; charset=utf-8";
-  }
-  if (isTextFile(path)) return "text/plain; charset=utf-8";
+function defaultStoredPackageContentType() {
   return "application/octet-stream";
 }
 
@@ -1287,7 +1283,7 @@ async function storeClawPackFile(
   ctx: ActionCtx,
   entry: { path: string; bytes: Uint8Array },
 ): Promise<StoredPackagePublishFile> {
-  const contentType = inferStoredPackageContentType(entry.path);
+  const contentType = defaultStoredPackageContentType();
   const storageId = await ctx.storage.store(
     new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
   );
@@ -1320,7 +1316,7 @@ async function storeUploadedPackageFile(
     throw new Error(getPublishFileSizeError(entry.name));
   }
   const buffer = new Uint8Array(await entry.arrayBuffer());
-  const contentType = inferStoredPackageContentType(entry.name);
+  const contentType = normalizeContentType(entry.type) ?? defaultStoredPackageContentType();
   const storageId = await ctx.storage.store(
     new Blob([bytesToArrayBuffer(buffer)], { type: contentType }),
   );
@@ -4026,8 +4022,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   if (packageSegments[0] === "file") {
-    const path = new URL(request.url).searchParams.get("path")?.trim();
+    const requestUrl = new URL(request.url);
+    const path = requestUrl.searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
+    const preview = requestUrl.searchParams.get("preview") === "1";
     if (skillDetail?.skill) {
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
@@ -4044,14 +4042,22 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       if (!file) return text("File not found", 404, rate.headers);
       if (!("storageId" in file) || !file.storageId)
         return text("File not found", 404, rate.headers);
-      if (!isTextFile(file.path, file.contentType)) {
-        return text("Binary files are not served inline", 415, rate.headers);
-      }
-      if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
+      const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+      if (file.size > maxBytes) return text("File too large", 413, rate.headers);
       const blob = await ctx.storage.get(file.storageId);
       if (!blob) return text("File not found", 404, rate.headers);
-      return safeTextFileResponse({
-        textContent: await blob.text(),
+      if (preview) {
+        return await safeStoredFilePreviewResponse({
+          blob,
+          path: file.path,
+          contentType: file.contentType,
+          sha256: file.sha256,
+          size: file.size,
+          headers: rate.headers,
+        });
+      }
+      return await safeStoredFileResponse({
+        blob,
         path: file.path,
         contentType: file.contentType,
         sha256: file.sha256,
@@ -4065,21 +4071,21 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
     const file = resolvePackageFilePath(release, path);
     if (!file) return text("File not found", 404, rate.headers);
-    if (!isTextFile(file.path, file.contentType)) {
-      return text("Binary files are not served inline", 415, rate.headers);
-    }
-    if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
+    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+    if (file.size > maxBytes) return text("File too large", 413, rate.headers);
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File not found", 404, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    const responseParams = {
+      blob,
       path: file.path,
       contentType: file.contentType,
       sha256: file.sha256,
       size: file.size,
       headers: rate.headers,
-    });
+    };
+    return preview
+      ? await safeStoredFilePreviewResponse(responseParams)
+      : await safeStoredFileResponse(responseParams);
   }
 
   if (packageSegments[0] === "download") {

@@ -11,7 +11,7 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
-  normalizeTextContentType,
+  normalizeContentType,
   parseArk,
   type SkillAppealListStatus,
   type SkillReportListStatus,
@@ -36,6 +36,7 @@ import {
   type InstallResolverSource,
   type SkillInstallResolution,
 } from "../lib/installResolver";
+import { MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
@@ -73,6 +74,8 @@ import {
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
+  safeStoredFilePreviewResponse,
+  safeStoredFileResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
   text,
@@ -821,7 +824,7 @@ function sourceFilesForVerify(
     path: file.path,
     size: file.size,
     sha256: file.sha256,
-    contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+    contentType: normalizeContentType(file.contentType) ?? null,
   }));
 }
 
@@ -2142,7 +2145,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             path: file.path,
             size: file.size,
             sha256: file.sha256,
-            contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+            contentType: normalizeContentType(file.contentType) ?? null,
           })),
           security: security ?? undefined,
         },
@@ -2481,6 +2484,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   if (second === "file" && segments.length === 2) {
     const path = url.searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
+    const preview = url.searchParams.get("preview") === "1";
     const versionParam = url.searchParams.get("version")?.trim();
     const tagParam = url.searchParams.get("tag")?.trim();
 
@@ -2540,13 +2544,29 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       version.files.find((entry) => entry.path === normalized) ??
       version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
     if (!file) return text("File not found", 404, rate.headers);
-    if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
+    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+    if (file.size > maxBytes) {
+      return text(
+        preview ? "File exceeds 200KB preview limit" : "File exceeds 10MB limit",
+        413,
+        rate.headers,
+      );
+    }
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    if (preview) {
+      return await safeStoredFilePreviewResponse({
+        blob,
+        path: file.path,
+        contentType: file.contentType ?? undefined,
+        sha256: file.sha256,
+        size: file.size,
+        headers: rate.headers,
+      });
+    }
+    return await safeStoredFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType ?? undefined,
       sha256: file.sha256,
@@ -3165,12 +3185,18 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     if (!parsed.ok) return parsed.response;
     const reason = typeof parsed.payload.reason === "string" ? parsed.payload.reason : "";
     const version = typeof parsed.payload.version === "string" ? parsed.payload.version : undefined;
+    const url = new URL(request.url);
+    const ownerHandle =
+      optionalStringField(parsed.payload, "ownerHandle") ??
+      optionalStringField(parsed.payload, "owner") ??
+      getOwnerHandleParam(url);
     try {
       const result = await runMutationRef(ctx, internalRefs.skills.reportSkillForUserInternal, {
         actorUserId: auth.userId,
         slug,
         reason,
         ...(version ? { version } : {}),
+        ...(ownerHandle ? { ownerHandle } : {}),
       });
       return json(result, 200, rate.headers);
     } catch (error) {

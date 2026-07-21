@@ -152,6 +152,7 @@ describe("fetchPackages", () => {
     const url = new URL(requestUrl);
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("version")).toBe("1.0.0");
+    expect(url.searchParams.get("preview")).toBe("1");
   });
 
   it("returns an empty package detail payload on 404", async () => {
@@ -515,6 +516,18 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/packages/example-ai-plugin/file");
     expect(url.searchParams.get("path")).toBe("skills/research/SKILL.md");
     expect(url.searchParams.get("version")).toBe("1.2.3");
+    expect(url.searchParams.get("preview")).toBe("1");
+  });
+
+  it("returns null when a package file cannot be previewed as text", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("File cannot be previewed as text", { status: 415 }),
+    );
+
+    await expect(
+      fetchPackageFile("example-ai-plugin", "assets/payload.bin", "1.2.3"),
+    ).resolves.toBeNull();
   });
 
   it("fetches scoped package version history with pagination", async () => {

@@ -361,9 +361,13 @@ export async function runNativeTruffleHog(workspace: string): Promise<TruffleHog
   };
 }
 
+export const DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS = 15 * 60 * 1000;
+
 function clawScanTimeoutMs() {
   const parsed = Number(process.env.PREPUBLICATION_CLAWSCAN_TIMEOUT_MS);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 240_000;
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_PREPUBLICATION_CLAWSCAN_TIMEOUT_MS;
 }
 
 function clawScanCommand() {

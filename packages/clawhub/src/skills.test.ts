@@ -12,6 +12,7 @@ import {
   hashSkillFiles,
   hashSkillZip,
   listManualSkills,
+  listSkillFiles,
   listTextFiles,
   readLockfile,
   readSkillOrigin,
@@ -117,7 +118,7 @@ describe("skills", () => {
     await writeFile(join(workdir, ".clawhub", "origin.json"), "{}", "utf8");
     await mkdir(join(workdir, "node_modules"), { recursive: true });
     await writeFile(join(workdir, "node_modules", "a.txt"), "no", "utf8");
-    const files = await listTextFiles(workdir);
+    const files = await listSkillFiles(workdir);
     expect(files.map((file) => file.relPath)).toEqual(["SKILL.md"]);
   });
 
@@ -130,7 +131,7 @@ describe("skills", () => {
     await writeFile(join(workdir, "private.md"), "no", "utf8");
     await writeFile(join(workdir, "public.json"), "{}", "utf8");
 
-    const files = await listTextFiles(workdir);
+    const files = await listSkillFiles(workdir);
     const paths = files.map((file) => file.relPath).sort();
     expect(paths).toEqual(["SKILL.md", "public.json"]);
     expect(files.find((file) => file.relPath === "SKILL.md")?.contentType).toMatch(/^text\//);
@@ -139,17 +140,21 @@ describe("skills", () => {
     );
   });
 
-  it("falls back to text/plain for unknown text extensions", async () => {
+  it("uses a generic MIME fallback for unknown extensions", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-env-"));
     await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
-    await writeFile(join(workdir, "config.env"), "TOKEN=demo", "utf8");
+    await writeFile(join(workdir, "config.env"), "SETTING=demo", "utf8");
     const files = await listTextFiles(workdir);
-    expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe("text/plain");
+    expect(files.find((file) => file.relPath === "config.env")?.contentType).toBe(
+      "application/octet-stream",
+    );
   });
 
-  it("includes tsv and extensionless text files while skipping extensionless binaries", async () => {
+  it("includes every eligible regular file with exact bytes", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "clawhub-extensionless-"));
     await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
+    await writeFile(join(workdir, "main.tf"), 'resource "null_resource" "demo" {}\n', "utf8");
+    await writeFile(join(workdir, "terraform.tfvars"), 'region = "us-east-1"\n', "utf8");
     await writeFile(join(workdir, "config.tsv"), "name\tvalue\napi\tok\n", "utf8");
     await writeFile(join(workdir, ".npmrc"), "//registry.npmjs.org/:_authToken=secret\n", "utf8");
     await mkdir(join(workdir, "bin"), { recursive: true });
@@ -163,11 +168,32 @@ describe("skills", () => {
     largeBinary[largeBinary.length - 1] = 255;
     await writeFile(join(workdir, "bin", "binary"), largeBinary);
 
-    const files = await listTextFiles(workdir);
+    const files = await listSkillFiles(workdir);
     const paths = files.map((file) => file.relPath).sort();
-    expect(paths).toEqual(["SKILL.md", "bin/openclaw-kraken", "config.tsv"]);
+    expect(paths).toEqual([
+      "SKILL.md",
+      "bin/binary",
+      "bin/openclaw-kraken",
+      "config.tsv",
+      "main.tf",
+      "terraform.tfvars",
+    ]);
     expect(files.find((file) => file.relPath === "bin/openclaw-kraken")?.contentType).toBe(
-      "text/plain",
+      "application/octet-stream",
+    );
+    expect(files.find((file) => file.relPath === "bin/binary")?.bytes).toEqual(largeBinary);
+  });
+
+  it("checks publish limits before reading skill artifacts", async () => {
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-publish-limits-"));
+    await writeFile(join(workdir, "SKILL.md"), "hi", "utf8");
+    await writeFile(join(workdir, "payload.bin"), "12345", "utf8");
+
+    await expect(listSkillFiles(workdir, { maxFileBytes: 4, maxTotalBytes: 100 })).rejects.toThrow(
+      'File "payload.bin" exceeds 4 byte limit',
+    );
+    await expect(listSkillFiles(workdir, { maxFileBytes: 10, maxTotalBytes: 6 })).rejects.toThrow(
+      "Skill bundle exceeds 6 byte limit",
     );
   });
 
@@ -183,38 +209,48 @@ describe("skills", () => {
     expect(fingerprint).toBe(expected);
   });
 
-  it("hashes text files inside a downloaded zip deterministically", () => {
+  it("hashes every eligible file inside a downloaded zip deterministically", () => {
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
     const zip = zipSync({
       "SKILL.md": strToU8("hello"),
       "notes.md": strToU8("world"),
       ".npmrc": strToU8("//registry.npmjs.org/:_authToken=secret\n"),
       "config/endpoints.tsv": strToU8("name\turl\napi\thttps://example.com\n"),
       "bin/tool": strToU8("#!/usr/bin/env sh\necho ok\n"),
-      "image.png": strToU8("nope"),
+      "main.tf": strToU8('resource "null_resource" "demo" {}\n'),
+      "assets/payload.bin": opaqueBytes,
     });
     const { fingerprint } = hashSkillZip(new Uint8Array(zip));
     const expected = buildSkillFingerprint([
       { path: "SKILL.md", sha256: sha256Hex(strToU8("hello")) },
+      { path: "assets/payload.bin", sha256: sha256Hex(opaqueBytes) },
       { path: "bin/tool", sha256: sha256Hex(strToU8("#!/usr/bin/env sh\necho ok\n")) },
       {
         path: "config/endpoints.tsv",
         sha256: sha256Hex(strToU8("name\turl\napi\thttps://example.com\n")),
+      },
+      {
+        path: "main.tf",
+        sha256: sha256Hex(strToU8('resource "null_resource" "demo" {}\n')),
       },
       { path: "notes.md", sha256: sha256Hex(strToU8("world")) },
     ]);
     expect(fingerprint).toBe(expected);
   });
 
-  it("ignores unsafe or non-text entries when hashing zips", () => {
+  it("ignores unsafe entries when hashing zips", () => {
     const zip = zipSync({
       "SKILL.md": strToU8("hello"),
       "folder/": strToU8(""),
       "../evil.txt": strToU8("nope"),
       "bad\\path.txt": strToU8("nope"),
-      "image.png": strToU8("nope"),
+      "image.png": strToU8("included"),
     });
     const { files } = hashSkillZip(new Uint8Array(zip));
-    expect(files).toEqual([{ path: "SKILL.md", sha256: sha256Hex(strToU8("hello")), size: 5 }]);
+    expect(files).toEqual([
+      { path: "SKILL.md", sha256: sha256Hex(strToU8("hello")), size: 5 },
+      { path: "image.png", sha256: sha256Hex(strToU8("included")), size: 8 },
+    ]);
   });
 
   it("builds fingerprints from valid entries only", () => {

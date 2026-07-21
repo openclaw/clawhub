@@ -597,6 +597,7 @@ describe("package commands", () => {
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("tag")).toBe("latest");
     expect(url.searchParams.get("version")).toBeNull();
+    expect(url.searchParams.get("preview")).toBe("1");
   });
 
   it("downloads a ClawPack artifact through the explicit artifact resolver", async () => {
@@ -1225,6 +1226,7 @@ describe("package commands", () => {
         ok: true,
         packageId: "pkg_1",
         releaseId: "rel_1",
+        publicationStatus: "published",
       });
 
       const options = {
@@ -1320,7 +1322,7 @@ describe("package commands", () => {
       });
 
       expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
-        "OK. Uploaded @scope/pending-plugin@1.0.0; security checks are pending before it becomes public (rel_1)",
+        "Update submitted for @scope/pending-plugin@1.0.0; pending security scans before it becomes public.",
       );
       expect(mockWrite).not.toHaveBeenCalled();
     } finally {
@@ -1371,10 +1373,53 @@ describe("package commands", () => {
       expect(output).toEqual(
         expect.objectContaining({
           name: "@scope/json-pending-plugin",
+          status: "pending-publication",
           releaseId: "rel_1",
           publicationStatus: "pending",
           attemptId: "attempt_1",
         }),
+      );
+      expect(output.status).not.toBe("published");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not claim a package was published when the server omits publication status", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "unknown-status-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/unknown-status-plugin",
+          displayName: "Unknown Status Plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "unknown.status.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "unknown-status-plugin", {
+        owner: "@openclaw",
+        sourceRepo: "openclaw/unknown-status-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "Update submitted for @scope/unknown-status-plugin@1.0.0; publication status was not reported.",
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });
@@ -1601,6 +1646,7 @@ describe("package commands", () => {
         ok: true,
         packageId: "pkg_1",
         releaseId: "rel_1",
+        publicationStatus: "published",
       });
 
       await cmdPublishPackage(makeOpts(workdir), packName, {
@@ -2645,6 +2691,7 @@ describe("package commands", () => {
         ok: true,
         packageId: "pkg_1",
         releaseId: "rel_1",
+        publicationStatus: "published",
         inspectorFindings: [
           {
             findingKind: "warning",

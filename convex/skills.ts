@@ -1,11 +1,12 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import {
+  decodeUtf8Text,
   getCatalogTopicSlugs,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
-  normalizeTextContentType,
+  normalizeContentType,
   resolveSkillCategories,
   resolveStoredSkillCategories,
   type SkillCategorySlug,
@@ -181,6 +182,12 @@ type ReadmeResult = { path: string; text: string; sourceBaseUrl?: string };
 type FileTextResult = {
   path: string;
   text: string;
+  size: number;
+  sha256: string;
+};
+type FilePreviewResult = {
+  path: string;
+  text: string | null;
   size: number;
   sha256: string;
 };
@@ -2239,7 +2246,7 @@ function toPublicSkillVersion(
       path: file.path,
       size: file.size,
       sha256: file.sha256,
-      contentType: normalizeTextContentType(file.path, file.contentType),
+      contentType: normalizeContentType(file.contentType),
     })),
     parsed: version.parsed
       ? {
@@ -2309,7 +2316,7 @@ function toPublicSkillCardFile(file: Doc<"skillVersions">["files"][number]) {
     path: file.path,
     size: file.size,
     sha256: file.sha256,
-    contentType: normalizeTextContentType(file.path, file.contentType),
+    contentType: normalizeContentType(file.contentType),
   };
 }
 
@@ -4374,12 +4381,22 @@ export const reportSkillForUserInternal = internalMutation({
     slug: v.string(),
     reason: v.string(),
     version: v.optional(v.string()),
+    // Owner qualifier for ambiguous slugs (mirrors GET /skills/{slug}?owner=).
+    ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
 
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, ownerHandle);
+    if (resolved.ambiguous) {
+      // Prefer the same guidance used by other slug-only endpoints instead of
+      // collapsing collisions into a misleading "Skill not found".
+      throw new ConvexError(
+        "Slug is used by multiple publishers. Use an owner-qualified skill URL.",
+      );
+    }
     const skill = resolved.skill;
     if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
       throw new ConvexError("Skill not found");
@@ -10174,6 +10191,40 @@ export const getFileText: ReturnType<typeof action> = action({
   },
 });
 
+export const getFilePreview: ReturnType<typeof action> = action({
+  args: { versionId: v.id("skillVersions"), path: v.string() },
+  handler: async (ctx, args): Promise<FilePreviewResult> => {
+    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+      versionId: args.versionId,
+    })) as Doc<"skillVersions"> | null;
+    if (!version) throw new ConvexError("Version not found");
+    if (!(await canReadSkillVersionFiles(ctx, version))) {
+      throw new ConvexError("Version not available");
+    }
+
+    const normalizedPath = args.path.trim();
+    const normalizedLower = normalizedPath.toLowerCase();
+    const file =
+      version.files.find((entry) => entry.path === normalizedPath) ??
+      version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
+    if (!file) throw new ConvexError("File not found");
+
+    if (file.size > MAX_DIFF_FILE_BYTES) {
+      return {
+        path: file.path,
+        text: null,
+        size: file.size,
+        sha256: file.sha256,
+      };
+    }
+
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) throw new ConvexError("File missing in storage");
+    const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
+    return { path: file.path, text, size: file.size, sha256: file.sha256 };
+  },
+});
+
 export const resolveVersionByHash = query({
   args: { slug: v.string(), hash: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -11317,30 +11368,17 @@ async function canManagePublisherDestination(
   return Boolean(membership && isPublisherRoleAllowed(membership.role, ["admin"]));
 }
 
-async function assertCanTransferSkillSlugToPublisher(
+async function getDestinationSkillSlugAliasToReplace(
   ctx: MutationCtx,
   skill: Doc<"skills">,
   destinationPublisher: Doc<"publishers">,
 ) {
-  const transferredSlugs = new Set([skill.slug]);
-
-  for (const slug of transferredSlugs) {
-    const existingSkill = await getSkillBySlugForPublisher(ctx, slug, destinationPublisher);
-    if (existingSkill && existingSkill._id !== skill._id) {
-      throw new ConvexError(buildDestinationSkillExistsMessage(destinationPublisher, slug));
-    }
-
-    const existingAlias = await getSkillSlugAliasBySlugForPublisher(
-      ctx,
-      slug,
-      destinationPublisher,
-    );
-    if (existingAlias && existingAlias.skillId !== skill._id) {
-      throw new ConvexError(
-        `Destination owner @${destinationPublisher.handle} already has a redirect for skill "${slug}". Rename or merge before transferring ownership.`,
-      );
-    }
+  const existingSkill = await getSkillBySlugForPublisher(ctx, skill.slug, destinationPublisher);
+  if (existingSkill && existingSkill._id !== skill._id) {
+    throw new ConvexError(buildDestinationSkillExistsMessage(destinationPublisher, skill.slug));
   }
+
+  return getSkillSlugAliasBySlugForPublisher(ctx, skill.slug, destinationPublisher);
 }
 
 export const transferSkillOwnerForUserInternal = internalMutation({
@@ -11408,9 +11446,16 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       throw new ConvexError("Destination owner user not found");
     }
 
-    await assertCanTransferSkillSlugToPublisher(ctx, skill, destinationPublisher);
+    const replacedDestinationAlias = await getDestinationSkillSlugAliasToReplace(
+      ctx,
+      skill,
+      destinationPublisher,
+    );
 
     const now = Date.now();
+    if (replacedDestinationAlias) {
+      await ctx.db.delete(replacedDestinationAlias._id);
+    }
     await transferSkillOwnershipAndEmbeddings(ctx, {
       skill,
       ownerUserId: nextOwner._id,
@@ -11438,6 +11483,8 @@ export const transferSkillOwnerForUserInternal = internalMutation({
         nextOwnerUserId: nextOwner._id,
         nextOwnerPublisherId: destinationPublisher._id,
         reason: args.reason || undefined,
+        replacedDestinationAliasId: replacedDestinationAlias?._id,
+        replacedDestinationAliasSkillId: replacedDestinationAlias?.skillId,
       },
       createdAt: now,
     });
@@ -12367,7 +12414,11 @@ export const insertVersion = internalMutation({
         userId,
         allowed: ["admin"],
       });
-      await assertCanTransferSkillSlugToPublisher(ctx, skill, ownerPublisher);
+      const replacedDestinationAlias = await getDestinationSkillSlugAliasToReplace(
+        ctx,
+        skill,
+        ownerPublisher,
+      );
 
       const previousOwnerPublisherId = skill.ownerPublisherId;
       const previousOwnerUserId = skill.ownerUserId;
@@ -12380,6 +12431,9 @@ export const insertVersion = internalMutation({
         updatedAt: now,
       };
 
+      if (replacedDestinationAlias) {
+        await ctx.db.delete(replacedDestinationAlias._id);
+      }
       await transferSkillOwnershipAndEmbeddings(ctx, {
         skill,
         ownerPublisherId,
@@ -12402,6 +12456,8 @@ export const insertVersion = internalMutation({
             ownerPublisherId,
             ownerUserId: userId,
           },
+          replacedDestinationAliasId: replacedDestinationAlias?._id,
+          replacedDestinationAliasSkillId: replacedDestinationAlias?.skillId,
         },
         createdAt: now,
       });

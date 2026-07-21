@@ -536,10 +536,16 @@ export async function fetchPackageReadme(
 ): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", "README.md");
+  url.searchParams.set("preview", "1");
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
-  if (response.status === 403 || response.status === 404 || response.status === 423) {
+  if (
+    response.status === 403 ||
+    response.status === 404 ||
+    response.status === 415 ||
+    response.status === 423
+  ) {
     return null;
   }
   throw await createPackageApiError(response);
@@ -552,10 +558,16 @@ export async function fetchPackageFile(
 ): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", path);
+  url.searchParams.set("preview", "1");
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();
-  if (response.status === 403 || response.status === 404 || response.status === 423) {
+  if (
+    response.status === 403 ||
+    response.status === 404 ||
+    response.status === 415 ||
+    response.status === 423
+  ) {
     return null;
   }
   throw await createPackageApiError(response);

@@ -728,7 +728,7 @@ function buildArtifactFileUrl(entity: EntityRef, path: string) {
     entity.kind === "skill"
       ? `/api/v1/skills/${encodeURIComponent(entity.name)}/file`
       : `/api/v1/packages/${encodeURIComponent(entity.name)}/file`;
-  const params = new URLSearchParams({ path });
+  const params = new URLSearchParams({ path, preview: "1" });
   if (entity.version) params.set("version", entity.version);
   const relativePath = `${base}?${params.toString()}`;
   const convexClientBaseUrl = resolveAbsoluteBaseUrl(

@@ -169,6 +169,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "prepublication-queue-health",
+    { minutes: 5 },
+    internal.prepublicationObservability.logPrePublicationQueueHealthInternal,
+    {},
+  );
+
+  crons.interval(
     "codex-scan-expired-lease-recovery",
     { minutes: 5 },
     internal.securityScan.requeueExpiredCodexScanJobsInternal,

@@ -42,7 +42,7 @@ Non-goal (v1): private repos (no OAuth/PAT support).
 
 Related:
 
-- `docs/skill-format.md` (what counts as a skill; text-only limits)
+- `docs/skill-format.md` (what counts as a skill; artifact limits)
 - `docs/api.md` / `docs/http-api.md` (REST patterns + auth)
 
 ## UX
@@ -176,7 +176,7 @@ Hard caps:
 UI affordances:
 
 - “Select referenced”
-- “Select all text”
+- “Select all”
 - “Clear”
 - Search/filter by path
 
@@ -184,7 +184,7 @@ UI affordances:
 
 Server publishes using existing pipeline:
 
-- Text-only enforced (see `docs/skill-format.md`).
+- All bounded regular files are preserved (see `docs/skill-format.md`).
 - Total ≤ 50MB (selected set).
 - Must include the detected skill file.
 

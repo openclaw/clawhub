@@ -8,7 +8,7 @@ import {
   ApiV1SkillResolveResponseSchema,
   ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
-import { hashSkillFiles, listTextFiles } from "../../skills.js";
+import { hashSkillFiles, listSkillFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
@@ -16,9 +16,12 @@ import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
+const MAX_PUBLISH_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_PUBLISH_TOTAL_BYTES = 50 * 1024 * 1024;
+
 type SkillPublishResult = {
   ok: true;
-  status: "unchanged" | "would-publish" | "published" | "pending-publication";
+  status: "unchanged" | "would-publish" | "submitted" | "published" | "pending-publication";
   slug: string;
   displayName: string;
   folder: string;
@@ -189,7 +192,9 @@ export async function cmdPublish(
     for (const file of filesOnDisk) {
       index += 1;
       if (spinner) spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
-      const blob = new Blob([Buffer.from(file.bytes)], { type: file.contentType ?? "text/plain" });
+      const blob = new Blob([Buffer.from(file.bytes)], {
+        type: file.contentType ?? "application/octet-stream",
+      });
       form.append("files", blob, file.relPath);
     }
 
@@ -200,9 +205,14 @@ export async function cmdPublish(
       ApiV1PublishResponseSchema,
     );
 
-    const isPendingPublication = result.publicationStatus === "pending";
+    const publicationStatus = result.publicationStatus;
     const publishResult = buildPublishResult({
-      status: isPendingPublication ? "pending-publication" : "published",
+      status:
+        publicationStatus === "pending"
+          ? "pending-publication"
+          : publicationStatus === "published"
+            ? "published"
+            : "submitted",
       slug,
       displayName,
       folder,
@@ -214,11 +224,17 @@ export async function cmdPublish(
       publicationStatus: result.publicationStatus,
       attemptId: result.attemptId,
     });
-    spinner?.succeed(
-      isPendingPublication
-        ? `OK. Uploaded ${slug}@${version}; security checks are pending before it becomes public (${result.versionId})`
-        : `OK. Published ${slug}@${version} (${result.versionId})`,
-    );
+    if (publicationStatus === "pending") {
+      spinner?.succeed(
+        `Update submitted for ${slug}@${version}; pending security scans before it becomes public.`,
+      );
+    } else if (publicationStatus === "published") {
+      spinner?.succeed(`OK. Published ${slug}@${version} (${result.versionId})`);
+    } else {
+      spinner?.succeed(
+        `Update submitted for ${slug}@${version}; publication status was not reported.`,
+      );
+    }
     writePublishJsonIfRequested(options.json, publishResult);
     return publishResult;
   } catch (error) {
@@ -287,17 +303,23 @@ function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPub
 
 export async function prepareSkillFilesForPublish(folder: string) {
   return stripGeneratedSkillCards(
-    await ensureRootManifestFile(folder, await listTextFiles(folder)),
+    await ensureRootManifestFile(
+      folder,
+      await listSkillFiles(folder, {
+        maxFileBytes: MAX_PUBLISH_FILE_BYTES,
+        maxTotalBytes: MAX_PUBLISH_TOTAL_BYTES,
+      }),
+    ),
   );
 }
 
-function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {
+function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listSkillFiles>>) {
   return files.filter((file) => file.relPath.trim().toLowerCase() !== "skill-card.md");
 }
 
 async function ensureRootManifestFile(
   folder: string,
-  files: Awaited<ReturnType<typeof listTextFiles>>,
+  files: Awaited<ReturnType<typeof listSkillFiles>>,
 ) {
   if (
     files.some((file) => {

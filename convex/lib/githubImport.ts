@@ -1,4 +1,3 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema";
 import { zipSync } from "fflate";
 import semver from "semver";
 import { parseFrontmatter } from "./skills";
@@ -279,7 +278,7 @@ function uniqCandidates(candidates: GitHubImportCandidate[]) {
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function listTextFilesUnderCandidate(
+export function listFilesUnderCandidate(
   entries: ZipEntryMap,
   candidatePath: string,
 ): Array<{ path: string; bytes: Uint8Array }> {
@@ -288,7 +287,6 @@ export function listTextFilesUnderCandidate(
   for (const [path, bytes] of Object.entries(entries)) {
     const normalized = normalizeRepoPath(path);
     if (!isUnderRoot(normalized, root)) continue;
-    if (!isTextPath(normalized)) continue;
     out.push({ path: normalized, bytes });
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
@@ -297,59 +295,12 @@ export function listTextFilesUnderCandidate(
 export function computeDefaultSelectedPaths(params: {
   candidate: GitHubImportCandidate;
   files: Array<{ path: string; bytes: Uint8Array }>;
-  maxDepth?: number;
-  maxAdds?: number;
 }) {
-  const maxDepth = params.maxDepth ?? 4;
-  const maxAdds = params.maxAdds ?? 200;
-  const byPath = new Map(params.files.map((file) => [file.path, file.bytes]));
   const candidateRoot = normalizeCandidateRoot(params.candidate.path);
-  const selected = new Set<string>();
-  let added = 0;
-
-  const add = (path: string) => {
-    const normalized = normalizeRepoPath(path);
-    if (!isUnderRoot(normalized, candidateRoot)) return;
-    if (!byPath.has(normalized)) return;
-    if (!selected.has(normalized)) {
-      selected.add(normalized);
-      added += 1;
-    }
-  };
-
-  add(params.candidate.readmePath);
-
-  const visited = new Set<string>();
-  const queue: Array<{ path: string; depth: number }> = [
-    { path: params.candidate.readmePath, depth: 0 },
-  ];
-
-  while (queue.length > 0) {
-    const item = queue.shift();
-    if (!item) break;
-    if (item.depth >= maxDepth) continue;
-    if (visited.has(item.path)) continue;
-    visited.add(item.path);
-
-    const bytes = byPath.get(item.path);
-    if (!bytes) continue;
-    if (!item.path.toLowerCase().endsWith(".md")) continue;
-
-    const text = new TextDecoder().decode(bytes);
-    const refs = extractMarkdownRelativeTargets(text);
-    for (const ref of refs) {
-      if (added >= maxAdds) break;
-      const resolved = resolveMarkdownTarget(item.path, ref);
-      if (!resolved) continue;
-      add(resolved);
-      if (resolved.toLowerCase().endsWith(".md") && byPath.has(resolved)) {
-        queue.push({ path: resolved, depth: item.depth + 1 });
-      }
-    }
-    if (added >= maxAdds) break;
-  }
-
-  return Array.from(selected).sort();
+  return params.files
+    .map((file) => normalizeRepoPath(file.path))
+    .filter((path) => path && isUnderRoot(path, candidateRoot))
+    .sort();
 }
 
 export function buildGitHubImportFileList(params: {
@@ -381,13 +332,6 @@ export function normalizeCandidateRoot(candidatePath: string) {
 function isUnderRoot(path: string, rootWithSlash: string) {
   if (!rootWithSlash) return true;
   return path === rootWithSlash.slice(0, -1) || path.startsWith(rootWithSlash);
-}
-
-function isTextPath(path: string) {
-  const lower = path.toLowerCase();
-  const ext = lower.split(".").at(-1) ?? "";
-  if (!ext) return false;
-  return TEXT_FILE_EXTENSION_SET.has(ext);
 }
 
 export function suggestDisplayName(candidate: GitHubImportCandidate, fallbackBase: string) {

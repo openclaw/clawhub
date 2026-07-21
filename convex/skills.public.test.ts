@@ -859,7 +859,7 @@ describe("skills.getBySlug", () => {
     expect(result?.skill?.canonicalSkillId).toBe("skills:canonical");
   });
 
-  it("normalizes misleading file MIME types in public version metadata", async () => {
+  it("preserves supplied file MIME types in public version metadata", async () => {
     const ctx = makeCtx({
       skill: {
         _id: "skills:1",
@@ -920,7 +920,7 @@ describe("skills.getBySlug", () => {
     expect(result?.latestVersion?.files).toEqual([
       expect.objectContaining({
         path: "src/index.ts",
-        contentType: "application/typescript",
+        contentType: "video/mp2t",
       }),
     ]);
   });

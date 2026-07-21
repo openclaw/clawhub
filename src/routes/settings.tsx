@@ -73,8 +73,8 @@ import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";
+import { uploadFile } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { uploadFile } from "./upload/-utils";
 
 const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
 type SettingsView = (typeof settingsViews)[number];

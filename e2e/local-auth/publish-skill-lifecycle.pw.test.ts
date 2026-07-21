@@ -608,9 +608,57 @@ test("skill publishers can create a skill and publish a new version", async ({
     version: "1.0.1",
     versionLabel: "second release",
     changelog: "Second release published through the owner new-version workflow.",
+    files: [
+      {
+        path: "main.tf",
+        contents: 'resource "null_resource" "demo" {}\n',
+      },
+      {
+        path: "terraform.tfvars",
+        contents: 'region = "us-east-1"\n',
+      },
+      {
+        path: "assets/payload.bin",
+        contents: Uint8Array.from([0, 1, 2, 255]),
+      },
+    ],
   });
 
   await expectCurrentVersion(page, "1.0.1");
+  await page.getByRole("tab", { name: "Files" }).click();
+  await expect(page.getByRole("button", { name: /main\.tf/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /terraform\.tfvars/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /assets\/payload\.bin/i })).toBeVisible();
+
+  await page.getByRole("button", { name: /main\.tf/i }).click();
+  await expect(page.locator("pre.file-viewer-code")).toContainText(
+    'resource "null_resource" "demo" {}',
+  );
+  await page.getByRole("button", { name: "Back to file list" }).click();
+
+  await page.getByRole("button", { name: /assets\/payload\.bin/i }).click();
+  await expect(
+    page.getByText("This file is available to download but cannot be previewed as text."),
+  ).toBeVisible();
+  const downloadLink = page.getByRole("link", { name: "Download payload.bin" });
+  const downloadHref = await downloadLink.getAttribute("href");
+  expect(downloadHref).toContain(
+    `/api/v1/skills/${slug}/file?path=assets%2Fpayload.bin&ownerHandle=${ownerHandle}`,
+  );
+
+  const rawResponse = await page.request.get(
+    `${convexSiteUrl()}/api/v1/skills/${slug}/file?path=assets%2Fpayload.bin&ownerHandle=${ownerHandle}`,
+  );
+  expect(rawResponse.status()).toBe(200);
+  expect(new Uint8Array(await rawResponse.body())).toEqual(Uint8Array.from([0, 1, 2, 255]));
+  expect(rawResponse.headers()["content-disposition"]).toContain("attachment");
+  expect(rawResponse.headers()["x-content-type-options"]).toBe("nosniff");
+  await page.screenshot({
+    path: testInfo.outputPath("mixed-skill-files.png"),
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: "Back to file list" }).click();
   await page.getByRole("tab", { name: "Versions" }).click();
   await expect(page.getByRole("heading", { name: "Versions" })).toBeVisible();
   await expect(page.getByText(/^v1\.0\.1\b/).first()).toBeVisible();

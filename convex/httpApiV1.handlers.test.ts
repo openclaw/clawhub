@@ -3519,6 +3519,47 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("skill report forwards owner query for ambiguous slugs", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:reporter",
+      user: { _id: "users:reporter", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        reported: true,
+        alreadyReported: false,
+        reportId: "skillReports:2",
+        skillId: "skills:owner-scoped",
+        reportCount: 1,
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/wp-multi-tool/report?owner=kingaiwork", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          reason: "impersonation",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { skills: Record<string, unknown> }).skills
+        .reportSkillForUserInternal,
+      {
+        actorUserId: "users:reporter",
+        slug: "wp-multi-tool",
+        reason: "impersonation",
+        ownerHandle: "kingaiwork",
+      },
+    );
+  });
+
   it("skill report triage posts moderator decisions", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
@@ -4961,7 +5002,7 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe("Version not found");
   });
 
-  it("returns raw file content", async () => {
+  it("previews UTF-8 Terraform by bytes and downloads the raw file", async () => {
     const internalVersion = {
       skillId: "skills:1",
       version: "1.0.0",
@@ -4969,11 +5010,11 @@ describe("httpApiV1 handlers", () => {
       changelog: "c",
       files: [
         {
-          path: "SKILL.md",
-          size: 5,
+          path: "main.tf",
+          size: 37,
           storageId: "storage:1",
           sha256: "abcd",
-          contentType: "text/plain",
+          contentType: "application/octet-stream",
         },
       ],
       softDeletedAt: undefined,
@@ -5002,16 +5043,211 @@ describe("httpApiV1 handlers", () => {
       return null;
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
+    const terraform = 'resource "null_resource" "demo" {}\n';
     const storage = {
-      get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
+      get: vi.fn().mockResolvedValue(new Blob([terraform], { type: "application/octet-stream" })),
     };
-    const response = await __handlers.skillsGetRouterV1Handler(
+    const previewResponse = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage }),
-      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
+      new Request("https://example.com/api/v1/skills/demo/file?path=main.tf&preview=1"),
     );
+    expect(previewResponse.status).toBe(200);
+    expect(await previewResponse.text()).toBe(terraform);
+    expect(previewResponse.headers.get("X-Content-SHA256")).toBe("abcd");
+    expect(previewResponse.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(previewResponse.headers.get("Content-Disposition")).toBeNull();
+
+    const rawResponse = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=main.tf"),
+    );
+    expect(rawResponse.status).toBe(200);
+    expect(new Uint8Array(await rawResponse.arrayBuffer())).toEqual(
+      new TextEncoder().encode(terraform),
+    );
+    expect(rawResponse.headers.get("Content-Type")).toBe("application/octet-stream");
+    expect(rawResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''main.tf",
+    );
+  });
+
+  it("preserves raw UTF-8 bytes exactly and downloads every file type", async () => {
+    const bomBytes = Uint8Array.from([0xef, 0xbb, 0xbf, 0x61]);
+    const markdownBytes = new TextEncoder().encode("# Demo\n");
+    const htmlBytes = new TextEncoder().encode("<script>alert(1)</script>");
+    const pdfBytes = new TextEncoder().encode("%PDF-1.7\n");
+    const internalVersion = {
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [
+        {
+          path: "bom.txt",
+          size: bomBytes.byteLength,
+          storageId: "storage:bom",
+          sha256: "bom-sha",
+          contentType: "text/plain",
+        },
+        {
+          path: "README.md",
+          size: markdownBytes.byteLength,
+          storageId: "storage:markdown",
+          sha256: "markdown-sha",
+          contentType: "text/markdown",
+        },
+        {
+          path: "demo.html",
+          size: htmlBytes.byteLength,
+          storageId: "storage:html",
+          sha256: "html-sha",
+          contentType: "text/html",
+        },
+        {
+          path: "demo.pdf",
+          size: pdfBytes.byteLength,
+          storageId: "storage:pdf",
+          sha256: "pdf-sha",
+          contentType: "application/pdf",
+        },
+      ],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const storage = {
+      get: vi.fn(async (storageId: string) => {
+        if (storageId === "storage:bom") return new Blob([bomBytes], { type: "text/plain" });
+        if (storageId === "storage:markdown") {
+          return new Blob([markdownBytes], { type: "text/markdown" });
+        }
+        if (storageId === "storage:html") return new Blob([htmlBytes], { type: "text/html" });
+        return new Blob([pdfBytes], { type: "application/pdf" });
+      }),
+    };
+    const ctx = makeCtx({
+      runQuery,
+      runMutation: vi.fn().mockResolvedValue(okRate()),
+      storage,
+    });
+
+    const bomResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=bom.txt"),
+    );
+    expect(new Uint8Array(await bomResponse.arrayBuffer())).toEqual(bomBytes);
+    expect(bomResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''bom.txt",
+    );
+
+    const markdownResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=README.md"),
+    );
+    expect(new Uint8Array(await markdownResponse.arrayBuffer())).toEqual(markdownBytes);
+    expect(markdownResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''README.md",
+    );
+
+    const htmlResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=demo.html"),
+    );
+    expect(new Uint8Array(await htmlResponse.arrayBuffer())).toEqual(htmlBytes);
+    expect(htmlResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''demo.html",
+    );
+    expect(htmlResponse.headers.get("Content-Type")).toBe("text/html");
+    expect(htmlResponse.headers.get("X-Content-Type-Options")).toBe("nosniff");
+
+    const pdfResponse = await __handlers.skillsGetRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/demo/file?path=demo.pdf"),
+    );
+    expect(new Uint8Array(await pdfResponse.arrayBuffer())).toEqual(pdfBytes);
+    expect(pdfResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''demo.pdf",
+    );
+    expect(pdfResponse.headers.get("Content-Type")).toBe("application/pdf");
+  });
+
+  it("returns opaque skill files as exact-byte attachments", async () => {
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    const internalVersion = {
+      skillId: "skills:1",
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "c",
+      files: [
+        {
+          path: "assets/payload.bin",
+          size: opaqueBytes.byteLength,
+          storageId: "storage:opaque",
+          sha256: "opaque-sha",
+          contentType: "application/octet-stream",
+        },
+      ],
+      softDeletedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            summary: "s",
+            tags: {},
+            stats: {},
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: null,
+        };
+      }
+      if ("versionId" in args) return internalVersion;
+      return null;
+    });
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({
+        runQuery,
+        runMutation: vi.fn().mockResolvedValue(okRate()),
+        storage: {
+          get: vi
+            .fn()
+            .mockResolvedValue(new Blob([opaqueBytes], { type: "application/octet-stream" })),
+        },
+      }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=assets%2Fpayload.bin"),
+    );
+
     expect(response.status).toBe(200);
-    expect(await response.text()).toBe("hello");
-    expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(opaqueBytes);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''payload.bin",
+    );
+    expect(response.headers.get("X-Content-SHA256")).toBe("opaque-sha");
   });
 
   it("looks up raw files in the requested owner namespace", async () => {
@@ -6415,7 +6651,8 @@ describe("httpApiV1 handlers", () => {
     expect(body).toContain("/api/v1/skills/demo/file?ownerHandle=<owner>&path=SKILL.md");
   });
 
-  it("returns 413 when raw file too large", async () => {
+  it("serves raw skill files above the preview limit", async () => {
+    const fileBytes = new Uint8Array(210 * 1024).fill(97);
     const internalVersion = {
       skillId: "skills:1",
       version: "1.0.0",
@@ -6424,7 +6661,7 @@ describe("httpApiV1 handlers", () => {
       files: [
         {
           path: "SKILL.md",
-          size: 210 * 1024,
+          size: fileBytes.byteLength,
           storageId: "storage:1",
           sha256: "abcd",
           contentType: "text/plain",
@@ -6457,10 +6694,17 @@ describe("httpApiV1 handlers", () => {
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const response = await __handlers.skillsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
+      makeCtx({
+        runQuery,
+        runMutation,
+        storage: {
+          get: vi.fn().mockResolvedValue(new Blob([fileBytes], { type: "text/plain" })),
+        },
+      }),
       new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
     );
-    expect(response.status).toBe(413);
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(fileBytes);
   });
 
   it("publish json succeeds", async () => {
@@ -6819,7 +7063,7 @@ describe("httpApiV1 handlers", () => {
     expect(publishVersionForUser).not.toHaveBeenCalled();
   });
 
-  it("publish multipart succeeds", async () => {
+  it("publish multipart preserves Terraform and opaque files", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
       userId: "users:1",
       user: { handle: "p" },
@@ -6847,9 +7091,24 @@ describe("httpApiV1 handlers", () => {
         tags: ["latest"],
       }),
     );
-    form.append("files", new Blob(["hello"], { type: "text/plain" }), "SKILL.md");
+    const terraform = 'resource "null_resource" "demo" {}\n';
+    const variables = 'region = "us-east-1"\n';
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    form.append("files", new Blob(["# Demo\n"], { type: "text/markdown" }), "SKILL.md");
+    form.append("files", new Blob([terraform]), "main.tf");
+    form.append("files", new Blob([variables]), "terraform.tfvars");
+    form.append(
+      "files",
+      new Blob([opaqueBytes], { type: "application/octet-stream" }),
+      "assets/payload.bin",
+    );
+    const storedBlobs: Blob[] = [];
+    const store = vi.fn(async (blob: Blob) => {
+      storedBlobs.push(blob);
+      return `storage:${storedBlobs.length}`;
+    });
     const response = await __handlers.publishSkillV1Handler(
-      makeCtx({ runMutation, storage: { store: vi.fn().mockResolvedValue("storage:1") } }),
+      makeCtx({ runMutation, storage: { store } }),
       new Request("https://example.com/api/v1/skills", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
@@ -6859,6 +7118,21 @@ describe("httpApiV1 handlers", () => {
     if (response.status !== 200) {
       throw new Error(await response.text());
     }
+    expect(store).toHaveBeenCalledTimes(4);
+    const publishArgs = vi.mocked(publishVersionForUser).mock.calls[0]?.[2] as {
+      files?: Array<{ path: string; storageId: string; size: number; contentType?: string }>;
+    };
+    expect(publishArgs.files?.map((file) => file.path)).toEqual([
+      "SKILL.md",
+      "main.tf",
+      "terraform.tfvars",
+      "assets/payload.bin",
+    ]);
+    expect(await storedBlobs[1]?.text()).toBe(terraform);
+    expect(await storedBlobs[2]?.text()).toBe(variables);
+    expect(new Uint8Array((await storedBlobs[3]?.arrayBuffer()) ?? new ArrayBuffer(0))).toEqual(
+      opaqueBytes,
+    );
   });
 
   it("publish multipart resolves requested owner publisher", async () => {
@@ -13352,6 +13626,91 @@ describe("httpApiV1 handlers", () => {
       name: "readIp",
       config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
     });
+  });
+
+  it("package file previews UTF-8 by bytes and downloads opaque artifacts", async () => {
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          files: [
+            {
+              path: "main.tf",
+              size: 37,
+              sha256: "b".repeat(64),
+              storageId: "storage:text",
+              contentType: "application/octet-stream",
+            },
+            {
+              path: "assets/payload.bin",
+              size: 4,
+              sha256: "a".repeat(64),
+              storageId: "storage:1",
+              contentType: "application/octet-stream",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const terraform = 'resource "null_resource" "demo" {}\n';
+    const opaqueBytes = Uint8Array.from([0, 1, 2, 255]);
+    const storage = {
+      get: vi.fn(async (storageId: string) =>
+        storageId === "storage:text"
+          ? new Blob([terraform], { type: "application/octet-stream" })
+          : new Blob([opaqueBytes], { type: "application/octet-stream" }),
+      ),
+    };
+
+    const previewResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/file?path=main.tf&preview=1"),
+    );
+    expect(previewResponse.status).toBe(200);
+    await expect(previewResponse.text()).resolves.toBe(terraform);
+    expect(previewResponse.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+
+    const opaquePreviewResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request(
+        "https://example.com/api/v1/packages/demo-plugin/file?path=assets%2Fpayload.bin&preview=1",
+      ),
+    );
+    expect(opaquePreviewResponse.status).toBe(415);
+    await expect(opaquePreviewResponse.text()).resolves.toBe("File cannot be previewed as text");
+
+    const rawResponse = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/file?path=assets%2Fpayload.bin"),
+    );
+    expect(rawResponse.status).toBe(200);
+    expect(new Uint8Array(await rawResponse.arrayBuffer())).toEqual(opaqueBytes);
+    expect(rawResponse.headers.get("Content-Disposition")).toBe(
+      "attachment; filename*=UTF-8''payload.bin",
+    );
   });
 
   it("package file resolves lowercase readme variants from the canonical request path", async () => {

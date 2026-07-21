@@ -61,7 +61,7 @@ vi.mock("../ui.js", () => ({
 const extractZipToDirMock = vi.spyOn(skillStore, "extractZipToDir");
 const extractGitHubZipPathToDirMock = vi.spyOn(skillStore, "extractGitHubZipPathToDir");
 const hashSkillFilesMock = vi.spyOn(skillStore, "hashSkillFiles");
-const listTextFilesMock = vi.spyOn(skillStore, "listTextFiles");
+const listTextFilesMock = vi.spyOn(skillStore, "listSkillFiles");
 const readLockfileMock = vi.spyOn(skillStore, "readLockfile");
 const readSkillOriginMock = vi.spyOn(skillStore, "readSkillOrigin");
 const writeLockfileMock = vi.spyOn(skillStore, "writeLockfile");
@@ -91,7 +91,7 @@ const {
   extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,
-  listTextFiles,
+  listSkillFiles,
   readLockfile,
   readSkillOrigin,
   writeLockfile,
@@ -474,7 +474,7 @@ describe("cmdUpdate", () => {
     vi.mocked(readSkillOrigin).mockResolvedValue(null);
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
     vi.mocked(stat).mockRejectedValue(new Error("missing"));
     vi.mocked(rm).mockResolvedValue();
@@ -522,7 +522,7 @@ describe("cmdUpdate", () => {
     vi.mocked(writeLockfile).mockResolvedValue();
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
 
     await cmdUpdate(makeOpts(), undefined, { all: true }, false);
 
@@ -604,7 +604,7 @@ describe("cmdUpdate", () => {
     vi.mocked(readSkillOrigin).mockResolvedValue(null);
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
     vi.mocked(stat).mockRejectedValue(new Error("missing"));
     vi.mocked(rm).mockResolvedValue();
@@ -640,7 +640,7 @@ describe("cmdUpdate", () => {
     vi.mocked(readSkillOrigin).mockResolvedValue(null);
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
     vi.mocked(stat).mockRejectedValue(new Error("missing"));
     vi.mocked(rm).mockResolvedValue();
@@ -692,7 +692,7 @@ describe("cmdUpdate", () => {
     vi.mocked(readSkillOrigin).mockResolvedValue(null);
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
     vi.mocked(stat).mockRejectedValue(new Error("missing"));
 
     await cmdUpdate(makeOpts(), undefined, { all: true }, false);
@@ -777,7 +777,7 @@ describe("cmdUpdate", () => {
       origin = nextOrigin;
     });
     vi.mocked(extractGitHubZipPathToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
 
     await cmdUpdate(makeOpts(), "demo", {}, false);
@@ -839,7 +839,7 @@ describe("cmdUpdate", () => {
       installedVersion: "a".repeat(40),
       installedAt: 123,
     });
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "local-fingerprint", files: [] });
@@ -880,7 +880,7 @@ describe("cmdUpdate", () => {
       skills: { "aiq-deploy": { version: commit, installedAt: 123 } },
     });
     vi.mocked(readSkillOrigin).mockResolvedValue(null);
-    vi.mocked(listTextFiles).mockResolvedValueOnce([
+    vi.mocked(listSkillFiles).mockResolvedValueOnce([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "clean-fingerprint", files: [] });
@@ -935,7 +935,7 @@ describe("cmdUpdate", () => {
       installedAt: 123,
       fingerprint: "clean-fingerprint",
     });
-    vi.mocked(listTextFiles)
+    vi.mocked(listSkillFiles)
       .mockResolvedValueOnce([{ relPath: "SKILL.md", bytes: new Uint8Array([9]) }])
       .mockResolvedValueOnce([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);
     vi.mocked(hashSkillFiles)
@@ -1004,7 +1004,7 @@ describe("cmdUpdate", () => {
     vi.mocked(writeLockfile).mockResolvedValue();
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
@@ -1045,7 +1045,7 @@ describe("cmdUpdate", () => {
       skills: { demo: { version: "1.0.0", installedAt: 123 } },
     });
     vi.mocked(readSkillOrigin).mockResolvedValue(null);
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
       { relPath: "skill-card.md", bytes: new Uint8Array([2]) },
     ]);
@@ -1087,7 +1087,7 @@ describe("cmdUpdate", () => {
       installedAt: 123,
       fingerprint: "hash",
     });
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
@@ -1139,7 +1139,7 @@ describe("cmdUpdate", () => {
     vi.mocked(writeLockfile).mockResolvedValue();
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
@@ -1167,7 +1167,7 @@ describe("cmdUpdate", () => {
       version: 1,
       skills: { demo: { version: "1.0.0", installedAt: 123 } },
     });
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
 
     await expect(cmdUpdate(makeOpts(), "demo", {}, false)).rejects.toThrow("network down");
 
@@ -1199,7 +1199,7 @@ describe("cmdUpdate", () => {
       },
     });
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(listSkillFiles).mockResolvedValue([]);
 
     await expect(cmdUpdate(makeOpts(), undefined, { all: true }, false)).rejects.toThrow(
       "registry down",
@@ -1420,7 +1420,7 @@ describe("cmdInstall", () => {
     vi.mocked(writeLockfile).mockResolvedValue();
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractGitHubZipPathToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
@@ -1960,7 +1960,7 @@ describe("cmdInstall", () => {
     vi.mocked(writeLockfile).mockResolvedValue();
     vi.mocked(writeSkillOrigin).mockResolvedValue();
     vi.mocked(extractZipToDir).mockResolvedValue();
-    vi.mocked(listTextFiles).mockResolvedValue([
+    vi.mocked(listSkillFiles).mockResolvedValue([
       { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
     ]);
     vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });

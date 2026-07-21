@@ -13,10 +13,12 @@ vi.mock("./lib/skillPublish", () => ({
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const {
   getReadme: getSkillReadme,
+  getFilePreview: getSkillFilePreview,
   getFileText: getSkillFileText,
   getGitHubSkillContent,
 } = await import("./skills");
 const getSkillReadmeHandler = getSkillReadme as unknown as { _handler: Function };
+const getSkillFilePreviewHandler = getSkillFilePreview as unknown as { _handler: Function };
 const getSkillFileTextHandler = getSkillFileText as unknown as { _handler: Function };
 const getGitHubSkillContentHandler = getGitHubSkillContent as unknown as { _handler: Function };
 
@@ -45,6 +47,7 @@ function makeActionCtx(args: {
   actor?: Record<string, unknown> | null;
   publisherMemberRole?: "owner" | "admin" | "publisher" | null;
   publisherAccess?: boolean;
+  storedBlob?: Blob | null;
 }) {
   return {
     runQuery: vi.fn(async (_endpoint: unknown, payload: Record<string, unknown>) => {
@@ -63,6 +66,9 @@ function makeActionCtx(args: {
       }
       throw new Error("Unexpected endpoint");
     }),
+    storage: {
+      get: vi.fn().mockResolvedValue(args.storedBlob ?? new Blob(["# skill"])),
+    },
   } as never;
 }
 
@@ -296,6 +302,95 @@ describe("version file access actions", () => {
       } as never),
     ).resolves.toMatchObject({ path: "SKILL.md", text: "# skill" });
   });
+
+  it("returns opaque files as download-only previews with exact metadata", async () => {
+    const version = {
+      ...makeSkillVersion(),
+      files: [
+        {
+          path: "assets/payload.bin",
+          size: 4,
+          storageId: "_storage:opaque",
+          sha256: "d".repeat(64),
+          contentType: "application/octet-stream",
+        },
+      ],
+    };
+    const ctx = makeActionCtx({
+      version,
+      storedBlob: new Blob([Uint8Array.from([0, 1, 2, 255])], {
+        type: "application/octet-stream",
+      }),
+      skill: {
+        _id: "skills:1",
+        ownerUserId: "users:owner",
+        stats: {},
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: [],
+      },
+    });
+
+    await expect(
+      getSkillFilePreviewHandler._handler(ctx, {
+        versionId: "skillVersions:1",
+        path: "assets/payload.bin",
+      } as never),
+    ).resolves.toEqual({
+      path: "assets/payload.bin",
+      text: null,
+      size: 4,
+      sha256: "d".repeat(64),
+    });
+  });
+
+  it.each([
+    ["report.pdf", "application/pdf"],
+    ["page.html", "text/html"],
+    ["diagram.svg", "image/svg+xml"],
+    ["config.xml", "application/xml"],
+  ])(
+    "previews valid UTF-8 document %s as escaped text regardless of extension",
+    async (path, contentType) => {
+      const text = "<root>valid UTF-8</root>";
+      const version = {
+        ...makeSkillVersion(),
+        files: [
+          {
+            path,
+            size: text.length,
+            storageId: "_storage:rich",
+            sha256: "e".repeat(64),
+            contentType,
+          },
+        ],
+      };
+      const ctx = makeActionCtx({
+        version,
+        storedBlob: new Blob([text], { type: contentType }),
+        skill: {
+          _id: "skills:1",
+          ownerUserId: "users:owner",
+          stats: {},
+          softDeletedAt: undefined,
+          moderationStatus: "active",
+          moderationFlags: [],
+        },
+      });
+
+      await expect(
+        getSkillFilePreviewHandler._handler(ctx, {
+          versionId: "skillVersions:1",
+          path,
+        } as never),
+      ).resolves.toEqual({
+        path,
+        text,
+        size: text.length,
+        sha256: "e".repeat(64),
+      });
+    },
+  );
 
   it("blocks unauthenticated file reads from hidden skill versions", async () => {
     const ctx = makeActionCtx({

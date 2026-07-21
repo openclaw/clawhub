@@ -5,6 +5,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
+import { decodeBoundedUtf8Text } from "./lib/artifactText";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
 import {
   fetchGitHubZipBytes,
@@ -27,7 +28,7 @@ import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { requirePublisherRole } from "./lib/publishers";
-import { isMacJunkPath, isTextFile, parseFrontmatter } from "./lib/skills";
+import { isMacJunkPath, parseFrontmatter } from "./lib/skills";
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
@@ -1298,10 +1299,11 @@ function listGitHubSkillTextContents(entries: Record<string, Uint8Array>, folder
   const textFiles = [];
   for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
     if (textFiles.length >= MAX_STATIC_SCAN_TEXT_FILES) break;
-    if (!isTextFile(path, undefined)) continue;
+    const content = decodeBoundedUtf8Text(bytes, MAX_STATIC_SCAN_TEXT_FILE_BYTES);
+    if (content === null) continue;
     textFiles.push({
       path,
-      content: new TextDecoder().decode(bytes.slice(0, MAX_STATIC_SCAN_TEXT_FILE_BYTES)),
+      content,
     });
   }
   return textFiles;

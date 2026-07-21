@@ -947,6 +947,7 @@ export function SkillDetailPage({
             hasSkillCard={hasSkillCard}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
+            latestVersion={latestVersion?.version ?? null}
             canDeleteVersions={canDeleteSkillVersions}
             skill={skill as Doc<"skills">}
             ownerHandle={ownerHandle}

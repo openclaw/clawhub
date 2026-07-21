@@ -8,6 +8,7 @@ import {
   detectGitHubImportCandidates,
   extractMarkdownRelativeTargets,
   fetchGitHubZipBytes,
+  listFilesUnderCandidate,
   parseGitHubImportUrl,
   resolveGitHubCommit,
   resolveMarkdownTarget,
@@ -23,6 +24,32 @@ function requestInfoToUrlString(input: RequestInfo | URL): string {
 }
 
 describe("github import", () => {
+  it("lists every eligible file under a skill candidate", () => {
+    const encode = (text: string) => new TextEncoder().encode(text);
+    const files = listFilesUnderCandidate(
+      {
+        "skills/demo/SKILL.md": encode("# Demo\n"),
+        "skills/demo/main.tf": encode('resource "null_resource" "demo" {}\n'),
+        "skills/demo/terraform.tfvars": encode('region = "us-east-1"\n'),
+        "skills/demo/assets/payload.bin": Uint8Array.from([0, 1, 2, 255]),
+        "skills/other/SKILL.md": encode("# Other\n"),
+      },
+      "skills/demo",
+    );
+
+    expect(files.map((file) => file.path)).toEqual(
+      [
+        "skills/demo/SKILL.md",
+        "skills/demo/assets/payload.bin",
+        "skills/demo/main.tf",
+        "skills/demo/terraform.tfvars",
+      ].sort((left, right) => left.localeCompare(right)),
+    );
+    expect(files.find((file) => file.path.endsWith("payload.bin"))?.bytes).toEqual(
+      Uint8Array.from([0, 1, 2, 255]),
+    );
+  });
+
   it("parses repo root urls", () => {
     expect(parseGitHubImportUrl("https://github.com/visionik/ouracli")).toEqual({
       owner: "visionik",
@@ -135,7 +162,7 @@ describe("github import", () => {
     expect(candidates.map((c) => c.name)).toEqual(["Alpha", "Beta"]);
   });
 
-  it("computes default selection via markdown references", () => {
+  it("selects the complete candidate artifact by default", () => {
     const entries = {
       "skill/SKILL.md": `---\nname: demo\n---\nSee [usage](docs/usage.md) and ![logo](img/logo.svg).\nIgnore [web](https://example.com).`,
       "skill/docs/usage.md": `See [more](more.md)`,
@@ -161,7 +188,7 @@ describe("github import", () => {
     expect(selected).toContain("skill/docs/usage.md");
     expect(selected).toContain("skill/docs/more.md");
     expect(selected).toContain("skill/img/logo.svg");
-    expect(selected).not.toContain("skill/extra.txt");
+    expect(selected).toContain("skill/extra.txt");
   });
 
   it("does not select files outside skill folder (even when referenced)", () => {
@@ -180,6 +207,7 @@ describe("github import", () => {
     const files = Object.entries(stripped).map(([path, bytes]) => ({ path, bytes }));
     const selected = computeDefaultSelectedPaths({ candidate, files });
     expect(selected).toContain("skill/SKILL.md");
+    expect(selected).toContain("skill/docs/usage.md");
     expect(selected).not.toContain("outside.md");
   });
 

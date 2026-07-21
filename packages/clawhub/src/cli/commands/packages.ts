@@ -62,6 +62,7 @@ import {
   styleText,
 } from "../ui.js";
 import {
+  createGitHubRetryBudget,
   fetchGitHubSource,
   normalizeGitHubRepo,
   resolveLocalGitInfo,
@@ -438,6 +439,7 @@ export async function cmdInspectPackage(
         registry,
       );
       url.searchParams.set("path", options.file);
+      url.searchParams.set("preview", "1");
       if (options.version) {
         url.searchParams.set("version", options.version);
       } else if (options.tag) {
@@ -975,14 +977,21 @@ export async function cmdPublishPackage(
         ApiV1PackagePublishResponseSchema,
       );
 
-      const isPendingPublication = result.publicationStatus === "pending";
+      const publicationStatus = result.publicationStatus;
+      const outputStatus =
+        publicationStatus === "pending"
+          ? "pending-publication"
+          : publicationStatus === "published"
+            ? "published"
+            : "submitted";
       if (options.json) {
         process.stdout.write(
           `${JSON.stringify(
             {
               ...plan.output,
+              status: outputStatus,
               releaseId: result.releaseId,
-              publicationStatus: result.publicationStatus,
+              publicationStatus,
               attemptId: result.attemptId,
               inspectorFindings: result.inspectorFindings,
             },
@@ -991,11 +1000,19 @@ export async function cmdPublishPackage(
           )}\n`,
         );
       } else {
-        spinner?.succeed(
-          isPendingPublication
-            ? `OK. Uploaded ${plan.payload.name}@${plan.payload.version}; security checks are pending before it becomes public (${result.releaseId})`
-            : `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
-        );
+        if (publicationStatus === "pending") {
+          spinner?.succeed(
+            `Update submitted for ${plan.payload.name}@${plan.payload.version}; pending security scans before it becomes public.`,
+          );
+        } else if (publicationStatus === "published") {
+          spinner?.succeed(
+            `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
+          );
+        } else {
+          spinner?.succeed(
+            `Update submitted for ${plan.payload.name}@${plan.payload.version}; publication status was not reported.`,
+          );
+        }
         printPackageInspectorFindings(result);
       }
     } catch (error) {
@@ -2210,9 +2227,11 @@ async function preparePackagePublishPlan(
   sourceArg: string,
   options: PackagePublishOptions,
 ): Promise<PackagePublishPlan> {
+  const githubRetryBudget = createGitHubRetryBudget();
   const resolvedSource = await resolveSourceInput(sourceArg, {
     workdir: opts.workdir,
     localWorkdirs: [process.cwd(), opts.workdir],
+    retryBudget: githubRetryBudget,
   });
   const sourceForFetch = applyGitHubSourcePath(resolvedSource, options.sourcePath);
   let folder = sourceForFetch.kind === "local" ? sourceForFetch.path : "";
@@ -2233,7 +2252,7 @@ async function preparePackagePublishPlan(
       ? null
       : createCrabLoader(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
     try {
-      const fetched = await fetchGitHubSource(sourceForFetch);
+      const fetched = await fetchGitHubSource(sourceForFetch, githubRetryBudget);
       folder = fetched.dir;
       cleanup = fetched.cleanup;
       inferredSource = fetched.source;

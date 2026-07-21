@@ -23,7 +23,7 @@ import {
   extractZipToDir,
   hashSkillFiles,
   listManualSkills,
-  listTextFiles,
+  listSkillFiles,
   readLockfile,
   readSkillOrigin,
   writeLockfile,
@@ -402,7 +402,7 @@ export async function cmdInstall(
         await extractZipToDir(zip, installTarget);
       });
     }
-    const installedFiles = await listTextFiles(target);
+    const installedFiles = await listSkillFiles(target);
     const installedFingerprint =
       installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
@@ -555,7 +555,7 @@ export async function cmdUpdate(
 
       let localFingerprint: string | null = null;
       if (exists) {
-        const filesOnDisk = await listTextFiles(target);
+        const filesOnDisk = await listSkillFiles(target);
         if (filesOnDisk.length > 0) {
           const hashed = hashSkillFiles(filesOnDisk);
           localFingerprint = hashed.fingerprint;
@@ -633,7 +633,7 @@ export async function cmdUpdate(
           await installSkillWithOptionalStaging(target, exists, (installTarget) =>
             installGitHubSkill(registry, githubResolution, installTarget),
           );
-          const installedFiles = await listTextFiles(target);
+          const installedFiles = await listSkillFiles(target);
           const installedFingerprint =
             installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
@@ -765,7 +765,7 @@ export async function cmdUpdate(
         });
         await extractZipToDir(zip, installTarget);
       });
-      const installedFiles = await listTextFiles(target);
+      const installedFiles = await listSkillFiles(target);
       const installedFingerprint =
         installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
