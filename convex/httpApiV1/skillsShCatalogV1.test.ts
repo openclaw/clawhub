@@ -20,6 +20,7 @@ vi.mock("./shared", async (importOriginal) => {
 });
 
 const { requireAdminOrResponse, requireApiTokenUserOrResponse } = await import("./shared");
+const { buildGitHubApiHeaders } = await import("../lib/githubAuth");
 const { skillsShCatalogTestV1Handler } = await import("./skillsShCatalogV1");
 
 function sha256(value: string) {
@@ -190,6 +191,41 @@ describe("skills.sh catalog Test HTTP API", () => {
         { owner: "nvidia", login: "nvidia", id: 1_728_152 },
       ],
     });
+    expect(buildGitHubApiHeaders).toHaveBeenCalledWith({
+      userAgent: "clawhub/skills-sh-catalog-test",
+      allowAnonymous: false,
+      useGitHubApp: false,
+    });
     expect(JSON.stringify(body)).not.toContain("Bearer placeholder");
+  });
+
+  it("reports only non-secret HTTP status when authenticated owner lookup fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("token=secret-response-body", { status: 404 })),
+    );
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })),
+    } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "resolve-owners",
+        owners: ["neondatabase"],
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+    const body = await response.text();
+
+    expect(response.status).toBe(400);
+    expect(body).toBe("Authenticated GitHub owner lookup failed with HTTP 404: neondatabase");
+    expect(body).not.toContain("secret-response-body");
+    expect(body).not.toContain("Bearer placeholder");
   });
 });

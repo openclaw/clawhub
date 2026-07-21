@@ -82,6 +82,7 @@ async function resolveAuthenticatedGitHubOwners(ownersValue: unknown) {
   const headers = await buildGitHubApiHeaders({
     userAgent: "clawhub/skills-sh-catalog-test",
     allowAnonymous: false,
+    useGitHubApp: false,
   });
   const resolved: Array<{ owner: string; id: number; login: string }> = [];
   for (let offset = 0; offset < owners.length; offset += GITHUB_OWNER_RESOLUTION_CONCURRENCY) {
@@ -96,7 +97,9 @@ async function resolveAuthenticatedGitHubOwners(ownersValue: unknown) {
             },
           );
           if (!response.ok) {
-            throw new Error(`Authenticated GitHub owner lookup failed: ${owner}`);
+            throw new Error(
+              `Authenticated GitHub owner lookup failed with HTTP ${response.status}: ${owner}`,
+            );
           }
           const payload = (await response.json()) as { id?: unknown; login?: unknown };
           const id = typeof payload.id === "number" ? payload.id : Number.NaN;
