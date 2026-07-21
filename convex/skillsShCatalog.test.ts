@@ -787,11 +787,7 @@ describe("skills.sh catalog overload control plane", () => {
         role: "admin",
       });
     });
-    const storedArtifact = await storeTestArtifact(
-      t,
-      allowlist[0]!,
-      "catalog test artifact",
-    );
+    const storedArtifact = await storeTestArtifact(t, allowlist[0]!, "catalog test artifact");
     const artifacts = allowlist.map((externalId) => ({
       ...storedArtifact,
       externalId,
@@ -887,11 +883,7 @@ describe("skills.sh catalog overload control plane", () => {
       cursor: 0,
       rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
     });
-    const artifact = await storeTestArtifact(
-      t,
-      "nvidia/skills/aiq-deploy",
-      "non-admin artifact",
-    );
+    const artifact = await storeTestArtifact(t, "nvidia/skills/aiq-deploy", "non-admin artifact");
 
     await expect(
       t.action(internal.skillsShCatalog.admitRealScansInternal, {
@@ -942,11 +934,7 @@ describe("skills.sh catalog overload control plane", () => {
       cursor: 0,
       rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
     });
-    const valid = await storeTestArtifact(
-      t,
-      "nvidia/skills/aiq-deploy",
-      "verified artifact bytes",
-    );
+    const valid = await storeTestArtifact(t, "nvidia/skills/aiq-deploy", "verified artifact bytes");
     const invalidArtifacts = [
       {
         ...valid,
@@ -1400,11 +1388,7 @@ describe("skills.sh catalog overload control plane", () => {
     });
     expect((await collectEntries(t)).every((entry) => !entry.publicVisible)).toBe(true);
 
-    const artifact = await storeTestArtifact(
-      t,
-      "nvidia/skills/aiq-deploy",
-      "hello catalog",
-    );
+    const artifact = await storeTestArtifact(t, "nvidia/skills/aiq-deploy", "hello catalog");
     const admitted = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
       runId,
       externalIds: ["nvidia/skills/aiq-deploy"],
@@ -1922,11 +1906,7 @@ describe("skills.sh catalog overload control plane", () => {
       cursor: 0,
       rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
     });
-    const artifact = await storeTestArtifact(
-      t,
-      "nvidia/skills/aiq-deploy",
-      "budget artifact",
-    );
+    const artifact = await storeTestArtifact(t, "nvidia/skills/aiq-deploy", "budget artifact");
 
     await expect(
       t.action(internal.skillsShCatalog.admitRealScansInternal, {
@@ -1978,11 +1958,7 @@ describe("skills.sh catalog overload control plane", () => {
       cursor: 0,
       rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
     });
-    const artifact = await storeTestArtifact(
-      t,
-      "nvidia/skills/aiq-deploy",
-      "six write artifact",
-    );
+    const artifact = await storeTestArtifact(t, "nvidia/skills/aiq-deploy", "six write artifact");
 
     const result = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
       runId,

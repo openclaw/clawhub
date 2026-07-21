@@ -891,204 +891,204 @@ type AdmitScansArgs = {
 };
 
 async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
-    const environment = assertSkillsShFixtureEnvironmentAllowed();
-    const control = assertScanAdmissionEnabled(await getControlDoc(ctx));
-    const run = await ctx.db.get(args.runId);
-    if (!run) throw new ConvexError("skills.sh catalog run not found");
-    if (
-      run.status === "paused" ||
-      run.status === "canceling" ||
-      run.status === "canceled" ||
-      run.status === "failed"
-    ) {
-      throw new ConvexError(`Cannot admit scans for ${run.status} run`);
+  const environment = assertSkillsShFixtureEnvironmentAllowed();
+  const control = assertScanAdmissionEnabled(await getControlDoc(ctx));
+  const run = await ctx.db.get(args.runId);
+  if (!run) throw new ConvexError("skills.sh catalog run not found");
+  if (
+    run.status === "paused" ||
+    run.status === "canceling" ||
+    run.status === "canceled" ||
+    run.status === "failed"
+  ) {
+    throw new ConvexError(`Cannot admit scans for ${run.status} run`);
+  }
+  const externalIds = Array.from(
+    new Set(args.externalIds.map((externalId) => externalId.trim().toLowerCase())),
+  ).filter(Boolean);
+  assertIntegerInRange(
+    "externalIds.length",
+    externalIds.length,
+    1,
+    run.budgets.maxScanAdmissionsPerBatch,
+  );
+  if (args.dispatchKind === "real") {
+    if (control.mode !== "staging-live") {
+      throw new ConvexError("real skills.sh scan admission requires staging-live controls");
     }
-    const externalIds = Array.from(
-      new Set(args.externalIds.map((externalId) => externalId.trim().toLowerCase())),
-    ).filter(Boolean);
-    assertIntegerInRange(
-      "externalIds.length",
-      externalIds.length,
-      1,
-      run.budgets.maxScanAdmissionsPerBatch,
-    );
+    if (run.sourceKind !== "staging-live" || run.fixtureId !== "skills-sh-test-live-500") {
+      throw new ConvexError("real skills.sh scan admission requires a staging-live run");
+    }
+    if (environment.environment !== "test") {
+      throw new ConvexError(
+        "real skills.sh scan admission requires the permanent Test environment",
+      );
+    }
+    if (externalIds.length > MAX_REAL_TEST_ADMISSIONS) {
+      throw new ConvexError(`real Test scan admission cannot exceed ${MAX_REAL_TEST_ADMISSIONS}`);
+    }
+    const allowlist = new Set(control.realScanAllowlist);
+    const denied = externalIds.find((externalId) => !allowlist.has(externalId));
+    if (denied) throw new ConvexError(`real Test scan admission is not allowlisted: ${denied}`);
+    if (!args.actorUserId) {
+      throw new ConvexError("real Test scan admission requires an authenticated operator");
+    }
+    const actor = await ctx.db.get(args.actorUserId);
+    if (actor?.role !== "admin") {
+      throw new ConvexError("real Test scan admission requires an admin operator");
+    }
+  }
+  const artifactInputs = args.artifacts ?? [];
+  const artifacts = new Map(
+    artifactInputs.map((artifact) => [artifact.externalId.trim().toLowerCase(), artifact]),
+  );
+  if (
+    args.dispatchKind === "real" &&
+    (artifactInputs.length !== externalIds.length || artifacts.size !== externalIds.length)
+  ) {
+    throw new ConvexError("real Test scan admission requires exactly one artifact per skill");
+  }
+
+  const queueHealth = await readQueueHealth(ctx, control);
+  if (!queueHealth.healthy) {
+    throw new ConvexError("skills.sh catalog scan admission is blocked by queue health");
+  }
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const effectiveDailyAdmissionLimit = Math.min(
+    run.budgets.maxScanAdmissionsPerDay,
+    control.maxScanAdmissionsPerDay,
+  );
+  const admittedToday = await ctx.db
+    .query("skillsShCatalogScanAttempts")
+    .withIndex("by_created_at", (q) => q.gte("createdAt", dayStart.getTime()))
+    .take(effectiveDailyAdmissionLimit + 1);
+
+  const fixture =
+    run.fixtureId === "skills-sh-test-live-500" ? null : getSkillsShCatalogFixture(run.fixtureId);
+  const now = Date.now();
+  let admitted = 0;
+  let skipped = 0;
+  const admittedExternalIds: string[] = [];
+  let readsUsed = args.dispatchKind === "real" ? 8 : 7;
+  let writesUsed = 0;
+  const runWriteCount = 1;
+  for (const externalId of externalIds) {
+    const fixtureRow = fixture?.findByExternalId(externalId);
+    const sourceRow = fixtureRow ? normalizeIdentity(fixtureRow) : null;
+    if (!sourceRow && run.sourceKind !== "staging-live") {
+      skipped += 1;
+      continue;
+    }
+    const entry = await ctx.db
+      .query("skillsShCatalogEntries")
+      .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+      .unique();
+    readsUsed += 1;
+    if (
+      !entry ||
+      (sourceRow && entry.sourceContentHash !== sourceRow.sourceContentHash) ||
+      (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId) ||
+      entry.scanStatus !== "planned"
+    ) {
+      skipped += 1;
+      continue;
+    }
+    const existingAttempt = await ctx.db
+      .query("skillsShCatalogScanAttempts")
+      .withIndex("by_entry_and_source_content_hash", (q) =>
+        q.eq("entryId", entry._id).eq("sourceContentHash", entry.sourceContentHash),
+      )
+      .filter((q) => q.neq(q.field("status"), "canceled"))
+      .order("desc")
+      .first();
+    readsUsed += 1;
+    if (existingAttempt) {
+      skipped += 1;
+      continue;
+    }
+    if (run.counts.scansAdmitted + admitted >= run.budgets.maxScanAdmissionsPerRun) {
+      throw new ConvexError("skills.sh catalog run scan-admission budget exceeded");
+    }
+    if (admittedToday.length + admitted >= effectiveDailyAdmissionLimit) {
+      throw new ConvexError("skills.sh catalog daily scan-admission budget exceeded");
+    }
+    if (queueHealth.catalogQueued + admitted >= control.maxCatalogQueued) {
+      throw new ConvexError("skills.sh catalog queued-scan budget exceeded");
+    }
+    const artifact = artifacts.get(externalId);
     if (args.dispatchKind === "real") {
-      if (control.mode !== "staging-live") {
-        throw new ConvexError("real skills.sh scan admission requires staging-live controls");
-      }
-      if (run.sourceKind !== "staging-live" || run.fixtureId !== "skills-sh-test-live-500") {
-        throw new ConvexError("real skills.sh scan admission requires a staging-live run");
-      }
-      if (environment.environment !== "test") {
+      if (
+        !artifact ||
+        !/^[a-f0-9]{64}$/i.test(artifact.artifactContentHash) ||
+        artifact.files.length === 0
+      ) {
         throw new ConvexError(
-          "real skills.sh scan admission requires the permanent Test environment",
+          `real Test scan admission requires a fetched artifact: ${externalId}`,
         );
       }
-      if (externalIds.length > MAX_REAL_TEST_ADMISSIONS) {
-        throw new ConvexError(`real Test scan admission cannot exceed ${MAX_REAL_TEST_ADMISSIONS}`);
-      }
-      const allowlist = new Set(control.realScanAllowlist);
-      const denied = externalIds.find((externalId) => !allowlist.has(externalId));
-      if (denied) throw new ConvexError(`real Test scan admission is not allowlisted: ${denied}`);
-      if (!args.actorUserId) {
-        throw new ConvexError("real Test scan admission requires an authenticated operator");
-      }
-      const actor = await ctx.db.get(args.actorUserId);
-      if (actor?.role !== "admin") {
-        throw new ConvexError("real Test scan admission requires an admin operator");
-      }
     }
-    const artifactInputs = args.artifacts ?? [];
-    const artifacts = new Map(
-      artifactInputs.map((artifact) => [artifact.externalId.trim().toLowerCase(), artifact]),
-    );
-    if (
-      args.dispatchKind === "real" &&
-      (artifactInputs.length !== externalIds.length || artifacts.size !== externalIds.length)
-    ) {
-      throw new ConvexError("real Test scan admission requires exactly one artifact per skill");
+    const admissionWriteCost = args.dispatchKind === "real" ? 6 : 2;
+    if (writesUsed + admissionWriteCost + runWriteCount > run.budgets.maxWritesPerBatch) {
+      throw new ConvexError("skills.sh catalog scan-admission write budget exceeded");
     }
-
-    const queueHealth = await readQueueHealth(ctx, control);
-    if (!queueHealth.healthy) {
-      throw new ConvexError("skills.sh catalog scan admission is blocked by queue health");
-    }
-    const dayStart = new Date();
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const effectiveDailyAdmissionLimit = Math.min(
-      run.budgets.maxScanAdmissionsPerDay,
-      control.maxScanAdmissionsPerDay,
-    );
-    const admittedToday = await ctx.db
-      .query("skillsShCatalogScanAttempts")
-      .withIndex("by_created_at", (q) => q.gte("createdAt", dayStart.getTime()))
-      .take(effectiveDailyAdmissionLimit + 1);
-
-    const fixture =
-      run.fixtureId === "skills-sh-test-live-500" ? null : getSkillsShCatalogFixture(run.fixtureId);
-    const now = Date.now();
-    let admitted = 0;
-    let skipped = 0;
-    const admittedExternalIds: string[] = [];
-    let readsUsed = args.dispatchKind === "real" ? 8 : 7;
-    let writesUsed = 0;
-    const runWriteCount = 1;
-    for (const externalId of externalIds) {
-      const fixtureRow = fixture?.findByExternalId(externalId);
-      const sourceRow = fixtureRow ? normalizeIdentity(fixtureRow) : null;
-      if (!sourceRow && run.sourceKind !== "staging-live") {
-        skipped += 1;
-        continue;
-      }
-      const entry = await ctx.db
-        .query("skillsShCatalogEntries")
-        .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
-        .unique();
-      readsUsed += 1;
-      if (
-        !entry ||
-        (sourceRow && entry.sourceContentHash !== sourceRow.sourceContentHash) ||
-        (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId) ||
-        entry.scanStatus !== "planned"
-      ) {
-        skipped += 1;
-        continue;
-      }
-      const existingAttempt = await ctx.db
-        .query("skillsShCatalogScanAttempts")
-        .withIndex("by_entry_and_source_content_hash", (q) =>
-          q.eq("entryId", entry._id).eq("sourceContentHash", entry.sourceContentHash),
-        )
-        .filter((q) => q.neq(q.field("status"), "canceled"))
-        .order("desc")
-        .first();
-      readsUsed += 1;
-      if (existingAttempt) {
-        skipped += 1;
-        continue;
-      }
-      if (run.counts.scansAdmitted + admitted >= run.budgets.maxScanAdmissionsPerRun) {
-        throw new ConvexError("skills.sh catalog run scan-admission budget exceeded");
-      }
-      if (admittedToday.length + admitted >= effectiveDailyAdmissionLimit) {
-        throw new ConvexError("skills.sh catalog daily scan-admission budget exceeded");
-      }
-      if (queueHealth.catalogQueued + admitted >= control.maxCatalogQueued) {
-        throw new ConvexError("skills.sh catalog queued-scan budget exceeded");
-      }
-      const artifact = artifacts.get(externalId);
-      if (args.dispatchKind === "real") {
-        if (
-          !artifact ||
-          !/^[a-f0-9]{64}$/i.test(artifact.artifactContentHash) ||
-          artifact.files.length === 0
-        ) {
-          throw new ConvexError(
-            `real Test scan admission requires a fetched artifact: ${externalId}`,
-          );
-        }
-      }
-      const admissionWriteCost = args.dispatchKind === "real" ? 6 : 2;
-      if (writesUsed + admissionWriteCost + runWriteCount > run.budgets.maxWritesPerBatch) {
-        throw new ConvexError("skills.sh catalog scan-admission write budget exceeded");
-      }
-      const attemptId = await insertCatalogScanAttempt(ctx, {
-        entryId: entry._id,
-        runId: run._id,
-        externalId,
-        sourceContentHash: entry.sourceContentHash,
-        dispatchKind: args.dispatchKind,
-        artifactContentHash: artifact?.artifactContentHash.toLowerCase(),
-        now,
+    const attemptId = await insertCatalogScanAttempt(ctx, {
+      entryId: entry._id,
+      runId: run._id,
+      externalId,
+      sourceContentHash: entry.sourceContentHash,
+      dispatchKind: args.dispatchKind,
+      artifactContentHash: artifact?.artifactContentHash.toLowerCase(),
+      now,
+    });
+    if (args.dispatchKind === "real" && args.actorUserId && artifact) {
+      const linked = await enqueueSkillsShCatalogScanRequest(ctx, {
+        actorUserId: args.actorUserId,
+        attemptId,
+        slug: entry.slug,
+        displayName: entry.displayName,
+        artifactContentHash: artifact.artifactContentHash.toLowerCase(),
+        files: artifact.files,
       });
-      if (args.dispatchKind === "real" && args.actorUserId && artifact) {
-        const linked = await enqueueSkillsShCatalogScanRequest(ctx, {
-          actorUserId: args.actorUserId,
-          attemptId,
-          slug: entry.slug,
-          displayName: entry.displayName,
-          artifactContentHash: artifact.artifactContentHash.toLowerCase(),
-          files: artifact.files,
-        });
-        await ctx.db.patch(attemptId, {
-          skillScanRequestId: linked.requestId,
-          securityScanJobId: linked.jobId,
-          updatedAt: now,
-        });
-        writesUsed += 4;
-      }
-      await ctx.db.patch(entry._id, {
-        scanStatus: "queued",
-        publicVisible: false,
+      await ctx.db.patch(attemptId, {
+        skillScanRequestId: linked.requestId,
+        securityScanJobId: linked.jobId,
         updatedAt: now,
       });
-      writesUsed += 2;
-      admitted += 1;
-      admittedExternalIds.push(externalId);
+      writesUsed += 4;
     }
-    const nextCounts = {
-      ...run.counts,
-      scansAdmitted: run.counts.scansAdmitted + admitted,
-    };
-    await ctx.db.patch(run._id, {
-      counts: nextCounts,
-      scanCursor: run.scanCursor + admitted,
-      scanAdmissionBatches: run.scanAdmissionBatches + 1,
-      operations: addOperations(run.operations, {
-        functionCalls: 1,
-        dbReads: readsUsed,
-        dbWrites: writesUsed + runWriteCount,
-      }),
+    await ctx.db.patch(entry._id, {
+      scanStatus: "queued",
+      publicVisible: false,
       updatedAt: now,
     });
-    return {
-      requested: externalIds.length,
-      admitted,
-      skipped,
-      admittedExternalIds,
-      queueHealth,
-      counts: nextCounts,
-    };
+    writesUsed += 2;
+    admitted += 1;
+    admittedExternalIds.push(externalId);
+  }
+  const nextCounts = {
+    ...run.counts,
+    scansAdmitted: run.counts.scansAdmitted + admitted,
+  };
+  await ctx.db.patch(run._id, {
+    counts: nextCounts,
+    scanCursor: run.scanCursor + admitted,
+    scanAdmissionBatches: run.scanAdmissionBatches + 1,
+    operations: addOperations(run.operations, {
+      functionCalls: 1,
+      dbReads: readsUsed,
+      dbWrites: writesUsed + runWriteCount,
+    }),
+    updatedAt: now,
+  });
+  return {
+    requested: externalIds.length,
+    admitted,
+    skipped,
+    admittedExternalIds,
+    queueHealth,
+    counts: nextCounts,
+  };
 }
 
 export const admitFixtureScansInternal = internalMutation({
@@ -1132,17 +1132,14 @@ export const admitRealScansInternal: ReturnType<typeof internalAction> = interna
   handler: async (ctx, args) => {
     const environment = assertSkillsShFixtureEnvironmentAllowed();
     if (environment.environment !== "test") {
-      throw new ConvexError("real skills.sh scan admission requires the permanent Test environment");
+      throw new ConvexError(
+        "real skills.sh scan admission requires the permanent Test environment",
+      );
     }
     const externalIds = Array.from(
       new Set(args.externalIds.map((externalId) => externalId.trim().toLowerCase())),
     ).filter(Boolean);
-    assertIntegerInRange(
-      "externalIds.length",
-      externalIds.length,
-      1,
-      MAX_REAL_TEST_ADMISSIONS,
-    );
+    assertIntegerInRange("externalIds.length", externalIds.length, 1, MAX_REAL_TEST_ADMISSIONS);
     const artifactInputs = args.artifacts;
     const artifacts = new Map(
       artifactInputs.map((artifact) => [artifact.externalId.trim().toLowerCase(), artifact]),
@@ -1816,10 +1813,16 @@ async function validateRealScanArtifacts(
     const files = [];
     for (const file of artifact.files) {
       if (file.path !== file.path.trim() || !validateFilePath(file.path) || paths.has(file.path)) {
-        throw new ConvexError(`real Test scan artifact has an unsafe or duplicate path: ${file.path}`);
+        throw new ConvexError(
+          `real Test scan artifact has an unsafe or duplicate path: ${file.path}`,
+        );
       }
       paths.add(file.path);
-      if (!Number.isSafeInteger(file.size) || file.size < 0 || !/^[a-f0-9]{64}$/i.test(file.sha256)) {
+      if (
+        !Number.isSafeInteger(file.size) ||
+        file.size < 0 ||
+        !/^[a-f0-9]{64}$/i.test(file.sha256)
+      ) {
         throw new ConvexError(`real Test scan artifact has invalid file metadata: ${file.path}`);
       }
       const blob = await ctx.storage.get(file.storageId);
