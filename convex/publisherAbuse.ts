@@ -71,6 +71,11 @@ const DEFAULT_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 5;
 const MAX_TEMPORAL_SIGNAL_ARCHIVE_MAX_PAGES = 50;
 const MAX_TEMPORAL_SIGNAL_ARCHIVE_CONTINUATION_CANDIDATES = 250;
 const DEFAULT_PUBLISHER_ABUSE_SIGNAL_SNOOZE_DAYS = 14;
+const RECURRING_SUSTAINED_SIGNAL_MIN_DOWNLOADS = 1_500;
+const RECURRING_SUSTAINED_SIGNAL_MAX_INSTALLS = 5;
+const RECURRING_RATIO_SIGNAL_MIN_DOWNLOADS = 500;
+const RECURRING_RATIO_SIGNAL_MIN_INSTALLS = 50;
+const RECURRING_RATIO_SIGNAL_MIN_RATIO = 0.1;
 const MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH = 1000;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE = 10;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_MAX_BATCH_SIZE = 25;
@@ -832,6 +837,13 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
     reviewedAt: args.now,
     reviewNote: args.note,
     snoozedUntil: args.status === "snoozed" ? args.snoozedUntil : undefined,
+    evidenceAcknowledgedAt: args.status === "snoozed" ? args.now : undefined,
+    evidenceBaselineDownloads: args.status === "snoozed" ? args.signal.allTimeDownloads : undefined,
+    evidenceBaselineInstalls: args.status === "snoozed" ? args.signal.allTimeInstalls : undefined,
+    freshDownloadsSinceSnooze: args.status === "snoozed" ? 0 : undefined,
+    freshInstallsSinceSnooze: args.status === "snoozed" ? 0 : undefined,
+    snoozeCount:
+      args.status === "snoozed" ? (args.signal.snoozeCount ?? 0) + 1 : args.signal.snoozeCount,
     needsNotification: args.notify === true,
     lastChangedAt: args.notify ? args.now : args.signal.lastChangedAt,
     notificationClaimedAt: undefined,
@@ -2852,7 +2864,7 @@ function buildHermitPublisherAbuseSignalDigest(
     topSignals: signals.map((signal) => ({
       signalId: signal._id,
       signalType: signal.signalType,
-      severity: publisherAbuseSignalSeverity(signal.signalType),
+      severity: publisherAbuseSignalSeverity(signal.signalType, signal.recurrenceCount),
       publisher: signal.handleSnapshot,
       skillSlug: signal.skillSlug,
       skillDisplayName: signal.skillDisplayName,
@@ -2868,6 +2880,9 @@ function buildHermitPublisherAbuseSignalDigest(
       allTimeDownloads: signal.allTimeDownloads,
       allTimeInstalls: signal.allTimeInstalls,
       allTimeInstallDownloadRatio: signal.allTimeInstallDownloadRatio,
+      recurrenceCount: signal.recurrenceCount ?? 0,
+      freshDownloadsSinceSnooze: signal.freshDownloadsSinceSnooze ?? 0,
+      freshInstallsSinceSnooze: signal.freshInstallsSinceSnooze ?? 0,
       skillUrl: `${config.siteUrl}/${routeSegment(signal.handleSnapshot)}/skills/${routeSegment(
         signal.skillSlug,
       )}`,
@@ -2876,7 +2891,8 @@ function buildHermitPublisherAbuseSignalDigest(
   };
 }
 
-function publisherAbuseSignalSeverity(signalType: PublisherAbuseSignalType) {
+function publisherAbuseSignalSeverity(signalType: PublisherAbuseSignalType, recurrenceCount = 0) {
+  if (recurrenceCount > 0) return "high";
   return signalType === "high_install_download_ratio" ? "high" : "review";
 }
 
@@ -3491,12 +3507,47 @@ async function upsertPublisherAbuseSignal(
       previousStatus === "snoozed" &&
       typeof signal.snoozedUntil === "number" &&
       signal.snoozedUntil <= args.now;
-    const nextStatus = snoozeExpired ? "open" : previousStatus;
+    const hasEvidenceCheckpoint =
+      typeof signal.evidenceBaselineDownloads === "number" &&
+      typeof signal.evidenceBaselineInstalls === "number";
+    const evidenceBaselineDownloads = signal.evidenceBaselineDownloads ?? snapshot.allTimeDownloads;
+    const evidenceBaselineInstalls = signal.evidenceBaselineInstalls ?? snapshot.allTimeInstalls;
+    const freshDownloadsSinceSnooze = Math.max(
+      0,
+      snapshot.allTimeDownloads - evidenceBaselineDownloads,
+    );
+    const freshInstallsSinceSnooze = Math.max(
+      0,
+      snapshot.allTimeInstalls - evidenceBaselineInstalls,
+    );
+    const recurringAfterSnooze =
+      snoozeExpired &&
+      hasEvidenceCheckpoint &&
+      freshEvidenceCrossesRepeatThreshold(args.signalType, {
+        downloads: freshDownloadsSinceSnooze,
+        installs: freshInstallsSinceSnooze,
+      });
+    const nextStatus = recurringAfterSnooze ? "open" : previousStatus;
     const shouldNotify = nextStatus === "open";
     await ctx.db.patch(signal._id, {
       ...snapshot,
       reviewStatus: nextStatus,
       snoozedUntil: nextStatus === "snoozed" ? signal.snoozedUntil : undefined,
+      evidenceAcknowledgedAt:
+        previousStatus === "snoozed"
+          ? (signal.evidenceAcknowledgedAt ?? args.now)
+          : signal.evidenceAcknowledgedAt,
+      evidenceBaselineDownloads:
+        previousStatus === "snoozed" ? evidenceBaselineDownloads : signal.evidenceBaselineDownloads,
+      evidenceBaselineInstalls:
+        previousStatus === "snoozed" ? evidenceBaselineInstalls : signal.evidenceBaselineInstalls,
+      freshDownloadsSinceSnooze:
+        previousStatus === "snoozed" ? freshDownloadsSinceSnooze : signal.freshDownloadsSinceSnooze,
+      freshInstallsSinceSnooze:
+        previousStatus === "snoozed" ? freshInstallsSinceSnooze : signal.freshInstallsSinceSnooze,
+      recurrenceCount: recurringAfterSnooze
+        ? (signal.recurrenceCount ?? 0) + 1
+        : signal.recurrenceCount,
       lastSeenAt: args.now,
       seenCount: signal.seenCount + 1,
       lastChangedAt: shouldNotify ? args.now : signal.lastChangedAt,
@@ -3517,6 +3568,23 @@ async function upsertPublisherAbuseSignal(
     needsNotification: true,
   });
   return true;
+}
+
+function freshEvidenceCrossesRepeatThreshold(
+  signalType: PublisherAbuseSignalType,
+  fresh: { downloads: number; installs: number },
+) {
+  if (signalType === "sustained_downloads_flat_installs") {
+    return (
+      fresh.downloads >= RECURRING_SUSTAINED_SIGNAL_MIN_DOWNLOADS &&
+      fresh.installs <= RECURRING_SUSTAINED_SIGNAL_MAX_INSTALLS
+    );
+  }
+  return (
+    fresh.downloads >= RECURRING_RATIO_SIGNAL_MIN_DOWNLOADS &&
+    fresh.installs >= RECURRING_RATIO_SIGNAL_MIN_INSTALLS &&
+    installDownloadRatio(fresh) >= RECURRING_RATIO_SIGNAL_MIN_RATIO
+  );
 }
 
 function publisherAbuseSignalSnapshot(args: {

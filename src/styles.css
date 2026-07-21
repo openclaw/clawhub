@@ -14262,10 +14262,7 @@ code {
 }
 
 .pa-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
   gap: var(--space-4);
 }
 
@@ -14278,16 +14275,81 @@ code {
 }
 
 .pa-run {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(140px, auto) minmax(140px, auto) 1fr auto;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.pa-run-state,
+.pa-run-meta,
+.pa-scan-policy,
+.pa-autoban,
+.pa-rescan {
+  padding: var(--space-3) var(--space-4);
+}
+
+.pa-run-state {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.pa-run-eyebrow,
+.pa-run-meta dt {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pa-run-status {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-5);
+  gap: 7px;
+  font-size: var(--fs-md);
+  font-weight: 650;
+}
+
+.pa-run-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ink-soft);
+}
+
+.pa-run-status.is-complete {
+  color: var(--status-success-fg);
+}
+
+.pa-run-status.is-complete .pa-run-status-dot {
+  background: currentColor;
+}
+
+.pa-run-status.is-running {
+  color: var(--oc-status-warning-fg);
+}
+
+.pa-run-status.is-running .pa-run-status-dot {
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.pa-run-status.is-failed {
+  color: var(--status-error-fg);
+}
+
+.pa-run-status.is-failed .pa-run-status-dot {
+  background: currentColor;
 }
 
 .pa-autoban {
   display: grid;
-  justify-items: end;
+  align-content: center;
+  justify-items: start;
   gap: 4px;
-  padding-left: var(--space-5);
   border-left: 1px solid var(--line);
 }
 
@@ -14307,9 +14369,9 @@ code {
 
 .pa-rescan {
   display: grid;
-  justify-items: end;
+  align-content: center;
+  justify-items: start;
   gap: 4px;
-  padding-left: var(--space-5);
   border-left: 1px solid var(--line);
 }
 
@@ -14320,8 +14382,10 @@ code {
 
 .pa-run-meta {
   display: flex;
-  gap: var(--space-5);
+  align-items: center;
+  gap: var(--space-4);
   margin: 0;
+  border-left: 1px solid var(--line);
 }
 
 .pa-run-meta > div {
@@ -14329,26 +14393,44 @@ code {
   gap: 2px;
 }
 
-.pa-run-meta dt {
-  font-size: var(--fs-xs);
-  color: var(--ink-soft);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
 .pa-run-meta dd {
   margin: 0;
-  font-size: var(--fs-md);
-  font-weight: 600;
+  font-size: var(--fs-sm);
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
 
-.pa-run-ok {
-  color: var(--status-success-fg);
+.pa-scan-policy {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  border-left: 1px solid var(--line);
 }
 
-.pa-run-bad {
-  color: var(--status-error-fg);
+.pa-scan-policy strong {
+  font-size: var(--fs-sm);
+  font-weight: 650;
+}
+
+.pa-scan-policy span {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+}
+
+.pa-scan-spin {
+  animation: pa-scan-spin 1.1s linear infinite;
+}
+
+@keyframes pa-scan-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pa-scan-spin {
+    animation: none;
+  }
 }
 
 .pa-scan-failure,
@@ -14606,6 +14688,12 @@ code {
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   white-space: nowrap;
+}
+
+.pa-signal-repeat.is-recurring {
+  color: var(--oc-status-warning-fg);
+  font-family: inherit;
+  font-weight: 650;
 }
 
 .pa-signal-name {
@@ -15064,6 +15152,20 @@ code {
   .management-sidebar-group {
     grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
   }
+
+  .pa-run {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .pa-scan-policy,
+  .pa-autoban {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .pa-rescan {
+    border-top: 1px solid var(--line);
+  }
 }
 
 @media (max-width: 720px) {
@@ -15072,8 +15174,19 @@ code {
   }
 
   .pa-run {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .pa-run-meta,
+  .pa-scan-policy,
+  .pa-autoban,
+  .pa-rescan {
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+
+  .pa-rescan [data-slot="button"] {
     width: 100%;
   }
 

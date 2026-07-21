@@ -88,7 +88,7 @@ function makePublisherAbuseItem({
   };
 }
 
-function makePublisherAbuseSignal() {
+function makePublisherAbuseSignal(signalOverrides: Record<string, unknown> = {}) {
   return {
     signal: {
       _id: "publisherAbuseSignals:ratio",
@@ -124,6 +124,7 @@ function makePublisherAbuseSignal() {
         spikeMultiplier7dP95: 4,
         spikeMultiplier7dP99: 12,
       },
+      ...signalOverrides,
     },
     publisher: {
       _id: "publishers:ratio-owner",
@@ -1021,7 +1022,72 @@ describe("Management", () => {
       expect(startSignalScan).toHaveBeenCalledWith({});
     });
     expect(startScoreScan).not.toHaveBeenCalled();
-    expect(screen.getByText("Re-checks every active skill")).toBeTruthy();
+    expect(screen.getByText("Checks every active skill")).toBeTruthy();
+  });
+
+  it("shows a focused signal scan summary without unrelated scoring or auto-ban controls", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          latestSignalRun: {
+            status: "completed",
+            scannedPublishers: 0,
+            scoredPublishers: 0,
+            temporalSampleSize: 70_679,
+          },
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "publisherAbuse:getAutobanSetting") return { enabled: false };
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    expect(screen.getByText("Latest signal scan")).toBeTruthy();
+    expect(screen.getByText("70,679 skills checked")).toBeTruthy();
+    expect(screen.getByText("Manual review only")).toBeTruthy();
+    expect(screen.getByText("Signals never auto-ban publishers.")).toBeTruthy();
+    expect(screen.queryByText("Scored")).toBeNull();
+    expect(screen.queryByText("Auto-ban is off")).toBeNull();
+    expect(screen.queryByLabelText("Publisher abuse auto-ban")).toBeNull();
+  });
+
+  it("elevates a signal that returns after its evidence was snoozed", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    const recurringSignal = makePublisherAbuseSignal({
+      signalType: "sustained_downloads_flat_installs",
+      recurrenceCount: 1,
+      freshDownloadsSinceSnooze: 2_000,
+      freshInstallsSinceSnooze: 0,
+    });
+    usePaginatedQueryMock.mockImplementation((query, args) => ({
+      results:
+        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
+          ? [recurringSignal]
+          : [],
+      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
+      loadMore: vi.fn(),
+    }));
+
+    render(<Management />);
+
+    expect(screen.getByText("Repeat after snooze")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open details for Ratio Skill" }));
+    expect(screen.getByText("Repeat signal")).toBeTruthy();
+    expect(screen.getByText("0 installs / 2,000 downloads")).toBeTruthy();
   });
 
   it("shows the terminal signal scan error after five failed attempts", () => {
@@ -1121,7 +1187,10 @@ describe("Management", () => {
 
     render(<Management />);
 
-    expect(screen.getByText("4,600")).toBeTruthy();
+    expect(screen.getByText("4,600 skills checked")).toBeTruthy();
+    const scanningButton = screen.getByRole("button", { name: "Scanning signals" });
+    expect(scanningButton.textContent).toContain("Scanning…");
+    expect(scanningButton.hasAttribute("disabled")).toBe(true);
   });
 
   it("shows users as a separate management view", () => {

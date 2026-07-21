@@ -1021,6 +1021,12 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         reviewStatus: "snoozed",
         reviewNote: "looks crawler-ish",
+        evidenceAcknowledgedAt: expect.any(Number),
+        evidenceBaselineDownloads: 10_000,
+        evidenceBaselineInstalls: 1_200,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        snoozeCount: 1,
         needsNotification: false,
       }),
     );
@@ -1131,7 +1137,7 @@ describe("publisher abuse dry-run persistence", () => {
     globalThis.fetch = fetchMock as typeof fetch;
     const signal = {
       _id: "publisherAbuseSignals:ratio",
-      signalType: "high_install_download_ratio",
+      signalType: "sustained_downloads_flat_installs",
       ownerKey: "publisher:publishers:ratio-owner",
       ownerPublisherId: "publishers:ratio-owner",
       ownerUserId: "users:ratio-owner",
@@ -1151,6 +1157,9 @@ describe("publisher abuse dry-run persistence", () => {
       allTimeDownloads: 10_000,
       allTimeInstalls: 1_200,
       allTimeInstallDownloadRatio: 0.12,
+      recurrenceCount: 1,
+      freshDownloadsSinceSnooze: 2_000,
+      freshInstallsSinceSnooze: 0,
       reviewStatus: "open",
       needsNotification: false,
     };
@@ -1196,6 +1205,9 @@ describe("publisher abuse dry-run persistence", () => {
               publisher: "ratio-owner",
               skillSlug: "ratio-skill",
               severity: "high",
+              recurrenceCount: 1,
+              freshDownloadsSinceSnooze: 2_000,
+              freshInstallsSinceSnooze: 0,
               seenCount: 3,
               skillUrl: "https://clawhub.example.test/ratio-owner/skills/ratio-skill",
             }),
@@ -10147,20 +10159,35 @@ describe("publisher abuse dry-run persistence", () => {
     ]);
   });
 
-  it("keeps active snoozed signals quiet and reopens expired snoozes when archiving", async () => {
+  it("keeps acknowledged evidence quiet and reopens only for fresh post-snooze activity", async () => {
     const activeSnooze = temporalCandidate("skills:active-snooze", {
       slug: "active-snooze",
       displayName: "Active Snooze",
     });
     activeSnooze.temporalScore.spike = false;
-    activeSnooze.temporalScore.nearConversion = true;
+    activeSnooze.temporalScore.sustained = true;
 
-    const expiredSnooze = temporalCandidate("skills:expired-snooze", {
-      slug: "expired-snooze",
-      displayName: "Expired Snooze",
+    const acknowledgedSnooze = temporalCandidate("skills:acknowledged-snooze", {
+      slug: "acknowledged-snooze",
+      displayName: "Acknowledged Snooze",
     });
-    expiredSnooze.temporalScore.spike = false;
-    expiredSnooze.temporalScore.nearConversion = true;
+    acknowledgedSnooze.temporalScore.spike = false;
+    acknowledgedSnooze.temporalScore.sustained = true;
+
+    const recurringSnooze = temporalCandidate("skills:recurring-snooze", {
+      slug: "recurring-snooze",
+      displayName: "Recurring Snooze",
+    });
+    recurringSnooze.temporalScore.spike = false;
+    recurringSnooze.temporalScore.sustained = true;
+    recurringSnooze.totalDownloads = 12_000;
+
+    const legacySnooze = temporalCandidate("skills:legacy-snooze", {
+      slug: "legacy-snooze",
+      displayName: "Legacy Snooze",
+    });
+    legacySnooze.temporalScore.spike = false;
+    legacySnooze.temporalScore.sustained = true;
 
     const patch = vi.fn(async () => null);
     const ctx = {
@@ -10187,27 +10214,15 @@ describe("publisher abuse dry-run persistence", () => {
               build(q);
               return {
                 first: async () => ({
-                  _id:
-                    constraints.skillId === activeSnooze.skillId
-                      ? "publisherAbuseSignals:active-snooze"
-                      : "publisherAbuseSignals:expired-snooze",
-                  signalType: "high_install_download_ratio",
-                  ownerKey:
-                    constraints.skillId === activeSnooze.skillId
-                      ? activeSnooze.ownerKey
-                      : expiredSnooze.ownerKey,
+                  _id: `publisherAbuseSignals:${String(constraints.skillId).replace("skills:", "")}`,
+                  signalType: "sustained_downloads_flat_installs",
+                  ownerKey: activeSnooze.ownerKey,
                   ownerPublisherId: null,
                   ownerUserId: null,
                   handleSnapshot: "ratio-owner",
                   skillId: constraints.skillId,
-                  skillSlug:
-                    constraints.skillId === activeSnooze.skillId
-                      ? activeSnooze.slug
-                      : expiredSnooze.slug,
-                  skillDisplayName:
-                    constraints.skillId === activeSnooze.skillId
-                      ? activeSnooze.displayName
-                      : expiredSnooze.displayName,
+                  skillSlug: String(constraints.skillId).replace("skills:", ""),
+                  skillDisplayName: "Snoozed skill",
                   firstSeenAt: 10,
                   lastSeenAt: 20,
                   seenCount: 2,
@@ -10222,6 +10237,15 @@ describe("publisher abuse dry-run persistence", () => {
                   allTimeInstallDownloadRatio: 0.1,
                   reviewStatus: "snoozed",
                   snoozedUntil: constraints.skillId === activeSnooze.skillId ? 2_000 : 1_000,
+                  ...(constraints.skillId === legacySnooze.skillId
+                    ? {}
+                    : {
+                        evidenceAcknowledgedAt: 900,
+                        evidenceBaselineDownloads: 10_000,
+                        evidenceBaselineInstalls: 0,
+                      }),
+                  snoozeCount: 1,
+                  recurrenceCount: 0,
                   lastChangedAt: 100,
                   needsNotification: false,
                 }),
@@ -10235,12 +10259,12 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(
       archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
         runId: "publisherAbuseScoreRuns:temporal",
-        candidates: [activeSnooze, expiredSnooze],
+        candidates: [activeSnooze, acknowledgedSnooze, recurringSnooze, legacySnooze],
         now: 1_234,
       }),
     ).resolves.toEqual({
-      archivedCandidates: 2,
-      archivedSignals: 2,
+      archivedCandidates: 4,
+      archivedSignals: 4,
       changedSignals: 1,
     });
 
@@ -10249,17 +10273,46 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         reviewStatus: "snoozed",
         snoozedUntil: 2_000,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
         lastChangedAt: 100,
         needsNotification: false,
       }),
     );
     expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseSignals:expired-snooze",
+      "publisherAbuseSignals:acknowledged-snooze",
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        snoozedUntil: 1_000,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        lastChangedAt: 100,
+        needsNotification: false,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:recurring-snooze",
       expect.objectContaining({
         reviewStatus: "open",
         snoozedUntil: undefined,
+        freshDownloadsSinceSnooze: 2_000,
+        freshInstallsSinceSnooze: 0,
+        recurrenceCount: 1,
         lastChangedAt: 1_234,
         needsNotification: true,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:legacy-snooze",
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        snoozedUntil: 1_000,
+        evidenceAcknowledgedAt: 1_234,
+        evidenceBaselineDownloads: 10_000,
+        evidenceBaselineInstalls: 0,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        needsNotification: false,
       }),
     );
   });

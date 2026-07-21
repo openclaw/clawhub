@@ -668,7 +668,7 @@ export function Management() {
   const requestSnoozePublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Snooze ${item.signal.skillDisplayName}?`,
-      body: "Hides this signal from the default review queue for 14 days. If it reappears after that, it will reopen and notify Hermit again.",
+      body: "Hides this signal for at least 14 days and acknowledges the evidence shown now. It reopens only if fresh activity crosses the lower repeat threshold.",
       confirmLabel: "Snooze 14 days",
       reason: {
         label: "Note (optional)",

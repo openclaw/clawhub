@@ -256,11 +256,20 @@ export function AbusePage({
     : "Auto-ban loading";
   const autobanToggleLabel = autobanEnabled ? "Turn off auto-ban" : "Turn on auto-ban";
   const AutobanStatusIcon = autobanEnabled ? ShieldCheck : ShieldOff;
+  const scanRunning = displayedRun?.status === "running";
+  const scanStatusClass =
+    displayedRun?.status === "completed"
+      ? "is-complete"
+      : displayedRun?.status === "failed"
+        ? "is-failed"
+        : displayedRun?.status === "running"
+          ? "is-running"
+          : "is-idle";
 
   return (
     <section className="pa" aria-labelledby="pa-title">
       <header className="pa-head">
-        <div>
+        <div className="pa-head-copy">
           <h2 id="pa-title" className="section-title pa-title">
             Publisher abuse review
           </h2>
@@ -268,59 +277,76 @@ export function AbusePage({
             Statistical publisher abuse signals from the latest scoring run.
           </p>
         </div>
-        <div className="pa-run">
+        <div
+          className="pa-run"
+          aria-label={tab === "signals" ? "Signal scan status" : "Publisher scan status"}
+        >
+          <div className="pa-run-state">
+            <span className="pa-run-eyebrow">
+              {tab === "signals" ? "Latest signal scan" : "Latest publisher scan"}
+            </span>
+            <strong className={`pa-run-status ${scanStatusClass}`}>
+              <span className="pa-run-status-dot" aria-hidden="true" />
+              {displayedRun
+                ? formatPublisherAbuseRunStatus(displayedRun.status)
+                : dashboardLoaded
+                  ? "No scans yet"
+                  : "Loading"}
+            </strong>
+          </div>
           <dl className="pa-run-meta">
             <div>
-              <dt>Last scan</dt>
-              <dd
-                className={
-                  displayedRun?.status === "completed"
-                    ? "pa-run-ok"
-                    : displayedRun?.status === "failed"
-                      ? "pa-run-bad"
-                      : undefined
-                }
-              >
-                {displayedRun
-                  ? formatPublisherAbuseRunStatus(displayedRun.status)
-                  : dashboardLoaded
-                    ? "No scans yet"
-                    : "Loading"}
+              <dt>{tab === "signals" ? "Coverage" : "Scanned"}</dt>
+              <dd>
+                {formatWholeNumber(displayedScannedCount)}
+                {tab === "signals" ? " skills checked" : " publishers"}
               </dd>
             </div>
-            <div>
-              <dt>Scanned</dt>
-              <dd>{formatWholeNumber(displayedScannedCount)}</dd>
-            </div>
-            <div>
-              <dt>Scored</dt>
-              <dd>{formatWholeNumber(displayedRun?.scoredPublishers)}</dd>
-            </div>
+            {tab !== "signals" ? (
+              <div>
+                <dt>Scored</dt>
+                <dd>{formatWholeNumber(displayedRun?.scoredPublishers)}</dd>
+              </div>
+            ) : null}
           </dl>
+          {tab === "signals" ? (
+            <div className="pa-scan-policy">
+              <strong>Manual review only</strong>
+              <span>Signals never auto-ban publishers.</span>
+            </div>
+          ) : (
+            <div className="pa-autoban" aria-label="Publisher abuse auto-ban">
+              <span className={autobanEnabled ? "pa-autoban-status is-on" : "pa-autoban-status"}>
+                <AutobanStatusIcon size={14} />
+                {autobanStatusLabel}
+              </span>
+              <Button
+                type="button"
+                variant={autobanEnabled ? "destructive" : "primary"}
+                size="sm"
+                disabled={!admin || !autobanLoaded}
+                onClick={onToggleAutoban}
+              >
+                <Power size={14} />
+                {admin ? autobanToggleLabel : "Admins only"}
+              </Button>
+            </div>
+          )}
           <div className="pa-rescan">
-            <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
-              <RefreshCcw size={14} />
-              {tab === "signals" ? "Rescan signals" : "Run new scan"}
-            </Button>
-            <span className="pa-rescan-hint">
-              {tab === "signals" ? "Re-checks every active skill" : "Re-scores every publisher"}
-            </span>
-          </div>
-          <div className="pa-autoban" aria-label="Publisher abuse auto-ban">
-            <span className={autobanEnabled ? "pa-autoban-status is-on" : "pa-autoban-status"}>
-              <AutobanStatusIcon size={14} />
-              {autobanStatusLabel}
-            </span>
             <Button
               type="button"
-              variant={autobanEnabled ? "destructive" : "primary"}
+              variant="outline"
               size="sm"
-              disabled={!admin || !autobanLoaded}
-              onClick={onToggleAutoban}
+              disabled={scanRunning}
+              aria-label={tab === "signals" && scanRunning ? "Scanning signals" : undefined}
+              onClick={onRefresh}
             >
-              <Power size={14} />
-              {admin ? autobanToggleLabel : "Admins only"}
+              <RefreshCcw className={scanRunning ? "pa-scan-spin" : undefined} size={14} />
+              {scanRunning ? "Scanning…" : tab === "signals" ? "Rescan signals" : "Run new scan"}
             </Button>
+            <span className="pa-rescan-hint">
+              {tab === "signals" ? "Checks every active skill" : "Re-scores every publisher"}
+            </span>
           </div>
         </div>
       </header>
@@ -893,6 +919,7 @@ function PublisherAbuseSignalsTable({
           ) : (
             items.map((item) => {
               const selected = item.signal._id === selectedSignalId;
+              const recurrenceCount = item.signal.recurrenceCount ?? 0;
               return (
                 <tr
                   key={item.signal._id}
@@ -901,10 +928,13 @@ function PublisherAbuseSignalsTable({
                 >
                   <td>
                     <Badge
-                      variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)}
+                      variant={publisherAbuseSignalSeverityVariant(
+                        item.signal.signalType,
+                        recurrenceCount,
+                      )}
                       size="sm"
                     >
-                      {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
+                      {formatPublisherAbuseSignalSeverity(item.signal.signalType, recurrenceCount)}
                     </Badge>
                   </td>
                   <td>
@@ -925,9 +955,11 @@ function PublisherAbuseSignalsTable({
                         {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
                       </span>
                     </button>
-                    {item.signal.snoozedUntil ? (
+                    {recurrenceCount > 0 ? (
+                      <div className="pa-signal-repeat is-recurring">Repeat after snooze</div>
+                    ) : item.signal.snoozedUntil ? (
                       <div className="pa-signal-repeat">
-                        until {formatShortTimestamp(item.signal.snoozedUntil)}
+                        {formatPublisherAbuseSnoozeState(item.signal.snoozedUntil)}
                       </div>
                     ) : null}
                   </td>
@@ -968,6 +1000,10 @@ function PublisherAbuseSignalInspector({
 }) {
   const status = signalReviewStatus(item);
   const publisherHandle = signalPublisherHandle(item);
+  const recurrenceCount = item.signal.recurrenceCount ?? 0;
+  const hasFreshEvidence =
+    typeof item.signal.freshDownloadsSinceSnooze === "number" &&
+    typeof item.signal.freshInstallsSinceSnooze === "number";
   return (
     <>
       <SheetHeader className="pa-sheet-head">
@@ -979,10 +1015,14 @@ function PublisherAbuseSignalInspector({
           <Badge variant="default" size="sm">
             {formatPublisherAbuseSignalStatus(status)}
           </Badge>
-          <Badge variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)} size="sm">
-            {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
+          <Badge
+            variant={publisherAbuseSignalSeverityVariant(item.signal.signalType, recurrenceCount)}
+            size="sm"
+          >
+            {formatPublisherAbuseSignalSeverity(item.signal.signalType, recurrenceCount)}
           </Badge>
           <Badge variant="compact">Seen {formatWholeNumber(item.signal.seenCount)}x</Badge>
+          {recurrenceCount > 0 ? <Badge variant="warning">Repeat signal</Badge> : null}
         </div>
         <div className="pa-idline">
           <a
@@ -1056,6 +1096,17 @@ function PublisherAbuseSignalInspector({
               installs={item.signal.allTimeInstalls}
               ratio={item.signal.allTimeInstallDownloadRatio}
             />
+            {hasFreshEvidence ? (
+              <PublisherAbuseSignalEvidenceMetric
+                label="Since snooze"
+                downloads={item.signal.freshDownloadsSinceSnooze ?? 0}
+                installs={item.signal.freshInstallsSinceSnooze ?? 0}
+                ratio={installDownloadRatioForDisplay({
+                  downloads: item.signal.freshDownloadsSinceSnooze ?? 0,
+                  installs: item.signal.freshInstallsSinceSnooze ?? 0,
+                })}
+              />
+            ) : null}
           </div>
           {item.signal.temporalBenchmark?.scope === "all_active_skills" ? (
             <p className="pa-hint">
@@ -1090,6 +1141,17 @@ function PublisherAbuseSignalInspector({
             />
           </div>
           {item.signal.reviewNote ? <p className="pa-hint">{item.signal.reviewNote}</p> : null}
+          {recurrenceCount > 0 ? (
+            <p className="pa-hint">
+              Reopened because fresh activity crossed the lower repeat threshold after the prior
+              evidence was acknowledged.
+            </p>
+          ) : status === "snoozed" ? (
+            <p className="pa-hint">
+              The evidence shown at snooze time is acknowledged. After the quiet period, only fresh
+              suspicious activity can reopen this signal.
+            </p>
+          ) : null}
         </section>
 
         <section className="pa-zone pa-review">
@@ -1492,7 +1554,8 @@ function describePublisherAbuseSignalType(signalType: string) {
   return "Archived publisher abuse signal for manual review.";
 }
 
-function formatPublisherAbuseSignalSeverity(signalType: string) {
+function formatPublisherAbuseSignalSeverity(signalType: string, recurrenceCount = 0) {
+  if (recurrenceCount > 0) return "High";
   if (signalType === "high_install_download_ratio") return "High";
   if (signalType === "sustained_downloads_flat_installs") return "Review";
   return "Review";
@@ -1500,9 +1563,21 @@ function formatPublisherAbuseSignalSeverity(signalType: string) {
 
 function publisherAbuseSignalSeverityVariant(
   signalType: string,
+  recurrenceCount = 0,
 ): NonNullable<BadgeProps["variant"]> {
+  if (recurrenceCount > 0) return "warning";
   if (signalType === "high_install_download_ratio") return "warning";
   return "review";
+}
+
+function formatPublisherAbuseSnoozeState(snoozedUntil: number) {
+  if (snoozedUntil > Date.now()) return `quiet until ${formatShortTimestamp(snoozedUntil)}`;
+  return "Old evidence acknowledged · watching fresh activity";
+}
+
+function installDownloadRatioForDisplay(input: { downloads: number; installs: number }) {
+  if (input.downloads <= 0) return input.installs > 0 ? 1 : 0;
+  return input.installs / input.downloads;
 }
 
 function formatPublisherAbuseStatus(status: string) {
