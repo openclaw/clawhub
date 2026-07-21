@@ -67,14 +67,17 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   opts into archived dry-run signal rows for the staff Signals tab. It persists
   bounded source pages, exact percentile samples, and review candidates, then
   resumes through percentile and classification phases. Temporary scan rows
-  expire after seven days. A scheduled scan step that fails validation or throws
-  must persist a terminal failed state instead of leaving a resumable running run.
+  expire after seven days. A failed step retries from the last persisted cursor
+  with bounded backoff; any successfully persisted page resets the consecutive
+  failure count. A watchdog treats fifteen minutes without persisted progress as
+  a failed attempt. After five consecutive failed attempts, the run becomes
+  terminal, retains the last error for the staff UI, and emits the structured
+  `publisher_temporal_abuse_scan_failed` operator-alert event.
   Moderators can start this same full signal pipeline from the staff Signals tab.
   New manual starts record the actor; requests made while a temporal scan is
-  already active return that run without starting a competing worker. A
-  moderator rescan may replace a run only after it has persisted no progress
-  for twenty-four hours. Cron starts never use this recovery timeout, avoiding
-  replacement churn during scheduler delays.
+  already active return that run without starting a competing worker. Stale
+  recovery continues the same durable run instead of replacing it, and
+  cursor-guarded writes prevent overlapping late workers from duplicating work.
   Explicitly bounded manual scans remain diagnostic-only.
   The `review` label remains a calibration/manual-review signal. The
   `potential_ban_candidate` label is an

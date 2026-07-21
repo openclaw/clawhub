@@ -2830,6 +2830,7 @@ const publisherAbuseScoreRuns = defineTable({
     "status",
     "updatedAt",
   ])
+  .index("by_temporal_pipeline_kind_and_started_at", ["temporalPipelineKind", "startedAt"])
   .index("by_model_status_phase_temporal_complete_started_at", [
     "modelVersion",
     "status",
