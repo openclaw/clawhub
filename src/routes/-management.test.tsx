@@ -1024,6 +1024,40 @@ describe("Management", () => {
     expect(screen.getByText("Re-checks every active skill")).toBeTruthy();
   });
 
+  it("shows the terminal signal scan error after five failed attempts", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          latestSignalRun: {
+            status: "failed",
+            scannedPublishers: 120,
+            scoredPublishers: 0,
+            transientErrorCount: 5,
+            errorMessage: "Query exceeded the document read limit.",
+          },
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    expect(screen.getByText("Stopped after 5 failed attempts")).toBeTruthy();
+    expect(screen.getByText("Query exceeded the document read limit.")).toBeTruthy();
+  });
+
   it("shows users as a separate management view", () => {
     searchState = { view: "users" };
 

@@ -131,6 +131,9 @@ export function AbusePage({
     }
   }, [selectedSignalId, signalItems, signalPageStatus, tab]);
   const latestRun = dashboard?.latestRun ?? null;
+  const latestSignalRun = dashboard?.latestSignalRun ?? null;
+  const displayedRun = tab === "signals" ? latestSignalRun : latestRun;
+  const signalFailureCount = latestSignalRun?.transientErrorCount ?? 0;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
   const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId);
@@ -267,15 +270,15 @@ export function AbusePage({
               <dt>Last scan</dt>
               <dd
                 className={
-                  latestRun?.status === "completed"
+                  displayedRun?.status === "completed"
                     ? "pa-run-ok"
-                    : latestRun?.status === "failed"
+                    : displayedRun?.status === "failed"
                       ? "pa-run-bad"
                       : undefined
                 }
               >
-                {latestRun
-                  ? formatPublisherAbuseRunStatus(latestRun.status)
+                {displayedRun
+                  ? formatPublisherAbuseRunStatus(displayedRun.status)
                   : dashboardLoaded
                     ? "No scans yet"
                     : "Loading"}
@@ -283,11 +286,11 @@ export function AbusePage({
             </div>
             <div>
               <dt>Scanned</dt>
-              <dd>{formatWholeNumber(latestRun?.scannedPublishers)}</dd>
+              <dd>{formatWholeNumber(displayedRun?.scannedPublishers)}</dd>
             </div>
             <div>
               <dt>Scored</dt>
-              <dd>{formatWholeNumber(latestRun?.scoredPublishers)}</dd>
+              <dd>{formatWholeNumber(displayedRun?.scoredPublishers)}</dd>
             </div>
           </dl>
           <div className="pa-rescan">
@@ -317,6 +320,32 @@ export function AbusePage({
           </div>
         </div>
       </header>
+
+      {tab === "signals" && latestSignalRun?.status === "failed" ? (
+        <div className="pa-scan-failure" role="alert">
+          <XCircle aria-hidden="true" size={18} />
+          <div>
+            <strong>
+              {signalFailureCount > 0
+                ? `Stopped after ${signalFailureCount} failed attempts`
+                : "Signal scan failed"}
+            </strong>
+            <span>
+              {latestSignalRun.errorMessage ?? "The signal scan failed without an error."}
+            </span>
+          </div>
+        </div>
+      ) : tab === "signals" && signalFailureCount > 0 ? (
+        <div className="pa-scan-retrying" role="status">
+          <RefreshCcw aria-hidden="true" size={18} />
+          <div>
+            <strong>Retrying after {signalFailureCount} of 5 failed attempts</strong>
+            <span>
+              {latestSignalRun?.lastTransientError ?? "The previous signal scan attempt failed."}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       <div className="pa-tabs" role="tablist" aria-label="Publisher abuse queue">
         <PublisherAbuseTabButton

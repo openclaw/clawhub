@@ -14351,6 +14351,37 @@ code {
   color: var(--status-error-fg);
 }
 
+.pa-scan-failure,
+.pa-scan-retrying {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--status-error-fg) 30%, var(--line));
+  background: var(--status-error-bg);
+  color: var(--status-error-fg);
+}
+
+.pa-scan-failure > div,
+.pa-scan-retrying > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pa-scan-failure span,
+.pa-scan-retrying span {
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.pa-scan-retrying {
+  border-color: color-mix(in srgb, var(--oc-status-warning-fg) 30%, var(--line));
+  background: var(--oc-status-warning-bg);
+  color: var(--oc-status-warning-fg);
+}
+
 .pa-tabs {
   display: flex;
   flex-wrap: wrap;
