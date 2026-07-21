@@ -1,14 +1,17 @@
 {
   "schemaVersion": 1,
   "issue": "CLAW-556",
-  "generatedAt": "2026-07-21T10:08:10Z",
+  "generatedAt": "2026-07-21T10:51:27.695Z",
   "question": "Does the permanent Test staging seam fetch and process exactly 500 live skills through the ClawHub Vercel OIDC boundary without broad scan admission, public visibility, scheduling, or native-state changes?",
   "verdict": "pass_for_review",
   "sourceRevision": {
-    "gitSha": "f74f895a0c0fe13c3a49de7f9ff0a9e6a9df0446",
+    "gitSha": "90e4d55f6733f806c2131433b33640c31aebddf4",
     "branch": "pe/claw-556-skills-sh-catalog-control-plane",
     "convexDeployment": "academic-chihuahua-392",
-    "convexBuildSha": "f74f895a0c0fe13c3a49de7f9ff0a9e6a9df0446"
+    "convexBuildSha": "90e4d55f6733f806c2131433b33640c31aebddf4",
+    "convexDeployedAt": "2026-07-21T10:47:00Z",
+    "liveProofInvocationSha": "f74f895a0c0fe13c3a49de7f9ff0a9e6a9df0446",
+    "hardeningScopeAfterLiveProof": "Artifact byte/hash validation, authoritative staging identity checks, direct real-dispatch rejection, admin authorization, missing-run callback rejection, source-kind collision rejection, allowlist normalization, terminal retry synchronization, and strict fixture-versus-staging-live mode isolation. Discovery, normalization, persistence batching, cursoring, and the 500-row source contract were unchanged."
   },
   "vercel": {
     "project": "openclaw-foundation/clawhub",
@@ -27,18 +30,22 @@
       "deploymentLimit": "The one-shot proof build intentionally did not emit the normal application output after the bounded invocation, so Vercel marked that invocation deployment as ERROR after the proof response was captured."
     },
     "finalInertDeployment": {
-      "deploymentId": "dpl_7Mu67A55g3o9qVDEF3trs4m65ySC",
-      "buildId": "bld_51us42k0b",
-      "url": "clawhub-n8mmmgn3t-openclaw-foundation.vercel.app",
+      "deploymentId": "dpl_3bBK3Me8b2Axi1W3kTCFKNMVx7ud",
+      "buildId": "bld_gayuzmghv",
+      "url": "clawhub-jmwo4j0b8-openclaw-foundation.vercel.app",
       "target": "test",
-      "sourceSha": "f74f895a0c0fe13c3a49de7f9ff0a9e6a9df0446",
+      "sourceSha": "90e4d55f6733f806c2131433b33640c31aebddf4",
       "readyState": "READY",
-      "createdAt": "2026-07-21T10:06:12Z",
+      "createdAt": "2026-07-21T10:47:57.273Z",
       "runtime": "nodejs24.x",
       "memorySizeMiB": 2048,
       "timeoutSeconds": 300,
       "liveInvocationMarkerPresent": false,
-      "unauthenticatedRouteStatus": 401,
+      "unauthenticatedRouteStatuses": {
+        "/ops/skills-sh/catalog-test": 401,
+        "/api/v1/operator/skills-sh/catalog-test": 401
+      },
+      "deploymentProtectionEnabled": true,
       "newCatalogRunsAfterDeploy": 0
     }
   },
@@ -225,6 +232,58 @@
       "realScanQueue": 0
     }
   },
+  "postHardenedDeployReadback": {
+    "capturedAt": "2026-07-21T10:51:27.695Z",
+    "convexDeployment": "academic-chihuahua-392",
+    "convexBuildSha": "90e4d55f6733f806c2131433b33640c31aebddf4",
+    "latestCatalogRunUpdatedAt": 1784627791018,
+    "latestCatalogRunPredatesFinalDeploy": true,
+    "control": {
+      "mode": "off",
+      "paused": true,
+      "discoveryEnabled": false,
+      "writesEnabled": false,
+      "scanPlanningEnabled": false,
+      "scanAdmissionEnabled": false,
+      "publicVisibilityEnabled": false,
+      "realScanAllowlist": []
+    },
+    "nativeSkills": {
+      "count": 67616,
+      "pagesRead": 68,
+      "cliJsonSha256": "cd3c9dd11f45127af378955f2245f4b3503c07a4dfdc5c02f08efa0fdfa7c4d7"
+    },
+    "nativeSecurityScanJobs": {
+      "count": 3,
+      "pagesRead": 1,
+      "cliJsonSha256": "04c733bf52b4c3f233609043b9a122fb10e6f8edd276076d687463234e3cc387",
+      "sources": {
+        "publish": 3
+      },
+      "statuses": {
+        "queued": 3
+      },
+      "catalogAttributed": 0
+    },
+    "catalog": {
+      "entries": 500,
+      "entryPagesRead": 1,
+      "entriesCliJsonSha256": "b6b251fe5488894e7ddaa4d321f1ef9c6ce86626942dc487f743c9d1c5ea9a59",
+      "sourceKinds": {
+        "staging-live": 500
+      },
+      "scanStatuses": {
+        "planned": 500
+      },
+      "entriesPublicVisible": 0,
+      "entriesInstallable": 0,
+      "scanAttempts": 0,
+      "attemptPagesRead": 1,
+      "attemptsCliJsonSha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "realScanAttempts": 0
+    },
+    "hashNote": "These fresh hashes cover the complete Convex CLI JSON readback after the hardened deploy. They are serialization-specific snapshots and are not compared numerically with the in-run ConvexHttpClient hashes; authoritative counts, source/status distributions, and the unchanged latest run timestamp establish that the inert deploy created no catalog or native work."
+  },
   "finalControls": {
     "mode": "off",
     "paused": true,
@@ -251,8 +310,35 @@
     "unhealthyOrExhaustedAdmissionFailsClosed": true,
     "dailySchedulingDefaultOff": true
   },
+  "hardeningValidation": {
+    "focusedTests": {
+      "files": 6,
+      "testsPassed": 147
+    },
+    "convexCodegenWithTypeScript": "passed",
+    "ciStatic": "passed",
+    "ciUnit": {
+      "filesPassed": 382,
+      "filesSkipped": 1,
+      "testsPassed": 4944,
+      "testsSkipped": 1,
+      "statementsPercent": 85.89,
+      "branchesPercent": 76.71,
+      "functionsPercent": 86.95,
+      "linesPercent": 88.59
+    },
+    "ciTypesBuild": "passed",
+    "structuredAutoreview": {
+      "branchFindingAccepted": "Fixture work could advance under staging-live controls.",
+      "fix": "Fixture start, processing, deterministic admission, start, completion, and callback now require fixture mode and a fixture run.",
+      "finalLocalReview": "clean"
+    },
+    "liveFetchRepeatedAfterHardening": false,
+    "reasonLiveFetchWasNotRepeated": "The post-proof changes only tightened staging admission, artifact validation, environment authorization, callback/retry synchronization, source-kind collision handling, and fixture-versus-live mode isolation. The exact 500-row source and discovery path was unchanged; the final descendant was deployed inert and read back with zero new runs, attempts, or jobs."
+  },
   "limits": [
     "The skills.sh detail contract did not provide complete file bodies for the selected real-scan candidates, so this gate proves fail-closed artifact admission rather than a terminal real ClawScan verdict.",
+    "The live 500-row invocation ran at f74f895a; the final hardened descendant 90e4d55f was deployed to both exact Test runtimes with the live-fetch marker absent. The proof records this split explicitly rather than claiming a second live fetch.",
     "Vercel local-upload deployments do not expose a gitSource object. The source SHA is bound by the clean detached worktree, the fixed one-shot invoker assertion, the Convex APP_BUILD_SHA readback, and the final conventional commit chain.",
     "Database operation counts are code-path estimates. Runtime, memory, fetch counts, full paginated table counts, and canonical SHA-256 comparisons are measured."
   ]
