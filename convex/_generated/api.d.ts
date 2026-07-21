@@ -51,6 +51,7 @@ import type * as leaderboards from "../leaderboards.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
+import type * as lib_artifactText from "../lib/artifactText.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
 import type * as lib_catalogClassification from "../lib/catalogClassification.js";
@@ -224,6 +225,7 @@ declare const fullApi: ApiFromModules<{
   "lib/access": typeof lib_access;
   "lib/apiTokenAuth": typeof lib_apiTokenAuth;
   "lib/artifactModeration": typeof lib_artifactModeration;
+  "lib/artifactText": typeof lib_artifactText;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
   "lib/catalogClassification": typeof lib_catalogClassification;

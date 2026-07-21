@@ -3,35 +3,501 @@
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
+import type { Doc, Id } from "./_generated/dataModel";
+import frozenSnapshot from "./fixtures/skills-sh-500-2026-07-21.json";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
+
+const LOCAL_ENV = {
+  CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
+};
 
 const TEST_ENV = {
   CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
   CLAWHUB_DISABLE_CRONS: "1",
   CLAWHUB_ENV: "test",
+  CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
 };
 
-function useTestEnvironment() {
-  for (const [name, value] of Object.entries(TEST_ENV)) vi.stubEnv(name, value);
+const BASE_CONTROL = {
+  actor: "codex-test",
+  reason: "exercise the dark skills.sh catalog gate",
+  confirm: "enable-skills-sh-fixture-control",
+  mode: "fixture" as const,
+  discoveryEnabled: true,
+  writesEnabled: true,
+  scanPlanningEnabled: true,
+  scanAdmissionEnabled: true,
+  maxEntriesPerRun: 500,
+  maxEntriesPerBatch: 125,
+  maxWritesPerBatch: 100,
+  maxPlannedScans: 500,
+  maxScanAdmissionsPerBatch: 50,
+  maxScanAdmissionsPerRun: 500,
+  maxScanAdmissionsPerDay: 500,
+  maxCatalogQueued: 50,
+  maxCatalogInFlight: 10,
+  maxNativeQueued: 0,
+  maxNativeInFlight: 0,
+  realScanAllowlist: [] as string[],
+};
+
+type CatalogTest = ReturnType<typeof convexTest>;
+type RunSummary = Pick<
+  Doc<"skillsShCatalogRuns">,
+  "status" | "cursor" | "fixtureLength" | "counts" | "snapshotCaptureFetches"
+> & {
+  operationsAreEstimates: boolean;
+  budgetConsumed: {
+    batchesProcessed: number;
+  };
+};
+
+function useEnvironment(env: Record<string, string>) {
+  for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
 }
 
-describe("skills.sh catalog dark control plane", () => {
+async function processToTerminal(
+  t: CatalogTest,
+  runId: Id<"skillsShCatalogRuns">,
+  maxBatches = 200,
+) {
+  for (let batch = 1; batch <= maxBatches; batch += 1) {
+    const result = (await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
+      runId,
+    })) as RunSummary;
+    if (result.status !== "running") return result;
+  }
+  throw new Error(`skills.sh run ${runId} exceeded ${maxBatches} batches`);
+}
+
+async function collectEntries(t: CatalogTest) {
+  const entries: Doc<"skillsShCatalogEntries">[] = [];
+  let cursor: string | null = null;
+  do {
+    const result = (await t.query(internal.skillsShCatalog.listEntriesPageInternal, {
+      paginationOpts: { cursor, numItems: 100 },
+    })) as {
+      page: Doc<"skillsShCatalogEntries">[];
+      isDone: boolean;
+      continueCursor: string;
+    };
+    entries.push(...result.page);
+    cursor = result.isDone ? null : result.continueCursor;
+  } while (cursor);
+  return entries;
+}
+
+async function collectAttempts(t: CatalogTest, runId: Id<"skillsShCatalogRuns">) {
+  const attempts: Doc<"skillsShCatalogScanAttempts">[] = [];
+  let cursor: string | null = null;
+  do {
+    const result = (await t.query(internal.skillsShCatalog.listRunScanAttemptsPageInternal, {
+      runId,
+      paginationOpts: { cursor, numItems: 100 },
+    })) as {
+      page: Doc<"skillsShCatalogScanAttempts">[];
+      isDone: boolean;
+      continueCursor: string;
+    };
+    attempts.push(...result.page);
+    cursor = result.isDone ? null : result.continueCursor;
+  } while (cursor);
+  return attempts;
+}
+
+async function collectNativeState(t: CatalogTest) {
+  const skills: Doc<"skills">[] = [];
+  const jobs: Doc<"securityScanJobs">[] = [];
+  let skillCursor: string | null = null;
+  let jobCursor: string | null = null;
+  do {
+    const result = (await t.query(internal.skillsShCatalog.listNativeSkillsIsolationPageInternal, {
+      paginationOpts: { cursor: skillCursor, numItems: 100 },
+    })) as {
+      page: Doc<"skills">[];
+      isDone: boolean;
+      continueCursor: string;
+    };
+    skills.push(...result.page);
+    skillCursor = result.isDone ? null : result.continueCursor;
+  } while (skillCursor);
+  do {
+    const result = (await t.query(
+      internal.skillsShCatalog.listNativeScanJobsIsolationPageInternal,
+      {
+        paginationOpts: { cursor: jobCursor, numItems: 100 },
+      },
+    )) as {
+      page: Doc<"securityScanJobs">[];
+      isDone: boolean;
+      continueCursor: string;
+    };
+    jobs.push(...result.page);
+    jobCursor = result.isDone ? null : result.continueCursor;
+  } while (jobCursor);
+  return { skills, jobs };
+}
+
+describe("skills.sh catalog overload control plane", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
-  it("runs the committed NVIDIA fixture idempotently without exposing public state", async () => {
-    useTestEnvironment();
-
+  it("fails closed without controls and rejects spoofed Preview/Test environments", async () => {
+    useEnvironment(LOCAL_ENV);
     const t = convexTest(schema, modules);
-    const nativeSkillId = await t.run(async (ctx) => {
+    const initial = await t.query(internal.skillsShCatalog.getStatusInternal, {});
+    expect(initial.control).toMatchObject({
+      mode: "off",
+      discoveryEnabled: false,
+      writesEnabled: false,
+      scanAdmissionEnabled: false,
+      publicVisibilityEnabled: false,
+      paused: true,
+    });
+    await expect(
+      t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+        fixtureId: "nvidia-small-v1",
+        actor: "codex-test",
+        reason: "must fail closed",
+      }),
+    ).rejects.toThrow("controls are disabled");
+
+    vi.stubEnv("CLAWHUB_PREVIEW", "1");
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    await expect(
+      t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+        ...BASE_CONTROL,
+        maxScanAdmissionsPerRun: 10,
+        maxScanAdmissionsPerDay: 10,
+      }),
+    ).rejects.toThrow("disabled in Preview");
+  });
+
+  it("terminates explicitly when the discovery budget is exhausted", async () => {
+    useEnvironment(LOCAL_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      scanAdmissionEnabled: false,
+      maxEntriesPerRun: 1,
+      maxEntriesPerBatch: 1,
+      maxPlannedScans: 1,
+      maxScanAdmissionsPerBatch: 0,
+      maxScanAdmissionsPerRun: 0,
+      maxScanAdmissionsPerDay: 0,
+      maxCatalogQueued: 0,
+      maxCatalogInFlight: 0,
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "nvidia-small-v1",
+      actor: "codex-test",
+      reason: "prove budget exhaustion is terminal",
+    });
+    const run = await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, { runId });
+    expect(run).toMatchObject({
+      status: "budget-exhausted",
+      cursor: 1,
+      fixtureLength: 3,
+      counts: {
+        observed: 1,
+        inserted: 1,
+        scansPlanned: 1,
+      },
+    });
+    const repeated = await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
+      runId,
+    });
+    expect(repeated).toMatchObject({
+      status: "budget-exhausted",
+      cursor: 1,
+      counts: { observed: 1 },
+    });
+  });
+
+  it("plans a bounded 20,000-row discovery without writing entries or enqueueing scans", async () => {
+    useEnvironment(LOCAL_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      writesEnabled: false,
+      scanAdmissionEnabled: false,
+      maxEntriesPerRun: 20_000,
+      maxEntriesPerBatch: 250,
+      maxPlannedScans: 20_000,
+      maxScanAdmissionsPerBatch: 0,
+      maxScanAdmissionsPerRun: 0,
+      maxScanAdmissionsPerDay: 0,
+      maxCatalogQueued: 0,
+      maxCatalogInFlight: 0,
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "synthetic-20000-v1",
+      actor: "codex-test",
+      reason: "prove discovery cannot enqueue scans",
+      dryRun: true,
+    });
+
+    const run = await processToTerminal(t, runId);
+    expect(run).toMatchObject({
+      status: "completed",
+      cursor: 20_000,
+      fixtureLength: 20_000,
+      counts: {
+        observed: 20_000,
+        wouldInsert: 20_000,
+        inserted: 0,
+        scansPlanned: 20_000,
+        scansAdmitted: 0,
+        scansCompleted: 0,
+      },
+      budgetConsumed: {
+        batchesProcessed: 80,
+      },
+      operationsAreEstimates: true,
+    });
+    expect(await collectEntries(t)).toHaveLength(0);
+    expect(await collectAttempts(t, runId)).toHaveLength(0);
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect()),
+    ).toHaveLength(0);
+  }, 60_000);
+
+  it("persists and completes 500 rows, then reruns idempotently and rescans only a changed source hash", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-21T03:00:00.000Z"));
+    useEnvironment(LOCAL_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, BASE_CONTROL);
+    const nativeBefore = await collectNativeState(t);
+    const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "skills-sh-500-2026-07-21",
+      actor: "codex-test",
+      reason: "first frozen 500 run",
+    });
+
+    const firstBatch = await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
+      runId,
+    });
+    expect(firstBatch.status).toBe("running");
+    const cursorBeforePause = firstBatch.cursor;
+    const countsBeforePause = firstBatch.counts;
+    await t.mutation(internal.skillsShCatalog.setFixtureRunPausedInternal, { runId, paused: true });
+    await expect(
+      t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
+        runId,
+      }),
+    ).rejects.toThrow("run is paused");
+    const paused = await t.query(internal.skillsShCatalog.getRunInternal, {
+      runId,
+    });
+    expect(paused).toMatchObject({
+      cursor: cursorBeforePause,
+      counts: countsBeforePause,
+    });
+    await t.mutation(internal.skillsShCatalog.setFixtureRunPausedInternal, {
+      runId,
+      paused: false,
+    });
+    const firstRun = await processToTerminal(t, runId);
+    expect(firstRun).toMatchObject({
+      status: "completed",
+      cursor: 500,
+      counts: {
+        observed: 500,
+        wouldInsert: 500,
+        wouldUpdate: 0,
+        inserted: 500,
+        updated: 0,
+        unchanged: 0,
+        rejected: 0,
+        scansPlanned: 500,
+        scansAdmitted: 0,
+      },
+      snapshotCaptureFetches: 528,
+    });
+
+    const entries = await collectEntries(t);
+    expect(entries).toHaveLength(500);
+    expect(entries.filter((entry) => entry.owner === "nvidia")).toHaveLength(10);
+    expect(entries.map((entry) => entry.externalId)).toEqual(
+      expect.arrayContaining([
+        "anthropics/skills/frontend-design",
+        "anthropics/claude-code/frontend-design",
+      ]),
+    );
+    expect(entries.every((entry) => !entry.publicVisible)).toBe(true);
+
+    for (let offset = 0; offset < entries.length; offset += 50) {
+      const externalIds = entries.slice(offset, offset + 50).map((entry) => entry.externalId);
+      const admission = await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+        runId,
+        externalIds,
+        dispatchKind: "deterministic",
+      });
+      expect(admission).toMatchObject({
+        admitted: externalIds.length,
+        skipped: 0,
+      });
+      const completion = await t.mutation(
+        internal.skillsShCatalog.completeDeterministicScansInternal,
+        { runId, limit: 50 },
+      );
+      expect(completion).toMatchObject({
+        matched: externalIds.length,
+        completed: externalIds.length,
+        canceled: 0,
+      });
+    }
+    const completedFirstRun = await t.query(internal.skillsShCatalog.getRunInternal, { runId });
+    expect(completedFirstRun?.counts).toMatchObject({
+      scansAdmitted: 500,
+      scansCompleted: 500,
+    });
+    expect(await collectAttempts(t, runId)).toHaveLength(500);
+
+    const repeated = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "skills-sh-500-2026-07-21",
+      actor: "codex-test",
+      reason: "identical frozen rerun",
+    });
+    const repeatedRun = await processToTerminal(t, repeated.runId);
+    expect(repeatedRun.counts).toEqual({
+      observed: 500,
+      wouldInsert: 0,
+      wouldUpdate: 0,
+      inserted: 0,
+      updated: 0,
+      unchanged: 500,
+      rejected: 0,
+      scansPlanned: 0,
+      scansAdmitted: 0,
+      scansCompleted: 0,
+      scansCanceled: 0,
+    });
+    expect(await collectAttempts(t, repeated.runId)).toHaveLength(0);
+
+    vi.setSystemTime(new Date("2026-07-22T03:00:00.000Z"));
+    const changed = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "skills-sh-500-2026-07-21-v2",
+      actor: "codex-test",
+      reason: "changed frozen rerun",
+    });
+    const changedRun = await processToTerminal(t, changed.runId);
+    expect(changedRun.counts).toEqual({
+      observed: 500,
+      wouldInsert: 0,
+      wouldUpdate: 2,
+      inserted: 0,
+      updated: 2,
+      unchanged: 498,
+      rejected: 0,
+      scansPlanned: 1,
+      scansAdmitted: 0,
+      scansCompleted: 0,
+      scansCanceled: 0,
+    });
+    const changedEntries = await collectEntries(t);
+    const planned = changedEntries.filter((entry) => entry.scanStatus === "planned");
+    expect(planned).toHaveLength(1);
+    await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+      runId: changed.runId,
+      externalIds: [planned[0]!.externalId],
+      dispatchKind: "deterministic",
+    });
+    await t.mutation(internal.skillsShCatalog.completeDeterministicScansInternal, {
+      runId: changed.runId,
+      limit: 1,
+    });
+    const changedAttempts = await collectAttempts(t, changed.runId);
+    expect(changedAttempts).toHaveLength(1);
+    expect(changedAttempts[0]?.sourceContentHash).toBe(planned[0]?.sourceContentHash);
+    expect(changedAttempts[0]?.artifactContentHash).toBeUndefined();
+
+    const allEntries = await collectEntries(t);
+    expect(allEntries).toHaveLength(500);
+    expect(allEntries.every((entry) => !entry.publicVisible)).toBe(true);
+    expect(await collectNativeState(t)).toEqual(nativeBefore);
+  }, 60_000);
+
+  it("allows at most ten explicitly allowlisted real Test queue records for the frozen 500", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const allowlist = frozenSnapshot.rows.slice(0, 10).map((row) => row.externalId);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxScanAdmissionsPerBatch: 10,
+      maxScanAdmissionsPerRun: 10,
+      maxScanAdmissionsPerDay: 10,
+      maxCatalogQueued: 10,
+      maxCatalogInFlight: 1,
+      realScanAllowlist: allowlist,
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "skills-sh-500-2026-07-21",
+      actor: "codex-test",
+      reason: "production-shaped Test seam",
+    });
+    const run = await processToTerminal(t, runId);
+    expect(run.counts).toMatchObject({
+      observed: 500,
+      scansPlanned: 500,
+      scansAdmitted: 0,
+    });
+    await expect(
+      t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+        runId,
+        externalIds: [frozenSnapshot.rows[10]!.externalId],
+        dispatchKind: "real",
+      }),
+    ).rejects.toThrow("not allowlisted");
+
+    const admitted = await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+      runId,
+      externalIds: allowlist,
+      dispatchKind: "real",
+    });
+    expect(admitted.admitted).toBe(10);
+    const realQueue = await t.query(internal.skillsShCatalog.listRealScanQueueInternal, {
+      limit: 10,
+    });
+    expect(realQueue).toHaveLength(10);
+    expect(
+      realQueue.every(
+        (attempt) =>
+          attempt.priority === "low" &&
+          attempt.requiresArtifactFetch &&
+          !attempt.artifactContentHash,
+      ),
+    ).toBe(true);
+    await expect(
+      t.mutation(internal.skillsShCatalog.recordFixtureScanResultInternal, {
+        attemptId: realQueue[0]!._id,
+        sourceContentHash: realQueue[0]!.sourceContentHash,
+        verdict: "clean",
+      }),
+    ).rejects.toThrow("external artifact-fetch integration");
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect()),
+    ).toHaveLength(0);
+  }, 30_000);
+
+  it("enforces queue health and concurrent caps, then cancels only catalog state", async () => {
+    useEnvironment(LOCAL_ENV);
+    const t = convexTest(schema, modules);
+    const seeded = await t.run(async (ctx) => {
       const ownerUserId = await ctx.db.insert("users", {
         handle: "native-owner",
         displayName: "Native Owner",
       });
-      return await ctx.db.insert("skills", {
+      const nativeSkillId = await ctx.db.insert("skills", {
         slug: "native-skill",
         displayName: "Native Skill",
         ownerUserId,
@@ -45,482 +511,109 @@ describe("skills.sh catalog dark control plane", () => {
         createdAt: 1,
         updatedAt: 1,
       });
+      const nativeCompletedJobId = await ctx.db.insert("securityScanJobs", {
+        targetKind: "skillVersion",
+        status: "succeeded",
+        source: "manual",
+        priority: 0,
+        hasMaliciousSignal: false,
+        waitForVtUntil: 0,
+        nextRunAt: 0,
+        attempts: 1,
+        completedAt: 1,
+        createdAt: 1,
+        updatedAt: 1,
+      });
+      return { nativeSkillId, nativeCompletedJobId };
     });
-    const initial = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(initial.control).toMatchObject({
-      mode: "off",
-      writesEnabled: false,
-      scanPlanningEnabled: false,
-      publicVisibilityEnabled: false,
-      paused: true,
-    });
-
-    await expect(
-      t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-        fixtureId: "nvidia-small-v1",
-        actor: "codex-test",
-        reason: "prove dark fixture behavior",
-      }),
-    ).rejects.toThrow("skills.sh catalog writes are disabled");
-
     await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      actor: "codex-test",
-      reason: "enable bounded fixture proof",
-      confirm: "enable-skills-sh-fixture-control",
-      writesEnabled: true,
-      scanPlanningEnabled: true,
-      maxEntriesPerRun: 10,
-      maxWritesPerBatch: 10,
-      maxPlannedScans: 5,
-    });
-
-    const firstRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v1",
-      actor: "codex-test",
-      reason: "first fixture run",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: firstRun.runId,
-    });
-
-    const afterFirstRun = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(afterFirstRun.runs[0]).toMatchObject({
-      status: "completed",
-      cursor: 3,
-      counts: {
-        observed: 3,
-        inserted: 2,
-        updated: 0,
-        unchanged: 1,
-        rejected: 0,
-        scansPlanned: 2,
-        scansCompleted: 0,
-        scansCanceled: 0,
-      },
-      budgetConsumed: {
-        entriesObserved: 3,
-        scansPlanned: 2,
-        batchesProcessed: 1,
-        lastBatchWrites: 5,
-      },
-      errors: [],
-    });
-    expect(afterFirstRun.entries).toHaveLength(2);
-    expect(afterFirstRun.entries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          externalId: "nvidia/skills/aiq-deploy",
-          githubOwnerId: 1728152,
-          publicVisible: false,
-          resolution: {
-            externalRoute: "/skills-sh/nvidia/skills/aiq-deploy",
-            installRef: "skills-sh:nvidia/skills/aiq-deploy",
-            installable: false,
-          },
-          scanStatus: "queued",
-        }),
-        expect.objectContaining({
-          externalId: "nvidia/skills/cuda-agent",
-          githubOwnerId: 1728152,
-          publicVisible: false,
-          scanStatus: "queued",
-        }),
-      ]),
-    );
-    expect(afterFirstRun.scanAttempts).toHaveLength(2);
-    expect(afterFirstRun.scanAttempts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          source: "skills-sh-catalog-fixture",
-          priority: "low",
-          status: "queued",
-        }),
-      ]),
-    );
-
-    const aiqAttempt = afterFirstRun.scanAttempts.find(
-      (attempt) => attempt.externalId === "nvidia/skills/aiq-deploy",
-    );
-    expect(aiqAttempt).toBeDefined();
-    await t.mutation(internal.skillsShCatalog.recordFixtureScanResultInternal, {
-      attemptId: aiqAttempt!._id,
-      contentHash: aiqAttempt!.contentHash,
-      verdict: "clean",
-    });
-
-    const afterScan = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(
-      afterScan.entries.find((entry) => entry.externalId === "nvidia/skills/aiq-deploy"),
-    ).toMatchObject({
-      scanStatus: "clean",
-      publicVisible: false,
-    });
-    expect(afterScan.runs[0].counts.scansCompleted).toBe(1);
-
-    const repeatedRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v1",
-      actor: "codex-test",
-      reason: "repeat identical fixture",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: repeatedRun.runId,
-    });
-
-    const afterRepeat = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(afterRepeat.runs[0]).toMatchObject({
-      status: "completed",
-      counts: {
-        observed: 3,
-        inserted: 0,
-        updated: 0,
-        unchanged: 3,
-        rejected: 0,
-        scansPlanned: 0,
-        scansCompleted: 0,
-        scansCanceled: 0,
-      },
-    });
-    expect(afterRepeat.scanAttempts).toHaveLength(2);
-
-    const canceled = await t.mutation(internal.skillsShCatalog.cancelQueuedFixtureScansInternal, {
-      limit: 10,
-    });
-    expect(canceled).toMatchObject({ matched: 1, canceled: 1 });
-
-    await t.mutation(internal.skillsShCatalog.disableCatalogInternal, {
-      actor: "codex-test",
-      reason: "exercise non-destructive rollback",
-      confirm: "disable-skills-sh-catalog",
-    });
-    const disabled = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(disabled.control).toMatchObject({
-      mode: "off",
-      writesEnabled: false,
-      scanPlanningEnabled: false,
-      publicVisibilityEnabled: false,
-      paused: true,
-    });
-    expect(disabled.entries).toHaveLength(2);
-    expect(disabled.runs).toHaveLength(2);
-    expect(await t.run(async (ctx) => await ctx.db.get(nativeSkillId))).toMatchObject({
-      slug: "native-skill",
-      displayName: "Native Skill",
-      updatedAt: 1,
-    });
-  });
-
-  it("pauses a bounded run and resumes from its stored cursor", async () => {
-    useTestEnvironment();
-    const t = convexTest(schema, modules);
-
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      actor: "codex-test",
-      reason: "force a multi-batch fixture run",
-      confirm: "enable-skills-sh-fixture-control",
-      writesEnabled: true,
-      scanPlanningEnabled: true,
-      maxEntriesPerRun: 10,
-      maxWritesPerBatch: 3,
-      maxPlannedScans: 5,
+      ...BASE_CONTROL,
+      maxEntriesPerRun: 3,
+      maxEntriesPerBatch: 3,
+      maxPlannedScans: 2,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 1,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
     });
     const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
       fixtureId: "nvidia-small-v1",
       actor: "codex-test",
-      reason: "pause and resume proof",
+      reason: "queue and concurrency proof",
     });
+    await processToTerminal(t, runId);
+    const entries = await collectEntries(t);
+    expect(entries).toHaveLength(2);
 
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, { runId });
-    const beforePause = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(beforePause.runs.find((run) => run._id === runId)).toMatchObject({
-      status: "running",
-      cursor: 2,
-      counts: {
-        observed: 2,
-        inserted: 1,
-        unchanged: 1,
-        scansPlanned: 1,
-      },
-      budgetConsumed: {
-        entriesObserved: 2,
-        scansPlanned: 1,
-        batchesProcessed: 1,
-        lastBatchWrites: 3,
-      },
-    });
-
-    await t.mutation(internal.skillsShCatalog.setFixtureRunPausedInternal, {
-      runId,
-      paused: true,
+    const blockingJobId = await t.run(async (ctx) => {
+      return await ctx.db.insert("securityScanJobs", {
+        targetKind: "skillVersion",
+        status: "queued",
+        source: "manual",
+        priority: 0,
+        hasMaliciousSignal: false,
+        waitForVtUntil: 0,
+        nextRunAt: 0,
+        attempts: 0,
+        createdAt: 2,
+        updatedAt: 2,
+      });
     });
     await expect(
-      t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, { runId }),
-    ).rejects.toThrow("skills.sh catalog run is paused");
-
-    await t.mutation(internal.skillsShCatalog.setFixtureRunPausedInternal, {
-      runId,
-      paused: false,
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, { runId });
-
-    const completed = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(completed.runs.find((run) => run._id === runId)).toMatchObject({
-      status: "completed",
-      cursor: 3,
-      counts: {
-        observed: 3,
-        inserted: 2,
-        unchanged: 1,
-        scansPlanned: 2,
-      },
-      budgetConsumed: {
-        entriesObserved: 3,
-        scansPlanned: 2,
-        batchesProcessed: 2,
-        lastBatchWrites: 3,
-      },
-    });
-  });
-
-  it("plans each exact hash once and ignores a stale scan callback", async () => {
-    useTestEnvironment();
-    const t = convexTest(schema, modules);
-
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      actor: "codex-test",
-      reason: "apply hidden metadata before scan planning",
-      confirm: "enable-skills-sh-fixture-control",
-      writesEnabled: true,
-      scanPlanningEnabled: false,
-      maxEntriesPerRun: 10,
-      maxWritesPerBatch: 10,
-      maxPlannedScans: 0,
-    });
-    const metadataRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v1",
-      actor: "codex-test",
-      reason: "metadata-only fixture pass",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: metadataRun.runId,
-    });
-
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      actor: "codex-test",
-      reason: "enable deterministic scans",
-      confirm: "enable-skills-sh-fixture-control",
-      writesEnabled: true,
-      scanPlanningEnabled: true,
-      maxEntriesPerRun: 10,
-      maxWritesPerBatch: 10,
-      maxPlannedScans: 5,
-    });
-    const scanRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v1",
-      actor: "codex-test",
-      reason: "plan previously deferred scans",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: scanRun.runId,
-    });
-
-    const afterPlanning = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(afterPlanning.runs.find((run) => run._id === scanRun.runId)).toMatchObject({
-      counts: {
-        observed: 3,
-        inserted: 0,
-        updated: 0,
-        unchanged: 3,
-        scansPlanned: 2,
-      },
-    });
-    expect(afterPlanning.scanAttempts).toHaveLength(2);
-    const oldAttempt = afterPlanning.scanAttempts.find(
-      (attempt) => attempt.externalId === "nvidia/skills/aiq-deploy",
-    );
-    expect(oldAttempt).toBeDefined();
-
-    const changedRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v2",
-      actor: "codex-test",
-      reason: "observe a changed exact hash",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: changedRun.runId,
-    });
-    const afterChange = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(afterChange.runs.find((run) => run._id === changedRun.runId)).toMatchObject({
-      counts: {
-        observed: 1,
-        inserted: 0,
-        updated: 1,
-        unchanged: 0,
-        scansPlanned: 1,
-      },
-    });
-    expect(afterChange.scanAttempts).toHaveLength(3);
-    const newAttempt = afterChange.scanAttempts.find(
-      (attempt) =>
-        attempt.externalId === "nvidia/skills/aiq-deploy" &&
-        attempt.contentHash !== oldAttempt!.contentHash,
-    );
-    expect(newAttempt).toBeDefined();
-
-    await expect(
-      t.mutation(internal.skillsShCatalog.recordFixtureScanResultInternal, {
-        attemptId: oldAttempt!._id,
-        contentHash: oldAttempt!.contentHash,
-        verdict: "clean",
+      t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+        runId,
+        externalIds: [entries[0]!.externalId],
+        dispatchKind: "deterministic",
       }),
-    ).resolves.toEqual({ applied: false, reason: "stale-attempt" });
-    const afterStaleCallback = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(
-      afterStaleCallback.scanAttempts.find((attempt) => attempt._id === oldAttempt!._id),
-    ).toMatchObject({
-      status: "canceled",
-      completedAt: expect.any(Number),
-    });
-    expect(afterStaleCallback.runs.find((run) => run._id === oldAttempt!.runId)).toMatchObject({
-      counts: {
-        scansCanceled: 1,
-      },
-    });
-    await expect(
-      t.mutation(internal.skillsShCatalog.recordFixtureScanResultInternal, {
-        attemptId: newAttempt!._id,
-        contentHash: newAttempt!.contentHash,
-        verdict: "clean",
-      }),
-    ).resolves.toEqual({ applied: true, publicVisible: false });
+    ).rejects.toThrow("blocked by queue health");
+    await t.run(async (ctx) => await ctx.db.delete(blockingJobId));
+    const nativeBefore = await collectNativeState(t);
 
-    const repeatedRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v2",
-      actor: "codex-test",
-      reason: "repeat changed fixture",
+    const concurrent = await Promise.allSettled(
+      entries.map((entry) =>
+        t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+          runId,
+          externalIds: [entry.externalId],
+          dispatchKind: "deterministic",
+        }),
+      ),
+    );
+    expect(concurrent.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(concurrent.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const attempts = await collectAttempts(t, runId);
+    expect(attempts).toHaveLength(1);
+    await t.mutation(internal.skillsShCatalog.markScanAttemptRunningInternal, {
+      attemptId: attempts[0]!._id,
     });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: repeatedRun.runId,
-    });
-    const afterRepeat = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(afterRepeat.runs.find((run) => run._id === repeatedRun.runId)).toMatchObject({
-      counts: {
-        observed: 1,
-        inserted: 0,
-        updated: 0,
-        unchanged: 1,
-        scansPlanned: 0,
-      },
-    });
-    expect(afterRepeat.scanAttempts).toHaveLength(3);
-  });
-
-  it("records a malicious verdict as a completed scan, not an execution failure", async () => {
-    useTestEnvironment();
-    const t = convexTest(schema, modules);
-
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      actor: "codex-test",
-      reason: "prove malicious verdict accounting",
-      confirm: "enable-skills-sh-fixture-control",
-      writesEnabled: true,
-      scanPlanningEnabled: true,
-      maxEntriesPerRun: 10,
-      maxWritesPerBatch: 10,
-      maxPlannedScans: 5,
-    });
-    const run = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v2",
-      actor: "codex-test",
-      reason: "malicious verdict fixture",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: run.runId,
-    });
-    const queued = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    const attempt = queued.scanAttempts[0];
-    expect(attempt).toBeDefined();
-
-    await t.mutation(internal.skillsShCatalog.recordFixtureScanResultInternal, {
-      attemptId: attempt!._id,
-      contentHash: attempt!.contentHash,
-      verdict: "malicious",
-    });
-    const completed = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(completed.scanAttempts.find((item) => item._id === attempt!._id)).toMatchObject({
-      status: "succeeded",
-      verdict: "malicious",
-    });
-    expect(
-      completed.entries.find((entry) => entry.externalId === "nvidia/skills/aiq-deploy"),
-    ).toMatchObject({
-      scanStatus: "malicious",
-      publicVisible: false,
-    });
-  });
-
-  it("does not automatically re-plan an exact hash after operator cancellation", async () => {
-    useTestEnvironment();
-    const t = convexTest(schema, modules);
-
-    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
-      actor: "codex-test",
-      reason: "prove cancellation remains durable",
-      confirm: "enable-skills-sh-fixture-control",
-      writesEnabled: true,
-      scanPlanningEnabled: true,
-      maxEntriesPerRun: 10,
-      maxWritesPerBatch: 10,
-      maxPlannedScans: 5,
-    });
-    const firstRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v2",
-      actor: "codex-test",
-      reason: "queue exact hash",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: firstRun.runId,
-    });
-    await t.mutation(internal.skillsShCatalog.cancelQueuedFixtureScansInternal, {
+    const canceled = await t.mutation(internal.skillsShCatalog.cancelCatalogRunInternal, {
+      runId,
       limit: 10,
     });
-
-    const repeatedRun = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
-      fixtureId: "nvidia-small-v2",
+    expect(canceled.canceled).toBe(1);
+    await t.mutation(internal.skillsShCatalog.disableCatalogInternal, {
       actor: "codex-test",
-      reason: "repeat canceled exact hash",
-    });
-    await t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, {
-      runId: repeatedRun.runId,
+      reason: "prove reversible rollback",
+      confirm: "disable-skills-sh-catalog",
     });
     const status = await t.query(internal.skillsShCatalog.getStatusInternal, {});
-    expect(status.runs.find((run) => run._id === repeatedRun.runId)).toMatchObject({
-      counts: {
-        observed: 1,
-        unchanged: 1,
-        scansPlanned: 0,
-      },
+    expect(status.control).toMatchObject({
+      mode: "off",
+      discoveryEnabled: false,
+      writesEnabled: false,
+      scanPlanningEnabled: false,
+      scanAdmissionEnabled: false,
+      publicVisibilityEnabled: false,
+      paused: true,
     });
-    expect(status.scanAttempts).toHaveLength(1);
-    expect(status.scanAttempts[0]).toMatchObject({
-      status: "canceled",
+    expect(status.entries.every((entry) => !entry.publicVisible)).toBe(true);
+    expect(await collectNativeState(t)).toEqual(nativeBefore);
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.nativeSkillId))).toMatchObject({
+      slug: "native-skill",
+      updatedAt: 1,
     });
-  });
-
-  it("rejects fixture mutations in Preview", async () => {
-    vi.stubEnv("CLAWHUB_PREVIEW", "1");
-    vi.stubEnv("CONVEX_DEPLOYMENT", "anonymous:clawhub");
-    const t = convexTest(schema, modules);
-
-    await expect(
-      t.mutation(internal.skillsShCatalog.cancelQueuedFixtureScansInternal, {
-        limit: 10,
-      }),
-    ).rejects.toThrow("skills.sh catalog fixture work is disabled in Preview");
-    await expect(
-      t.mutation(internal.skillsShCatalog.disableCatalogInternal, {
-        actor: "codex-test",
-        reason: "Preview mutation should stay disabled",
-        confirm: "disable-skills-sh-catalog",
-      }),
-    ).rejects.toThrow("skills.sh catalog control mutations are disabled in Preview");
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.nativeCompletedJobId))).toMatchObject(
+      { status: "succeeded", updatedAt: 1 },
+    );
   });
 });

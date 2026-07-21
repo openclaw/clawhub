@@ -2751,14 +2751,25 @@ const systemSettings = defineTable({
 
 const skillsShCatalogControls = defineTable({
   key: v.literal("global"),
-  mode: v.union(v.literal("off"), v.literal("fixture")),
+  mode: v.union(v.literal("off"), v.literal("fixture"), v.literal("staging-live")),
+  discoveryEnabled: v.boolean(),
   writesEnabled: v.boolean(),
   scanPlanningEnabled: v.boolean(),
+  scanAdmissionEnabled: v.boolean(),
   publicVisibilityEnabled: v.boolean(),
   paused: v.boolean(),
   maxEntriesPerRun: v.number(),
+  maxEntriesPerBatch: v.number(),
   maxWritesPerBatch: v.number(),
   maxPlannedScans: v.number(),
+  maxScanAdmissionsPerBatch: v.number(),
+  maxScanAdmissionsPerRun: v.number(),
+  maxScanAdmissionsPerDay: v.number(),
+  maxCatalogQueued: v.number(),
+  maxCatalogInFlight: v.number(),
+  maxNativeQueued: v.number(),
+  maxNativeInFlight: v.number(),
+  realScanAllowlist: v.array(v.string()),
   updatedBy: v.string(),
   reason: v.string(),
   updatedAt: v.number(),
@@ -2766,37 +2777,68 @@ const skillsShCatalogControls = defineTable({
 
 const skillsShCatalogRunCountsValidator = v.object({
   observed: v.number(),
+  wouldInsert: v.number(),
+  wouldUpdate: v.number(),
   inserted: v.number(),
   updated: v.number(),
   unchanged: v.number(),
   rejected: v.number(),
   scansPlanned: v.number(),
+  scansAdmitted: v.number(),
   scansCompleted: v.number(),
   scansCanceled: v.number(),
 });
 
 const skillsShCatalogRuns = defineTable({
-  fixtureId: v.union(v.literal("nvidia-small-v1"), v.literal("nvidia-small-v2")),
+  fixtureId: v.union(
+    v.literal("nvidia-small-v1"),
+    v.literal("nvidia-small-v2"),
+    v.literal("skills-sh-500-2026-07-21"),
+    v.literal("skills-sh-500-2026-07-21-v2"),
+    v.literal("synthetic-20000-v1"),
+  ),
+  snapshotId: v.string(),
+  sourceKind: v.union(
+    v.literal("fixture"),
+    v.literal("frozen-snapshot"),
+    v.literal("staging-live"),
+  ),
+  sourceCapturedAt: v.optional(v.string()),
+  snapshotCaptureFetches: v.number(),
+  dryRun: v.boolean(),
   status: v.union(
     v.literal("running"),
     v.literal("paused"),
     v.literal("completed"),
+    v.literal("budget-exhausted"),
     v.literal("failed"),
     v.literal("canceled"),
   ),
   cursor: v.number(),
+  scanCursor: v.number(),
   fixtureLength: v.number(),
   counts: skillsShCatalogRunCountsValidator,
   budgets: v.object({
     maxEntriesPerRun: v.number(),
+    maxEntriesPerBatch: v.number(),
     maxWritesPerBatch: v.number(),
     maxPlannedScans: v.number(),
+    maxScanAdmissionsPerBatch: v.number(),
+    maxScanAdmissionsPerRun: v.number(),
+    maxScanAdmissionsPerDay: v.number(),
+  }),
+  operations: v.object({
+    functionCalls: v.number(),
+    dbReads: v.number(),
+    dbWrites: v.number(),
   }),
   actor: v.string(),
   reason: v.string(),
   lastError: v.optional(v.string()),
   batchesProcessed: v.number(),
+  scanAdmissionBatches: v.number(),
   lastBatchWrites: v.number(),
+  lastBatchReads: v.number(),
   startedAt: v.number(),
   completedAt: v.optional(v.number()),
   updatedAt: v.number(),
@@ -2806,20 +2848,25 @@ const skillsShCatalogRuns = defineTable({
 
 const skillsShCatalogEntries = defineTable({
   externalId: v.string(),
-  sourceKind: v.literal("fixture"),
+  sourceKind: v.union(
+    v.literal("fixture"),
+    v.literal("frozen-snapshot"),
+    v.literal("staging-live"),
+  ),
   githubOwnerId: v.number(),
   owner: v.string(),
   repo: v.string(),
   slug: v.string(),
   displayName: v.string(),
   sourceUrl: v.string(),
-  githubPath: v.string(),
-  githubCommit: v.string(),
-  githubContentHash: v.string(),
-  githubCheckedAt: v.number(),
+  githubRepoUrl: v.string(),
+  sourceContentHash: v.string(),
+  installs: v.number(),
+  sourceSnapshotId: v.string(),
   publicVisible: v.boolean(),
   scanStatus: v.union(
     v.literal("not-planned"),
+    v.literal("planned"),
     v.literal("queued"),
     v.literal("clean"),
     v.literal("suspicious"),
@@ -2839,11 +2886,14 @@ const skillsShCatalogScanAttempts = defineTable({
   entryId: v.id("skillsShCatalogEntries"),
   runId: v.id("skillsShCatalogRuns"),
   externalId: v.string(),
-  contentHash: v.string(),
-  source: v.literal("skills-sh-catalog-fixture"),
+  sourceContentHash: v.string(),
+  artifactContentHash: v.optional(v.string()),
+  source: v.union(v.literal("skills-sh-catalog-fixture"), v.literal("skills-sh-catalog-test")),
+  dispatchKind: v.union(v.literal("deterministic"), v.literal("real")),
   priority: v.literal("low"),
   status: v.union(
     v.literal("queued"),
+    v.literal("running"),
     v.literal("succeeded"),
     v.literal("failed"),
     v.literal("canceled"),
@@ -2860,10 +2910,13 @@ const skillsShCatalogScanAttempts = defineTable({
   createdAt: v.number(),
   updatedAt: v.number(),
 })
-  .index("by_entry_and_content_hash", ["entryId", "contentHash"])
+  .index("by_entry_and_source_content_hash", ["entryId", "sourceContentHash"])
   .index("by_run", ["runId"])
+  .index("by_run_and_status", ["runId", "status"])
+  .index("by_run_dispatch_kind_status_created_at", ["runId", "dispatchKind", "status", "createdAt"])
   .index("by_created_at", ["createdAt"])
-  .index("by_status_and_created_at", ["status", "createdAt"]);
+  .index("by_status_and_created_at", ["status", "createdAt"])
+  .index("by_dispatch_kind_and_status_and_created_at", ["dispatchKind", "status", "createdAt"]);
 
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),

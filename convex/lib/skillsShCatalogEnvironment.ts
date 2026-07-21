@@ -21,6 +21,8 @@ export type SkillsShFixtureEnvironmentPolicy =
     };
 
 const TEST_DEPLOYMENT = "academic-chihuahua-392";
+const TEST_CLOUD_URL = `https://${TEST_DEPLOYMENT}.convex.cloud`;
+const TEST_SITE_URL = `https://${TEST_DEPLOYMENT}.convex.site`;
 
 function isLocalRuntimeUrl(value: string | undefined) {
   if (!value) return false;
@@ -70,6 +72,13 @@ export function getSkillsShFixtureEnvironmentPolicy(
         allowed: false,
         environment: "test",
         reason: `skills.sh Test fixture work requires CLAWHUB_DEPLOYMENT_NAME=${TEST_DEPLOYMENT}`,
+      };
+    }
+    if (env.CONVEX_CLOUD_URL !== TEST_CLOUD_URL && env.CONVEX_SITE_URL !== TEST_SITE_URL) {
+      return {
+        allowed: false,
+        environment: "test",
+        reason: `skills.sh Test fixture work requires the ${TEST_DEPLOYMENT} Convex runtime URL`,
       };
     }
     return { allowed: true, environment: "test" };
