@@ -186,6 +186,20 @@ function assertScanAdmissionEnabled(control: Doc<"skillsShCatalogControls"> | nu
   return active;
 }
 
+function assertFixtureMode(control: Doc<"skillsShCatalogControls"> | null) {
+  const active = assertCatalogActive(control);
+  if (active.mode !== "fixture") {
+    throw new ConvexError("skills.sh fixture work requires fixture controls");
+  }
+  return active;
+}
+
+function assertFixtureRun(run: Doc<"skillsShCatalogRuns">) {
+  if (run.sourceKind === "staging-live" || run.fixtureId === "skills-sh-test-live-500") {
+    throw new ConvexError("skills.sh fixture work requires a fixture run");
+  }
+}
+
 export const configureFixtureControlInternal = internalMutation({
   args: {
     actor: v.string(),
@@ -366,7 +380,7 @@ export const startFixtureRunInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     assertSkillsShFixtureEnvironmentAllowed();
-    const control = assertDiscoveryEnabled(await getControlDoc(ctx));
+    const control = assertFixtureMode(assertDiscoveryEnabled(await getControlDoc(ctx)));
     const fixture = getSkillsShCatalogFixture(args.fixtureId);
     const now = Date.now();
     const runId = await ctx.db.insert("skillsShCatalogRuns", {
@@ -641,14 +655,13 @@ export const processFixtureBatchInternal = internalMutation({
     const control = await getControlDoc(ctx);
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("skills.sh catalog run not found");
+    assertFixtureMode(control);
+    assertFixtureRun(run);
     assertDiscoveryEnabled(control);
     if (!run.dryRun) assertWritesEnabled(control);
     if (run.status === "paused") throw new ConvexError("skills.sh catalog run is paused");
     if (run.status !== "running") return summarizeRun(run);
 
-    if (run.fixtureId === "skills-sh-test-live-500") {
-      throw new ConvexError("Use the staging-live batch processor for live Test runs");
-    }
     const fixture = getSkillsShCatalogFixture(run.fixtureId);
     let cursor = run.cursor;
     let writesUsed = 0;
@@ -912,7 +925,10 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     1,
     run.budgets.maxScanAdmissionsPerBatch,
   );
-  if (args.dispatchKind === "real") {
+  if (args.dispatchKind === "deterministic") {
+    assertFixtureMode(control);
+    assertFixtureRun(run);
+  } else {
     if (control.mode !== "staging-live") {
       throw new ConvexError("real skills.sh scan admission requires staging-live controls");
     }
@@ -1173,6 +1189,11 @@ export const markScanAttemptRunningInternal = internalMutation({
       return { started: false };
     }
     const run = await ctx.db.get(attempt.runId);
+    if (attempt.dispatchKind === "deterministic") {
+      assertFixtureMode(control);
+      if (!run) throw new ConvexError("skills.sh fixture scan run not found");
+      assertFixtureRun(run);
+    }
     if (
       run &&
       (run.status === "paused" ||
@@ -1209,6 +1230,8 @@ export const completeDeterministicScansInternal = internalMutation({
     assertIntegerInRange("limit", args.limit, 1, MAX_DETERMINISTIC_COMPLETIONS_PER_BATCH);
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("skills.sh catalog run not found");
+    assertFixtureMode(control);
+    assertFixtureRun(run);
     if (
       run.status === "paused" ||
       run.status === "canceling" ||
@@ -1391,6 +1414,7 @@ export const recordFixtureScanResultInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     assertSkillsShFixtureEnvironmentAllowed();
+    assertFixtureMode(await getControlDoc(ctx));
     const attempt = await ctx.db.get(args.attemptId);
     if (!attempt) throw new ConvexError("skills.sh fixture scan attempt not found");
     if (attempt.status !== "queued" && attempt.status !== "running") {
@@ -1403,7 +1427,9 @@ export const recordFixtureScanResultInternal = internalMutation({
       throw new ConvexError("skills.sh fixture source observation hash mismatch");
     }
     const run = await ctx.db.get(attempt.runId);
-    if (run?.status === "canceling" || run?.status === "canceled") {
+    if (!run) throw new ConvexError("skills.sh fixture scan run not found");
+    assertFixtureRun(run);
+    if (run.status === "canceling" || run.status === "canceled") {
       const now = Date.now();
       const canceledOperations = await cancelAttempt(ctx, attempt, now);
       const hasMore = await hasActiveScanAttemptsForRun(ctx, run._id);
@@ -1430,20 +1456,18 @@ export const recordFixtureScanResultInternal = internalMutation({
         completedAt: now,
         updatedAt: now,
       });
-      if (run) {
-        await ctx.db.patch(run._id, {
-          counts: {
-            ...run.counts,
-            scansCanceled: run.counts.scansCanceled + 1,
-          },
-          operations: addOperations(run.operations, {
-            functionCalls: 1,
-            dbReads: 3,
-            dbWrites: 2,
-          }),
-          updatedAt: now,
-        });
-      }
+      await ctx.db.patch(run._id, {
+        counts: {
+          ...run.counts,
+          scansCanceled: run.counts.scansCanceled + 1,
+        },
+        operations: addOperations(run.operations, {
+          functionCalls: 1,
+          dbReads: 3,
+          dbWrites: 2,
+        }),
+        updatedAt: now,
+      });
       return { applied: false, reason: "stale-attempt" };
     }
 
@@ -1460,20 +1484,18 @@ export const recordFixtureScanResultInternal = internalMutation({
       publicVisible: false,
       updatedAt: now,
     });
-    if (run) {
-      await ctx.db.patch(run._id, {
-        counts: {
-          ...run.counts,
-          scansCompleted: run.counts.scansCompleted + 1,
-        },
-        operations: addOperations(run.operations, {
-          functionCalls: 1,
-          dbReads: 3,
-          dbWrites: 3,
-        }),
-        updatedAt: now,
-      });
-    }
+    await ctx.db.patch(run._id, {
+      counts: {
+        ...run.counts,
+        scansCompleted: run.counts.scansCompleted + 1,
+      },
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: 3,
+        dbWrites: 3,
+      }),
+      updatedAt: now,
+    });
     return { applied: true, publicVisible: false };
   },
 });

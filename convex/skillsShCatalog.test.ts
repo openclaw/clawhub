@@ -468,6 +468,17 @@ describe("skills.sh catalog overload control plane", () => {
   it("replans unchanged staging content after its prior attempt was canceled", async () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);
+    const row = frozenSnapshot.rows.find(
+      (candidate) => candidate.externalId === "nvidia/skills/aiq-deploy",
+    )!;
+    const actorUserId = await t.run(async (ctx) => {
+      return await ctx.db.insert("users", {
+        handle: "catalog-retry-operator",
+        displayName: "Catalog Retry Operator",
+        role: "admin",
+      });
+    });
+    const artifact = await storeTestArtifact(t, row.externalId, "staging retry artifact");
     await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
       ...BASE_CONTROL,
       mode: "staging-live",
@@ -479,10 +490,8 @@ describe("skills.sh catalog overload control plane", () => {
       maxScanAdmissionsPerDay: 2,
       maxCatalogQueued: 1,
       maxCatalogInFlight: 1,
+      realScanAllowlist: [row.externalId],
     });
-    const row = frozenSnapshot.rows.find(
-      (candidate) => candidate.externalId === "nvidia/skills/aiq-deploy",
-    )!;
     const first = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
       actor: "codex-test",
       reason: "cancel one staging attempt",
@@ -496,10 +505,11 @@ describe("skills.sh catalog overload control plane", () => {
       cursor: 0,
       rows: [row],
     });
-    await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+    await t.action(internal.skillsShCatalog.admitRealScansInternal, {
       runId: first.runId,
       externalIds: [row.externalId],
-      dispatchKind: "deterministic",
+      actorUserId,
+      artifacts: [artifact],
     });
     await t.mutation(internal.skillsShCatalog.cancelCatalogRunInternal, {
       runId: first.runId,
@@ -531,10 +541,11 @@ describe("skills.sh catalog overload control plane", () => {
       scanStatus: "planned",
       sourceSnapshotId: "skills-sh-test-live-500:canceled-repeat",
     });
-    const readmitted = await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+    const readmitted = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
       runId: repeated.runId,
       externalIds: [row.externalId],
-      dispatchKind: "deterministic",
+      actorUserId,
+      artifacts: [artifact],
     });
     expect(readmitted).toMatchObject({ admitted: 1, skipped: 0 });
     expect(await collectAttempts(t, first.runId)).toHaveLength(1);
@@ -847,6 +858,108 @@ describe("skills.sh catalog overload control plane", () => {
       [],
     );
   }, 30_000);
+
+  it("rejects fixture discovery after controls switch to staging-live", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      maxScanAdmissionsPerRun: 10,
+      maxScanAdmissionsPerDay: 10,
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "nvidia-small-v1",
+      actor: "codex-test",
+      reason: "fixture run before staging-live switch",
+    });
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxScanAdmissionsPerRun: 10,
+      maxScanAdmissionsPerDay: 10,
+    });
+
+    await expect(
+      t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+        fixtureId: "nvidia-small-v1",
+        actor: "codex-test",
+        reason: "fixture start under staging-live controls",
+      }),
+    ).rejects.toThrow("fixture work requires fixture controls");
+    await expect(
+      t.mutation(internal.skillsShCatalog.processFixtureBatchInternal, { runId }),
+    ).rejects.toThrow("fixture work requires fixture controls");
+    expect(await collectEntries(t)).toEqual([]);
+  });
+
+  it("rejects deterministic fixture scan lifecycle after a staging-live mode switch", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      maxEntriesPerRun: 2,
+      maxEntriesPerBatch: 2,
+      maxPlannedScans: 2,
+      maxScanAdmissionsPerBatch: 2,
+      maxScanAdmissionsPerRun: 2,
+      maxScanAdmissionsPerDay: 2,
+      maxCatalogQueued: 2,
+      maxCatalogInFlight: 1,
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startFixtureRunInternal, {
+      fixtureId: "synthetic-20000-v1",
+      actor: "codex-test",
+      reason: "fixture attempts before staging-live switch",
+    });
+    await processToTerminal(t, runId);
+    const entries = await collectEntries(t);
+    await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+      runId,
+      externalIds: [entries[0]!.externalId],
+      dispatchKind: "deterministic",
+    });
+    const [attempt] = await collectAttempts(t, runId);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxEntriesPerRun: 2,
+      maxEntriesPerBatch: 2,
+      maxPlannedScans: 2,
+      maxScanAdmissionsPerBatch: 2,
+      maxScanAdmissionsPerRun: 2,
+      maxScanAdmissionsPerDay: 2,
+      maxCatalogQueued: 2,
+      maxCatalogInFlight: 1,
+    });
+
+    await expect(
+      t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+        runId,
+        externalIds: [entries[1]!.externalId],
+        dispatchKind: "deterministic",
+      }),
+    ).rejects.toThrow("fixture work requires fixture controls");
+    await expect(
+      t.mutation(internal.skillsShCatalog.markScanAttemptRunningInternal, {
+        attemptId: attempt!._id,
+      }),
+    ).rejects.toThrow("fixture work requires fixture controls");
+    await expect(
+      t.mutation(internal.skillsShCatalog.completeDeterministicScansInternal, {
+        runId,
+        limit: 1,
+      }),
+    ).rejects.toThrow("fixture work requires fixture controls");
+    await expect(
+      t.mutation(internal.skillsShCatalog.recordFixtureScanResultInternal, {
+        attemptId: attempt!._id,
+        sourceContentHash: attempt!.sourceContentHash,
+        verdict: "clean",
+      }),
+    ).rejects.toThrow("fixture work requires fixture controls");
+    expect((await collectAttempts(t, runId))[0]).toMatchObject({ status: "queued" });
+    expect((await collectEntries(t)).every((entry) => !entry.publicVisible)).toBe(true);
+  });
 
   it("rejects non-admin real scan admission", async () => {
     useEnvironment(TEST_ENV);
