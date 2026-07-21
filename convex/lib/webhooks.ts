@@ -112,5 +112,12 @@ function formatTags(tags?: string[] | null) {
 
 function truncate(value: string, max: number) {
   if (value.length <= max) return value;
-  return `${value.slice(0, max - 1).trim()}…`;
+  let end = 0;
+  for (const { segment } of new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(
+    value,
+  )) {
+    if (end + segment.length > max - 1) break;
+    end += segment.length;
+  }
+  return `${value.slice(0, end).trim()}…`;
 }
