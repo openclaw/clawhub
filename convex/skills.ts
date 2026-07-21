@@ -4381,12 +4381,22 @@ export const reportSkillForUserInternal = internalMutation({
     slug: v.string(),
     reason: v.string(),
     version: v.optional(v.string()),
+    // Owner qualifier for ambiguous slugs (mirrors GET /skills/{slug}?owner=).
+    ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
 
-    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const ownerHandle = args.ownerHandle?.trim().replace(/^@+/, "") || undefined;
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, ownerHandle);
+    if (resolved.ambiguous) {
+      // Prefer the same guidance used by other slug-only endpoints instead of
+      // collapsing collisions into a misleading "Skill not found".
+      throw new ConvexError(
+        "Slug is used by multiple publishers. Use an owner-qualified skill URL.",
+      );
+    }
     const skill = resolved.skill;
     if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
       throw new ConvexError("Skill not found");
