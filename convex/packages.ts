@@ -9765,7 +9765,7 @@ export const insertReleaseInternal = internalMutation({
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
     if (existing?.softDeletedAt) {
       throw new ConvexError(
-        `Package "${nextNameLabel}" was deleted. Restore it before publishing another release or choose a new package name.`,
+        `Package "${nextNameLabel}" is hidden/deleted. Run "clawhub package undelete ${nextNameLabel} --yes" before publishing another release.`,
       );
     }
     const nextChannel = derivePackagePublisherChannel({

@@ -7793,7 +7793,10 @@ describe("packages public queries", () => {
         files: [],
         integritySha256: "abc123",
       }),
-    ).rejects.toThrow("Restore it before publishing another release");
+    ).rejects.toThrow(
+      'Package "demo-plugin" is hidden/deleted. Run "clawhub package undelete demo-plugin --yes" before publishing another release.',
+    );
+    expect(ctx.insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());
   });
 
   it("rejects final package publish inserts when the actor was banned mid-publish", async () => {

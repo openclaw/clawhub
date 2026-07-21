@@ -550,6 +550,7 @@ export async function publishSkillVersion(
     versionExists?: () => Promise<boolean>;
     skillMarkdown?: string;
     completeChecks?: boolean;
+    expectedError?: string;
     files?: Array<{ path: string; contents: string | Uint8Array }>;
   },
 ) {
@@ -576,9 +577,26 @@ export async function publishSkillVersion(
   const detailUrlPattern = new RegExp(`/[^/]+/(?:skills/)?${escapeRegExp(args.slug)}$`);
   const versionExists = async () =>
     args.versionExists ? await args.versionExists() : await publishedSkillVersionExists(page, args);
-  type PublishState = "duplicate" | "pending" | "private-detail" | "published" | "staged" | "";
+  type PublishState =
+    | "duplicate"
+    | "pending"
+    | "private-detail"
+    | "published"
+    | "rejected"
+    | "staged"
+    | "";
   const readPublishState = async (): Promise<PublishState> => {
     if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
+    if (
+      args.expectedError &&
+      (await page
+        .getByRole("alert")
+        .filter({ hasText: args.expectedError })
+        .isVisible({ timeout: 500 })
+        .catch(() => false))
+    ) {
+      return "rejected";
+    }
     const pathname = new URL(page.url()).pathname;
     // Staged publishes redirect to the dashboard as soon as Convex accepts the
     // upload. Treat that navigation as success instead of waiting and retrying.
@@ -608,6 +626,9 @@ export async function publishSkillVersion(
         .poll(readPublishState, { timeout: 60_000, intervals: [500, 1_000, 2_000] })
         .not.toBe("");
       const observedPublishState = await readPublishState();
+      if (observedPublishState === "rejected") {
+        return args.ownerHandle;
+      }
       if (observedPublishState !== "published") {
         if (args.completeChecks === false) {
           return args.ownerHandle;

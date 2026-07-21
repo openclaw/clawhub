@@ -5,7 +5,11 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { insertVersion } from "./skills";
+import {
+  discardPendingPublicationInternal,
+  insertVersion,
+  publishPendingVersionInternal,
+} from "./skills";
 
 type WrappedHandler<TArgs> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
@@ -13,10 +17,15 @@ type WrappedHandler<TArgs> = {
 
 const insertVersionHandler = (insertVersion as unknown as WrappedHandler<Record<string, unknown>>)
   ._handler;
+const discardPendingPublicationHandler = (
+  discardPendingPublicationInternal as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const publishPendingVersionHandler = (
+  publishPendingVersionInternal as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 
 const OWNER_USER_ID = "users:owner";
 const OWNER_PUBLISHER_ID = "publishers:owner";
-const MODERATOR_USER_ID = "users:moderator";
 const SKILL_ID = "skills:1";
 const PREV_LATEST_VERSION_ID = "skillVersions:prev";
 const PREV_EMBEDDING_ID = "skillEmbeddings:prev";
@@ -161,11 +170,6 @@ function buildDb(
   skill: SkillDoc,
   captured: Captured,
   existingVersion?: Record<string, unknown> | null,
-  options: {
-    activeOwnerPublisher?: boolean;
-    moderatorUser?: boolean;
-    pendingVersions?: Record<string, unknown>[];
-  } = {},
 ) {
   // Trigger-driven code (syncSkillSearchDigestForSkill -> getOwnerPublisher)
   // will ask for publishers via `db.get(ownerPublisherId)`. Return null so
@@ -200,28 +204,14 @@ function buildDb(
         };
       }
       if (id === OWNER_PUBLISHER_ID) {
-        if (options.activeOwnerPublisher) {
-          return {
-            _id: OWNER_PUBLISHER_ID,
-            kind: "user",
-            handle: "alice",
-            displayName: "Alice",
-            linkedUserId: OWNER_USER_ID,
-            deletedAt: undefined,
-            deactivatedAt: undefined,
-          };
-        }
-        // Returning null lets getOwnerPublisher fall back to user-based
-        // resolution, which then hits the synthesize fallback.
-        return null;
-      }
-      if (id === MODERATOR_USER_ID && options.moderatorUser) {
         return {
-          _id: MODERATOR_USER_ID,
-          handle: "moderator",
-          role: "moderator",
-          deletedAt: undefined,
-          deactivatedAt: undefined,
+          _id: OWNER_PUBLISHER_ID,
+          kind: "user",
+          handle: "alice",
+          displayName: "Alice",
+          linkedUserId: OWNER_USER_ID,
+          createdAt: 1,
+          updatedAt: 1,
         };
       }
       if (id === SKILL_ID) return skill;
@@ -291,9 +281,7 @@ function buildDb(
                       llmAnalysis: { status: "clean" },
                       staticScan: { status: "clean" },
                     };
-                    return [...(options.pendingVersions ?? []), insertedVersion, previousVersion]
-                      .filter(Boolean)
-                      .slice(0, limit);
+                    return [insertedVersion, previousVersion].filter(Boolean).slice(0, limit);
                   },
                 }),
               };
@@ -453,15 +441,7 @@ function buildDb(
   return db;
 }
 
-function buildCtx(
-  skill: SkillDoc,
-  existingVersion?: Record<string, unknown> | null,
-  options: {
-    activeOwnerPublisher?: boolean;
-    moderatorUser?: boolean;
-    pendingVersions?: Record<string, unknown>[];
-  } = {},
-) {
+function buildCtx(skill: SkillDoc, existingVersion?: Record<string, unknown> | null) {
   const captured: Captured = {
     skillPatches: [],
     embeddingInserts: [],
@@ -469,7 +449,7 @@ function buildCtx(
     versionInserted: null,
     allPatches: [],
   };
-  const db = buildDb(skill, captured, existingVersion, options);
+  const db = buildDb(skill, captured, existingVersion);
   const ctx = {
     db,
     scheduler: { runAfter: vi.fn() },
@@ -495,159 +475,14 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(captured.versionInserted).toBeNull();
   });
 
-  it("keeps an immutable version reserved when its parent skill is owner-deleted", async () => {
-    const deletedAt = 1_700_000_000_000;
+  it("requires owners to restore a deleted skill before publishing another version", async () => {
     const skill = buildExistingSkill({
       moderationStatus: "hidden",
       moderationReason: undefined,
-      softDeletedAt: deletedAt,
-      hiddenAt: deletedAt,
+      softDeletedAt: 1_700_000_000_000,
       hiddenBy: OWNER_USER_ID,
-      unpublishedSlugReservedUntil: deletedAt + 30 * 24 * 60 * 60 * 1000,
     });
-    const { ctx, captured } = buildCtx(
-      skill,
-      {
-        _id: "skillVersions:existing",
-        skillId: SKILL_ID,
-        version: "2.0.0",
-      },
-      { activeOwnerPublisher: true },
-    );
-
-    await expect(
-      insertVersionHandler(
-        ctx as never,
-        buildPublishArgs({
-          version: "2.0.0",
-          publicationStatus: "pending",
-        }) as never,
-      ),
-    ).rejects.toThrow("Version 2.0.0 already exists. Increment the version number and try again.");
-
-    expect(captured.versionInserted).toBeNull();
-    expect(captured.skillPatches).not.toContainEqual(
-      expect.objectContaining({ softDeletedAt: undefined }),
-    );
-  });
-
-  it("restores an owner-deleted skill when staging a new version", async () => {
-    const deletedAt = 1_700_000_000_000;
-    const skill = buildExistingSkill({
-      moderationStatus: "hidden",
-      moderationReason: undefined,
-      softDeletedAt: deletedAt,
-      hiddenAt: deletedAt,
-      hiddenBy: OWNER_USER_ID,
-      unpublishedSlugReservedUntil: deletedAt + 30 * 24 * 60 * 60 * 1000,
-    });
-    const { ctx, captured } = buildCtx(skill, null, { activeOwnerPublisher: true });
-
-    await expect(
-      insertVersionHandler(
-        ctx as never,
-        buildPublishArgs({
-          version: "2.1.0",
-          publicationStatus: "pending",
-        }) as never,
-      ),
-    ).resolves.toEqual({
-      skillId: SKILL_ID,
-      versionId: NEW_VERSION_ID,
-      publicationStatus: "pending",
-      createdNewParent: false,
-    });
-
-    expect(captured.versionInserted).toMatchObject({
-      skillId: SKILL_ID,
-      version: "2.1.0",
-      publicationStatus: "pending",
-      pendingPublication: expect.objectContaining({
-        ownerDeleteRestoreState: expect.objectContaining({
-          softDeletedAt: deletedAt,
-          moderationStatus: "hidden",
-          unpublishedSlugReservedUntil: deletedAt + 30 * 24 * 60 * 60 * 1000,
-        }),
-      }),
-    });
-    expect(captured.skillPatches).toContainEqual(
-      expect.objectContaining({
-        softDeletedAt: undefined,
-        unpublishedSlugReservedUntil: undefined,
-      }),
-    );
-  });
-
-  it("carries owner-delete rollback state across concurrent pending versions", async () => {
-    const deletedAt = 1_700_000_000_000;
-    const restoreState = {
-      softDeletedAt: deletedAt,
-      moderationStatus: "hidden",
-      unpublishedSlugReservedUntil: deletedAt + 30 * 24 * 60 * 60 * 1000,
-      updatedAt: deletedAt,
-    };
-    const skill = buildExistingSkill({
-      moderationStatus: "hidden",
-      moderationReason: "pending.publication",
-      softDeletedAt: undefined,
-      hiddenAt: deletedAt,
-      hiddenBy: OWNER_USER_ID,
-      unpublishedSlugReservedUntil: undefined,
-    });
-    const { ctx, captured } = buildCtx(skill, null, {
-      activeOwnerPublisher: true,
-      pendingVersions: [
-        {
-          _id: "skillVersions:first-pending",
-          skillId: SKILL_ID,
-          version: "2.1.0",
-          publicationStatus: "pending",
-          softDeletedAt: undefined,
-          pendingPublication: { ownerDeleteRestoreState: restoreState },
-        },
-      ],
-    });
-
-    await expect(
-      insertVersionHandler(
-        ctx as never,
-        buildPublishArgs({
-          version: "2.2.0",
-          publicationStatus: "pending",
-        }) as never,
-      ),
-    ).resolves.toEqual({
-      skillId: SKILL_ID,
-      versionId: NEW_VERSION_ID,
-      publicationStatus: "pending",
-      createdNewParent: false,
-    });
-
-    expect(captured.versionInserted).toMatchObject({
-      version: "2.2.0",
-      pendingPublication: {
-        ownerDeleteRestoreState: restoreState,
-        skillInsertArgs: expect.any(Object),
-      },
-    });
-    expect(captured.skillPatches).not.toContainEqual(
-      expect.objectContaining({ softDeletedAt: undefined }),
-    );
-  });
-
-  it("does not restore a skill hidden by a moderator", async () => {
-    const hiddenAt = 1_700_000_000_000;
-    const skill = buildExistingSkill({
-      moderationStatus: "hidden",
-      moderationReason: "manual.report",
-      softDeletedAt: hiddenAt,
-      hiddenAt,
-      hiddenBy: MODERATOR_USER_ID,
-    });
-    const { ctx, captured } = buildCtx(skill, null, {
-      activeOwnerPublisher: true,
-      moderatorUser: true,
-    });
+    const { ctx, captured } = buildCtx(skill);
 
     await expect(
       insertVersionHandler(
@@ -658,13 +493,67 @@ describe("skills.insertVersion latest-tag protection", () => {
         }) as never,
       ),
     ).rejects.toThrow(
-      "Forbidden: This skill was hidden by moderation and cannot be restored by publishing.",
+      'Skill "my-skill" is hidden/deleted. Run "clawhub undelete @alice/my-skill --yes" before publishing another version.',
     );
 
     expect(captured.versionInserted).toBeNull();
-    expect(captured.skillPatches).not.toContainEqual(
-      expect.objectContaining({ softDeletedAt: undefined }),
+  });
+
+  it("does not advertise owner undelete for moderation-hidden skills", async () => {
+    const skill = buildExistingSkill({
+      moderationStatus: "hidden",
+      moderationReason: "security.redaction",
+      moderationFlags: ["blocked.malware"],
+      moderationVerdict: "malicious",
+      softDeletedAt: 1_700_000_000_000,
+      hiddenBy: "users:moderator",
+    });
+    const { ctx, captured } = buildCtx(skill);
+
+    await expect(
+      insertVersionHandler(
+        ctx as never,
+        buildPublishArgs({
+          version: "2.1.0",
+          publicationStatus: "pending",
+        }) as never,
+      ),
+    ).rejects.toThrow(
+      "Forbidden: This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
     );
+
+    expect(captured.versionInserted).toBeNull();
+  });
+
+  it("blocks another version while a legacy deleted-skill republish is pending", async () => {
+    const deletedAt = 1_700_000_000_000;
+    const skill = buildExistingSkill({
+      moderationStatus: "hidden",
+      moderationReason: "pending.publication",
+      softDeletedAt: undefined,
+    });
+    const { ctx, captured } = buildCtx(skill);
+    captured.versionInserted = {
+      version: "2.0.1",
+      publicationStatus: "pending",
+      pendingPublication: {
+        ownerDeleteRestoreState: {
+          softDeletedAt: deletedAt,
+          moderationStatus: "hidden",
+          updatedAt: deletedAt,
+        },
+      },
+    };
+
+    await expect(
+      insertVersionHandler(
+        ctx as never,
+        buildPublishArgs({
+          version: "2.1.0",
+          publicationStatus: "pending",
+        }) as never,
+      ),
+    ).rejects.toThrow("deleted-skill republish awaiting security checks");
   });
 
   it("promotes latest when publishing a strictly higher version", async () => {
@@ -1028,5 +917,152 @@ describe("skills.insertVersion latest-tag protection", () => {
     const finalPatch = captured.skillPatches.at(-1) as Record<string, unknown>;
     expect(finalPatch.latestVersionId).toBe(NEW_VERSION_ID);
     expect(finalPatch.latestVersionSummary).toMatchObject({ version: "0.1.0" });
+  });
+});
+
+describe("skills.discardPendingPublicationInternal legacy owner-delete rollback", () => {
+  it("restores a deleted-skill tombstone saved by an already-pending publish", async () => {
+    const deletedAt = 1_700_000_000_000;
+    const reservedUntil = deletedAt + 30 * 24 * 60 * 60 * 1000;
+    const version = {
+      _id: "skillVersions:pending",
+      skillId: SKILL_ID,
+      version: "2.1.0",
+      publicationStatus: "pending",
+      files: [],
+      pendingPublication: {
+        ownerDeleteRestoreState: {
+          softDeletedAt: deletedAt,
+          moderationStatus: "hidden",
+          unpublishedSlugReservedUntil: reservedUntil,
+          updatedAt: deletedAt,
+        },
+      },
+    };
+    const skill = buildExistingSkill({
+      moderationStatus: "hidden",
+      moderationReason: "pending.publication",
+      softDeletedAt: undefined,
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === version._id) return version;
+          if (id === SKILL_ID) return skill;
+          if (id === OWNER_USER_ID) {
+            return {
+              _id: OWNER_USER_ID,
+              publishedSkills: 1,
+              totalStars: 0,
+              totalDownloads: 0,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "skillVersionFingerprints") {
+            return {
+              withIndex: () => ({
+                take: async () => [],
+              }),
+            };
+          }
+          if (table === "skillVersions") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  take: async () => [],
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        delete: vi.fn(),
+        insert: vi.fn(),
+        patch,
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      discardPendingPublicationHandler(ctx as never, {
+        skillId: SKILL_ID,
+        versionId: version._id,
+        createdNewParent: false,
+      }),
+    ).resolves.toEqual({ deleted: true, parentDeleted: false });
+
+    expect(patch).toHaveBeenCalledWith(
+      SKILL_ID,
+      expect.objectContaining({
+        softDeletedAt: deletedAt,
+        moderationStatus: "hidden",
+        unpublishedSlugReservedUntil: reservedUntil,
+        updatedAt: deletedAt,
+      }),
+    );
+  });
+});
+
+describe("skills.publishPendingVersionInternal legacy owner-delete coordination", () => {
+  it("does not finalize after the parent is deleted again", async () => {
+    const deletedAt = 1_700_000_000_000;
+    const version = {
+      _id: "skillVersions:pending",
+      skillId: SKILL_ID,
+      version: "2.1.0",
+      publicationStatus: "pending",
+      softDeletedAt: undefined,
+      pendingPublication: {
+        ownerDeleteRestoreState: {
+          softDeletedAt: deletedAt,
+          moderationStatus: "hidden",
+          updatedAt: deletedAt,
+        },
+      },
+    };
+    const skill = buildExistingSkill({
+      moderationStatus: "hidden",
+      moderationReason: undefined,
+      softDeletedAt: deletedAt + 1,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === version._id) return version;
+          if (id === SKILL_ID) return skill;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "skillEmbeddings") {
+            return {
+              withIndex: () => ({
+                unique: async () => null,
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await expect(
+      publishPendingVersionHandler(ctx as never, {
+        versionId: version._id,
+        publishArgs: {},
+      }),
+    ).rejects.toThrow("Skill state changed while the deleted-skill republish was pending");
   });
 });
