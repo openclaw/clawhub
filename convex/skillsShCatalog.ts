@@ -12,6 +12,7 @@ import {
   getSkillsShCatalogFixture,
   type SkillsShCatalogFixtureRow,
 } from "./lib/skillsShCatalogFixtures";
+import { enqueueSkillsShCatalogScanRequest } from "./securityScan";
 
 const CONTROL_KEY = "global";
 const ENABLE_FIXTURE_CONFIRM = "enable-skills-sh-fixture-control";
@@ -39,6 +40,30 @@ const scanVerdictValidator = v.union(
   v.literal("failed"),
 );
 const dispatchKindValidator = v.union(v.literal("deterministic"), v.literal("real"));
+const stagingLiveRowValidator = v.object({
+  externalId: v.string(),
+  githubOwnerId: v.number(),
+  owner: v.string(),
+  repo: v.string(),
+  slug: v.string(),
+  displayName: v.string(),
+  sourceUrl: v.string(),
+  githubRepoUrl: v.string(),
+  sourceContentHash: v.string(),
+  installs: v.number(),
+});
+const scanRequestFileValidator = v.object({
+  path: v.string(),
+  size: v.number(),
+  storageId: v.id("_storage"),
+  sha256: v.string(),
+  contentType: v.optional(v.string()),
+});
+const stagingLiveArtifactValidator = v.object({
+  externalId: v.string(),
+  artifactContentHash: v.string(),
+  files: v.array(scanRequestFileValidator),
+});
 
 const DEFAULT_CONTROL = {
   mode: "off" as const,
@@ -380,6 +405,229 @@ export const startFixtureRunInternal = internalMutation({
   },
 });
 
+export const startStagingLiveRunInternal = internalMutation({
+  args: {
+    actor: v.string(),
+    reason: v.string(),
+    snapshotId: v.string(),
+    sourceCapturedAt: v.string(),
+    snapshotCaptureFetches: v.number(),
+    fixtureLength: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    const control = assertDiscoveryEnabled(await getControlDoc(ctx));
+    if (environment.environment !== "test" || control.mode !== "staging-live") {
+      throw new ConvexError("skills.sh live runs require permanent Test staging-live controls");
+    }
+    if (args.fixtureLength !== 500) {
+      throw new ConvexError("skills.sh live Test runs require exactly 500 rows");
+    }
+    assertIntegerInRange("snapshotCaptureFetches", args.snapshotCaptureFetches, 1, 2_000);
+    const now = Date.now();
+    const runId = await ctx.db.insert("skillsShCatalogRuns", {
+      fixtureId: "skills-sh-test-live-500",
+      snapshotId: args.snapshotId.trim(),
+      sourceKind: "staging-live",
+      sourceCapturedAt: args.sourceCapturedAt,
+      snapshotCaptureFetches: args.snapshotCaptureFetches,
+      dryRun: false,
+      status: "running",
+      cursor: 0,
+      scanCursor: 0,
+      fixtureLength: args.fixtureLength,
+      counts: emptyCounts(),
+      budgets: {
+        maxEntriesPerRun: control.maxEntriesPerRun,
+        maxEntriesPerBatch: control.maxEntriesPerBatch,
+        maxWritesPerBatch: control.maxWritesPerBatch,
+        maxPlannedScans: control.maxPlannedScans,
+        maxScanAdmissionsPerBatch: control.maxScanAdmissionsPerBatch,
+        maxScanAdmissionsPerRun: control.maxScanAdmissionsPerRun,
+        maxScanAdmissionsPerDay: control.maxScanAdmissionsPerDay,
+      },
+      operations: {
+        functionCalls: 1,
+        dbReads: 1,
+        dbWrites: 1,
+      },
+      actor: args.actor.trim(),
+      reason: args.reason.trim(),
+      batchesProcessed: 0,
+      scanAdmissionBatches: 0,
+      lastBatchWrites: 1,
+      lastBatchReads: 1,
+      startedAt: now,
+      updatedAt: now,
+    });
+    return { runId };
+  },
+});
+
+export const processStagingLiveBatchInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShCatalogRuns"),
+    cursor: v.number(),
+    rows: v.array(stagingLiveRowValidator),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    const control = await getControlDoc(ctx);
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("skills.sh catalog run not found");
+    if (
+      environment.environment !== "test" ||
+      control?.mode !== "staging-live" ||
+      run.sourceKind !== "staging-live" ||
+      run.fixtureId !== "skills-sh-test-live-500"
+    ) {
+      throw new ConvexError("skills.sh live batch requires permanent Test staging-live state");
+    }
+    assertDiscoveryEnabled(control);
+    assertWritesEnabled(control);
+    if (run.status === "paused") throw new ConvexError("skills.sh catalog run is paused");
+    if (run.status !== "running") return summarizeRun(run);
+    if (args.cursor !== run.cursor) {
+      throw new ConvexError(`skills.sh live batch cursor mismatch: expected ${run.cursor}`);
+    }
+    assertIntegerInRange("rows.length", args.rows.length, 1, run.budgets.maxEntriesPerBatch);
+    if (args.cursor + args.rows.length > run.fixtureLength) {
+      throw new ConvexError("skills.sh live batch exceeds the declared 500-row snapshot");
+    }
+
+    let cursor = run.cursor;
+    let writesUsed = 0;
+    let readsUsed = 2;
+    const counts = { ...run.counts };
+    const now = Date.now();
+    for (const inputRow of args.rows) {
+      if (counts.observed >= run.budgets.maxEntriesPerRun) break;
+      const row = normalizeIdentity(inputRow);
+      if (row.externalId !== inputRow.externalId.trim().toLowerCase()) {
+        throw new ConvexError(`skills.sh live row identity mismatch: ${inputRow.externalId}`);
+      }
+      const existing = await ctx.db
+        .query("skillsShCatalogEntries")
+        .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
+        .unique();
+      readsUsed += 1;
+      if (existing && fixtureObservationConflicts(existing, row)) {
+        counts.observed += 1;
+        counts.rejected += 1;
+        cursor += 1;
+        continue;
+      }
+      const observationUnchanged = existing ? sameFixtureObservation(existing, row) : false;
+      const contentChanged = existing
+        ? existing.sourceContentHash !== row.sourceContentHash
+        : false;
+      const existingAttempt =
+        existing && control.scanPlanningEnabled
+          ? await ctx.db
+              .query("skillsShCatalogScanAttempts")
+              .withIndex("by_entry_and_source_content_hash", (q) =>
+                q.eq("entryId", existing._id).eq("sourceContentHash", row.sourceContentHash),
+              )
+              .order("desc")
+              .first()
+          : null;
+      if (existing && control.scanPlanningEnabled) readsUsed += 1;
+      const shouldPlanScan =
+        control.scanPlanningEnabled &&
+        counts.scansPlanned < run.budgets.maxPlannedScans &&
+        !existingAttempt &&
+        (!existing || contentChanged || existing.scanStatus !== "planned");
+      if (writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
+
+      counts.observed += 1;
+      cursor += 1;
+      if (shouldPlanScan) counts.scansPlanned += 1;
+      if (existing) {
+        if (observationUnchanged) counts.unchanged += 1;
+        else {
+          counts.wouldUpdate += 1;
+          counts.updated += 1;
+        }
+        await ctx.db.patch(existing._id, {
+          sourceKind: "staging-live",
+          githubOwnerId: row.githubOwnerId,
+          owner: row.owner,
+          repo: row.repo,
+          slug: row.slug,
+          displayName: row.displayName,
+          sourceUrl: row.sourceUrl,
+          githubRepoUrl: row.githubRepoUrl,
+          sourceContentHash: row.sourceContentHash,
+          installs: row.installs,
+          sourceSnapshotId: run.snapshotId,
+          publicVisible: false,
+          scanStatus: shouldPlanScan
+            ? "planned"
+            : contentChanged && existingAttempt
+              ? scanStatusFromAttempt(existingAttempt)
+              : contentChanged
+                ? "not-planned"
+                : existing.scanStatus,
+          lastObservedAt: now,
+          updatedAt: now,
+        });
+      } else {
+        counts.wouldInsert += 1;
+        counts.inserted += 1;
+        await ctx.db.insert("skillsShCatalogEntries", {
+          externalId: row.externalId,
+          sourceKind: "staging-live",
+          githubOwnerId: row.githubOwnerId,
+          owner: row.owner,
+          repo: row.repo,
+          slug: row.slug,
+          displayName: row.displayName,
+          sourceUrl: row.sourceUrl,
+          githubRepoUrl: row.githubRepoUrl,
+          sourceContentHash: row.sourceContentHash,
+          installs: row.installs,
+          sourceSnapshotId: run.snapshotId,
+          publicVisible: false,
+          scanStatus: shouldPlanScan ? "planned" : "not-planned",
+          firstObservedAt: now,
+          lastObservedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      writesUsed += 1;
+    }
+
+    if (cursor !== args.cursor + args.rows.length) {
+      throw new ConvexError("skills.sh live batch exceeded its write or discovery budget");
+    }
+    const completed = cursor >= run.fixtureLength;
+    const budgetExhausted = !completed && counts.observed >= run.budgets.maxEntriesPerRun;
+    const terminal = completed || budgetExhausted;
+    const patch = {
+      cursor,
+      counts,
+      status: completed
+        ? ("completed" as const)
+        : budgetExhausted
+          ? ("budget-exhausted" as const)
+          : ("running" as const),
+      completedAt: terminal ? now : undefined,
+      batchesProcessed: run.batchesProcessed + 1,
+      lastBatchWrites: writesUsed + 1,
+      lastBatchReads: readsUsed,
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: readsUsed,
+        dbWrites: writesUsed + 1,
+      }),
+      updatedAt: now,
+    };
+    await ctx.db.patch(run._id, patch);
+    return summarizeRun({ ...run, ...patch });
+  },
+});
+
 export const processFixtureBatchInternal = internalMutation({
   args: {
     runId: v.id("skillsShCatalogRuns"),
@@ -394,6 +642,9 @@ export const processFixtureBatchInternal = internalMutation({
     if (run.status === "paused") throw new ConvexError("skills.sh catalog run is paused");
     if (run.status !== "running") return summarizeRun(run);
 
+    if (run.fixtureId === "skills-sh-test-live-500") {
+      throw new ConvexError("Use the staging-live batch processor for live Test runs");
+    }
     const fixture = getSkillsShCatalogFixture(run.fixtureId);
     let cursor = run.cursor;
     let writesUsed = 0;
@@ -573,32 +824,54 @@ export const setFixtureRunPausedInternal = internalMutation({
 });
 
 async function readQueueHealth(ctx: MutationCtx, control: Doc<"skillsShCatalogControls">) {
-  const [nativeQueued, nativeRunning, catalogQueued, catalogRunning] = await Promise.all([
-    ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_and_next_run_at", (q) => q.eq("status", "queued"))
-      .take(control.maxNativeQueued + 1),
-    ctx.db
-      .query("securityScanJobs")
-      .withIndex("by_status_and_updated_at", (q) => q.eq("status", "running"))
-      .take(control.maxNativeInFlight + 1),
-    ctx.db
-      .query("skillsShCatalogScanAttempts")
-      .withIndex("by_status_and_created_at", (q) => q.eq("status", "queued"))
-      .take(control.maxCatalogQueued + 1),
-    ctx.db
-      .query("skillsShCatalogScanAttempts")
-      .withIndex("by_status_and_created_at", (q) => q.eq("status", "running"))
-      .take(control.maxCatalogInFlight + 1),
-  ]);
+  const nativeSources = ["publish", "vt-update", "backfill", "bulk-rescan", "manual"] as const;
+  const [nativeQueuedBySource, nativeRunningBySource, catalogQueued, catalogRunning] =
+    await Promise.all([
+      Promise.all(
+        nativeSources.map(async (source) =>
+          ctx.db
+            .query("securityScanJobs")
+            .withIndex("by_status_source_created_at", (q) =>
+              q.eq("status", "queued").eq("source", source),
+            )
+            .take(control.maxNativeQueued + 1),
+        ),
+      ),
+      Promise.all(
+        nativeSources.map(async (source) =>
+          ctx.db
+            .query("securityScanJobs")
+            .withIndex("by_status_source_created_at", (q) =>
+              q.eq("status", "running").eq("source", source),
+            )
+            .take(control.maxNativeInFlight + 1),
+        ),
+      ),
+      ctx.db
+        .query("skillsShCatalogScanAttempts")
+        .withIndex("by_status_and_created_at", (q) => q.eq("status", "queued"))
+        .take(control.maxCatalogQueued + 1),
+      ctx.db
+        .query("skillsShCatalogScanAttempts")
+        .withIndex("by_status_and_created_at", (q) => q.eq("status", "running"))
+        .take(control.maxCatalogInFlight + 1),
+    ]);
+  const nativeQueued = Math.min(
+    control.maxNativeQueued + 1,
+    nativeQueuedBySource.reduce((count, jobs) => count + jobs.length, 0),
+  );
+  const nativeInFlight = Math.min(
+    control.maxNativeInFlight + 1,
+    nativeRunningBySource.reduce((count, jobs) => count + jobs.length, 0),
+  );
   return {
-    nativeQueued: nativeQueued.length,
-    nativeInFlight: nativeRunning.length,
+    nativeQueued,
+    nativeInFlight,
     catalogQueued: catalogQueued.length,
     catalogInFlight: catalogRunning.length,
     healthy:
-      nativeQueued.length <= control.maxNativeQueued &&
-      nativeRunning.length <= control.maxNativeInFlight &&
+      nativeQueued <= control.maxNativeQueued &&
+      nativeInFlight <= control.maxNativeInFlight &&
       catalogQueued.length <= control.maxCatalogQueued &&
       catalogRunning.length <= control.maxCatalogInFlight,
   };
@@ -609,6 +882,8 @@ export const admitFixtureScansInternal = internalMutation({
     runId: v.id("skillsShCatalogRuns"),
     externalIds: v.array(v.string()),
     dispatchKind: dispatchKindValidator,
+    actorUserId: v.optional(v.id("users")),
+    artifacts: v.optional(v.array(stagingLiveArtifactValidator)),
   },
   handler: async (ctx, args) => {
     const environment = assertSkillsShFixtureEnvironmentAllowed();
@@ -647,6 +922,19 @@ export const admitFixtureScansInternal = internalMutation({
       const allowlist = new Set(control.realScanAllowlist);
       const denied = externalIds.find((externalId) => !allowlist.has(externalId));
       if (denied) throw new ConvexError(`real Test scan admission is not allowlisted: ${denied}`);
+      if (!args.actorUserId) {
+        throw new ConvexError("real Test scan admission requires an authenticated operator");
+      }
+    }
+    const artifactInputs = args.artifacts ?? [];
+    const artifacts = new Map(
+      artifactInputs.map((artifact) => [artifact.externalId.trim().toLowerCase(), artifact]),
+    );
+    if (
+      args.dispatchKind === "real" &&
+      (artifactInputs.length !== externalIds.length || artifacts.size !== externalIds.length)
+    ) {
+      throw new ConvexError("real Test scan admission requires exactly one artifact per skill");
     }
 
     const queueHealth = await readQueueHealth(ctx, control);
@@ -660,16 +948,19 @@ export const admitFixtureScansInternal = internalMutation({
       .withIndex("by_created_at", (q) => q.gte("createdAt", dayStart.getTime()))
       .take(run.budgets.maxScanAdmissionsPerDay + 1);
 
-    const fixture = getSkillsShCatalogFixture(run.fixtureId);
+    const fixture =
+      run.fixtureId === "skills-sh-test-live-500" ? null : getSkillsShCatalogFixture(run.fixtureId);
     const now = Date.now();
     let admitted = 0;
     let skipped = 0;
+    const admittedExternalIds: string[] = [];
     let readsUsed = 7;
     let writesUsed = 0;
+    const runWriteCount = 1;
     for (const externalId of externalIds) {
-      const fixtureRow = fixture.findByExternalId(externalId);
+      const fixtureRow = fixture?.findByExternalId(externalId);
       const sourceRow = fixtureRow ? normalizeIdentity(fixtureRow) : null;
-      if (!sourceRow) {
+      if (!sourceRow && run.sourceKind !== "staging-live") {
         skipped += 1;
         continue;
       }
@@ -680,7 +971,8 @@ export const admitFixtureScansInternal = internalMutation({
       readsUsed += 1;
       if (
         !entry ||
-        entry.sourceContentHash !== sourceRow.sourceContentHash ||
+        (sourceRow && entry.sourceContentHash !== sourceRow.sourceContentHash) ||
+        (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId) ||
         entry.scanStatus !== "planned"
       ) {
         skipped += 1;
@@ -707,14 +999,47 @@ export const admitFixtureScansInternal = internalMutation({
       if (queueHealth.catalogQueued + admitted >= control.maxCatalogQueued) {
         throw new ConvexError("skills.sh catalog queued-scan budget exceeded");
       }
-      await insertCatalogScanAttempt(ctx, {
+      const artifact = artifacts.get(externalId);
+      if (args.dispatchKind === "real") {
+        if (
+          !artifact ||
+          !/^[a-f0-9]{64}$/i.test(artifact.artifactContentHash) ||
+          artifact.files.length === 0
+        ) {
+          throw new ConvexError(
+            `real Test scan admission requires a fetched artifact: ${externalId}`,
+          );
+        }
+      }
+      const admissionWriteCost = args.dispatchKind === "real" ? 6 : 2;
+      if (writesUsed + admissionWriteCost + runWriteCount > run.budgets.maxWritesPerBatch) {
+        throw new ConvexError("skills.sh catalog scan-admission write budget exceeded");
+      }
+      const attemptId = await insertCatalogScanAttempt(ctx, {
         entryId: entry._id,
         runId: run._id,
         externalId,
         sourceContentHash: entry.sourceContentHash,
         dispatchKind: args.dispatchKind,
+        artifactContentHash: artifact?.artifactContentHash.toLowerCase(),
         now,
       });
+      if (args.dispatchKind === "real" && args.actorUserId && artifact) {
+        const linked = await enqueueSkillsShCatalogScanRequest(ctx, {
+          actorUserId: args.actorUserId,
+          attemptId,
+          slug: entry.slug,
+          displayName: entry.displayName,
+          artifactContentHash: artifact.artifactContentHash.toLowerCase(),
+          files: artifact.files,
+        });
+        await ctx.db.patch(attemptId, {
+          skillScanRequestId: linked.requestId,
+          securityScanJobId: linked.jobId,
+          updatedAt: now,
+        });
+        writesUsed += 4;
+      }
       await ctx.db.patch(entry._id, {
         scanStatus: "queued",
         publicVisible: false,
@@ -722,9 +1047,8 @@ export const admitFixtureScansInternal = internalMutation({
       });
       writesUsed += 2;
       admitted += 1;
+      admittedExternalIds.push(externalId);
     }
-
-    const runWriteCount = 1;
     const nextCounts = {
       ...run.counts,
       scansAdmitted: run.counts.scansAdmitted + admitted,
@@ -744,6 +1068,7 @@ export const admitFixtureScansInternal = internalMutation({
       requested: externalIds.length,
       admitted,
       skipped,
+      admittedExternalIds,
       queueHealth,
       counts: nextCounts,
     };
@@ -869,6 +1194,106 @@ export const completeDeterministicScansInternal = internalMutation({
       counts,
       queueHealth,
     };
+  },
+});
+
+export const recordRealScanResultInternal = internalMutation({
+  args: {
+    attemptId: v.id("skillsShCatalogScanAttempts"),
+    artifactContentHash: v.string(),
+    verdict: scanVerdictValidator,
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    if (environment.environment !== "test") {
+      throw new ConvexError("real skills.sh scan results require the permanent Test environment");
+    }
+    const attempt = await ctx.db.get(args.attemptId);
+    if (!attempt) throw new ConvexError("skills.sh real scan attempt not found");
+    if (attempt.dispatchKind !== "real") {
+      throw new ConvexError("skills.sh real scan callback requires a real attempt");
+    }
+    if (attempt.status !== "queued" && attempt.status !== "running") {
+      return { applied: false, reason: "attempt-not-active" };
+    }
+    if (
+      !attempt.artifactContentHash ||
+      attempt.artifactContentHash !== args.artifactContentHash.toLowerCase()
+    ) {
+      throw new ConvexError("skills.sh real scan artifact hash mismatch");
+    }
+    const run = await ctx.db.get(attempt.runId);
+    if (run?.status === "canceling" || run?.status === "canceled") {
+      const now = Date.now();
+      const canceledOperations = await cancelAttempt(ctx, attempt, now);
+      const hasMore = await hasActiveScanAttemptsForRun(ctx, run._id);
+      await ctx.db.patch(run._id, {
+        status: hasMore ? "canceling" : "canceled",
+        counts: {
+          ...run.counts,
+          scansCanceled: run.counts.scansCanceled + 1,
+        },
+        operations: addOperations(run.operations, {
+          functionCalls: 1,
+          dbReads: 4 + canceledOperations.dbReads,
+          dbWrites: 1 + canceledOperations.dbWrites,
+        }),
+        updatedAt: now,
+      });
+      return { applied: false, reason: "run-canceled" };
+    }
+    const entry = await ctx.db.get(attempt.entryId);
+    if (!entry || entry.sourceContentHash !== attempt.sourceContentHash) {
+      const now = Date.now();
+      await ctx.db.patch(attempt._id, {
+        status: "canceled",
+        completedAt: now,
+        updatedAt: now,
+      });
+      if (run) {
+        await ctx.db.patch(run._id, {
+          counts: {
+            ...run.counts,
+            scansCanceled: run.counts.scansCanceled + 1,
+          },
+          operations: addOperations(run.operations, {
+            functionCalls: 1,
+            dbReads: 3,
+            dbWrites: 2,
+          }),
+          updatedAt: now,
+        });
+      }
+      return { applied: false, reason: "stale-attempt" };
+    }
+    const now = Date.now();
+    const succeeded = args.verdict !== "failed";
+    await ctx.db.patch(attempt._id, {
+      status: succeeded ? "succeeded" : "failed",
+      verdict: args.verdict,
+      completedAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(entry._id, {
+      scanStatus: args.verdict,
+      publicVisible: false,
+      updatedAt: now,
+    });
+    if (run) {
+      await ctx.db.patch(run._id, {
+        counts: {
+          ...run.counts,
+          scansCompleted: run.counts.scansCompleted + 1,
+        },
+        operations: addOperations(run.operations, {
+          functionCalls: 1,
+          dbReads: 3,
+          dbWrites: 3,
+        }),
+        updatedAt: now,
+      });
+    }
+    return { applied: true, publicVisible: false };
   },
 });
 
@@ -1092,6 +1517,22 @@ export const getRunInternal = internalQuery({
   },
 });
 
+export const getStagingLiveControlInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const environment = assertSkillsShFixtureEnvironmentAllowed();
+    if (environment.environment !== "test") {
+      throw new ConvexError("skills.sh staging control is available only in permanent Test");
+    }
+    return {
+      environment: environment.environment,
+      deploymentName: process.env.CLAWHUB_DEPLOYMENT_NAME ?? null,
+      buildSha: process.env.APP_BUILD_SHA ?? null,
+      control: summarizeControl(await getControlDoc(ctx)),
+    };
+  },
+});
+
 export const listRunScanAttemptsPageInternal = internalQuery({
   args: {
     runId: v.id("skillsShCatalogRuns"),
@@ -1264,14 +1705,16 @@ async function insertCatalogScanAttempt(
     externalId: string;
     sourceContentHash: string;
     dispatchKind: "deterministic" | "real";
+    artifactContentHash?: string;
     now: number;
   },
 ) {
-  await ctx.db.insert("skillsShCatalogScanAttempts", {
+  return await ctx.db.insert("skillsShCatalogScanAttempts", {
     entryId: args.entryId,
     runId: args.runId,
     externalId: args.externalId,
     sourceContentHash: args.sourceContentHash,
+    ...(args.artifactContentHash ? { artifactContentHash: args.artifactContentHash } : {}),
     source: args.dispatchKind === "real" ? "skills-sh-catalog-test" : "skills-sh-catalog-fixture",
     dispatchKind: args.dispatchKind,
     priority: "low",
@@ -1286,6 +1729,29 @@ async function cancelAttempt(
   attempt: Doc<"skillsShCatalogScanAttempts">,
   now: number,
 ) {
+  let dbReads = 1;
+  let dbWrites = 1;
+  if (attempt.securityScanJobId) {
+    const job = await ctx.db.get(attempt.securityScanJobId);
+    dbReads += 1;
+    if (job?.source === "skills-sh-catalog-test" && job.status === "queued") {
+      await ctx.db.delete(job._id);
+      dbWrites += 1;
+      if (attempt.skillScanRequestId) {
+        const request = await ctx.db.get(attempt.skillScanRequestId);
+        dbReads += 1;
+        if (request) {
+          await ctx.db.patch(request._id, {
+            status: "failed",
+            lastError: "Catalog run canceled before scan start",
+            completedAt: now,
+            updatedAt: now,
+          });
+          dbWrites += 1;
+        }
+      }
+    }
+  }
   await ctx.db.patch(attempt._id, {
     status: "canceled",
     completedAt: now,
@@ -1298,9 +1764,9 @@ async function cancelAttempt(
       publicVisible: false,
       updatedAt: now,
     });
-    return { dbReads: 1, dbWrites: 2 };
+    return { dbReads, dbWrites: dbWrites + 1 };
   }
-  return { dbReads: 1, dbWrites: 1 };
+  return { dbReads, dbWrites };
 }
 
 async function hasActiveScanAttemptsForRun(ctx: MutationCtx, runId: Id<"skillsShCatalogRuns">) {

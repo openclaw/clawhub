@@ -59,6 +59,7 @@ import {
   verifyDocsSessionV1Http,
   whoamiV1Http,
   contentRightsV1Http,
+  skillsShCatalogTestV1Http,
 } from "./httpApiV1";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
@@ -322,6 +323,18 @@ http.route({
   pathPrefix: `${ApiRoutes.contentRights}/`,
   method: "GET",
   handler: contentRightsV1Http,
+});
+
+http.route({
+  path: "/api/v1/operator/skills-sh/catalog-test",
+  method: "GET",
+  handler: skillsShCatalogTestV1Http,
+});
+
+http.route({
+  path: "/api/v1/operator/skills-sh/catalog-test",
+  method: "POST",
+  handler: skillsShCatalogTestV1Http,
 });
 
 http.route({

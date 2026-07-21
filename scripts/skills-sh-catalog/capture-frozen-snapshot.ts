@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
@@ -8,6 +7,7 @@ import {
   searchSkillsShCatalog,
   type SkillsShCatalogListRow,
 } from "../../server/skillsShCatalogSource";
+import { resolveAuthenticatedGitHubOwner } from "./github-owner-resolution";
 
 const SNAPSHOT_ID = "skills-sh-500-2026-07-21";
 const ROW_LIMIT = 500;
@@ -54,21 +54,6 @@ function normalizeRow(row: SkillsShCatalogListRow) {
     repo: repo.trim().toLowerCase(),
     slug: row.slug.trim().toLowerCase(),
   };
-}
-
-function readGitHubOwnerId(owner: string) {
-  const result = spawnSync("gh", ["api", `users/${owner}`, "--jq", ".id"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.status !== 0) {
-    throw new Error(`GitHub owner lookup failed for ${owner}`);
-  }
-  const id = Number(result.stdout.trim());
-  if (!Number.isSafeInteger(id) || id <= 0) {
-    throw new Error(`GitHub owner lookup returned an invalid id for ${owner}`);
-  }
-  return id;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -166,7 +151,12 @@ async function main() {
   }
 
   const owners = Array.from(new Set(selected.map(({ row }) => row.owner))).sort();
-  const ownerIds = new Map(owners.map((owner) => [owner, readGitHubOwnerId(owner)] as const));
+  const ownerIds = new Map(
+    owners.map((owner) => {
+      const resolved = resolveAuthenticatedGitHubOwner(owner);
+      return [owner, resolved.id] as const;
+    }),
+  );
   const rows: FrozenRow[] = selected.map(({ row, detail }) => {
     return {
       externalId: row.id,

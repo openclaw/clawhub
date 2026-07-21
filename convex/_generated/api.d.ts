@@ -41,6 +41,7 @@ import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_promotionsV1 from "../httpApiV1/promotionsV1.js";
 import type * as httpApiV1_publishersV1 from "../httpApiV1/publishersV1.js";
 import type * as httpApiV1_shared from "../httpApiV1/shared.js";
+import type * as httpApiV1_skillsShCatalogV1 from "../httpApiV1/skillsShCatalogV1.js";
 import type * as httpApiV1_skillsV1 from "../httpApiV1/skillsV1.js";
 import type * as httpApiV1_starsV1 from "../httpApiV1/starsV1.js";
 import type * as httpApiV1_transfersV1 from "../httpApiV1/transfersV1.js";
@@ -215,6 +216,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/promotionsV1": typeof httpApiV1_promotionsV1;
   "httpApiV1/publishersV1": typeof httpApiV1_publishersV1;
   "httpApiV1/shared": typeof httpApiV1_shared;
+  "httpApiV1/skillsShCatalogV1": typeof httpApiV1_skillsShCatalogV1;
   "httpApiV1/skillsV1": typeof httpApiV1_skillsV1;
   "httpApiV1/starsV1": typeof httpApiV1_starsV1;
   "httpApiV1/transfersV1": typeof httpApiV1_transfersV1;

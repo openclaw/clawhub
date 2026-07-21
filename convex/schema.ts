@@ -715,6 +715,7 @@ const securityScanJobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
+  v.literal("skills-sh-catalog-test"),
 );
 const skillCardGenerationJobStatusValidator = v.union(
   v.literal("queued"),
@@ -780,6 +781,7 @@ const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
   v.literal("published"),
   v.literal("github"),
+  v.literal("skills-sh-catalog"),
 );
 
 const skills = defineTable({
@@ -1915,6 +1917,7 @@ const skillScanRequests = defineTable({
   skillId: v.optional(v.id("skills")),
   skillVersionId: v.optional(v.id("skillVersions")),
   githubSkillScanId: v.optional(v.id("githubSkillScans")),
+  skillsShCatalogAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
   files: packageFilesValidator,
   fileChunkCount: v.optional(v.number()),
   fileManifestBytes: v.optional(v.number()),
@@ -2796,6 +2799,7 @@ const skillsShCatalogRuns = defineTable({
     v.literal("skills-sh-500-2026-07-21"),
     v.literal("skills-sh-500-2026-07-21-v2"),
     v.literal("synthetic-20000-v1"),
+    v.literal("skills-sh-test-live-500"),
   ),
   snapshotId: v.string(),
   sourceKind: v.union(
@@ -2889,6 +2893,8 @@ const skillsShCatalogScanAttempts = defineTable({
   externalId: v.string(),
   sourceContentHash: v.string(),
   artifactContentHash: v.optional(v.string()),
+  skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  securityScanJobId: v.optional(v.id("securityScanJobs")),
   source: v.union(v.literal("skills-sh-catalog-fixture"), v.literal("skills-sh-catalog-test")),
   dispatchKind: v.union(v.literal("deterministic"), v.literal("real")),
   priority: v.literal("low"),

@@ -384,8 +384,8 @@ describe("skills.sh catalog overload control plane", () => {
     );
     expect(entries.every((entry) => !entry.publicVisible)).toBe(true);
 
-    for (let offset = 0; offset < entries.length; offset += 50) {
-      const externalIds = entries.slice(offset, offset + 50).map((entry) => entry.externalId);
+    for (let offset = 0; offset < entries.length; offset += 49) {
+      const externalIds = entries.slice(offset, offset + 49).map((entry) => entry.externalId);
       const admission = await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
         runId,
         externalIds,
@@ -397,7 +397,7 @@ describe("skills.sh catalog overload control plane", () => {
       });
       const completion = await t.mutation(
         internal.skillsShCatalog.completeDeterministicScansInternal,
-        { runId, limit: 50 },
+        { runId, limit: externalIds.length },
       );
       expect(completion).toMatchObject({
         matched: externalIds.length,
@@ -508,6 +508,29 @@ describe("skills.sh catalog overload control plane", () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);
     const allowlist = frozenSnapshot.rows.slice(0, 10).map((row) => row.externalId);
+    const actorUserId = await t.run(async (ctx) => {
+      return await ctx.db.insert("users", {
+        handle: "catalog-test-operator",
+        displayName: "Catalog Test Operator",
+        role: "admin",
+      });
+    });
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["catalog test artifact"])),
+    );
+    const artifacts = allowlist.map((externalId, index) => ({
+      externalId,
+      artifactContentHash: index.toString(16).padStart(64, "a"),
+      files: [
+        {
+          path: "SKILL.md",
+          size: 21,
+          storageId,
+          sha256: index.toString(16).padStart(64, "b"),
+          contentType: "text/markdown",
+        },
+      ],
+    }));
     await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
       ...BASE_CONTROL,
       maxScanAdmissionsPerBatch: 10,
@@ -533,6 +556,8 @@ describe("skills.sh catalog overload control plane", () => {
         runId,
         externalIds: [allowlist[0]!],
         dispatchKind: "real",
+        actorUserId,
+        artifacts: [artifacts[0]!],
       }),
     ).rejects.toThrow("requires staging-live controls");
     await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
@@ -550,6 +575,13 @@ describe("skills.sh catalog overload control plane", () => {
         runId,
         externalIds: [frozenSnapshot.rows[10]!.externalId],
         dispatchKind: "real",
+        actorUserId,
+        artifacts: [
+          {
+            ...artifacts[0]!,
+            externalId: frozenSnapshot.rows[10]!.externalId,
+          },
+        ],
       }),
     ).rejects.toThrow("not allowlisted");
 
@@ -557,6 +589,8 @@ describe("skills.sh catalog overload control plane", () => {
       runId,
       externalIds: allowlist,
       dispatchKind: "real",
+      actorUserId,
+      artifacts,
     });
     expect(admitted.admitted).toBe(10);
     const realQueue = await t.query(internal.skillsShCatalog.listRealScanQueueInternal, {
@@ -567,8 +601,10 @@ describe("skills.sh catalog overload control plane", () => {
       realQueue.every(
         (attempt) =>
           attempt.priority === "low" &&
-          attempt.requiresArtifactFetch &&
-          !attempt.artifactContentHash,
+          !attempt.requiresArtifactFetch &&
+          Boolean(attempt.artifactContentHash) &&
+          Boolean(attempt.skillScanRequestId) &&
+          Boolean(attempt.securityScanJobId),
       ),
     ).toBe(true);
     await expect(
@@ -580,7 +616,7 @@ describe("skills.sh catalog overload control plane", () => {
     ).rejects.toThrow("external artifact-fetch integration");
     expect(
       await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect()),
-    ).toHaveLength(0);
+    ).toHaveLength(10);
   }, 30_000);
 
   it("charges retry budgets only for newly admitted scan attempts", async () => {
@@ -813,5 +849,387 @@ describe("skills.sh catalog overload control plane", () => {
     expect(await t.run(async (ctx) => await ctx.db.get(seeded.nativeCompletedJobId))).toMatchObject(
       { status: "succeeded", updatedAt: 1 },
     );
+  });
+
+  it("persists live Test batches dark and links an admitted artifact to the real scan queue", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const actorUserId = await t.run(async (ctx) => {
+      return await ctx.db.insert("users", {
+        handle: "catalog-test-operator",
+        displayName: "Catalog Test Operator",
+        role: "admin",
+      });
+    });
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxEntriesPerRun: 500,
+      maxEntriesPerBatch: 100,
+      maxPlannedScans: 500,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 1,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+      maxNativeQueued: 0,
+      maxNativeInFlight: 0,
+      realScanAllowlist: ["nvidia/skills/aiq-deploy"],
+    });
+
+    const rows = frozenSnapshot.rows.map((row) => ({ ...row }));
+    const { runId } = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-test-operator",
+      reason: "prove exact live Test batching",
+      snapshotId: "skills-sh-test-live-500:test",
+      sourceCapturedAt: "2026-07-21T00:00:00.000Z",
+      snapshotCaptureFetches: 528,
+      fixtureLength: rows.length,
+    });
+    for (let cursor = 0; cursor < rows.length; cursor += 50) {
+      await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+        runId,
+        cursor,
+        rows: rows.slice(cursor, cursor + 50),
+      });
+    }
+
+    const run = await t.query(internal.skillsShCatalog.getRunInternal, { runId });
+    expect(run).toMatchObject({
+      status: "completed",
+      cursor: 500,
+      counts: {
+        observed: 500,
+        inserted: 500,
+        scansPlanned: 500,
+        scansAdmitted: 0,
+      },
+    });
+    expect((await collectEntries(t)).every((entry) => !entry.publicVisible)).toBe(true);
+
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["hello catalog"])),
+    );
+    const admitted = await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+      runId,
+      externalIds: ["nvidia/skills/aiq-deploy"],
+      dispatchKind: "real",
+      actorUserId,
+      artifacts: [
+        {
+          externalId: "nvidia/skills/aiq-deploy",
+          artifactContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 12,
+              storageId,
+              sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              contentType: "text/markdown",
+            },
+          ],
+        },
+      ],
+    });
+    expect(admitted).toMatchObject({ admitted: 1, skipped: 0 });
+
+    const [attempt] = await collectAttempts(t, runId);
+    expect(attempt).toMatchObject({
+      dispatchKind: "real",
+      source: "skills-sh-catalog-test",
+      artifactContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    });
+    const linked = await t.run(async (ctx) => {
+      const request = attempt?.skillScanRequestId
+        ? await ctx.db.get(attempt.skillScanRequestId)
+        : null;
+      const job = attempt?.securityScanJobId ? await ctx.db.get(attempt.securityScanJobId) : null;
+      return { request, job };
+    });
+    expect(linked.request).toMatchObject({
+      actorUserId,
+      sourceKind: "skills-sh-catalog",
+      status: "queued",
+      sha256hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      skillsShCatalogAttemptId: attempt?._id,
+    });
+    expect(linked.request).not.toHaveProperty("skillId");
+    expect(linked.job).toMatchObject({
+      targetKind: "skillScanRequest",
+      source: "skills-sh-catalog-test",
+      priority: -100,
+      status: "queued",
+      skillScanRequestId: linked.request?._id,
+    });
+
+    await t.run(async (ctx) => {
+      const entry = await ctx.db.get(attempt!.entryId);
+      await ctx.db.patch(entry!._id, {
+        sourceContentHash: "changed-after-admission",
+        updatedAt: Date.now(),
+      });
+    });
+    const staleResult = await t.mutation(internal.skillsShCatalog.recordRealScanResultInternal, {
+      attemptId: attempt!._id,
+      artifactContentHash: attempt!.artifactContentHash!,
+      verdict: "clean",
+    });
+    expect(staleResult).toEqual({ applied: false, reason: "stale-attempt" });
+    expect(await t.query(internal.skillsShCatalog.getRunInternal, { runId })).toMatchObject({
+      counts: {
+        scansAdmitted: 1,
+        scansCanceled: 1,
+        scansCompleted: 0,
+      },
+    });
+    expect((await collectAttempts(t, runId))[0]).toMatchObject({
+      status: "canceled",
+    });
+  });
+
+  it("defers expiry cleanup for an active catalog job and accepts its later result", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const actorUserId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("users", {
+          handle: "catalog-expiry-operator",
+          displayName: "Catalog Expiry Operator",
+          role: "admin",
+        }),
+    );
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxEntriesPerRun: 500,
+      maxEntriesPerBatch: 1,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 1,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+      realScanAllowlist: ["nvidia/skills/aiq-deploy"],
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-expiry-operator",
+      reason: "prove active request expiry is deferred",
+      snapshotId: "skills-sh-test-live-500:active-expiry",
+      sourceCapturedAt: "2026-07-21T00:00:00.000Z",
+      snapshotCaptureFetches: 528,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId,
+      cursor: 0,
+      rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
+    });
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["active expiry artifact"])),
+    );
+    await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+      runId,
+      externalIds: ["nvidia/skills/aiq-deploy"],
+      dispatchKind: "real",
+      actorUserId,
+      artifacts: [
+        {
+          externalId: "nvidia/skills/aiq-deploy",
+          artifactContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 22,
+              storageId,
+              sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            },
+          ],
+        },
+      ],
+    });
+    const [attempt] = await collectAttempts(t, runId);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(attempt!.skillScanRequestId!, {
+        status: "running",
+        expiresAt: 0,
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(attempt!.securityScanJobId!, {
+        status: "running",
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(attempt!._id, {
+        status: "running",
+        updatedAt: Date.now(),
+      });
+    });
+
+    const pruned = await t.mutation(internal.securityScan.pruneExpiredSkillScanRequestsInternal, {
+      batchSize: 10,
+    });
+    expect(pruned).toMatchObject({
+      deletedRequests: 0,
+      deferredRequests: 1,
+      deletedJobs: 0,
+      deletedFiles: 0,
+      done: false,
+    });
+    expect(
+      await t.run(async (ctx) => await ctx.db.get(attempt!.skillScanRequestId!)),
+    ).toMatchObject({ status: "running" });
+    expect(await t.run(async (ctx) => await ctx.db.get(attempt!.securityScanJobId!))).toMatchObject(
+      { status: "running" },
+    );
+    expect((await collectAttempts(t, runId))[0]).toMatchObject({ status: "running" });
+
+    const result = await t.mutation(internal.skillsShCatalog.recordRealScanResultInternal, {
+      attemptId: attempt!._id,
+      artifactContentHash: attempt!.artifactContentHash!,
+      verdict: "clean",
+    });
+    expect(result).toEqual({ applied: true, publicVisible: false });
+    expect((await collectAttempts(t, runId))[0]).toMatchObject({
+      status: "succeeded",
+      verdict: "clean",
+    });
+    expect(await t.run(async (ctx) => await ctx.db.get(attempt!.entryId))).toMatchObject({
+      scanStatus: "clean",
+      publicVisible: false,
+    });
+  });
+
+  it("rejects real admission when only six writes remain in the batch budget", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const actorUserId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("users", {
+          handle: "catalog-budget-operator",
+          displayName: "Catalog Budget Operator",
+          role: "admin",
+        }),
+    );
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxEntriesPerBatch: 1,
+      maxWritesPerBatch: 6,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 1,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+      realScanAllowlist: ["nvidia/skills/aiq-deploy"],
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-budget-operator",
+      reason: "prove admission write reservation",
+      snapshotId: "skills-sh-test-live-500:write-budget",
+      sourceCapturedAt: "2026-07-21T00:00:00.000Z",
+      snapshotCaptureFetches: 528,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId,
+      cursor: 0,
+      rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
+    });
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["budget artifact"])),
+    );
+
+    await expect(
+      t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+        runId,
+        externalIds: ["nvidia/skills/aiq-deploy"],
+        dispatchKind: "real",
+        actorUserId,
+        artifacts: [
+          {
+            externalId: "nvidia/skills/aiq-deploy",
+            artifactContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            files: [
+              {
+                path: "SKILL.md",
+                size: 15,
+                storageId,
+                sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              },
+            ],
+          },
+        ],
+      }),
+    ).rejects.toThrow("scan-admission write budget exceeded");
+    expect(await collectAttempts(t, runId)).toEqual([]);
+    expect(await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect())).toEqual(
+      [],
+    );
+  });
+
+  it("admits one real scan when all seven writes fit the batch budget", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const actorUserId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("users", {
+          handle: "catalog-six-write-operator",
+          displayName: "Catalog Six Write Operator",
+          role: "admin",
+        }),
+    );
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxEntriesPerBatch: 1,
+      maxWritesPerBatch: 7,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 1,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+      realScanAllowlist: ["nvidia/skills/aiq-deploy"],
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-six-write-operator",
+      reason: "prove exact admission write reservation",
+      snapshotId: "skills-sh-test-live-500:six-write-budget",
+      sourceCapturedAt: "2026-07-21T00:00:00.000Z",
+      snapshotCaptureFetches: 528,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId,
+      cursor: 0,
+      rows: [frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!],
+    });
+    const storageId = await t.run(
+      async (ctx) => await ctx.storage.store(new Blob(["six write artifact"])),
+    );
+
+    const result = await t.mutation(internal.skillsShCatalog.admitFixtureScansInternal, {
+      runId,
+      externalIds: ["nvidia/skills/aiq-deploy"],
+      dispatchKind: "real",
+      actorUserId,
+      artifacts: [
+        {
+          externalId: "nvidia/skills/aiq-deploy",
+          artifactContentHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 18,
+              storageId,
+              sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({ requested: 1, admitted: 1, skipped: 0 });
+    expect(await collectAttempts(t, runId)).toHaveLength(1);
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect()),
+    ).toHaveLength(1);
   });
 });
