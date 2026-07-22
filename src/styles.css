@@ -15057,6 +15057,34 @@ code {
   text-align: right;
 }
 
+.pa-signal-trends {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-2);
+}
+
+.pa-signal-trend {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.pa-signal-trend + .pa-signal-trend {
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--line);
+}
+
+.pa-signal-trend-label {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.pa-signal-trend-installs {
+  --metric-trend-line: color-mix(in srgb, var(--status-success-fg) 76%, var(--ink));
+  --metric-trend-area: color-mix(in srgb, var(--status-success-fg) 18%, transparent);
+  --metric-trend-marker: color-mix(in srgb, var(--status-success-fg) 36%, transparent);
+}
+
 .pa-section-label {
   margin: 0;
   color: var(--ink-soft);

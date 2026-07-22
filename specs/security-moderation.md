@@ -122,7 +122,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   install/download ratio. Reopened repeat signals are elevated to high severity.
   Staff may snooze or dismiss up to 50 selected open signals in one atomic
   action. Bulk review must apply the same evidence checkpoint and write the same
-  per-signal review event as the corresponding single-signal action.
+  per-signal review event as the corresponding single-signal action. The signal
+  inspector must show the selected skill's daily downloads and installs across
+  the same trailing 30-day window, loaded on demand from the bounded daily-stat
+  index so staff can judge whether the evidence is sustained or spiky.
 - Hermit owns Discord notification delivery for publisher abuse Signals.
   ClawHub queues Hermit digests only for changed open signals: newly archived
   signals, manual reopens, expired snoozes with qualifying fresh evidence, and

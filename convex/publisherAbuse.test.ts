@@ -291,6 +291,16 @@ const listSignalsPageHandler = (
   >
 )._handler;
 
+const getSignalActivityTrendHandler = (
+  publisherAbuse.getSignalActivityTrend as unknown as Wrapped<
+    { signalId: string; endDay: number },
+    {
+      downloads: { total: number; points: Array<{ day: number; value: number }> };
+      installs: { total: number; points: Array<{ day: number; value: number }> };
+    } | null
+  >
+)._handler;
+
 const archiveTemporalPublisherAbuseSignalsPageHandler = (
   publisherAbuse.archiveTemporalPublisherAbuseSignalsPageInternal as unknown as Wrapped<
     {
@@ -957,6 +967,54 @@ describe("publisher abuse dry-run persistence", () => {
     expect(assertModerator).not.toHaveBeenCalled();
     expect(db.get).not.toHaveBeenCalled();
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("returns bounded 30-day download and install trends for a signal", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const rows = [
+      { day: 98, downloads: 120, installs: 9 },
+      { day: 100, downloads: 180, installs: 12 },
+    ];
+    const take = vi.fn(async () => rows);
+    const indexBuilder = {
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+    };
+    const db = {
+      get: vi.fn(async (id: string) =>
+        id === "publisherAbuseSignals:ratio" ? { _id: id, skillId: "skills:ratio" } : null,
+      ),
+      query: vi.fn((table: string) => {
+        expect(table).toBe("skillDailyStats");
+        return {
+          withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+            expect(indexName).toBe("by_skill_day");
+            callback(indexBuilder);
+            return { take };
+          },
+        };
+      }),
+    };
+
+    const result = await getSignalActivityTrendHandler(
+      { db },
+      { signalId: "publisherAbuseSignals:ratio", endDay: 100 },
+    );
+
+    expect(result?.downloads.total).toBe(300);
+    expect(result?.installs.total).toBe(21);
+    expect(result?.downloads.points).toHaveLength(30);
+    expect(result?.installs.points).toHaveLength(30);
+    expect(result?.downloads.points.at(-1)).toEqual({ day: 100, value: 180 });
+    expect(result?.installs.points.at(-1)).toEqual({ day: 100, value: 12 });
+    expect(take).toHaveBeenCalledWith(30);
+    expect(indexBuilder.eq).toHaveBeenCalledWith("skillId", "skills:ratio");
+    expect(indexBuilder.gte).toHaveBeenCalledWith("day", 71);
+    expect(indexBuilder.lte).toHaveBeenCalledWith("day", 100);
   });
 
   it("lets moderators snooze, dismiss, and reopen archived signals with audit rows", async () => {

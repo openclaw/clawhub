@@ -12,6 +12,12 @@ import {
   query,
 } from "./functions";
 import { assertAdmin, assertModerator, requireUser, requireUserFromAction } from "./lib/access";
+import {
+  ACTIVITY_TREND_DAYS,
+  buildDailyActivityTrends,
+  clampActivityTrendEndDay,
+  getActivityTrendRangeForEndDay,
+} from "./lib/downloadTrend";
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow } from "./lib/officialPublishers";
 import {
@@ -480,6 +486,31 @@ export const listSignalsPage = query({
       isDone: page.isDone,
       continueCursor: page.continueCursor,
     };
+  },
+});
+
+export const getSignalActivityTrend = query({
+  args: {
+    signalId: v.id("publisherAbuseSignals"),
+    endDay: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requirePublisherAbuseDashboardUser(ctx);
+    if (!auth) return null;
+
+    const signal = await ctx.db.get(args.signalId);
+    if (!signal) return null;
+
+    const endDay = clampActivityTrendEndDay(args.endDay, Date.now());
+    const { startDay } = getActivityTrendRangeForEndDay(endDay);
+    const rows = await ctx.db
+      .query("skillDailyStats")
+      .withIndex("by_skill_day", (q) =>
+        q.eq("skillId", signal.skillId).gte("day", startDay).lte("day", endDay),
+      )
+      .take(ACTIVITY_TREND_DAYS);
+
+    return buildDailyActivityTrends(rows, endDay);
   },
 });
 

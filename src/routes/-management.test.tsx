@@ -143,6 +143,22 @@ function makePublisherAbuseSignal(signalOverrides: Record<string, unknown> = {})
   };
 }
 
+function makeSignalActivityTrend() {
+  const points = Array.from({ length: 30 }, (_, index) => ({
+    day: 20_500 + index,
+    value: index + 1,
+  }));
+  return {
+    downloads: { range: "daily", days: 30, total: 465, points },
+    installs: {
+      range: "daily",
+      days: 30,
+      total: 30,
+      points: points.map((point) => ({ ...point, value: point.value % 3 })),
+    },
+  };
+}
+
 function makeManagementUser(
   id: string,
   handle: string,
@@ -458,6 +474,9 @@ describe("Management", () => {
           signalCountHasMore: false,
         };
       }
+      if (name === "publisherAbuse:getSignalActivityTrend") {
+        return makeSignalActivityTrend();
+      }
       if (name === "users:list") return { items: [], total: 0 };
       return undefined;
     });
@@ -550,6 +569,10 @@ describe("Management", () => {
     expect(screen.getByText("96 installs / 800 downloads")).toBeTruthy();
     expect(screen.getByText("288 installs / 2,400 downloads")).toBeTruthy();
     expect(screen.getByText("1,200 installs / 10,000 downloads")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.getByText("Downloads — 30 days")).toBeTruthy();
+    expect(screen.getByText("Installs — 30 days")).toBeTruthy();
     expect(
       screen.getByText(/Platform 30d downloads across all 1,000 active skills: P95 900, P99 3,000/),
     ).toBeTruthy();
@@ -567,6 +590,18 @@ describe("Management", () => {
         ([query, args]) =>
           getFunctionName(query) === "publisherAbuse:listSignalsPage" &&
           JSON.stringify(args) === JSON.stringify({ reviewStatus: "open" }),
+      ),
+    ).toBe(true);
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query) === "publisherAbuse:getSignalActivityTrend" &&
+          typeof args === "object" &&
+          args !== null &&
+          "signalId" in args &&
+          args.signalId === "publisherAbuseSignals:ratio" &&
+          "endDay" in args &&
+          typeof args.endDay === "number",
       ),
     ).toBe(true);
   });
