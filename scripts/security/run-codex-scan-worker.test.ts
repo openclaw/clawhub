@@ -464,19 +464,19 @@ describe("run-codex-scan-worker diagnostics", () => {
           files: [
             {
               path: "scripts",
-              sha256: "empty",
+              sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
               size: 0,
               url: "data:application/octet-stream,",
             },
             {
               path: "scripts/run.sh",
-              sha256: "script",
+              sha256: "277cfe839808c4010d970694be37f2a28cc592396a68d8868b85c8303497319b",
               size: 18,
               url: "data:text/plain,echo%20ready%0A",
             },
             {
               path: "EMPTY",
-              sha256: "empty",
+              sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
               size: 0,
               url: "data:application/octet-stream,",
             },
