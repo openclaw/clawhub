@@ -181,11 +181,13 @@
   "overrides": {
     "ast-v8-to-istanbul": "1.0.4",
     "brace-expansion": "5.0.7",
-    "dompurify": "3.4.11",
+    "dompurify": "3.4.12",
     "esbuild": "0.28.1",
+    "fast-uri": "3.1.4",
     "js-yaml": "4.3.0",
     "next": "16.2.6",
     "postcss": "8.5.12",
+    "sharp": "0.35.3",
     "shell-quote": "1.10.0",
     "undici": "7.28.0",
     "ws": "8.21.0"
