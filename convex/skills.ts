@@ -217,8 +217,7 @@ const SLUG_RESERVATION_DAYS = 90;
 const SLUG_RESERVATION_MS = SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
 const UNPUBLISHED_SLUG_RESERVATION_DAYS = 30;
 const UNPUBLISHED_SLUG_RESERVATION_MS = UNPUBLISHED_SLUG_RESERVATION_DAYS * RATE_LIMIT_DAY_MS;
-const MAX_SKILL_SLUG_ALIASES_PER_SKILL = 5;
-const MAX_SKILL_SLUG_ALIASES_PER_OWNER = 25;
+const MAX_SKILL_SLUG_ALIASES_PER_MERGE = 200;
 const MAX_MANUAL_OVERRIDE_NOTE_LENGTH = 1200;
 const DEFAULT_STAFF_AUDIT_LOG_LIMIT = 10;
 const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
@@ -1291,14 +1290,20 @@ async function getSkillSlugAliasBySlug(ctx: Pick<QueryCtx | MutationCtx, "db">, 
   return resolved.alias;
 }
 
-async function listSkillSlugAliasesForSkill(
+async function listSkillSlugAliasesForMerge(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   skillId: Id<"skills">,
 ) {
-  return ctx.db
+  const aliases = await ctx.db
     .query("skillSlugAliases")
     .withIndex("by_skill", (q) => q.eq("skillId", skillId))
-    .collect();
+    .take(MAX_SKILL_SLUG_ALIASES_PER_MERGE + 1);
+  if (aliases.length > MAX_SKILL_SLUG_ALIASES_PER_MERGE) {
+    throw new ConvexError(
+      `A skill with more than ${MAX_SKILL_SLUG_ALIASES_PER_MERGE} historical slugs cannot be merged in one transaction. Contact a ClawHub maintainer for a batched migration.`,
+    );
+  }
+  return aliases;
 }
 
 function sameSkillSlugAliasOwner(
@@ -1310,75 +1315,6 @@ function sameSkillSlugAliasOwner(
     alias.ownerUserId === ownerUserId &&
     (alias.ownerPublisherId ?? null) === (ownerPublisherId ?? null)
   );
-}
-
-async function countSkillSlugAliasesForOwnerQuota(
-  ctx: Pick<QueryCtx | MutationCtx, "db">,
-  ownerUserId: Id<"users">,
-  ownerPublisherId: Id<"publishers"> | undefined,
-) {
-  if (ownerPublisherId) {
-    const aliases = await ctx.db
-      .query("skillSlugAliases")
-      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
-      .take(MAX_SKILL_SLUG_ALIASES_PER_OWNER + 1);
-    return aliases.length;
-  }
-
-  const aliases = await ctx.db
-    .query("skillSlugAliases")
-    .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
-    .take(MAX_SKILL_SLUG_ALIASES_PER_OWNER + 1);
-  return aliases.length;
-}
-
-async function assertSkillSlugAliasQuota(
-  ctx: Pick<QueryCtx | MutationCtx, "db">,
-  params: {
-    targetSkillId: Id<"skills">;
-    ownerUserId: Id<"users">;
-    ownerPublisherId: Id<"publishers"> | undefined;
-    currentSkillAliasCount?: number;
-    addedSkillAliases: number;
-    removedSkillAliases?: number;
-    addedOwnerAliases: number;
-    removedOwnerAliases?: number;
-  },
-) {
-  const addedSkillAliases = Math.max(0, params.addedSkillAliases);
-  const removedSkillAliases = Math.max(0, params.removedSkillAliases ?? 0);
-  const addedOwnerAliases = Math.max(0, params.addedOwnerAliases);
-  const removedOwnerAliases = Math.max(0, params.removedOwnerAliases ?? 0);
-
-  const currentSkillAliasCount =
-    params.currentSkillAliasCount ??
-    (await listSkillSlugAliasesForSkill(ctx, params.targetSkillId)).length;
-  const nextSkillAliasCount =
-    Math.max(0, currentSkillAliasCount - removedSkillAliases) + addedSkillAliases;
-  if (nextSkillAliasCount > MAX_SKILL_SLUG_ALIASES_PER_SKILL) {
-    throw new ConvexError(
-      "Too many historical slugs are already reserved for this skill. " +
-        `A skill can keep at most ${MAX_SKILL_SLUG_ALIASES_PER_SKILL} old slug redirects. ` +
-        "Contact support@openclaw.ai if this is a legitimate migration.",
-    );
-  }
-
-  if (addedOwnerAliases === 0 && removedOwnerAliases === 0) return;
-
-  const currentOwnerAliasCount = await countSkillSlugAliasesForOwnerQuota(
-    ctx,
-    params.ownerUserId,
-    params.ownerPublisherId,
-  );
-  const nextOwnerAliasCount =
-    Math.max(0, currentOwnerAliasCount - removedOwnerAliases) + addedOwnerAliases;
-  if (nextOwnerAliasCount > MAX_SKILL_SLUG_ALIASES_PER_OWNER) {
-    throw new ConvexError(
-      "Too many historical slugs are already reserved by this owner. " +
-        `An owner can keep at most ${MAX_SKILL_SLUG_ALIASES_PER_OWNER} old slug redirects. ` +
-        "Contact support@openclaw.ai if this is a legitimate migration.",
-    );
-  }
 }
 
 async function releaseExpiredUnpublishedSkillSlug(
@@ -11163,32 +11099,7 @@ async function renameOwnedSkillByActor(
     throw new ConvexError(formatReservedSlugCooldownMessage(newSlug, reservation.expiresAt));
   }
 
-  const aliasesForSkill = await listSkillSlugAliasesForSkill(ctx, skill._id);
-  const aliasRemovedForNewSlug =
-    existingAlias && existingAlias.skillId === skill._id ? existingAlias : null;
   const previousAlias = await getSkillSlugAliasBySlugForPublisher(ctx, skill.slug, skillOwner);
-  const addedSkillAliases = previousAlias?.skillId === skill._id ? 0 : 1;
-  const removedSkillAliases = aliasRemovedForNewSlug ? 1 : 0;
-  const addedOwnerAliases = previousAlias
-    ? sameSkillSlugAliasOwner(previousAlias, skill.ownerUserId, skill.ownerPublisherId)
-      ? 0
-      : 1
-    : 1;
-  const removedOwnerAliases =
-    aliasRemovedForNewSlug &&
-    sameSkillSlugAliasOwner(aliasRemovedForNewSlug, skill.ownerUserId, skill.ownerPublisherId)
-      ? 1
-      : 0;
-  await assertSkillSlugAliasQuota(ctx, {
-    targetSkillId: skill._id,
-    ownerUserId: skill.ownerUserId,
-    ownerPublisherId: skill.ownerPublisherId,
-    currentSkillAliasCount: aliasesForSkill.length,
-    addedSkillAliases,
-    removedSkillAliases,
-    addedOwnerAliases,
-    removedOwnerAliases,
-  });
 
   if (existingAlias && existingAlias.skillId === skill._id) {
     await ctx.db.delete(existingAlias._id);
@@ -11292,9 +11203,9 @@ async function mergeOwnedSkillIntoCanonicalByActor(
     : null;
   const targetCanonicalSkillId = target.canonicalSkillId ?? target._id;
 
-  const targetAliases = await listSkillSlugAliasesForSkill(ctx, target._id);
+  const targetAliases = await listSkillSlugAliasesForMerge(ctx, target._id);
   const targetAliasSlugs = new Set(targetAliases.map((alias) => alias.slug));
-  const aliases = await listSkillSlugAliasesForSkill(ctx, source._id);
+  const aliases = await listSkillSlugAliasesForMerge(ctx, source._id);
   const targetPublisher = await getOwnerPublisher(ctx, {
     ownerPublisherId: target.ownerPublisherId,
     ownerUserId: target.ownerUserId,
@@ -11358,27 +11269,8 @@ async function mergeOwnedSkillIntoCanonicalByActor(
     }
   }
 
-  await assertSkillSlugAliasQuota(ctx, {
-    targetSkillId: target._id,
-    ownerUserId: target.ownerUserId,
-    ownerPublisherId: target.ownerPublisherId,
-    currentSkillAliasCount: targetAliases.length,
-    addedSkillAliases: addedSkillAliasSlugs.size,
-    addedOwnerAliases: sourceOwnerMatchesTargetOwner ? addedOwnerAliasSlugs.size : 0,
-  });
-
   const willInsertSourceAlias =
     !sourceAlias && (!sourceOwnerMatchesTargetOwner || source.slug !== target.slug);
-  if (!sourceOwnerMatchesTargetOwner && willInsertSourceAlias) {
-    await assertSkillSlugAliasQuota(ctx, {
-      targetSkillId: target._id,
-      ownerUserId: source.ownerUserId,
-      ownerPublisherId: source.ownerPublisherId,
-      currentSkillAliasCount: targetAliases.length,
-      addedSkillAliases: 0,
-      addedOwnerAliases: 1,
-    });
-  }
 
   for (const alias of aliases) {
     if (sourceOwnerMatchesTargetOwner && alias.slug === target.slug) {
