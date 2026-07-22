@@ -33,6 +33,7 @@ import {
   recoverPersonalPublisherInternal,
   createOrg,
   createImageUpload,
+  cleanupPublisherFeedHistoryBatchImpl,
   deleteOrg,
   reclaimDeletedOrgHandleInternal,
   removeMember,
@@ -680,6 +681,17 @@ function emptyOfficialPublishersQuery() {
   };
 }
 
+function emptyPublisherFeedPublicationsQuery() {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      if (indexName !== "by_publisher") {
+        throw new Error(`unexpected publisherFeedPublications index ${indexName}`);
+      }
+      return { unique: vi.fn(async () => null) };
+    }),
+  };
+}
+
 function emptyOwnedResourcesQuery() {
   return {
     withIndex: vi.fn(() => ({
@@ -699,6 +711,16 @@ function emptyPublisherInvitesQuery() {
       }
       return { collect: vi.fn(async () => []) };
     }),
+  };
+}
+
+function emptyPublisherFeedQuery() {
+  return {
+    withIndex: vi.fn(() => ({
+      unique: vi.fn(async () => null),
+      collect: vi.fn(async () => []),
+      take: vi.fn(async () => []),
+    })),
   };
 }
 
@@ -1085,8 +1107,14 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table.startsWith("publisherFeed")) {
+            return emptyPublisherFeedQuery();
+          }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
@@ -1183,8 +1211,14 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table.startsWith("publisherFeed")) {
+            return emptyPublisherFeedQuery();
+          }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
@@ -1219,6 +1253,9 @@ describe("publishers membership controls", () => {
       activeSkills?: Array<Record<string, unknown>>;
       activePackages?: Array<Record<string, unknown>>;
       invites?: Array<Record<string, unknown>>;
+      feedPublication?: Record<string, unknown> | null;
+      feedRevisions?: Array<Record<string, unknown>>;
+      feedChanges?: Array<Record<string, unknown>>;
     } = {},
   ) {
     const publisher = options.publisher ?? {
@@ -1312,6 +1349,24 @@ describe("publishers membership controls", () => {
         return emptyOwnedResourcesQuery();
       }
       if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      if (table === "publisherFeedPublications") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => options.feedPublication ?? null),
+          })),
+        };
+      }
+      if (table === "publisherFeedRevisions" || table === "publisherFeedChanges") {
+        return {
+          withIndex: vi.fn(() => ({
+            take: vi.fn(async () =>
+              table === "publisherFeedRevisions"
+                ? (options.feedRevisions ?? [])
+                : (options.feedChanges ?? []),
+            ),
+          })),
+        };
+      }
       throw new Error(`unexpected table ${table}`);
     });
     return {
@@ -1382,6 +1437,9 @@ describe("publishers membership controls", () => {
           status: "pending",
         },
       ],
+      feedPublication: { _id: "publisherFeedPublications:tencent" },
+      feedRevisions: [{ _id: "publisherFeedRevisions:tencent-1" }],
+      feedChanges: [{ _id: "publisherFeedChanges:tencent-1" }],
     });
 
     const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
@@ -1397,6 +1455,9 @@ describe("publishers membership controls", () => {
       hardDeleted: true,
       memberCount: 1,
       inviteCount: 1,
+      publisherFeedPublication: true,
+      publisherFeedRevisionHistory: true,
+      publisherFeedChangeHistory: true,
     });
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
@@ -1413,7 +1474,35 @@ describe("publishers membership controls", () => {
     );
     expect(deleted).toHaveBeenCalledWith("publisherMembers:owner");
     expect(deleted).toHaveBeenCalledWith("publisherInvites:pending");
+    expect(deleted).toHaveBeenCalledWith("publisherFeedPublications:tencent");
     expect(deleted).toHaveBeenCalledWith("publishers:tencent");
+  });
+
+  it("deletes publisher feed history in bounded rescheduled batches", async () => {
+    const revisions = Array.from({ length: 100 }, (_, index) => ({
+      _id: `publisherFeedRevisions:${index}`,
+    }));
+    const changes = Array.from({ length: 100 }, (_, index) => ({
+      _id: `publisherFeedChanges:${index}`,
+    }));
+    const deleted = vi.fn();
+    const runAfter = vi.fn();
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        take: vi.fn(async () => (table === "publisherFeedRevisions" ? revisions : changes)),
+      })),
+    }));
+
+    const result = await cleanupPublisherFeedHistoryBatchImpl(
+      { db: { query, delete: deleted }, scheduler: { runAfter } } as never,
+      "publishers:tencent" as never,
+    );
+
+    expect(result).toEqual({ deletedRevisions: 100, deletedChanges: 100, hasMore: true });
+    expect(deleted).toHaveBeenCalledTimes(200);
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      publisherId: "publishers:tencent",
+    });
   });
 
   it("refuses to reclaim an active org handle", async () => {
@@ -1481,8 +1570,14 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table.startsWith("publisherFeed")) {
+            return emptyPublisherFeedQuery();
+          }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {

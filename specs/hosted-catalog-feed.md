@@ -104,9 +104,15 @@ the sequence and exact payload needed for validators.
 
 The `Publish Hosted Catalog Feed` workflow refreshes the snapshot every six
 hours and can be run manually. It requires the existing `Production` environment
-`CONVEX_DEPLOY_KEY`. The workflow currently publishes an unsigned feed; signed
-envelopes require a separate production key-management decision and must not be
-advertised to OpenClaw clients until the signing key and trust root are deployed.
+`CONVEX_DEPLOY_KEY`. Publication stores the canonical unsigned payload bytes;
+the plugin HTTP action wraps those exact bytes in a deterministic DSSE/Ed25519
+envelope. The private key stays in Convex environment secret storage and the
+matching public key is bundled in OpenClaw.
+
+The response uses the standard DSSE JSON envelope fields: `payloadType`,
+`payload`, and `signatures` containing `keyid` and `sig`. Ed25519 is selected by
+the trusted key profile rather than repeated as a nonstandard signature field.
+The signed representation uses the `application/vnd.dsse+json` media type.
 
 `convex/promotionsFeed.ts` builds the promotions snapshot from the bounded active
 set and stores it in the same publication table. Production backend deploys
@@ -120,14 +126,25 @@ snapshot inside its 24-hour `expiresAt` horizon.
 ## Edge delivery
 
 The HTTP endpoints are `/api/v1/feeds/plugins`, `/api/v1/feeds/skills`, and
-`/api/v1/feeds/promotions`. Each returns its stored bytes unchanged and
-provides:
+`/api/v1/feeds/promotions`. Each representation provides:
 
 - `ETag: "sha256:<payload hash>"`
-- `Last-Modified`
 - `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=86400`
 - `Surrogate-Control: max-age=300, stale-while-revalidate=86400`
-- `304 Not Modified` for matching `If-None-Match` or `If-Modified-Since`
+- `304 Not Modified` for matching `If-None-Match`
+
+Unsigned skills and promotions also expose `Last-Modified` and accept
+`If-Modified-Since`. The signed plugin representation intentionally does not:
+rotating its signer changes the envelope without changing the underlying
+publication time, so only its representation ETag is a valid cache validator.
+
+The plugin feed route requires one atomic `CLAWHUB_FEED_SIGNING_CONFIG` JSON
+secret containing exactly `keyId` and `privateKey`. It returns `503` with
+`Cache-Control: no-store` when the value is absent or invalid. Its ETag and
+`X-Content-SHA256` describe the signed envelope representation;
+`X-Catalog-Payload-SHA256` preserves the stored publication payload digest.
+Skills and promotions remain on their existing unsigned representations until
+their payload types and matching OpenClaw consumers are specified.
 
 Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
 `/v1/feeds/promotions` through the same environment-aware Convex proxy used for
@@ -145,3 +162,79 @@ schema version.
 
 Do not make the feed request-time dynamic. Refresh the stored publication first,
 then let Vercel or the configured CDN cache the immutable response by ETag.
+
+## Feed signing runbook
+
+ClawHub owns the private key and stable key id. OpenClaw owns distribution of
+the matching public trust anchor. Do not reuse release, package, TLS, account,
+or other platform signing keys for feed signing, and do not publish a trust
+bootstrap endpoint from the same origin as the feed.
+
+### Initial provisioning
+
+1. Generate a dedicated Ed25519 key pair on an approved operator machine:
+
+   ```bash
+   openssl genpkey -algorithm ED25519 -out clawhub-feed-private.pem
+   openssl pkey -in clawhub-feed-private.pem -pubout -out clawhub-feed-public.pem
+   ```
+
+2. Choose a stable, non-secret key id such as `clawhub-feed-2026-q3`. Record the
+   owner, creation time, intended deployment, and rotation contact in the
+   operator secret inventory.
+3. Store the key id and private PEM as one atomic JSON value in each intended
+   Convex deployment. Do not create separate mutable variables for the pair: a
+   partially rotated pair can publish an unverifiable cacheable envelope. For
+   production, use the Convex dashboard or pipe compact JSON to the CLI without
+   placing the private key in shell history:
+
+   ```powershell
+   @{
+     keyId = "clawhub-feed-2026-q3"
+     privateKey = Get-Content -Raw .\clawhub-feed-private.pem
+   } | ConvertTo-Json -Compress |
+     bunx convex env set CLAWHUB_FEED_SIGNING_CONFIG --prod
+   ```
+
+4. Confirm only the variable names, not their values:
+
+   ```bash
+   bunx convex env list --names-only --prod
+   ```
+
+5. Provide `clawhub-feed-public.pem` and the key id to the OpenClaw maintainer
+   bundling the `clawhub-public` trust profile. The private PEM never leaves
+   ClawHub's operator-controlled secret path.
+6. Deploy ClawHub, publish a fresh `clawhub-official` snapshot, and verify that
+   `/api/v1/feeds/plugins` returns an envelope whose decoded payload bytes equal
+   the stored publication and whose signature verifies with the handed-off
+   public key.
+7. Land and release the matching OpenClaw bundled public key. Older unsigned
+   clients may fall back to their bundled catalog when they first encounter the
+   envelope; they must not reinterpret it as unsigned feed content.
+8. Securely delete operator-machine private-key files after the approved secret
+   backup and recovery process is complete.
+
+### Normal rotation
+
+1. Generate a new dedicated key and key id.
+2. Bundle the new public key in OpenClaw while the old key remains trusted.
+3. After that trust update is available, replace
+   `CLAWHUB_FEED_SIGNING_CONFIG` once with JSON containing the new matched pair,
+   then deploy. Never stage key id and private key separately.
+4. Verify a higher-sequence publication under the new key before retiring the
+   old private key.
+5. Remove the old public key in a later OpenClaw release after the supported
+   client overlap window.
+
+The first signer emits one signature, so it cannot provide an old-and-new
+dual-sign overlap by itself. If operational policy requires dual signing, add
+multi-key signer support before beginning that rotation.
+
+### Emergency revocation
+
+Remove `CLAWHUB_FEED_SIGNING_CONFIG` or replace it with a new matched pair in
+Convex immediately. An absent signing configuration makes the plugin feed return
+`503 no-store`. Notify OpenClaw maintainers to remove the compromised public key
+through the authenticated release channel. Do not recover by advertising a new
+public key from a feed-adjacent endpoint.
