@@ -25,6 +25,33 @@ export function mirrorRateLimitRetryDelayMs(
   return Math.max(1_000, requestedMs);
 }
 
+export function mirrorRunAccounting(total: number, counts: Record<string, number>) {
+  if (!Number.isSafeInteger(total) || total < 0) {
+    throw new Error("mirror source total must be a nonnegative integer");
+  }
+  const requiredCount = (name: "conflicts" | "rejected" | "quarantined") => {
+    const value = counts[name];
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`mirror ${name} must be a nonnegative integer`);
+    }
+    return value;
+  };
+  const rejected = requiredCount("rejected");
+  const quarantined = requiredCount("quarantined");
+  const conflicts = requiredCount("conflicts");
+  if (conflicts !== rejected) {
+    throw new Error("mirror conflict accounting does not equal rejected rows");
+  }
+  if (quarantined > rejected) {
+    throw new Error("mirror quarantine accounting exceeds rejected rows");
+  }
+  const accepted = total - rejected;
+  if (accepted < 0) {
+    throw new Error("mirror rejected rows exceed the source total");
+  }
+  return { accepted, rejected, quarantined };
+}
+
 export type RecoverableMirrorRun = {
   runId: string;
   status: "running" | "paused" | "reconciling";
