@@ -184,6 +184,7 @@ jobs:
               --build-env VERCEL_ENV=test \
               --build-env VERCEL_TARGET_ENV=test \
               --build-env CLAWHUB_ENV=test \
+              --build-env CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED=1 \
               --build-env SITE_URL="$TEST_SITE_URL" \
               --build-env VITE_CLAWHUB_DEPLOY_ENV=test \
               --build-env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
@@ -191,6 +192,7 @@ jobs:
               --build-env VITE_SITE_URL="$TEST_SITE_URL" \
               --env CONVEX_DEPLOY_KEY= \
               --env CLAWHUB_ENV=test \
+              --env CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED=1 \
               --env SITE_URL="$TEST_SITE_URL" \
               --env VITE_CLAWHUB_DEPLOY_ENV=test \
               --env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
@@ -269,3 +271,147 @@ jobs:
             echo "- Fixture version: \`${FIXTURE_VERSION:-unresolved}\`"
             echo "- Result: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  claw563-mirror-load:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Load and prove the complete authenticated mirror
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          set -euo pipefail
+          operator_token=""
+          cleanup() {
+            set +e
+            bunx convex run --no-push skillsShMirror:configureInternal \
+              '{
+                "actor":"CLAW-563 Test workflow",
+                "reason":"CLAW-563 proof cleanup",
+                "confirm":"enable-skills-sh-mirror-test",
+                "enabled":false,
+                "maxRowsPerRun":10000,
+                "maxRowsPerBatch":50,
+                "maxDetailBytes":65536
+              }' > claw563-control-disabled.json 2>&1
+            disable_exit=$?
+            bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}' >/dev/null
+            token_rotation_exit=$?
+            if [[ -n "$operator_token" ]]; then
+              revoked_status="$(
+                curl \
+                  --silent \
+                  --output /dev/null \
+                  --write-out '%{http_code}' \
+                  --header "Authorization: Bearer $operator_token" \
+                  https://academic-chihuahua-392.convex.site/api/v1/operator/skills-sh/catalog-test
+              )"
+            else
+              revoked_status="not-created"
+            fi
+            jq -n \
+              --argjson disableExit "$disable_exit" \
+              --argjson tokenRotationExit "$token_rotation_exit" \
+              --arg revokedStatus "$revoked_status" \
+              '{
+                disableExit:$disableExit,
+                tokenRotationExit:$tokenRotationExit,
+                revokedStatus:$revokedStatus
+              }' > claw563-cleanup.json
+            set -e
+            [[
+              "$disable_exit" -eq 0 &&
+              "$token_rotation_exit" -eq 0 &&
+              "$revoked_status" == "401"
+            ]]
+          }
+          trap cleanup EXIT
+
+          deployment_json="$(bunx convex run --no-push appMeta:getDeploymentInfo)"
+          build_sha="$(jq -r '.appBuildSha // empty' <<<"$deployment_json")"
+          if [[ "$build_sha" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Unexpected Convex Test build SHA: $build_sha"
+            exit 1
+          fi
+
+          token_seed="$(bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}')"
+          operator_token="$(jq -r '.admin.token // empty' <<<"$token_seed")"
+          token_seed=""
+          if [[ -z "$operator_token" ]]; then
+            echo "::error::Test admin fixture token is missing"
+            exit 1
+          fi
+          echo "::add-mask::$operator_token"
+
+          export CLAWHUB_TEST_MIRROR_GATE_URL="$TEST_SITE_URL/ops/skills-sh/mirror-test"
+          export CLAWHUB_TEST_OPERATOR_TOKEN="$operator_token"
+          bun run skills-sh:prove-mirror > claw563-proof-output.json
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer $operator_token" \
+            --header "Content-Type: application/json" \
+            --data '{"operation":"read","externalId":"patrick-erichsen/skills/html"}' \
+            "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-controlled-entry.json
+          jq -e '
+            .digest.externalId == "patrick-erichsen/skills/html" and
+            .digest.sourceType == "github" and
+            .digest.owner == "patrick-erichsen" and
+            .digest.repo == "skills" and
+            .digest.githubPath != null and
+            .digest.githubCommit != null and
+            .digest.sourceContentHash != null and
+            .digest.active == true and
+            .digest.publicVisible == false and
+            .digest.installable == false
+          ' claw563-controlled-entry.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw563-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .disableExit == 0 and
+            .tokenRotationExit == 0 and
+            .revokedStatus == "401"
+          ' claw563-cleanup.json >/dev/null
+
+      - name: Upload permanent Test mirror proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw563-mirror-proof
+          if-no-files-found: warn
+          path: |
+            proof/claw-563/skills-sh-mirror-test-proof.json
+            claw563-proof-output.json
+            claw563-controlled-entry.json
+            claw563-control-disabled.json
+            claw563-cleanup.json
+            claw563-deployment.json

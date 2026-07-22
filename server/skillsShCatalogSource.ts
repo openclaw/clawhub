@@ -4,6 +4,7 @@ import { parseFragment, type DefaultTreeAdapterTypes } from "parse5";
 
 const SKILLS_SH_API_BASE = "https://skills.sh/api/v1";
 const MAX_SOURCE_PAGE_SIZE = 500;
+const MAX_SOURCE_ATTEMPTS = 4;
 const MAX_TEST_SCAN_ADMISSIONS = 10;
 const DETAIL_CONCURRENCY = 8;
 const MAX_UPSTREAM_SCANNER_STATUS_LENGTH = 32;
@@ -324,16 +325,28 @@ async function fetchSkillsShJson<T>(
 ): Promise<T> {
   const env = options.env ?? process.env;
   const fetchImpl = options.fetchImpl ?? fetch;
-  const response = await fetchImpl(`${SKILLS_SH_API_BASE}${path}`, {
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`skills.sh catalog source returned HTTP ${response.status}`);
+  for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
+    const response = await fetchImpl(`${SKILLS_SH_API_BASE}${path}`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
+      },
+    });
+    if (response.ok) return (await response.json()) as T;
+    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
+      throw new Error(`skills.sh catalog source returned HTTP ${response.status}`);
+    }
+    await waitForSkillsShRetry(response, attempt);
   }
-  return (await response.json()) as T;
+  throw new Error("skills.sh catalog source exhausted retries");
+}
+
+async function waitForSkillsShRetry(response: Response, attempt: number) {
+  const retryAfterSeconds = Number(response.headers.get("retry-after"));
+  const delayMs = Number.isFinite(retryAfterSeconds)
+    ? Math.min(5_000, Math.max(0, retryAfterSeconds * 1_000))
+    : 250 * 2 ** attempt;
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
 
 async function fetchSkillsShText(
@@ -353,16 +366,20 @@ async function fetchSkillsShText(
   ) {
     throw new Error("skills.sh mirror source page must use the skills.sh origin");
   }
-  const response = await fetchImpl(parsedUrl, {
-    headers: {
-      Accept: "text/html",
-      Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`skills.sh mirror source page returned HTTP ${response.status}`);
+  for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
+    const response = await fetchImpl(parsedUrl, {
+      headers: {
+        Accept: "text/html",
+        Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
+      },
+    });
+    if (response.ok) return await response.text();
+    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
+      throw new Error(`skills.sh mirror source page returned HTTP ${response.status}`);
+    }
+    await waitForSkillsShRetry(response, attempt);
   }
-  return await response.text();
+  throw new Error("skills.sh mirror source page exhausted retries");
 }
 
 export async function fetchSkillsShCatalogPage(
@@ -459,9 +476,16 @@ export async function fetchSkillsShMirrorBatch(
   assertIntegerInRange("offset", args.offset, 0, MAX_SOURCE_PAGE_SIZE);
   assertIntegerInRange("limit", args.limit, 1, 50);
   assertIntegerInRange("maxDetailBytes", args.maxDetailBytes, 1, 64 * 1024);
+  const baseFetch = options.fetchImpl ?? fetch;
+  let sourceRequests = 0;
+  const monitoredFetch: typeof fetch = async (input, init) => {
+    sourceRequests += 1;
+    return await baseFetch(input, init);
+  };
+  const fetchOptions = { ...options, fetchImpl: monitoredFetch };
   const sourcePage = await fetchSkillsShCatalogPage(
     { page: args.page, perPage: MAX_SOURCE_PAGE_SIZE },
-    options,
+    fetchOptions,
   );
   if (
     sourcePage.pagination.page !== args.page ||
@@ -484,8 +508,8 @@ export async function fetchSkillsShMirrorBatch(
         nextIndex += 1;
         const listRow = listRows[index]!;
         [details[index], sourcePages[index]] = await Promise.all([
-          fetchSkillsShMirrorDetail(listRow.id, options),
-          fetchSkillsShText(listRow.url, options),
+          fetchSkillsShMirrorDetail(listRow.id, fetchOptions),
+          fetchSkillsShText(listRow.url, fetchOptions),
         ]);
       }
     }),
@@ -518,7 +542,7 @@ export async function fetchSkillsShMirrorBatch(
     pageLength: sourcePage.data.length,
     sourceTotal: sourcePage.pagination.total,
     hasMore: sourcePage.pagination.hasMore,
-    sourceRequests: 1 + details.length + sourcePages.length,
+    sourceRequests,
     sourceBytes:
       Buffer.byteLength(JSON.stringify(sourcePage), "utf8") +
       details.reduce(
