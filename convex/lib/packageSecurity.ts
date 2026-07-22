@@ -8,7 +8,13 @@ export type PackageScanStatus = Doc<"packages">["scanStatus"];
 
 type PackageReleaseSecurityLike = Pick<
   Doc<"packageReleases">,
-  "sha256hash" | "vtAnalysis" | "llmAnalysis" | "verification" | "staticScan" | "manualModeration"
+  | "sha256hash"
+  | "vtAnalysis"
+  | "llmAnalysis"
+  | "verification"
+  | "staticScan"
+  | "dependencyScan"
+  | "manualModeration"
 >;
 
 export function normalizePackageScanStatus(status: string | null | undefined): PackageScanStatus {
@@ -16,16 +22,40 @@ export function normalizePackageScanStatus(status: string | null | undefined): P
   return normalized === "failed" ? undefined : (normalized as PackageScanStatus);
 }
 
+export function hasMaliciousPackageDependencyScan(
+  dependencyScan: PackageReleaseSecurityLike["dependencyScan"],
+) {
+  return (
+    dependencyScan?.status === "malicious" &&
+    dependencyScan.findings.some(
+      (finding) => finding.classification === "malware" && finding.confidence === "high",
+    )
+  );
+}
+
+function manualApprovalCoversDependencyScan(release: PackageReleaseSecurityLike) {
+  return (
+    release.manualModeration?.state === "approved" &&
+    release.dependencyScan?.checkedAt !== undefined &&
+    release.manualModeration.updatedAt >= release.dependencyScan.checkedAt
+  );
+}
+
 export function resolvePackageReleaseScanStatus(
   release: PackageReleaseSecurityLike,
 ): Exclude<PackageScanStatus, undefined> {
-  if (release.manualModeration?.state === "approved") return "clean";
+  const dependencyScanMalicious = hasMaliciousPackageDependencyScan(release.dependencyScan);
+  if (release.manualModeration?.state === "approved") {
+    if (!dependencyScanMalicious || manualApprovalCoversDependencyScan(release)) return "clean";
+  }
   if (
     release.manualModeration?.state === "quarantined" ||
     release.manualModeration?.state === "revoked"
   ) {
     return "malicious";
   }
+
+  if (dependencyScanMalicious) return "malicious";
 
   const llmStatus = normalizePackageScanStatus(
     release.llmAnalysis?.verdict ?? release.llmAnalysis?.status,

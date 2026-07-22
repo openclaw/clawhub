@@ -158,6 +158,51 @@ const staticScanValidator = v.object({
   checkedAt: v.number(),
 });
 
+const packageDependencyScanFindingValidator = v.object({
+  source: v.literal("osv"),
+  advisoryId: v.string(),
+  packageName: v.string(),
+  manifestName: v.optional(v.string()),
+  ecosystem: v.literal("npm"),
+  version: v.optional(v.string()),
+  summary: v.string(),
+  aliases: v.array(v.string()),
+  classification: v.union(v.literal("malware"), v.literal("vulnerability")),
+  confidence: v.union(v.literal("high"), v.literal("medium")),
+  severity: v.optional(v.string()),
+  url: v.optional(v.string()),
+  manifestPath: v.optional(v.string()),
+  dependencyKind: v.optional(
+    v.union(
+      v.literal("dependencies"),
+      v.literal("optionalDependencies"),
+      v.literal("peerDependencies"),
+      v.literal("bundledDependencies"),
+      v.literal("bundleDependencies"),
+    ),
+  ),
+});
+
+const packageDependencyScanValidator = v.object({
+  status: v.union(
+    v.literal("clean"),
+    v.literal("suspicious"),
+    v.literal("malicious"),
+    v.literal("skipped"),
+    v.literal("error"),
+  ),
+  provider: v.literal("osv"),
+  scannerVersion: v.string(),
+  dependencyCount: v.number(),
+  scannedDependencyCount: v.number(),
+  skippedDependencyCount: v.number(),
+  manifests: v.array(v.string()),
+  findings: v.array(packageDependencyScanFindingValidator),
+  summary: v.string(),
+  checkedAt: v.number(),
+  error: v.optional(v.string()),
+});
+
 const users = defineTable({
   name: v.optional(v.string()),
   image: v.optional(v.string()),
@@ -1734,6 +1779,7 @@ const packageReleases = defineTable({
       checkedAt: v.number(),
     }),
   ),
+  dependencyScan: v.optional(packageDependencyScanValidator),
   staticScan: v.optional(
     v.object({
       status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),

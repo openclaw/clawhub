@@ -165,6 +165,110 @@ describe("packageSecurity", () => {
     expect(getPackageDownloadSecurityBlock(release)).toBeNull();
   });
 
+  it("keeps ordinary dependency vulnerabilities advisory", () => {
+    const release = {
+      dependencyScan: {
+        status: "suspicious",
+        findings: [{ classification: "vulnerability", confidence: "medium" }],
+      },
+      staticScan: { status: "clean" },
+      verification: { scanStatus: "pending" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("pending");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
+  it("does not block low-confidence dependency scan statuses", () => {
+    const release = {
+      dependencyScan: {
+        status: "malicious",
+        findings: [{ classification: "malware", confidence: "medium" }],
+      },
+      verification: { scanStatus: "pending" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("pending");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
+  it("blocks package releases with malicious dependency scan results", () => {
+    const release = {
+      dependencyScan: {
+        status: "malicious",
+        findings: [
+          {
+            classification: "malware",
+            confidence: "high",
+            advisoryId: "MAL-2026-1234",
+          },
+        ],
+      },
+      verification: { scanStatus: "pending" },
+      llmAnalysis: { status: "clean", verdict: "benign" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("malicious");
+    expect(getPackageDownloadSecurityBlock(release)).toEqual(
+      expect.objectContaining({
+        status: 403,
+        message: expect.stringContaining("malicious"),
+      }),
+    );
+  });
+
+  it("does not let stale manual approval override later dependency malware", () => {
+    const release = {
+      dependencyScan: {
+        status: "malicious",
+        checkedAt: 2,
+        findings: [
+          {
+            classification: "malware",
+            confidence: "high",
+            advisoryId: "MAL-2026-1234",
+          },
+        ],
+      },
+      manualModeration: { state: "approved", updatedAt: 1 },
+      verification: { scanStatus: "pending" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("malicious");
+    expect(getPackageDownloadSecurityBlock(release)).toEqual(
+      expect.objectContaining({
+        status: 403,
+        message: expect.stringContaining("malicious"),
+      }),
+    );
+  });
+
+  it("lets newer manual approval clear dependency malware", () => {
+    const release = {
+      dependencyScan: {
+        status: "malicious",
+        checkedAt: 2,
+        findings: [
+          {
+            classification: "malware",
+            confidence: "high",
+            advisoryId: "MAL-2026-1234",
+          },
+        ],
+      },
+      manualModeration: { state: "approved", updatedAt: 3 },
+      verification: { scanStatus: "pending" },
+      sha256hash: "a".repeat(64),
+    } as never;
+
+    expect(resolvePackageReleaseScanStatus(release)).toBe("clean");
+    expect(getPackageDownloadSecurityBlock(release)).toBeNull();
+  });
+
   it("lets manual package moderation approve or block releases", () => {
     expect(
       resolvePackageReleaseScanStatus({

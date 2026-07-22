@@ -212,6 +212,16 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   the same artifact. Static scan findings are ClawScan input context only and
   must not schedule account autobans or set public/install-blocking trust by
   themselves.
+- Plugin package artifacts with inspectable dependency manifests may have a
+  dedicated dependency scan result on the exact package release. Static scan
+  findings remain ClawScan input context only; dependency scan findings are a
+  separate supply-chain signal. High-confidence malicious package advisories
+  must set exact-release package trust to `malicious` and therefore make
+  `trust.blockedFromDownload` true. Ordinary dependency vulnerabilities should
+  remain advisory or `suspicious` until policy explicitly promotes them. This
+  keeps dependency-risk decisions in ClawHub for ClawHub-sourced artifacts
+  instead of requiring OpenClaw install clients to duplicate local package
+  scanning.
 - Pending skill ownership transfers must not be accepted when the requesting
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
