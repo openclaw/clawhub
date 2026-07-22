@@ -371,6 +371,7 @@ jobs:
             --request POST \
             --header "Authorization: Bearer $operator_token" \
             --header "Content-Type: application/json" \
+            --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
             --data '{"operation":"read","externalId":"patrick-erichsen/skills/html"}' \
             "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-controlled-entry.json
           jq -e '
