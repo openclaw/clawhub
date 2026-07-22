@@ -26,10 +26,7 @@ permissions:
 jobs:
   deploy-test:
     if: >-
-      (github.event_name == 'workflow_dispatch' &&
-      (github.ref == 'refs/heads/main' ||
-      (github.ref_name == 'pe/claw-563-skills-sh-mirror-10k' &&
-      github.actor == 'Patrick-Erichsen'))) ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
