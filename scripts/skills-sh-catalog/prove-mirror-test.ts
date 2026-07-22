@@ -2,7 +2,11 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { buildMirrorProofHeaders } from "./prove-mirror-request";
+import {
+  buildMirrorProofHeaders,
+  findRecoverableMirrorRun,
+  type RecoverableMirrorRun,
+} from "./prove-mirror-request";
 
 const OUTPUT_PATH = resolve("proof/claw-563/skills-sh-mirror-test-proof.json");
 const PROJECTED_SCALE = 700_000;
@@ -54,16 +58,40 @@ function requireRunId(payload: Record<string, unknown>) {
   return payload.runId;
 }
 
-async function runMirror(reason: string, provePauseResume: boolean) {
-  const startedAt = Date.now();
-  const start = await call({ operation: "start", reason });
+async function runMirror(
+  reason: string,
+  provePauseResume: boolean,
+  recoverableRun: RecoverableMirrorRun | null = null,
+) {
+  const attemptStartedAt = Date.now();
+  const start = recoverableRun
+    ? { payload: recoverableRun }
+    : await call({ operation: "start", reason });
   const runId = requireRunId(start.payload);
-  let page = 0;
-  let offset = 0;
+  let page = recoverableRun?.page ?? 0;
+  let offset = recoverableRun?.offset ?? 0;
   let steps = 0;
   let pauseProof: Record<string, unknown> | null = null;
-  let run = start.payload;
-  while (run.status !== "reconciling") {
+  let run = start.payload as Record<string, unknown>;
+  let recovery: Record<string, unknown> | null = null;
+  if (recoverableRun) {
+    recovery = {
+      runId,
+      status: recoverableRun.status,
+      cursor: { page, offset },
+      interruptedAtLeastOnce: true,
+    };
+    if (recoverableRun.status === "paused") {
+      run = (
+        await call({
+          operation: "resume",
+          runId,
+          reason: "CLAW-563 interrupted run recovery",
+        })
+      ).payload;
+    }
+  }
+  while (run.status === "running") {
     const step = await call({ operation: "step", runId, page, offset });
     run = step.payload;
     steps += 1;
@@ -117,10 +145,12 @@ async function runMirror(reason: string, provePauseResume: boolean) {
       measuredAt: start.payload.sourceMeasuredAt,
       pageSize: start.payload.sourcePageSize,
     },
+    recovery,
     steps,
     reconciliationBatches,
     pauseProof,
-    elapsedMs: Date.now() - startedAt,
+    elapsedMs: Date.now() - (recoverableRun?.startedAt ?? attemptStartedAt),
+    attemptElapsedMs: Date.now() - attemptStartedAt,
   };
 }
 
@@ -295,7 +325,9 @@ await call({
 });
 try {
   const isolationBefore = (await call({ operation: "isolation" })).payload;
-  const firstRun = await runMirror("CLAW-563 complete authenticated mirror", true);
+  const statusBefore = (await call({ operation: "status" })).payload;
+  const recoverableRun = findRecoverableMirrorRun(statusBefore);
+  const firstRun = await runMirror("CLAW-563 complete authenticated mirror", true, recoverableRun);
   const identicalRerun = await runMirror(
     "CLAW-563 complete authenticated mirror identical rerun",
     false,

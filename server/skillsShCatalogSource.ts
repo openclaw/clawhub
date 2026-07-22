@@ -374,6 +374,7 @@ async function fetchSkillsShText(
       },
     });
     if (response.ok) return await response.text();
+    if (response.status === 404) return null;
     if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
       throw new Error(`skills.sh mirror source page returned HTTP ${response.status}`);
     }
@@ -499,7 +500,7 @@ export async function fetchSkillsShMirrorBatch(
   }
   const listRows = sourcePage.data.slice(args.offset, args.offset + args.limit);
   const details = Array.from<SkillsShCatalogDetail>({ length: listRows.length });
-  const sourcePages = Array.from<string>({ length: listRows.length });
+  const sourcePages = Array.from<string | null>({ length: listRows.length });
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: Math.min(DETAIL_CONCURRENCY, listRows.length) }, async () => {
@@ -520,7 +521,7 @@ export async function fetchSkillsShMirrorBatch(
     return {
       ...observation,
       ...(detail.sourceContentHash ? { sourceContentHash: detail.sourceContentHash } : {}),
-      upstreamScanners: buildSkillsShMirrorUpstreamScanners(sourcePages[index]!, listRow.url),
+      upstreamScanners: buildSkillsShMirrorUpstreamScanners(sourcePages[index] ?? "", listRow.url),
       ...(detail.contentKind === "none"
         ? {}
         : {
@@ -549,7 +550,11 @@ export async function fetchSkillsShMirrorBatch(
         (total, detail) => total + Buffer.byteLength(JSON.stringify(detail), "utf8"),
         0,
       ) +
-      sourcePages.reduce((total, sourceHtml) => total + Buffer.byteLength(sourceHtml, "utf8"), 0),
+      sourcePages.reduce(
+        (total, sourceHtml) =>
+          total + (sourceHtml === null ? 0 : Buffer.byteLength(sourceHtml, "utf8")),
+        0,
+      ),
     rows,
   };
 }
