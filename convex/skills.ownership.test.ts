@@ -782,8 +782,10 @@ describe("skills ownership", () => {
                   build(chainEq(constraints));
                   if (name === "by_skill") {
                     return {
-                      collect: async () =>
-                        aliases.filter((alias) => alias.skillId === constraints.skillId),
+                      take: async (limit: number) =>
+                        aliases
+                          .filter((alias) => alias.skillId === constraints.skillId)
+                          .slice(0, limit),
                     };
                   }
                   if (name === "by_slug") {
@@ -1039,8 +1041,10 @@ describe("skills ownership", () => {
                   build(chainEq(constraints));
                   if (name === "by_skill") {
                     return {
-                      collect: async () =>
-                        aliases.filter((alias) => alias.skillId === constraints.skillId),
+                      take: async (limit: number) =>
+                        aliases
+                          .filter((alias) => alias.skillId === constraints.skillId)
+                          .slice(0, limit),
                     };
                   }
                   if (name === "by_owner_publisher_slug") {
@@ -1186,7 +1190,7 @@ describe("skills ownership", () => {
     );
   });
 
-  it("allows publisher admins to rename publisher-owned skills", async () => {
+  it("allows publisher admins to rename beyond the former historical alias quota", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "skillSlugAliases:old");
     const skill = {
@@ -1205,6 +1209,13 @@ describe("skills ownership", () => {
       createdAt: 1_700_000_000_000,
       softDeletedAt: undefined,
     };
+    const aliases = Array.from({ length: 25 }, (_, index) => ({
+      _id: `skillSlugAliases:old-${index}`,
+      slug: `historical-name-${index}`,
+      skillId: "skills:source",
+      ownerUserId: "users:creator",
+      ownerPublisherId: "publishers:org",
+    }));
 
     const result = await renameOwnedSkillInternalHandler(
       {
@@ -1259,8 +1270,8 @@ describe("skills ownership", () => {
                   if (name === "by_owner_publisher_slug") return { unique: async () => null };
                   if (name === "by_owner_slug") return { unique: async () => null };
                   if (name === "by_slug") return { take: async () => [], unique: async () => null };
-                  if (name === "by_skill") return { collect: async () => [] };
-                  if (name === "by_owner_publisher") return { take: async () => [] };
+                  if (name === "by_skill") return { collect: async () => aliases };
+                  if (name === "by_owner_publisher") return { take: async () => aliases };
                   throw new Error(`unexpected skillSlugAliases index ${name}`);
                 },
               };
@@ -2415,7 +2426,7 @@ describe("skills ownership", () => {
     expect(patch).not.toHaveBeenCalledWith("skills:source", expect.anything());
   });
 
-  it("rejects merges that would reserve too many historical slugs for one skill", async () => {
+  it("bounds aliases rewritten by a single merge transaction", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");
     const skills = [
@@ -2436,7 +2447,7 @@ describe("skills ownership", () => {
         softDeletedAt: undefined,
       },
     ];
-    const aliases = Array.from({ length: 5 }, (_, index) => ({
+    const aliases = Array.from({ length: 201 }, (_, index) => ({
       _id: `skillSlugAliases:target-${index}`,
       slug: `target-old-${index}`,
       skillId: "skills:target",
@@ -2469,9 +2480,7 @@ describe("skills ownership", () => {
                       };
                     }
                     if (name === "by_owner_publisher_slug") {
-                      return {
-                        unique: async () => null,
-                      };
+                      return { unique: async () => null };
                     }
                     if (name === "by_owner_slug") {
                       return {
@@ -2485,9 +2494,6 @@ describe("skills ownership", () => {
                             .slice(0, 25),
                       };
                     }
-                    if (name === "by_canonical" || name === "by_fork_of") {
-                      return { collect: async () => [] };
-                    }
                     throw new Error(`unexpected skills index ${name}`);
                   },
                 };
@@ -2499,22 +2505,20 @@ describe("skills ownership", () => {
                     build(chainEq(constraints));
                     if (name === "by_skill") {
                       return {
-                        collect: async () =>
-                          aliases.filter((alias) => alias.skillId === constraints.skillId),
+                        take: async (limit: number) =>
+                          aliases
+                            .filter((alias) => alias.skillId === constraints.skillId)
+                            .slice(0, limit),
                       };
                     }
                     if (name === "by_slug") {
                       return {
                         take: async () =>
                           aliases.filter((alias) => alias.slug === constraints.slug).slice(0, 2),
-                        unique: async () =>
-                          aliases.find((alias) => alias.slug === constraints.slug) ?? null,
                       };
                     }
                     if (name === "by_owner_publisher_slug") {
-                      return {
-                        unique: async () => null,
-                      };
+                      return { unique: async () => null };
                     }
                     if (name === "by_owner_slug") {
                       return {
@@ -2526,12 +2530,6 @@ describe("skills ownership", () => {
                                 alias.slug === constraints.slug,
                             )
                             .slice(0, 25),
-                      };
-                    }
-                    if (name === "by_owner") {
-                      return {
-                        take: async () =>
-                          aliases.filter((alias) => alias.ownerUserId === constraints.ownerUserId),
                       };
                     }
                     throw new Error(`unexpected skillSlugAliases index ${name}`);
@@ -2550,7 +2548,7 @@ describe("skills ownership", () => {
           targetSlug: "merge-target",
         },
       ),
-    ).rejects.toThrow(/Too many historical slugs/);
+    ).rejects.toThrow(/cannot be merged in one transaction/);
 
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();

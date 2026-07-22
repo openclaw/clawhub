@@ -135,10 +135,12 @@ protected affixes such as `openclaw-`, `-openclaw`, `official-`, or
 `-official` are blocked unless an internal/admin path explicitly bypasses the
 reserved list for a controlled migration.
 
-Historical slug redirects are also bounded. Rename and merge may preserve old
-slugs as aliases, but a single skill can keep at most five historical slug
-redirects and an owner/publisher can keep at most 25. These limits prevent
-alias-hoarding while preserving ordinary rename and duplicate-merge redirects.
+Rename and merge preserve historical slugs as aliases in the owning publisher's
+namespace. Historical aliases are not quota-limited because they do not reserve
+names across other publishers. Collision checks still prevent two skills or
+aliases from claiming the same slug within one publisher namespace.
+The one-shot merge mutation keeps a separate operational ceiling on aliases it
+can rewrite in one transaction; larger histories require a batched migration.
 
 Owner-initiated unpublishes must not reserve a slug forever. When an owner
 soft-deletes a skill, the slug remains reserved for 30 days so they can restore
