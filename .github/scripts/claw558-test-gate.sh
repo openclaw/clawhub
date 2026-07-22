@@ -255,6 +255,35 @@ admit_scan() {
 read_status() {
   local output="$1"
   convex_run skillsShCatalog:getStatusInternal '{}' > "$output"
+  local cursor="null"
+  while true; do
+    local args page canary
+    if [[ "$cursor" == "null" ]]; then
+      args='{"paginationOpts":{"cursor":null,"numItems":100}}'
+    else
+      args="$(jq -nc --arg cursor "$cursor" \
+        '{paginationOpts:{cursor:$cursor,numItems:100}}')"
+    fi
+    page="$(convex_run skillsShCatalog:listEntriesPageInternal "$args")"
+    canary="$(jq -c --arg externalId "$CANARY_ID" \
+      '.page[] | select(.externalId == $externalId)' <<<"$page")"
+    if [[ -n "$canary" ]]; then
+      jq --argjson canary "$canary" --arg externalId "$CANARY_ID" \
+        '.entries = ([.entries[] | select(.externalId != $externalId)] + [$canary])' \
+        "$output" > "${output}.tmp"
+      mv "${output}.tmp" "$output"
+      return
+    fi
+    if [[ "$(jq -r '.isDone' <<<"$page")" == "true" ]]; then
+      echo "::error::Controlled canary is missing from Test catalog state"
+      exit 1
+    fi
+    cursor="$(jq -r '.continueCursor' <<<"$page")"
+    if [[ -z "$cursor" || "$cursor" == "null" ]]; then
+      echo "::error::Catalog entry pagination returned an incomplete cursor"
+      exit 1
+    fi
+  done
 }
 
 assert_public_status() {
