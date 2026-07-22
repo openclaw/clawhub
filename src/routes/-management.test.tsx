@@ -571,8 +571,12 @@ describe("Management", () => {
     expect(screen.getByText("1,200 installs / 10,000 downloads")).toBeTruthy();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
-    expect(screen.getByText("Downloads — 30 days")).toBeTruthy();
-    expect(screen.getByText("Installs — 30 days")).toBeTruthy();
+    expect(screen.getByText("30-day activity")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getByText("Installs")).toBeTruthy();
+    const drawerZones = Array.from(document.querySelectorAll(".pa-sheet-body > .pa-zone"));
+    expect(drawerZones[0]?.textContent).toContain("30-day activity");
+    expect(drawerZones[1]?.textContent).toContain("Signal");
     expect(
       screen.getByText(/Platform 30d downloads across all 1,000 active skills: P95 900, P99 3,000/),
     ).toBeTruthy();

@@ -1197,6 +1197,44 @@ function PublisherAbuseSignalInspector({
       </SheetHeader>
 
       <div className="pa-sheet-body">
+        <section className="pa-zone pa-signal-trends-zone">
+          <div className="pa-section-label">30-day activity</div>
+          <div className="pa-signal-trends" aria-label="30-day activity trends">
+            <div className="pa-signal-trend">
+              <div className="pa-signal-trend-label">Downloads</div>
+              {activityTrend ? (
+                <MetricTrendCard
+                  trend={activityTrend.downloads}
+                  ariaLabel="Daily downloads over the last 30 days"
+                  periodLabel="30 days"
+                  unitLabel="download"
+                  hideIdlePeriodLabel
+                />
+              ) : activityTrend === undefined ? (
+                <MetricTrendCardSkeleton />
+              ) : (
+                <span className="pa-hint">Trend unavailable</span>
+              )}
+            </div>
+            <div className="pa-signal-trend pa-signal-trend-installs">
+              <div className="pa-signal-trend-label">Installs</div>
+              {activityTrend ? (
+                <MetricTrendCard
+                  trend={activityTrend.installs}
+                  ariaLabel="Daily installs over the last 30 days"
+                  periodLabel="30 days"
+                  unitLabel="install"
+                  hideIdlePeriodLabel
+                />
+              ) : activityTrend === undefined ? (
+                <MetricTrendCardSkeleton />
+              ) : (
+                <span className="pa-hint">Trend unavailable</span>
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="pa-zone">
           <div className="pa-section-label">Signal</div>
           <div className="pa-reason-list">
@@ -1255,40 +1293,6 @@ function PublisherAbuseSignalInspector({
                 })}
               />
             ) : null}
-          </div>
-          <div className="pa-signal-trends" aria-label="30-day activity trends">
-            <div className="pa-signal-trend">
-              <div className="pa-signal-trend-label">Downloads — 30 days</div>
-              {activityTrend ? (
-                <MetricTrendCard
-                  trend={activityTrend.downloads}
-                  ariaLabel="Daily downloads over the last 30 days"
-                  periodLabel="30 days"
-                  unitLabel="download"
-                  hideIdlePeriodLabel
-                />
-              ) : activityTrend === undefined ? (
-                <MetricTrendCardSkeleton />
-              ) : (
-                <span className="pa-hint">Trend unavailable</span>
-              )}
-            </div>
-            <div className="pa-signal-trend pa-signal-trend-installs">
-              <div className="pa-signal-trend-label">Installs — 30 days</div>
-              {activityTrend ? (
-                <MetricTrendCard
-                  trend={activityTrend.installs}
-                  ariaLabel="Daily installs over the last 30 days"
-                  periodLabel="30 days"
-                  unitLabel="install"
-                  hideIdlePeriodLabel
-                />
-              ) : activityTrend === undefined ? (
-                <MetricTrendCardSkeleton />
-              ) : (
-                <span className="pa-hint">Trend unavailable</span>
-              )}
-            </div>
           </div>
           {item.signal.temporalBenchmark?.scope === "all_active_skills" ? (
             <p className="pa-hint">

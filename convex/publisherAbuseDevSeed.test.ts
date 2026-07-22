@@ -273,6 +273,22 @@ describe("publisherAbuseDevSeed.seed", () => {
     expect(tables.users ?? []).toHaveLength(16);
     expect(tables.skills?.some((doc) => doc.slug === "demo-temporal-download-burst")).toBe(true);
     expect(tables.skills?.some((doc) => doc.slug === "demo-temporal-install-ratio")).toBe(true);
+    const burstSkill = tables.skills?.find((doc) => doc.slug === "demo-temporal-download-burst");
+    const ratioSkill = tables.skills?.find((doc) => doc.slug === "demo-temporal-install-ratio");
+    const burstRecentStats = (tables.skillDailyStats ?? [])
+      .filter((doc) => doc.skillId === burstSkill?._id)
+      .sort((left, right) => Number(left.day) - Number(right.day))
+      .slice(-30);
+    const ratioRecentStats = (tables.skillDailyStats ?? [])
+      .filter((doc) => doc.skillId === ratioSkill?._id)
+      .sort((left, right) => Number(left.day) - Number(right.day));
+
+    expect(burstRecentStats.map((doc) => doc.downloads)).toHaveLength(30);
+    expect(new Set(burstRecentStats.map((doc) => doc.downloads)).size).toBeGreaterThan(10);
+    expect(burstRecentStats.reduce((sum, doc) => sum + Number(doc.downloads), 0)).toBe(16_200);
+    expect(burstRecentStats.reduce((sum, doc) => sum + Number(doc.installs), 0)).toBe(8);
+    expect(ratioRecentStats.reduce((sum, doc) => sum + Number(doc.downloads), 0)).toBe(2_400);
+    expect(ratioRecentStats.reduce((sum, doc) => sum + Number(doc.installs), 0)).toBe(288);
     expect(tables.publisherAbuseSignals).toEqual([
       expect.objectContaining({
         signalType: "sustained_downloads_flat_installs",

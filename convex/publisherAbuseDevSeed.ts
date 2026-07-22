@@ -28,6 +28,24 @@ const TEMPORAL_DEMO_SKILL_SLUG = "demo-temporal-download-burst";
 const TEMPORAL_DEMO_RATIO_SKILL_SLUG = "demo-temporal-install-ratio";
 const CLEAR_SEED_BATCH_SIZE = 100;
 
+// A realistic quiet-baseline → sharp-burst → uneven-tail shape keeps the
+// activity charts useful during manual review without copying production rows.
+const TEMPORAL_DEMO_ACTIVITY_SHAPE = [
+  13, 5, 4, 2, 10, 8, 9, 11, 10, 11, 13, 5, 7, 11, 10, 6, 18, 6, 59, 96, 205, 98, 76, 79, 62, 99,
+  81, 53, 54, 11,
+] as const;
+const TEMPORAL_DEMO_SPARSE_INSTALLS = [
+  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 1, 0, 1, 0, 1, 0, 0, 0, 1,
+] as const;
+
+function scaleDailySeries(shape: readonly number[], targetTotal: number) {
+  const sourceTotal = shape.reduce((sum, value) => sum + value, 0);
+  const scaled = shape.map((value) => Math.round((value * targetTotal) / sourceTotal));
+  const roundingDifference = targetTotal - scaled.reduce((sum, value) => sum + value, 0);
+  scaled[scaled.length - 1] = (scaled.at(-1) ?? 0) + roundingDifference;
+  return scaled;
+}
+
 type TriageStatus =
   | "pending"
   | "reviewed_no_action"
@@ -397,6 +415,16 @@ export const clearSeed = internalMutation({
 async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number }) {
   const now = args.now;
   const todayDay = Math.floor(now / DAY_MS);
+  const temporalDownloads = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 16_200);
+  const temporalInstalls: number[] = [...TEMPORAL_DEMO_SPARSE_INSTALLS];
+  const temporalDownloads30d = temporalDownloads.reduce((sum, value) => sum + value, 0);
+  const temporalInstalls30d = temporalInstalls.reduce((sum, value) => sum + value, 0);
+  const temporalDownloads7d = temporalDownloads.slice(-7).reduce((sum, value) => sum + value, 0);
+  const temporalInstalls7d = temporalInstalls.slice(-7).reduce((sum, value) => sum + value, 0);
+  const ratioDownloads = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 2_400);
+  const ratioInstalls = scaleDailySeries(TEMPORAL_DEMO_ACTIVITY_SHAPE, 288);
+  const ratioDownloads7d = ratioDownloads.slice(-7).reduce((sum, value) => sum + value, 0);
+  const ratioInstalls7d = ratioInstalls.slice(-7).reduce((sum, value) => sum + value, 0);
   const temporalBenchmark = {
     scope: "all_active_skills" as const,
     sampleSize: 1000,
@@ -421,11 +449,11 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     linkedUserId: temporalUserId,
     publishedSkills: 1,
     publishedPackages: 0,
-    totalInstalls: 0,
-    totalDownloads: 16_200,
+    totalInstalls: temporalInstalls30d,
+    totalDownloads: temporalDownloads30d,
     totalStars: 0,
-    skillTotalInstalls: 0,
-    skillTotalDownloads: 16_200,
+    skillTotalInstalls: temporalInstalls30d,
+    skillTotalDownloads: temporalDownloads30d,
     skillTotalStars: 0,
     createdAt: now - DAY_MS,
     updatedAt: now - HOUR_MS,
@@ -433,20 +461,20 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
   const temporalSkillId = await ctx.db.insert("skills", {
     slug: TEMPORAL_DEMO_SKILL_SLUG,
     displayName: "Demo Temporal Download Burst",
-    summary: "Synthetic fixture: high 30-day downloads with zero installs.",
+    summary: "Synthetic fixture: high 30-day downloads with near-flat installs.",
     ownerUserId: temporalUserId,
     ownerPublisherId: temporalPublisherId,
     tags: {},
     badges: {},
     moderationStatus: "active",
-    statsDownloads: 16_200,
+    statsDownloads: temporalDownloads30d,
     statsStars: 0,
     statsInstallsCurrent: 0,
-    statsInstallsAllTime: 0,
+    statsInstallsAllTime: temporalInstalls30d,
     stats: {
-      downloads: 16_200,
+      downloads: temporalDownloads30d,
       installsCurrent: 0,
-      installsAllTime: 0,
+      installsAllTime: temporalInstalls30d,
       stars: 0,
       versions: 1,
       comments: 0,
@@ -488,11 +516,19 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     });
   }
   for (let offset = 29; offset >= 0; offset -= 1) {
+    const index = 29 - offset;
     await ctx.db.insert("skillDailyStats", {
       skillId: temporalSkillId,
       day: todayDay - offset,
-      downloads: 540,
-      installs: 0,
+      downloads: temporalDownloads[index] ?? 0,
+      installs: temporalInstalls[index] ?? 0,
+      updatedAt: now - HOUR_MS,
+    });
+    await ctx.db.insert("skillDailyStats", {
+      skillId: ratioSkillId,
+      day: todayDay - offset,
+      downloads: ratioDownloads[index] ?? 0,
+      installs: ratioInstalls[index] ?? 0,
       updatedAt: now - HOUR_MS,
     });
   }
@@ -534,12 +570,12 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     logPressure: Math.log10(18),
     zScore: 2.14,
     publishedSkills: 1,
-    totalInstalls: 0,
+    totalInstalls: temporalInstalls30d,
     totalStars: 0,
-    totalDownloads: 16_200,
-    installsPerSkill: 0,
+    totalDownloads: temporalDownloads30d,
+    installsPerSkill: temporalInstalls30d,
     starsPerSkill: 0,
-    downloadsPerSkill: 16_200,
+    downloadsPerSkill: temporalDownloads30d,
     reasonCodes: ["temporal_sustained_downloads_flat_installs"],
     temporalHighSkillCount: 1,
     temporalSpikeSkillCount: 0,
@@ -554,14 +590,14 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
         spike: false,
         sustained: true,
         pressure: 18,
-        recent7Downloads: 3_780,
-        recent7Installs: 0,
+        recent7Downloads: temporalDownloads7d,
+        recent7Installs: temporalInstalls7d,
         previous30Downloads: 120,
         baseline7Downloads: 100,
         spikeMultiplier: 8,
-        recent30Downloads: 16_200,
-        recent30Installs: 0,
-        downloadInstallRatio30: 16_200,
+        recent30Downloads: temporalDownloads30d,
+        recent30Installs: temporalInstalls30d,
+        downloadInstallRatio30: temporalDownloads30d / Math.max(1, temporalInstalls30d),
         downloads30dCohortBand: "p99",
         spikeMultiplierCohortBand: "p95",
         downloads30dVsPeerP95: 18,
@@ -601,15 +637,15 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     firstSeenAt: temporalCompletedAt,
     lastSeenAt: temporalCompletedAt,
     seenCount: 1,
-    recent7Downloads: 3_780,
-    recent7Installs: 0,
-    recent7InstallDownloadRatio: 0,
-    recent30Downloads: 16_200,
-    recent30Installs: 0,
-    recent30InstallDownloadRatio: 0,
-    allTimeDownloads: 16_200,
-    allTimeInstalls: 0,
-    allTimeInstallDownloadRatio: 0,
+    recent7Downloads: temporalDownloads7d,
+    recent7Installs: temporalInstalls7d,
+    recent7InstallDownloadRatio: temporalInstalls7d / temporalDownloads7d,
+    recent30Downloads: temporalDownloads30d,
+    recent30Installs: temporalInstalls30d,
+    recent30InstallDownloadRatio: temporalInstalls30d / temporalDownloads30d,
+    allTimeDownloads: temporalDownloads30d,
+    allTimeInstalls: temporalInstalls30d,
+    allTimeInstallDownloadRatio: temporalInstalls30d / temporalDownloads30d,
     reviewStatus: "open",
   });
   await ctx.db.insert("publisherAbuseSignals", {
@@ -626,9 +662,9 @@ async function seedTemporalCohortDemoRows(ctx: ClearSeedCtx, args: { now: number
     firstSeenAt: temporalCompletedAt - 7 * 60_000,
     lastSeenAt: temporalCompletedAt,
     seenCount: 2,
-    recent7Downloads: 800,
-    recent7Installs: 96,
-    recent7InstallDownloadRatio: 0.12,
+    recent7Downloads: ratioDownloads7d,
+    recent7Installs: ratioInstalls7d,
+    recent7InstallDownloadRatio: ratioInstalls7d / ratioDownloads7d,
     recent30Downloads: 2_400,
     recent30Installs: 288,
     recent30InstallDownloadRatio: 0.12,
