@@ -856,16 +856,30 @@ async function runCommand(
     for (const name of options.omitEnv ?? []) delete env[name];
     const child = spawn(command, args, {
       cwd: options.cwd,
+      detached: process.platform !== "win32",
       env,
       stdio: ["pipe", "pipe", "pipe"],
     });
     let stdout = "";
     let stderr = "";
     let timedOut = false;
+    let forceKillTimeout: NodeJS.Timeout | undefined;
+    const killProcessTree = (signal: NodeJS.Signals) => {
+      if (process.platform !== "win32" && child.pid) {
+        try {
+          process.kill(-child.pid, signal);
+          return;
+        } catch {
+          // The process group may already have exited; fall back to the direct child.
+        }
+      }
+      child.kill(signal);
+    };
     const timeout = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGTERM");
-      setTimeout(() => child.kill("SIGKILL"), 10_000).unref();
+      killProcessTree("SIGTERM");
+      forceKillTimeout = setTimeout(() => killProcessTree("SIGKILL"), 10_000);
+      forceKillTimeout.unref();
     }, options.timeoutMs);
     child.stdout.on("data", (chunk) => {
       stdout += String(chunk);
@@ -875,10 +889,14 @@ async function runCommand(
     });
     child.on("error", (error) => {
       clearTimeout(timeout);
+      if (timedOut) killProcessTree("SIGKILL");
+      if (forceKillTimeout) clearTimeout(forceKillTimeout);
       reject(error);
     });
     child.on("close", (code) => {
       clearTimeout(timeout);
+      if (timedOut) killProcessTree("SIGKILL");
+      if (forceKillTimeout) clearTimeout(forceKillTimeout);
       if (code === 0) resolvePromise({ stdout, stderr });
       else {
         reject(

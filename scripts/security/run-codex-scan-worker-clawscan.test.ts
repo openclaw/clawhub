@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaimedJob } from "./run-codex-scan-worker";
-import { processJob } from "./run-codex-scan-worker";
+import { processJob, runClawScan } from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
 const execFileAsync = promisify(execFile);
@@ -979,6 +979,62 @@ echo "this should never complete"`,
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
       if (previousTimeout === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
       else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = previousTimeout;
+    }
+  });
+
+  it("terminates the full ClawScan process tree on timeout", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    const fakeClawScan = join(workspace, "fake-clawscan");
+    await writeFakeClawScanCommand(
+      fakeClawScan,
+      `(
+  trap '' TERM
+  exec >/dev/null 2>&1
+  while true; do sleep 1; done
+) &
+child_pid=$!
+printf '%s' "$child_pid" > "${workspace}/descendant.pid"
+wait "$child_pid"`,
+    );
+    const previousCommand = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+    const previousTimeout = process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = fakeClawScan;
+    process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = "2000";
+    let descendantPid: number | undefined;
+
+    try {
+      await expect(
+        runClawScan(skillVersionJob("securityScanJobs:process-tree-timeout"), workspace, () => {}),
+      ).rejects.toThrow("timed out");
+
+      descendantPid = Number(await readFile(join(workspace, "descendant.pid"), "utf8"));
+      let descendantRunning = true;
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+          process.kill(descendantPid, 0);
+          await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
+        } catch {
+          descendantRunning = false;
+          break;
+        }
+      }
+      expect(descendantRunning).toBe(false);
+    } finally {
+      if (descendantPid) {
+        try {
+          process.kill(descendantPid, "SIGKILL");
+        } catch {
+          // The fixed worker has already terminated the descendant.
+        }
+      }
+      if (previousCommand === undefined) delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND;
+      else process.env.CODEX_SECURITY_SCAN_CLAWSCAN_COMMAND = previousCommand;
+      if (previousTimeout === undefined) {
+        delete process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS;
+      } else {
+        process.env.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS = previousTimeout;
+      }
     }
   });
 });

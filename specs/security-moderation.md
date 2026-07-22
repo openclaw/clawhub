@@ -312,6 +312,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   kind and source runs through the same ClawScan profile and completion/failure
   contract. ClawScan failures use the existing failure/retry lifecycle; there
   is no per-job fallback or alternate legacy route.
+- On Unix runners, ClawScan commands run in isolated process groups. A timeout
+  must terminate the full process group so surviving scanner or judge
+  descendants cannot hold a worker slot after the timeout is recorded.
+- The production scan-worker timeout defaults to 15 minutes. Package-release
+  SkillSpector runs can validly exceed four minutes, so a lower timeout must not
+  be used as the normal capacity control.
 - A ClawScan judge result is complete only when ClawScan verifies
   a workspace-only inspection challenge and the SHA-256 of a required artifact
   file. Missing or mismatched inspection receipts fail the judge and use the
