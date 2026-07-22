@@ -133,6 +133,7 @@ import type * as lib_skills_slugResolution from "../lib/skills/slugResolution.js
 import type * as lib_skillsShCatalogEnvironment from "../lib/skillsShCatalogEnvironment.js";
 import type * as lib_skillsShCatalogFixtures from "../lib/skillsShCatalogFixtures.js";
 import type * as lib_skillsShCatalogPublication from "../lib/skillsShCatalogPublication.js";
+import type * as lib_skillsShRefreshLifecycle from "../lib/skillsShRefreshLifecycle.js";
 import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_testSeed from "../lib/testSeed.js";
 import type * as lib_tokens from "../lib/tokens.js";
@@ -309,6 +310,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShCatalogEnvironment": typeof lib_skillsShCatalogEnvironment;
   "lib/skillsShCatalogFixtures": typeof lib_skillsShCatalogFixtures;
   "lib/skillsShCatalogPublication": typeof lib_skillsShCatalogPublication;
+  "lib/skillsShRefreshLifecycle": typeof lib_skillsShRefreshLifecycle;
   "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/testSeed": typeof lib_testSeed;
   "lib/tokens": typeof lib_tokens;

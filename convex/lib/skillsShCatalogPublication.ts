@@ -1,3 +1,8 @@
+import {
+  resolveAdoptedActiveSource,
+  shouldPromoteAdoptedCandidate,
+} from "./skillsShRefreshLifecycle";
+
 export type SkillsShCatalogPublicationControl = {
   mode: "off" | "fixture" | "staging-live";
   paused: boolean;
@@ -54,9 +59,46 @@ export function shouldPublishSkillsShCatalogEntry(args: {
     args.control.realScanAllowlist.includes(args.attempt.externalId) &&
     args.attempt.dispatchKind === "real" &&
     args.attempt.source === "skills-sh-catalog-test" &&
-    (args.verdict === "clean" || args.verdict === "suspicious") &&
-    isExactSkillsShCatalogAttempt(args.entry, args.attempt)
+    shouldPromoteAdoptedCandidate({
+      current: args.entry,
+      candidate: args.attempt,
+      verdict: args.verdict,
+    })
   );
+}
+
+export function shouldServePublishedSkillsShCatalogEntry(args: {
+  control: SkillsShCatalogPublicationControl | null;
+  entry: SkillsShCatalogIdentity;
+  attempt: SkillsShCatalogPublicationAttempt;
+  verdict: SkillsShCatalogVerdict;
+}) {
+  return (
+    args.control?.mode === "staging-live" &&
+    !args.control.paused &&
+    args.control.publicVisibilityEnabled &&
+    args.control.realScanAllowlist.includes(args.attempt.externalId) &&
+    args.attempt.dispatchKind === "real" &&
+    args.attempt.source === "skills-sh-catalog-test" &&
+    (args.verdict === "clean" || args.verdict === "suspicious") &&
+    args.entry.externalId === args.attempt.externalId &&
+    args.entry.githubOwnerId === args.attempt.githubOwnerId &&
+    args.entry.owner === args.attempt.owner &&
+    args.entry.repo === args.attempt.repo &&
+    args.entry.slug === args.attempt.slug
+  );
+}
+
+export function resolveSkillsShCatalogActiveSource(args: {
+  entry: SkillsShCatalogIdentity;
+  attempt: SkillsShCatalogIdentity;
+}) {
+  return resolveAdoptedActiveSource({
+    current: args.entry,
+    active: args.attempt,
+  }) === args.entry
+    ? args.entry
+    : args.attempt;
 }
 
 export function buildSkillsShCatalogInstallResolution(entry: SkillsShCatalogIdentity) {

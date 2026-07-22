@@ -796,13 +796,39 @@ describe("skills.sh controlled hidden metadata canary", () => {
   it.each([
     ["githubPath", "skills/changed"],
     ["githubCommit", "1".repeat(40)],
-    ["githubContentHash", "2".repeat(64)],
-  ] as const)("rejects a stale callback after the entry %s changes", async (field, value) => {
+  ] as const)(
+    "accepts a pointer-only callback after the entry %s changes",
+    async (field, value) => {
+      useEnvironment(TEST_ENV);
+      const t = convexTest(schema, modules);
+      const attempt = await prepareScannedCanary(t);
+      await t.run(async (ctx) => {
+        await ctx.db.patch(attempt.entryId, { [field]: value, updatedAt: Date.now() });
+      });
+
+      await expect(completeScannedCanary(t, attempt, "clean")).resolves.toEqual({
+        ok: true,
+        applied: true,
+        publicVisible: true,
+      });
+      const published = await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+      });
+      expect(published).toMatchObject({ [field]: value });
+    },
+  );
+
+  it("rejects a stale callback after the entry githubContentHash changes", async () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);
     const attempt = await prepareScannedCanary(t);
     await t.run(async (ctx) => {
-      await ctx.db.patch(attempt.entryId, { [field]: value, updatedAt: Date.now() });
+      await ctx.db.patch(attempt.entryId, {
+        githubContentHash: "2".repeat(64),
+        updatedAt: Date.now(),
+      });
     });
 
     await expect(completeScannedCanary(t, attempt, "clean")).resolves.toEqual({
