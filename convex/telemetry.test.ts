@@ -41,6 +41,13 @@ const reportCliInstallHandler = (
         slug: string;
         ownerHandle?: string;
         sourceRef?: string;
+        sourceKind?: "skills-sh";
+        sourceRepository?: string;
+        sourcePath?: string;
+        sourceUrl?: string;
+        canonicalRef?: string;
+        clawhubScan?: "unscanned" | "scanned";
+        trustLabel?: string;
         version?: string;
       },
     ) => Promise<void>;
@@ -200,9 +207,41 @@ describe("telemetry install events", () => {
 
     await reportCliInstallHandler(ctx, {
       userId: "users:one",
-      slug: "demo",
-      sourceRef: "skills-sh/alice/skills/demo",
+      slug: "skills-sh:alice/skills/demo",
+      sourceRef: "skills-sh:alice/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "alice/skills",
+      sourcePath: "skills/demo",
+      sourceUrl:
+        "https://github.com/alice/skills/tree/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skills/demo",
+      canonicalRef: undefined,
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
       version: "a".repeat(40),
+    });
+
+    expect(query).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not trust a client-reported canonical ref for scanned skills.sh attribution", async () => {
+    const query = vi.fn();
+    const insert = vi.fn();
+    const ctx = { db: { query, insert, patch: vi.fn() } };
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "skills-sh:alice/skills/demo",
+      sourceRef: "skills-sh:alice/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "alice/skills",
+      sourcePath: "skills/demo",
+      sourceUrl:
+        "https://github.com/alice/skills/tree/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skills/demo",
+      canonicalRef: "@alice/demo",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      version: "1.0.0",
     });
 
     expect(query).not.toHaveBeenCalled();

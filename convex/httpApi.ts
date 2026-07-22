@@ -333,6 +333,13 @@ async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
         slug: args.slug,
         ownerHandle: args.ownerHandle,
         sourceRef: args.sourceRef,
+        sourceKind: args.sourceKind,
+        sourceRepository: args.sourceRepository,
+        sourcePath: args.sourcePath,
+        sourceUrl: args.sourceUrl,
+        canonicalRef: args.canonicalRef,
+        clawhubScan: args.clawhubScan,
+        trustLabel: args.trustLabel,
         version: args.version,
       });
     }
