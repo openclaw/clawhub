@@ -13,6 +13,7 @@ const MAX_ROWS_PER_BATCH = 50;
 const MAX_DETAIL_BYTES = 64 * 1024;
 const MAX_RECONCILE_ROWS = 250;
 const MAX_SOURCE_ATTEMPTS = 4;
+const MAX_SEARCH_ROWS = 50;
 const MAX_SCANNER_STATUS_LENGTH = 32;
 const MAX_SCANNER_URL_LENGTH = 2_048;
 
@@ -173,6 +174,21 @@ function normalizedSearchText(value: string) {
 
 function firstSearchToken(value: string) {
   return tokenize(value)[0] ?? normalizedSearchText(value);
+}
+
+function requiredSearchValue(name: string, value: string) {
+  const normalized = normalizedSearchText(value);
+  if (!normalized) throw new ConvexError(`${name} is required`);
+  return normalized;
+}
+
+function searchLimit(limit: number) {
+  assertIntegerInRange("limit", limit, 1, MAX_SEARCH_ROWS);
+  return limit;
+}
+
+function prefixUpperBound(prefix: string) {
+  return `${prefix}\uffff`;
 }
 
 function searchFields(row: MirrorRow) {
@@ -719,6 +735,130 @@ export const getDetailByExternalIdInternal = internalQuery({
       .query("skillsShMirrorDetails")
       .withIndex("by_external_id", (q) => q.eq("externalId", args.externalId.trim().toLowerCase()))
       .unique();
+  },
+});
+
+export const listActiveByNormalizedSlugInternal = internalQuery({
+  args: {
+    value: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const value = requiredSearchValue("value", args.value);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_normalized_slug", (q) =>
+        q.eq("active", true).eq("normalizedSlug", value),
+      )
+      .take(searchLimit(args.limit));
+  },
+});
+
+export const listActiveByNormalizedDisplayNameInternal = internalQuery({
+  args: {
+    value: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const value = requiredSearchValue("value", args.value);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_normalized_display_name", (q) =>
+        q.eq("active", true).eq("normalizedDisplayName", value),
+      )
+      .take(searchLimit(args.limit));
+  },
+});
+
+export const listActiveByNormalizedSlugPrefixInternal = internalQuery({
+  args: {
+    prefix: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const prefix = requiredSearchValue("prefix", args.prefix);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_normalized_slug", (q) =>
+        q
+          .eq("active", true)
+          .gte("normalizedSlug", prefix)
+          .lt("normalizedSlug", prefixUpperBound(prefix)),
+      )
+      .take(searchLimit(args.limit));
+  },
+});
+
+export const listActiveByNormalizedDisplayNamePrefixInternal = internalQuery({
+  args: {
+    prefix: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const prefix = requiredSearchValue("prefix", args.prefix);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_normalized_display_name", (q) =>
+        q
+          .eq("active", true)
+          .gte("normalizedDisplayName", prefix)
+          .lt("normalizedDisplayName", prefixUpperBound(prefix)),
+      )
+      .take(searchLimit(args.limit));
+  },
+});
+
+export const listActiveByNormalizedSlugFirstTokenPrefixInternal = internalQuery({
+  args: {
+    prefix: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const prefix = requiredSearchValue("prefix", args.prefix);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_normalized_slug_first_token", (q) =>
+        q
+          .eq("active", true)
+          .gte("normalizedSlugFirstToken", prefix)
+          .lt("normalizedSlugFirstToken", prefixUpperBound(prefix)),
+      )
+      .take(searchLimit(args.limit));
+  },
+});
+
+export const listActiveByNormalizedDisplayNameFirstTokenPrefixInternal = internalQuery({
+  args: {
+    prefix: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const prefix = requiredSearchValue("prefix", args.prefix);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_normalized_display_name_first_token", (q) =>
+        q
+          .eq("active", true)
+          .gte("normalizedDisplayNameFirstToken", prefix)
+          .lt("normalizedDisplayNameFirstToken", prefixUpperBound(prefix)),
+      )
+      .take(searchLimit(args.limit));
+  },
+});
+
+export const searchActiveBySearchTextInternal = internalQuery({
+  args: {
+    query: v.string(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const query = requiredSearchValue("query", args.query);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withSearchIndex("search_by_search_text", (q) =>
+        q.search("searchText", query).eq("active", true),
+      )
+      .take(searchLimit(args.limit));
   },
 });
 

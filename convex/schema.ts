@@ -3030,7 +3030,6 @@ const skillsShMirrorRuns = defineTable({
   .index("by_started_at", ["startedAt"])
   .index("by_status_and_updated_at", {
     fields: ["status", "updatedAt"],
-    staged: true,
   });
 
 const skillsShMirrorUpstreamScannerValidator = v.object({
@@ -3080,36 +3079,28 @@ const skillsShMirrorDigests = defineTable({
   .index("by_external_id", ["externalId"])
   .index("by_active_and_normalized_slug", {
     fields: ["active", "normalizedSlug"],
-    staged: true,
   })
   .index("by_active_and_normalized_display_name", {
     fields: ["active", "normalizedDisplayName"],
-    staged: true,
   })
   .index("by_active_and_normalized_slug_first_token", {
     fields: ["active", "normalizedSlugFirstToken"],
-    staged: true,
   })
   .index("by_active_and_normalized_display_name_first_token", {
     fields: ["active", "normalizedDisplayNameFirstToken"],
-    staged: true,
   })
   .index("by_active_and_upstream_installs", {
     fields: ["active", "upstreamInstalls"],
-    staged: true,
   })
   .index("by_source_type_and_external_id", {
     fields: ["sourceType", "externalId"],
-    staged: true,
   })
   .index("by_last_observed_at", {
     fields: ["lastObservedAt"],
-    staged: true,
   })
   .searchIndex("search_by_search_text", {
     searchField: "searchText",
     filterFields: ["active"],
-    staged: true,
   });
 
 const skillsShMirrorDetails = defineTable({
@@ -3131,7 +3122,6 @@ const skillsShMirrorDetails = defineTable({
   .index("by_external_id", ["externalId"])
   .index("by_digest_id", {
     fields: ["digestId"],
-    staged: true,
   });
 
 const skillsShMirrorConflicts = defineTable({
@@ -3147,7 +3137,6 @@ const skillsShMirrorConflicts = defineTable({
   .index("by_run_id", ["runId"])
   .index("by_external_id_and_created_at", {
     fields: ["externalId", "createdAt"],
-    staged: true,
   });
 
 const publisherAbuseScoreRuns = defineTable({
