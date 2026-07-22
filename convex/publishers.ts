@@ -32,12 +32,14 @@ import {
   getPublisherMembership,
   getPersonalPublisherForUserOrFallback,
   getPersonalPublisherForUser,
+  getPublicPublisherVisibility,
   isPublisherActive,
   isPublisherRoleAllowed,
   isReservedOpenClawPublisherHandle,
   PUBLISHER_HANDLE_PATTERN,
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
+  type PublicPublisherVisibility,
 } from "./lib/publishers";
 import {
   getLatestActiveReservedHandle,
@@ -282,45 +284,6 @@ function hasPublisherStats(publisher: Doc<"publishers">) {
     typeof publisher.totalDownloads === "number" &&
     typeof publisher.totalStars === "number"
   );
-}
-
-type PublicPublisherVisibility = {
-  publisher: Doc<"publishers">;
-  linkedUser: Doc<"users"> | null;
-};
-
-async function getPublicPublisherVisibility(
-  ctx: Pick<QueryCtx, "db">,
-  publisher: Doc<"publishers"> | null | undefined,
-): Promise<PublicPublisherVisibility | null> {
-  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
-  if (publisher.kind !== "user") {
-    return { publisher, linkedUser: null };
-  }
-  if (!publisher.linkedUserId) {
-    const legacyOwner = await getLegacyPersonalPublisherOwner(ctx, publisher._id);
-    return legacyOwner ? { publisher, linkedUser: legacyOwner } : null;
-  }
-
-  const linkedUser = await ctx.db.get(publisher.linkedUserId);
-  if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) return null;
-  return { publisher, linkedUser };
-}
-
-async function getLegacyPersonalPublisherOwner(
-  ctx: Pick<QueryCtx, "db">,
-  publisherId: Id<"publishers">,
-) {
-  const memberships = await ctx.db
-    .query("publisherMembers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .collect();
-  for (const membership of memberships) {
-    if (membership.role !== "owner") continue;
-    const user = await ctx.db.get(membership.userId);
-    if (user && !user.deletedAt && !user.deactivatedAt) return user;
-  }
-  return null;
 }
 
 function getPublisherDenormalizedStats(publisher: Doc<"publishers">): PublisherListStats {
@@ -2013,7 +1976,12 @@ async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<
     .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
     .unique();
 
-  return { sources, sourceContents, members, invites, official };
+  const feedPublication = await ctx.db
+    .query("publisherFeedPublications")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+
+  return { sources, sourceContents, members, invites, official, feedPublication };
 }
 
 async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
@@ -2035,6 +2003,7 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
   for (const invite of preview.invites) await ctx.db.delete(invite._id);
 
   if (preview.official) await ctx.db.delete(preview.official._id);
+  if (preview.feedPublication) await ctx.db.delete(preview.feedPublication._id);
 
   await ctx.db.delete(publisherId);
 
@@ -2044,6 +2013,7 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     members: preview.members.length,
     invites: preview.invites.length,
     official: Boolean(preview.official),
+    feedPublication: Boolean(preview.feedPublication),
   };
 }
 
