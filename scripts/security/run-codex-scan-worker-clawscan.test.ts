@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import { processJob } from "./run-codex-scan-worker";
 
 const tempDirs: string[] = [];
 const execFileAsync = promisify(execFile);
+const sha256 = (content: string) => createHash("sha256").update(content).digest("hex");
 
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -45,7 +47,7 @@ function skillVersionJob(jobId: string): ClaimedJob {
       files: [
         {
           path: "SKILL.md",
-          sha256: "abc123",
+          sha256: sha256("# Skill"),
           size: 42,
           url: "data:text/plain,%23%20Skill",
         },
@@ -86,7 +88,7 @@ function fileTarget(path: string, content: string): ClaimedJob["target"] {
     files: [
       {
         path,
-        sha256: "artifact-sha",
+        sha256: sha256(content),
         size: Buffer.byteLength(content),
         url: `data:text/plain,${encodeURIComponent(content)}`,
       },

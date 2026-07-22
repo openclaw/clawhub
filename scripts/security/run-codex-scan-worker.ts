@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -237,7 +238,8 @@ function parseArgs() {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   };
   const laneValue = get("--lane") ?? process.env.CODEX_SECURITY_SCAN_LANE;
-  const lane: "priority" | "shared" = laneValue === "priority" ? "priority" : "shared";
+  const lane: "priority" | "shared" | "catalog" =
+    laneValue === "priority" || laneValue === "catalog" ? laneValue : "shared";
   return {
     batchLimit: numberFrom(
       get("--batch-limit") ?? get("--limit") ?? process.env.CODEX_SECURITY_SCAN_LIMIT,
@@ -757,7 +759,14 @@ export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string)
 
     const { file, out } = candidate;
     await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, await download(file.url, { kind: "file", path: file.path }));
+    const bytes = await download(file.url, { kind: "file", path: file.path });
+    const actualSha256 = createHash("sha256").update(bytes).digest("hex");
+    if (actualSha256 !== file.sha256.toLowerCase()) {
+      throw new Error(
+        `Downloaded artifact hash mismatch for artifact file ${safeWorkerArtifactPathLabel(file.path)}`,
+      );
+    }
+    await writeFile(out, bytes);
   }
 
   if (job.target.clawpackUrl) {

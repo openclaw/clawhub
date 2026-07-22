@@ -21,6 +21,7 @@ import {
   MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES,
   serializedSkillScanRequestFilesBytes,
 } from "./lib/skillScanRequestFiles";
+import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
 import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
@@ -138,10 +139,21 @@ const jobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
+  v.literal("skills-sh-catalog-test"),
 );
 
-type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
-const codexScanWorkerLaneValidator = v.union(v.literal("priority"), v.literal("shared"));
+type SecurityScanJobSource =
+  | "publish"
+  | "vt-update"
+  | "backfill"
+  | "bulk-rescan"
+  | "manual"
+  | "skills-sh-catalog-test";
+const codexScanWorkerLaneValidator = v.union(
+  v.literal("priority"),
+  v.literal("shared"),
+  v.literal("catalog"),
+);
 
 type CodexScanQueueHealth = {
   snapshotAt: number;
@@ -158,6 +170,7 @@ const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "backfill",
   "vt-update",
   "bulk-rescan",
+  "skills-sh-catalog-test",
 ];
 
 const SOURCE_PRIORITY: Record<SecurityScanJobSource, number> = {
@@ -166,6 +179,7 @@ const SOURCE_PRIORITY: Record<SecurityScanJobSource, number> = {
   backfill: 3,
   "vt-update": 2,
   "bulk-rescan": 1,
+  "skills-sh-catalog-test": 0,
 };
 
 function higherPrioritySource(
@@ -310,6 +324,12 @@ const githubSkillScanStatusValidator = v.union(
   v.literal("pending"),
   v.literal("failed"),
 );
+const catalogScanVerdictValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("failed"),
+);
 
 const internalRefs = internal as unknown as {
   packages: {
@@ -329,6 +349,7 @@ const internalRefs = internal as unknown as {
     getSkillScanRequestForUserInternal: unknown;
     getJobTargetInternal: unknown;
     recordGitHubSkillScanResultInternal: unknown;
+    completeCatalogSkillScanJobInternal: unknown;
     recordSkillScanRequestFailedInternal: unknown;
     recordSkillScanRequestSucceededInternal: unknown;
     requeueJobLeaseInternal: unknown;
@@ -1258,6 +1279,42 @@ async function enqueueSkillScanRequestJob(
   return jobId;
 }
 
+export async function enqueueSkillsShCatalogScanRequest(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    attemptId: Id<"skillsShCatalogScanAttempts">;
+    slug: string;
+    displayName: string;
+    artifactContentHash: string;
+    files: Doc<"skillScanRequests">["files"];
+  },
+) {
+  const now = Date.now();
+  const requestId = await ctx.db.insert("skillScanRequests", {
+    actorUserId: args.actorUserId,
+    sourceKind: "skills-sh-catalog",
+    update: false,
+    writtenBack: false,
+    status: "queued",
+    requestedJobSource: "skills-sh-catalog-test",
+    requestedJobPriority: -100,
+    slug: args.slug,
+    displayName: args.displayName,
+    skillsShCatalogAttemptId: args.attemptId,
+    files: args.files,
+    sha256hash: args.artifactContentHash,
+    expiresAt: skillScanRequestExpiresAt(now),
+    createdAt: now,
+    updatedAt: now,
+  });
+  const jobId = await enqueueSkillScanRequestJob(ctx, requestId, {
+    source: "skills-sh-catalog-test",
+    priority: -100,
+  });
+  return { requestId, jobId };
+}
+
 export const prepareGitHubSkillScanRequestInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
@@ -1868,6 +1925,227 @@ export const recordSkillScanRequestSucceededInternal = internalMutation({
   },
 });
 
+export const completeCatalogSkillScanJobInternal = internalMutation({
+  args: {
+    attemptId: v.id("skillsShCatalogScanAttempts"),
+    scanId: v.id("skillScanRequests"),
+    jobId: v.id("securityScanJobs"),
+    leaseToken: v.string(),
+    artifactContentHash: v.string(),
+    verdict: catalogScanVerdictValidator,
+    runId: v.optional(v.string()),
+    llmAnalysis: llmAnalysisValidator,
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+  },
+  handler: async (ctx, args) => {
+    const environment = getSkillsShFixtureEnvironmentPolicy();
+    if (!environment.allowed || environment.environment !== "test") {
+      throw new ConvexError("catalog scan completion requires the permanent Test environment");
+    }
+    const [job, request, attempt] = await Promise.all([
+      ctx.db.get(args.jobId),
+      ctx.db.get(args.scanId),
+      ctx.db.get(args.attemptId),
+    ]);
+    if (
+      !job ||
+      job.source !== "skills-sh-catalog-test" ||
+      job.targetKind !== "skillScanRequest" ||
+      job.skillScanRequestId !== args.scanId
+    ) {
+      throw new ConvexError("Catalog scan job linkage mismatch");
+    }
+    if (
+      !request ||
+      request.sourceKind !== "skills-sh-catalog" ||
+      request.securityScanJobId !== args.jobId ||
+      request.skillsShCatalogAttemptId !== args.attemptId
+    ) {
+      throw new ConvexError("Catalog scan request linkage mismatch");
+    }
+    if (
+      !attempt ||
+      attempt.dispatchKind !== "real" ||
+      attempt.skillScanRequestId !== args.scanId ||
+      attempt.securityScanJobId !== args.jobId
+    ) {
+      throw new ConvexError("Catalog scan attempt linkage mismatch");
+    }
+    const artifactContentHash = args.artifactContentHash.toLowerCase();
+    if (
+      !attempt.artifactContentHash ||
+      attempt.artifactContentHash !== artifactContentHash ||
+      request.sha256hash !== artifactContentHash
+    ) {
+      throw new ConvexError("Catalog scan artifact hash mismatch");
+    }
+    if (
+      attempt.status === "succeeded" ||
+      attempt.status === "failed" ||
+      attempt.status === "canceled"
+    ) {
+      const expectedStatus = args.verdict === "failed" ? "failed" : "succeeded";
+      if (
+        attempt.status === expectedStatus &&
+        attempt.verdict === args.verdict &&
+        request.status === expectedStatus &&
+        job.status === expectedStatus &&
+        (expectedStatus !== "failed" ||
+          (request.lastError === "Catalog scan analysis failed" &&
+            job.lastError === "Catalog scan analysis failed"))
+      ) {
+        return { ok: true as const, applied: true as const, publicVisible: false as const };
+      }
+      if (
+        attempt.status === "canceled" &&
+        request.status === "failed" &&
+        job.status === "failed" &&
+        request.lastError === job.lastError
+      ) {
+        if (request.lastError === "Catalog run canceled before scan completion") {
+          return { ok: true as const, applied: false as const, reason: "run-canceled" as const };
+        }
+        if (request.lastError === "Catalog source changed before scan completion") {
+          return { ok: true as const, applied: false as const, reason: "stale-attempt" as const };
+        }
+      }
+      throw new ConvexError("Catalog scan terminal result mismatch");
+    }
+    if (
+      job.leaseToken !== args.leaseToken ||
+      job.status !== "running" ||
+      (attempt.status !== "queued" && attempt.status !== "running")
+    ) {
+      throw new ConvexError("Catalog scan job lease mismatch");
+    }
+
+    const [run, entry] = await Promise.all([
+      ctx.db.get(attempt.runId),
+      ctx.db.get(attempt.entryId),
+    ]);
+    const now = Date.now();
+    const terminalizeWithoutResult = async (reason: "run-canceled" | "stale-attempt") => {
+      const entryStillCurrent = entry?.sourceContentHash === attempt.sourceContentHash;
+      await ctx.db.patch(attempt._id, {
+        status: "canceled",
+        completedAt: now,
+        updatedAt: now,
+      });
+      if (entryStillCurrent) {
+        await ctx.db.patch(entry._id, {
+          scanStatus: "canceled",
+          publicVisible: false,
+          updatedAt: now,
+        });
+      }
+      await ctx.db.patch(request._id, {
+        status: "failed",
+        lastError:
+          reason === "run-canceled"
+            ? "Catalog run canceled before scan completion"
+            : "Catalog source changed before scan completion",
+        completedAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.patch(job._id, {
+        status: "failed",
+        lastError:
+          reason === "run-canceled"
+            ? "Catalog run canceled before scan completion"
+            : "Catalog source changed before scan completion",
+        completedAt: now,
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        updatedAt: now,
+      });
+      if (run) {
+        const [queued, running] = await Promise.all([
+          ctx.db
+            .query("skillsShCatalogScanAttempts")
+            .withIndex("by_run_and_status", (q) => q.eq("runId", run._id).eq("status", "queued"))
+            .first(),
+          ctx.db
+            .query("skillsShCatalogScanAttempts")
+            .withIndex("by_run_and_status", (q) => q.eq("runId", run._id).eq("status", "running"))
+            .first(),
+        ]);
+        await ctx.db.patch(run._id, {
+          ...(reason === "run-canceled"
+            ? { status: queued || running ? ("canceling" as const) : ("canceled" as const) }
+            : {}),
+          counts: {
+            ...run.counts,
+            scansCanceled: run.counts.scansCanceled + 1,
+          },
+          operations: {
+            functionCalls: run.operations.functionCalls + 1,
+            dbReads: run.operations.dbReads + 7,
+            dbWrites: run.operations.dbWrites + (entryStillCurrent ? 5 : 4),
+          },
+          updatedAt: now,
+        });
+      }
+      return { ok: true as const, applied: false as const, reason };
+    };
+
+    if (run?.status === "canceling" || run?.status === "canceled") {
+      return await terminalizeWithoutResult("run-canceled");
+    }
+    if (!entry || entry.sourceContentHash !== attempt.sourceContentHash) {
+      return await terminalizeWithoutResult("stale-attempt");
+    }
+
+    const scanFailed = args.verdict === "failed";
+    await ctx.db.patch(attempt._id, {
+      status: scanFailed ? "failed" : "succeeded",
+      verdict: args.verdict,
+      completedAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(entry._id, {
+      scanStatus: args.verdict,
+      publicVisible: false,
+      updatedAt: now,
+    });
+    await ctx.db.patch(request._id, {
+      status: scanFailed ? "failed" : "succeeded",
+      lastError: scanFailed ? "Catalog scan analysis failed" : undefined,
+      llmAnalysis: args.llmAnalysis,
+      ...(args.skillSpectorAnalysis
+        ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
+        : {}),
+      writtenBack: request.writtenBack,
+      runId: args.runId,
+      completedAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(job._id, {
+      status: scanFailed ? "failed" : "succeeded",
+      lastError: scanFailed ? "Catalog scan analysis failed" : undefined,
+      runId: args.runId,
+      completedAt: now,
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      updatedAt: now,
+    });
+    if (run) {
+      await ctx.db.patch(run._id, {
+        counts: {
+          ...run.counts,
+          scansCompleted: run.counts.scansCompleted + 1,
+        },
+        operations: {
+          functionCalls: run.operations.functionCalls + 1,
+          dbReads: run.operations.dbReads + 5,
+          dbWrites: run.operations.dbWrites + 5,
+        },
+        updatedAt: now,
+      });
+    }
+    return { ok: true as const, applied: true as const, publicVisible: false as const };
+  },
+});
+
 export const recordSkillScanRequestFailedInternal = internalMutation({
   args: {
     scanId: v.id("skillScanRequests"),
@@ -1945,12 +2223,32 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
     let deletedRequests = 0;
     let deferredRequests = 0;
     for (const request of requests) {
-      if (request.securityScanJobId) {
-        const job = await ctx.db.get(request.securityScanJobId);
-        if (job?.targetKind === "skillScanRequest") {
-          await ctx.db.delete(job._id);
-          deletedJobs += 1;
-        }
+      const job = request.securityScanJobId ? await ctx.db.get(request.securityScanJobId) : null;
+      if (
+        request.sourceKind === "skills-sh-catalog" &&
+        job?.targetKind === "skillScanRequest" &&
+        (job.status === "queued" || job.status === "running")
+      ) {
+        deferredRequests += 1;
+        continue;
+      }
+      if (request.sourceKind === "skills-sh-catalog" && request.skillsShCatalogAttemptId) {
+        const attempt = await ctx.db.get(request.skillsShCatalogAttemptId);
+        const run = attempt ? await ctx.db.get(attempt.runId) : null;
+        await terminalizeBlockedCatalogRetry(
+          ctx,
+          {
+            kind: "blocked",
+            request,
+            ...(attempt ? { attempt } : {}),
+            ...(run ? { run } : {}),
+          },
+          now,
+        );
+      }
+      if (job?.targetKind === "skillScanRequest") {
+        await ctx.db.delete(job._id);
+        deletedJobs += 1;
       }
       const fileChunks =
         request.sourceKind === "github"
@@ -1977,7 +2275,11 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
         deferredRequests += 1;
         continue;
       }
-      if (request.sourceKind === "upload" || request.sourceKind === "github") {
+      if (
+        request.sourceKind === "upload" ||
+        request.sourceKind === "github" ||
+        request.sourceKind === "skills-sh-catalog"
+      ) {
         for (const file of [...request.files, ...fileChunks.flatMap((chunk) => chunk.files)]) {
           try {
             await ctx.storage.delete(file.storageId);
@@ -2369,9 +2671,35 @@ export const claimQueuedJobsInternal = internalMutation({
     const ready: Doc<"securityScanJobs">[] = [];
     const claimedIds = new Set<Id<"securityScanJobs">>();
     const remainingCapacity = () => capacity - ready.length;
-    const addReadyJobs = (jobs: Doc<"securityScanJobs">[]) => {
+    let catalogGate:
+      | {
+          control: Doc<"skillsShCatalogControls">;
+          health: Awaited<ReturnType<typeof readCatalogClaimHealth>>;
+        }
+      | null
+      | undefined;
+    const loadCatalogGate = async () => {
+      if (catalogGate !== undefined) return catalogGate;
+      const environment = getSkillsShFixtureEnvironmentPolicy();
+      if (!environment.allowed || environment.environment !== "test") {
+        catalogGate = null;
+        return catalogGate;
+      }
+      const control = await ctx.db
+        .query("skillsShCatalogControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique();
+      catalogGate = control
+        ? {
+            control,
+            health: await readCatalogClaimHealth(ctx, control),
+          }
+        : null;
+      return catalogGate;
+    };
+    const addReadyJobs = (jobs: Doc<"securityScanJobs">[], stopAtCapacity = true) => {
       for (const job of jobs) {
-        if (remainingCapacity() === 0) break;
+        if (stopAtCapacity && remainingCapacity() === 0) break;
         if (claimedIds.has(job._id) || job.nextRunAt > now) continue;
         claimedIds.add(job._id);
         ready.push(job);
@@ -2379,39 +2707,97 @@ export const claimQueuedJobsInternal = internalMutation({
     };
     const takeReadySourceJobs = async (source: SecurityScanJobSource) => {
       if (remainingCapacity() === 0) return [];
+      let takeLimit = remainingCapacity();
+      if (source === "skills-sh-catalog-test") {
+        const gate = await loadCatalogGate();
+        if (
+          !gate ||
+          gate.control.mode !== "staging-live" ||
+          gate.control.paused ||
+          !gate.control.scanAdmissionEnabled ||
+          !gate.health.claimable
+        ) {
+          return [];
+        }
+        // Scan a bounded window independent of the current admission cap so paused
+        // or canceled jobs cannot hide later runnable backlog after the cap is lowered.
+        takeLimit = MAX_CODEX_SCAN_CLAIM_LIMIT;
+      }
       return await ctx.db
         .query("securityScanJobs")
         .withIndex("by_status_source_next_run_at", (q) =>
           q.eq("status", "queued").eq("source", source).lte("nextRunAt", now),
         )
         .order("asc")
-        .take(remainingCapacity());
+        .take(takeLimit);
     };
 
-    addReadyJobs(await takeReadySourceJobs("manual"));
+    if (args.lane === "catalog") {
+      addReadyJobs(await takeReadySourceJobs("skills-sh-catalog-test"), false);
+    } else {
+      addReadyJobs(await takeReadySourceJobs("manual"));
 
-    if (remainingCapacity() > 0) {
-      addReadyJobs(
-        await ctx.db
-          .query("securityScanJobs")
-          .withIndex("by_status_malicious_signal_next_run_at", (q) =>
-            q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
-          )
-          .order("asc")
-          .take(remainingCapacity()),
-      );
-    }
+      if (remainingCapacity() > 0) {
+        addReadyJobs(
+          await ctx.db
+            .query("securityScanJobs")
+            .withIndex("by_status_malicious_signal_next_run_at", (q) =>
+              q.eq("status", "queued").eq("hasMaliciousSignal", true).lte("nextRunAt", now),
+            )
+            .order("asc")
+            .take(remainingCapacity()),
+        );
+      }
 
-    // Shared workers remain work-conserving and may help priority work. The dedicated
-    // priority lane never claims bulk sources, which guarantees reserved fast-path capacity.
-    for (const source of CLAIM_SOURCE_ORDER) {
-      addReadyJobs(await takeReadySourceJobs(source));
-      if (remainingCapacity() === 0) break;
-      if (args.lane === "priority" && source === "publish") break;
+      // Shared workers remain work-conserving and may help priority work. The dedicated
+      // priority lane never claims bulk sources, which guarantees reserved fast-path capacity.
+      for (const source of CLAIM_SOURCE_ORDER) {
+        addReadyJobs(await takeReadySourceJobs(source), source !== "skills-sh-catalog-test");
+        if (remainingCapacity() === 0) break;
+        if (args.lane === "priority" && source === "publish") break;
+      }
     }
 
     const claimed = [];
+    let catalogClaims = 0;
     for (const job of ready) {
+      if (claimed.length >= capacity) break;
+      let catalogAttemptId: Id<"skillsShCatalogScanAttempts"> | null = null;
+      if (job.source === "skills-sh-catalog-test") {
+        if (!job.skillScanRequestId) {
+          continue;
+        }
+        const request = await ctx.db.get(job.skillScanRequestId);
+        const attempt = request?.skillsShCatalogAttemptId
+          ? await ctx.db.get(request.skillsShCatalogAttemptId)
+          : null;
+        const run = attempt ? await ctx.db.get(attempt.runId) : null;
+        await loadCatalogGate();
+        const control = catalogGate?.control ?? null;
+        const health = catalogGate?.health ?? null;
+        if (
+          !request ||
+          request.sourceKind !== "skills-sh-catalog" ||
+          !attempt ||
+          attempt.skillScanRequestId !== request._id ||
+          attempt.securityScanJobId !== job._id ||
+          attempt.status !== "queued" ||
+          !run ||
+          run.status === "paused" ||
+          run.status === "canceling" ||
+          run.status === "canceled" ||
+          run.status === "failed" ||
+          !control ||
+          control.mode !== "staging-live" ||
+          control.paused ||
+          !control.scanAdmissionEnabled ||
+          !health?.claimable ||
+          health.catalogInFlight + catalogClaims >= control.maxCatalogInFlight
+        ) {
+          continue;
+        }
+        catalogAttemptId = attempt._id;
+      }
       const leaseToken = crypto.randomUUID();
       await ctx.db.patch(job._id, {
         status: "running",
@@ -2429,6 +2815,13 @@ export const claimQueuedJobsInternal = internalMutation({
           updatedAt: now,
         });
       }
+      if (catalogAttemptId) {
+        await ctx.db.patch(catalogAttemptId, {
+          status: "running",
+          updatedAt: now,
+        });
+        catalogClaims += 1;
+      }
       claimed.push({
         ...job,
         status: "running" as const,
@@ -2441,6 +2834,169 @@ export const claimQueuedJobsInternal = internalMutation({
     return claimed;
   },
 });
+
+async function readCatalogClaimHealth(ctx: MutationCtx, control: Doc<"skillsShCatalogControls">) {
+  const nativeSources = ["publish", "vt-update", "backfill", "bulk-rescan", "manual"] as const;
+  const [nativeQueuedBySource, nativeRunningBySource, catalogQueued, catalogRunning] =
+    await Promise.all([
+      Promise.all(
+        nativeSources.map(async (source) =>
+          ctx.db
+            .query("securityScanJobs")
+            .withIndex("by_status_source_created_at", (q) =>
+              q.eq("status", "queued").eq("source", source),
+            )
+            .take(control.maxNativeQueued + 1),
+        ),
+      ),
+      Promise.all(
+        nativeSources.map(async (source) =>
+          ctx.db
+            .query("securityScanJobs")
+            .withIndex("by_status_source_created_at", (q) =>
+              q.eq("status", "running").eq("source", source),
+            )
+            .take(control.maxNativeInFlight + 1),
+        ),
+      ),
+      ctx.db
+        .query("skillsShCatalogScanAttempts")
+        .withIndex("by_dispatch_kind_and_status_and_created_at", (q) =>
+          q.eq("dispatchKind", "real").eq("status", "queued"),
+        )
+        .take(control.maxCatalogQueued + 1),
+      ctx.db
+        .query("skillsShCatalogScanAttempts")
+        .withIndex("by_dispatch_kind_and_status_and_created_at", (q) =>
+          q.eq("dispatchKind", "real").eq("status", "running"),
+        )
+        .take(control.maxCatalogInFlight + 1),
+    ]);
+  const nativeQueued = Math.min(
+    control.maxNativeQueued + 1,
+    nativeQueuedBySource.reduce((count, jobs) => count + jobs.length, 0),
+  );
+  const nativeInFlight = Math.min(
+    control.maxNativeInFlight + 1,
+    nativeRunningBySource.reduce((count, jobs) => count + jobs.length, 0),
+  );
+  return {
+    nativeQueued,
+    nativeInFlight,
+    catalogQueued: catalogQueued.length,
+    catalogInFlight: catalogRunning.length,
+    // Queued depth is an admission limit, not a drain limit. Already admitted work
+    // must remain claimable after an operator lowers maxCatalogQueued.
+    claimable:
+      nativeQueued <= control.maxNativeQueued &&
+      nativeInFlight <= control.maxNativeInFlight &&
+      catalogRunning.length <= control.maxCatalogInFlight,
+  };
+}
+
+type CatalogRetryDecision =
+  | { kind: "not-catalog" }
+  | {
+      kind: "allowed";
+      attemptId: Id<"skillsShCatalogScanAttempts">;
+      requestId: Id<"skillScanRequests">;
+    }
+  | {
+      kind: "blocked";
+      request?: Doc<"skillScanRequests">;
+      attempt?: Doc<"skillsShCatalogScanAttempts">;
+      run?: Doc<"skillsShCatalogRuns">;
+    };
+
+async function prepareCatalogRetry(
+  ctx: MutationCtx,
+  job: Doc<"securityScanJobs">,
+  now: number,
+  retryAllowed = true,
+): Promise<CatalogRetryDecision> {
+  if (job.source !== "skills-sh-catalog-test") return { kind: "not-catalog" };
+  if (job.targetKind !== "skillScanRequest" || !job.skillScanRequestId) {
+    return { kind: "blocked" };
+  }
+  const request = await ctx.db.get(job.skillScanRequestId);
+  if (!request || request.sourceKind !== "skills-sh-catalog" || !request.skillsShCatalogAttemptId) {
+    return { kind: "blocked", ...(request ? { request } : {}) };
+  }
+  const attempt = await ctx.db.get(request.skillsShCatalogAttemptId);
+  if (
+    !attempt ||
+    attempt.skillScanRequestId !== request._id ||
+    attempt.securityScanJobId !== job._id
+  ) {
+    return { kind: "blocked", request };
+  }
+  const run = await ctx.db.get(attempt.runId);
+  if (
+    !retryAllowed ||
+    (attempt.status !== "queued" && attempt.status !== "running") ||
+    !run ||
+    run.status === "canceling" ||
+    run.status === "canceled" ||
+    run.status === "failed"
+  ) {
+    return { kind: "blocked", request, attempt, ...(run ? { run } : {}) };
+  }
+  await ctx.db.patch(attempt._id, {
+    status: "queued",
+    updatedAt: now,
+  });
+  return {
+    kind: "allowed",
+    attemptId: attempt._id,
+    requestId: request._id,
+  };
+}
+
+async function terminalizeBlockedCatalogRetry(
+  ctx: MutationCtx,
+  decision: Extract<CatalogRetryDecision, { kind: "blocked" }>,
+  now: number,
+) {
+  const attempt = decision.attempt;
+  if (!attempt || (attempt.status !== "queued" && attempt.status !== "running")) return;
+
+  const canceled = decision.run?.status === "canceling" || decision.run?.status === "canceled";
+  await ctx.db.patch(attempt._id, {
+    status: canceled ? "canceled" : "failed",
+    verdict: canceled ? undefined : "failed",
+    completedAt: now,
+    updatedAt: now,
+  });
+
+  const entry = await ctx.db.get(attempt.entryId);
+  const entryShouldBeTerminalized =
+    entry?.sourceContentHash === attempt.sourceContentHash &&
+    (entry.scanStatus === "planned" || entry.scanStatus === "queued");
+  if (entryShouldBeTerminalized) {
+    await ctx.db.patch(entry._id, {
+      scanStatus: canceled ? "canceled" : "failed",
+      publicVisible: false,
+      updatedAt: now,
+    });
+  }
+
+  if (decision.run) {
+    await ctx.db.patch(decision.run._id, {
+      counts: {
+        ...decision.run.counts,
+        scansCompleted: decision.run.counts.scansCompleted + (canceled ? 0 : 1),
+        scansCanceled: decision.run.counts.scansCanceled + (canceled ? 1 : 0),
+      },
+      operations: {
+        ...decision.run.operations,
+        functionCalls: decision.run.operations.functionCalls + 1,
+        dbReads: decision.run.operations.dbReads + 4,
+        dbWrites: decision.run.operations.dbWrites + (entryShouldBeTerminalized ? 3 : 2),
+      },
+      updatedAt: now,
+    });
+  }
+}
 
 export const requeueExpiredCodexScanJobsInternal = internalMutation({
   args: {
@@ -2459,7 +3015,30 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
           Math.min(args.limit ?? MAX_EXPIRED_CODEX_SCAN_LEASE_REQUEUES, MAX_CODEX_SCAN_CLAIM_LIMIT),
         ),
       );
+    let requeued = 0;
     for (const job of jobs) {
+      const catalogRetry = await prepareCatalogRetry(ctx, job, now);
+      if (catalogRetry.kind === "blocked") {
+        await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
+        await ctx.db.patch(job._id, {
+          status: "failed",
+          lastError: "Catalog scan retry blocked by inactive or invalid linkage",
+          completedAt: now,
+          leaseToken: undefined,
+          leaseExpiresAt: undefined,
+          workerId: undefined,
+          updatedAt: now,
+        });
+        if (catalogRetry.request) {
+          await ctx.db.patch(catalogRetry.request._id, {
+            status: "failed",
+            lastError: "Catalog scan retry blocked by inactive or invalid linkage",
+            completedAt: now,
+            updatedAt: now,
+          });
+        }
+        continue;
+      }
       await ctx.db.patch(job._id, {
         status: "queued",
         leaseToken: undefined,
@@ -2468,9 +3047,18 @@ export const requeueExpiredCodexScanJobsInternal = internalMutation({
         nextRunAt: now,
         updatedAt: now,
       });
+      if (catalogRetry.kind === "allowed") {
+        await ctx.db.patch(catalogRetry.requestId, {
+          status: "queued",
+          lastError: undefined,
+          completedAt: undefined,
+          updatedAt: now,
+        });
+      }
+      requeued += 1;
     }
-    if (jobs.length > 0) await requestSecurityScanDispatch(ctx);
-    return { requeued: jobs.length };
+    if (requeued > 0) await requestSecurityScanDispatch(ctx);
+    return { requeued };
   },
 });
 
@@ -2500,11 +3088,13 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
           .gte("updatedAt", args.failedAfter)
           .lt("updatedAt", args.failedBefore),
       )
+      .filter((q) => q.neq(q.field("source"), "skills-sh-catalog-test"))
       .order("asc")
       .take(limit + 1);
     const matched = jobs.slice(0, limit);
     const bySource: Partial<Record<SecurityScanJobSource, number>> = {};
     const byTargetKind: Partial<Record<Doc<"securityScanJobs">["targetKind"], number>> = {};
+    let requeued = 0;
 
     for (const job of matched) {
       bySource[job.source] = (bySource[job.source] ?? 0) + 1;
@@ -2553,13 +3143,14 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
           }
         }
       }
+      requeued += 1;
     }
 
-    if (!args.dryRun && matched.length > 0) await requestSecurityScanDispatch(ctx);
+    if (!args.dryRun && requeued > 0) await requestSecurityScanDispatch(ctx);
     return {
       dryRun: args.dryRun,
       matched: matched.length,
-      requeued: args.dryRun ? 0 : matched.length,
+      requeued: args.dryRun ? 0 : requeued,
       hasMore: jobs.length > limit,
       bySource,
       byTargetKind,
@@ -2672,8 +3263,12 @@ export const failJobInternal = internalMutation({
     const job = await ctx.db.get(args.jobId);
     if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
     const now = Date.now();
-    const retry = job.attempts < MAX_ATTEMPTS;
+    const catalogRetry = await prepareCatalogRetry(ctx, job, now, job.attempts < MAX_ATTEMPTS);
+    const retry = job.attempts < MAX_ATTEMPTS && catalogRetry.kind !== "blocked";
     const error = sanitizeWorkerErrorDetail(args.error, 2000);
+    if (catalogRetry.kind === "blocked") {
+      await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
+    }
     await ctx.db.patch(args.jobId, {
       status: retry ? "queued" : "failed",
       lastError: error,
@@ -2712,22 +3307,39 @@ export const requeueJobLeaseInternal = internalMutation({
       throw new ConvexError("Lease mismatch");
     }
     const now = Date.now();
+    const catalogRetry = await prepareCatalogRetry(ctx, job, now);
+    const retry = catalogRetry.kind !== "blocked";
+    if (catalogRetry.kind === "blocked") {
+      await terminalizeBlockedCatalogRetry(ctx, catalogRetry, now);
+    }
     await ctx.db.patch(job._id, {
-      status: "queued",
-      attempts: Math.max(0, job.attempts - 1),
+      status: retry ? "queued" : "failed",
+      attempts: retry ? Math.max(0, job.attempts - 1) : job.attempts,
+      ...(retry
+        ? {}
+        : {
+            lastError: "Catalog scan retry blocked by inactive or invalid linkage",
+            completedAt: now,
+          }),
       leaseToken: undefined,
       leaseExpiresAt: undefined,
       workerId: undefined,
-      nextRunAt: now + 60_000,
+      nextRunAt: retry ? now + 60_000 : job.nextRunAt,
       updatedAt: now,
     });
     if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
       await ctx.db.patch(job.skillScanRequestId, {
-        status: "queued",
+        status: retry ? "queued" : "failed",
+        ...(retry
+          ? {}
+          : {
+              lastError: "Catalog scan retry blocked by inactive or invalid linkage",
+              completedAt: now,
+            }),
         updatedAt: now,
       });
     }
-    await requestSecurityScanDispatch(ctx);
+    if (retry) await requestSecurityScanDispatch(ctx);
     return { ok: true as const, nextRunAt: now + 60_000 };
   },
 });
@@ -2951,7 +3563,13 @@ export const completeCodexScanJob = action({
       },
     );
     if (!target) throw new ConvexError("Job not found");
-    if (target.job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
+    const isCatalogScanRequest =
+      target.job.targetKind === "skillScanRequest" &&
+      target.scanRequest?.sourceKind === "skills-sh-catalog" &&
+      Boolean(target.scanRequest.skillsShCatalogAttemptId);
+    if (!isCatalogScanRequest && target.job.leaseToken !== args.leaseToken) {
+      throw new ConvexError("Lease mismatch");
+    }
 
     if (target.job.targetKind === "skillVersion" && target.version) {
       if (args.skillSpectorAnalysis) {
@@ -3006,6 +3624,36 @@ export const completeCodexScanJob = action({
           runId: args.runId,
         });
         writtenBack = true;
+      }
+      if (
+        target.scanRequest.sourceKind === "skills-sh-catalog" &&
+        target.scanRequest.skillsShCatalogAttemptId
+      ) {
+        const result = await runMutationRef<{ ok: true }>(
+          ctx,
+          internalRefs.securityScan.completeCatalogSkillScanJobInternal,
+          {
+            attemptId: target.scanRequest.skillsShCatalogAttemptId,
+            scanId: target.scanRequest._id,
+            jobId: args.jobId,
+            leaseToken: args.leaseToken,
+            artifactContentHash: target.scanRequest.sha256hash ?? "",
+            verdict: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
+            runId: args.runId,
+            llmAnalysis: args.llmAnalysis,
+            skillSpectorAnalysis,
+          },
+        );
+        try {
+          await runMutationRef(
+            ctx,
+            internalRefs.securityScanDispatch.requestSecurityScanDispatchInternal,
+            {},
+          );
+        } catch {
+          console.warn("security scan dispatch request failed after catalog completion");
+        }
+        return result;
       }
       await runMutationRef(ctx, internalRefs.securityScan.recordSkillScanRequestSucceededInternal, {
         scanId: target.scanRequest._id,

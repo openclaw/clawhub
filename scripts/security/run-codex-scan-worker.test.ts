@@ -385,7 +385,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           files: [
             {
               path: "SKILL.md",
-              sha256: "abc123",
+              sha256: "e2151f8490121dc5e6fd36c1d4e00b6da5593595e3eb8ece76c1d0ec3f310979",
               size: 42,
               url: "data:text/plain,%23%20Skill",
             },
@@ -409,7 +409,42 @@ describe("run-codex-scan-worker diagnostics", () => {
       source: "publish",
       targetKind: "skillVersion",
     });
-    expect(metadata.target.files).toEqual([{ path: "SKILL.md", sha256: "abc123", size: 42 }]);
+    expect(metadata.target.files).toEqual([
+      {
+        path: "SKILL.md",
+        sha256: "e2151f8490121dc5e6fd36c1d4e00b6da5593595e3eb8ece76c1d0ec3f310979",
+        size: 42,
+      },
+    ]);
+  });
+
+  it("rejects downloaded bytes that do not match the stored file hash", async () => {
+    const workspace = await tempDir();
+    await expect(
+      writeArtifactWorkspace(
+        {
+          job: {
+            _id: "catalog-job",
+            hasMaliciousSignal: false,
+            leaseToken: "test-auth-token",
+            source: "skills-sh-catalog-test",
+            targetKind: "skillScanRequest",
+            waitForVtUntil: 0,
+          },
+          target: {
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: "0".repeat(64),
+                size: 7,
+                url: "data:text/plain,%23%20Skill",
+              },
+            ],
+          },
+        },
+        workspace,
+      ),
+    ).rejects.toThrow("Downloaded artifact hash mismatch for artifact file SKILL.md");
   });
 
   it("materializes zero-byte directory markers with descendant files", async () => {

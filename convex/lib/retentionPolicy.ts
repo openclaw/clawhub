@@ -215,6 +215,12 @@ export const RETENTION_POLICIES = {
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
+  skillsShCatalogControls: permanent("Durable skills.sh catalog operator controls."),
+  skillsShCatalogRuns: permanent("Skills.sh catalog run, cursor, and rollback audit history."),
+  skillsShCatalogEntries: permanent("Normalized unclaimed skills.sh catalog identities."),
+  skillsShCatalogScanAttempts: permanent(
+    "Exact-hash skills.sh scan attempts are durable audit and deduplication history.",
+  ),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
   publisherAbuseTemporalScanSamples: ephemeral(
     "Exact temporal percentile samples are temporary scan working state.",

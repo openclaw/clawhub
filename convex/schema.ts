@@ -715,6 +715,7 @@ const securityScanJobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
+  v.literal("skills-sh-catalog-test"),
 );
 const skillCardGenerationJobStatusValidator = v.union(
   v.literal("queued"),
@@ -780,6 +781,7 @@ const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
   v.literal("published"),
   v.literal("github"),
+  v.literal("skills-sh-catalog"),
 );
 
 const skills = defineTable({
@@ -1917,6 +1919,7 @@ const skillScanRequests = defineTable({
   skillId: v.optional(v.id("skills")),
   skillVersionId: v.optional(v.id("skillVersions")),
   githubSkillScanId: v.optional(v.id("githubSkillScans")),
+  skillsShCatalogAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
   files: packageFilesValidator,
   fileChunkCount: v.optional(v.number()),
   fileManifestBytes: v.optional(v.number()),
@@ -2751,6 +2754,181 @@ const systemSettings = defineTable({
   updatedByUserId: v.optional(v.id("users")),
 }).index("by_key_and_updated_at", ["key", "updatedAt"]);
 
+const skillsShCatalogControls = defineTable({
+  key: v.literal("global"),
+  mode: v.union(v.literal("off"), v.literal("fixture"), v.literal("staging-live")),
+  discoveryEnabled: v.boolean(),
+  writesEnabled: v.boolean(),
+  scanPlanningEnabled: v.boolean(),
+  scanAdmissionEnabled: v.boolean(),
+  publicVisibilityEnabled: v.boolean(),
+  paused: v.boolean(),
+  maxEntriesPerRun: v.number(),
+  maxEntriesPerBatch: v.number(),
+  maxWritesPerBatch: v.number(),
+  maxPlannedScans: v.number(),
+  maxScanAdmissionsPerBatch: v.number(),
+  maxScanAdmissionsPerRun: v.number(),
+  maxScanAdmissionsPerDay: v.number(),
+  maxCatalogQueued: v.number(),
+  maxCatalogInFlight: v.number(),
+  maxNativeQueued: v.number(),
+  maxNativeInFlight: v.number(),
+  realScanAllowlist: v.array(v.string()),
+  updatedBy: v.string(),
+  reason: v.string(),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
+const skillsShCatalogRunCountsValidator = v.object({
+  observed: v.number(),
+  wouldInsert: v.number(),
+  wouldUpdate: v.number(),
+  inserted: v.number(),
+  updated: v.number(),
+  unchanged: v.number(),
+  rejected: v.number(),
+  scansPlanned: v.number(),
+  scansAdmitted: v.number(),
+  scansCompleted: v.number(),
+  scansCanceled: v.number(),
+});
+
+const skillsShCatalogRuns = defineTable({
+  fixtureId: v.union(
+    v.literal("nvidia-small-v1"),
+    v.literal("nvidia-small-v2"),
+    v.literal("skills-sh-500-2026-07-21"),
+    v.literal("skills-sh-500-2026-07-21-v2"),
+    v.literal("synthetic-20000-v1"),
+    v.literal("skills-sh-test-live-500"),
+  ),
+  snapshotId: v.string(),
+  sourceKind: v.union(
+    v.literal("fixture"),
+    v.literal("frozen-snapshot"),
+    v.literal("staging-live"),
+  ),
+  sourceCapturedAt: v.optional(v.string()),
+  snapshotCaptureFetches: v.number(),
+  dryRun: v.boolean(),
+  status: v.union(
+    v.literal("running"),
+    v.literal("paused"),
+    v.literal("completed"),
+    v.literal("budget-exhausted"),
+    v.literal("failed"),
+    v.literal("canceling"),
+    v.literal("canceled"),
+  ),
+  cursor: v.number(),
+  scanCursor: v.number(),
+  fixtureLength: v.number(),
+  counts: skillsShCatalogRunCountsValidator,
+  budgets: v.object({
+    maxEntriesPerRun: v.number(),
+    maxEntriesPerBatch: v.number(),
+    maxWritesPerBatch: v.number(),
+    maxPlannedScans: v.number(),
+    maxScanAdmissionsPerBatch: v.number(),
+    maxScanAdmissionsPerRun: v.number(),
+    maxScanAdmissionsPerDay: v.number(),
+  }),
+  operations: v.object({
+    functionCalls: v.number(),
+    dbReads: v.number(),
+    dbWrites: v.number(),
+  }),
+  actor: v.string(),
+  reason: v.string(),
+  lastError: v.optional(v.string()),
+  batchesProcessed: v.number(),
+  scanAdmissionBatches: v.number(),
+  lastBatchWrites: v.number(),
+  lastBatchReads: v.number(),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+})
+  .index("by_started_at", ["startedAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"]);
+
+const skillsShCatalogEntries = defineTable({
+  externalId: v.string(),
+  sourceKind: v.union(
+    v.literal("fixture"),
+    v.literal("frozen-snapshot"),
+    v.literal("staging-live"),
+  ),
+  githubOwnerId: v.number(),
+  owner: v.string(),
+  repo: v.string(),
+  slug: v.string(),
+  displayName: v.string(),
+  sourceUrl: v.string(),
+  githubRepoUrl: v.string(),
+  sourceContentHash: v.string(),
+  installs: v.number(),
+  sourceSnapshotId: v.string(),
+  publicVisible: v.boolean(),
+  scanStatus: v.union(
+    v.literal("not-planned"),
+    v.literal("planned"),
+    v.literal("queued"),
+    v.literal("clean"),
+    v.literal("suspicious"),
+    v.literal("malicious"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  firstObservedAt: v.number(),
+  lastObservedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_owner_and_source_kind_and_github_owner_id", ["owner", "sourceKind", "githubOwnerId"])
+  .index("by_source_kind_and_github_owner_id_and_owner", ["sourceKind", "githubOwnerId", "owner"])
+  .index("by_scan_status_and_updated_at", ["scanStatus", "updatedAt"]);
+
+const skillsShCatalogScanAttempts = defineTable({
+  entryId: v.id("skillsShCatalogEntries"),
+  runId: v.id("skillsShCatalogRuns"),
+  externalId: v.string(),
+  sourceContentHash: v.string(),
+  artifactContentHash: v.optional(v.string()),
+  skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  securityScanJobId: v.optional(v.id("securityScanJobs")),
+  source: v.union(v.literal("skills-sh-catalog-fixture"), v.literal("skills-sh-catalog-test")),
+  dispatchKind: v.union(v.literal("deterministic"), v.literal("real")),
+  priority: v.literal("low"),
+  status: v.union(
+    v.literal("queued"),
+    v.literal("running"),
+    v.literal("succeeded"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  verdict: v.optional(
+    v.union(
+      v.literal("clean"),
+      v.literal("suspicious"),
+      v.literal("malicious"),
+      v.literal("failed"),
+    ),
+  ),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_entry_and_source_content_hash", ["entryId", "sourceContentHash"])
+  .index("by_run", ["runId"])
+  .index("by_run_and_status", ["runId", "status"])
+  .index("by_run_dispatch_kind_status_created_at", ["runId", "dispatchKind", "status", "createdAt"])
+  .index("by_created_at", ["createdAt"])
+  .index("by_status_and_created_at", ["status", "createdAt"])
+  .index("by_dispatch_kind_and_status_and_created_at", ["dispatchKind", "status", "createdAt"]);
+
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),
   modelConfig: publisherAbuseModelConfigValidator,
@@ -3429,6 +3607,10 @@ export default defineSchema({
   promotions,
   auditLogs,
   systemSettings,
+  skillsShCatalogControls,
+  skillsShCatalogRuns,
+  skillsShCatalogEntries,
+  skillsShCatalogScanAttempts,
   publisherAbuseScoreRuns,
   publisherAbuseTemporalScanSamples,
   publisherAbuseTemporalScanCandidates,

@@ -70,6 +70,8 @@
     "seed:test:validate-snapshot": "bun scripts/staging-seed/validate-sanitized-snapshot.ts",
     "setup:worktree": "bun scripts/setup-worktree.ts",
     "skill-cards:worker": "bun scripts/skill-cards/run-skill-card-worker.ts",
+    "skills-sh:capture-500": "bun scripts/skills-sh-catalog/capture-frozen-snapshot.ts",
+    "skills-sh:prove-500": "bun scripts/skills-sh-catalog/prove-500.ts",
     "skills:install": "npx --yes skills@1.5.16 add openclaw/design-system --skill openclaw-design openclaw-brand openclaw-design-system openclaw-marketing-pages openclaw-design-audit --agent codex --copy --yes",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
@@ -111,6 +113,7 @@
     "@tanstack/react-router": "1.170.18",
     "@tanstack/react-start": "1.168.32",
     "@vercel/analytics": "2.0.1",
+    "@vercel/oidc": "^3.8.0",
     "@vercel/speed-insights": "2.0.0",
     "class-variance-authority": "0.7.1",
     "clawhub-schema": "workspace:0.0.2",
@@ -146,6 +149,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@faker-js/faker": "^10.5.0",
     "@playwright/test": "^1.61.1",
     "@react-email/ui": "^6.9.0",
@@ -161,6 +165,7 @@
     "@typescript/native": "npm:typescript@7.0.2",
     "@vitejs/plugin-react": "6.0.3",
     "@vitest/coverage-v8": "4.1.10",
+    "convex-test": "^0.0.54",
     "jsdom": "29.1.1",
     "nitro": "3.0.260610-beta",
     "only-allow": "1.2.2",
