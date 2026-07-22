@@ -398,6 +398,7 @@ disable_catalog() {
 proof() {
   assert_exact_test
   seed_operator_token
+  bunx convex env set SECURITY_SCAN_WORKER_TOKEN "$SECURITY_SCAN_WORKER_TOKEN" --prod >/dev/null
   seed_canary_fixture
   read_status "$ARTIFACT_DIR/status-before.json"
   jq -e \
@@ -613,9 +614,23 @@ cleanup() {
   assert_exact_test
   seed_operator_token
   read_status "$ARTIFACT_DIR/cleanup-before.json"
+  mapfile -t active_run_ids < <(
+    jq -r '
+      [.scanAttempts[] |
+        select(.status == "queued" or .status == "running") |
+        .runId
+      ] | unique[]
+    ' "$ARTIFACT_DIR/cleanup-before.json"
+  )
+  for run_id in "${active_run_ids[@]}"; do
+    convex_run skillsShCatalog:cancelCatalogRunInternal "$(
+      jq -nc --arg runId "$run_id" '{runId:$runId,limit:100}'
+    )" > "$ARTIFACT_DIR/cleanup-cancel-${run_id}.json"
+  done
+  read_status "$ARTIFACT_DIR/cleanup-after-cancel.json"
   active_attempts="$(
     jq '[.scanAttempts[] | select(.status == "queued" or .status == "running")] | length' \
-      "$ARTIFACT_DIR/cleanup-before.json"
+      "$ARTIFACT_DIR/cleanup-after-cancel.json"
   )"
   if [[ "$active_attempts" != "0" ]]; then
     echo "::error::Refusing cleanup with active catalog scan work"
