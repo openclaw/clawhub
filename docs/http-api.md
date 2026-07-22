@@ -1590,7 +1590,8 @@ Response:
 
 ### `POST /api/v1/stars/{slug}` / `DELETE /api/v1/stars/{slug}`
 
-Add/remove a star (highlights). Both endpoints are idempotent.
+Add/remove a Bookmark. The legacy `stars` route and response field names remain
+for compatibility. Both endpoints are idempotent.
 
 Responses:
 

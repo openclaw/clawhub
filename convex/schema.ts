@@ -892,6 +892,8 @@ const skills = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
   installBackfill: v.optional(
     v.object({
       modelVersion: v.string(),
@@ -1318,6 +1320,8 @@ const skillSearchDigest = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
   recommendedScore: v.optional(v.number()),
   recommendedScoreVersion: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
@@ -2886,6 +2890,7 @@ const skillsShCatalogEntries = defineTable({
   githubContentHash: v.optional(v.string()),
   sourceContentHash: v.string(),
   installs: v.number(),
+  githubStars: v.optional(v.number()),
   sourceSnapshotId: v.string(),
   reconciliation: v.optional(
     v.object({
