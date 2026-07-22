@@ -136,6 +136,7 @@ import type * as lib_skillsShCatalogEnvironment from "../lib/skillsShCatalogEnvi
 import type * as lib_skillsShCatalogFixtures from "../lib/skillsShCatalogFixtures.js";
 import type * as lib_skillsShCatalogPublication from "../lib/skillsShCatalogPublication.js";
 import type * as lib_skillsShMirrorPublic from "../lib/skillsShMirrorPublic.js";
+import type * as lib_skillsShRefreshLifecycle from "../lib/skillsShRefreshLifecycle.js";
 import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_testSeed from "../lib/testSeed.js";
 import type * as lib_tokens from "../lib/tokens.js";
@@ -318,6 +319,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShCatalogFixtures": typeof lib_skillsShCatalogFixtures;
   "lib/skillsShCatalogPublication": typeof lib_skillsShCatalogPublication;
   "lib/skillsShMirrorPublic": typeof lib_skillsShMirrorPublic;
+  "lib/skillsShRefreshLifecycle": typeof lib_skillsShRefreshLifecycle;
   "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/testSeed": typeof lib_testSeed;
   "lib/tokens": typeof lib_tokens;

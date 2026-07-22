@@ -2958,12 +2958,24 @@ const skillsShCatalogScanAttempts = defineTable({
       v.literal("failed"),
     ),
   ),
+  verdictSourceAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
+  previousPublishedAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
   publicationRolledBackAt: v.optional(v.number()),
   completedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
   .index("by_entry_and_source_content_hash", ["entryId", "sourceContentHash"])
+  .index("by_entry_hash_ghash_kind_source_active_status_verdict", [
+    "entryId",
+    "sourceContentHash",
+    "githubContentHash",
+    "dispatchKind",
+    "source",
+    "publicationRolledBackAt",
+    "status",
+    "verdict",
+  ])
   .index("by_run", ["runId"])
   .index("by_run_and_status", ["runId", "status"])
   .index("by_run_dispatch_kind_status_created_at", ["runId", "dispatchKind", "status", "createdAt"])

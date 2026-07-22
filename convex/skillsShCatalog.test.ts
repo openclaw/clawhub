@@ -2,7 +2,7 @@
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import frozenSnapshot from "./fixtures/skills-sh-500-2026-07-21.json";
 import schema from "./schema";
@@ -206,6 +206,46 @@ async function collectAttempts(t: CatalogTest, runId: Id<"skillsShCatalogRuns">)
     cursor = result.isDone ? null : result.continueCursor;
   } while (cursor);
   return attempts;
+}
+
+async function seedPublishedCatalogAttempt(
+  t: CatalogTest,
+  runId: Id<"skillsShCatalogRuns">,
+  externalId: string,
+) {
+  const entry = (await collectEntries(t)).find((candidate) => candidate.externalId === externalId);
+  if (!entry) throw new Error(`missing catalog entry ${externalId}`);
+  return await t.run(async (ctx) => {
+    const now = Date.now();
+    const attemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
+      entryId: entry._id,
+      runId,
+      externalId: entry.externalId,
+      githubOwnerId: entry.githubOwnerId,
+      owner: entry.owner,
+      repo: entry.repo,
+      slug: entry.slug,
+      githubPath: entry.githubPath,
+      githubCommit: entry.githubCommit,
+      githubContentHash: entry.githubContentHash,
+      sourceContentHash: entry.sourceContentHash,
+      source: "skills-sh-catalog-test",
+      dispatchKind: "real",
+      priority: "low",
+      status: "succeeded",
+      verdict: "clean",
+      completedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(entry._id, {
+      scanStatus: "clean",
+      publicVisible: true,
+      publishedScanAttemptId: attemptId,
+      updatedAt: now,
+    });
+    return { entryId: entry._id, attemptId };
+  });
 }
 
 async function collectNativeState(t: CatalogTest) {
@@ -1418,6 +1458,633 @@ describe("skills.sh catalog overload control plane", () => {
       },
     );
     expect(completed).toMatchObject({ matched: 1, completed: 1, canceled: 0 });
+  });
+
+  it("keeps an allowed adopted version active across pointer-only and rejected refreshes", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const sourceRow = {
+      ...frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!,
+      githubPath: "skills/aiq-deploy",
+      githubCommit: "a".repeat(40),
+      githubContentHash: "a".repeat(64),
+    };
+    const actorUserId = await t.run(async (ctx) => {
+      return await ctx.db.insert("users", {
+        handle: "catalog-refresh-operator",
+        displayName: "Catalog Refresh Operator",
+        role: "admin",
+      });
+    });
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      publicVisibilityEnabled: true,
+      maxEntriesPerRun: 500,
+      maxEntriesPerBatch: 1,
+      maxPlannedScans: 10,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 10,
+      maxScanAdmissionsPerDay: 10,
+      maxCatalogQueued: 10,
+      maxCatalogInFlight: 1,
+      realScanAllowlist: [sourceRow.externalId],
+    });
+
+    const firstRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "seed the allowed adopted version",
+      snapshotId: "skills-sh-test-live-500:refresh-a",
+      sourceCapturedAt: "2026-07-22T19:00:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId: firstRun.runId,
+      cursor: 0,
+      rows: [sourceRow],
+    });
+    const published = await seedPublishedCatalogAttempt(t, firstRun.runId, sourceRow.externalId);
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 101; index += 1) {
+        await ctx.db.insert("skillsShCatalogScanAttempts", {
+          entryId: published.entryId,
+          runId: firstRun.runId,
+          externalId: sourceRow.externalId,
+          githubOwnerId: sourceRow.githubOwnerId,
+          owner: sourceRow.owner,
+          repo: sourceRow.repo,
+          slug: sourceRow.slug,
+          githubPath: sourceRow.githubPath,
+          githubCommit: sourceRow.githubCommit,
+          githubContentHash: sourceRow.githubContentHash,
+          sourceContentHash: sourceRow.sourceContentHash,
+          source: "skills-sh-catalog-test",
+          dispatchKind: "real",
+          priority: "low",
+          status: "canceled",
+          completedAt: index + 1,
+          createdAt: index + 1,
+          updatedAt: index + 1,
+        });
+      }
+      await ctx.db.insert("skillsShCatalogScanAttempts", {
+        entryId: published.entryId,
+        runId: firstRun.runId,
+        externalId: sourceRow.externalId,
+        githubOwnerId: sourceRow.githubOwnerId,
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+        githubPath: sourceRow.githubPath,
+        githubCommit: sourceRow.githubCommit,
+        githubContentHash: sourceRow.githubContentHash,
+        sourceContentHash: sourceRow.sourceContentHash,
+        source: "skills-sh-catalog-fixture",
+        dispatchKind: "deterministic",
+        priority: "low",
+        status: "succeeded",
+        verdict: "clean",
+        completedAt: 102,
+        createdAt: 102,
+        updatedAt: 102,
+      });
+    });
+
+    const pointerOnlyRow = {
+      ...sourceRow,
+      githubPath: "skills/aiq-deploy-moved",
+      githubCommit: "b".repeat(40),
+    };
+    const pointerRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "advance provenance without rescanning identical content",
+      snapshotId: "skills-sh-test-live-500:refresh-pointer",
+      sourceCapturedAt: "2026-07-22T19:05:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    const pointerResult = await t.mutation(
+      internal.skillsShCatalog.processStagingLiveBatchInternal,
+      {
+        runId: pointerRun.runId,
+        cursor: 0,
+        rows: [pointerOnlyRow],
+      },
+    );
+    expect(pointerResult.counts).toMatchObject({ updated: 1, scansPlanned: 0 });
+    const pointerAttempts = await collectAttempts(t, pointerRun.runId);
+    expect(pointerAttempts).toMatchObject([
+      {
+        status: "succeeded",
+        verdict: "clean",
+        githubPath: pointerOnlyRow.githubPath,
+        githubCommit: pointerOnlyRow.githubCommit,
+        verdictSourceAttemptId: published.attemptId,
+      },
+    ]);
+    const pointerEntry = await t.run(async (ctx) => await ctx.db.get(published.entryId));
+    expect(pointerEntry).toMatchObject({
+      publicVisible: true,
+      scanStatus: "clean",
+      publishedScanAttemptId: pointerAttempts[0]!._id,
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      security: { attemptId: published.attemptId, verdict: "clean" },
+    });
+
+    const { artifact, row: changedRow } = await storeAuthenticatedTestArtifact(
+      t,
+      {
+        ...pointerOnlyRow,
+        githubCommit: "c".repeat(40),
+        sourceContentHash: "changed-source-content",
+      },
+      "malicious changed candidate",
+    );
+    const changedRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "scan changed adopted content before promotion",
+      snapshotId: "skills-sh-test-live-500:refresh-changed",
+      sourceCapturedAt: "2026-07-22T19:10:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    const changedResult = await t.mutation(
+      internal.skillsShCatalog.processStagingLiveBatchInternal,
+      {
+        runId: changedRun.runId,
+        cursor: 0,
+        rows: [changedRow],
+      },
+    );
+    expect(changedResult.counts).toMatchObject({ updated: 1, scansPlanned: 1 });
+    expect(await t.run(async (ctx) => await ctx.db.get(published.entryId))).toMatchObject({
+      publicVisible: true,
+      publishedScanAttemptId: pointerAttempts[0]!._id,
+      scanStatus: "planned",
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      security: { verdict: "clean" },
+    });
+
+    await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId: changedRun.runId,
+      externalIds: [changedRow.externalId],
+      actorUserId,
+      artifacts: [artifact],
+    });
+    const [candidate] = await collectAttempts(t, changedRun.runId);
+    expect(await t.run(async (ctx) => await ctx.db.get(published.entryId))).toMatchObject({
+      publicVisible: true,
+      publishedScanAttemptId: pointerAttempts[0]!._id,
+      scanStatus: "queued",
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(candidate!.securityScanJobId!, {
+        status: "running",
+        leaseToken: "refresh-lease",
+        leaseExpiresAt: Date.now() + 60_000,
+        workerId: "catalog-refresh-worker",
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(candidate!._id, { status: "running", updatedAt: Date.now() });
+    });
+    const rejected = await t.mutation(internal.securityScan.completeCatalogSkillScanJobInternal, {
+      attemptId: candidate!._id,
+      scanId: candidate!.skillScanRequestId!,
+      jobId: candidate!.securityScanJobId!,
+      leaseToken: "refresh-lease",
+      artifactContentHash: candidate!.artifactContentHash!,
+      verdict: "malicious",
+      runId: "clawscan-refresh-run",
+      llmAnalysis: { status: "malicious", checkedAt: Date.now() },
+    });
+    expect(rejected).toEqual({ ok: true, applied: true, publicVisible: true });
+    expect(await t.run(async (ctx) => await ctx.db.get(published.entryId))).toMatchObject({
+      publicVisible: true,
+      publishedScanAttemptId: pointerAttempts[0]!._id,
+      scanStatus: "malicious",
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      security: { verdict: "clean" },
+    });
+
+    const { artifact: staleArtifact, row: staleRow } = await storeAuthenticatedTestArtifact(
+      t,
+      {
+        ...pointerOnlyRow,
+        githubCommit: "d".repeat(40),
+        sourceContentHash: "stale-candidate-content",
+      },
+      "candidate that becomes stale",
+    );
+    const staleRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "create a candidate that a newer observation supersedes",
+      snapshotId: "skills-sh-test-live-500:refresh-stale",
+      sourceCapturedAt: "2026-07-22T19:15:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId: staleRun.runId,
+      cursor: 0,
+      rows: [staleRow],
+    });
+    await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId: staleRun.runId,
+      externalIds: [staleRow.externalId],
+      actorUserId,
+      artifacts: [staleArtifact],
+    });
+    const [staleCandidate] = await collectAttempts(t, staleRun.runId);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(staleCandidate!.securityScanJobId!, {
+        status: "running",
+        leaseToken: "stale-refresh-lease",
+        leaseExpiresAt: Date.now() + 60_000,
+        workerId: "catalog-refresh-worker",
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(staleCandidate!._id, { status: "running", updatedAt: Date.now() });
+    });
+
+    const { artifact: allowedArtifact, row: allowedRow } = await storeAuthenticatedTestArtifact(
+      t,
+      {
+        ...pointerOnlyRow,
+        githubCommit: "e".repeat(40),
+        sourceContentHash: "allowed-candidate-content",
+      },
+      "newest allowed candidate",
+    );
+    const allowedRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "replace the stale candidate with the newest observation",
+      snapshotId: "skills-sh-test-live-500:refresh-allowed",
+      sourceCapturedAt: "2026-07-22T19:20:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId: allowedRun.runId,
+      cursor: 0,
+      rows: [allowedRow],
+    });
+    const staleResult = await t.mutation(
+      internal.securityScan.completeCatalogSkillScanJobInternal,
+      {
+        attemptId: staleCandidate!._id,
+        scanId: staleCandidate!.skillScanRequestId!,
+        jobId: staleCandidate!.securityScanJobId!,
+        leaseToken: "stale-refresh-lease",
+        artifactContentHash: staleCandidate!.artifactContentHash!,
+        verdict: "clean",
+        runId: "clawscan-stale-refresh-run",
+        llmAnalysis: { status: "clean", checkedAt: Date.now() },
+      },
+    );
+    expect(staleResult).toEqual({ ok: true, applied: false, reason: "stale-attempt" });
+    expect(await t.run(async (ctx) => await ctx.db.get(published.entryId))).toMatchObject({
+      publicVisible: true,
+      publishedScanAttemptId: pointerAttempts[0]!._id,
+      scanStatus: "planned",
+    });
+
+    await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId: allowedRun.runId,
+      externalIds: [allowedRow.externalId],
+      actorUserId,
+      artifacts: [allowedArtifact],
+    });
+    const [allowedCandidate] = await collectAttempts(t, allowedRun.runId);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(allowedCandidate!.securityScanJobId!, {
+        status: "running",
+        leaseToken: "allowed-refresh-lease",
+        leaseExpiresAt: Date.now() + 60_000,
+        workerId: "catalog-refresh-worker",
+        updatedAt: Date.now(),
+      });
+      await ctx.db.patch(allowedCandidate!._id, { status: "running", updatedAt: Date.now() });
+    });
+    const promoted = await t.mutation(internal.securityScan.completeCatalogSkillScanJobInternal, {
+      attemptId: allowedCandidate!._id,
+      scanId: allowedCandidate!.skillScanRequestId!,
+      jobId: allowedCandidate!.securityScanJobId!,
+      leaseToken: "allowed-refresh-lease",
+      artifactContentHash: allowedCandidate!.artifactContentHash!,
+      verdict: "clean",
+      runId: "clawscan-allowed-refresh-run",
+      llmAnalysis: { status: "clean", checkedAt: Date.now() },
+    });
+    expect(promoted).toEqual({ ok: true, applied: true, publicVisible: true });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubCommit: allowedRow.githubCommit,
+      githubContentHash: allowedRow.githubContentHash,
+      security: { attemptId: allowedCandidate!._id, verdict: "clean" },
+    });
+
+    const revertRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "reuse the previously allowed content after a source revert",
+      snapshotId: "skills-sh-test-live-500:refresh-revert",
+      sourceCapturedAt: "2026-07-22T19:25:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    const revertResult = await t.mutation(
+      internal.skillsShCatalog.processStagingLiveBatchInternal,
+      {
+        runId: revertRun.runId,
+        cursor: 0,
+        rows: [pointerOnlyRow],
+      },
+    );
+    expect(revertResult.counts).toMatchObject({ updated: 1, scansPlanned: 0 });
+    const [revertCandidate] = await collectAttempts(t, revertRun.runId);
+    expect(revertCandidate).toMatchObject({
+      status: "succeeded",
+      verdict: "clean",
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      verdictSourceAttemptId: published.attemptId,
+      previousPublishedAttemptId: allowedCandidate!._id,
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      security: { attemptId: published.attemptId, verdict: "clean" },
+    });
+
+    const revertedRollback = await t.mutation(
+      internal.skillsShCatalog.rollbackPublicationInternal,
+      {
+        externalId: sourceRow.externalId,
+        attemptId: revertCandidate!._id,
+        actor: "catalog-refresh-operator",
+        reason: "restore the allowed changed-content candidate",
+        confirm: "rollback-skills-sh-test-publication",
+      },
+    );
+    expect(revertedRollback).toMatchObject({
+      publicVisible: true,
+      restoredAttemptId: allowedCandidate!._id,
+      alreadyRolledBack: false,
+    });
+
+    const rolledBack = await t.mutation(internal.skillsShCatalog.rollbackPublicationInternal, {
+      externalId: sourceRow.externalId,
+      attemptId: allowedCandidate!._id,
+      actor: "catalog-refresh-operator",
+      reason: "restore the previous allowed adopted version",
+      confirm: "rollback-skills-sh-test-publication",
+    });
+    expect(rolledBack).toMatchObject({
+      publicVisible: true,
+      restoredAttemptId: pointerAttempts[0]!._id,
+      alreadyRolledBack: false,
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      security: { attemptId: published.attemptId, verdict: "clean" },
+    });
+
+    const pointerRollback = await t.mutation(internal.skillsShCatalog.rollbackPublicationInternal, {
+      externalId: sourceRow.externalId,
+      attemptId: pointerAttempts[0]!._id,
+      actor: "catalog-refresh-operator",
+      reason: "restore the original allowed source pointer",
+      confirm: "rollback-skills-sh-test-publication",
+    });
+    expect(pointerRollback).toMatchObject({
+      publicVisible: true,
+      restoredAttemptId: published.attemptId,
+      alreadyRolledBack: false,
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: sourceRow.githubPath,
+      githubCommit: sourceRow.githubCommit,
+      security: { attemptId: published.attemptId, verdict: "clean" },
+    });
+
+    const readoptRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "readopt the rolled-back pointer without rescanning",
+      snapshotId: "skills-sh-test-live-500:refresh-readopt-pointer",
+      sourceCapturedAt: "2026-07-22T19:30:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    const readoptResult = await t.mutation(
+      internal.skillsShCatalog.processStagingLiveBatchInternal,
+      {
+        runId: readoptRun.runId,
+        cursor: 0,
+        rows: [pointerOnlyRow],
+      },
+    );
+    expect(readoptResult.counts).toMatchObject({ scansPlanned: 0 });
+    const [readoptedPointer] = await collectAttempts(t, readoptRun.runId);
+    expect(readoptedPointer).toMatchObject({
+      status: "succeeded",
+      verdict: "clean",
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      verdictSourceAttemptId: published.attemptId,
+      previousPublishedAttemptId: published.attemptId,
+    });
+    expect(
+      await t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: sourceRow.owner,
+        repo: sourceRow.repo,
+        slug: sourceRow.slug,
+      }),
+    ).toMatchObject({
+      githubPath: pointerOnlyRow.githubPath,
+      githubCommit: pointerOnlyRow.githubCommit,
+      security: { attemptId: published.attemptId, verdict: "clean" },
+    });
+  });
+
+  it("rolls back to the newest allowed attempt across a large mixed-hash history", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      publicVisibilityEnabled: true,
+      maxEntriesPerBatch: 1,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 1,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+      realScanAllowlist: ["openclaw/skills/rollback-history"],
+    });
+    const { runId } = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-refresh-operator",
+      reason: "seed rollback history",
+      snapshotId: "skills-sh-test-live-500:rollback-history",
+      sourceCapturedAt: "2026-07-22T19:30:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    const seeded = await t.run(async (ctx) => {
+      const now = Date.now();
+      const entryId = await ctx.db.insert("skillsShCatalogEntries", {
+        sourceKind: "staging-live",
+        externalId: "openclaw/skills/rollback-history",
+        githubOwnerId: 991,
+        owner: "openclaw",
+        repo: "skills",
+        slug: "rollback-history",
+        displayName: "Rollback history",
+        sourceUrl: "https://skills.sh/openclaw/skills/rollback-history",
+        githubRepoUrl: "https://github.com/openclaw/skills",
+        githubPath: "skills/rollback-history",
+        githubCommit: "c".repeat(40),
+        githubContentHash: "c".repeat(64),
+        sourceContentHash: "current-content",
+        installs: 1,
+        sourceSnapshotId: "skills-sh-test-live-500:rollback-history",
+        publicVisible: true,
+        scanStatus: "clean",
+        firstObservedAt: now,
+        lastObservedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      const priorAttemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
+        entryId,
+        runId,
+        externalId: "openclaw/skills/rollback-history",
+        githubOwnerId: 991,
+        owner: "openclaw",
+        repo: "skills",
+        slug: "rollback-history",
+        githubPath: "skills/rollback-history",
+        githubCommit: "b".repeat(40),
+        githubContentHash: "b".repeat(64),
+        sourceContentHash: "z-prior-allowed-content",
+        source: "skills-sh-catalog-test",
+        dispatchKind: "real",
+        priority: "low",
+        status: "succeeded",
+        verdict: "clean",
+        completedAt: now - 2,
+        createdAt: now - 2,
+        updatedAt: now - 2,
+      });
+      for (let index = 0; index < 1_000; index += 1) {
+        await ctx.db.insert("skillsShCatalogScanAttempts", {
+          entryId,
+          runId,
+          externalId: "openclaw/skills/rollback-history",
+          sourceContentHash: `a-decoy-${index.toString().padStart(4, "0")}`,
+          source: "skills-sh-catalog-test",
+          dispatchKind: "real",
+          priority: "low",
+          status: "failed",
+          verdict: "failed",
+          completedAt: now - 1,
+          createdAt: now - 1,
+          updatedAt: now - 1,
+        });
+      }
+      const currentAttemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
+        entryId,
+        runId,
+        externalId: "openclaw/skills/rollback-history",
+        githubOwnerId: 991,
+        owner: "openclaw",
+        repo: "skills",
+        slug: "rollback-history",
+        githubPath: "skills/rollback-history",
+        githubCommit: "c".repeat(40),
+        githubContentHash: "c".repeat(64),
+        sourceContentHash: "current-content",
+        source: "skills-sh-catalog-test",
+        dispatchKind: "real",
+        priority: "low",
+        status: "succeeded",
+        verdict: "clean",
+        previousPublishedAttemptId: priorAttemptId,
+        completedAt: now,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await ctx.db.patch(entryId, { publishedScanAttemptId: currentAttemptId });
+      return { entryId, priorAttemptId, currentAttemptId };
+    });
+
+    const rolledBack = await t.mutation(internal.skillsShCatalog.rollbackPublicationInternal, {
+      externalId: "openclaw/skills/rollback-history",
+      attemptId: seeded.currentAttemptId,
+      actor: "catalog-refresh-operator",
+      reason: "restore the newest prior allowed version",
+      confirm: "rollback-skills-sh-test-publication",
+    });
+
+    expect(rolledBack).toMatchObject({
+      publicVisible: true,
+      restoredAttemptId: seeded.priorAttemptId,
+      alreadyRolledBack: false,
+    });
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.entryId))).toMatchObject({
+      publicVisible: true,
+      publishedScanAttemptId: seeded.priorAttemptId,
+    });
   });
 
   it("does not complete queued deterministic work while the run is paused", async () => {
