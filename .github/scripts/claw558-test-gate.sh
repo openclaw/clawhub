@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly SOURCE_SHA="6df7f62eb72151802a7bf9b43618c421b361ebaa"
+readonly SOURCE_SHA="f7d1d8e12bdde83fb2b20d4be763acdf4ccf3179"
 readonly DEPLOYMENT="academic-chihuahua-392"
 readonly CONVEX_URL_EXPECTED="https://${DEPLOYMENT}.convex.cloud"
 readonly CONVEX_SITE="https://${DEPLOYMENT}.convex.site"
 readonly OPERATOR_URL="${CONVEX_SITE}/api/v1/operator/skills-sh/catalog-test"
 readonly PUBLIC_URL="${CONVEX_SITE}/api/v1/skills-sh/patrick-erichsen/skills/html"
+readonly VERIFY_URL="${CONVEX_SITE}/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml"
 readonly CANARY_ID="patrick-erichsen/skills/html"
 readonly CANARY_COMMIT="050daba89f6b6636470add5cb300aac46a412cf8"
 readonly CANARY_FOLDER_HASH="a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f"
@@ -319,6 +320,47 @@ assert_hidden() {
   [[ "$status" == "404" ]]
 }
 
+assert_verify_status() {
+  local output="$1"
+  local expected_attempt="$2"
+  curl --fail-with-body --silent --show-error "$VERIFY_URL" > "$output"
+  jq -e \
+    --arg attemptId "$expected_attempt" \
+    --arg commit "$CANARY_COMMIT" \
+    --arg folderHash "$CANARY_FOLDER_HASH" \
+    --arg artifactHash "$CANARY_ARTIFACT_HASH" \
+    --arg fileSha "$CANARY_FILE_SHA" \
+    '
+      .schema == "clawhub.skill.verify.v1" and
+      .slug == "skills-sh/patrick-erichsen/skills/html" and
+      .version == $commit and
+      .resolvedFrom == "latest" and
+      .tag == null and
+      (
+        (.security.verdict == "clean" and .ok == true and .decision == "pass" and
+          .security.passed == true and (.reasons | length) == 0) or
+        (.security.verdict == "suspicious" and .ok == false and .decision == "fail" and
+          .security.passed == false and .reasons == ["security.status_not_clean"])
+      ) and
+      .security.attemptId == $attemptId and
+      .artifact.sourceFingerprint == $folderHash and
+      .artifact.bundleFingerprints == [$artifactHash] and
+      .artifact.files == [{
+        path:"SKILL.md",
+        size:5688,
+        sha256:$fileSha,
+        contentType:"text/markdown"
+      }] and
+      .provenance.reference == "skills-sh/patrick-erichsen/skills/html" and
+      .provenance.repository == "patrick-erichsen/skills" and
+      .provenance.path == "skills/html" and
+      .provenance.commit == $commit and
+      .provenance.contentHash == $folderHash and
+      .provenance.scanAttemptId == $attemptId and
+      .provenance.artifactContentHash == $artifactHash
+    ' "$output" >/dev/null
+}
+
 run_catalog_worker() {
   local label="$1"
   CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR="$ARTIFACT_DIR/worker-${label}" \
@@ -350,6 +392,32 @@ prove_clawhub_cli() {
     > "$ARTIFACT_DIR/clawhub-installed-state.txt"
   grep -F "skills-sh/patrick-erichsen/skills/html" \
     "$ARTIFACT_DIR/clawhub-installed-state.txt" >/dev/null
+  local verify_status
+  set +e
+  node packages/clawhub/bin/clawdhub.js \
+    --registry "$CONVEX_SITE" \
+    skill verify skills-sh/patrick-erichsen/skills/html \
+    > "$ARTIFACT_DIR/clawhub-verify.json" 2>&1
+  verify_status="$?"
+  set -e
+  jq -e \
+    --arg commit "$CANARY_COMMIT" \
+    --arg folderHash "$CANARY_FOLDER_HASH" \
+    --arg artifactHash "$CANARY_ARTIFACT_HASH" \
+    --arg fileSha "$CANARY_FILE_SHA" \
+    '
+      .schema == "clawhub.skill.verify.v1" and
+      .slug == "skills-sh/patrick-erichsen/skills/html" and
+      .version == $commit and
+      .artifact.sourceFingerprint == $folderHash and
+      .artifact.bundleFingerprints == [$artifactHash] and
+      .artifact.files[0].sha256 == $fileSha
+    ' "$ARTIFACT_DIR/clawhub-verify.json" >/dev/null
+  if [[ "$(jq -r '.security.status' "$ARTIFACT_DIR/clawhub-verify.json")" == "clean" ]]; then
+    [[ "$verify_status" == "0" ]]
+  else
+    [[ "$verify_status" == "1" ]]
+  fi
   if node packages/clawhub/bin/clawdhub.js \
     --registry "http://127.0.0.1:1" \
     --workdir "$workdir/colon" \
@@ -514,6 +582,9 @@ proof() {
   jq -e --arg runId "$run_a" '.reused == true and .runId == $runId' \
     "$ARTIFACT_DIR/resume-promotion.json" >/dev/null
   assert_public_status "$ARTIFACT_DIR/public-a.json"
+  assert_verify_status \
+    "$ARTIFACT_DIR/verify-a.json" \
+    "$(jq -r '.security.attemptId' "$ARTIFACT_DIR/public-a.json")"
   prove_clawhub_cli
 
   rollback_attempt "$ARTIFACT_DIR/rollback-a.json" "$attempt_a"
@@ -529,6 +600,7 @@ proof() {
   assert_public_status "$ARTIFACT_DIR/public-b.json"
   attempt_b="$(jq -r '.security.attemptId' "$ARTIFACT_DIR/public-b.json")"
   [[ -n "$attempt_b" && "$attempt_b" != "$attempt_a" ]]
+  assert_verify_status "$ARTIFACT_DIR/verify-b.json" "$attempt_b"
 
   convex_run skillsShCatalog:recordRealScanResultInternal "$(
     jq -nc \
@@ -545,6 +617,7 @@ proof() {
   assert_public_status "$ARTIFACT_DIR/public-after-stale-callback.json"
   jq -e --arg attemptId "$attempt_b" '.security.attemptId == $attemptId' \
     "$ARTIFACT_DIR/public-after-stale-callback.json" >/dev/null
+  assert_verify_status "$ARTIFACT_DIR/verify-after-stale-callback.json" "$attempt_b"
 
   rollback_attempt "$ARTIFACT_DIR/old-rollback-a.json" "$attempt_a"
   jq -e '.alreadyRolledBack == true and .publicVisible == true' \
