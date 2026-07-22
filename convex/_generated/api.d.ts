@@ -168,6 +168,7 @@ import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
 import type * as skills from "../skills.js";
 import type * as skillsShCatalog from "../skillsShCatalog.js";
+import type * as skillsShMirror from "../skillsShMirror.js";
 import type * as stars from "../stars.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
@@ -344,6 +345,7 @@ declare const fullApi: ApiFromModules<{
   skillTransfers: typeof skillTransfers;
   skills: typeof skills;
   skillsShCatalog: typeof skillsShCatalog;
+  skillsShMirror: typeof skillsShMirror;
   stars: typeof stars;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;

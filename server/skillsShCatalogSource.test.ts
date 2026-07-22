@@ -2,8 +2,12 @@
 
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildSkillsShMirrorObservation,
+  buildSkillsShMirrorDetail,
+  buildSkillsShMirrorUpstreamScanners,
   captureSkillsShCatalogTestSnapshot,
   fetchSkillsShCatalogDetail,
+  fetchSkillsShMirrorBatch,
   fetchSkillsShCatalogPage,
   fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
@@ -12,6 +16,208 @@ import {
 } from "./skillsShCatalogSource";
 
 describe("skills.sh Vercel source boundary", () => {
+  it("retains each upstream scanner status and source link independently", () => {
+    expect(
+      buildSkillsShMirrorUpstreamScanners(
+        `
+          <a href="/vercel-labs/skills/find-skills/security/agent-trust-hub">
+            <span>Gen Agent Trust Hub</span><span>Pass</span>
+          </a>
+          <a href="/vercel-labs/skills/find-skills/security/socket">
+            <span>Socket</span><span>Pass</span>
+          </a>
+          <a href="/vercel-labs/skills/find-skills/security/snyk">
+            <span>Snyk</span><span>Warn</span>
+          </a>
+        `,
+        "https://skills.sh/vercel-labs/skills/find-skills",
+      ),
+    ).toEqual({
+      genAgentTrustHub: {
+        status: "pass",
+        sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/agent-trust-hub",
+      },
+      socket: {
+        status: "pass",
+        sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/socket",
+      },
+      snyk: {
+        status: "warn",
+        sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/snyk",
+      },
+    });
+
+    expect(
+      buildSkillsShMirrorUpstreamScanners(
+        "<html><body>No audit links</body></html>",
+        "https://skills.sh/open.feishu.cn/lark-doc",
+      ),
+    ).toEqual({
+      genAgentTrustHub: { status: "unavailable" },
+      socket: { status: "unavailable" },
+      snyk: { status: "unavailable" },
+    });
+  });
+
+  it("normalizes GitHub and well-known rows without inventing repository identity", () => {
+    expect(
+      buildSkillsShMirrorObservation({
+        id: "Vercel-Labs/Skills/Find-Skills",
+        installUrl: "https://github.com/vercel-labs/skills",
+        installs: 42,
+        name: "Find Skills",
+        slug: "Find-Skills",
+        source: "Vercel-Labs/Skills",
+        sourceType: "github",
+        url: "https://skills.sh/vercel-labs/skills/find-skills",
+      }),
+    ).toMatchObject({
+      externalId: "vercel-labs/skills/find-skills",
+      sourceType: "github",
+      owner: "vercel-labs",
+      repo: "skills",
+      slug: "find-skills",
+      canonicalRepoUrl: "https://github.com/vercel-labs/skills",
+      upstreamInstalls: 42,
+    });
+
+    expect(
+      buildSkillsShMirrorObservation({
+        id: "open.feishu.cn/lark-doc",
+        installUrl: null,
+        installs: 7,
+        name: "lark-doc",
+        slug: "lark-doc",
+        source: "open.feishu.cn",
+        sourceType: "well-known",
+        url: "https://www.skills.sh/site/open.feishu.cn/lark-doc",
+      }),
+    ).toMatchObject({
+      externalId: "open.feishu.cn/lark-doc",
+      sourceType: "well-known",
+      sourceHost: "open.feishu.cn",
+      slug: "lark-doc",
+      upstreamInstalls: 7,
+    });
+  });
+
+  it("stores only one bounded detail document from the upstream file tree", () => {
+    const detail = buildSkillsShMirrorDetail(
+      {
+        id: "vercel-labs/skills/find-skills",
+        source: "vercel-labs/skills",
+        slug: "find-skills",
+        installs: 42,
+        hash: "a".repeat(64),
+        files: [
+          { path: "references/notes.md", contents: "do not retain" },
+          { path: "README.md", contents: "readme" },
+          { path: "SKILL.md", contents: "1234567890" },
+        ],
+      },
+      8,
+    );
+
+    expect(detail).toEqual({
+      sourceContentHash: "a".repeat(64),
+      sourceFileCount: 3,
+      contentKind: "skill-md",
+      path: "SKILL.md",
+      content: "12345678",
+      contentBytes: 8,
+      sourceBytes: 10,
+      truncated: true,
+    });
+  });
+
+  it("fetches one bounded mirror batch from an exact source page and offset", async () => {
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=3&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+              {
+                id: "open.feishu.cn/lark-doc",
+                installUrl: null,
+                installs: 7,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "open.feishu.cn",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/site/open.feishu.cn/lark-doc",
+              },
+            ],
+            pagination: { page: 3, perPage: 500, total: 1_002, hasMore: false },
+          }),
+        );
+      }
+      if (!url.includes("/api/v1/skills/")) {
+        return new Response(`
+          <a href="/open.feishu.cn/lark-doc/security/socket">
+            <span>Socket</span><span>Pass</span>
+          </a>
+        `);
+      }
+      const id = decodeURIComponent(url.split("/api/v1/skills/")[1] ?? "");
+      return new Response(
+        JSON.stringify({
+          id,
+          source: id.split("/").slice(0, -1).join("/"),
+          slug: id.split("/").at(-1),
+          installs: 1,
+          hash: "a".repeat(64),
+          files: [{ path: "SKILL.md", contents: `# ${id}` }],
+        }),
+      );
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 3, offset: 1, limit: 1, maxDetailBytes: 64 },
+      {
+        env: { VERCEL_OIDC_TOKEN: "request-token" },
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+    );
+
+    expect(batch).toMatchObject({
+      page: 3,
+      offset: 1,
+      pageLength: 2,
+      sourceTotal: 1_002,
+      hasMore: false,
+      sourceRequests: 2,
+      rows: [
+        {
+          externalId: "open.feishu.cn/lark-doc",
+          sourceType: "well-known",
+          sourceHost: "open.feishu.cn",
+          sourceContentHash: "a".repeat(64),
+          upstreamScanners: {
+            genAgentTrustHub: { status: "unavailable" },
+            socket: {
+              status: "pass",
+              sourceUrl: "https://www.skills.sh/open.feishu.cn/lark-doc/security/socket",
+            },
+            snyk: { status: "unavailable" },
+          },
+          detail: { contentKind: "skill-md", path: "SKILL.md" },
+        },
+      ],
+      sourceRequests: 3,
+    });
+  });
+
   it("uses only the injected Vercel OIDC token for source authentication", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response(
