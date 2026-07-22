@@ -435,6 +435,17 @@ describe("skills.sh controlled hidden metadata canary", () => {
       ).resolves.toMatchObject({
         ref: "skills-sh/patrick-erichsen/skills/html",
         route: "/skills-sh/patrick-erichsen/skills/html",
+        artifact: {
+          contentHash: attempt.artifactContentHash,
+          files: [
+            {
+              path: "SKILL.md",
+              size: expect.any(Number),
+              sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+              contentType: "text/markdown",
+            },
+          ],
+        },
         security: {
           verdict,
           source: "clawhub",
@@ -454,6 +465,30 @@ describe("skills.sh controlled hidden metadata canary", () => {
       });
     },
   );
+
+  it("omits verification artifacts when the scan request no longer matches the approved attempt", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const attempt = await prepareScannedCanary(t);
+    await completeScannedCanary(t, attempt, "clean");
+    await t.run(async (ctx) => {
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        sha256hash: "0".repeat(64),
+      });
+    });
+
+    await expect(
+      t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+      }),
+    ).resolves.toMatchObject({
+      ref: "skills-sh/patrick-erichsen/skills/html",
+      artifact: null,
+      security: { attemptId: attempt._id, verdict: "clean" },
+    });
+  });
 
   it("reuses an exact completed canary scan without hiding the published entry", async () => {
     useEnvironment(TEST_ENV);

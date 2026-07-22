@@ -2951,6 +2951,198 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(1);
   });
 
+  it("skill verification returns the exact approved skills.sh scan envelope", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      expect(args).toEqual({
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+      });
+      return {
+        ref: "skills-sh/patrick-erichsen/skills/html",
+        route: "/skills-sh/patrick-erichsen/skills/html",
+        displayName: "HTML Artifact Chooser",
+        repository: "patrick-erichsen/skills",
+        githubPath: "skills/html",
+        githubCommit: "1".repeat(40),
+        githubContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+        security: {
+          verdict: "clean",
+          source: "clawhub",
+          attemptId: "skillsShCatalogScanAttempts:canary",
+          scannedAt: 123,
+        },
+        artifact: {
+          contentHash: "c".repeat(64),
+          files: [
+            {
+              path: "SKILL.md",
+              size: 42,
+              sha256: "d".repeat(64),
+              contentType: "text/markdown",
+            },
+          ],
+        },
+      };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: "skills-sh/patrick-erichsen/skills/html",
+      displayName: "HTML Artifact Chooser",
+      pageUrl: "https://example.com/skills-sh/patrick-erichsen/skills/html",
+      publisherHandle: null,
+      publisherDisplayName: null,
+      publisherProfileUrl: null,
+      version: "1".repeat(40),
+      resolvedFrom: "latest",
+      tag: null,
+      createdAt: 123,
+      card: {
+        available: false,
+        path: "skill-card.md",
+        url: null,
+        sha256: null,
+        size: null,
+        contentType: null,
+      },
+      artifact: {
+        sourceFingerprint: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+        bundleFingerprints: ["c".repeat(64)],
+        files: [
+          {
+            path: "SKILL.md",
+            size: 42,
+            sha256: "d".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      provenance: {
+        source: "skills-sh-catalog",
+        reference: "skills-sh/patrick-erichsen/skills/html",
+        repository: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit: "1".repeat(40),
+        contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+        scanAttemptId: "skillsShCatalogScanAttempts:canary",
+        artifactContentHash: "c".repeat(64),
+      },
+      security: {
+        status: "clean",
+        passed: true,
+        rawStatus: "clean",
+        verdict: "clean",
+        source: "clawhub",
+        attemptId: "skillsShCatalogScanAttempts:canary",
+        checkedAt: 123,
+      },
+      signature: {
+        status: "unsigned",
+      },
+    });
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("skill verification preserves suspicious publication while failing the security decision", async () => {
+    const runQuery = vi.fn(async () => ({
+      ref: "skills-sh/patrick-erichsen/skills/html",
+      route: "/skills-sh/patrick-erichsen/skills/html",
+      displayName: "HTML Artifact Chooser",
+      repository: "patrick-erichsen/skills",
+      githubPath: "skills/html",
+      githubCommit: "1".repeat(40),
+      githubContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+      security: {
+        verdict: "suspicious",
+        source: "clawhub",
+        attemptId: "skillsShCatalogScanAttempts:canary",
+        scannedAt: 123,
+      },
+      artifact: {
+        contentHash: "c".repeat(64),
+        files: [{ path: "SKILL.md", size: 42, sha256: "d".repeat(64) }],
+      },
+    }));
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      schema: "clawhub.skill.verify.v1",
+      ok: false,
+      decision: "fail",
+      reasons: ["security.status_not_clean"],
+      slug: "skills-sh/patrick-erichsen/skills/html",
+      security: {
+        status: "suspicious",
+        passed: false,
+        verdict: "suspicious",
+        attemptId: "skillsShCatalogScanAttempts:canary",
+      },
+    });
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["skills-sh:patrick-erichsen/skills/html", "skills-sh/patrick-erichsen/skills/weather"])(
+    "skill verification rejects invalid exact catalog reference %s",
+    async (reference) => {
+      const runQuery = vi.fn();
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+
+      const response = await __handlers.skillsGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(
+          `https://example.com/api/v1/skills/html/verify?reference=${encodeURIComponent(reference)}`,
+        ),
+      );
+
+      expect(response.status).toBe(400);
+      expect(runQuery).not.toHaveBeenCalled();
+    },
+  );
+
+  it("skill verification never falls back to a native slug for a hidden catalog reference", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      expect(args).toEqual({
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+      });
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
   it("skill install resolver returns a pinned GitHub descriptor for scan-clean source-backed skills", async () => {
     const runQuery = makeInstallResolverRunQuery({
       skill: {

@@ -3,7 +3,6 @@ import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_SUMMARY,
-  ApiV1SkillsShCatalogEntrySchema,
   ApiV1SkillModerationResponseSchema,
   ApiV1SkillResponseSchema,
   ApiV1SkillVerifyResponseSchema,
@@ -278,25 +277,12 @@ export async function cmdVerifySkill(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Fetching skill verification");
   try {
-    if (skillsShRef) {
-      const result = await apiRequest(
-        registry,
-        {
-          method: "GET",
-          path: `${ApiRoutes.skillsSh}/${encodeURIComponent(
-            skillsShRef.owner,
-          )}/${encodeURIComponent(skillsShRef.repo)}/${encodeURIComponent(skillsShRef.slug)}`,
-          token,
-        },
-        ApiV1SkillsShCatalogEntrySchema,
-      );
-      spinner.stop();
-      console.log(JSON.stringify(result, null, 2));
-      return;
-    }
-
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
-    if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
+    if (skillsShRef) {
+      url.searchParams.set("reference", slug.trim().toLowerCase());
+    } else if (requested.ownerHandle) {
+      url.searchParams.set("ownerHandle", requested.ownerHandle);
+    }
     if (options.version) {
       url.searchParams.set("version", options.version);
     } else if (options.tag) {

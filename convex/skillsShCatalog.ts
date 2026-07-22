@@ -2588,6 +2588,26 @@ export const getPublicEntry = query({
     }
     const install = buildSkillsShCatalogInstallResolution(entry);
     if (!install) return null;
+    const scanRequest = attempt.skillScanRequestId
+      ? await ctx.db.get(attempt.skillScanRequestId)
+      : null;
+    const artifact =
+      attempt.artifactContentHash &&
+      scanRequest?.sourceKind === "skills-sh-catalog" &&
+      scanRequest.status === "succeeded" &&
+      scanRequest.skillsShCatalogAttemptId === attempt._id &&
+      scanRequest.securityScanJobId === attempt.securityScanJobId &&
+      scanRequest.sha256hash === attempt.artifactContentHash
+        ? {
+            contentHash: attempt.artifactContentHash,
+            files: scanRequest.files.map(({ path, size, sha256, contentType }) => ({
+              path,
+              size,
+              sha256,
+              ...(contentType ? { contentType } : {}),
+            })),
+          }
+        : null;
     return {
       ref: `skills-sh/${entry.externalId}`,
       route: `/skills-sh/${entry.externalId}`,
@@ -2612,6 +2632,7 @@ export const getPublicEntry = query({
         attemptId: attempt._id,
         scannedAt: attempt.completedAt ?? attempt.updatedAt,
       },
+      artifact,
       install,
     };
   },

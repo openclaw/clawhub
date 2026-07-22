@@ -360,48 +360,43 @@ describe("cmdInspect", () => {
 });
 
 describe("cmdVerifySkill", () => {
-  it("prints skills.sh catalog security evidence from the slash route", async () => {
+  it("prints exact skills.sh catalog verification from the standard verify route", async () => {
     const sourceRef = "skills-sh/patrick-erichsen/skills/html";
     const payload = {
-      ref: sourceRef,
-      route: "/skills-sh/patrick-erichsen/skills/html",
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: sourceRef,
       displayName: "HTML Artifact Chooser",
-      summary: "GitHub-backed skill indexed by skills.sh and verified by ClawHub.",
-      owner: {
-        handle: "patrick-erichsen",
-        githubUrl: "https://github.com/patrick-erichsen",
+      pageUrl: "https://clawhub.ai/skills-sh/patrick-erichsen/skills/html",
+      publisherHandle: null,
+      publisherDisplayName: null,
+      publisherProfileUrl: null,
+      version: "a".repeat(40),
+      resolvedFrom: "latest",
+      tag: null,
+      createdAt: 123,
+      card: {
+        available: false,
       },
-      repository: "patrick-erichsen/skills",
-      githubPath: "skills/html",
-      githubCommit: "a".repeat(40),
-      githubContentHash: "b".repeat(64),
-      sourceUrl: "https://www.skills.sh/patrick-erichsen/skills/html",
-      installs: 0,
-      security: {
-        verdict: "clean",
-        source: "clawhub",
-        attemptId: "skillsShCatalogScanAttempts:canary",
-        scannedAt: 123,
+      artifact: {
+        sourceFingerprint: "b".repeat(64),
+        bundleFingerprints: ["c".repeat(64)],
+        files: [{ path: "SKILL.md", size: 42, sha256: "d".repeat(64) }],
       },
-      install: {
-        ok: true,
-        slug: sourceRef,
-        installKind: "github",
-        github: {
-          repo: "patrick-erichsen/skills",
-          path: "skills/html",
-          commit: "a".repeat(40),
-          contentHash: "b".repeat(64),
-          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${"a".repeat(40)}/skills/html`,
-        },
-      },
+      provenance: { source: "skills-sh-catalog" },
+      security: { status: "clean", passed: true },
+      signature: { status: "unsigned" },
     };
     httpMocks.apiRequest.mockResolvedValueOnce(payload);
 
     await cmdVerifySkill(makeGlobalOpts(), sourceRef);
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1];
-    expect(request?.path).toBe(`${ApiRoutes.skillsSh}/patrick-erichsen/skills/html`);
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe(`${ApiRoutes.skills}/html/verify`);
+    expect(url.searchParams.get("reference")).toBe(sourceRef);
     expect(JSON.parse(String(mockLog.mock.calls[0]?.[0]))).toEqual(payload);
   });
 
