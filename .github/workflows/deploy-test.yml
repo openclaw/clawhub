@@ -6,6 +6,15 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact branch SHA permitted for a temporary protected Test deploy
+        required: false
+        type: string
+      branch_test_confirm:
+        description: Confirmation phrase for the CLAW-563 branch-only Test deploy
+        required: false
+        type: string
 
 concurrency:
   group: deploy-test
@@ -18,7 +27,10 @@ jobs:
   deploy-test:
     if: >-
       (github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main') ||
+      (github.ref == 'refs/heads/main' ||
+      (github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
+      github.actor == 'Patrick-Erichsen' &&
+      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'))) ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -30,6 +42,7 @@ jobs:
       deployment_url: ${{ steps.vercel.outputs.deployment_url }}
       deploy_sha: ${{ steps.revision.outputs.deploy_sha }}
       fixture_version: ${{ steps.revision.outputs.fixture_version }}
+      branch_test: ${{ steps.revision.outputs.branch_test }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -44,8 +57,18 @@ jobs:
           git fetch --no-tags origin main
           main_sha="$(git rev-parse origin/main)"
           if [[ "$deploy_sha" != "$main_sha" ]]; then
-            echo "::error::Refusing stale Test deploy: $deploy_sha is not current main $main_sha"
-            exit 1
+            if [[ "$GITHUB_EVENT_NAME" != workflow_dispatch ]] ||
+              [[ "$GITHUB_REF" != refs/heads/pe/claw-563-skills-sh-mirror-10k ]] ||
+              [[ "$GITHUB_ACTOR" != Patrick-Erichsen ]] ||
+              [[ "${{ inputs.branch_test_confirm }}" != deploy-claw-563-to-permanent-test ]] ||
+              [[ "${{ inputs.expected_sha }}" != "$deploy_sha" ]]
+            then
+              echo "::error::Refusing non-main Test deploy without the exact CLAW-563 branch guard"
+              exit 1
+            fi
+            echo "branch_test=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch_test=false" >> "$GITHUB_OUTPUT"
           fi
           fixture_version="$(
             git hash-object convex/devSeed.ts convex/lib/testSeed.ts |
@@ -138,6 +161,7 @@ jobs:
           ' <<< "$capabilities"
 
       - name: Apply additive Test fixtures
+        if: steps.revision.outputs.branch_test != 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_DEPLOYMENT: ${{ vars.CONVEX_DEPLOYMENT }}
