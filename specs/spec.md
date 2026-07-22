@@ -52,7 +52,18 @@ read_when:
 - `moderationFlags`: `string[]` (automatic detection)
 - `moderationNotes`, `moderationReason`
 - `hiddenAt`, `hiddenBy`, `lastReviewedAt`, `reportCount`
-- `stats`: `{ downloads, stars, versions, comments }` (`comments` is retained as a historical stat field; skill comments are retired)
+- `stats`: legacy nested compatibility counters; canonical migrated counters live
+  in top-level fields.
+- `statsDownloads`: native ClawHub downloads.
+- `statsSkillsShInstalls`: upstream skills.sh installs, stored separately.
+- `statsInstallsCurrent`, `statsInstallsAllTime`: OpenClaw install telemetry.
+- `statsGithubStars`: upstream GitHub popularity.
+- `statsStars`: ClawHub Bookmarks; existing `stars` rows and API names remain for
+  compatibility.
+- Public Downloads are `statsDownloads` for native-only skills and
+  `statsDownloads + statsSkillsShInstalls` for skills.sh-indexed skills.
+- Search ranking continues to use native counters rather than the combined
+  presentation value.
 - `createdAt`, `updatedAt`
 
 ### SkillVersion
@@ -95,9 +106,11 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
   detail page and as hover text; 70 is a presentation rule, not a storage,
   publish, API, or sync constraint.
 
-### Star
+### Bookmark
 
 - `skillId`, `userId`, `createdAt`
+- Stored in the legacy `stars` table and exposed through compatibility API
+  routes named `stars`; user-facing product language is Bookmark.
 
 ### AuditLog
 

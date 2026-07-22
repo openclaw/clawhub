@@ -1922,8 +1922,7 @@ describe("httpApiV1 handlers", () => {
           displayName: "Demo",
           summary: "Summary",
           updatedAt: 1,
-          statsDownloads: 42,
-          stats: { downloads: 1 },
+          stats: { downloads: 50 },
         },
         version: { version: "1.0.0" },
         ownerHandle: "openclaw",
@@ -1951,7 +1950,7 @@ describe("httpApiV1 handlers", () => {
           displayName: "Demo",
           summary: "Summary",
           version: "1.0.0",
-          downloads: 42,
+          downloads: 50,
           updatedAt: 1,
           ownerHandle: "openclaw",
           owner: {

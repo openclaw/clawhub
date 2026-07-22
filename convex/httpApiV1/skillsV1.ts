@@ -55,7 +55,6 @@ import {
   buildUnclaimedSkillsShVerifyResponse,
   type SkillsShMirrorDigest,
 } from "../lib/skillsShMirrorPublic";
-import { readCanonicalStat } from "../lib/skillStats";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -106,7 +105,6 @@ type SearchSkillEntry = {
       stars?: number;
       installs?: number;
     };
-    statsDownloads?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;
   ownerHandle?: string | null;
@@ -1402,7 +1400,9 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
           displayName: result.skill?.displayName,
           summary: result.skill?.summary ?? null,
           version: result.version?.version ?? null,
-          downloads: result.skill ? readCanonicalStat(result.skill, "downloads") : 0,
+          // searchSkills already returns the ordinary public skill shape, including
+          // the combined presentation value and no source-attribution fields.
+          downloads: result.skill?.stats.downloads ?? 0,
           updatedAt: result.skill?.updatedAt,
           ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
           owner,

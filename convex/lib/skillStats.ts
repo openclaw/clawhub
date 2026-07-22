@@ -17,7 +17,19 @@ export type SkillStatReadable = {
   statsStars?: number;
   statsInstallsCurrent?: number;
   statsInstallsAllTime?: number;
+  statsSkillsShInstalls?: number;
+  statsGithubStars?: number;
 };
+
+type ExternalSkillMetricSnapshot = {
+  skillsShInstalls?: number;
+  githubStars?: number;
+};
+
+function nonNegativeCount(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.trunc(value));
+}
 
 /**
  * Read the canonical value of a migrated stat field from a skill document.
@@ -40,6 +52,32 @@ export function readCanonicalStat(
     | "statsInstallsCurrent"
     | "statsInstallsAllTime";
   return typeof skill[topLevelKey] === "number" ? skill[topLevelKey]! : (skill.stats[field] ?? 0);
+}
+
+export function readSkillMetricSources(skill: SkillStatReadable) {
+  return {
+    clawHubDownloads: readCanonicalStat(skill, "downloads"),
+    skillsShInstalls: nonNegativeCount(skill.statsSkillsShInstalls),
+    openClawInstallsCurrent: readCanonicalStat(skill, "installsCurrent"),
+    openClawInstallsAllTime: readCanonicalStat(skill, "installsAllTime"),
+    githubStars: nonNegativeCount(skill.statsGithubStars),
+    bookmarks: readCanonicalStat(skill, "stars"),
+  };
+}
+
+export function readPublicDownloads(skill: SkillStatReadable): number {
+  return readCanonicalStat(skill, "downloads") + nonNegativeCount(skill.statsSkillsShInstalls);
+}
+
+export function buildExternalSkillMetricPatch(snapshot: ExternalSkillMetricSnapshot) {
+  return {
+    ...(snapshot.skillsShInstalls === undefined
+      ? {}
+      : { statsSkillsShInstalls: nonNegativeCount(snapshot.skillsShInstalls) }),
+    ...(snapshot.githubStars === undefined
+      ? {}
+      : { statsGithubStars: nonNegativeCount(snapshot.githubStars) }),
+  };
 }
 
 export function applySkillStatDeltas(skill: Doc<"skills">, deltas: SkillStatDeltas) {
