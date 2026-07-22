@@ -167,7 +167,7 @@ import {
   upsertSkillSearchDigest,
 } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug, normalizeSkillSlug } from "./lib/skillSlugValidator";
-import { readCanonicalStat } from "./lib/skillStats";
+import { readCanonicalStat, readPublicDownloads, readSkillMetricSources } from "./lib/skillStats";
 import { normalizeSkillTags } from "./lib/skillTags";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
@@ -1984,6 +1984,7 @@ type DashboardSkillListItem = {
   tags: Doc<"skills">["tags"];
   badges: Doc<"skills">["badges"];
   stats: Doc<"skills">["stats"];
+  metricSources: ReturnType<typeof readSkillMetricSources>;
   moderationStatus?: Doc<"skills">["moderationStatus"];
   moderationReason?: string;
   moderationSummary?: string;
@@ -2377,7 +2378,7 @@ async function toDashboardSkillListItem(
   const latestVersion = skill.latestVersionId ? await ctx.db.get(skill.latestVersionId) : null;
   const stats = {
     ...skill.stats,
-    downloads: readCanonicalStat(skill, "downloads"),
+    downloads: readPublicDownloads(skill),
     stars: readCanonicalStat(skill, "stars"),
     installsCurrent: readCanonicalStat(skill, "installsCurrent"),
     installsAllTime: readCanonicalStat(skill, "installsAllTime"),
@@ -2397,6 +2398,7 @@ async function toDashboardSkillListItem(
     tags: skill.tags,
     badges: skill.badges,
     stats,
+    metricSources: readSkillMetricSources(skill),
     moderationStatus: skill.moderationStatus,
     moderationReason: skill.moderationReason,
     moderationSummary: skill.moderationSummary,
@@ -6432,7 +6434,9 @@ async function toPublicSkillCatalogItem(
     latestVersion: latestVersion?.version ?? null,
     verificationTier: null,
     stats: {
-      downloads: readDigestRankStat(digest, "downloads"),
+      // CLAW-561 changes presentation only. Download indexes and ranking remain
+      // native-only until a separately accepted indexed combined metric exists.
+      downloads: readPublicDownloads(digest),
       installs: readDigestRankStat(digest, "installsAllTime"),
       stars: readDigestRankStat(digest, "stars"),
       versions: digest.stats.versions,

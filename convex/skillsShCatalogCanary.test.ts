@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import canarySkillMarkdown from "./fixtures/patrick-html-canary-SKILL.txt?raw";
+import { extractDigestFields } from "./lib/skillSearchDigest";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
@@ -214,6 +215,11 @@ async function seedNativeSkill(
   options: {
     exactSource: boolean;
     downloads: number;
+    bookmarks?: number;
+    openClawInstalls?: number;
+    skillsShInstalls?: number;
+    githubStars?: number;
+    seedDigest?: boolean;
   },
 ) {
   return await t.run(async (ctx) => {
@@ -250,26 +256,40 @@ async function seedNativeSkill(
       tags: {},
       moderationStatus: "active",
       statsDownloads: options.downloads,
-      statsStars: 0,
-      statsInstallsCurrent: 0,
-      statsInstallsAllTime: 0,
+      statsStars: options.bookmarks ?? 0,
+      statsInstallsCurrent: options.openClawInstalls ?? 0,
+      statsInstallsAllTime: options.openClawInstalls ?? 0,
+      statsSkillsShInstalls: options.skillsShInstalls,
+      statsGithubStars: options.githubStars,
       stats: {
         downloads: options.downloads,
-        stars: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
+        stars: options.bookmarks ?? 0,
+        installsCurrent: options.openClawInstalls ?? 0,
+        installsAllTime: options.openClawInstalls ?? 0,
         versions: 0,
         comments: 0,
       },
       createdAt: 1,
       updatedAt: 1,
     });
+    if (options.seedDigest) {
+      const skill = await ctx.db.get(skillId);
+      if (!skill) throw new Error("seeded native skill missing");
+      await ctx.db.insert("skillSearchDigest", {
+        ...extractDigestFields(skill),
+        ownerHandle: "native-owner",
+        ownerKind: "user",
+        ownerName: "Native Owner",
+        ownerDisplayName: "Native Owner",
+      });
+    }
     return skillId;
   });
 }
 
 describe("skills.sh controlled hidden metadata canary", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
@@ -324,17 +344,33 @@ describe("skills.sh controlled hidden metadata canary", () => {
     ).toHaveLength(0);
   });
 
-  it("records an exact native match and preserves its downloads", async () => {
+  it("attaches upstream metrics to an exact native match without rewriting native counters", async () => {
+    vi.useFakeTimers();
     useEnvironment(LOCAL_ENV);
     const t = convexTest(schema, modules);
-    const nativeSkillId = await seedNativeSkill(t, { exactSource: true, downloads: 143 });
+    const nativeSkillId = await seedNativeSkill(t, {
+      exactSource: true,
+      downloads: 143,
+      bookmarks: 5,
+      openClawInstalls: 11,
+      skillsShInstalls: 2,
+      githubStars: 300,
+      seedDigest: true,
+    });
     await configureCanary(t);
 
     const { runId, run } = await runCanary(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
     const readback = await t.query(internal.skillsShCatalog.getRunReconciliationInternal, {
       runId,
     });
     const native = await t.run(async (ctx) => await ctx.db.get(nativeSkillId));
+    const digest = await t.run(async (ctx) =>
+      ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", nativeSkillId))
+        .unique(),
+    );
 
     expect(run.counts).toMatchObject({
       newExternal: 0,
@@ -352,9 +388,24 @@ describe("skills.sh controlled hidden metadata canary", () => {
     expect(native).toMatchObject({
       _id: nativeSkillId,
       statsDownloads: 143,
-      stats: { downloads: 143 },
+      statsStars: 5,
+      statsInstallsCurrent: 11,
+      statsInstallsAllTime: 11,
+      statsSkillsShInstalls: 17,
+      statsGithubStars: 321,
+      stats: {
+        downloads: 143,
+        stars: 5,
+        installsCurrent: 11,
+        installsAllTime: 11,
+      },
       githubCurrentCommit: CANARY_COMMIT,
       githubCurrentContentHash: CANARY_CONTENT_HASH,
+    });
+    expect(digest).toMatchObject({
+      statsDownloads: 143,
+      statsSkillsShInstalls: 17,
+      statsGithubStars: 321,
     });
   });
 
