@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { getVercelOidcToken, verifyVercelOidcToken, type VercelOidcPayload } from "@vercel/oidc";
 import { getClawHubRolloutCapabilities } from "clawhub-schema";
-import { parseFragment, type DefaultTreeAdapterTypes } from "parse5";
 
 const SKILLS_SH_API_BASE = "https://skills.sh/api/v1";
 const MAX_SOURCE_PAGE_SIZE = 500;
@@ -49,6 +48,13 @@ export type SkillsShCatalogDetail = {
   }> | null;
 };
 
+export type SkillsShCatalogAudit = {
+  id?: unknown;
+  source?: unknown;
+  slug?: unknown;
+  audits?: unknown;
+};
+
 export type SkillsShMirrorUpstreamScanner = {
   status: string;
   sourceCheckedAt?: string;
@@ -79,36 +85,11 @@ type HashQualifiedSkillsShCatalogDetail = SkillsShCatalogDetail & {
   hash: string;
 };
 
-type HtmlNode = DefaultTreeAdapterTypes.Node;
-type HtmlElement = DefaultTreeAdapterTypes.Element;
-
-const UPSTREAM_SCANNER_PATHS = {
-  genAgentTrustHub: "agent-trust-hub",
+const UPSTREAM_SCANNER_PROVIDERS = {
+  "agent-trust-hub": "genAgentTrustHub",
   socket: "socket",
   snyk: "snyk",
 } as const;
-
-function isHtmlElement(node: HtmlNode): node is HtmlElement {
-  return "tagName" in node;
-}
-
-function walkHtml(node: HtmlNode, visit: (child: HtmlNode) => void) {
-  visit(node);
-  if (!("childNodes" in node)) return;
-  for (const child of node.childNodes) walkHtml(child, visit);
-}
-
-function htmlText(node: HtmlNode) {
-  const chunks: string[] = [];
-  walkHtml(node, (child) => {
-    if (child.nodeName === "#text" && "value" in child) chunks.push(child.value);
-  });
-  return chunks.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function htmlAttribute(element: HtmlElement, name: string) {
-  return element.attrs.find((attribute) => attribute.name === name)?.value;
-}
 
 function normalizeUpstreamScannerStatus(value: string) {
   const status = value.trim().toLowerCase().replace(/\s+/g, "-");
@@ -120,7 +101,7 @@ function normalizeUpstreamScannerStatus(value: string) {
 }
 
 export function buildSkillsShMirrorUpstreamScanners(
-  html: string,
+  auditPayload: SkillsShCatalogAudit | null,
   sourceUrl: string,
 ): SkillsShMirrorUpstreamScanners {
   const unavailable = (): SkillsShMirrorUpstreamScanner => ({ status: "unavailable" });
@@ -129,50 +110,88 @@ export function buildSkillsShMirrorUpstreamScanners(
     socket: unavailable(),
     snyk: unavailable(),
   };
-  const document = parseFragment(html);
-  const anchors: HtmlElement[] = [];
-  walkHtml(document, (node) => {
-    if (isHtmlElement(node) && node.tagName === "a") anchors.push(node);
-  });
-  for (const [provider, path] of Object.entries(UPSTREAM_SCANNER_PATHS) as Array<
-    [keyof SkillsShMirrorUpstreamScanners, string]
-  >) {
-    const anchor = anchors.find((candidate) =>
-      htmlAttribute(candidate, "href")?.endsWith(`/security/${path}`),
-    );
-    const href = anchor ? htmlAttribute(anchor, "href") : undefined;
-    if (!anchor || !href) continue;
-    let resolvedUrl: URL;
-    try {
-      resolvedUrl = new URL(href, sourceUrl);
-    } catch {
-      continue;
-    }
-    if (
-      resolvedUrl.protocol !== "https:" ||
-      !["skills.sh", "www.skills.sh"].includes(resolvedUrl.hostname) ||
-      resolvedUrl.href.length > MAX_UPSTREAM_SCANNER_URL_LENGTH
-    ) {
-      continue;
-    }
-    const spans: HtmlElement[] = [];
+  if (!auditPayload || !Array.isArray(auditPayload.audits)) return scanners;
+  let pageUrl: URL;
+  try {
+    pageUrl = new URL(sourceUrl);
+  } catch {
+    return scanners;
+  }
+  if (pageUrl.protocol !== "https:" || !["skills.sh", "www.skills.sh"].includes(pageUrl.hostname)) {
+    return scanners;
+  }
+  for (const value of auditPayload.audits) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const audit = value as Record<string, unknown>;
+    if (typeof audit.slug !== "string" || typeof audit.status !== "string") continue;
+    const slug = audit.slug.trim().toLowerCase();
+    const provider = UPSTREAM_SCANNER_PROVIDERS[slug as keyof typeof UPSTREAM_SCANNER_PROVIDERS];
+    if (!provider) continue;
+    const status = normalizeUpstreamScannerStatus(audit.status);
+    if (status === "unavailable") continue;
+    const detailUrl = new URL(pageUrl);
+    detailUrl.pathname = `${detailUrl.pathname.replace(/\/+$/, "")}/security/${slug}`;
+    detailUrl.search = "";
+    detailUrl.hash = "";
+    if (detailUrl.href.length > MAX_UPSTREAM_SCANNER_URL_LENGTH) continue;
     let sourceCheckedAt: string | undefined;
-    walkHtml(anchor, (node) => {
-      if (!isHtmlElement(node)) return;
-      if (node.tagName === "span") spans.push(node);
-      if (node.tagName === "time") {
-        const datetime = htmlAttribute(node, "datetime");
-        if (datetime && !Number.isNaN(Date.parse(datetime))) sourceCheckedAt = datetime;
-      }
-    });
-    const status = normalizeUpstreamScannerStatus(htmlText(spans.at(-1) ?? anchor));
+    if (typeof audit.auditedAt === "string" && !Number.isNaN(Date.parse(audit.auditedAt))) {
+      sourceCheckedAt = audit.auditedAt;
+    }
     scanners[provider] = {
       status,
-      sourceUrl: resolvedUrl.href,
+      sourceUrl: detailUrl.href,
       ...(sourceCheckedAt ? { sourceCheckedAt } : {}),
     };
   }
   return scanners;
+}
+
+type SkillsShFetchOptions = {
+  env?: SkillsShCatalogSourceEnv;
+  fetchImpl?: typeof fetch;
+  oidcToken?: string;
+};
+
+async function fetchSkillsShApiResponse(
+  path: string,
+  options: SkillsShFetchOptions,
+  allowNotFound = false,
+) {
+  const env = options.env ?? process.env;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
+    const response = await fetchImpl(`${SKILLS_SH_API_BASE}${path}`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
+      },
+    });
+    if (response.ok) return response;
+    if (allowNotFound && response.status === 404) return null;
+    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
+      throw new Error(`skills.sh catalog source returned HTTP ${response.status}`);
+    }
+    await waitForSkillsShRetry(response, attempt);
+  }
+  throw new Error("skills.sh catalog source exhausted retries");
+}
+
+function normalizeSkillsShId(id: string) {
+  const parts = id.split("/");
+  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !part.trim())) {
+    throw new Error("skills.sh mirror detail id must be source/skill or owner/repo/skill");
+  }
+  return parts.map((part) => encodeURIComponent(part)).join("/");
+}
+
+async function fetchSkillsShMirrorAudit(id: string, options: SkillsShFetchOptions = {}) {
+  const response = await fetchSkillsShApiResponse(
+    `/skills/audit/${normalizeSkillsShId(id)}`,
+    options,
+    true,
+  );
+  return response === null ? null : ((await response.json()) as SkillsShCatalogAudit);
 }
 
 export function buildSkillsShMirrorObservation(row: SkillsShCatalogListRow) {
@@ -317,30 +336,10 @@ function requireOidcToken(env: SkillsShCatalogSourceEnv, requestOidcToken?: stri
   return token;
 }
 
-async function fetchSkillsShJson<T>(
-  path: string,
-  options: {
-    env?: SkillsShCatalogSourceEnv;
-    fetchImpl?: typeof fetch;
-    oidcToken?: string;
-  } = {},
-): Promise<T> {
-  const env = options.env ?? process.env;
-  const fetchImpl = options.fetchImpl ?? fetch;
-  for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
-    const response = await fetchImpl(`${SKILLS_SH_API_BASE}${path}`, {
-      headers: {
-        Accept: "application/json",
-        Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
-      },
-    });
-    if (response.ok) return (await response.json()) as T;
-    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
-      throw new Error(`skills.sh catalog source returned HTTP ${response.status}`);
-    }
-    await waitForSkillsShRetry(response, attempt);
-  }
-  throw new Error("skills.sh catalog source exhausted retries");
+async function fetchSkillsShJson<T>(path: string, options: SkillsShFetchOptions = {}): Promise<T> {
+  const response = await fetchSkillsShApiResponse(path, options);
+  if (response === null) throw new Error("skills.sh catalog source returned unexpected not found");
+  return (await response.json()) as T;
 }
 
 async function waitForSkillsShRetry(response: Response, attempt: number) {
@@ -349,40 +348,6 @@ async function waitForSkillsShRetry(response: Response, attempt: number) {
     ? Math.min(5_000, Math.max(0, retryAfterSeconds * 1_000))
     : 250 * 2 ** attempt;
   await new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-async function fetchSkillsShText(
-  url: string,
-  options: {
-    env?: SkillsShCatalogSourceEnv;
-    fetchImpl?: typeof fetch;
-    oidcToken?: string;
-  } = {},
-) {
-  const env = options.env ?? process.env;
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const parsedUrl = new URL(url);
-  if (
-    parsedUrl.protocol !== "https:" ||
-    !["skills.sh", "www.skills.sh"].includes(parsedUrl.hostname)
-  ) {
-    throw new Error("skills.sh mirror source page must use the skills.sh origin");
-  }
-  for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
-    const response = await fetchImpl(parsedUrl, {
-      headers: {
-        Accept: "text/html",
-        Authorization: `Bearer ${requireOidcToken(env, options.oidcToken)}`,
-      },
-    });
-    if (response.ok) return await response.text();
-    if (response.status === 404) return null;
-    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
-      throw new Error(`skills.sh mirror source page returned HTTP ${response.status}`);
-    }
-    await waitForSkillsShRetry(response, attempt);
-  }
-  throw new Error("skills.sh mirror source page exhausted retries");
 }
 
 export async function fetchSkillsShCatalogPage(
@@ -446,20 +411,11 @@ export async function fetchSkillsShCatalogDetail(
   return await fetchSkillsShJson<SkillsShCatalogDetail>(`/skills/${normalizedId}`, options);
 }
 
-async function fetchSkillsShMirrorDetail(
-  id: string,
-  options: {
-    env?: SkillsShCatalogSourceEnv;
-    fetchImpl?: typeof fetch;
-    oidcToken?: string;
-  } = {},
-) {
-  const parts = id.split("/");
-  if (parts.length < 2 || parts.length > 3 || parts.some((part) => !part.trim())) {
-    throw new Error("skills.sh mirror detail id must be source/skill or owner/repo/skill");
-  }
-  const normalizedId = parts.map((part) => encodeURIComponent(part)).join("/");
-  return await fetchSkillsShJson<SkillsShCatalogDetail>(`/skills/${normalizedId}`, options);
+async function fetchSkillsShMirrorDetail(id: string, options: SkillsShFetchOptions = {}) {
+  return await fetchSkillsShJson<SkillsShCatalogDetail>(
+    `/skills/${normalizeSkillsShId(id)}`,
+    options,
+  );
 }
 
 export async function fetchSkillsShMirrorBatch(
@@ -502,7 +458,7 @@ export async function fetchSkillsShMirrorBatch(
   }
   const listRows = sourcePage.data.slice(args.offset, args.offset + args.limit);
   const details = Array.from<SkillsShCatalogDetail>({ length: listRows.length });
-  const sourcePages = Array.from<string | null>({ length: listRows.length });
+  const audits = Array.from<SkillsShCatalogAudit | null>({ length: listRows.length });
   let nextIndex = 0;
   await Promise.all(
     Array.from({ length: Math.min(DETAIL_CONCURRENCY, listRows.length) }, async () => {
@@ -510,9 +466,9 @@ export async function fetchSkillsShMirrorBatch(
         const index = nextIndex;
         nextIndex += 1;
         const listRow = listRows[index]!;
-        [details[index], sourcePages[index]] = await Promise.all([
+        [details[index], audits[index]] = await Promise.all([
           fetchSkillsShMirrorDetail(listRow.id, fetchOptions),
-          fetchSkillsShText(listRow.url, fetchOptions),
+          fetchSkillsShMirrorAudit(listRow.id, fetchOptions),
         ]);
       }
     }),
@@ -523,7 +479,7 @@ export async function fetchSkillsShMirrorBatch(
     return {
       ...observation,
       ...(detail.sourceContentHash ? { sourceContentHash: detail.sourceContentHash } : {}),
-      upstreamScanners: buildSkillsShMirrorUpstreamScanners(sourcePages[index] ?? "", listRow.url),
+      upstreamScanners: buildSkillsShMirrorUpstreamScanners(audits[index] ?? null, listRow.url),
       ...(detail.contentKind === "none"
         ? {}
         : {
@@ -552,9 +508,9 @@ export async function fetchSkillsShMirrorBatch(
         (total, detail) => total + Buffer.byteLength(JSON.stringify(detail), "utf8"),
         0,
       ) +
-      sourcePages.reduce(
-        (total, sourceHtml) =>
-          total + (sourceHtml === null ? 0 : Buffer.byteLength(sourceHtml, "utf8")),
+      audits.reduce(
+        (total, audit) =>
+          total + (audit === null ? 0 : Buffer.byteLength(JSON.stringify(audit), "utf8")),
         0,
       ),
     rows,
