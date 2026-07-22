@@ -2971,6 +2971,189 @@ const skillsShCatalogScanAttempts = defineTable({
   .index("by_status_and_created_at", ["status", "createdAt"])
   .index("by_dispatch_kind_and_status_and_created_at", ["dispatchKind", "status", "createdAt"]);
 
+const skillsShMirrorControls = defineTable({
+  key: v.literal("global"),
+  enabled: v.boolean(),
+  paused: v.boolean(),
+  maxRowsPerRun: v.number(),
+  maxRowsPerBatch: v.number(),
+  maxDetailBytes: v.number(),
+  updatedBy: v.string(),
+  reason: v.string(),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
+const skillsShMirrorRunCountsValidator = v.object({
+  observed: v.number(),
+  inserted: v.number(),
+  updated: v.number(),
+  unchanged: v.number(),
+  rejected: v.number(),
+  conflicts: v.number(),
+  detailsInserted: v.number(),
+  detailsUpdated: v.number(),
+  detailsUnchanged: v.number(),
+  detailsMissing: v.number(),
+  detailsTruncated: v.number(),
+  tombstoned: v.number(),
+  reactivated: v.number(),
+  scansPlanned: v.literal(0),
+  scansAdmitted: v.literal(0),
+});
+
+const skillsShMirrorRuns = defineTable({
+  snapshotId: v.string(),
+  status: v.union(
+    v.literal("running"),
+    v.literal("paused"),
+    v.literal("reconciling"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  sourceTotal: v.number(),
+  sourcePageSize: v.number(),
+  sourceMeasuredAt: v.string(),
+  page: v.number(),
+  offset: v.number(),
+  reconcileCursor: v.optional(v.string()),
+  counts: skillsShMirrorRunCountsValidator,
+  operations: v.object({
+    functionCalls: v.number(),
+    dbReads: v.number(),
+    dbWrites: v.number(),
+    sourceRequests: v.number(),
+    sourceBytes: v.number(),
+  }),
+  actor: v.string(),
+  reason: v.string(),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+})
+  .index("by_started_at", ["startedAt"])
+  .index("by_status_and_updated_at", {
+    fields: ["status", "updatedAt"],
+    staged: true,
+  });
+
+const skillsShMirrorUpstreamScannerValidator = v.object({
+  status: v.string(),
+  sourceCheckedAt: v.optional(v.string()),
+  sourceUrl: v.optional(v.string()),
+});
+
+const skillsShMirrorDigests = defineTable({
+  externalId: v.string(),
+  sourceType: v.union(v.literal("github"), v.literal("well-known")),
+  owner: v.optional(v.string()),
+  repo: v.optional(v.string()),
+  sourceHost: v.optional(v.string()),
+  slug: v.string(),
+  normalizedSlug: v.string(),
+  normalizedSlugFirstToken: v.string(),
+  displayName: v.string(),
+  normalizedDisplayName: v.string(),
+  normalizedDisplayNameFirstToken: v.string(),
+  searchText: v.string(),
+  sourceUrl: v.string(),
+  canonicalRepoUrl: v.optional(v.string()),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  sourceContentHash: v.optional(v.string()),
+  upstreamInstalls: v.number(),
+  upstreamScanners: v.object({
+    genAgentTrustHub: skillsShMirrorUpstreamScannerValidator,
+    socket: skillsShMirrorUpstreamScannerValidator,
+    snyk: skillsShMirrorUpstreamScannerValidator,
+  }),
+  sourceFreshnessStatus: v.literal("observed-only"),
+  detailStatus: v.union(v.literal("available"), v.literal("missing")),
+  observationFingerprint: v.string(),
+  sourceSnapshotId: v.string(),
+  lastObservedRunId: v.id("skillsShMirrorRuns"),
+  active: v.boolean(),
+  publicVisible: v.literal(false),
+  installable: v.literal(false),
+  tombstonedAt: v.optional(v.number()),
+  firstObservedAt: v.number(),
+  lastObservedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_active_and_normalized_slug", {
+    fields: ["active", "normalizedSlug"],
+    staged: true,
+  })
+  .index("by_active_and_normalized_display_name", {
+    fields: ["active", "normalizedDisplayName"],
+    staged: true,
+  })
+  .index("by_active_and_normalized_slug_first_token", {
+    fields: ["active", "normalizedSlugFirstToken"],
+    staged: true,
+  })
+  .index("by_active_and_normalized_display_name_first_token", {
+    fields: ["active", "normalizedDisplayNameFirstToken"],
+    staged: true,
+  })
+  .index("by_active_and_upstream_installs", {
+    fields: ["active", "upstreamInstalls"],
+    staged: true,
+  })
+  .index("by_source_type_and_external_id", {
+    fields: ["sourceType", "externalId"],
+    staged: true,
+  })
+  .index("by_last_observed_at", {
+    fields: ["lastObservedAt"],
+    staged: true,
+  })
+  .searchIndex("search_by_search_text", {
+    searchField: "searchText",
+    filterFields: ["active"],
+    staged: true,
+  });
+
+const skillsShMirrorDetails = defineTable({
+  externalId: v.string(),
+  digestId: v.id("skillsShMirrorDigests"),
+  contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
+  path: v.string(),
+  content: v.string(),
+  contentBytes: v.number(),
+  sourceBytes: v.number(),
+  sourceFileCount: v.number(),
+  truncated: v.boolean(),
+  sourceContentHash: v.optional(v.string()),
+  sourceSnapshotId: v.string(),
+  lastObservedRunId: v.id("skillsShMirrorRuns"),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_digest_id", {
+    fields: ["digestId"],
+    staged: true,
+  });
+
+const skillsShMirrorConflicts = defineTable({
+  runId: v.id("skillsShMirrorRuns"),
+  externalId: v.string(),
+  kind: v.union(v.literal("same-run-drift"), v.literal("identity-mismatch")),
+  previousFingerprint: v.optional(v.string()),
+  observedFingerprint: v.string(),
+  page: v.number(),
+  offset: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_run_id", ["runId"])
+  .index("by_external_id_and_created_at", {
+    fields: ["externalId", "createdAt"],
+    staged: true,
+  });
+
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),
   modelConfig: publisherAbuseModelConfigValidator,
@@ -3653,6 +3836,11 @@ export default defineSchema({
   skillsShCatalogRuns,
   skillsShCatalogEntries,
   skillsShCatalogScanAttempts,
+  skillsShMirrorControls,
+  skillsShMirrorRuns,
+  skillsShMirrorDigests,
+  skillsShMirrorDetails,
+  skillsShMirrorConflicts,
   publisherAbuseScoreRuns,
   publisherAbuseTemporalScanSamples,
   publisherAbuseTemporalScanCandidates,

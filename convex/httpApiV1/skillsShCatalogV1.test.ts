@@ -210,6 +210,86 @@ describe("skills.sh catalog Test HTTP API", () => {
     expect(buildGitHubApiHeaders).not.toHaveBeenCalled();
   });
 
+  it("routes mirror batches through the scanless mirror mutation", async () => {
+    const runMutation = vi.fn(async (_ref, args: Record<string, unknown>) => ({
+      status: "running",
+      page: args.page,
+      offset: 1,
+    }));
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })),
+      runMutation,
+    } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "mirror-batch",
+        runId: "skillsShMirrorRuns:test",
+        page: 0,
+        offset: 0,
+        pageLength: 500,
+        hasMore: true,
+        sourceTotal: 9_571,
+        sourceRequests: 2,
+        sourceBytes: 1_024,
+        rows: [{ externalId: "vercel-labs/skills/find-skills" }],
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        runId: "skillsShMirrorRuns:test",
+        page: 0,
+        offset: 0,
+        sourceTotal: 9_571,
+      }),
+    );
+  });
+
+  it("reads one mirror run for source-fetch preflight", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })
+      .mockResolvedValueOnce({
+        runId: "skillsShMirrorRuns:test",
+        status: "paused",
+        page: 3,
+        offset: 50,
+      });
+    const ctx = { runQuery } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "mirror-run",
+        runId: "skillsShMirrorRuns:test",
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      status: "paused",
+      page: 3,
+      offset: 50,
+    });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
   it("fetches only owners missing from authenticated staging-live state", async () => {
     const githubFetch = vi.fn(async (url: string, init?: RequestInit) => {
       expect(init?.headers).toMatchObject({ Authorization: "Bearer placeholder" });
