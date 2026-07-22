@@ -192,7 +192,25 @@ function UpstreamCheck({ check }: { check: SkillsShUpstreamCheck }) {
           {check.scanner}
         </span>
       </div>
-      <p className={`mt-1 text-xs font-medium ${presentation.className}`}>{presentation.label}</p>
+      <p className={`mt-1 text-xs font-medium ${presentation.className}`}>
+        {check.sourceStatus === "unavailable" ? presentation.label : check.sourceStatus}
+      </p>
+      {check.checkedAt ? (
+        <p className="mt-1 text-xs text-[color:var(--oc-text-muted)]">
+          Checked {timeAgo(check.checkedAt)}
+        </p>
+      ) : null}
+      {check.url ? (
+        <a
+          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[color:var(--oc-accent-primary)] hover:underline"
+          href={check.url}
+          target="_blank"
+          rel="noreferrer"
+        >
+          View result
+          <ExternalLink aria-hidden="true" size={12} />
+        </a>
+      ) : null}
     </div>
   );
 }

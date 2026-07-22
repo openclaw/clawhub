@@ -8,6 +8,8 @@ export type MixedSkillCandidate<T> = {
   textScore: number;
   clawhubTrusted: boolean;
   popularity: number;
+  secondaryPopularity?: number;
+  tertiaryPopularity?: number;
   freshness: number;
 };
 
@@ -25,6 +27,8 @@ function compareMixedSkillCandidates<T>(a: MixedSkillCandidate<T>, b: MixedSkill
     Number(b.clawhubTrusted) - Number(a.clawhubTrusted) ||
     b.textScore - a.textScore ||
     b.popularity - a.popularity ||
+    (b.secondaryPopularity ?? 0) - (a.secondaryPopularity ?? 0) ||
+    (b.tertiaryPopularity ?? 0) - (a.tertiaryPopularity ?? 0) ||
     b.freshness - a.freshness ||
     a.key.localeCompare(b.key)
   );

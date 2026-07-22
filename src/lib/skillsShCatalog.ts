@@ -5,6 +5,7 @@ export type SkillsShUpstreamCheckStatus = "passed" | "warning" | "failed" | "una
 export type SkillsShUpstreamCheck = {
   scanner: string;
   status: SkillsShUpstreamCheckStatus;
+  sourceStatus: string;
   checkedAt?: number;
   url?: string;
 };

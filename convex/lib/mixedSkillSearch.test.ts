@@ -118,4 +118,21 @@ describe("mixed skill search", () => {
 
     expect(result.map((entry) => entry.key)).toEqual(["relevant", "popular", "fresh"]);
   });
+
+  it("preserves source-specific popularity tie-breakers", () => {
+    const result = rankMixedSkillCandidates([
+      candidate("tertiary", {
+        popularity: 1,
+        secondaryPopularity: 1,
+        tertiaryPopularity: 2,
+      }),
+      candidate("secondary", {
+        popularity: 1,
+        secondaryPopularity: 2,
+        tertiaryPopularity: 0,
+      }),
+    ]);
+
+    expect(result.map((entry) => entry.key)).toEqual(["secondary", "tertiary"]);
+  });
 });

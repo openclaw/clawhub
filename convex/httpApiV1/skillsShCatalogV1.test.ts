@@ -778,7 +778,11 @@ describe("skills.sh public HTTP API", () => {
     githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
     sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
     upstreamInstalls: 100,
-    upstreamScannerStatus: "unavailable",
+    upstreamScanners: {
+      genAgentTrustHub: { status: "unavailable" },
+      socket: { status: "unavailable" },
+      snyk: { status: "unavailable" },
+    },
     sourceFreshnessStatus: "observed-only",
     detailStatus: "available",
     active: true,
@@ -815,9 +819,13 @@ describe("skills.sh public HTTP API", () => {
     githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
     sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
     upstreamChecks: [
-      { scanner: "Gen Agent Trust Hub", status: "unavailable" },
-      { scanner: "Socket", status: "unavailable" },
-      { scanner: "Snyk", status: "unavailable" },
+      {
+        scanner: "Gen Agent Trust Hub",
+        status: "unavailable",
+        sourceStatus: "unavailable",
+      },
+      { scanner: "Socket", status: "unavailable", sourceStatus: "unavailable" },
+      { scanner: "Snyk", status: "unavailable", sourceStatus: "unavailable" },
     ],
     content: {
       kind: "skill-md",

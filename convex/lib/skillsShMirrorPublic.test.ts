@@ -23,7 +23,15 @@ const digest: SkillsShMirrorDigest = {
   githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
   sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
   upstreamInstalls: 100,
-  upstreamScannerStatus: "unavailable",
+  upstreamScanners: {
+    genAgentTrustHub: { status: "unavailable" },
+    socket: {
+      status: "pass",
+      sourceCheckedAt: "2026-07-22T20:00:00.000Z",
+      sourceUrl: "https://www.skills.sh/patrick-erichsen/skills/html/security/socket",
+    },
+    snyk: { status: "warning" },
+  },
   sourceFreshnessStatus: "observed-only",
   detailStatus: "available",
   active: true,
@@ -98,9 +106,19 @@ describe("skills.sh mirror public contract", () => {
     expect(buildSkillsShMirrorCatalogDetail({ digest, detail })).toMatchObject({
       sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
       upstreamChecks: [
-        { scanner: "Gen Agent Trust Hub", status: "unavailable" },
-        { scanner: "Socket", status: "unavailable" },
-        { scanner: "Snyk", status: "unavailable" },
+        {
+          scanner: "Gen Agent Trust Hub",
+          status: "unavailable",
+          sourceStatus: "unavailable",
+        },
+        {
+          scanner: "Socket",
+          status: "passed",
+          sourceStatus: "pass",
+          checkedAt: Date.parse("2026-07-22T20:00:00.000Z"),
+          url: "https://www.skills.sh/patrick-erichsen/skills/html/security/socket",
+        },
+        { scanner: "Snyk", status: "warning", sourceStatus: "warning" },
       ],
       content: {
         kind: "skill-md",
@@ -139,7 +157,13 @@ describe("skills.sh mirror public contract", () => {
   it("refuses incomplete, inactive, mismatched, and non-GitHub rows", () => {
     expect(buildUnclaimedSkillsShInstallResolution({ ...digest, active: false })).toBeNull();
     expect(
-      buildUnclaimedSkillsShInstallResolution({ ...digest, upstreamScannerStatus: "unavailable" }),
+      buildUnclaimedSkillsShInstallResolution({
+        ...digest,
+        upstreamScanners: {
+          ...digest.upstreamScanners,
+          socket: { status: "failed" },
+        },
+      }),
     ).not.toBeNull();
     expect(
       buildUnclaimedSkillsShInstallResolution({ ...digest, sourceContentHash: undefined }),

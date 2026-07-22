@@ -13,6 +13,10 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(screen.getByText("Gen Agent Trust Hub")).toBeTruthy();
     expect(screen.getByText("Socket")).toBeTruthy();
     expect(screen.getByText("Snyk")).toBeTruthy();
+    expect(screen.getByText("pass")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View result" }).getAttribute("href")).toBe(
+      "https://www.skills.sh/patrick-erichsen/skills/html/security/socket",
+    );
     expect(screen.getByText("Upstream checks are separate from ClawHub scanning.")).toBeTruthy();
     expect(screen.getByText("Observed 1m ago")).toBeTruthy();
     expect(screen.getByRole("link", { name: /View on skills\.sh/i }).getAttribute("href")).toBe(
@@ -64,9 +68,15 @@ function makeEntry(): SkillsShCatalogDetail {
     upstreamInstalls: 100,
     lastObservedAt: Date.now() - 60_000,
     upstreamChecks: [
-      { scanner: "Gen Agent Trust Hub", status: "passed" },
-      { scanner: "Socket", status: "unavailable" },
-      { scanner: "Snyk", status: "warning" },
+      { scanner: "Gen Agent Trust Hub", status: "unavailable", sourceStatus: "unavailable" },
+      {
+        scanner: "Socket",
+        status: "passed",
+        sourceStatus: "pass",
+        checkedAt: Date.now() - 60_000,
+        url: "https://www.skills.sh/patrick-erichsen/skills/html/security/socket",
+      },
+      { scanner: "Snyk", status: "warning", sourceStatus: "warning" },
     ],
     content: {
       kind: "skill-md",

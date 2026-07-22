@@ -17,13 +17,23 @@ export type SkillsShMirrorDigest = {
   githubCommit?: string;
   sourceContentHash?: string;
   upstreamInstalls: number;
-  upstreamScannerStatus: "unavailable";
+  upstreamScanners: {
+    genAgentTrustHub: SkillsShMirrorUpstreamScanner;
+    socket: SkillsShMirrorUpstreamScanner;
+    snyk: SkillsShMirrorUpstreamScanner;
+  };
   sourceFreshnessStatus: "observed-only";
   detailStatus: "available" | "missing";
   active: boolean;
   publicVisible: false;
   installable: false;
   lastObservedAt: number;
+};
+
+type SkillsShMirrorUpstreamScanner = {
+  status: string;
+  sourceCheckedAt?: string;
+  sourceUrl?: string;
 };
 
 export type SkillsShMirrorDetail = {
@@ -80,9 +90,37 @@ function isUnclaimedMirrorDigest(digest: SkillsShMirrorDigest) {
     digest.active &&
     digest.publicVisible === false &&
     digest.installable === false &&
-    digest.upstreamScannerStatus === "unavailable" &&
     digest.sourceFreshnessStatus === "observed-only"
   );
+}
+
+function upstreamCheckStatus(status: string) {
+  switch (status.trim().toLowerCase()) {
+    case "pass":
+    case "passed":
+    case "clean":
+      return "passed" as const;
+    case "warn":
+    case "warning":
+      return "warning" as const;
+    case "fail":
+    case "failed":
+    case "unsafe":
+      return "failed" as const;
+    default:
+      return "unavailable" as const;
+  }
+}
+
+function buildUpstreamCheck(scanner: string, result: SkillsShMirrorUpstreamScanner) {
+  const checkedAt = result.sourceCheckedAt ? Date.parse(result.sourceCheckedAt) : Number.NaN;
+  return {
+    scanner,
+    status: upstreamCheckStatus(result.status),
+    sourceStatus: result.status,
+    ...(Number.isNaN(checkedAt) ? {} : { checkedAt }),
+    ...(result.sourceUrl ? { url: result.sourceUrl } : {}),
+  };
 }
 
 export function buildSkillsShMirrorSearchResult(digest: SkillsShMirrorDigest) {
@@ -125,10 +163,11 @@ export function buildSkillsShMirrorCatalogDetail(args: {
     githubPath: args.digest.githubPath,
     githubCommit: args.digest.githubCommit,
     sourceContentHash: args.digest.sourceContentHash,
-    upstreamChecks: UPSTREAM_SCANNERS.map((scanner) => ({
-      scanner,
-      status: "unavailable" as const,
-    })),
+    upstreamChecks: [
+      buildUpstreamCheck(UPSTREAM_SCANNERS[0], args.digest.upstreamScanners.genAgentTrustHub),
+      buildUpstreamCheck(UPSTREAM_SCANNERS[1], args.digest.upstreamScanners.socket),
+      buildUpstreamCheck(UPSTREAM_SCANNERS[2], args.digest.upstreamScanners.snyk),
+    ],
     content: detail,
   };
 }
