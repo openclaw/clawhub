@@ -1,4 +1,5 @@
 import { httpAction } from "./functions";
+import { publishersGetRouterV1Handler } from "./httpApiV1/accountFeedsV1";
 import {
   catalogFeedV1Handler,
   catalogSkillsFeedV1Handler,
@@ -70,6 +71,7 @@ export const listCodePluginsV1Http = httpAction(listCodePluginsV1Handler);
 export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 export const createPublisherV1Http = httpAction(createPublisherV1Handler);
+export const publishersGetRouterV1Http = httpAction(publishersGetRouterV1Handler);
 export const contentRightsV1Http = httpAction(contentRightsV1Handler);
 export const skillsShCatalogTestV1Http = httpAction(skillsShCatalogTestV1Handler);
 export const skillsShCatalogPublicV1Http = httpAction(skillsShCatalogPublicV1Handler);
@@ -121,6 +123,7 @@ export const __handlers = {
   listBundlePluginsV1Handler,
   verifyDocsSessionV1Handler,
   createPublisherV1Handler,
+  publishersGetRouterV1Handler,
   contentRightsV1Handler,
   skillsShCatalogTestV1Handler,
   skillsShCatalogPublicV1Handler,

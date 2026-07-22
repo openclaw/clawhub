@@ -938,10 +938,10 @@ const skills = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_slug", ["ownerUserId", "slug"])
   .index("by_owner_publisher_slug", ["ownerPublisherId", "slug"])
-  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_downloads", [
     "ownerPublisherId",
@@ -1601,6 +1601,7 @@ const packages = defineTable({
 })
   .index("by_name", ["normalizedName"])
   .index("by_owner", ["ownerUserId"])
+  .index("by_owner_active_updated", ["ownerUserId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_active_updated", ["ownerPublisherId", "softDeletedAt", "updatedAt"])
   .index("by_owner_publisher_active_downloads", [
@@ -2686,6 +2687,90 @@ const catalogFeedPublications = defineTable({
   publishedAt: v.number(),
 }).index("by_feed", ["feedId"]);
 
+const publisherFeedPublications = defineTable({
+  publisherId: v.id("publishers"),
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  handle: v.union(v.string(), v.null()),
+  displayName: v.string(),
+  entries: v.array(
+    v.object({
+      kind: v.union(v.literal("skill"), v.literal("plugin")),
+      id: v.string(),
+      name: v.string(),
+      displayName: v.string(),
+      summary: v.union(v.string(), v.null()),
+      url: v.string(),
+      updatedAt: v.number(),
+    }),
+  ),
+  contentKey: v.string(),
+  cumulativeChangeCount: v.optional(v.number()),
+  publishedAt: v.number(),
+}).index("by_publisher", ["publisherId"]);
+
+const publisherFeedEntryValidator = v.object({
+  kind: v.union(v.literal("skill"), v.literal("plugin")),
+  id: v.string(),
+  name: v.string(),
+  displayName: v.string(),
+  summary: v.union(v.string(), v.null()),
+  url: v.string(),
+  updatedAt: v.number(),
+});
+
+const publisherFeedMetadataValidator = v.object({
+  publisherId: v.string(),
+  handle: v.union(v.string(), v.null()),
+  displayName: v.string(),
+});
+
+const publisherFeedRevisions = defineTable({
+  publisherId: v.id("publishers"),
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  metadata: publisherFeedMetadataValidator,
+  contentKey: v.string(),
+  cumulativeChangeCount: v.number(),
+  publishedAt: v.number(),
+})
+  .index("by_publisher_and_sequence", ["publisherId", "sequence"])
+  .index("by_feed_and_sequence", ["feedId", "sequence"]);
+
+const publisherFeedChanges = defineTable(
+  v.union(
+    v.object({
+      publisherId: v.id("publishers"),
+      feedId: v.string(),
+      sequence: v.number(),
+      changeNumber: v.number(),
+      operation: v.literal("upsert"),
+      entry: publisherFeedEntryValidator,
+    }),
+    v.object({
+      publisherId: v.id("publishers"),
+      feedId: v.string(),
+      sequence: v.number(),
+      changeNumber: v.number(),
+      operation: v.literal("remove"),
+      entryId: v.string(),
+      entryKind: v.union(v.literal("skill"), v.literal("plugin")),
+    }),
+    v.object({
+      publisherId: v.id("publishers"),
+      feedId: v.string(),
+      sequence: v.number(),
+      changeNumber: v.number(),
+      operation: v.literal("metadata"),
+      metadata: publisherFeedMetadataValidator,
+    }),
+  ),
+)
+  .index("by_publisher_and_change_number", ["publisherId", "changeNumber"])
+  .index("by_publisher_and_sequence", ["publisherId", "sequence"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -3640,6 +3725,9 @@ export default defineSchema({
   packageModerationEventLogs,
   officialPluginMigrations,
   catalogFeedPublications,
+  publisherFeedPublications,
+  publisherFeedRevisions,
+  publisherFeedChanges,
   stars,
   promotions,
   auditLogs,

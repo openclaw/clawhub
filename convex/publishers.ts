@@ -32,12 +32,14 @@ import {
   getPublisherMembership,
   getPersonalPublisherForUserOrFallback,
   getPersonalPublisherForUser,
+  getPublicPublisherVisibility,
   isPublisherActive,
   isPublisherRoleAllowed,
   isReservedOpenClawPublisherHandle,
   PUBLISHER_HANDLE_PATTERN,
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
+  type PublicPublisherVisibility,
 } from "./lib/publishers";
 import {
   getLatestActiveReservedHandle,
@@ -282,45 +284,6 @@ function hasPublisherStats(publisher: Doc<"publishers">) {
     typeof publisher.totalDownloads === "number" &&
     typeof publisher.totalStars === "number"
   );
-}
-
-type PublicPublisherVisibility = {
-  publisher: Doc<"publishers">;
-  linkedUser: Doc<"users"> | null;
-};
-
-async function getPublicPublisherVisibility(
-  ctx: Pick<QueryCtx, "db">,
-  publisher: Doc<"publishers"> | null | undefined,
-): Promise<PublicPublisherVisibility | null> {
-  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return null;
-  if (publisher.kind !== "user") {
-    return { publisher, linkedUser: null };
-  }
-  if (!publisher.linkedUserId) {
-    const legacyOwner = await getLegacyPersonalPublisherOwner(ctx, publisher._id);
-    return legacyOwner ? { publisher, linkedUser: legacyOwner } : null;
-  }
-
-  const linkedUser = await ctx.db.get(publisher.linkedUserId);
-  if (!linkedUser || linkedUser.deletedAt || linkedUser.deactivatedAt) return null;
-  return { publisher, linkedUser };
-}
-
-async function getLegacyPersonalPublisherOwner(
-  ctx: Pick<QueryCtx, "db">,
-  publisherId: Id<"publishers">,
-) {
-  const memberships = await ctx.db
-    .query("publisherMembers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .collect();
-  for (const membership of memberships) {
-    if (membership.role !== "owner") continue;
-    const user = await ctx.db.get(membership.userId);
-    if (user && !user.deletedAt && !user.deactivatedAt) return user;
-  }
-  return null;
 }
 
 function getPublisherDenormalizedStats(publisher: Doc<"publishers">): PublisherListStats {
@@ -2013,7 +1976,29 @@ async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<
     .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
     .unique();
 
-  return { sources, sourceContents, members, invites, official };
+  const feedPublication = await ctx.db
+    .query("publisherFeedPublications")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+  const feedRevisions = await ctx.db
+    .query("publisherFeedRevisions")
+    .withIndex("by_publisher_and_sequence", (q) => q.eq("publisherId", publisherId))
+    .take(1);
+  const feedChanges = await ctx.db
+    .query("publisherFeedChanges")
+    .withIndex("by_publisher_and_change_number", (q) => q.eq("publisherId", publisherId))
+    .take(1);
+
+  return {
+    sources,
+    sourceContents,
+    members,
+    invites,
+    official,
+    feedPublication,
+    feedRevisions,
+    feedChanges,
+  };
 }
 
 async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
@@ -2035,6 +2020,12 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
   for (const invite of preview.invites) await ctx.db.delete(invite._id);
 
   if (preview.official) await ctx.db.delete(preview.official._id);
+  if (preview.feedPublication) await ctx.db.delete(preview.feedPublication._id);
+  if (preview.feedRevisions.length > 0 || preview.feedChanges.length > 0) {
+    await ctx.scheduler.runAfter(0, internal.publishers.cleanupPublisherFeedHistoryBatchInternal, {
+      publisherId,
+    });
+  }
 
   await ctx.db.delete(publisherId);
 
@@ -2044,8 +2035,46 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     members: preview.members.length,
     invites: preview.invites.length,
     official: Boolean(preview.official),
+    feedPublication: Boolean(preview.feedPublication),
+    feedRevisionHistory: preview.feedRevisions.length > 0,
+    feedChangeHistory: preview.feedChanges.length > 0,
   };
 }
+
+const PUBLISHER_FEED_HISTORY_DELETE_BATCH_SIZE = 100;
+
+export async function cleanupPublisherFeedHistoryBatchImpl(
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
+  publisherId: Id<"publishers">,
+) {
+  const [revisions, changes] = await Promise.all([
+    ctx.db
+      .query("publisherFeedRevisions")
+      .withIndex("by_publisher_and_sequence", (q) => q.eq("publisherId", publisherId))
+      .take(PUBLISHER_FEED_HISTORY_DELETE_BATCH_SIZE),
+    ctx.db
+      .query("publisherFeedChanges")
+      .withIndex("by_publisher_and_change_number", (q) => q.eq("publisherId", publisherId))
+      .take(PUBLISHER_FEED_HISTORY_DELETE_BATCH_SIZE),
+  ]);
+  for (const revision of revisions) await ctx.db.delete(revision._id);
+  for (const change of changes) await ctx.db.delete(change._id);
+
+  const hasMore =
+    revisions.length === PUBLISHER_FEED_HISTORY_DELETE_BATCH_SIZE ||
+    changes.length === PUBLISHER_FEED_HISTORY_DELETE_BATCH_SIZE;
+  if (hasMore) {
+    await ctx.scheduler.runAfter(0, internal.publishers.cleanupPublisherFeedHistoryBatchInternal, {
+      publisherId,
+    });
+  }
+  return { deletedRevisions: revisions.length, deletedChanges: changes.length, hasMore };
+}
+
+export const cleanupPublisherFeedHistoryBatchInternal = internalMutation({
+  args: { publisherId: v.id("publishers") },
+  handler: async (ctx, args) => await cleanupPublisherFeedHistoryBatchImpl(ctx, args.publisherId),
+});
 
 async function deleteOrgPublisherForOwner(
   ctx: MutationCtx,
@@ -3532,6 +3561,9 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
       githubSources: preview.sources.length,
       githubSourceContents: preview.sourceContents,
       officialPublisher: Boolean(preview.official),
+      publisherFeedPublication: Boolean(preview.feedPublication),
+      publisherFeedRevisionHistory: preview.feedRevisions.length > 0,
+      publisherFeedChangeHistory: preview.feedChanges.length > 0,
       confirmationToken,
     };
     if (dryRun) {
@@ -3562,6 +3594,9 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
         githubSources: preview.sources.length,
         githubSourceContents: preview.sourceContents,
         officialPublisher: Boolean(preview.official),
+        publisherFeedPublication: Boolean(preview.feedPublication),
+        publisherFeedRevisionHistory: preview.feedRevisions.length > 0,
+        publisherFeedChangeHistory: preview.feedChanges.length > 0,
         source: "publisher.org.admin_reclaim",
       },
       createdAt: now,
@@ -3577,6 +3612,9 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
       githubSources: deletedRows.sources,
       githubSourceContents: deletedRows.sourceContents,
       officialPublisher: deletedRows.official,
+      publisherFeedPublication: deletedRows.feedPublication,
+      publisherFeedRevisionHistory: deletedRows.feedRevisionHistory,
+      publisherFeedChangeHistory: deletedRows.feedChangeHistory,
     };
   },
 });
