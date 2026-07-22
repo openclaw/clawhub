@@ -21,10 +21,7 @@ async function callRaw(body: Record<string, unknown>) {
   const startedAt = performance.now();
   const response = await fetch(targetUrl, {
     method: "POST",
-    headers: buildMirrorProofHeaders(
-      operatorAuthorization,
-      vercelAutomationBypassSecret,
-    ),
+    headers: buildMirrorProofHeaders(operatorAuthorization, vercelAutomationBypassSecret),
     body: JSON.stringify(body),
   });
   const text = await response.text();

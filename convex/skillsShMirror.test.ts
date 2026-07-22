@@ -171,8 +171,7 @@ describe("skills.sh external mirror", () => {
       rows: [githubRow, wellKnownRow],
     });
 
-    const externalIds = (rows: Doc<"skillsShMirrorDigests">[]) =>
-      rows.map((row) => row.externalId);
+    const externalIds = (rows: Doc<"skillsShMirrorDigests">[]) => rows.map((row) => row.externalId);
     expect(
       externalIds(
         await t.query(internal.skillsShMirror.listActiveByNormalizedSlugInternal, {
