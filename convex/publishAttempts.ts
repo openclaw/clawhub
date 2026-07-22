@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { action, internalAction, internalMutation, internalQuery } from "./functions";
 import { finalizeSkillPublishAttempt } from "./lib/skillPublish";
@@ -112,7 +112,9 @@ function isTerminalFinalizationConflict(error: string | undefined) {
     (/Version .+ already exists\. Increment the version number and try again\./.test(error) ||
       error.includes("Slug is used by multiple publishers. Use an owner-qualified skill URL.") ||
       error.includes("Slug redirects to an existing skill. Choose a different slug.") ||
-      error.includes("Upstream skill not found"))
+      error.includes("Upstream skill not found") ||
+      error.includes("Pending skill version not found.") ||
+      error.includes("Pending package release not found"))
   );
 }
 
@@ -140,6 +142,45 @@ function releaseFinalizationClaimPatch(error: string | undefined, now: number) {
     failedAt: now,
     updatedAt: now,
   };
+}
+
+async function unavailableStagedTargetError(
+  ctx: Pick<MutationCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+) {
+  if (attempt.kind === "skill" && attempt.skillVersionId) {
+    const version = await ctx.db.get(attempt.skillVersionId);
+    if (!version || version.softDeletedAt) return "Pending skill version not found.";
+  }
+  if (attempt.kind === "package" && attempt.packageReleaseId) {
+    const release = await ctx.db.get(attempt.packageReleaseId);
+    if (!release || release.softDeletedAt) return "Pending package release not found";
+  }
+  return null;
+}
+
+async function terminalizeUnavailableStagedTarget(
+  ctx: Pick<MutationCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+  now: number,
+) {
+  const error = await unavailableStagedTargetError(ctx, attempt);
+  if (!error) return false;
+  const pendingChecks = attempt.status === "pending_checks";
+  await ctx.db.patch(attempt._id, {
+    status: "failed",
+    checkClaimId: undefined,
+    checkClaimedAt: undefined,
+    checkClaimExpiresAt: undefined,
+    checkClaimLastError: pendingChecks ? error : undefined,
+    finalizationClaimId: undefined,
+    finalizationClaimedAt: undefined,
+    finalizationClaimExpiresAt: undefined,
+    finalizationLastError: pendingChecks ? undefined : error,
+    failedAt: now,
+    updatedAt: now,
+  });
+  return true;
 }
 
 export const createSkillPublishAttemptInternal = internalMutation({
@@ -614,6 +655,10 @@ export const completePendingPublishAttemptChecksInternal = internalMutation({
       return { attemptId: attempt._id, kind: attempt.kind, status: "blocked" as const };
     }
 
+    if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) {
+      return { attemptId: attempt._id, kind: attempt.kind, status: "failed" as const };
+    }
+
     if (args.trufflehog.status === "failed" || args.clawscan.status === "failed") {
       await ctx.db.patch(attempt._id, {
         status: "pending_checks",
@@ -672,93 +717,107 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const attempt = args.attemptId
-      ? await ctx.db.get(args.attemptId)
-      : (
-          await ctx.db
-            .query("publishAttempts")
-            .withIndex("by_status_check_claim_expires_at_created", (q) =>
-              q.eq("status", "pending_checks"),
-            )
-            .order("asc")
-            .take(25)
-        ).find((candidate) => {
-          if ((candidate.checkClaimExpiresAt ?? 0) > now) return false;
-          if (args.kind && candidate.kind !== args.kind) return false;
-          if (args.slug && candidate.slug !== args.slug) return false;
-          if (args.version && candidate.version !== args.version) return false;
-          return true;
-        });
+    const targetedAttempt = args.attemptId ? await ctx.db.get(args.attemptId) : null;
+    const candidates = args.attemptId
+      ? targetedAttempt
+        ? [targetedAttempt]
+        : []
+      : await ctx.db
+          .query("publishAttempts")
+          .withIndex("by_status_check_claim_expires_at_created", (q) =>
+            q.eq("status", "pending_checks"),
+          )
+          .order("asc")
+          .take(25);
 
-    if (!attempt) return null;
-    if (attempt.status !== "pending_checks") {
-      throw new ConvexError(`Publish attempt is ${attempt.status}, not pending checks.`);
-    }
-    if (args.kind && attempt.kind !== args.kind) {
-      throw new ConvexError("Publish attempt kind does not match worker claim.");
-    }
-    if (args.slug && attempt.slug !== args.slug) {
-      throw new ConvexError("Publish attempt slug does not match worker claim.");
-    }
-    if (args.version && attempt.version !== args.version) {
-      throw new ConvexError("Publish attempt version does not match worker claim.");
-    }
-    if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
-      throw new ConvexError("Publish attempt checks are already claimed.");
-    }
-
-    const checkClaimExpiresAt = now + CHECK_CLAIM_LEASE_MS;
-    await ctx.db.patch(attempt._id, {
-      checkClaimId: args.claimId,
-      checkClaimedAt: now,
-      checkClaimExpiresAt,
-      checkClaimLastError: undefined,
-      updatedAt: now,
-    });
-
-    let existingClawscanAnalysis: unknown;
-    if (attempt.kind === "skill" && attempt.skillVersionId) {
-      const version = await ctx.db.get(attempt.skillVersionId);
-      if (version?.fingerprint === attempt.artifactFingerprint) {
-        existingClawscanAnalysis = reusableClawscanAnalysis(version.llmAnalysis);
+    for (const attempt of candidates) {
+      if (attempt.status !== "pending_checks") {
+        if (args.attemptId && attempt.status === "failed") return null;
+        if (args.attemptId) {
+          throw new ConvexError(`Publish attempt is ${attempt.status}, not pending checks.`);
+        }
+        continue;
       }
-    } else if (attempt.kind === "package" && attempt.packageReleaseId) {
-      const release = await ctx.db.get(attempt.packageReleaseId);
-      if (release?.integritySha256 === attempt.artifactFingerprint) {
-        existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
+      if (args.kind && attempt.kind !== args.kind) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt kind does not match worker claim.");
+        }
+        continue;
       }
-    }
+      if (args.slug && attempt.slug !== args.slug) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt slug does not match worker claim.");
+        }
+        continue;
+      }
+      if (args.version && attempt.version !== args.version) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt version does not match worker claim.");
+        }
+        continue;
+      }
+      if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt checks are already claimed.");
+        }
+        continue;
+      }
+      if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
 
-    return {
-      attemptId: attempt._id,
-      status: attempt.status,
-      claimId: args.claimId,
-      kind: attempt.kind,
-      userId: attempt.userId,
-      ownerUserId: attempt.ownerUserId,
-      ownerPublisherId: attempt.ownerPublisherId,
-      sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
-      skillId: attempt.skillId,
-      versionId: attempt.skillVersionId,
-      packageId: attempt.packageId,
-      releaseId: attempt.packageReleaseId,
-      slug: attempt.slug,
-      displayName: attempt.displayName,
-      version: attempt.version,
-      artifactFingerprint: attempt.artifactFingerprint,
-      files: attempt.files,
-      ...(attempt.kind === "skill"
-        ? {
-            scanContext: buildSkillAttemptScanContext(attempt),
-          }
-        : {
-            clawpackStorageId: publishAttemptClawpackStorageId(attempt),
-            scanContext: buildPackageAttemptScanContext(attempt),
-          }),
-      ...(existingClawscanAnalysis ? { existingClawscanAnalysis } : {}),
-      checkClaimExpiresAt,
-      createdAt: attempt.createdAt,
-    };
+      const checkClaimExpiresAt = now + CHECK_CLAIM_LEASE_MS;
+      await ctx.db.patch(attempt._id, {
+        checkClaimId: args.claimId,
+        checkClaimedAt: now,
+        checkClaimExpiresAt,
+        checkClaimLastError: undefined,
+        updatedAt: now,
+      });
+
+      let existingClawscanAnalysis: unknown;
+      if (attempt.kind === "skill" && attempt.skillVersionId) {
+        const version = await ctx.db.get(attempt.skillVersionId);
+        if (version?.fingerprint === attempt.artifactFingerprint) {
+          existingClawscanAnalysis = reusableClawscanAnalysis(version.llmAnalysis);
+        }
+      } else if (attempt.kind === "package" && attempt.packageReleaseId) {
+        const release = await ctx.db.get(attempt.packageReleaseId);
+        if (release?.integritySha256 === attempt.artifactFingerprint) {
+          existingClawscanAnalysis = reusableClawscanAnalysis(release.llmAnalysis);
+        }
+      }
+
+      return {
+        attemptId: attempt._id,
+        status: attempt.status,
+        claimId: args.claimId,
+        kind: attempt.kind,
+        userId: attempt.userId,
+        ownerUserId: attempt.ownerUserId,
+        ownerPublisherId: attempt.ownerPublisherId,
+        sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
+        skillId: attempt.skillId,
+        versionId: attempt.skillVersionId,
+        packageId: attempt.packageId,
+        releaseId: attempt.packageReleaseId,
+        slug: attempt.slug,
+        displayName: attempt.displayName,
+        version: attempt.version,
+        artifactFingerprint: attempt.artifactFingerprint,
+        files: attempt.files,
+        ...(attempt.kind === "skill"
+          ? {
+              scanContext: buildSkillAttemptScanContext(attempt),
+            }
+          : {
+              clawpackStorageId: publishAttemptClawpackStorageId(attempt),
+              scanContext: buildPackageAttemptScanContext(attempt),
+            }),
+        ...(existingClawscanAnalysis ? { existingClawscanAnalysis } : {}),
+        checkClaimExpiresAt,
+        createdAt: attempt.createdAt,
+      };
+    }
+    return null;
   },
 });
 
@@ -772,68 +831,79 @@ export const claimReadyPublishAttemptFinalizationRetryInternal = internalMutatio
   },
   handler: async (ctx, args) => {
     const now = Date.now();
-    const attempt = args.attemptId
-      ? await ctx.db.get(args.attemptId)
-      : (
-          await ctx.db
-            .query("publishAttempts")
-            .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
-            .order("asc")
-            .take(25)
-        ).find((candidate) => {
-          if ((candidate.checkClaimExpiresAt ?? 0) > now) return false;
-          if (args.kind && candidate.kind !== args.kind) return false;
-          if (args.slug && candidate.slug !== args.slug) return false;
-          if (args.version && candidate.version !== args.version) return false;
-          return true;
-        });
+    const targetedAttempt = args.attemptId ? await ctx.db.get(args.attemptId) : null;
+    const candidates = args.attemptId
+      ? targetedAttempt
+        ? [targetedAttempt]
+        : []
+      : await ctx.db
+          .query("publishAttempts")
+          .withIndex("by_status_and_created", (q) => q.eq("status", "ready_to_finalize"))
+          .order("asc")
+          .take(25);
 
-    if (!attempt) return null;
-    if (attempt.status !== "ready_to_finalize") {
-      return null;
-    }
-    if (args.kind && attempt.kind !== args.kind) {
-      throw new ConvexError("Publish attempt kind does not match worker claim.");
-    }
-    if (args.slug && attempt.slug !== args.slug) {
-      throw new ConvexError("Publish attempt slug does not match worker claim.");
-    }
-    if (args.version && attempt.version !== args.version) {
-      throw new ConvexError("Publish attempt version does not match worker claim.");
-    }
-    if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
-      throw new ConvexError("Publish attempt finalization retry is already claimed.");
-    }
+    for (const attempt of candidates) {
+      if (attempt.status !== "ready_to_finalize") {
+        if (args.attemptId) return null;
+        continue;
+      }
+      if (args.kind && attempt.kind !== args.kind) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt kind does not match worker claim.");
+        }
+        continue;
+      }
+      if (args.slug && attempt.slug !== args.slug) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt slug does not match worker claim.");
+        }
+        continue;
+      }
+      if (args.version && attempt.version !== args.version) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt version does not match worker claim.");
+        }
+        continue;
+      }
+      if ((attempt.checkClaimExpiresAt ?? 0) > now && attempt.checkClaimId !== args.claimId) {
+        if (args.attemptId) {
+          throw new ConvexError("Publish attempt finalization retry is already claimed.");
+        }
+        continue;
+      }
+      if (await terminalizeUnavailableStagedTarget(ctx, attempt, now)) continue;
 
-    await ctx.db.patch(attempt._id, {
-      checkClaimId: args.claimId,
-      checkClaimedAt: now,
-      checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
-      checkClaimLastError: undefined,
-      updatedAt: now,
-    });
+      await ctx.db.patch(attempt._id, {
+        checkClaimId: args.claimId,
+        checkClaimedAt: now,
+        checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
+        checkClaimLastError: undefined,
+        updatedAt: now,
+      });
 
-    return {
-      attemptId: attempt._id,
-      status: attempt.status,
-      claimId: args.claimId,
-      kind: attempt.kind,
-      userId: attempt.userId,
-      ownerUserId: attempt.ownerUserId,
-      ownerPublisherId: attempt.ownerPublisherId,
-      sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
-      skillId: attempt.skillId,
-      versionId: attempt.skillVersionId,
-      packageId: attempt.packageId,
-      releaseId: attempt.packageReleaseId,
-      slug: attempt.slug,
-      displayName: attempt.displayName,
-      version: attempt.version,
-      artifactFingerprint: attempt.artifactFingerprint,
-      files: [],
-      checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
-      createdAt: attempt.createdAt,
-    };
+      return {
+        attemptId: attempt._id,
+        status: attempt.status,
+        claimId: args.claimId,
+        kind: attempt.kind,
+        userId: attempt.userId,
+        ownerUserId: attempt.ownerUserId,
+        ownerPublisherId: attempt.ownerPublisherId,
+        sourceOwnerPublisherId: attempt.sourceOwnerPublisherId,
+        skillId: attempt.skillId,
+        versionId: attempt.skillVersionId,
+        packageId: attempt.packageId,
+        releaseId: attempt.packageReleaseId,
+        slug: attempt.slug,
+        displayName: attempt.displayName,
+        version: attempt.version,
+        artifactFingerprint: attempt.artifactFingerprint,
+        files: [],
+        checkClaimExpiresAt: now + CHECK_CLAIM_LEASE_MS,
+        createdAt: attempt.createdAt,
+      };
+    }
+    return null;
   },
 });
 
@@ -1201,7 +1271,7 @@ export const completePrePublicationChecks: ReturnType<typeof action> = action({
     )) as {
       attemptId: Id<"publishAttempts">;
       kind: "skill" | "package";
-      status: "blocked" | "pending_checks" | "ready_to_finalize";
+      status: "blocked" | "failed" | "pending_checks" | "ready_to_finalize";
     };
 
     if (completed.status !== "ready_to_finalize") return completed;

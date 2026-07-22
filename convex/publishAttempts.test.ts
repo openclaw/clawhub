@@ -165,6 +165,71 @@ describe("publishAttempts", () => {
     );
   });
 
+  it("terminalizes orphaned pending attempts and claims healthy work behind them", async () => {
+    const orphan = {
+      _id: "publishAttempts:orphan",
+      kind: "skill",
+      status: "pending_checks",
+      userId: "users:publisher",
+      skillVersionId: "skillVersions:deleted",
+      slug: "deleted-skill",
+      displayName: "Deleted Skill",
+      version: "1.0.0",
+      artifactFingerprint: "fingerprint",
+      files: [{ path: "SKILL.md", storageId: "_storage:skill", size: 10, sha256: "sha" }],
+      createdAt: Date.now(),
+    };
+    const healthy = {
+      ...orphan,
+      _id: "publishAttempts:healthy",
+      skillVersionId: "skillVersions:healthy",
+      slug: "healthy-skill",
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:healthy"
+            ? { _id: id, fingerprint: healthy.artifactFingerprint }
+            : null,
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [orphan, healthy]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, { claimId: "checks:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:healthy",
+      slug: "healthy-skill",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:orphan",
+      expect.objectContaining({
+        status: "failed",
+        checkClaimId: undefined,
+        checkClaimLastError: "Pending skill version not found.",
+        failedAt: expect.any(Number),
+      }),
+    );
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:healthy",
+      expect.objectContaining({ checkClaimId: "checks:claim" }),
+    );
+  });
+
   it("reuses a completed ClawScan verdict only for the exact staged artifact", async () => {
     const attempt = {
       _id: "publishAttempts:reusable",
@@ -391,6 +456,92 @@ describe("publishAttempts", () => {
     expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
+  it("terminalizes orphaned ready attempts and claims healthy work behind them", async () => {
+    const orphan = {
+      _id: "publishAttempts:orphan-package",
+      kind: "package",
+      status: "ready_to_finalize",
+      packageReleaseId: "packageReleases:deleted",
+      slug: "@demo/deleted",
+      version: "1.0.0",
+      createdAt: Date.now(),
+    };
+    const healthy = {
+      ...orphan,
+      _id: "publishAttempts:healthy-package",
+      packageReleaseId: "packageReleases:healthy",
+      slug: "@demo/healthy",
+    };
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) =>
+          id === "packageReleases:deleted" ? { _id: id, softDeletedAt: Date.now() } : { _id: id },
+        ),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            order: vi.fn(() => ({
+              take: vi.fn(async () => [orphan, healthy]),
+            })),
+          })),
+        })),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimReadyFinalizationHandler(ctx, { claimId: "finalize:claim" }),
+    ).resolves.toMatchObject({
+      attemptId: "publishAttempts:healthy-package",
+      slug: "@demo/healthy",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:orphan-package",
+      expect.objectContaining({
+        status: "failed",
+        finalizationClaimId: undefined,
+        finalizationLastError: "Pending package release not found",
+        failedAt: expect.any(Number),
+      }),
+    );
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:healthy-package",
+      expect.objectContaining({ checkClaimId: "finalize:claim" }),
+    );
+  });
+
+  it("treats targeted attempts terminalized by the ready queue as drained", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:orphan-package",
+          kind: "package",
+          status: "failed",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+
+    await expect(
+      claimPendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:orphan-package",
+        claimId: "finalize:claim",
+      }),
+    ).resolves.toBeNull();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
   it("rejects targeted ready-finalization claims with mismatched filters", async () => {
     const ctx = {
       db: {
@@ -520,6 +671,74 @@ describe("publishAttempts", () => {
     expect(patch.checkClaimExpiresAt).toBeGreaterThan(now);
   });
 
+  it("terminalizes an attempt when its staged target disappears during scanning", async () => {
+    const now = Date.now();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "publishAttempts:orphan"
+            ? {
+                _id: "publishAttempts:orphan",
+                kind: "skill",
+                status: "pending_checks",
+                skillVersionId: "skillVersions:deleted",
+                artifactFingerprint: "fingerprint",
+                checkClaimId: "checks:claim",
+                checkClaimExpiresAt: now + 60_000,
+                checks: {
+                  trufflehog: { status: "pending" },
+                  clawscan: { status: "pending" },
+                },
+              }
+            : null,
+        ),
+        patch: vi.fn(async (id: string) => {
+          if (id === "skillVersions:deleted") {
+            throw new Error("Update on nonexistent document ID skillVersions:deleted");
+          }
+        }),
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query: vi.fn(),
+        normalizeId: vi.fn(),
+        system: {},
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      completePendingChecksHandler(ctx, {
+        attemptId: "publishAttempts:orphan",
+        claimId: "checks:claim",
+        artifactFingerprint: "fingerprint",
+        trufflehog: { status: "clean" },
+        clawscan: { status: "clean" },
+        clawscanAnalysis: {
+          status: "clean",
+          verdict: "benign",
+          checkedAt: now,
+        },
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:orphan",
+      kind: "skill",
+      status: "failed",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:orphan",
+      expect.objectContaining({
+        status: "failed",
+        checkClaimLastError: "Pending skill version not found.",
+        failedAt: expect.any(Number),
+      }),
+    );
+    expect(ctx.db.patch).not.toHaveBeenCalledWith("skillVersions:deleted", expect.anything());
+  });
+
   it("terminalizes duplicate skill versions instead of retrying finalization", async () => {
     const ctx = {
       db: {
@@ -619,6 +838,7 @@ describe("publishAttempts", () => {
       "Uncaught ConvexError: Slug redirects to an existing skill. Choose a different slug. Existing skill: /orchune/personal-finance",
     ],
     ["deleted fork sources", "Uncaught ConvexError: Upstream skill not found"],
+    ["deleted staged versions", "Uncaught ConvexError: Pending skill version not found."],
   ])("terminalizes %s instead of retrying finalization", async (_caseName, error) => {
     const ctx = {
       db: {
@@ -732,6 +952,48 @@ describe("publishAttempts", () => {
       }),
     );
     expect(transientCtx.db.patch.mock.calls[0]?.[1]).not.toHaveProperty("failedAt");
+  });
+
+  it("terminalizes deleted package releases instead of retrying finalization", async () => {
+    const ctx = {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async () => ({
+          _id: "publishAttempts:orphan-package",
+          kind: "package",
+          status: "finalizing",
+          packageReleaseId: "packageReleases:deleted",
+          finalizationClaimId: "finalize:claim",
+        })),
+        insert: vi.fn(),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+        replace: vi.fn(),
+        system: {},
+      },
+    };
+    const error = "Uncaught ConvexError: Pending package release not found";
+
+    await expect(
+      releasePackageFinalizationHandler(ctx, {
+        attemptId: "publishAttempts:orphan-package",
+        claimId: "finalize:claim",
+        error,
+      }),
+    ).resolves.toEqual({
+      attemptId: "publishAttempts:orphan-package",
+      status: "failed",
+    });
+
+    expect(ctx.db.patch).toHaveBeenCalledWith(
+      "publishAttempts:orphan-package",
+      expect.objectContaining({
+        status: "failed",
+        finalizationLastError: error,
+        failedAt: expect.any(Number),
+      }),
+    );
   });
 
   it("clears private pending skill metadata when finalization is recorded", async () => {
