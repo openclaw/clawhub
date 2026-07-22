@@ -154,6 +154,90 @@ describe("skills.sh external mirror", () => {
     });
   });
 
+  it("serves bounded active exact, prefix, first-token, and full-text recall", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:search");
+    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      pageLength: 2,
+      hasMore: false,
+      sourceTotal: 2,
+      sourceRequests: 5,
+      sourceBytes: 1_024,
+      rows: [githubRow, wellKnownRow],
+    });
+
+    const externalIds = (rows: Doc<"skillsShMirrorDigests">[]) =>
+      rows.map((row) => row.externalId);
+    expect(
+      externalIds(
+        await t.query(internal.skillsShMirror.listActiveByNormalizedSlugInternal, {
+          value: "find-skills",
+          limit: 10,
+        }),
+      ),
+    ).toEqual([githubRow.externalId]);
+    expect(
+      externalIds(
+        await t.query(internal.skillsShMirror.listActiveByNormalizedDisplayNameInternal, {
+          value: "find skills",
+          limit: 10,
+        }),
+      ),
+    ).toEqual([githubRow.externalId]);
+    expect(
+      externalIds(
+        await t.query(internal.skillsShMirror.listActiveByNormalizedSlugPrefixInternal, {
+          prefix: "find",
+          limit: 10,
+        }),
+      ),
+    ).toEqual([githubRow.externalId]);
+    expect(
+      externalIds(
+        await t.query(internal.skillsShMirror.listActiveByNormalizedDisplayNamePrefixInternal, {
+          prefix: "find",
+          limit: 10,
+        }),
+      ),
+    ).toEqual([githubRow.externalId]);
+    expect(
+      externalIds(
+        await t.query(internal.skillsShMirror.listActiveByNormalizedSlugFirstTokenPrefixInternal, {
+          prefix: "fi",
+          limit: 10,
+        }),
+      ),
+    ).toEqual([githubRow.externalId]);
+    expect(
+      externalIds(
+        await t.query(
+          internal.skillsShMirror.listActiveByNormalizedDisplayNameFirstTokenPrefixInternal,
+          {
+            prefix: "fi",
+            limit: 10,
+          },
+        ),
+      ),
+    ).toEqual([githubRow.externalId]);
+
+    const fullText = (await t.query(internal.skillsShMirror.searchActiveBySearchTextInternal, {
+      query: "vercel find",
+      limit: 10,
+    })) as Doc<"skillsShMirrorDigests">[];
+    expect(fullText.map((row) => row.externalId)).toEqual([githubRow.externalId]);
+    await expect(
+      t.query(internal.skillsShMirror.listActiveByNormalizedSlugPrefixInternal, {
+        prefix: "",
+        limit: 10,
+      }),
+    ).rejects.toThrow("prefix is required");
+  });
+
   it("pauses and resumes from the exact page and offset", async () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);
