@@ -28,9 +28,8 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' &&
       (github.ref == 'refs/heads/main' ||
-      (github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
-      github.actor == 'Patrick-Erichsen' &&
-      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'))) ||
+      (github.ref_name == 'pe/claw-563-skills-sh-mirror-10k' &&
+      github.actor == 'Patrick-Erichsen'))) ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
