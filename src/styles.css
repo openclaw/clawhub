@@ -14710,11 +14710,28 @@ code {
 }
 
 .pa-signal-select-cell input[type="checkbox"] {
+  appearance: none;
   width: 16px;
   height: 16px;
   margin: 0;
-  accent-color: var(--oc-accent-primary);
+  border: 1px solid var(--oc-border-subtle);
+  border-radius: var(--oc-radius-inset);
+  background-color: var(--oc-bg-surface);
   cursor: pointer;
+}
+
+.pa-signal-select-cell input[type="checkbox"]:checked {
+  border-color: var(--oc-accent-primary);
+  background-color: var(--oc-accent-primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3.5 8 3 3 6-6' fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2'/%3E%3C/svg%3E");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px;
+}
+
+.pa-signal-select-cell input[type="checkbox"]:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .pa-signal-select-cell input[type="checkbox"]:focus-visible {
