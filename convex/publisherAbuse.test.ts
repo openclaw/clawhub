@@ -367,6 +367,18 @@ const dismissPublisherAbuseSignalHandler = (
   >
 )._handler;
 
+const reviewPublisherAbuseSignalsBatchHandler = (
+  publisherAbuse.reviewPublisherAbuseSignalsBatch as unknown as Wrapped<
+    {
+      signalIds: string[];
+      status: "snoozed" | "dismissed";
+      note?: string;
+      days?: number;
+    },
+    { ok: true; status: "snoozed" | "dismissed"; updated: number }
+  >
+)._handler;
+
 const reopenPublisherAbuseSignalHandler = (
   publisherAbuse.reopenPublisherAbuseSignal as unknown as Wrapped<
     { signalId: string; note?: string },
@@ -1074,6 +1086,123 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     );
     expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
+  });
+
+  it("lets moderators snooze a batch of signals with one audited transition per signal", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signals = new Map(
+      ["first", "second"].map((suffix, index) => [
+        `publisherAbuseSignals:${suffix}`,
+        {
+          _id: `publisherAbuseSignals:${suffix}`,
+          signalType: "sustained_downloads_flat_installs",
+          ownerKey: `publisher:publishers:${suffix}`,
+          ownerPublisherId: `publishers:${suffix}`,
+          ownerUserId: `users:${suffix}`,
+          handleSnapshot: suffix,
+          skillId: `skills:${suffix}`,
+          skillSlug: suffix,
+          skillDisplayName: suffix,
+          firstSeenAt: 10,
+          lastSeenAt: 20,
+          seenCount: index + 1,
+          recent7Downloads: 1_000,
+          recent7Installs: 0,
+          recent7InstallDownloadRatio: 0,
+          recent30Downloads: 5_000,
+          recent30Installs: 0,
+          recent30InstallDownloadRatio: 0,
+          allTimeDownloads: 10_000 + index,
+          allTimeInstalls: 0,
+          allTimeInstallDownloadRatio: 0,
+          reviewStatus: "open",
+          lastChangedAt: 20,
+          needsNotification: false,
+        },
+      ]),
+    );
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async () => "publisherAbuseSignalReviewEvents:event");
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    await expect(
+      reviewPublisherAbuseSignalsBatchHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => signals.get(id) ?? null),
+            patch,
+            insert,
+          },
+        },
+        {
+          signalIds: ["publisherAbuseSignals:first", "publisherAbuseSignals:second"],
+          status: "snoozed",
+          note: "Likely crawler traffic",
+          days: 30,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, status: "snoozed", updated: 2 });
+
+    expect(patch).toHaveBeenCalledTimes(2);
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:first",
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        reviewNote: "Likely crawler traffic",
+        snoozedUntil: now + 30 * 24 * 60 * 60 * 1_000,
+        evidenceBaselineDownloads: 10_000,
+        needsNotification: false,
+      }),
+    );
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseSignalReviewEvents",
+      expect.objectContaining({
+        actorUserId: "users:moderator",
+        eventType: "snoozed",
+        previousStatus: "open",
+        nextStatus: "snoozed",
+      }),
+    );
+  });
+
+  it("rejects a bulk review atomically when a selected signal is no longer open", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signals = new Map([
+      ["publisherAbuseSignals:open", { _id: "publisherAbuseSignals:open", reviewStatus: "open" }],
+      [
+        "publisherAbuseSignals:reviewed",
+        { _id: "publisherAbuseSignals:reviewed", reviewStatus: "snoozed" },
+      ],
+    ]);
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async () => "publisherAbuseSignalReviewEvents:event");
+
+    await expect(
+      reviewPublisherAbuseSignalsBatchHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => signals.get(id) ?? null),
+            patch,
+            insert,
+          },
+        },
+        {
+          signalIds: ["publisherAbuseSignals:open", "publisherAbuseSignals:reviewed"],
+          status: "dismissed",
+        },
+      ),
+    ).rejects.toThrow("One or more selected signals are no longer open; refresh and try again");
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("does not reopen or notify already-open publisher abuse signals", async () => {
@@ -10010,6 +10139,8 @@ describe("publisher abuse dry-run persistence", () => {
       allTimeDownloads: 10_000,
       allTimeInstalls: 1_000,
       allTimeInstallDownloadRatio: 0.1,
+      lastChangedAt: 20,
+      needsNotification: true,
     };
     const signalLookups: Array<Record<string, unknown>> = [];
     const insertedSignals: unknown[] = [];
@@ -10115,7 +10246,7 @@ describe("publisher abuse dry-run persistence", () => {
     ).resolves.toEqual({
       archivedCandidates: 3,
       archivedSignals: 2,
-      changedSignals: 2,
+      changedSignals: 1,
     });
 
     expect(signalLookups).toEqual([
@@ -10139,7 +10270,9 @@ describe("publisher abuse dry-run persistence", () => {
         recent7InstallDownloadRatio: 0.12,
         lastSeenAt: 1_234,
         seenCount: 6,
-        lastChangedAt: 1_234,
+        notificationBaselineDownloads: 10_000,
+        notificationBaselineInstalls: 1_000,
+        lastChangedAt: 20,
         needsNotification: true,
       }),
     );
@@ -10153,10 +10286,37 @@ describe("publisher abuse dry-run persistence", () => {
         lastSeenAt: 1_234,
         seenCount: 1,
         reviewStatus: "open",
+        notificationBaselineDownloads: 10_000,
+        notificationBaselineInstalls: 0,
         lastChangedAt: 1_234,
         needsNotification: true,
       }),
     ]);
+
+    patch.mockClear();
+    highRatio.totalDownloads = 10_500;
+    highRatio.totalInstalls = 1_050;
+
+    await expect(
+      archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:temporal",
+        candidates: [highRatio],
+        now: 2_345,
+      }),
+    ).resolves.toEqual({
+      archivedCandidates: 1,
+      archivedSignals: 1,
+      changedSignals: 1,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:existing-ratio",
+      expect.objectContaining({
+        notificationBaselineDownloads: 10_500,
+        notificationBaselineInstalls: 1_050,
+        lastChangedAt: 2_345,
+        needsNotification: true,
+      }),
+    );
   });
 
   it("keeps acknowledged evidence quiet and reopens only for fresh post-snooze activity", async () => {

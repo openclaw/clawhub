@@ -120,11 +120,18 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   the lower repeat threshold: at least 1,500 downloads with at most 5 installs
   for flat-install volume, or at least 500 downloads and 50 installs at a 10%
   install/download ratio. Reopened repeat signals are elevated to high severity.
+  Staff may snooze or dismiss up to 50 selected open signals in one atomic
+  action. Bulk review must apply the same evidence checkpoint and write the same
+  per-signal review event as the corresponding single-signal action.
 - Hermit owns Discord notification delivery for publisher abuse Signals.
   ClawHub queues Hermit digests only for changed open signals: newly archived
-  signals, repeated open signals with a higher seen count, manual reopens, and
-  expired snoozes with qualifying fresh evidence. Active snoozed or dismissed
-  signals must update their metric snapshot without notifying Hermit.
+  signals, manual reopens, expired snoozes with qualifying fresh evidence, and
+  open signals whose evidence has materially increased since the previous
+  notification. A higher seen count alone is not a change. Material increases
+  use the same lower repeat thresholds as post-snooze recurrence, and the
+  notification checkpoint advances only when a notification is queued so
+  smaller changes accumulate across scans. Active snoozed or dismissed signals
+  must update their metric snapshot without notifying Hermit.
 - Aggregate publisher spam-abuse labels start at the 200-skill pivot. Below
   that pivot, publishers can contribute to the population baseline, but they
   cannot receive aggregate spam reason codes or be nominated by this score path.

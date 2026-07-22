@@ -14584,6 +14584,34 @@ code {
   color: var(--ink);
 }
 
+.pa-signal-bulk-bar {
+  display: flex;
+  min-height: 42px;
+  margin: 0 calc(-1 * var(--space-4));
+  padding: 6px var(--space-4);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  border-top: 1px solid var(--oc-border-subtle);
+  border-bottom: 1px solid var(--oc-border-subtle);
+  background: color-mix(in srgb, var(--oc-bg-surface) 78%, var(--oc-bg-page));
+}
+
+.pa-signal-bulk-count {
+  color: var(--oc-text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pa-signal-bulk-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .pa-table-wrap {
   min-width: 0;
   margin: 0 calc(-1 * var(--space-4));
@@ -14669,6 +14697,29 @@ code {
 
 .pa-signals-table tbody tr:hover {
   background: var(--hover-bg);
+}
+
+.pa-signals-table tbody tr.is-bulk-selected {
+  background: color-mix(in srgb, var(--oc-accent-primary) 9%, transparent);
+}
+
+.pa-signals-table .pa-signal-select-cell {
+  width: 42px;
+  padding-right: 0;
+  text-align: center;
+}
+
+.pa-signal-select-cell input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--oc-accent-primary);
+  cursor: pointer;
+}
+
+.pa-signal-select-cell input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--oc-focus-ring);
+  outline-offset: 2px;
 }
 
 .pa-num {
@@ -15197,6 +15248,17 @@ code {
 
   .pa-signal-evidence-grid {
     grid-template-columns: 1fr;
+  }
+
+  .pa-signal-bulk-bar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pa-signal-bulk-actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .pa-score > div {

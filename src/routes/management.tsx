@@ -285,6 +285,9 @@ export function Management() {
   );
   const snoozePublisherAbuseSignal = useMutation(api.publisherAbuse.snoozePublisherAbuseSignal);
   const dismissPublisherAbuseSignal = useMutation(api.publisherAbuse.dismissPublisherAbuseSignal);
+  const reviewPublisherAbuseSignalsBatch = useMutation(
+    api.publisherAbuse.reviewPublisherAbuseSignalsBatch,
+  );
   const reopenPublisherAbuseSignal = useMutation(api.publisherAbuse.reopenPublisherAbuseSignal);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
   const startPublisherAbuseSignalScan = useAction(
@@ -724,6 +727,52 @@ export function Management() {
     });
   };
 
+  const requestSnoozePublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
+    const count = signalIds.length;
+    if (count === 0) return;
+    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
+    setConfirmRequest({
+      title: `Snooze ${label}?`,
+      body: "Hides the selected signals for 14 days and acknowledges the evidence shown now. Each signal reopens only if fresh activity crosses the repeat threshold.",
+      confirmLabel: `Snooze ${label}`,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you snoozing these signals?",
+      },
+      onConfirm: (note) => {
+        void reviewPublisherAbuseSignalsBatch({
+          signalIds,
+          status: "snoozed",
+          note,
+          days: 14,
+        })
+          .then((result) => toast.success(`${result.updated} signals snoozed.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestDismissPublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
+    const count = signalIds.length;
+    if (count === 0) return;
+    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
+    setConfirmRequest({
+      title: `Dismiss ${label}?`,
+      body: "Archives the selected signals and removes them from the Open queue. They will not notify Hermit unless a moderator reopens them.",
+      confirmLabel: `Dismiss ${label}`,
+      destructive: true,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you dismissing these signals?",
+      },
+      onConfirm: (note) => {
+        void reviewPublisherAbuseSignalsBatch({ signalIds, status: "dismissed", note })
+          .then((result) => toast.success(`${result.updated} signals dismissed.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
   const requestReopenPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Reopen ${item.signal.skillDisplayName}?`,
@@ -863,6 +912,7 @@ export function Management() {
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
             onDismissSignal={requestDismissPublisherAbuseSignal}
+            onDismissSignals={requestDismissPublisherAbuseSignals}
             onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {
@@ -912,6 +962,7 @@ export function Management() {
               setSelectedPublisherAbuseNominationId(nominationId);
             }}
             onSnoozeSignal={requestSnoozePublisherAbuseSignal}
+            onSnoozeSignals={requestSnoozePublisherAbuseSignals}
           />
         ) : null}
 

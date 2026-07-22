@@ -715,6 +715,129 @@ describe("Management", () => {
     });
   });
 
+  it("bulk snoozes and dismisses selected open publisher abuse signals", async () => {
+    searchState = { view: "abuse", tab: "signals" };
+    const reviewSignalsBatch = vi.fn(async () => ({ ok: true, status: "snoozed", updated: 2 }));
+    const firstSignal = makePublisherAbuseSignal();
+    const secondSignal = makePublisherAbuseSignal({
+      _id: "publisherAbuseSignals:sustained",
+      signalType: "sustained_downloads_flat_installs",
+      skillId: "skills:sustained",
+      skillSlug: "sustained-skill",
+      skillDisplayName: "Sustained Skill",
+    });
+    useMutationMock.mockImplementation((mutation) => {
+      if (getFunctionName(mutation) === "publisherAbuse:reviewPublisherAbuseSignalsBatch") {
+        return reviewSignalsBatch;
+      }
+      return vi.fn(async () => ({ ok: true }));
+    });
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: 2,
+          signalCountHasMore: false,
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+    usePaginatedQueryMock.mockImplementation((query, args) => ({
+      results:
+        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
+          ? [firstSignal, secondSignal]
+          : [],
+      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
+      loadMore: vi.fn(),
+    }));
+
+    render(<Management />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Ratio Skill" }));
+    expect(screen.getByText("1 selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Snooze 1 signal" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Snooze 1 signal" }).at(-1)!);
+    await waitFor(() => {
+      expect(reviewSignalsBatch).toHaveBeenCalledWith({
+        signalIds: ["publisherAbuseSignals:ratio"],
+        status: "snoozed",
+        note: undefined,
+        days: 14,
+      });
+    });
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select Sustained Skill" }));
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss 2 signals" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss 2 signals" }).at(-1)!);
+    await waitFor(() => {
+      expect(reviewSignalsBatch).toHaveBeenCalledWith({
+        signalIds: ["publisherAbuseSignals:ratio", "publisherAbuseSignals:sustained"],
+        status: "dismissed",
+        note: undefined,
+      });
+    });
+  });
+
+  it("caps bulk signal selection at the backend batch limit", () => {
+    searchState = { view: "abuse", tab: "signals" };
+    const signalResults = Array.from({ length: 51 }, (_, index) =>
+      makePublisherAbuseSignal({
+        _id: `publisherAbuseSignals:bulk-${index}`,
+        skillId: `skills:bulk-${index}`,
+        skillSlug: `bulk-${index}`,
+        skillDisplayName: `Bulk Skill ${index}`,
+      }),
+    );
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+          signalCount: signalResults.length,
+          signalCountHasMore: false,
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+    usePaginatedQueryMock.mockImplementation((query, args) => ({
+      results:
+        getFunctionName(query) === "publisherAbuse:listSignalsPage" && args !== "skip"
+          ? signalResults
+          : [],
+      status: args === "skip" ? "LoadingFirstPage" : "Exhausted",
+      loadMore: vi.fn(),
+    }));
+
+    render(<Management />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all loaded signals" }));
+    expect(screen.getByText("50 selected · 50 maximum")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Dismiss 50 signals" })).toBeTruthy();
+    expect(
+      (screen.getByRole("checkbox", { name: "Select Bulk Skill 50" }) as HTMLInputElement).disabled,
+    ).toBe(true);
+  });
+
   it("updates publisher abuse tab badges when live counts decrease", () => {
     const firstItem = makePublisherAbuseItem({ id: "1", handle: "first-pub" });
     const secondItem = makePublisherAbuseItem({ id: "2", handle: "second-pub" });

@@ -42,6 +42,8 @@ import {
   USER_BAN_REASON_MAX_LENGTH,
 } from "./managementShared";
 
+const MAX_BULK_SIGNAL_SELECTION = 50;
+
 export function AbusePage({
   admin,
   autobanSetting,
@@ -66,12 +68,14 @@ export function AbusePage({
   onChangeTab,
   onClose,
   onDismissSignal,
+  onDismissSignals,
   onMarkReviewed,
   onLoadMore,
   onRefresh,
   onReopenSignal,
   onSelect,
   onSnoozeSignal,
+  onSnoozeSignals,
   onToggleAutoban,
 }: {
   admin: boolean;
@@ -103,16 +107,21 @@ export function AbusePage({
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
   onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
+  onDismissSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onMarkReviewed: (item: PublisherAbuseReviewItem) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
   onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
   onSelect: (value: Id<"publisherAbuseReviewNominations">) => void;
   onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
+  onSnoozeSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onToggleAutoban: () => void;
 }) {
   const [selectedSignalItem, setSelectedSignalItem] = useState<PublisherAbuseSignalEntry | null>(
     null,
+  );
+  const [selectedSignalIds, setSelectedSignalIds] = useState<Set<Id<"publisherAbuseSignals">>>(
+    new Set(),
   );
   const selectedSignalId = selectedSignalItem?.signal._id ?? null;
   useEffect(() => {
@@ -130,6 +139,16 @@ export function AbusePage({
       setSelectedSignalItem(null);
     }
   }, [selectedSignalId, signalItems, signalPageStatus, tab]);
+  useEffect(() => {
+    setSelectedSignalIds(new Set());
+  }, [signalStatus, tab]);
+  useEffect(() => {
+    const visibleSignalIds = new Set(signalItems.map((item) => item.signal._id));
+    setSelectedSignalIds((current) => {
+      const next = new Set([...current].filter((signalId) => visibleSignalIds.has(signalId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [signalItems]);
   const latestRun = dashboard?.latestRun ?? null;
   const latestSignalRun = dashboard?.latestSignalRun ?? null;
   const displayedRun = tab === "signals" ? latestSignalRun : latestRun;
@@ -455,9 +474,32 @@ export function AbusePage({
             items={signalItems}
             loaded={signalsLoaded}
             selectedSignalId={selectedSignalItem?.signal._id ?? null}
+            selectedSignalIds={selectedSignalIds}
             status={signalStatus}
             searchActive={search.trim().length > 0}
+            onClearSignalSelection={() => setSelectedSignalIds(new Set())}
+            onDismissSignals={onDismissSignals}
             onSelectSignal={setSelectedSignalItem}
+            onSnoozeSignals={onSnoozeSignals}
+            onToggleAllSignals={(checked) => {
+              setSelectedSignalIds(
+                checked
+                  ? new Set(
+                      signalItems
+                        .slice(0, MAX_BULK_SIGNAL_SELECTION)
+                        .map((item) => item.signal._id),
+                    )
+                  : new Set(),
+              );
+            }}
+            onToggleSignal={(signalId, checked) => {
+              setSelectedSignalIds((current) => {
+                const next = new Set(current);
+                if (checked && next.size < MAX_BULK_SIGNAL_SELECTION) next.add(signalId);
+                else next.delete(signalId);
+                return next;
+              });
+            }}
           />
         ) : (
           <div className="pa-table-wrap">
@@ -881,110 +923,208 @@ function PublisherAbuseSignalsTable({
   items,
   loaded,
   selectedSignalId,
+  selectedSignalIds,
   status,
   searchActive,
+  onClearSignalSelection,
+  onDismissSignals,
   onSelectSignal,
+  onSnoozeSignals,
+  onToggleAllSignals,
+  onToggleSignal,
 }: {
   canLoadMore: boolean;
   items: PublisherAbuseSignalEntry[];
   loaded: boolean;
   selectedSignalId: Id<"publisherAbuseSignals"> | null;
+  selectedSignalIds: Set<Id<"publisherAbuseSignals">>;
   status: PublisherAbuseSignalStatus;
   searchActive: boolean;
+  onClearSignalSelection: () => void;
+  onDismissSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onSelectSignal: (item: PublisherAbuseSignalEntry) => void;
+  onSnoozeSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
+  onToggleAllSignals: (checked: boolean) => void;
+  onToggleSignal: (signalId: Id<"publisherAbuseSignals">, checked: boolean) => void;
 }) {
   const emptyState = publisherAbuseSignalEmptyState(searchActive, canLoadMore, status);
+  const bulkSelectionEnabled = status === "open" && loaded && items.length > 0;
+  const selectedIds = [...selectedSignalIds];
+  const selectedCount = selectedIds.length;
+  const selectionAtLimit = selectedCount >= MAX_BULK_SIGNAL_SELECTION;
+  const selectableItems = items.slice(0, MAX_BULK_SIGNAL_SELECTION);
+  const allLoadedSelected =
+    bulkSelectionEnabled &&
+    selectableItems.length > 0 &&
+    selectableItems.every((item) => selectedSignalIds.has(item.signal._id));
   return (
-    <div className="pa-table-wrap">
-      <table className="pa-table pa-signals-table">
-        <thead>
-          <tr>
-            <th>Severity</th>
-            <th>Signal</th>
-            <th>Subject</th>
-            <th className="pa-num">Evidence</th>
-            <th>Last seen</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!loaded ? (
-            <PublisherAbuseTableSkeletonRows columns={5} label="Loading publisher abuse signals" />
-          ) : items.length === 0 ? (
-            <tr className="pa-empty-row">
-              <td colSpan={5}>
-                <strong>{emptyState.title}</strong>
-                {emptyState.body}
-              </td>
-            </tr>
-          ) : (
-            items.map((item) => {
-              const selected = item.signal._id === selectedSignalId;
-              const recurrenceCount = item.signal.recurrenceCount ?? 0;
-              return (
-                <tr
-                  key={item.signal._id}
-                  className={selected ? "is-selected" : undefined}
-                  onClick={() => onSelectSignal(item)}
-                >
-                  <td>
-                    <Badge
-                      variant={publisherAbuseSignalSeverityVariant(
-                        item.signal.signalType,
-                        recurrenceCount,
-                      )}
-                      size="sm"
-                    >
-                      {formatPublisherAbuseSignalSeverity(item.signal.signalType, recurrenceCount)}
-                    </Badge>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="pa-signal-summary pa-row-button"
-                      aria-label={`Open details for ${item.signal.skillDisplayName}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onSelectSignal(item);
-                      }}
-                    >
-                      <strong className="pa-signal-name">
-                        {formatPublisherAbuseSignalType(item.signal.signalType)}
-                      </strong>
-                      <span>
-                        {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
-                        {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
-                      </span>
-                    </button>
-                    {recurrenceCount > 0 ? (
-                      <div className="pa-signal-repeat is-recurring">Repeat after snooze</div>
-                    ) : item.signal.snoozedUntil ? (
-                      <div className="pa-signal-repeat">
-                        {formatPublisherAbuseSnoozeState(item.signal.snoozedUntil)}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>
-                    <div className="pa-signal-subject">
-                      <strong>{item.signal.skillDisplayName}</strong>
-                      <span>
-                        @{item.signal.handleSnapshot} / {item.signal.skillSlug}
-                      </span>
-                    </div>
-                  </td>
-                  <PublisherAbuseSignalRatioCell
-                    downloads={item.signal.recent30Downloads}
-                    installs={item.signal.recent30Installs}
-                    ratio={item.signal.recent30InstallDownloadRatio}
+    <>
+      {bulkSelectionEnabled ? (
+        <div className="pa-signal-bulk-bar" aria-label="Bulk signal actions">
+          <span className="pa-signal-bulk-count" aria-live="polite">
+            {formatWholeNumber(selectedCount)} selected
+            {selectionAtLimit ? ` · ${MAX_BULK_SIGNAL_SELECTION} maximum` : null}
+          </span>
+          <div className="pa-signal-bulk-actions">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={selectedCount === 0}
+              onClick={() => onSnoozeSignals(selectedIds)}
+            >
+              <Clock3 size={14} aria-hidden="true" />
+              {bulkSignalActionLabel("Snooze", selectedCount)}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={selectedCount === 0}
+              onClick={() => onDismissSignals(selectedIds)}
+            >
+              <XCircle size={14} aria-hidden="true" />
+              {bulkSignalActionLabel("Dismiss", selectedCount)}
+            </Button>
+            {selectedCount > 0 ? (
+              <Button type="button" variant="ghost" size="xs" onClick={onClearSignalSelection}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div className="pa-table-wrap">
+        <table className="pa-table pa-signals-table">
+          <thead>
+            <tr>
+              {bulkSelectionEnabled ? (
+                <th className="pa-signal-select-cell">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all loaded signals"
+                    checked={allLoadedSelected}
+                    onChange={(event) => onToggleAllSignals(event.target.checked)}
                   />
-                  <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
+                </th>
+              ) : null}
+              <th>Severity</th>
+              <th>Signal</th>
+              <th>Subject</th>
+              <th className="pa-num">Evidence</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!loaded ? (
+              <PublisherAbuseTableSkeletonRows
+                columns={5}
+                label="Loading publisher abuse signals"
+              />
+            ) : items.length === 0 ? (
+              <tr className="pa-empty-row">
+                <td colSpan={bulkSelectionEnabled ? 6 : 5}>
+                  <strong>{emptyState.title}</strong>
+                  {emptyState.body}
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => {
+                const selected = item.signal._id === selectedSignalId;
+                const bulkSelected = selectedSignalIds.has(item.signal._id);
+                const recurrenceCount = item.signal.recurrenceCount ?? 0;
+                return (
+                  <tr
+                    key={item.signal._id}
+                    className={
+                      [selected ? "is-selected" : "", bulkSelected ? "is-bulk-selected" : ""]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
+                    onClick={() => onSelectSignal(item)}
+                  >
+                    {bulkSelectionEnabled ? (
+                      <td className="pa-signal-select-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${item.signal.skillDisplayName}`}
+                          checked={bulkSelected}
+                          disabled={selectionAtLimit && !bulkSelected}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) =>
+                            onToggleSignal(item.signal._id, event.target.checked)
+                          }
+                        />
+                      </td>
+                    ) : null}
+                    <td>
+                      <Badge
+                        variant={publisherAbuseSignalSeverityVariant(
+                          item.signal.signalType,
+                          recurrenceCount,
+                        )}
+                        size="sm"
+                      >
+                        {formatPublisherAbuseSignalSeverity(
+                          item.signal.signalType,
+                          recurrenceCount,
+                        )}
+                      </Badge>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="pa-signal-summary pa-row-button"
+                        aria-label={`Open details for ${item.signal.skillDisplayName}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelectSignal(item);
+                        }}
+                      >
+                        <strong className="pa-signal-name">
+                          {formatPublisherAbuseSignalType(item.signal.signalType)}
+                        </strong>
+                        <span>
+                          {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
+                          {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
+                        </span>
+                      </button>
+                      {recurrenceCount > 0 ? (
+                        <div className="pa-signal-repeat is-recurring">Repeat after snooze</div>
+                      ) : item.signal.snoozedUntil ? (
+                        <div className="pa-signal-repeat">
+                          {formatPublisherAbuseSnoozeState(item.signal.snoozedUntil)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <div className="pa-signal-subject">
+                        <strong>{item.signal.skillDisplayName}</strong>
+                        <span>
+                          @{item.signal.handleSnapshot} / {item.signal.skillSlug}
+                        </span>
+                      </div>
+                    </td>
+                    <PublisherAbuseSignalRatioCell
+                      downloads={item.signal.recent30Downloads}
+                      installs={item.signal.recent30Installs}
+                      ratio={item.signal.recent30InstallDownloadRatio}
+                    />
+                    <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
+}
+
+function bulkSignalActionLabel(action: "Snooze" | "Dismiss", count: number) {
+  if (count <= 0) return `${action} selected`;
+  return `${action} ${formatWholeNumber(count)} ${count === 1 ? "signal" : "signals"}`;
 }
 
 function PublisherAbuseSignalInspector({

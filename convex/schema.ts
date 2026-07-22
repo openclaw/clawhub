@@ -3105,6 +3105,8 @@ const publisherAbuseSignals = defineTable({
   freshInstallsSinceSnooze: v.optional(v.number()),
   snoozeCount: v.optional(v.number()),
   recurrenceCount: v.optional(v.number()),
+  notificationBaselineDownloads: v.optional(v.number()),
+  notificationBaselineInstalls: v.optional(v.number()),
   reviewedByUserId: v.optional(v.id("users")),
   reviewedAt: v.optional(v.number()),
   reviewNote: v.optional(v.string()),

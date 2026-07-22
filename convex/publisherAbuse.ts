@@ -76,6 +76,7 @@ const RECURRING_SUSTAINED_SIGNAL_MAX_INSTALLS = 5;
 const RECURRING_RATIO_SIGNAL_MIN_DOWNLOADS = 500;
 const RECURRING_RATIO_SIGNAL_MIN_INSTALLS = 50;
 const RECURRING_RATIO_SIGNAL_MIN_RATIO = 0.1;
+const MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE = 50;
 const MAX_PUBLISHER_ABUSE_SIGNAL_REVIEW_NOTE_LENGTH = 1000;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_BATCH_SIZE = 10;
 const PUBLISHER_ABUSE_SIGNAL_NOTIFICATION_MAX_BATCH_SIZE = 25;
@@ -656,6 +657,60 @@ export const dismissPublisherAbuseSignal = mutation({
   },
 });
 
+export const reviewPublisherAbuseSignalsBatch = mutation({
+  args: {
+    signalIds: v.array(v.id("publisherAbuseSignals")),
+    status: v.union(v.literal("snoozed"), v.literal("dismissed")),
+    note: v.optional(v.string()),
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+    const signalIds = [...new Set(args.signalIds)];
+    if (signalIds.length === 0) throw new Error("Select at least one publisher abuse signal");
+    if (signalIds.length > MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE) {
+      throw new Error(
+        `Review at most ${MAX_PUBLISHER_ABUSE_SIGNAL_BATCH_SIZE} publisher abuse signals at once`,
+      );
+    }
+
+    const signals: PublisherAbuseSignalDoc[] = [];
+    for (const signalId of signalIds) {
+      const signal = await ctx.db.get(signalId);
+      if (!signal) throw new Error("Publisher abuse signal not found");
+      signals.push(signal);
+    }
+    if (signals.some((signal) => publisherAbuseSignalReviewStatus(signal) !== "open")) {
+      throw new Error("One or more selected signals are no longer open; refresh and try again");
+    }
+
+    const now = Date.now();
+    const note = normalizePublisherAbuseSignalReviewNote(args.note);
+    const snoozedUntil =
+      args.status === "snoozed"
+        ? now +
+          clampInt(args.days ?? DEFAULT_PUBLISHER_ABUSE_SIGNAL_SNOOZE_DAYS, 1, 90) *
+            24 *
+            60 *
+            60 *
+            1000
+        : undefined;
+    for (const signal of signals) {
+      await setPublisherAbuseSignalReviewStatusWithActor(ctx, {
+        signal,
+        status: args.status,
+        actorUserId: user._id,
+        note,
+        snoozedUntil,
+        now,
+      });
+    }
+
+    return { ok: true, status: args.status, updated: signals.length };
+  },
+});
+
 export const reopenPublisherAbuseSignal = mutation({
   args: {
     signalId: v.id("publisherAbuseSignals"),
@@ -844,6 +899,12 @@ async function setPublisherAbuseSignalReviewStatusWithActor(
     freshInstallsSinceSnooze: args.status === "snoozed" ? 0 : undefined,
     snoozeCount:
       args.status === "snoozed" ? (args.signal.snoozeCount ?? 0) + 1 : args.signal.snoozeCount,
+    notificationBaselineDownloads: args.notify
+      ? args.signal.allTimeDownloads
+      : args.signal.notificationBaselineDownloads,
+    notificationBaselineInstalls: args.notify
+      ? args.signal.allTimeInstalls
+      : args.signal.notificationBaselineInstalls,
     needsNotification: args.notify === true,
     lastChangedAt: args.notify ? args.now : args.signal.lastChangedAt,
     notificationClaimedAt: undefined,
@@ -3527,8 +3588,18 @@ async function upsertPublisherAbuseSignal(
         downloads: freshDownloadsSinceSnooze,
         installs: freshInstallsSinceSnooze,
       });
+    const notificationBaselineDownloads =
+      signal.notificationBaselineDownloads ?? signal.allTimeDownloads;
+    const notificationBaselineInstalls =
+      signal.notificationBaselineInstalls ?? signal.allTimeInstalls;
+    const materiallyStrongerEvidence =
+      previousStatus === "open" &&
+      freshEvidenceCrossesRepeatThreshold(args.signalType, {
+        downloads: Math.max(0, snapshot.allTimeDownloads - notificationBaselineDownloads),
+        installs: Math.max(0, snapshot.allTimeInstalls - notificationBaselineInstalls),
+      });
     const nextStatus = recurringAfterSnooze ? "open" : previousStatus;
-    const shouldNotify = nextStatus === "open";
+    const shouldNotify = recurringAfterSnooze || materiallyStrongerEvidence;
     await ctx.db.patch(signal._id, {
       ...snapshot,
       reviewStatus: nextStatus,
@@ -3548,6 +3619,12 @@ async function upsertPublisherAbuseSignal(
       recurrenceCount: recurringAfterSnooze
         ? (signal.recurrenceCount ?? 0) + 1
         : signal.recurrenceCount,
+      notificationBaselineDownloads: shouldNotify
+        ? snapshot.allTimeDownloads
+        : notificationBaselineDownloads,
+      notificationBaselineInstalls: shouldNotify
+        ? snapshot.allTimeInstalls
+        : notificationBaselineInstalls,
       lastSeenAt: args.now,
       seenCount: signal.seenCount + 1,
       lastChangedAt: shouldNotify ? args.now : signal.lastChangedAt,
@@ -3564,6 +3641,8 @@ async function upsertPublisherAbuseSignal(
     lastSeenAt: args.now,
     seenCount: 1,
     reviewStatus: "open",
+    notificationBaselineDownloads: snapshot.allTimeDownloads,
+    notificationBaselineInstalls: snapshot.allTimeInstalls,
     lastChangedAt: args.now,
     needsNotification: true,
   });
