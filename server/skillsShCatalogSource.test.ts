@@ -196,7 +196,6 @@ describe("skills.sh Vercel source boundary", () => {
       pageLength: 2,
       sourceTotal: 1_002,
       hasMore: false,
-      sourceRequests: 2,
       rows: [
         {
           externalId: "open.feishu.cn/lark-doc",

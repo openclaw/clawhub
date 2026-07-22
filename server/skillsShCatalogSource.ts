@@ -218,7 +218,7 @@ export function buildSkillsShMirrorObservation(row: SkillsShCatalogListRow) {
   throw new Error(`Unsupported skills.sh mirror identity: ${row.id}`);
 }
 
-function mirrorDetailFile(file: SkillsShCatalogDetail["files"][number]) {
+function mirrorDetailFile(file: NonNullable<SkillsShCatalogDetail["files"]>[number]) {
   const path =
     typeof file.path === "string"
       ? file.path.trim()
