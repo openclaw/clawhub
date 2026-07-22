@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSkillsShMirrorObservation,
   buildSkillsShMirrorDetail,
@@ -11,11 +11,16 @@ import {
   fetchSkillsShCatalogPage,
   fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
+  skillsShSourceRetryAfterSeconds,
   SkillsShCatalogOwnerProofRequiredError,
   validateSkillsShCatalogGitHubOwnerProof,
 } from "./skillsShCatalogSource";
 
 describe("skills.sh Vercel source boundary", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("retains each upstream scanner status and source link independently", () => {
     expect(
       buildSkillsShMirrorUpstreamScanners(
@@ -100,6 +105,7 @@ describe("skills.sh Vercel source boundary", () => {
     ).toMatchObject({
       externalId: "vercel-labs/skills/find-skills",
       sourceType: "github",
+      upstreamSourceType: "github",
       owner: "vercel-labs",
       repo: "skills",
       slug: "find-skills",
@@ -115,16 +121,173 @@ describe("skills.sh Vercel source boundary", () => {
         name: "lark-doc",
         slug: "lark-doc",
         source: "open.feishu.cn",
-        sourceType: "well-known",
+        sourceType: "Well-Known",
         url: "https://www.skills.sh/site/open.feishu.cn/lark-doc",
       }),
     ).toMatchObject({
       externalId: "open.feishu.cn/lark-doc",
       sourceType: "well-known",
+      upstreamSourceType: "well-known",
       sourceHost: "open.feishu.cn",
       slug: "lark-doc",
       upstreamInstalls: 7,
     });
+  });
+
+  it("uses an exact GitHub install identity when the source type marker drifts", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: "https://github.com/larksuite/cli.git",
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: " GitHub-Repository ",
+      url: "https://skills.sh/larksuite/cli/lark-doc",
+    };
+    expect(buildSkillsShMirrorObservation(liveRow)).toMatchObject({
+      externalId: "larksuite/cli/lark-doc",
+      sourceType: "github",
+      upstreamSourceType: "github-repository",
+      owner: "larksuite",
+      repo: "cli",
+      slug: "lark-doc",
+      canonicalRepoUrl: "https://github.com/larksuite/cli",
+      upstreamInstalls: 383_123,
+    });
+  });
+
+  it("normalizes advisory source types to the persisted token grammar", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: "https://github.com/larksuite/cli",
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: ".GitHub_Repository.",
+      url: "https://skills.sh/larksuite/cli/lark-doc",
+    };
+    expect(buildSkillsShMirrorObservation(liveRow)).toMatchObject({
+      sourceType: "github",
+      upstreamSourceType: "github_repository",
+    });
+    expect(buildSkillsShMirrorObservation({ ...liveRow, sourceType: "__" })).toMatchObject({
+      sourceType: "github",
+      upstreamSourceType: "missing",
+    });
+  });
+
+  it("uses only the labeled Repository section for an ambiguous GitHub-backed row", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: null,
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: "well-known",
+      url: "https://www.skills.sh/larksuite/cli/lark-doc",
+    };
+    const html = `
+      <main>
+        <article>
+          <h2>Repository</h2>
+          <a href="https://github.com/attacker/readme">README repository link</a>
+        </article>
+        <section class="bg-background py-8">
+          <div><span>Repository</span></div>
+          <a href="https://github.com/larksuite/cli">larksuite/cli</a>
+        </section>
+      </main>
+    `;
+    expect(buildSkillsShMirrorObservation(liveRow, html)).toMatchObject({
+      externalId: "larksuite/cli/lark-doc",
+      sourceType: "github",
+      upstreamSourceType: "well-known",
+      owner: "larksuite",
+      repo: "cli",
+      canonicalRepoUrl: "https://github.com/larksuite/cli",
+    });
+
+    const invalidPages = [
+      `<section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/other/cli">other/cli</a></section>`,
+      `<section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli/tree/main">larksuite/cli</a></section>`,
+      `<section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli">larksuite/cli</a><a href="https://github.com/other/repo">other/repo</a></section>`,
+    ];
+    for (const invalidPage of invalidPages) {
+      expect(() => buildSkillsShMirrorObservation(liveRow, invalidPage)).toThrow(
+        "Unsupported skills.sh mirror identity",
+      );
+    }
+    expect(() =>
+      buildSkillsShMirrorObservation(
+        { ...liveRow, url: "https://www.skills.sh/larksuite/cli/other" },
+        html,
+      ),
+    ).toThrow("Unsupported skills.sh mirror identity");
+  });
+
+  it("rejects conflicting GitHub structural identity without exposing the install URL", () => {
+    const liveRow = {
+      id: "larksuite/cli/lark-doc",
+      installUrl: "https://github.com/larksuite/cli",
+      installs: 383_123,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "larksuite/cli",
+      sourceType: "repository",
+      url: "https://skills.sh/larksuite/cli/lark-doc",
+    };
+    const invalidRows = [
+      { ...liveRow, installUrl: "https://github.com/larksuite/docs" },
+      { ...liveRow, installUrl: "https://github.com/larksuite/cli/tree/main" },
+      { ...liveRow, id: "larksuite/docs/lark-doc" },
+      { ...liveRow, source: "larksuite/docs" },
+      { ...liveRow, slug: "lark-sheets" },
+      { ...liveRow, installUrl: null, url: "https://skills.sh/larksuite/cli/other-skill" },
+      { ...liveRow, installUrl: "https://example.com/larksuite/cli" },
+      { ...liveRow, installUrl: "https://github.com:8443/larksuite/cli" },
+      { ...liveRow, installUrl: null, url: "https://skills.sh:8443/larksuite/cli/lark-doc" },
+    ];
+    for (const row of invalidRows) {
+      try {
+        buildSkillsShMirrorObservation(row);
+        throw new Error("expected invalid skills.sh identity to be rejected");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        expect(message).toContain("Unsupported skills.sh mirror identity");
+        expect(message).toContain("sourceType=repository");
+        expect(message).toContain(`installUrlPresent=${row.installUrl !== null}`);
+        if (row.installUrl) expect(message).not.toContain(row.installUrl);
+      }
+    }
+  });
+
+  it("requires the exact skills.sh site route for well-known identity", () => {
+    const liveRow = {
+      id: "open.feishu.cn/lark-doc",
+      installUrl: null,
+      installs: 7,
+      name: "lark-doc",
+      slug: "lark-doc",
+      source: "open.feishu.cn",
+      sourceType: "well-known",
+      url: "https://skills.sh/site/open.feishu.cn/lark-doc",
+    };
+    expect(() =>
+      buildSkillsShMirrorObservation({
+        ...liveRow,
+        url: "https://skills.sh/open.feishu.cn/lark-doc",
+      }),
+    ).toThrow("Unsupported skills.sh mirror identity");
+    expect(() =>
+      buildSkillsShMirrorObservation({
+        ...liveRow,
+        installUrl: "https://github.com/attacker/repo",
+        sourceType: "github",
+      }),
+    ).toThrow("Unsupported skills.sh mirror identity");
   });
 
   it("stores only one bounded detail document from the upstream file tree", () => {
@@ -152,6 +315,26 @@ describe("skills.sh Vercel source boundary", () => {
       content: "12345678",
       contentBytes: 8,
       sourceBytes: 10,
+      truncated: true,
+    });
+  });
+
+  it("derives a deterministic content hash from bounded detail when upstream omits one", () => {
+    const detail = buildSkillsShMirrorDetail(
+      {
+        id: "patrick-erichsen/skills/html",
+        source: "patrick-erichsen/skills",
+        slug: "html",
+        installs: 42,
+        hash: null,
+        files: [{ path: "SKILL.md", contents: "abcdef" }],
+      },
+      3,
+    );
+
+    expect(detail).toMatchObject({
+      sourceContentHash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      content: "abc",
       truncated: true,
     });
   });
@@ -377,6 +560,502 @@ describe("skills.sh Vercel source boundary", () => {
     );
   });
 
+  it("fetches the exact ambiguous source page only for identity resolution", async () => {
+    let identityPageAttempts = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        identityPageAttempts += 1;
+        if (identityPageAttempts === 1) {
+          return new Response("retry", {
+            status: 503,
+            headers: { "retry-after": "0" },
+          });
+        }
+        return new Response(
+          `<main><section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli.git">larksuite/cli</a></section></main>`,
+          { headers: { "content-type": "text/html; charset=utf-8" } },
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/larksuite/cli/lark-doc")) {
+        return new Response(
+          JSON.stringify({
+            id: "larksuite/cli/lark-doc",
+            source: "larksuite/cli",
+            slug: "lark-doc",
+            installs: 383_123,
+            hash: "c".repeat(64),
+            files: [{ path: "skills/lark-doc/SKILL.md", contents: "# Lark Doc" }],
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      expect.objectContaining({
+        externalId: "larksuite/cli/lark-doc",
+        sourceType: "github",
+        upstreamSourceType: "well-known",
+        owner: "larksuite",
+        repo: "cli",
+        canonicalRepoUrl: "https://github.com/larksuite/cli",
+      }),
+    ]);
+    expect(batch.sourceRequests).toBe(5);
+    expect(fetchImpl).toHaveBeenCalledWith("https://www.skills.sh/larksuite/cli/lark-doc", {
+      headers: { Accept: "text/html" },
+      redirect: "manual",
+    });
+  });
+
+  it("quarantines an identity page redirect outside the exact skills.sh route", async () => {
+    let redirectBodyCanceled = false;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://skills.sh/larksuite/cli/lark-doc") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              controller.enqueue(new TextEncoder().encode("redirecting"));
+            },
+            cancel() {
+              redirectBodyCanceled = true;
+            },
+          }),
+          {
+            status: 302,
+            headers: { location: "http://169.254.169.254/latest/meta-data/" },
+          },
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "larksuite/cli/lark-doc",
+        upstreamSourceType: "well-known",
+        reason: "identity-page-redirect",
+      },
+    ]);
+    expect(redirectBodyCanceled).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("quarantines an ambiguous HTML 404 and continues the source batch", async () => {
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        return new Response("not found", { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/vercel-labs/skills/find-skills")) {
+        return new Response(
+          JSON.stringify({
+            id: "vercel-labs/skills/find-skills",
+            source: "vercel-labs/skills",
+            slug: "find-skills",
+            installs: 42,
+            hash: "a".repeat(64),
+            files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 2, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "larksuite/cli/lark-doc",
+        upstreamSourceType: "well-known",
+        reason: "identity-page-http-404",
+      },
+      expect.objectContaining({
+        externalId: "vercel-labs/skills/find-skills",
+        sourceType: "github",
+        upstreamSourceType: "github",
+      }),
+    ]);
+    expect(batch.sourceRequests).toBe(4);
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://skills.sh/api/v1/skills/larksuite/cli/lark-doc",
+      expect.anything(),
+    );
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://skills.sh/api/v1/skills/audit/larksuite/cli/lark-doc",
+      expect.anything(),
+    );
+  });
+
+  it("cancels an oversized chunked identity page before buffering the full body", async () => {
+    let canceled = false;
+    let chunkIndex = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull(controller) {
+              chunkIndex += 1;
+              if (chunkIndex <= 4) {
+                controller.enqueue(new Uint8Array(256 * 1024));
+              } else {
+                controller.close();
+              }
+            },
+            cancel() {
+              canceled = true;
+            },
+          }),
+          { headers: { "content-type": "text/html" } },
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "larksuite/cli/lark-doc",
+        upstreamSourceType: "well-known",
+        reason: "identity-page-too-large",
+      },
+    ]);
+    expect(canceled).toBe(true);
+  });
+
+  it("retries a failed identity response stream without aborting the source batch", async () => {
+    let identityPageAttempts = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        identityPageAttempts += 1;
+        if (identityPageAttempts === 1) {
+          let sentChunk = false;
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              pull(controller) {
+                if (!sentChunk) {
+                  sentChunk = true;
+                  controller.enqueue(new Uint8Array(64 * 1024));
+                } else {
+                  controller.error(new Error("connection reset"));
+                }
+              },
+            }),
+            { headers: { "content-type": "text/html" } },
+          );
+        }
+        return new Response(
+          `<section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli">larksuite/cli</a></section>`,
+          { headers: { "content-type": "text/html" } },
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/larksuite/cli/lark-doc")) {
+        return new Response(
+          JSON.stringify({
+            id: "larksuite/cli/lark-doc",
+            source: "larksuite/cli",
+            slug: "lark-doc",
+            installs: 383_123,
+            hash: "c".repeat(64),
+            files: [{ path: "skills/lark-doc/SKILL.md", contents: "# Lark Doc" }],
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      expect.objectContaining({
+        externalId: "larksuite/cli/lark-doc",
+        sourceType: "github",
+        upstreamSourceType: "well-known",
+      }),
+    ]);
+    expect(identityPageAttempts).toBe(2);
+    expect(batch.sourceRequests).toBe(5);
+    expect(batch.sourceBytes).toBeGreaterThan(64 * 1024);
+  });
+
+  it("quarantines exhausted identity-page 5xx retries as a transient fetch failure", async () => {
+    let identityPageAttempts = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        identityPageAttempts += 1;
+        return new Response("unavailable", {
+          status: 503,
+          headers: { "retry-after": "0" },
+        });
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "larksuite/cli/lark-doc",
+        upstreamSourceType: "well-known",
+        reason: "identity-page-fetch-failed",
+      },
+    ]);
+    expect(identityPageAttempts).toBe(4);
+    expect(batch.sourceRequests).toBe(5);
+  });
+
+  it("quarantines an identity page without an explicit HTML content type", async () => {
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        return new Response(
+          new TextEncoder().encode(
+            `<section class="bg-background py-8"><div><span>Repository</span></div><a href="https://github.com/larksuite/cli">larksuite/cli</a></section>`,
+          ),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "larksuite/cli/lark-doc",
+        upstreamSourceType: "well-known",
+        reason: "identity-page-content-type",
+      },
+    ]);
+  });
+
+  it("quarantines a malformed upstream source type instead of aborting the batch", async () => {
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "owner/repo/skill",
+                installUrl: null,
+                installs: 1,
+                name: "Skill",
+                slug: "skill",
+                source: "owner/repo",
+                sourceType: null,
+                url: "https://www.skills.sh/owner/repo/skill",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "owner/repo/skill",
+        upstreamSourceType: "missing",
+        reason: "unsupported-identity",
+      },
+    ]);
+  });
+
   it("fails closed when the authenticated audit endpoint rejects authorization", async () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
@@ -481,6 +1160,127 @@ describe("skills.sh Vercel source boundary", () => {
 
     expect(batch.sourceRequests).toBe(4);
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("paces authenticated mirror API requests below the upstream minute limit", async () => {
+    vi.useFakeTimers();
+    const requestTimes: number[] = [];
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      requestTimes.push(Date.now());
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ audits: [] }));
+      }
+      return new Response(
+        JSON.stringify({
+          hash: "a".repeat(64),
+          files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+        }),
+      );
+    });
+
+    const batchPromise = fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        minimumApiRequestIntervalMs: 125,
+      },
+    );
+    await vi.runAllTimersAsync();
+    await batchPromise;
+
+    expect(requestTimes).toHaveLength(3);
+    expect(requestTimes[1]! - requestTimes[0]!).toBeGreaterThanOrEqual(125);
+    expect(requestTimes[2]! - requestTimes[1]!).toBeGreaterThanOrEqual(125);
+    vi.useRealTimers();
+  });
+
+  it("honors the full Retry-After delay before retrying a 429", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "17" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          data: [],
+          pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+        }),
+      );
+    });
+
+    const pagePromise = fetchSkillsShCatalogPage(
+      { page: 0, perPage: 500 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+    await vi.advanceTimersByTimeAsync(16_999);
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await pagePromise;
+    expect(attempts).toBe(2);
+  });
+
+  it("preserves Retry-After when bounded source retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async () => {
+      return new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "17" },
+      });
+    });
+
+    const pagePromise = fetchSkillsShCatalogPage(
+      { page: 0, perPage: 500 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    ).catch((error: unknown) => error);
+    await vi.runAllTimersAsync();
+    const error = await pagePromise;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(17);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("delegates long Retry-After waits without shortening the upstream cooldown", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "120" },
+      });
+    });
+
+    const error = await fetchSkillsShCatalogPage(
+      { page: 0, perPage: 500 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    ).catch((value: unknown) => value);
+
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed without OIDC and above the 500-row boundary", async () => {

@@ -1,3 +1,4 @@
+import { paginationOptsValidator } from "convex/server";
 import { ConvexError, type Infer, v } from "convex/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
@@ -16,6 +17,14 @@ const MAX_SOURCE_ATTEMPTS = 4;
 const MAX_SEARCH_ROWS = 50;
 const MAX_SCANNER_STATUS_LENGTH = 32;
 const MAX_SCANNER_URL_LENGTH = 2_048;
+const MAX_UPSTREAM_SOURCE_TYPE_LENGTH = 64;
+const MAX_QUARANTINE_REASON_LENGTH = 64;
+const MAX_INFERRED_CATEGORIES = 3;
+const MAX_INFERRED_TOPICS = 5;
+const MAX_INFERENCE_METADATA_LENGTH = 128;
+const BATCH_LEASE_DURATION_MS = 5 * 60 * 1_000;
+const MAX_BATCH_LEASE_TOKEN_LENGTH = 128;
+const PRESERVE_EXISTING_QUARANTINE_REASONS = new Set(["identity-page-fetch-failed"]);
 
 const detailValidator = v.object({
   contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
@@ -39,9 +48,16 @@ const upstreamScannersValidator = v.object({
   snyk: upstreamScannerValidator,
 });
 
+const classificationConfidenceValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
 const rowValidator = v.object({
   externalId: v.string(),
   sourceType: v.union(v.literal("github"), v.literal("well-known")),
+  upstreamSourceType: v.string(),
   owner: v.optional(v.string()),
   repo: v.optional(v.string()),
   sourceHost: v.optional(v.string()),
@@ -54,10 +70,29 @@ const rowValidator = v.object({
   sourceContentHash: v.optional(v.string()),
   upstreamInstalls: v.number(),
   upstreamScanners: upstreamScannersValidator,
+  inferredCategories: v.array(v.string()),
+  inferredTopics: v.array(v.string()),
+  inferredCategoryConfidence: classificationConfidenceValidator,
+  inferredTopicConfidence: classificationConfidenceValidator,
+  inferredClassifierVersion: v.string(),
+  inferredTopicClassifierVersion: v.string(),
+  inferredInputHash: v.string(),
+  inferredTopicInputHash: v.string(),
+  inferredAt: v.number(),
   detail: v.optional(detailValidator),
 });
 
 type MirrorRow = Infer<typeof rowValidator>;
+
+const quarantinedRowValidator = v.object({
+  quarantined: v.literal(true),
+  externalId: v.string(),
+  upstreamSourceType: v.string(),
+  reason: v.string(),
+});
+
+type QuarantinedRow = Infer<typeof quarantinedRowValidator>;
+type BatchRow = MirrorRow | QuarantinedRow;
 
 function assertIntegerInRange(name: string, value: number, min: number, max: number) {
   if (!Number.isInteger(value) || value < min || value > max) {
@@ -72,6 +107,8 @@ function emptyCounts(): Doc<"skillsShMirrorRuns">["counts"] {
     updated: 0,
     unchanged: 0,
     rejected: 0,
+    quarantined: 0,
+    quarantinedPreserved: 0,
     conflicts: 0,
     detailsInserted: 0,
     detailsUpdated: 0,
@@ -111,6 +148,22 @@ function requireActiveControl(control: Doc<"skillsShMirrorControls"> | null) {
   return control;
 }
 
+function normalizedLeaseToken(value: string) {
+  const token = value.trim();
+  if (!token || token.length > MAX_BATCH_LEASE_TOKEN_LENGTH) {
+    throw new ConvexError(
+      `leaseToken must be between 1 and ${MAX_BATCH_LEASE_TOKEN_LENGTH} characters`,
+    );
+  }
+  return token;
+}
+
+function requireExactRunCursor(run: Doc<"skillsShMirrorRuns">, page: number, offset: number) {
+  if (page !== run.page || offset !== run.offset) {
+    throw new ConvexError(`skills.sh mirror cursor mismatch: expected ${run.page}:${run.offset}`);
+  }
+}
+
 function normalizeRow(row: MirrorRow): MirrorRow {
   const externalId = row.externalId.trim().toLowerCase();
   const slug = row.slug.trim().toLowerCase();
@@ -127,11 +180,26 @@ function normalizeRow(row: MirrorRow): MirrorRow {
     githubPath: row.githubPath?.trim(),
     githubCommit: row.githubCommit?.trim().toLowerCase(),
     sourceContentHash: row.sourceContentHash?.trim().toLowerCase(),
+    upstreamSourceType: row.upstreamSourceType.trim().toLowerCase(),
     upstreamScanners: {
       genAgentTrustHub: normalizeScanner(row.upstreamScanners.genAgentTrustHub),
       socket: normalizeScanner(row.upstreamScanners.socket),
       snyk: normalizeScanner(row.upstreamScanners.snyk),
     },
+    inferredCategories: row.inferredCategories.map(normalizedSearchText),
+    inferredTopics: row.inferredTopics.map(normalizedSearchText),
+    inferredClassifierVersion: row.inferredClassifierVersion.trim(),
+    inferredTopicClassifierVersion: row.inferredTopicClassifierVersion.trim(),
+    inferredInputHash: row.inferredInputHash.trim(),
+    inferredTopicInputHash: row.inferredTopicInputHash.trim(),
+  };
+}
+
+function normalizeQuarantinedRow(row: QuarantinedRow) {
+  return {
+    externalId: row.externalId.trim().toLowerCase(),
+    upstreamSourceType: row.upstreamSourceType.trim().toLowerCase(),
+    reason: row.reason.trim().toLowerCase(),
   };
 }
 
@@ -199,14 +267,57 @@ function searchFields(row: MirrorRow) {
     normalizedSlugFirstToken: firstSearchToken(row.slug),
     normalizedDisplayName,
     normalizedDisplayNameFirstToken: firstSearchToken(row.displayName),
-    searchText: [row.displayName, row.slug, row.owner, row.repo, row.sourceHost]
+    searchText: [
+      row.displayName,
+      row.slug,
+      row.owner,
+      row.repo,
+      row.sourceHost,
+      ...row.inferredCategories,
+      ...row.inferredTopics,
+    ]
       .filter((value): value is string => Boolean(value))
       .join(" "),
   };
 }
 
+function validInferenceTerms(values: string[], min: number, max: number) {
+  return (
+    values.length >= min &&
+    values.length <= max &&
+    new Set(values).size === values.length &&
+    values.every(
+      (value) => value.length > 0 && value.length <= 64 && /^[a-z0-9][a-z0-9-]*$/.test(value),
+    )
+  );
+}
+
+function validInference(row: MirrorRow) {
+  return (
+    validInferenceTerms(row.inferredCategories, 1, MAX_INFERRED_CATEGORIES) &&
+    validInferenceTerms(row.inferredTopics, 0, MAX_INFERRED_TOPICS) &&
+    [
+      row.inferredClassifierVersion,
+      row.inferredTopicClassifierVersion,
+      row.inferredInputHash,
+      row.inferredTopicInputHash,
+    ].every((value) => value.length > 0 && value.length <= MAX_INFERENCE_METADATA_LENGTH) &&
+    Number.isSafeInteger(row.inferredAt) &&
+    row.inferredAt > 0
+  );
+}
+
 function validIdentity(row: MirrorRow) {
-  if (!row.externalId || !row.slug || !row.sourceUrl) return false;
+  if (
+    !row.externalId ||
+    !row.slug ||
+    !row.sourceUrl ||
+    !row.upstreamSourceType ||
+    row.upstreamSourceType.length > MAX_UPSTREAM_SOURCE_TYPE_LENGTH ||
+    !/^[a-z0-9][a-z0-9._-]*$/.test(row.upstreamSourceType)
+  ) {
+    return false;
+  }
   if (row.sourceType === "github") {
     return (
       Boolean(row.owner && row.repo && row.canonicalRepoUrl) &&
@@ -227,6 +338,7 @@ function observationFingerprint(row: MirrorRow) {
   return JSON.stringify({
     externalId: row.externalId,
     sourceType: row.sourceType,
+    upstreamSourceType: row.upstreamSourceType,
     owner: row.owner ?? null,
     repo: row.repo ?? null,
     sourceHost: row.sourceHost ?? null,
@@ -239,6 +351,14 @@ function observationFingerprint(row: MirrorRow) {
     sourceContentHash: row.sourceContentHash ?? null,
     upstreamInstalls: row.upstreamInstalls,
     upstreamScanners: row.upstreamScanners,
+    inferredCategories: row.inferredCategories,
+    inferredTopics: row.inferredTopics,
+    inferredCategoryConfidence: row.inferredCategoryConfidence,
+    inferredTopicConfidence: row.inferredTopicConfidence,
+    inferredClassifierVersion: row.inferredClassifierVersion,
+    inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
+    inferredInputHash: row.inferredInputHash,
+    inferredTopicInputHash: row.inferredTopicInputHash,
     detail: row.detail ?? null,
   });
 }
@@ -258,6 +378,76 @@ function sameDetail(detail: Doc<"skillsShMirrorDetails">, row: MirrorRow) {
   );
 }
 
+async function syncFacets(
+  ctx: MutationCtx,
+  digestId: Id<"skillsShMirrorDigests">,
+  row: MirrorRow,
+  now: number,
+) {
+  const desired = new Map(
+    [
+      ...row.inferredCategories.map((term) => ({
+        key: `category:${term}`,
+        kind: "category" as const,
+        term,
+      })),
+      ...row.inferredTopics.map((term) => ({
+        key: `topic:${term}`,
+        kind: "topic" as const,
+        term,
+      })),
+    ].map((facet) => [facet.key, facet]),
+  );
+  const existing = await ctx.db
+    .query("skillsShMirrorFacets")
+    .withIndex("by_digest_id_and_kind_and_term", (q) => q.eq("digestId", digestId))
+    .collect();
+  let writes = 0;
+  for (const facet of existing) {
+    const key = `${facet.kind}:${facet.term}`;
+    if (!desired.delete(key)) {
+      if (facet.active) {
+        await ctx.db.patch(facet._id, {
+          active: false,
+          updatedAt: now,
+        });
+        writes += 1;
+      }
+      continue;
+    }
+    if (!facet.active || facet.installs !== row.upstreamInstalls) {
+      await ctx.db.patch(facet._id, {
+        active: true,
+        installs: row.upstreamInstalls,
+        updatedAt: now,
+      });
+      writes += 1;
+    }
+  }
+  for (const facet of desired.values()) {
+    await ctx.db.insert("skillsShMirrorFacets", {
+      digestId,
+      externalId: row.externalId,
+      kind: facet.kind,
+      term: facet.term,
+      active: true,
+      installs: row.upstreamInstalls,
+      createdAt: now,
+      updatedAt: now,
+    });
+    writes += 1;
+  }
+  return { reads: existing.length + 1, writes };
+}
+
+function runCounts(counts: Doc<"skillsShMirrorRuns">["counts"]) {
+  return {
+    ...counts,
+    quarantined: counts.quarantined ?? 0,
+    quarantinedPreserved: counts.quarantinedPreserved ?? 0,
+  };
+}
+
 function summarizeRun(run: Doc<"skillsShMirrorRuns">) {
   return {
     runId: run._id,
@@ -268,7 +458,7 @@ function summarizeRun(run: Doc<"skillsShMirrorRuns">) {
     sourceMeasuredAt: run.sourceMeasuredAt,
     page: run.page,
     offset: run.offset,
-    counts: run.counts,
+    counts: runCounts(run.counts),
     operations: run.operations,
     startedAt: run.startedAt,
     completedAt: run.completedAt ?? null,
@@ -405,6 +595,8 @@ export const setPausedInternal = internalMutation({
     });
     await ctx.db.patch(run._id, {
       status: args.paused ? "paused" : "running",
+      batchLeaseToken: undefined,
+      batchLeaseExpiresAt: undefined,
       operations: addOperations(run.operations, {
         functionCalls: 1,
         dbReads: 2,
@@ -416,17 +608,101 @@ export const setPausedInternal = internalMutation({
   },
 });
 
+export const claimBatchLeaseInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShMirrorRuns"),
+    page: v.number(),
+    offset: v.number(),
+    leaseToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    requireActiveControl(await getControl(ctx));
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("skills.sh mirror run not found");
+    if (run.status === "paused") throw new ConvexError("skills.sh mirror run is paused");
+    if (run.status !== "running") {
+      throw new ConvexError(`Cannot lease a ${run.status} skills.sh mirror run`);
+    }
+    requireExactRunCursor(run, args.page, args.offset);
+    const leaseToken = normalizedLeaseToken(args.leaseToken);
+    const now = Date.now();
+    if (
+      run.batchLeaseToken &&
+      run.batchLeaseExpiresAt !== undefined &&
+      run.batchLeaseExpiresAt > now
+    ) {
+      if (run.batchLeaseToken !== leaseToken) {
+        throw new ConvexError(
+          `skills.sh mirror cursor ${run.page}:${run.offset} is already leased`,
+        );
+      }
+    }
+    const leaseExpiresAt = now + BATCH_LEASE_DURATION_MS;
+    await ctx.db.patch(run._id, {
+      batchLeaseToken: leaseToken,
+      batchLeaseExpiresAt: leaseExpiresAt,
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: 2,
+        dbWrites: 1,
+      }),
+      updatedAt: now,
+    });
+    return {
+      runId: run._id,
+      page: run.page,
+      offset: run.offset,
+      leaseToken,
+      leaseExpiresAt,
+    };
+  },
+});
+
+export const releaseBatchLeaseInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShMirrorRuns"),
+    page: v.number(),
+    offset: v.number(),
+    leaseToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("skills.sh mirror run not found");
+    requireExactRunCursor(run, args.page, args.offset);
+    const leaseToken = normalizedLeaseToken(args.leaseToken);
+    if (!run.batchLeaseToken) return { released: false as const };
+    if (run.batchLeaseToken !== leaseToken) {
+      throw new ConvexError("skills.sh mirror lease token mismatch");
+    }
+    const now = Date.now();
+    await ctx.db.patch(run._id, {
+      batchLeaseToken: undefined,
+      batchLeaseExpiresAt: undefined,
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: 1,
+        dbWrites: 1,
+      }),
+      updatedAt: now,
+    });
+    return { released: true as const };
+  },
+});
+
 export const processBatchInternal = internalMutation({
   args: {
     runId: v.id("skillsShMirrorRuns"),
     page: v.number(),
     offset: v.number(),
+    leaseToken: v.string(),
     pageLength: v.number(),
     hasMore: v.boolean(),
     sourceTotal: v.number(),
     sourceRequests: v.number(),
     sourceBytes: v.number(),
-    rows: v.array(rowValidator),
+    rows: v.array(v.union(rowValidator, quarantinedRowValidator)),
   },
   handler: async (ctx, args) => {
     assertSkillsShFixtureEnvironmentAllowed();
@@ -435,8 +711,13 @@ export const processBatchInternal = internalMutation({
     if (!run) throw new ConvexError("skills.sh mirror run not found");
     if (run.status === "paused") throw new ConvexError("skills.sh mirror run is paused");
     if (run.status !== "running") return summarizeRun(run);
-    if (args.page !== run.page || args.offset !== run.offset) {
-      throw new ConvexError(`skills.sh mirror cursor mismatch: expected ${run.page}:${run.offset}`);
+    requireExactRunCursor(run, args.page, args.offset);
+    const leaseToken = normalizedLeaseToken(args.leaseToken);
+    if (run.batchLeaseToken !== leaseToken) {
+      throw new ConvexError("skills.sh mirror lease token mismatch");
+    }
+    if (run.batchLeaseExpiresAt === undefined || run.batchLeaseExpiresAt <= Date.now()) {
+      throw new ConvexError("skills.sh mirror batch lease expired");
     }
     if (args.sourceTotal !== run.sourceTotal) {
       throw new ConvexError("skills.sh mirror source total changed during the run");
@@ -448,24 +729,74 @@ export const processBatchInternal = internalMutation({
     assertIntegerInRange(
       "sourceRequests",
       args.sourceRequests,
-      1,
-      MAX_SOURCE_ATTEMPTS * (1 + 2 * args.rows.length),
+      0,
+      MAX_SOURCE_ATTEMPTS * (1 + 5 * args.rows.length),
     );
     assertIntegerInRange("sourceBytes", args.sourceBytes, 0, 100 * 1024 * 1024);
     if (args.offset + args.rows.length > args.pageLength) {
       throw new ConvexError("skills.sh mirror batch exceeds the source page");
     }
 
-    const counts = { ...run.counts };
+    const counts = runCounts(run.counts);
     let reads = 2;
     let writes = 0;
     const now = Date.now();
     for (let index = 0; index < args.rows.length; index += 1) {
-      const row = normalizeRow(args.rows[index]!);
-      const fingerprint = observationFingerprint(row);
+      const batchRow: BatchRow = args.rows[index]!;
       counts.observed += 1;
+      if ("quarantined" in batchRow) {
+        const row = normalizeQuarantinedRow(batchRow);
+        if (
+          !row.externalId ||
+          row.externalId.length > 512 ||
+          !row.upstreamSourceType ||
+          row.upstreamSourceType.length > MAX_UPSTREAM_SOURCE_TYPE_LENGTH ||
+          !/^[a-z0-9][a-z0-9._-]*$/.test(row.upstreamSourceType) ||
+          !row.reason ||
+          row.reason.length > MAX_QUARANTINE_REASON_LENGTH ||
+          !/^[a-z0-9][a-z0-9-]*$/.test(row.reason)
+        ) {
+          throw new ConvexError("skills.sh mirror quarantine record is invalid");
+        }
+        await ctx.db.insert("skillsShMirrorConflicts", {
+          runId: run._id,
+          externalId: row.externalId,
+          kind: "source-quarantine",
+          reason: row.reason,
+          upstreamSourceType: row.upstreamSourceType,
+          observedFingerprint: JSON.stringify(row),
+          page: args.page,
+          offset: args.offset + index,
+          createdAt: now,
+        });
+        counts.rejected += 1;
+        counts.quarantined += 1;
+        counts.conflicts += 1;
+        writes += 1;
+        if (PRESERVE_EXISTING_QUARANTINE_REASONS.has(row.reason)) {
+          const existing = await ctx.db
+            .query("skillsShMirrorDigests")
+            .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
+            .unique();
+          reads += 1;
+          if (existing?.active && existing.lastObservedRunId !== run._id) {
+            counts.quarantinedPreserved += 1;
+            await ctx.db.patch(existing._id, {
+              upstreamSourceType: row.upstreamSourceType,
+              lastObservedRunId: run._id,
+              sourceFreshnessStatus: "stale",
+              updatedAt: now,
+            });
+            writes += 1;
+          }
+        }
+        continue;
+      }
+      const row = normalizeRow(batchRow);
+      const fingerprint = observationFingerprint(row);
       if (
         !validIdentity(row) ||
+        !validInference(row) ||
         !Number.isSafeInteger(row.upstreamInstalls) ||
         row.upstreamInstalls < 0 ||
         (row.sourceContentHash !== undefined && !/^[a-f0-9]{64}$/.test(row.sourceContentHash)) ||
@@ -496,8 +827,12 @@ export const processBatchInternal = internalMutation({
         .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
         .unique();
       reads += 1;
+      if (existing?.lastObservedRunId === run._id && existing.sourceFreshnessStatus === "stale") {
+        counts.quarantinedPreserved = Math.max(0, counts.quarantinedPreserved - 1);
+      }
       if (
         existing?.lastObservedRunId === run._id &&
+        existing.sourceFreshnessStatus !== "stale" &&
         existing.observationFingerprint !== fingerprint
       ) {
         await ctx.db.insert("skillsShMirrorConflicts", {
@@ -522,6 +857,7 @@ export const processBatchInternal = internalMutation({
         digestId = await ctx.db.insert("skillsShMirrorDigests", {
           externalId: row.externalId,
           sourceType: row.sourceType,
+          upstreamSourceType: row.upstreamSourceType,
           ...(row.owner ? { owner: row.owner } : {}),
           ...(row.repo ? { repo: row.repo } : {}),
           ...(row.sourceHost ? { sourceHost: row.sourceHost } : {}),
@@ -535,6 +871,15 @@ export const processBatchInternal = internalMutation({
           ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),
           upstreamInstalls: row.upstreamInstalls,
           upstreamScanners: row.upstreamScanners,
+          inferredCategories: row.inferredCategories,
+          inferredTopics: row.inferredTopics,
+          inferredCategoryConfidence: row.inferredCategoryConfidence,
+          inferredTopicConfidence: row.inferredTopicConfidence,
+          inferredClassifierVersion: row.inferredClassifierVersion,
+          inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
+          inferredInputHash: row.inferredInputHash,
+          inferredTopicInputHash: row.inferredTopicInputHash,
+          inferredAt: row.inferredAt,
           sourceFreshnessStatus: "observed-only",
           detailStatus: row.detail ? "available" : "missing",
           observationFingerprint: fingerprint,
@@ -552,7 +897,8 @@ export const processBatchInternal = internalMutation({
         writes += 1;
       } else if (
         existing.observationFingerprint === fingerprint &&
-        existing.lastObservedRunId === run._id
+        existing.lastObservedRunId === run._id &&
+        existing.sourceFreshnessStatus === "observed-only"
       ) {
         digestId = existing._id;
         counts.unchanged += 1;
@@ -563,6 +909,7 @@ export const processBatchInternal = internalMutation({
         if (!existing.active) counts.reactivated += 1;
         await ctx.db.patch(existing._id, {
           sourceType: row.sourceType,
+          upstreamSourceType: row.upstreamSourceType,
           owner: row.owner,
           repo: row.repo,
           sourceHost: row.sourceHost,
@@ -576,6 +923,16 @@ export const processBatchInternal = internalMutation({
           sourceContentHash: row.sourceContentHash,
           upstreamInstalls: row.upstreamInstalls,
           upstreamScanners: row.upstreamScanners,
+          inferredCategories: row.inferredCategories,
+          inferredTopics: row.inferredTopics,
+          inferredCategoryConfidence: row.inferredCategoryConfidence,
+          inferredTopicConfidence: row.inferredTopicConfidence,
+          inferredClassifierVersion: row.inferredClassifierVersion,
+          inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
+          inferredInputHash: row.inferredInputHash,
+          inferredTopicInputHash: row.inferredTopicInputHash,
+          inferredAt: row.inferredAt,
+          sourceFreshnessStatus: "observed-only",
           detailStatus: row.detail ? "available" : "missing",
           observationFingerprint: fingerprint,
           sourceSnapshotId: run.snapshotId,
@@ -589,6 +946,10 @@ export const processBatchInternal = internalMutation({
         });
         writes += 1;
       }
+
+      const facetOperations = await syncFacets(ctx, digestId, row, now);
+      reads += facetOperations.reads;
+      writes += facetOperations.writes;
 
       const existingDetail = await ctx.db
         .query("skillsShMirrorDetails")
@@ -651,6 +1012,8 @@ export const processBatchInternal = internalMutation({
       status: sourceComplete ? ("reconciling" as const) : ("running" as const),
       page: nextPage,
       offset: storedOffset,
+      batchLeaseToken: undefined,
+      batchLeaseExpiresAt: undefined,
       counts,
       operations: addOperations(run.operations, {
         functionCalls: 1,
@@ -681,8 +1044,9 @@ export const reconcileBatchInternal = internalMutation({
       .query("skillsShMirrorDigests")
       .withIndex("by_external_id")
       .paginate({ cursor: run.reconcileCursor ?? null, numItems: args.limit });
-    const counts = { ...run.counts };
+    const counts = runCounts(run.counts);
     const now = Date.now();
+    let reads = page.page.length + 1;
     let writes = 0;
     for (const digest of page.page) {
       if (digest.lastObservedRunId === run._id || !digest.active) continue;
@@ -695,6 +1059,19 @@ export const reconcileBatchInternal = internalMutation({
       });
       counts.tombstoned += 1;
       writes += 1;
+      const facets = await ctx.db
+        .query("skillsShMirrorFacets")
+        .withIndex("by_digest_id_and_kind_and_term", (q) => q.eq("digestId", digest._id))
+        .collect();
+      reads += facets.length + 1;
+      for (const facet of facets) {
+        if (!facet.active) continue;
+        await ctx.db.patch(facet._id, {
+          active: false,
+          updatedAt: now,
+        });
+        writes += 1;
+      }
     }
     const completed = page.isDone;
     const patch = {
@@ -703,7 +1080,7 @@ export const reconcileBatchInternal = internalMutation({
       counts,
       operations: addOperations(run.operations, {
         functionCalls: 1,
-        dbReads: page.page.length + 1,
+        dbReads: reads,
         dbWrites: writes + 1,
       }),
       ...(completed ? { completedAt: now } : {}),
@@ -862,6 +1239,173 @@ export const searchActiveBySearchTextInternal = internalQuery({
   },
 });
 
+export const listActiveGithubByOwnerInternal = internalQuery({
+  args: {
+    owner: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const owner = requiredSearchValue("owner", args.owner);
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_source_type_and_owner_and_repo_and_external_id", (q) =>
+        q.eq("active", true).eq("sourceType", "github").eq("owner", owner),
+      )
+      .paginate(args.paginationOpts);
+  },
+});
+
+export const listActiveByUpstreamInstallsInternal = internalQuery({
+  args: {
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_upstream_installs", (q) => q.eq("active", true))
+      .order("desc")
+      .take(searchLimit(args.limit));
+  },
+});
+
+async function listActiveByFacet(
+  ctx: QueryCtx,
+  args: {
+    kind: "category" | "topic";
+    term: string;
+    paginationOpts: Infer<typeof paginationOptsValidator>;
+  },
+) {
+  const facets = await ctx.db
+    .query("skillsShMirrorFacets")
+    .withIndex("by_active_and_kind_and_term_and_installs_and_external_id", (q) =>
+      q.eq("active", true).eq("kind", args.kind).eq("term", args.term),
+    )
+    .order("desc")
+    .paginate(args.paginationOpts);
+  const page = await Promise.all(facets.page.map((facet) => ctx.db.get(facet.digestId)));
+  if (page.some((digest) => !digest?.active)) {
+    throw new ConvexError("skills.sh mirror facet references an inactive or missing digest");
+  }
+  return {
+    ...facets,
+    page: page as Doc<"skillsShMirrorDigests">[],
+  };
+}
+
+export const listActiveByCategoryInternal = internalQuery({
+  args: {
+    categorySlug: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    return await listActiveByFacet(ctx, {
+      kind: "category",
+      term: requiredSearchValue("categorySlug", args.categorySlug),
+      paginationOpts: args.paginationOpts,
+    });
+  },
+});
+
+export const listActiveByTopicInternal = internalQuery({
+  args: {
+    topic: v.string(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    return await listActiveByFacet(ctx, {
+      kind: "topic",
+      term: requiredSearchValue("topic", args.topic),
+      paginationOpts: args.paginationOpts,
+    });
+  },
+});
+
+export const getClassificationStatesInternal = internalQuery({
+  args: {
+    externalIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    assertIntegerInRange("externalIds.length", args.externalIds.length, 1, MAX_ROWS_PER_BATCH);
+    const externalIds = Array.from(
+      new Set(args.externalIds.map((externalId) => externalId.trim().toLowerCase())),
+    );
+    const digests = await Promise.all(
+      externalIds.map((externalId) =>
+        ctx.db
+          .query("skillsShMirrorDigests")
+          .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+          .unique(),
+      ),
+    );
+    return digests.flatMap((digest) => {
+      if (
+        !digest ||
+        !digest.inferredCategories ||
+        !digest.inferredTopics ||
+        !digest.inferredCategoryConfidence ||
+        !digest.inferredTopicConfidence ||
+        !digest.inferredClassifierVersion ||
+        !digest.inferredTopicClassifierVersion ||
+        !digest.inferredInputHash ||
+        !digest.inferredTopicInputHash ||
+        digest.inferredAt === undefined
+      ) {
+        return [];
+      }
+      return [
+        {
+          externalId: digest.externalId,
+          slug: digest.slug,
+          displayName: digest.displayName,
+          ...(digest.sourceContentHash ? { sourceContentHash: digest.sourceContentHash } : {}),
+          inferredCategories: digest.inferredCategories,
+          inferredTopics: digest.inferredTopics,
+          inferredCategoryConfidence: digest.inferredCategoryConfidence,
+          inferredTopicConfidence: digest.inferredTopicConfidence,
+          inferredClassifierVersion: digest.inferredClassifierVersion,
+          inferredTopicClassifierVersion: digest.inferredTopicClassifierVersion,
+          inferredInputHash: digest.inferredInputHash,
+          inferredTopicInputHash: digest.inferredTopicInputHash,
+          inferredAt: digest.inferredAt,
+        },
+      ];
+    });
+  },
+});
+
+export const getReplayRowsInternal = internalQuery({
+  args: {
+    externalIds: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    assertIntegerInRange("externalIds.length", args.externalIds.length, 1, MAX_ROWS_PER_BATCH);
+    const externalIds = Array.from(
+      new Set(args.externalIds.map((externalId) => externalId.trim().toLowerCase())),
+    );
+    return await Promise.all(
+      externalIds.map(async (externalId) => {
+        const [digest, detail] = await Promise.all([
+          ctx.db
+            .query("skillsShMirrorDigests")
+            .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+            .unique(),
+          ctx.db
+            .query("skillsShMirrorDetails")
+            .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+            .unique(),
+        ]);
+        if (!digest?.active) {
+          throw new ConvexError(
+            `skills.sh mirror replay row is missing or inactive: ${externalId}`,
+          );
+        }
+        return { digest, detail };
+      }),
+    );
+  },
+});
+
 export const getRunInternal = internalQuery({
   args: {
     runId: v.id("skillsShMirrorRuns"),
@@ -881,7 +1425,7 @@ export const listDigestsPageInternal = internalQuery({
     assertIntegerInRange("limit", args.limit, 1, 500);
     return await ctx.db
       .query("skillsShMirrorDigests")
-      .withIndex("by_external_id")
+      .withIndex("by_active_and_upstream_installs", (q) => q.eq("active", true))
       .paginate({ cursor: args.cursor, numItems: args.limit });
   },
 });
@@ -900,21 +1444,43 @@ export const listDetailsPageInternal = internalQuery({
   },
 });
 
+export const listFacetsPageInternal = internalQuery({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    assertIntegerInRange("limit", args.limit, 1, 500);
+    return await ctx.db
+      .query("skillsShMirrorFacets")
+      .withIndex("by_active_and_kind_and_term_and_installs_and_external_id", (q) =>
+        q.eq("active", true),
+      )
+      .paginate({ cursor: args.cursor, numItems: args.limit });
+  },
+});
+
 export const getStatusInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const [control, runs, sampleDigests, sampleConflicts] = await Promise.all([
+    const [control, runs, sampleDigests] = await Promise.all([
       getControl(ctx),
       ctx.db.query("skillsShMirrorRuns").withIndex("by_started_at").order("desc").take(20),
       ctx.db.query("skillsShMirrorDigests").withIndex("by_external_id").take(50),
-      ctx.db.query("skillsShMirrorConflicts").withIndex("by_run_id").take(50),
     ]);
+    const latestRunConflicts = runs[0]
+      ? await ctx.db
+          .query("skillsShMirrorConflicts")
+          .withIndex("by_run_id", (q) => q.eq("runId", runs[0]!._id))
+          .take(50)
+      : [];
     return {
       environment: assertSkillsShFixtureEnvironmentAllowed(),
       control,
       runs: runs.map(summarizeRun),
       sampleDigests,
-      sampleConflicts,
+      sampleConflicts: latestRunConflicts,
+      latestRunConflicts,
       invariants: {
         publicVisible: false,
         installable: false,

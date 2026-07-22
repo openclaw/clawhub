@@ -230,6 +230,7 @@ describe("skills.sh catalog Test HTTP API", () => {
       body: JSON.stringify({
         operation: "mirror-batch",
         runId: "skillsShMirrorRuns:test",
+        leaseToken: "lease:test",
         page: 0,
         offset: 0,
         pageLength: 500,
@@ -248,9 +249,70 @@ describe("skills.sh catalog Test HTTP API", () => {
       expect.anything(),
       expect.objectContaining({
         runId: "skillsShMirrorRuns:test",
+        leaseToken: "lease:test",
         page: 0,
         offset: 0,
         sourceTotal: 9_571,
+      }),
+    );
+  });
+
+  it("routes guarded mirror batch lease claims and releases", async () => {
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        runId: "skillsShMirrorRuns:test",
+        page: 3,
+        offset: 50,
+        leaseToken: "lease:test",
+        leaseExpiresAt: Date.now() + 300_000,
+      })
+      .mockResolvedValueOnce({ released: true });
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })),
+      runMutation,
+    } as never;
+
+    for (const operation of ["mirror-batch-claim", "mirror-batch-release"] as const) {
+      const response = await skillsShCatalogTestV1Handler(
+        ctx,
+        new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+          method: "POST",
+          body: JSON.stringify({
+            operation,
+            runId: "skillsShMirrorRuns:test",
+            page: 3,
+            offset: 50,
+            leaseToken: "lease:test",
+          }),
+        }),
+      );
+      expect(response.status).toBe(200);
+    }
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        runId: "skillsShMirrorRuns:test",
+        page: 3,
+        offset: 50,
+        leaseToken: "lease:test",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        runId: "skillsShMirrorRuns:test",
+        page: 3,
+        offset: 50,
+        leaseToken: "lease:test",
       }),
     );
   });
@@ -288,6 +350,107 @@ describe("skills.sh catalog Test HTTP API", () => {
       offset: 50,
     });
     expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads bounded mirror classification reuse state", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })
+      .mockResolvedValueOnce([
+        {
+          externalId: "patrick-erichsen/skills/html",
+          inferredClassifierVersion: "taxonomy-prototype-v9",
+        },
+      ]);
+    const ctx = { runQuery } as never;
+    const response = await skillsShCatalogTestV1Handler(
+      ctx,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-classification-states",
+          externalIds: ["patrick-erichsen/skills/html"],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      states: [{ externalId: "patrick-erichsen/skills/html" }],
+    });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a bounded mirror facet proof page", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })
+      .mockResolvedValueOnce({
+        page: [{ kind: "category", term: "development" }],
+        isDone: true,
+        continueCursor: "",
+      });
+    const ctx = { runQuery } as never;
+    const response = await skillsShCatalogTestV1Handler(
+      ctx,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-facet-page",
+          cursor: null,
+          limit: 500,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      page: [{ kind: "category", term: "development" }],
+      isDone: true,
+    });
+  });
+
+  it("reads bounded captured mirror rows for replay", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })
+      .mockResolvedValueOnce([
+        {
+          digest: { externalId: "patrick-erichsen/skills/html", active: true },
+          detail: null,
+        },
+      ]);
+    const ctx = { runQuery } as never;
+    const response = await skillsShCatalogTestV1Handler(
+      ctx,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-replay-rows",
+          externalIds: ["patrick-erichsen/skills/html"],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      rows: [{ digest: { externalId: "patrick-erichsen/skills/html" }, detail: null }],
+    });
   });
 
   it("fetches only owners missing from authenticated staging-live state", async () => {
@@ -765,113 +928,41 @@ describe("skills.sh catalog Test HTTP API", () => {
 });
 
 describe("skills.sh public HTTP API", () => {
-  const digest = {
-    externalId: "patrick-erichsen/skills/html",
-    sourceType: "github",
-    owner: "patrick-erichsen",
-    repo: "skills",
-    slug: "html",
-    displayName: "HTML Artifact Chooser",
-    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
-    canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
-    githubPath: "skills/html",
-    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-    upstreamInstalls: 100,
-    upstreamScanners: {
-      genAgentTrustHub: { status: "unavailable" },
-      socket: { status: "unavailable" },
-      snyk: { status: "unavailable" },
-    },
-    sourceFreshnessStatus: "observed-only",
-    detailStatus: "available",
-    active: true,
-    publicVisible: false,
-    installable: false,
-    lastObservedAt: 123,
-  };
-  const detail = {
-    externalId: digest.externalId,
-    contentKind: "skill-md",
-    path: "skills/html/SKILL.md",
-    content: "# HTML",
-    contentBytes: 6,
-    sourceBytes: 6,
-    sourceFileCount: 1,
-    truncated: false,
-    sourceContentHash: digest.sourceContentHash,
-    updatedAt: 123,
-  };
   const publicEntry = {
-    source: "skills.sh",
-    externalId: "patrick-erichsen/skills/html",
+    ref: "skills-sh/patrick-erichsen/skills/html",
     route: "/skills-sh/patrick-erichsen/skills/html",
-    reference: "skills-sh:patrick-erichsen/skills/html",
-    owner: "patrick-erichsen",
-    repo: "skills",
-    slug: "html",
     displayName: "HTML Artifact Chooser",
-    upstreamInstalls: 100,
-    lastObservedAt: 123,
-    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
-    canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
-    githubPath: "skills/html",
-    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-    upstreamChecks: [
-      {
-        scanner: "Gen Agent Trust Hub",
-        status: "unavailable",
-        sourceStatus: "unavailable",
+    security: {
+      verdict: "clean",
+      source: "clawhub",
+      attemptId: "skillsShCatalogScanAttempts:canary",
+    },
+    install: {
+      ok: true,
+      slug: "skills-sh/patrick-erichsen/skills/html",
+      installKind: "github",
+      github: {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit: "050daba89f6b6636470add5cb300aac46a412cf8",
+        contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+        sourceUrl:
+          "https://github.com/patrick-erichsen/skills/tree/050daba89f6b6636470add5cb300aac46a412cf8/skills/html",
       },
-      { scanner: "Socket", status: "unavailable", sourceStatus: "unavailable" },
-      { scanner: "Snyk", status: "unavailable", sourceStatus: "unavailable" },
-    ],
-    content: {
-      kind: "skill-md",
-      path: "skills/html/SKILL.md",
-      markdown: "# HTML",
-      bytes: 6,
-      truncated: false,
     },
-  };
-  const install = {
-    ok: true,
-    slug: "skills-sh:patrick-erichsen/skills/html",
-    installKind: "github",
-    github: {
-      repo: "patrick-erichsen/skills",
-      path: "skills/html",
-      commit: "050daba89f6b6636470add5cb300aac46a412cf8",
-      contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-      sourceUrl:
-        "https://github.com/patrick-erichsen/skills/tree/050daba89f6b6636470add5cb300aac46a412cf8/skills/html",
-    },
-    provenance: {
-      source: "skills.sh",
-      reference: "skills-sh:patrick-erichsen/skills/html",
-    },
-    trust: {
-      clawhubScan: "unscanned",
-      label: "Not scanned by ClawHub",
-    },
-    canonicalRef: null,
   };
 
   it.each([
     {
       suffix: "",
       expected: publicEntry,
-      responses: [digest, detail],
     },
     {
       suffix: "/install",
-      expected: install,
-      responses: [digest],
+      expected: publicEntry.install,
     },
-  ])("serves an unclaimed mirrored route$suffix", async ({ suffix, expected, responses }) => {
-    const runQuery = vi.fn();
-    for (const response of responses) runQuery.mockResolvedValueOnce(response);
+  ])("serves an approved slash route$suffix", async ({ suffix, expected }) => {
+    const runQuery = vi.fn(async () => publicEntry);
     const ctx = { runQuery } as never;
     const response = await skillsShCatalogPublicV1Handler(
       ctx,
@@ -883,7 +974,9 @@ describe("skills.sh public HTTP API", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(expected);
     expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
-      externalId: "patrick-erichsen/skills/html",
+      owner: "patrick-erichsen",
+      repo: "skills",
+      slug: "html",
     });
   });
 
@@ -904,7 +997,7 @@ describe("skills.sh public HTTP API", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it("returns 404 while the exact mirror entry is unavailable", async () => {
+  it("returns 404 while the exact entry is not public", async () => {
     const ctx = { runQuery: vi.fn(async () => null) } as never;
     const response = await skillsShCatalogPublicV1Handler(
       ctx,

@@ -24,6 +24,9 @@ async function readWorkflow() {
     };
     jobs?: Record<string, WorkflowJob>;
     on?: {
+      pull_request?: {
+        types?: string[];
+      };
       workflow_dispatch?: unknown;
       workflow_run?: {
         branches?: string[];
@@ -36,27 +39,35 @@ async function readWorkflow() {
 }
 
 describe("Test deploy workflow", () => {
-  it("runs only after successful main CI or a manual dispatch", async () => {
+  it("admits main CI and exact guarded CLAW-563 branch deploys", async () => {
     const workflow = await readWorkflow();
     const job = workflow.jobs?.["deploy-test"];
     const steps = job?.steps ?? [];
+    const revision = steps.find((step) => step.name === "Resolve deployment revision")?.run ?? "";
 
     expect(workflow.on?.workflow_run).toEqual({
       workflows: ["CI"],
       types: ["completed"],
       branches: ["main"],
     });
+    expect(workflow.on?.pull_request).toEqual({
+      types: ["opened", "reopened", "synchronize", "labeled"],
+    });
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.concurrency).toEqual({
       group: "deploy-test",
       "cancel-in-progress": false,
     });
+    expect(job?.if).toContain("github.event_name == 'workflow_dispatch'");
+    expect(job?.if).toContain("github.event_name == 'pull_request'");
     expect(job?.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(job?.if).toContain("github.event.workflow_run.event == 'push'");
-    expect(job?.if).toContain("github.ref == 'refs/heads/main'");
-    expect(steps.find((step) => step.name === "Resolve deployment revision")?.run).toContain(
-      'deploy_sha" != "$main_sha',
-    );
+    expect(revision).toContain('deploy_sha" != "$main_sha');
+    expect(revision).toContain("refs/heads/pe/claw-563-skills-sh-mirror-10k");
+    expect(revision).toContain("Patrick-Erichsen");
+    expect(revision).toContain("deploy-claw-563-to-permanent-test");
+    expect(revision).toContain("${{ inputs.expected_sha }}");
+    expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
   });
 
   it("uses only the Test environment and narrowly scoped secrets", async () => {

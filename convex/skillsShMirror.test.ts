@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 /* @vitest-environment edge-runtime */
 import { convexTest } from "convex-test";
+import type { FunctionArgs } from "convex/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -21,6 +22,7 @@ function useTestEnvironment() {
 const githubRow = {
   externalId: "vercel-labs/skills/find-skills",
   sourceType: "github" as const,
+  upstreamSourceType: "github",
   owner: "vercel-labs",
   repo: "skills",
   slug: "find-skills",
@@ -42,6 +44,15 @@ const githubRow = {
       sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/snyk",
     },
   },
+  inferredCategories: ["development"],
+  inferredTopics: ["skill-discovery"],
+  inferredCategoryConfidence: "high" as const,
+  inferredTopicConfidence: "medium" as const,
+  inferredClassifierVersion: "taxonomy-prototype-v9",
+  inferredTopicClassifierVersion: "topic-prototype-v1",
+  inferredInputHash: "github-input-hash",
+  inferredTopicInputHash: "github-topic-input-hash",
+  inferredAt: 123,
   sourceContentHash: "a".repeat(64),
   detail: {
     contentKind: "skill-md" as const,
@@ -57,6 +68,7 @@ const githubRow = {
 const wellKnownRow = {
   externalId: "open.feishu.cn/lark-doc",
   sourceType: "well-known" as const,
+  upstreamSourceType: "well-known",
   sourceHost: "open.feishu.cn",
   slug: "lark-doc",
   displayName: "lark-doc",
@@ -67,6 +79,15 @@ const wellKnownRow = {
     socket: { status: "unavailable" },
     snyk: { status: "unavailable" },
   },
+  inferredCategories: ["productivity"],
+  inferredTopics: ["documents"],
+  inferredCategoryConfidence: "medium" as const,
+  inferredTopicConfidence: "medium" as const,
+  inferredClassifierVersion: "taxonomy-prototype-v9",
+  inferredTopicClassifierVersion: "topic-prototype-v1",
+  inferredInputHash: "well-known-input-hash",
+  inferredTopicInputHash: "well-known-topic-input-hash",
+  inferredAt: 123,
   sourceContentHash: "b".repeat(64),
   detail: {
     contentKind: "readme" as const,
@@ -102,8 +123,198 @@ async function startRun(t: ReturnType<typeof convexTest>, snapshotId: string, so
   })) as { runId: Id<"skillsShMirrorRuns"> };
 }
 
+const mirrorLeaseRefs = internal.skillsShMirror as unknown as {
+  claimBatchLeaseInternal: Parameters<ReturnType<typeof convexTest>["mutation"]>[0];
+  releaseBatchLeaseInternal: Parameters<ReturnType<typeof convexTest>["mutation"]>[0];
+};
+
+let leaseSequence = 0;
+
+async function processBatch(
+  t: ReturnType<typeof convexTest>,
+  args: Omit<FunctionArgs<typeof internal.skillsShMirror.processBatchInternal>, "leaseToken">,
+) {
+  const leaseToken = `test-lease:${(leaseSequence += 1)}`;
+  await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+    runId: args.runId,
+    page: args.page,
+    offset: args.offset,
+    leaseToken,
+  });
+  return await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    ...args,
+    leaseToken,
+  });
+}
+
 describe("skills.sh external mirror", () => {
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("allows only one active batch lease for an exact durable cursor", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:lease", 1);
+
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:first",
+      }),
+    ).resolves.toMatchObject({
+      runId,
+      page: 0,
+      offset: 0,
+      leaseExpiresAt: expect.any(Number),
+    });
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:second",
+      }),
+    ).rejects.toThrow("already leased");
+  });
+
+  it("renews an active batch lease when the same worker heartbeats", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:lease-renewal", 1);
+    const first = (await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      leaseToken: "lease:worker",
+    })) as { leaseExpiresAt: number };
+    await t.run(async (ctx) => {
+      await ctx.db.patch(runId, { batchLeaseExpiresAt: first.leaseExpiresAt - 60_000 });
+    });
+
+    const renewed = (await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      leaseToken: "lease:worker",
+    })) as { leaseExpiresAt: number };
+
+    expect(renewed.leaseExpiresAt).toBeGreaterThan(first.leaseExpiresAt - 1_000);
+  });
+
+  it("permits stale lease takeover and rejects the superseded token", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:stale-lease", 1);
+    await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      leaseToken: "lease:stale",
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(runId, { batchLeaseExpiresAt: Date.now() - 1 });
+    });
+
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:fresh",
+      }),
+    ).resolves.toMatchObject({ leaseToken: "lease:fresh" });
+    await expect(
+      t.mutation(internal.skillsShMirror.processBatchInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:stale",
+        pageLength: 1,
+        hasMore: false,
+        sourceTotal: 1,
+        sourceRequests: 3,
+        sourceBytes: 1_024,
+        rows: [githubRow],
+      }),
+    ).rejects.toThrow("lease token mismatch");
+  });
+
+  it("requires the exact lease token to release or commit a batch", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:lease-token", 1);
+    await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      leaseToken: "lease:owner",
+    });
+
+    await expect(
+      t.mutation(mirrorLeaseRefs.releaseBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:wrong",
+      }),
+    ).rejects.toThrow("lease token mismatch");
+    await expect(
+      t.mutation(internal.skillsShMirror.processBatchInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:wrong",
+        pageLength: 1,
+        hasMore: false,
+        sourceTotal: 1,
+        sourceRequests: 3,
+        sourceBytes: 1_024,
+        rows: [githubRow],
+      }),
+    ).rejects.toThrow("lease token mismatch");
+
+    await expect(
+      t.mutation(mirrorLeaseRefs.releaseBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:owner",
+      }),
+    ).resolves.toMatchObject({ released: true });
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:replacement",
+      }),
+    ).resolves.toMatchObject({ leaseToken: "lease:replacement" });
+
+    const committed = await t.mutation(internal.skillsShMirror.processBatchInternal, {
+      runId,
+      page: 0,
+      offset: 0,
+      leaseToken: "lease:replacement",
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [githubRow],
+    });
+    expect(committed).toMatchObject({ status: "reconciling", page: 1, offset: 0 });
+    const storedRun = await t.run(async (ctx) => await ctx.db.get(runId));
+    expect(storedRun).not.toHaveProperty("batchLeaseToken");
+    expect(storedRun).not.toHaveProperty("batchLeaseExpiresAt");
+  });
 
   it("processes durable source cursors without creating scan work", async () => {
     useTestEnvironment();
@@ -111,7 +322,7 @@ describe("skills.sh external mirror", () => {
     await configure(t);
     const { runId } = await startRun(t, "snapshot:first");
 
-    const result = await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    const result = await processBatch(t, {
       runId,
       page: 0,
       offset: 0,
@@ -151,6 +362,8 @@ describe("skills.sh external mirror", () => {
       normalizedDisplayName: "find skills",
       normalizedDisplayNameFirstToken: "find",
       upstreamScanners: githubRow.upstreamScanners,
+      inferredCategories: ["development"],
+      inferredTopics: ["skill-discovery"],
     });
   });
 
@@ -159,7 +372,7 @@ describe("skills.sh external mirror", () => {
     const t = convexTest(schema, modules);
     await configure(t);
     const { runId } = await startRun(t, "snapshot:search");
-    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    await processBatch(t, {
       runId,
       page: 0,
       offset: 0,
@@ -171,8 +384,7 @@ describe("skills.sh external mirror", () => {
       rows: [githubRow, wellKnownRow],
     });
 
-    const externalIds = (rows: Doc<"skillsShMirrorDigests">[]) =>
-      rows.map((row) => row.externalId);
+    const externalIds = (rows: Doc<"skillsShMirrorDigests">[]) => rows.map((row) => row.externalId);
     expect(
       externalIds(
         await t.query(internal.skillsShMirror.listActiveByNormalizedSlugInternal, {
@@ -230,6 +442,56 @@ describe("skills.sh external mirror", () => {
       limit: 10,
     })) as Doc<"skillsShMirrorDigests">[];
     expect(fullText.map((row) => row.externalId)).toEqual([githubRow.externalId]);
+    const byOwner = await t.query(internal.skillsShMirror.listActiveGithubByOwnerInternal, {
+      owner: " VERCEL-LABS ",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(byOwner.page.map((row) => row.externalId)).toEqual([githubRow.externalId]);
+    expect(byOwner.isDone).toBe(true);
+    const byCategory = await t.query(internal.skillsShMirror.listActiveByCategoryInternal, {
+      categorySlug: " DEVELOPMENT ",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(byCategory.page.map((row) => row.externalId)).toEqual([githubRow.externalId]);
+    const byTopic = await t.query(internal.skillsShMirror.listActiveByTopicInternal, {
+      topic: "skill-discovery",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+    expect(byTopic.page.map((row) => row.externalId)).toEqual([githubRow.externalId]);
+    const byPopularity = await t.query(
+      internal.skillsShMirror.listActiveByUpstreamInstallsInternal,
+      { limit: 10 },
+    );
+    expect(byPopularity.map((row) => row.externalId)).toEqual([
+      githubRow.externalId,
+      wellKnownRow.externalId,
+    ]);
+    const classificationStates = await t.query(
+      internal.skillsShMirror.getClassificationStatesInternal,
+      { externalIds: [githubRow.externalId, "missing/repo/skill"] },
+    );
+    expect(classificationStates).toEqual([
+      expect.objectContaining({
+        externalId: githubRow.externalId,
+        sourceContentHash: githubRow.sourceContentHash,
+        inferredClassifierVersion: githubRow.inferredClassifierVersion,
+      }),
+    ]);
+    const replayRows = await t.query(internal.skillsShMirror.getReplayRowsInternal, {
+      externalIds: [githubRow.externalId],
+    });
+    expect(replayRows).toEqual([
+      {
+        digest: expect.objectContaining({
+          externalId: githubRow.externalId,
+          active: true,
+        }),
+        detail: expect.objectContaining({
+          externalId: githubRow.externalId,
+          content: githubRow.detail.content,
+        }),
+      },
+    ]);
     await expect(
       t.query(internal.skillsShMirror.listActiveByNormalizedSlugPrefixInternal, {
         prefix: "",
@@ -238,13 +500,301 @@ describe("skills.sh external mirror", () => {
     ).rejects.toThrow("prefix is required");
   });
 
+  it("records a quarantined source row and continues the batch cursor", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:quarantine", 2);
+
+    const result = await processBatch(t, {
+      runId,
+      page: 0,
+      offset: 0,
+      pageLength: 2,
+      hasMore: false,
+      sourceTotal: 2,
+      sourceRequests: 4,
+      sourceBytes: 2_048,
+      rows: [
+        {
+          quarantined: true,
+          externalId: "larksuite/cli/lark-doc",
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+        githubRow,
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: "reconciling",
+      page: 1,
+      offset: 0,
+      counts: {
+        observed: 2,
+        inserted: 1,
+        rejected: 1,
+        quarantined: 1,
+        scansPlanned: 0,
+        scansAdmitted: 0,
+      },
+    });
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("skillsShMirrorConflicts").collect()),
+    ).toEqual([
+      expect.objectContaining({
+        externalId: "larksuite/cli/lark-doc",
+        kind: "source-quarantine",
+        reason: "identity-page-fetch-failed",
+      }),
+    ]);
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: "larksuite/cli/lark-doc",
+      }),
+    ).toBeNull();
+    expect(await t.query(internal.skillsShMirror.getStatusInternal, {})).toMatchObject({
+      latestRunConflicts: [
+        {
+          externalId: "larksuite/cli/lark-doc",
+          kind: "source-quarantine",
+          reason: "identity-page-fetch-failed",
+        },
+      ],
+    });
+  });
+
+  it("preserves an existing digest when identity-page transport is quarantined", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const firstRun = await startRun(t, "snapshot:before-transient-quarantine", 1);
+    await processBatch(t, {
+      runId: firstRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [githubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: firstRun.runId,
+      limit: 10,
+    });
+    await t.run(async (ctx) => {
+      const existing = await ctx.db
+        .query("skillsShMirrorDigests")
+        .withIndex("by_external_id", (q) => q.eq("externalId", githubRow.externalId))
+        .unique();
+      expect(existing).not.toBeNull();
+      await ctx.db.patch(existing!._id, { upstreamSourceType: undefined });
+    });
+
+    const secondRun = await startRun(t, "snapshot:transient-quarantine", 1);
+    const result = await processBatch(t, {
+      runId: secondRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 2,
+      sourceBytes: 1_024,
+      rows: [
+        {
+          quarantined: true,
+          externalId: githubRow.externalId,
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+      ],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: secondRun.runId,
+      limit: 10,
+    });
+
+    expect(result.counts).toMatchObject({
+      quarantined: 1,
+      quarantinedPreserved: 1,
+      tombstoned: 0,
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      active: true,
+      lastObservedRunId: secondRun.runId,
+      sourceFreshnessStatus: "stale",
+      upstreamSourceType: "well-known",
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getDetailByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      lastObservedRunId: firstRun.runId,
+    });
+
+    const disappearanceRun = await startRun(t, "snapshot:disappearance-before-quarantine", 1);
+    await processBatch(t, {
+      runId: disappearanceRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [wellKnownRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: disappearanceRun.runId,
+      limit: 10,
+    });
+
+    const inactiveQuarantineRun = await startRun(t, "snapshot:inactive-quarantine", 1);
+    const inactiveResult = await processBatch(t, {
+      runId: inactiveQuarantineRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 2,
+      sourceBytes: 1_024,
+      rows: [
+        {
+          quarantined: true,
+          externalId: githubRow.externalId,
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+      ],
+    });
+    expect(inactiveResult.counts.quarantinedPreserved).toBe(0);
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      active: false,
+      lastObservedRunId: secondRun.runId,
+    });
+  });
+
+  it("keeps a successful same-run observation authoritative over a later quarantine", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const { runId } = await startRun(t, "snapshot:same-run-quarantine", 2);
+
+    const result = await processBatch(t, {
+      runId,
+      page: 0,
+      offset: 0,
+      pageLength: 2,
+      hasMore: false,
+      sourceTotal: 2,
+      sourceRequests: 4,
+      sourceBytes: 2_048,
+      rows: [
+        githubRow,
+        {
+          quarantined: true,
+          externalId: githubRow.externalId,
+          upstreamSourceType: "well-known",
+          reason: "identity-page-http-404",
+        },
+      ],
+    });
+
+    expect(result.counts).toMatchObject({
+      inserted: 1,
+      quarantined: 1,
+      quarantinedPreserved: 0,
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      active: true,
+      lastObservedRunId: runId,
+      sourceFreshnessStatus: "observed-only",
+    });
+  });
+
+  it("accepts a valid observation after preserving an earlier-run quarantined digest", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const firstRun = await startRun(t, "snapshot:before-quarantine-first", 1);
+    await processBatch(t, {
+      runId: firstRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [githubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: firstRun.runId,
+      limit: 10,
+    });
+
+    const secondRun = await startRun(t, "snapshot:quarantine-first", 2);
+    const result = await processBatch(t, {
+      runId: secondRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 2,
+      hasMore: false,
+      sourceTotal: 2,
+      sourceRequests: 4,
+      sourceBytes: 2_048,
+      rows: [
+        {
+          quarantined: true,
+          externalId: githubRow.externalId,
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+        { ...githubRow, upstreamInstalls: githubRow.upstreamInstalls + 1 },
+      ],
+    });
+
+    expect(result.counts).toMatchObject({
+      updated: 1,
+      quarantined: 1,
+      quarantinedPreserved: 0,
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      active: true,
+      lastObservedRunId: secondRun.runId,
+      sourceFreshnessStatus: "observed-only",
+      upstreamInstalls: githubRow.upstreamInstalls + 1,
+    });
+  });
+
   it("pauses and resumes from the exact page and offset", async () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);
     await configure(t);
     const { runId } = await startRun(t, "snapshot:pause", 3);
 
-    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    await processBatch(t, {
       runId,
       page: 0,
       offset: 0,
@@ -263,7 +813,7 @@ describe("skills.sh external mirror", () => {
       confirm: "set-skills-sh-mirror-pause",
     });
     await expect(
-      t.mutation(internal.skillsShMirror.processBatchInternal, {
+      processBatch(t, {
         runId,
         page: 0,
         offset: 1,
@@ -282,7 +832,7 @@ describe("skills.sh external mirror", () => {
       reason: "resume exact cursor",
       confirm: "set-skills-sh-mirror-pause",
     });
-    const resumed = await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    const resumed = await processBatch(t, {
       runId,
       page: 0,
       offset: 1,
@@ -302,7 +852,7 @@ describe("skills.sh external mirror", () => {
     await configure(t);
     const { runId } = await startRun(t, "snapshot:conflict", 2);
 
-    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    await processBatch(t, {
       runId,
       page: 0,
       offset: 0,
@@ -313,7 +863,7 @@ describe("skills.sh external mirror", () => {
       sourceBytes: 512,
       rows: [githubRow],
     });
-    const conflicted = await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    const conflicted = await processBatch(t, {
       runId,
       page: 0,
       offset: 1,
@@ -339,7 +889,7 @@ describe("skills.sh external mirror", () => {
     const t = convexTest(schema, modules);
     await configure(t);
     const first = await startRun(t, "snapshot:all");
-    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    await processBatch(t, {
       runId: first.runId,
       page: 0,
       offset: 0,
@@ -356,7 +906,7 @@ describe("skills.sh external mirror", () => {
     });
 
     const second = await startRun(t, "snapshot:missing", 1);
-    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    await processBatch(t, {
       runId: second.runId,
       page: 0,
       offset: 0,
@@ -372,9 +922,17 @@ describe("skills.sh external mirror", () => {
       limit: 100,
     });
     expect(reconciled).toMatchObject({ status: "completed", counts: { tombstoned: 1 } });
+    const activeFacets = await t.query(internal.skillsShMirror.listFacetsPageInternal, {
+      cursor: null,
+      limit: 500,
+    });
+    expect(activeFacets.page.every((facet) => facet.active)).toBe(true);
+    expect(activeFacets.page.some((facet) => facet.externalId === wellKnownRow.externalId)).toBe(
+      false,
+    );
 
     const third = await startRun(t, "snapshot:return", 2);
-    await t.mutation(internal.skillsShMirror.processBatchInternal, {
+    await processBatch(t, {
       runId: third.runId,
       page: 0,
       offset: 0,
