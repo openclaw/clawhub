@@ -4,12 +4,13 @@ import type { RefObject } from "react";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { SkillListItem } from "../../components/SkillListItem";
+import { SkillsShListItem } from "../../components/SkillsShListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
 import { Button } from "../../components/ui/button";
 import { getSkillBadges } from "../../lib/badges";
 import { timeAgo } from "../../lib/timeAgo";
 import { useMediaQuery } from "../../lib/useMediaQuery";
-import { buildSkillHref, type SkillListEntry } from "./-types";
+import { buildSkillHref, isExternalSkillListEntry, type SkillListEntry } from "./-types";
 import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
@@ -38,7 +39,7 @@ export function SkillsResults({
   loadMore,
 }: SkillsResultsProps) {
   const isMobileBrowse = useMediaQuery("(max-width: 760px)");
-  const effectiveView = isMobileBrowse ? "list" : view;
+  const effectiveView = isMobileBrowse || sorted.some(isExternalSkillListEntry) ? "list" : view;
 
   return (
     <>
@@ -62,6 +63,7 @@ export function SkillsResults({
       ) : effectiveView === "grid" ? (
         <div className="grid browse-results-grid">
           {sorted.map((entry) => {
+            if (isExternalSkillListEntry(entry)) return null;
             const skill = entry.skill;
             const clawdis = entry.latestVersion?.parsed?.clawdis;
             const isPlugin = Boolean(clawdis?.nix?.plugin);
@@ -98,6 +100,9 @@ export function SkillsResults({
           </div>
           <div className="results-list">
             {sorted.map((entry) => {
+              if (isExternalSkillListEntry(entry)) {
+                return <SkillsShListItem key={entry.result.externalId} result={entry.result} />;
+              }
               const skill = entry.skill;
               const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
               return (

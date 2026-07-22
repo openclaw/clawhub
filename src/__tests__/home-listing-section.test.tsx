@@ -349,6 +349,36 @@ describe("HomeListingSection", () => {
     });
   });
 
+  it("renders mirrored skills.sh search results without native publisher ownership", async () => {
+    convexActionMock.mockResolvedValue([
+      {
+        source: "skills.sh",
+        externalId: "patrick-erichsen/skills/html",
+        route: "/skills-sh/patrick-erichsen/skills/html",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+        displayName: "HTML Artifact Chooser",
+        upstreamInstalls: 100,
+        lastObservedAt: 1,
+        score: 2,
+      },
+    ]);
+
+    renderSkillsListing();
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
+    fireEvent.change(searchInput, { target: { value: "html" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("HTML Artifact Chooser")).toBeTruthy();
+      expect(screen.getByText("patrick-erichsen/skills")).toBeTruthy();
+      expect(screen.getByText("Not scanned by ClawHub")).toBeTruthy();
+      expect(screen.queryByText("@patrick-erichsen")).toBeNull();
+    });
+  });
+
   it("searches skills inside the selected category before truncating results", async () => {
     convexActionMock.mockResolvedValue([
       {

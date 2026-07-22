@@ -4,12 +4,17 @@ import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
 import type { PublicPublisher, PublicPublisherListItem } from "./publicUser";
+import {
+  isSkillsShSearchResult,
+  type SkillsShSearchEntry,
+  type SkillsShSearchResult,
+} from "./skillsShCatalog";
 
 export type UnifiedSearchType = "all" | "skills" | "plugins" | "creators";
 const MAX_UNIFIED_SEARCH_LIMIT = 100;
 const MAX_CREATOR_SEARCH_LIMIT = 50;
 
-export type UnifiedSkillResult = {
+export type UnifiedNativeSkillResult = {
   type: "skill";
   skill: {
     _id: string;
@@ -30,6 +35,14 @@ export type UnifiedSkillResult = {
   owner?: PublicPublisher | null;
   score: number;
 };
+
+export type UnifiedSkillsShResult = {
+  type: "skills-sh";
+  result: SkillsShSearchResult;
+  score: number;
+};
+
+export type UnifiedSkillResult = UnifiedNativeSkillResult | UnifiedSkillsShResult;
 
 export type UnifiedPluginResult = {
   type: "plugin";
@@ -87,6 +100,32 @@ function mergeUnifiedResults(
     merged.push(...creatorResults);
   }
   return merged;
+}
+
+export function toUnifiedSkillResult(
+  entry:
+    | SkillsShSearchEntry
+    | {
+        skill: UnifiedNativeSkillResult["skill"];
+        ownerHandle: string | null;
+        owner?: PublicPublisher | null;
+        score: number;
+      },
+): UnifiedSkillResult {
+  if (isSkillsShSearchResult(entry)) {
+    return {
+      type: "skills-sh",
+      result: entry,
+      score: entry.score,
+    };
+  }
+  return {
+    type: "skill",
+    skill: entry.skill,
+    ownerHandle: entry.ownerHandle,
+    owner: entry.owner ?? null,
+    score: entry.score,
+  };
 }
 
 export function useUnifiedSearch(
@@ -253,19 +292,15 @@ export function useUnifiedSearch(
           const skillMatches: UnifiedSkillResult[] =
             matchedInitialData?.skillResults ??
             (
-              (skillsRaw as Array<{
-                skill: UnifiedSkillResult["skill"];
-                ownerHandle: string | null;
-                owner?: PublicPublisher | null;
-                score: number;
-              }>) ?? []
-            ).map((entry) => ({
-              type: "skill" as const,
-              skill: entry.skill,
-              ownerHandle: entry.ownerHandle,
-              owner: entry.owner ?? null,
-              score: entry.score,
-            }));
+              (skillsRaw as
+                | Array<{
+                    skill: UnifiedNativeSkillResult["skill"];
+                    ownerHandle: string | null;
+                    owner?: PublicPublisher | null;
+                    score: number;
+                  }>
+                | SkillsShSearchEntry[]) ?? []
+            ).map(toUnifiedSkillResult);
           const nextSkillResults = skillMatches.slice(0, skillLimit);
 
           const pluginMatches: UnifiedPluginResult[] = (
