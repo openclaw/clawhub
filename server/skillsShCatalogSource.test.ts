@@ -19,39 +19,65 @@ describe("skills.sh Vercel source boundary", () => {
   it("retains each upstream scanner status and source link independently", () => {
     expect(
       buildSkillsShMirrorUpstreamScanners(
-        `
-          <a href="/vercel-labs/skills/find-skills/security/agent-trust-hub">
-            <span>Gen Agent Trust Hub</span><span>Pass</span>
-          </a>
-          <a href="/vercel-labs/skills/find-skills/security/socket">
-            <span>Socket</span><span>Pass</span>
-          </a>
-          <a href="/vercel-labs/skills/find-skills/security/snyk">
-            <span>Snyk</span><span>Warn</span>
-          </a>
-        `,
+        {
+          id: "vercel-labs/skills/find-skills",
+          source: "vercel-labs/skills",
+          slug: "find-skills",
+          audits: [
+            {
+              provider: "Runlayer",
+              slug: "runlayer",
+              status: "pass",
+              auditedAt: "2026-07-22T20:00:00.000Z",
+            },
+            {
+              provider: "Gen Agent Trust Hub",
+              slug: "agent-trust-hub",
+              status: "pass",
+              auditedAt: "2026-07-22T20:01:00.000Z",
+            },
+            {
+              provider: "Socket",
+              slug: "socket",
+              status: "pass",
+              auditedAt: "2026-07-22T20:02:00.000Z",
+            },
+            {
+              provider: "Snyk",
+              slug: "snyk",
+              status: "warn",
+              auditedAt: "2026-07-22T20:03:00.000Z",
+            },
+            {
+              provider: "ZeroLeaks",
+              slug: "zeroleaks",
+              status: "fail",
+              auditedAt: "2026-07-22T20:04:00.000Z",
+            },
+          ],
+        },
         "https://skills.sh/vercel-labs/skills/find-skills",
       ),
     ).toEqual({
       genAgentTrustHub: {
         status: "pass",
         sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/agent-trust-hub",
+        sourceCheckedAt: "2026-07-22T20:01:00.000Z",
       },
       socket: {
         status: "pass",
         sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/socket",
+        sourceCheckedAt: "2026-07-22T20:02:00.000Z",
       },
       snyk: {
         status: "warn",
         sourceUrl: "https://skills.sh/vercel-labs/skills/find-skills/security/snyk",
+        sourceCheckedAt: "2026-07-22T20:03:00.000Z",
       },
     });
 
     expect(
-      buildSkillsShMirrorUpstreamScanners(
-        "<html><body>No audit links</body></html>",
-        "https://skills.sh/open.feishu.cn/lark-doc",
-      ),
+      buildSkillsShMirrorUpstreamScanners(null, "https://skills.sh/open.feishu.cn/lark-doc"),
     ).toEqual({
       genAgentTrustHub: { status: "unavailable" },
       socket: { status: "unavailable" },
@@ -162,12 +188,22 @@ describe("skills.sh Vercel source boundary", () => {
           }),
         );
       }
-      if (!url.includes("/api/v1/skills/")) {
-        return new Response(`
-          <a href="/open.feishu.cn/lark-doc/security/socket">
-            <span>Socket</span><span>Pass</span>
-          </a>
-        `);
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(
+          JSON.stringify({
+            id: "open.feishu.cn/lark-doc",
+            source: "open.feishu.cn",
+            slug: "lark-doc",
+            audits: [
+              {
+                provider: "Socket",
+                slug: "socket",
+                status: "pass",
+                auditedAt: "2026-07-22T20:02:00.000Z",
+              },
+            ],
+          }),
+        );
       }
       const id = decodeURIComponent(url.split("/api/v1/skills/")[1] ?? "");
       return new Response(
@@ -206,7 +242,8 @@ describe("skills.sh Vercel source boundary", () => {
             genAgentTrustHub: { status: "unavailable" },
             socket: {
               status: "pass",
-              sourceUrl: "https://www.skills.sh/open.feishu.cn/lark-doc/security/socket",
+              sourceUrl: "https://www.skills.sh/site/open.feishu.cn/lark-doc/security/socket",
+              sourceCheckedAt: "2026-07-22T20:02:00.000Z",
             },
             snyk: { status: "unavailable" },
           },
@@ -269,7 +306,7 @@ describe("skills.sh Vercel source boundary", () => {
     });
   });
 
-  it("keeps a mirror row when its optional scanner page is missing", async () => {
+  it("keeps a mirror row when the authenticated audit endpoint has no audits", async () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
@@ -291,6 +328,9 @@ describe("skills.sh Vercel source boundary", () => {
           }),
         );
       }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
       if (url.includes("/api/v1/skills/")) {
         return new Response(
           JSON.stringify({
@@ -303,7 +343,7 @@ describe("skills.sh Vercel source boundary", () => {
           }),
         );
       }
-      return new Response("missing", { status: 404 });
+      return new Response("unexpected request", { status: 500 });
     });
 
     const batch = await fetchSkillsShMirrorBatch(
@@ -326,18 +366,19 @@ describe("skills.sh Vercel source boundary", () => {
       }),
     ]);
     expect(batch.sourceRequests).toBe(3);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://skills.sh/api/v1/skills/audit/vercel-labs/skills/find-skills",
+      {
+        headers: {
+          Accept: "application/json",
+          Authorization: "Bearer request-bound-oidc",
+        },
+      },
+    );
   });
 
-  it("retries transient source responses and counts every request", async () => {
-    let attempts = 0;
+  it("fails closed when the authenticated audit endpoint rejects authorization", async () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
-      attempts += 1;
-      if (attempts === 1) {
-        return new Response("busy", {
-          status: 503,
-          headers: { "retry-after": "0" },
-        });
-      }
       const url = String(urlInput);
       if (url.includes("?page=0&per_page=500")) {
         return new Response(
@@ -358,8 +399,68 @@ describe("skills.sh Vercel source boundary", () => {
           }),
         );
       }
-      if (!url.includes("/api/v1/skills/")) {
-        return new Response("<html><body>No audit links</body></html>");
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+      }
+      return new Response(
+        JSON.stringify({
+          id: "vercel-labs/skills/find-skills",
+          source: "vercel-labs/skills",
+          slug: "find-skills",
+          installs: 42,
+          hash: "a".repeat(64),
+          files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+        }),
+      );
+    });
+
+    await expect(
+      fetchSkillsShMirrorBatch(
+        { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+        { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      ),
+    ).rejects.toThrow("skills.sh catalog source returned HTTP 401");
+  });
+
+  it("retries transient audit responses and counts every request", async () => {
+    let auditAttempts = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        auditAttempts += 1;
+        if (auditAttempts === 1) {
+          return new Response("busy", {
+            status: 503,
+            headers: { "retry-after": "0" },
+          });
+        }
+        return new Response(
+          JSON.stringify({
+            id: "vercel-labs/skills/find-skills",
+            source: "vercel-labs/skills",
+            slug: "find-skills",
+            audits: [],
+          }),
+        );
       }
       return new Response(
         JSON.stringify({
