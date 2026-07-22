@@ -3,6 +3,7 @@ import {
   buildMirrorProofHeaders,
   findRecoverableMirrorRun,
   mirrorRateLimitRetryDelayMs,
+  mirrorRunAccounting,
 } from "./prove-mirror-request";
 
 describe("skills.sh mirror proof request headers", () => {
@@ -64,5 +65,49 @@ describe("skills.sh mirror proof request headers", () => {
     expect(mirrorRateLimitRetryDelayMs(429, "120", 0)).toBe(120_000);
     expect(mirrorRateLimitRetryDelayMs(429, null, 3)).toBe(8_000);
     expect(mirrorRateLimitRetryDelayMs(502, "17", 0)).toBeNull();
+  });
+
+  it("accounts fail-closed identity conflicts separately from source quarantines", () => {
+    expect(
+      mirrorRunAccounting(9_571, {
+        conflicts: 205,
+        rejected: 205,
+        quarantined: 166,
+      }),
+    ).toEqual({
+      accepted: 9_366,
+      rejected: 205,
+      quarantined: 166,
+    });
+  });
+
+  it("rejects unrecorded failures and impossible quarantine counts", () => {
+    expect(() =>
+      mirrorRunAccounting(100, {
+        rejected: 0,
+        quarantined: 0,
+      }),
+    ).toThrow("mirror conflicts must be a nonnegative integer");
+    expect(() =>
+      mirrorRunAccounting(100, {
+        conflicts: 0,
+        rejected: Number.NaN,
+        quarantined: 0,
+      }),
+    ).toThrow("mirror rejected must be a nonnegative integer");
+    expect(() =>
+      mirrorRunAccounting(100, {
+        conflicts: 4,
+        rejected: 5,
+        quarantined: 3,
+      }),
+    ).toThrow("mirror conflict accounting");
+    expect(() =>
+      mirrorRunAccounting(100, {
+        conflicts: 5,
+        rejected: 5,
+        quarantined: 6,
+      }),
+    ).toThrow("mirror quarantine accounting");
   });
 });

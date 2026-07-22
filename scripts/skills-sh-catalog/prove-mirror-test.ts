@@ -6,6 +6,7 @@ import {
   buildMirrorProofHeaders,
   findRecoverableMirrorRun,
   mirrorRateLimitRetryDelayMs,
+  mirrorRunAccounting,
   type RecoverableMirrorRun,
 } from "./prove-mirror-request";
 
@@ -277,15 +278,11 @@ function assertZeroCounts(counts: Record<string, number>, names: string[]) {
 function assertRunProof(runResult: MirrorRunProof, mode: "first" | "identical") {
   const counts = runCounts(runResult);
   const total = Number(runResult.source.total);
-  const quarantined = counts.quarantined ?? 0;
-  const accepted = total - quarantined;
+  const { accepted } = mirrorRunAccounting(total, counts);
   if (counts.observed !== total) {
     throw new Error(`mirror observed ${String(counts.observed)} of ${total} source rows`);
   }
   assertZeroCounts(counts, ["scansPlanned", "scansAdmitted"]);
-  if (counts.rejected !== quarantined || counts.conflicts !== quarantined) {
-    throw new Error("mirror rejected rows outside the bounded source quarantine path");
-  }
   if ((counts.inserted ?? 0) + (counts.updated ?? 0) + (counts.unchanged ?? 0) !== accepted) {
     throw new Error(`${mode} run digest accounting does not equal the source total`);
   }
@@ -483,9 +480,10 @@ try {
     collectPages("facet-page", validateFacet),
   ]);
   const firstCounts = runCounts(firstRun);
-  const quarantinedCount = firstCounts.quarantined ?? 0;
+  const firstAccounting = mirrorRunAccounting(Number(firstRun.source.total), firstCounts);
+  const quarantinedCount = firstAccounting.quarantined;
   const quarantinedPreservedCount = firstCounts.quarantinedPreserved ?? 0;
-  const acceptedCount = Number(firstRun.source.total) - quarantinedCount;
+  const acceptedCount = firstAccounting.accepted;
   const expectedDigestCount = acceptedCount + quarantinedPreservedCount;
   if (digests.count !== expectedDigestCount) {
     throw new Error(
