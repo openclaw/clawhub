@@ -12,6 +12,7 @@ const MAX_BATCH_SIZE = 50;
 
 type CatalogTestRequest = {
   allowlist?: string[];
+  mode?: "live-500" | "controlled-canary";
   reason?: string;
 };
 
@@ -22,12 +23,14 @@ function parseCatalogTestRequest(value: unknown): CatalogTestRequest | null {
     (body.allowlist !== undefined &&
       (!Array.isArray(body.allowlist) ||
         !body.allowlist.every((externalId) => typeof externalId === "string"))) ||
+    (body.mode !== undefined && body.mode !== "live-500" && body.mode !== "controlled-canary") ||
     (body.reason !== undefined && typeof body.reason !== "string")
   ) {
     return null;
   }
   return {
     ...(body.allowlist !== undefined ? { allowlist: body.allowlist as string[] } : {}),
+    ...(body.mode !== undefined ? { mode: body.mode as "live-500" | "controlled-canary" } : {}),
     ...(body.reason !== undefined ? { reason: body.reason as string } : {}),
   };
 }
@@ -105,6 +108,95 @@ async function executeSnapshotRun(
   return { runId, run };
 }
 
+async function executeControlledCanaryRun(authorization: string, reason: string) {
+  const start = await callConvexOperator(authorization, {
+    method: "POST",
+    body: {
+      operation: "start-canary",
+      reason,
+    },
+  });
+  const runId = start.runId;
+  if (typeof runId !== "string") throw new Error("Convex Test operator did not return a run id");
+  const run = await callConvexOperator(authorization, {
+    method: "POST",
+    body: {
+      operation: "process-fixture",
+      runId,
+    },
+  });
+  if (run.status !== "completed" || run.cursor !== 1) {
+    throw new Error("Convex Test controlled canary did not complete exactly one row");
+  }
+  const reconciliation = await callConvexOperator(authorization, {
+    method: "POST",
+    body: {
+      operation: "reconcile",
+      runId,
+    },
+  });
+  if (
+    reconciliation.reconciled !== true ||
+    !Array.isArray(reconciliation.mismatches) ||
+    reconciliation.mismatches.length !== 0 ||
+    !Array.isArray(reconciliation.entries) ||
+    reconciliation.entries.length !== 1
+  ) {
+    throw new Error("Convex Test controlled canary reconciliation failed");
+  }
+  return {
+    runId,
+    sourceVerification: start.sourceVerification,
+    run,
+    reconciliation,
+  };
+}
+
+function assertControlledCanaryControl(control: Record<string, unknown>) {
+  const expected = {
+    mode: "fixture",
+    discoveryEnabled: true,
+    writesEnabled: true,
+    scanPlanningEnabled: true,
+    scanAdmissionEnabled: false,
+    publicVisibilityEnabled: false,
+    maxEntriesPerRun: 1,
+    maxEntriesPerBatch: 1,
+    maxWritesPerBatch: 2,
+    maxPlannedScans: 1,
+    maxScanAdmissionsPerBatch: 0,
+    maxScanAdmissionsPerRun: 0,
+    maxScanAdmissionsPerDay: 0,
+    maxCatalogQueued: 0,
+    maxCatalogInFlight: 0,
+  } as const;
+  for (const [key, value] of Object.entries(expected)) {
+    if (control[key] !== value) {
+      throw new Error(`Convex Test controlled canary requires ${key}=${String(value)}`);
+    }
+  }
+}
+
+function assertControlledCanaryIdenticalRerun(run: Record<string, unknown>) {
+  const counts = run.counts;
+  if (!counts || typeof counts !== "object" || Array.isArray(counts)) {
+    throw new Error("Convex Test controlled canary identical rerun lacked counters");
+  }
+  const expected = {
+    observed: 1,
+    inserted: 0,
+    updated: 0,
+    unchanged: 1,
+    scansPlanned: 0,
+    scansAdmitted: 0,
+  } as const;
+  for (const [key, value] of Object.entries(expected)) {
+    if ((counts as Record<string, unknown>)[key] !== value) {
+      throw new Error("Convex Test controlled canary identical rerun was not idempotent");
+    }
+  }
+}
+
 function batchSizeFromControl(control: Record<string, unknown>) {
   const maxEntriesPerBatch = control.maxEntriesPerBatch;
   const maxWritesPerBatch = control.maxWritesPerBatch;
@@ -142,6 +234,10 @@ export default defineEventHandler(async (event) => {
   if (allowlist.length > policy.maxRealScanAdmissions) {
     return jsonResponse({ error: "allowlist_exceeds_test_ceiling" }, 400);
   }
+  const mode = body.mode ?? "live-500";
+  if (mode === "controlled-canary" && allowlist.length > 0) {
+    return jsonResponse({ error: "controlled_canary_does_not_admit_scans" }, 400);
+  }
   const memoryStart = process.memoryUsage();
   const startedAt = Date.now();
   try {
@@ -149,6 +245,44 @@ export default defineEventHandler(async (event) => {
     const control = staging.control;
     if (!control || typeof control !== "object") {
       throw new Error("Convex Test operator did not return catalog controls");
+    }
+    if (mode === "controlled-canary") {
+      assertControlledCanaryControl(control as Record<string, unknown>);
+      const reason = body.reason?.trim() || "CLAW-557 controlled hidden metadata canary";
+      const firstRun = await executeControlledCanaryRun(authorization, reason);
+      const identicalRerun = await executeControlledCanaryRun(
+        authorization,
+        `${reason} identical rerun`,
+      );
+      assertControlledCanaryIdenticalRerun(identicalRerun.run);
+      const memoryEnd = process.memoryUsage();
+      return jsonResponse({
+        ok: true,
+        mode,
+        source: firstRun.sourceVerification,
+        convex: {
+          deploymentName: staging.deploymentName,
+          buildSha: staging.buildSha,
+          firstRun,
+          identicalRerun,
+        },
+        runtime: {
+          elapsedMs: Date.now() - startedAt,
+          rssStartBytes: memoryStart.rss,
+          rssEndBytes: memoryEnd.rss,
+          heapUsedStartBytes: memoryStart.heapUsed,
+          heapUsedEndBytes: memoryEnd.heapUsed,
+        },
+        controls: {
+          publicVisibilityEnabled: false,
+          installabilityEnabled: false,
+          claimExecutionEnabled: false,
+          publisherAttachmentEnabled: false,
+          schedulesEnabled: false,
+          scanAdmissionEnabled: false,
+          maxEntriesPerRun: 1,
+        },
+      });
     }
     const batchSize = batchSizeFromControl(control as Record<string, unknown>);
     const snapshot = await captureSkillsShCatalogTestSnapshot({
@@ -205,6 +339,7 @@ export default defineEventHandler(async (event) => {
     const memoryEnd = process.memoryUsage();
     return jsonResponse({
       ok: true,
+      mode,
       source: {
         project: "openclaw-foundation/clawhub",
         vercelSourceSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,

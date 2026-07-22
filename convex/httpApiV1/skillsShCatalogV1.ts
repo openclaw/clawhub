@@ -2,21 +2,32 @@ import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
+import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import {
+  getSkillsShCatalogFixture,
+  type SkillsShCatalogFixtureRow,
+} from "../lib/skillsShCatalogFixtures";
 import { json, requireAdminOrResponse, requireApiTokenUserOrResponse, text } from "./shared";
 
 const internalRefs = internal as unknown as {
   skillsShCatalog: {
     admitRealScansInternal: unknown;
     assertFreshGitHubOwnerAssignmentsInternal: unknown;
+    getRunReconciliationInternal: unknown;
     getStagingLiveControlInternal: unknown;
+    processFixtureBatchInternal: unknown;
     processStagingLiveBatchInternal: unknown;
     resolveKnownGitHubOwnersInternal: unknown;
+    rollbackFixtureRunInternal: unknown;
+    startFixtureRunInternal: unknown;
     startStagingLiveRunInternal: unknown;
   };
 };
 const MAX_GITHUB_OWNER_RESOLUTIONS = 500;
 const GITHUB_OWNER_RESOLUTION_CONCURRENCY = 8;
+const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
+const MAX_CONTROLLED_CANARY_FILES = 100;
 
 async function runMutationRef<T>(
   ctx: ActionCtx,
@@ -122,6 +133,130 @@ async function fetchAuthenticatedGitHubOwners(owners: string[]) {
     );
   }
   return resolved;
+}
+
+async function fetchGitHubJson(
+  url: string,
+  headers: Record<string, string>,
+  label: string,
+  fetchImpl: typeof fetch,
+) {
+  const response = await fetchImpl(url, { headers });
+  if (!response.ok) {
+    throw new Error(`${label} failed with HTTP ${response.status}`);
+  }
+  return (await response.json()) as Record<string, unknown>;
+}
+
+function decodeGitHubBlob(payload: Record<string, unknown>, path: string) {
+  if (payload.encoding !== "base64" || typeof payload.content !== "string") {
+    throw new Error(`Controlled canary returned invalid GitHub blob content: ${path}`);
+  }
+  return decodeBase64(payload.content.replace(/\s+/g, ""));
+}
+
+export async function verifyControlledCanaryGitHubSource(options: {
+  expected?: SkillsShCatalogFixtureRow;
+  fetchImpl?: typeof fetch;
+  checkedAt?: string;
+}) {
+  const expected =
+    options.expected ??
+    getSkillsShCatalogFixture(CONTROLLED_CANARY_FIXTURE_ID).findByExternalId(
+      "patrick-erichsen/skills/html",
+    );
+  if (!expected || !expected.githubPath || !expected.githubCommit || !expected.githubContentHash) {
+    throw new Error("Controlled canary fixture lacks immutable GitHub provenance");
+  }
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const headers = await buildGitHubApiHeaders({
+    userAgent: "clawhub/skills-sh-catalog-canary",
+    allowAnonymous: false,
+    useGitHubApp: false,
+  });
+  const repository = await fetchGitHubJson(
+    `https://api.github.com/repos/${encodeURIComponent(expected.owner)}/${encodeURIComponent(expected.repo)}`,
+    headers,
+    "Controlled canary GitHub repository lookup",
+    fetchImpl,
+  );
+  const repositoryOwner = asRecord(repository.owner);
+  if (
+    repository.private !== false ||
+    requireString(repository, "full_name").toLowerCase() !==
+      `${expected.owner}/${expected.repo}`.toLowerCase() ||
+    requireNumber(repositoryOwner ?? {}, "id") !== expected.githubOwnerId ||
+    requireString(repositoryOwner ?? {}, "login").toLowerCase() !== expected.owner.toLowerCase()
+  ) {
+    throw new Error("Controlled canary GitHub repository identity mismatch");
+  }
+  const commit = await fetchGitHubJson(
+    `https://api.github.com/repos/${encodeURIComponent(expected.owner)}/${encodeURIComponent(expected.repo)}/git/commits/${encodeURIComponent(expected.githubCommit)}`,
+    headers,
+    "Controlled canary GitHub commit lookup",
+    fetchImpl,
+  );
+  const commitSha = requireString(commit, "sha").toLowerCase();
+  const commitTree = asRecord(commit.tree);
+  const treeSha = requireString(commitTree ?? {}, "sha");
+  if (commitSha !== expected.githubCommit.toLowerCase()) {
+    throw new Error("Controlled canary GitHub commit mismatch");
+  }
+  const tree = await fetchGitHubJson(
+    `https://api.github.com/repos/${encodeURIComponent(expected.owner)}/${encodeURIComponent(expected.repo)}/git/trees/${encodeURIComponent(treeSha)}?recursive=1`,
+    headers,
+    "Controlled canary GitHub tree lookup",
+    fetchImpl,
+  );
+  if (tree.truncated !== false || !Array.isArray(tree.tree)) {
+    throw new Error("Controlled canary GitHub tree is incomplete");
+  }
+  const prefix = `${expected.githubPath.replace(/\/+$/g, "")}/`;
+  const blobs = tree.tree
+    .map(asRecord)
+    .filter(
+      (entry): entry is Record<string, unknown> =>
+        entry !== null &&
+        entry.type === "blob" &&
+        typeof entry.path === "string" &&
+        entry.path.startsWith(prefix),
+    )
+    .sort((left, right) => String(left.path).localeCompare(String(right.path)));
+  if (blobs.length < 1 || blobs.length > MAX_CONTROLLED_CANARY_FILES) {
+    throw new Error("Controlled canary GitHub folder has an invalid file count");
+  }
+  const entries: Record<string, Uint8Array> = {};
+  for (const blob of blobs) {
+    const path = requireString(blob, "path");
+    const blobSha = requireString(blob, "sha");
+    const payload = await fetchGitHubJson(
+      `https://api.github.com/repos/${encodeURIComponent(expected.owner)}/${encodeURIComponent(expected.repo)}/git/blobs/${encodeURIComponent(blobSha)}`,
+      headers,
+      `Controlled canary GitHub blob lookup: ${path}`,
+      fetchImpl,
+    );
+    entries[path] = decodeGitHubBlob(payload, path);
+  }
+  const contentHash = await computeGitHubSkillFolderContentHash(entries, expected.githubPath);
+  if (contentHash !== expected.githubContentHash.toLowerCase()) {
+    throw new Error("Controlled canary GitHub content hash mismatch");
+  }
+  const checkedAt = options.checkedAt ?? new Date().toISOString();
+  if (Number.isNaN(Date.parse(checkedAt))) {
+    throw new Error("Controlled canary GitHub checked time is invalid");
+  }
+  return {
+    authentication: "clawhub-github-authenticated" as const,
+    fixtureId: CONTROLLED_CANARY_FIXTURE_ID,
+    externalId: expected.externalId,
+    githubOwnerId: expected.githubOwnerId,
+    githubRepo: `${expected.owner}/${expected.repo}`,
+    githubPath: expected.githubPath,
+    githubCommit: commitSha,
+    githubContentHash: contentHash,
+    githubCheckedAt: checkedAt,
+    githubFetches: 3 + blobs.length,
+  };
 }
 
 async function resolveAuthenticatedGitHubOwners(ctx: ActionCtx, ownersValue: unknown) {
@@ -264,6 +399,60 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
     const body = asRecord(await request.json());
     if (!body) return text("Invalid JSON", 400, rate.headers);
     const operation = requireString(body, "operation");
+    if (operation === "verify-canary") {
+      return json(await verifyControlledCanaryGitHubSource({}), 200, rate.headers);
+    }
+    if (operation === "start-canary") {
+      const verification = await verifyControlledCanaryGitHubSource({});
+      const sourceVerification = {
+        githubOwnerId: verification.githubOwnerId,
+        githubCommit: verification.githubCommit,
+        githubContentHash: verification.githubContentHash,
+        githubCheckedAt: verification.githubCheckedAt,
+        githubFetches: verification.githubFetches,
+      };
+      const result = await runMutationRef<{ runId: string }>(
+        ctx,
+        internalRefs.skillsShCatalog.startFixtureRunInternal,
+        {
+          fixtureId: CONTROLLED_CANARY_FIXTURE_ID,
+          actor: auth.user.handle,
+          reason: requireString(body, "reason"),
+          sourceVerification,
+        },
+      );
+      return json({ ...result, sourceVerification: verification }, 200, rate.headers);
+    }
+    if (operation === "process-fixture") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShCatalog.processFixtureBatchInternal, {
+          runId: requireString(body, "runId"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "reconcile") {
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShCatalog.getRunReconciliationInternal, {
+          runId: requireString(body, "runId"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "rollback-canary") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShCatalog.rollbackFixtureRunInternal, {
+          runId: requireString(body, "runId"),
+          actor: auth.user.handle,
+          reason: requireString(body, "reason"),
+          confirm: requireString(body, "confirm"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
     if (operation === "resolve-owners") {
       return json(await resolveAuthenticatedGitHubOwners(ctx, body.owners), 200, rate.headers);
     }

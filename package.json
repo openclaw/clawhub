@@ -72,6 +72,7 @@
     "skill-cards:worker": "bun scripts/skill-cards/run-skill-card-worker.ts",
     "skills-sh:capture-500": "bun scripts/skills-sh-catalog/capture-frozen-snapshot.ts",
     "skills-sh:prove-500": "bun scripts/skills-sh-catalog/prove-500.ts",
+    "skills-sh:prove-canary": "CLAWHUB_TEST_CATALOG_MODE=controlled-canary bun scripts/skills-sh-catalog/run-test-gate.ts",
     "skills:install": "npx --yes skills@1.5.16 add openclaw/design-system --skill openclaw-design openclaw-brand openclaw-design-system openclaw-marketing-pages openclaw-design-audit --agent codex --copy --yes",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",

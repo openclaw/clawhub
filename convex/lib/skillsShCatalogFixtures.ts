@@ -9,6 +9,10 @@ export type SkillsShCatalogFixtureRow = {
   displayName: string;
   sourceUrl: string;
   githubRepoUrl: string;
+  githubPath?: string;
+  githubCommit?: string;
+  githubContentHash?: string;
+  claimPublisherHandle?: string;
   sourceContentHash: string;
   installs: number;
 };
@@ -41,6 +45,23 @@ const AIQ_DEPLOY_V2: SkillsShCatalogFixtureRow = {
   displayName: "AIQ Deploy Updated",
   sourceContentHash: "d087fae29cc3882e03116c37921a7e092c42b15a04aa9a6c503e000a3e260ab5",
   installs: 101,
+};
+
+const PATRICK_HTML_CANARY: SkillsShCatalogFixtureRow = {
+  externalId: "patrick-erichsen/skills/html",
+  githubOwnerId: 20_157_849,
+  owner: "patrick-erichsen",
+  repo: "skills",
+  slug: "html",
+  displayName: "HTML Artifact Chooser",
+  sourceUrl: "https://www.skills.sh/patrick-erichsen/skills/html",
+  githubRepoUrl: "https://github.com/Patrick-Erichsen/skills",
+  githubPath: "skills/html",
+  githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+  githubContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+  claimPublisherHandle: "patrick-erichsen",
+  sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+  installs: 0,
 };
 
 const FROZEN_ROWS = frozenSnapshot.rows satisfies SkillsShCatalogFixtureRow[];
@@ -108,6 +129,15 @@ function syntheticDiscoveryRow(index: number): SkillsShCatalogFixtureRow {
 }
 
 const FIXTURES = {
+  "patrick-html-canary-v1": fromRows(
+    {
+      snapshotId: "patrick-html-canary-v1",
+      sourceKind: "fixture",
+      capturedAt: null,
+      snapshotCaptureFetches: 0,
+    },
+    [PATRICK_HTML_CANARY],
+  ),
   "nvidia-small-v1": fromRows(
     {
       snapshotId: "nvidia-small-v1",

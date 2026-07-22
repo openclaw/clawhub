@@ -10,6 +10,14 @@ vi.mock("../lib/githubAuth", () => ({
   buildGitHubApiHeaders: vi.fn(async () => ({ Authorization: "Bearer placeholder" })),
 }));
 
+vi.mock("../lib/githubSkillSync", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/githubSkillSync")>();
+  return {
+    ...original,
+    computeGitHubSkillFolderContentHash: vi.fn(original.computeGitHubSkillFolderContentHash),
+  };
+});
+
 vi.mock("./shared", async (importOriginal) => {
   const original = await importOriginal<typeof import("./shared")>();
   return {
@@ -21,7 +29,9 @@ vi.mock("./shared", async (importOriginal) => {
 
 const { requireAdminOrResponse, requireApiTokenUserOrResponse } = await import("./shared");
 const { buildGitHubApiHeaders } = await import("../lib/githubAuth");
-const { skillsShCatalogTestV1Handler } = await import("./skillsShCatalogV1");
+const { computeGitHubSkillFolderContentHash } = await import("../lib/githubSkillSync");
+const { skillsShCatalogTestV1Handler, verifyControlledCanaryGitHubSource } =
+  await import("./skillsShCatalogV1");
 
 function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -373,5 +383,186 @@ describe("skills.sh catalog Test HTTP API", () => {
       "Authenticated GitHub owner id 1728152 is already assigned to another owner",
     );
     expect(githubFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("verifies the controlled canary against immutable public GitHub content", async () => {
+    const skillMarkdown = "# HTML Artifact Chooser\n";
+    const fileHash = sha256(skillMarkdown);
+    const contentHash = sha256(`SKILL.md\0${Buffer.byteLength(skillMarkdown)}\0${fileHash}`);
+    const githubFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({ Authorization: "Bearer placeholder" });
+      if (url.endsWith("/repos/patrick-erichsen/skills")) {
+        return new Response(
+          JSON.stringify({
+            private: false,
+            full_name: "Patrick-Erichsen/skills",
+            owner: { id: 20_157_849, login: "Patrick-Erichsen" },
+          }),
+        );
+      }
+      if (url.includes("/git/commits/")) {
+        return new Response(
+          JSON.stringify({
+            sha: "050daba89f6b6636470add5cb300aac46a412cf8",
+            tree: { sha: "tree-sha" },
+          }),
+        );
+      }
+      if (url.endsWith("/git/trees/tree-sha?recursive=1")) {
+        return new Response(
+          JSON.stringify({
+            truncated: false,
+            tree: [
+              {
+                path: "skills/html/SKILL.md",
+                type: "blob",
+                sha: "blob-sha",
+                size: Buffer.byteLength(skillMarkdown),
+              },
+            ],
+          }),
+        );
+      }
+      if (url.endsWith("/git/blobs/blob-sha")) {
+        return new Response(
+          JSON.stringify({
+            encoding: "base64",
+            content: Buffer.from(skillMarkdown).toString("base64"),
+          }),
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    vi.stubGlobal("fetch", githubFetch);
+    const proof = await verifyControlledCanaryGitHubSource({
+      fetchImpl: githubFetch as typeof fetch,
+      checkedAt: "2026-07-22T05:00:00.000Z",
+      expected: {
+        externalId: "patrick-erichsen/skills/html",
+        githubOwnerId: 20_157_849,
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+        displayName: "HTML Artifact Chooser",
+        sourceUrl: "https://www.skills.sh/patrick-erichsen/skills/html",
+        githubRepoUrl: "https://github.com/Patrick-Erichsen/skills",
+        githubPath: "skills/html",
+        githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+        githubContentHash: contentHash,
+        sourceContentHash: contentHash,
+        installs: 0,
+      },
+    });
+
+    expect(proof).toMatchObject({
+      authentication: "clawhub-github-authenticated",
+      fixtureId: "patrick-html-canary-v1",
+      externalId: "patrick-erichsen/skills/html",
+      githubOwnerId: 20_157_849,
+      githubPath: "skills/html",
+      githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+      githubContentHash: contentHash,
+      githubFetches: 4,
+    });
+    expect(githubFetch).toHaveBeenCalledTimes(4);
+    expect(buildGitHubApiHeaders).toHaveBeenCalledWith({
+      userAgent: "clawhub/skills-sh-catalog-canary",
+      allowAnonymous: false,
+      useGitHubApp: false,
+    });
+  });
+
+  it("passes only server-fetched GitHub verification when starting the controlled canary", async () => {
+    const expectedContentHash = "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f";
+    vi.mocked(computeGitHubSkillFolderContentHash).mockResolvedValueOnce(expectedContentHash);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/repos/patrick-erichsen/skills")) {
+          return new Response(
+            JSON.stringify({
+              private: false,
+              full_name: "Patrick-Erichsen/skills",
+              owner: { id: 20_157_849, login: "Patrick-Erichsen" },
+            }),
+          );
+        }
+        if (url.includes("/git/commits/")) {
+          return new Response(
+            JSON.stringify({
+              sha: "050daba89f6b6636470add5cb300aac46a412cf8",
+              tree: { sha: "tree-sha" },
+            }),
+          );
+        }
+        if (url.endsWith("/git/trees/tree-sha?recursive=1")) {
+          return new Response(
+            JSON.stringify({
+              truncated: false,
+              tree: [
+                {
+                  path: "skills/html/SKILL.md",
+                  type: "blob",
+                  sha: "blob-sha",
+                },
+              ],
+            }),
+          );
+        }
+        if (url.endsWith("/git/blobs/blob-sha")) {
+          return new Response(
+            JSON.stringify({
+              encoding: "base64",
+              content: Buffer.from("# Server-fetched content\n").toString("base64"),
+            }),
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    const runMutation = vi.fn(async (_ref: unknown, _args: Record<string, unknown>) => ({
+      runId: "skillsShCatalogRuns:canary",
+    }));
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })),
+      runMutation,
+    } as never;
+    const request = new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+      method: "POST",
+      body: JSON.stringify({
+        operation: "start-canary",
+        reason: "CLAW-557 hidden metadata canary",
+        sourceVerification: {
+          githubOwnerId: 1,
+          githubCommit: "client-controlled",
+          githubContentHash: "client-controlled",
+          githubCheckedAt: "client-controlled",
+          githubFetches: 99_999,
+        },
+      }),
+    });
+
+    const response = await skillsShCatalogTestV1Handler(ctx, request);
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledOnce();
+    expect(runMutation.mock.calls[0]?.[1]).toEqual({
+      fixtureId: "patrick-html-canary-v1",
+      actor: "catalog-operator",
+      reason: "CLAW-557 hidden metadata canary",
+      sourceVerification: {
+        githubOwnerId: 20_157_849,
+        githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+        githubContentHash: expectedContentHash,
+        githubCheckedAt: expect.any(String),
+        githubFetches: 4,
+      },
+    });
+    expect(JSON.stringify(runMutation.mock.calls[0]?.[1])).not.toContain("client-controlled");
   });
 });

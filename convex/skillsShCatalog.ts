@@ -19,6 +19,8 @@ import { enqueueSkillsShCatalogScanRequest } from "./securityScan";
 const CONTROL_KEY = "global";
 const ENABLE_FIXTURE_CONFIRM = "enable-skills-sh-fixture-control";
 const DISABLE_CATALOG_CONFIRM = "disable-skills-sh-catalog";
+const ROLLBACK_CONTROLLED_CANARY_CONFIRM = "rollback-skills-sh-controlled-canary";
+const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
 const STATUS_LIMIT = 50;
 const MAX_DISCOVERY_ROWS = 20_000;
 const MAX_ENTRIES_PER_BATCH = 250;
@@ -29,6 +31,7 @@ const MAX_REAL_TEST_ADMISSIONS = 10;
 const MAX_DETERMINISTIC_COMPLETIONS_PER_BATCH = 50;
 
 const fixtureIdValidator = v.union(
+  v.literal("patrick-html-canary-v1"),
   v.literal("nvidia-small-v1"),
   v.literal("nvidia-small-v2"),
   v.literal("skills-sh-500-2026-07-21"),
@@ -51,8 +54,19 @@ const stagingLiveRowValidator = v.object({
   displayName: v.string(),
   sourceUrl: v.string(),
   githubRepoUrl: v.string(),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  githubContentHash: v.optional(v.string()),
+  claimPublisherHandle: v.optional(v.string()),
   sourceContentHash: v.string(),
   installs: v.number(),
+});
+const sourceVerificationValidator = v.object({
+  githubOwnerId: v.number(),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  githubCheckedAt: v.string(),
+  githubFetches: v.number(),
 });
 const scanRequestFileValidator = v.object({
   path: v.string(),
@@ -109,7 +123,92 @@ function normalizeIdentity(row: SkillsShCatalogFixtureRow) {
     repo,
     slug,
     externalId: `${owner}/${repo}/${slug}`,
+    githubPath: row.githubPath?.trim(),
+    githubCommit: row.githubCommit?.trim().toLowerCase(),
+    githubContentHash: row.githubContentHash?.trim().toLowerCase(),
+    claimPublisherHandle: row.claimPublisherHandle?.trim().toLowerCase(),
     sourceContentHash: row.sourceContentHash.trim().toLowerCase(),
+  };
+}
+
+async function reconcileNativeSkill(
+  ctx: MutationCtx,
+  row: ReturnType<typeof normalizeIdentity>,
+  observedAt: number,
+) {
+  const nativeSkills = (
+    await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", row.slug))
+      .collect()
+  ).filter((skill) => skill.softDeletedAt === undefined);
+  let reads = 1;
+  for (const skill of nativeSkills) {
+    if (
+      skill.installKind !== "github" ||
+      !skill.githubSourceId ||
+      !row.githubPath ||
+      !row.githubCommit ||
+      !row.githubContentHash ||
+      skill.githubPath !== row.githubPath ||
+      skill.githubCurrentCommit?.toLowerCase() !== row.githubCommit ||
+      skill.githubCurrentContentHash?.toLowerCase() !== row.githubContentHash
+    ) {
+      continue;
+    }
+    const source = await ctx.db.get(skill.githubSourceId);
+    reads += 1;
+    if (source?.repo.trim().toLowerCase() !== `${row.owner}/${row.repo}`) continue;
+    return {
+      reads,
+      reconciliation: {
+        kind: "exact-native" as const,
+        nativeSkillId: skill._id,
+        nativeSlug: skill.slug,
+        nativeStatsDownloads: skill.statsDownloads ?? skill.stats.downloads,
+        claimOpportunity: Boolean(row.claimPublisherHandle),
+        ...(row.claimPublisherHandle ? { claimPublisherHandle: row.claimPublisherHandle } : {}),
+        observedAt,
+      },
+    };
+  }
+  const collision = nativeSkills[0];
+  return {
+    reads,
+    reconciliation: {
+      kind: collision ? ("route-collision" as const) : ("new" as const),
+      ...(collision
+        ? {
+            nativeSkillId: collision._id,
+            nativeSlug: collision.slug,
+            nativeStatsDownloads: collision.statsDownloads ?? collision.stats.downloads,
+          }
+        : {}),
+      claimOpportunity: Boolean(row.claimPublisherHandle),
+      ...(row.claimPublisherHandle ? { claimPublisherHandle: row.claimPublisherHandle } : {}),
+      observedAt,
+    },
+  };
+}
+
+function incrementReconciliationCounts(
+  counts: ReturnType<typeof normalizedCounts>,
+  reconciliation: Doc<"skillsShCatalogEntries">["reconciliation"],
+) {
+  if (!reconciliation) return;
+  if (reconciliation.kind === "new") counts.newExternal += 1;
+  if (reconciliation.kind === "exact-native") counts.exactNativeMatches += 1;
+  if (reconciliation.kind === "route-collision") counts.routeCollisions += 1;
+  if (reconciliation.claimOpportunity) counts.claimOpportunities += 1;
+}
+
+function normalizedCounts(counts: Doc<"skillsShCatalogRuns">["counts"]) {
+  return {
+    ...counts,
+    newExternal: counts.newExternal ?? 0,
+    exactNativeMatches: counts.exactNativeMatches ?? 0,
+    routeCollisions: counts.routeCollisions ?? 0,
+    claimOpportunities: counts.claimOpportunities ?? 0,
   };
 }
 
@@ -377,18 +476,74 @@ export const startFixtureRunInternal = internalMutation({
     actor: v.string(),
     reason: v.string(),
     dryRun: v.optional(v.boolean()),
+    sourceVerification: v.optional(sourceVerificationValidator),
   },
   handler: async (ctx, args) => {
     assertSkillsShFixtureEnvironmentAllowed();
     const control = assertFixtureMode(assertDiscoveryEnabled(await getControlDoc(ctx)));
     const fixture = getSkillsShCatalogFixture(args.fixtureId);
+    let githubVerification:
+      | {
+          ownerId: number;
+          commit: string;
+          contentHash: string;
+          checkedAt: string;
+          fetches: number;
+        }
+      | undefined;
+    if (args.fixtureId === CONTROLLED_CANARY_FIXTURE_ID) {
+      if (
+        control.scanAdmissionEnabled ||
+        control.publicVisibilityEnabled ||
+        control.maxEntriesPerRun !== 1 ||
+        control.maxEntriesPerBatch !== 1 ||
+        control.maxPlannedScans !== 1 ||
+        control.maxScanAdmissionsPerBatch !== 0 ||
+        control.maxScanAdmissionsPerRun !== 0 ||
+        control.maxScanAdmissionsPerDay !== 0 ||
+        control.maxCatalogQueued !== 0 ||
+        control.maxCatalogInFlight !== 0
+      ) {
+        throw new ConvexError(
+          "controlled skills.sh canary requires the exact one-row hidden no-admission control",
+        );
+      }
+      const row = normalizeIdentity(fixture.rowAt(0));
+      const verification = args.sourceVerification;
+      if (
+        !verification ||
+        verification.githubOwnerId !== row.githubOwnerId ||
+        verification.githubCommit.trim().toLowerCase() !== row.githubCommit ||
+        verification.githubContentHash.trim().toLowerCase() !== row.githubContentHash ||
+        !Number.isInteger(verification.githubFetches) ||
+        verification.githubFetches < 1 ||
+        Number.isNaN(Date.parse(verification.githubCheckedAt))
+      ) {
+        throw new ConvexError(
+          "controlled skills.sh canary requires exact authenticated GitHub source verification",
+        );
+      }
+      githubVerification = {
+        ownerId: verification.githubOwnerId,
+        commit: verification.githubCommit.trim().toLowerCase(),
+        contentHash: verification.githubContentHash.trim().toLowerCase(),
+        checkedAt: verification.githubCheckedAt,
+        fetches: verification.githubFetches,
+      };
+    } else if (args.sourceVerification) {
+      throw new ConvexError("GitHub source verification is reserved for the controlled canary");
+    }
     const now = Date.now();
     const runId = await ctx.db.insert("skillsShCatalogRuns", {
       fixtureId: args.fixtureId,
       snapshotId: fixture.snapshotId,
       sourceKind: fixture.sourceKind,
-      ...(fixture.capturedAt ? { sourceCapturedAt: fixture.capturedAt } : {}),
-      snapshotCaptureFetches: fixture.snapshotCaptureFetches,
+      ...(githubVerification
+        ? { sourceCapturedAt: githubVerification.checkedAt, githubVerification }
+        : fixture.capturedAt
+          ? { sourceCapturedAt: fixture.capturedAt }
+          : {}),
+      snapshotCaptureFetches: githubVerification?.fetches ?? fixture.snapshotCaptureFetches,
       dryRun: args.dryRun ?? false,
       status: "running",
       cursor: 0,
@@ -515,7 +670,7 @@ export const processStagingLiveBatchInternal = internalMutation({
     let cursor = run.cursor;
     let writesUsed = 0;
     let readsUsed = 2;
-    const counts = { ...run.counts };
+    const counts = normalizedCounts(run.counts);
     const now = Date.now();
     for (const inputRow of args.rows) {
       if (counts.observed >= run.budgets.maxEntriesPerRun) break;
@@ -534,7 +689,11 @@ export const processStagingLiveBatchInternal = internalMutation({
         cursor += 1;
         continue;
       }
-      const observationUnchanged = existing ? sameFixtureObservation(existing, row) : false;
+      const native = await reconcileNativeSkill(ctx, row, now);
+      readsUsed += native.reads;
+      const observationUnchanged = existing
+        ? sameFixtureObservation(existing, row, native.reconciliation)
+        : false;
       const contentChanged = existing
         ? existing.sourceContentHash !== row.sourceContentHash
         : false;
@@ -559,6 +718,7 @@ export const processStagingLiveBatchInternal = internalMutation({
         (!existing || contentChanged || existing.scanStatus !== "planned");
       if (writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
 
+      incrementReconciliationCounts(counts, native.reconciliation);
       counts.observed += 1;
       cursor += 1;
       if (shouldPlanScan) counts.scansPlanned += 1;
@@ -577,9 +737,13 @@ export const processStagingLiveBatchInternal = internalMutation({
           displayName: row.displayName,
           sourceUrl: row.sourceUrl,
           githubRepoUrl: row.githubRepoUrl,
+          githubPath: row.githubPath,
+          githubCommit: row.githubCommit,
+          githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
           sourceSnapshotId: run.snapshotId,
+          reconciliation: native.reconciliation,
           publicVisible: false,
           scanStatus: shouldPlanScan
             ? "planned"
@@ -604,9 +768,13 @@ export const processStagingLiveBatchInternal = internalMutation({
           displayName: row.displayName,
           sourceUrl: row.sourceUrl,
           githubRepoUrl: row.githubRepoUrl,
+          githubPath: row.githubPath,
+          githubCommit: row.githubCommit,
+          githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
           sourceSnapshotId: run.snapshotId,
+          reconciliation: native.reconciliation,
           publicVisible: false,
           scanStatus: shouldPlanScan ? "planned" : "not-planned",
           firstObservedAt: now,
@@ -672,7 +840,7 @@ export const processFixtureBatchInternal = internalMutation({
     let writesUsed = 0;
     let readsUsed = 2;
     let entriesProcessed = 0;
-    const counts = { ...run.counts };
+    const counts = normalizedCounts(run.counts);
     const now = Date.now();
 
     while (
@@ -693,8 +861,12 @@ export const processFixtureBatchInternal = internalMutation({
         entriesProcessed += 1;
         continue;
       }
+      const native = await reconcileNativeSkill(ctx, row, now);
+      readsUsed += native.reads;
 
-      const observationUnchanged = existing ? sameFixtureObservation(existing, row) : false;
+      const observationUnchanged = existing
+        ? sameFixtureObservation(existing, row, native.reconciliation)
+        : false;
       const contentChanged = existing
         ? existing.sourceContentHash !== row.sourceContentHash
         : false;
@@ -720,6 +892,7 @@ export const processFixtureBatchInternal = internalMutation({
       const entryWriteRequired = !run.dryRun;
       if (entryWriteRequired && writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
 
+      incrementReconciliationCounts(counts, native.reconciliation);
       counts.observed += 1;
       cursor += 1;
       entriesProcessed += 1;
@@ -740,9 +913,13 @@ export const processFixtureBatchInternal = internalMutation({
             displayName: row.displayName,
             sourceUrl: row.sourceUrl,
             githubRepoUrl: row.githubRepoUrl,
+            githubPath: row.githubPath,
+            githubCommit: row.githubCommit,
+            githubContentHash: row.githubContentHash,
             sourceContentHash: row.sourceContentHash,
             installs: row.installs,
             sourceSnapshotId: fixture.snapshotId,
+            reconciliation: native.reconciliation,
             // This gate has no publication seam; every catalog write reasserts dark visibility.
             publicVisible: false,
             scanStatus: shouldPlanScan
@@ -772,9 +949,13 @@ export const processFixtureBatchInternal = internalMutation({
           displayName: row.displayName,
           sourceUrl: row.sourceUrl,
           githubRepoUrl: row.githubRepoUrl,
+          githubPath: row.githubPath,
+          githubCommit: row.githubCommit,
+          githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
           sourceSnapshotId: fixture.snapshotId,
+          reconciliation: native.reconciliation,
           publicVisible: false,
           scanStatus: shouldPlanScan ? "planned" : "not-planned",
           firstObservedAt: now,
@@ -1781,6 +1962,127 @@ export const getRunInternal = internalQuery({
   },
 });
 
+export const getRunReconciliationInternal = internalQuery({
+  args: {
+    runId: v.id("skillsShCatalogRuns"),
+  },
+  handler: async (ctx, args) => {
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("skills.sh catalog run not found");
+    if (run.sourceKind === "staging-live" || run.fixtureId === "skills-sh-test-live-500") {
+      throw new ConvexError("skills.sh reconciliation readback requires a fixture run");
+    }
+    const fixture = getSkillsShCatalogFixture(run.fixtureId);
+    const entries = [];
+    const mismatches: string[] = [];
+    for (let index = 0; index < fixture.length; index += 1) {
+      const expected = normalizeIdentity(fixture.rowAt(index));
+      const entry = await ctx.db
+        .query("skillsShCatalogEntries")
+        .withIndex("by_external_id", (q) => q.eq("externalId", expected.externalId))
+        .unique();
+      if (!entry) {
+        mismatches.push(`missing:${expected.externalId}`);
+        continue;
+      }
+      if (entry.sourceSnapshotId !== fixture.snapshotId) {
+        mismatches.push(`snapshot:${expected.externalId}`);
+      }
+      if (
+        entry.githubOwnerId !== expected.githubOwnerId ||
+        entry.githubPath !== expected.githubPath ||
+        entry.githubCommit !== expected.githubCommit ||
+        entry.githubContentHash !== expected.githubContentHash ||
+        entry.sourceContentHash !== expected.sourceContentHash
+      ) {
+        mismatches.push(`provenance:${expected.externalId}`);
+      }
+      if (entry.publicVisible || !entry.reconciliation) {
+        mismatches.push(`dark-state:${expected.externalId}`);
+      }
+      entries.push({
+        ...entry,
+        resolution: {
+          externalRoute: `/skills-sh/${entry.externalId}`,
+          installRef: `skills-sh:${entry.externalId}`,
+          installable: false,
+        },
+      });
+    }
+    return {
+      run: summarizeRun(run),
+      reconciled: mismatches.length === 0 && entries.length === fixture.length,
+      mismatches,
+      entries,
+      limits: {
+        fixtureRows: fixture.length,
+        maxEntriesPerRun: run.budgets.maxEntriesPerRun,
+        maxEntriesPerBatch: run.budgets.maxEntriesPerBatch,
+        maxWritesPerBatch: run.budgets.maxWritesPerBatch,
+        maxPlannedScans: run.budgets.maxPlannedScans,
+        maxScanAdmissionsPerRun: run.budgets.maxScanAdmissionsPerRun,
+      },
+    };
+  },
+});
+
+export const rollbackFixtureRunInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShCatalogRuns"),
+    actor: v.string(),
+    reason: v.string(),
+    confirm: v.string(),
+  },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    assertFixtureMode(await getControlDoc(ctx));
+    if (args.confirm !== ROLLBACK_CONTROLLED_CANARY_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${ROLLBACK_CONTROLLED_CANARY_CONFIRM}" to roll back the controlled canary.`,
+      );
+    }
+    const run = await ctx.db.get(args.runId);
+    if (!run) throw new ConvexError("skills.sh catalog run not found");
+    if (run.fixtureId !== CONTROLLED_CANARY_FIXTURE_ID || run.sourceKind !== "fixture") {
+      throw new ConvexError("Only the controlled skills.sh canary fixture can be rolled back");
+    }
+    const fixture = getSkillsShCatalogFixture(run.fixtureId);
+    let deletedEntries = 0;
+    for (let index = 0; index < fixture.length; index += 1) {
+      const expected = normalizeIdentity(fixture.rowAt(index));
+      const entry = await ctx.db
+        .query("skillsShCatalogEntries")
+        .withIndex("by_external_id", (q) => q.eq("externalId", expected.externalId))
+        .unique();
+      if (!entry) continue;
+      if (entry.sourceKind !== "fixture" || entry.sourceSnapshotId !== fixture.snapshotId) {
+        throw new ConvexError(`Controlled canary no longer owns ${expected.externalId}`);
+      }
+      const attempt = await ctx.db
+        .query("skillsShCatalogScanAttempts")
+        .withIndex("by_entry_and_source_content_hash", (q) =>
+          q.eq("entryId", entry._id).eq("sourceContentHash", entry.sourceContentHash),
+        )
+        .filter((q) => q.neq(q.field("status"), "canceled"))
+        .first();
+      if (attempt) {
+        throw new ConvexError(
+          `Controlled canary has retained scan history: ${expected.externalId}`,
+        );
+      }
+      await ctx.db.delete(entry._id);
+      deletedEntries += 1;
+    }
+    return {
+      fixtureId: run.fixtureId,
+      actor: args.actor.trim(),
+      reason: args.reason.trim(),
+      deletedEntries,
+      nativeSkillsChanged: 0,
+    };
+  },
+});
+
 export const getStagingLiveControlInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -1922,6 +2224,10 @@ function emptyCounts() {
     updated: 0,
     unchanged: 0,
     rejected: 0,
+    newExternal: 0,
+    exactNativeMatches: 0,
+    routeCollisions: 0,
+    claimOpportunities: 0,
     scansPlanned: 0,
     scansAdmitted: 0,
     scansCompleted: 0,
@@ -1932,7 +2238,9 @@ function emptyCounts() {
 function sameFixtureObservation(
   existing: Doc<"skillsShCatalogEntries">,
   row: ReturnType<typeof normalizeIdentity>,
+  reconciliation: NonNullable<Doc<"skillsShCatalogEntries">["reconciliation"]>,
 ) {
+  const existingReconciliation = existing.reconciliation;
   return (
     existing.githubOwnerId === row.githubOwnerId &&
     existing.owner === row.owner &&
@@ -1941,8 +2249,17 @@ function sameFixtureObservation(
     existing.displayName === row.displayName &&
     existing.sourceUrl === row.sourceUrl &&
     existing.githubRepoUrl === row.githubRepoUrl &&
+    existing.githubPath === row.githubPath &&
+    existing.githubCommit === row.githubCommit &&
+    existing.githubContentHash === row.githubContentHash &&
     existing.sourceContentHash === row.sourceContentHash &&
-    existing.installs === row.installs
+    existing.installs === row.installs &&
+    existingReconciliation?.kind === reconciliation.kind &&
+    existingReconciliation.nativeSkillId === reconciliation.nativeSkillId &&
+    existingReconciliation.nativeSlug === reconciliation.nativeSlug &&
+    existingReconciliation.nativeStatsDownloads === reconciliation.nativeStatsDownloads &&
+    existingReconciliation.claimOpportunity === reconciliation.claimOpportunity &&
+    existingReconciliation.claimPublisherHandle === reconciliation.claimPublisherHandle
   );
 }
 
@@ -2163,12 +2480,13 @@ function summarizeRun(run: Doc<"skillsShCatalogRuns">) {
     sourceKind: run.sourceKind,
     sourceCapturedAt: run.sourceCapturedAt,
     snapshotCaptureFetches: run.snapshotCaptureFetches,
+    githubVerification: run.githubVerification,
     dryRun: run.dryRun,
     status: run.status,
     cursor: run.cursor,
     scanCursor: run.scanCursor,
     fixtureLength: run.fixtureLength,
-    counts: run.counts,
+    counts: normalizedCounts(run.counts),
     budgets: run.budgets,
     operations: run.operations,
     actor: run.actor,

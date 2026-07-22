@@ -50,6 +50,28 @@ skills:
 This table is not an install artifact store. OpenClaw must not install from
 `githubSkillContents`.
 
+## Dark skills.sh discovery metadata
+
+The skills.sh discovery pipeline has a separate hidden metadata table and does
+not create or mutate `skills` rows during its planning gates.
+
+- A discovery row keeps the immutable GitHub owner ID plus exact repository,
+  path, commit, folder content hash, source URL, and source snapshot.
+- Native reconciliation is advisory metadata only. It classifies an observation
+  as new, an exact native GitHub-source match, or a slug/route collision.
+- Exact matches may record the native download count for readback, but discovery
+  must not patch that count or any other native field.
+- A verified GitHub owner may create a claim opportunity marker. That marker is
+  not publisher attachment, ownership, profile content, or claim execution.
+- Hidden discovery rows are never installable and cannot become public through
+  the discovery control plane.
+- The permanent Test canary uses one committed skills.sh observation fixture,
+  while GitHub owner, repository, commit, path, and content verification remain
+  live and authenticated.
+- Canary rollback may delete only the controlled hidden fixture row. It must
+  leave native skills, download history, scan jobs, publishers, and aliases
+  unchanged.
+
 `skills` stores the public catalog row and install state:
 
 - `installKind: "github"`

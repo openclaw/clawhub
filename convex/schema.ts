@@ -2788,6 +2788,10 @@ const skillsShCatalogRunCountsValidator = v.object({
   updated: v.number(),
   unchanged: v.number(),
   rejected: v.number(),
+  newExternal: v.optional(v.number()),
+  exactNativeMatches: v.optional(v.number()),
+  routeCollisions: v.optional(v.number()),
+  claimOpportunities: v.optional(v.number()),
   scansPlanned: v.number(),
   scansAdmitted: v.number(),
   scansCompleted: v.number(),
@@ -2796,6 +2800,7 @@ const skillsShCatalogRunCountsValidator = v.object({
 
 const skillsShCatalogRuns = defineTable({
   fixtureId: v.union(
+    v.literal("patrick-html-canary-v1"),
     v.literal("nvidia-small-v1"),
     v.literal("nvidia-small-v2"),
     v.literal("skills-sh-500-2026-07-21"),
@@ -2811,6 +2816,15 @@ const skillsShCatalogRuns = defineTable({
   ),
   sourceCapturedAt: v.optional(v.string()),
   snapshotCaptureFetches: v.number(),
+  githubVerification: v.optional(
+    v.object({
+      ownerId: v.number(),
+      commit: v.string(),
+      contentHash: v.string(),
+      checkedAt: v.string(),
+      fetches: v.number(),
+    }),
+  ),
   dryRun: v.boolean(),
   status: v.union(
     v.literal("running"),
@@ -2867,9 +2881,23 @@ const skillsShCatalogEntries = defineTable({
   displayName: v.string(),
   sourceUrl: v.string(),
   githubRepoUrl: v.string(),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  githubContentHash: v.optional(v.string()),
   sourceContentHash: v.string(),
   installs: v.number(),
   sourceSnapshotId: v.string(),
+  reconciliation: v.optional(
+    v.object({
+      kind: v.union(v.literal("new"), v.literal("exact-native"), v.literal("route-collision")),
+      nativeSkillId: v.optional(v.id("skills")),
+      nativeSlug: v.optional(v.string()),
+      nativeStatsDownloads: v.optional(v.number()),
+      claimOpportunity: v.boolean(),
+      claimPublisherHandle: v.optional(v.string()),
+      observedAt: v.number(),
+    }),
+  ),
   publicVisible: v.boolean(),
   scanStatus: v.union(
     v.literal("not-planned"),
