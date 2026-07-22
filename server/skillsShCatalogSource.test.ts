@@ -270,6 +270,60 @@ describe("skills.sh Vercel source boundary", () => {
     });
   });
 
+  it("retries transient source responses and counts every request", async () => {
+    let attempts = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("busy", {
+          status: 503,
+          headers: { "retry-after": "0" },
+        });
+      }
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (!url.includes("/api/v1/skills/")) {
+        return new Response("<html><body>No audit links</body></html>");
+      }
+      return new Response(
+        JSON.stringify({
+          id: "vercel-labs/skills/find-skills",
+          source: "vercel-labs/skills",
+          slug: "find-skills",
+          installs: 42,
+          hash: "a".repeat(64),
+          files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+        }),
+      );
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.sourceRequests).toBe(4);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
   it("fails closed without OIDC and above the 500-row boundary", async () => {
     await expect(
       fetchSkillsShCatalogPage({ page: 0, perPage: 500 }, { env: {}, fetchImpl: vi.fn() }),

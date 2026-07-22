@@ -12,6 +12,7 @@ const MAX_ROWS_PER_RUN = 10_000;
 const MAX_ROWS_PER_BATCH = 50;
 const MAX_DETAIL_BYTES = 64 * 1024;
 const MAX_RECONCILE_ROWS = 250;
+const MAX_SOURCE_ATTEMPTS = 4;
 const MAX_SCANNER_STATUS_LENGTH = 32;
 const MAX_SCANNER_URL_LENGTH = 2_048;
 
@@ -428,7 +429,12 @@ export const processBatchInternal = internalMutation({
     assertIntegerInRange("offset", args.offset, 0, run.sourcePageSize);
     assertIntegerInRange("pageLength", args.pageLength, 1, run.sourcePageSize);
     assertIntegerInRange("rows.length", args.rows.length, 1, control.maxRowsPerBatch);
-    assertIntegerInRange("sourceRequests", args.sourceRequests, 1, 1 + 2 * args.rows.length);
+    assertIntegerInRange(
+      "sourceRequests",
+      args.sourceRequests,
+      1,
+      MAX_SOURCE_ATTEMPTS * (1 + 2 * args.rows.length),
+    );
     assertIntegerInRange("sourceBytes", args.sourceBytes, 0, 100 * 1024 * 1024);
     if (args.offset + args.rows.length > args.pageLength) {
       throw new ConvexError("skills.sh mirror batch exceeds the source page");
