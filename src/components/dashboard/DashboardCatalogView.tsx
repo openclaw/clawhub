@@ -110,6 +110,7 @@ function SkillListRow({
       secondary={packageRowSecondary(skill.updatedAt)}
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
+      downloadTitle={skillMetricSourceLabel(skill)}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
     />
   );
@@ -149,6 +150,7 @@ function CatalogRow({
   secondary,
   status,
   downloads,
+  downloadTitle,
   menu,
 }: {
   href: string;
@@ -159,6 +161,7 @@ function CatalogRow({
   secondary: string;
   status: ArtifactDisplayStatus;
   downloads: number;
+  downloadTitle?: string;
   menu: ReactNode;
 }) {
   return (
@@ -180,7 +183,10 @@ function CatalogRow({
         <SecurityAuditMiniStatus status={status} />
       </div>
       <div className="skill-list-item-meta">
-        <span className="dashboard-catalog-downloads" title={metricLabel(downloads, "download")}>
+        <span
+          className="dashboard-catalog-downloads"
+          title={downloadTitle ?? metricLabel(downloads, "download")}
+        >
           <Download size={14} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>
           <span className="sr-only">{metricLabel(downloads, "download")}</span>
@@ -216,6 +222,13 @@ function metricLabel(value: number, noun: string) {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
+function skillMetricSourceLabel(skill: DashboardSkill) {
+  const sources = skill.metricSources;
+  const downloads = skill.stats?.downloads ?? 0;
+  if (!sources) return metricLabel(downloads, "download");
+  return `${metricLabel(downloads, "download")}: ${sources.clawHubDownloads} ClawHub downloads + ${sources.skillsShInstalls} skills.sh installs. ${sources.openClawInstallsAllTime} OpenClaw installs; ${sources.githubStars} GitHub stars; ${sources.bookmarks} bookmarks.`;
+}
+
 function visibilityIcon(label: string) {
   if (label !== "Hidden" && label !== "Removed") return undefined;
   return (
@@ -238,6 +251,7 @@ function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHan
       kindLabel="Skill"
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
+      downloadTitle={skillMetricSourceLabel(skill)}
       updatedAt={skill.updatedAt}
     />
   );
@@ -268,6 +282,7 @@ function DashboardCatalogGridCard({
   kindLabel,
   status,
   downloads,
+  downloadTitle,
   updatedAt,
 }: {
   href: string;
@@ -278,6 +293,7 @@ function DashboardCatalogGridCard({
   kindLabel: "Skill" | "Plugin";
   status: ArtifactDisplayStatus;
   downloads: number;
+  downloadTitle?: string;
   updatedAt: number;
 }) {
   return (
@@ -304,7 +320,7 @@ function DashboardCatalogGridCard({
         </span>
         <span
           className="dashboard-catalog-grid-card-downloads"
-          title={metricLabel(downloads, "download")}
+          title={downloadTitle ?? metricLabel(downloads, "download")}
         >
           <Download size={13} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>

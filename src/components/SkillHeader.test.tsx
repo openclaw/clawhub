@@ -162,14 +162,14 @@ describe("SkillHeader", () => {
     );
   }
 
-  it("keeps signed-out star and report actions visible and routes clicks to sign-in", () => {
+  it("keeps signed-out bookmark and report actions visible and routes clicks to sign-in", () => {
     const onToggleStar = vi.fn();
     const onOpenReport = vi.fn();
     const onRequireSignIn = vi.fn();
 
     const { container } = renderHeader({ onToggleStar, onOpenReport, onRequireSignIn });
 
-    fireEvent.click(screen.getByRole("button", { name: "Star skill" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bookmark skill" }));
     fireEvent.click(screen.getByRole("button", { name: "Report" }));
 
     expect(onRequireSignIn).toHaveBeenCalledTimes(2);
@@ -488,19 +488,19 @@ describe("SkillHeader", () => {
     ).toBeTruthy();
   });
 
-  it("places Star in the sidebar without an outline button", () => {
+  it("places Bookmark in the sidebar without an outline button", () => {
     const { container } = renderHeader();
 
     const starBand = container.querySelector(".skill-sidebar-star-band");
     expect(starBand).toBeTruthy();
     const starButton = within(starBand as HTMLElement).getByRole("button", {
-      name: "Star skill",
+      name: "Bookmark skill",
     });
     expect(starButton.className).toContain("skill-sidebar-star-action");
     expect(container.querySelector(".skill-hero-title-row .skill-title-actions")).toBeNull();
   });
 
-  it("places Star on the creator row on mobile detail layout", () => {
+  it("places Bookmark on the creator row on mobile detail layout", () => {
     setViewportWidth(390);
     const { container } = renderHeader();
 
@@ -508,7 +508,7 @@ describe("SkillHeader", () => {
     const creator = container.querySelector(".skill-hero-creator");
     expect(creator).toBeTruthy();
     const starButton = within(creator as HTMLElement).getByRole("button", {
-      name: "Star skill",
+      name: "Bookmark skill",
     });
     expect(starButton.className).toContain("skill-sidebar-star-action");
     expect(starButton.closest(".skill-hero-creator-star")).toBeTruthy();

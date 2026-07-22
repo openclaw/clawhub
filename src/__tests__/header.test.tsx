@@ -687,7 +687,7 @@ describe("Header", () => {
     expect(labels).toEqual(["Home", "Skills", "Plugins", "Creators", "Docs"]);
   });
 
-  it("links profile and starred skills from the signed-in avatar menu", () => {
+  it("links profile and bookmarks from the signed-in avatar menu", () => {
     profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -710,7 +710,7 @@ describe("Header", () => {
     expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
+    expect(screen.getByText("Bookmarks").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
   });
