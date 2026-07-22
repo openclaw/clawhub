@@ -225,6 +225,7 @@ export const RETENTION_POLICIES = {
   skillsShMirrorRuns: permanent("Skills.sh external mirror cursor and reconciliation history."),
   skillsShMirrorDigests: permanent("Normalized skills.sh external search digests."),
   skillsShMirrorDetails: permanent("Bounded skills.sh external detail content."),
+  skillsShMirrorFacets: permanent("Indexed skills.sh external category and topic metadata."),
   skillsShMirrorConflicts: permanent("Skills.sh external observation conflict audit history."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
   publisherAbuseTemporalScanSamples: ephemeral(

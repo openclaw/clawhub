@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildMirrorProofHeaders, findRecoverableMirrorRun } from "./prove-mirror-request";
+import {
+  buildMirrorProofHeaders,
+  findRecoverableMirrorRun,
+  mirrorRateLimitRetryDelayMs,
+} from "./prove-mirror-request";
 
 describe("skills.sh mirror proof request headers", () => {
   it("carries the Test deployment protection bypass without changing operator auth", () => {
@@ -53,5 +57,12 @@ describe("skills.sh mirror proof request headers", () => {
       sourceMeasuredAt: "2026-07-22T21:18:13.365Z",
       startedAt: 2,
     });
+  });
+
+  it("bounds rate-limit recovery delays while preserving Retry-After", () => {
+    expect(mirrorRateLimitRetryDelayMs(429, "17", 0)).toBe(17_000);
+    expect(mirrorRateLimitRetryDelayMs(429, "120", 0)).toBe(120_000);
+    expect(mirrorRateLimitRetryDelayMs(429, null, 3)).toBe(8_000);
+    expect(mirrorRateLimitRetryDelayMs(502, "17", 0)).toBeNull();
   });
 });

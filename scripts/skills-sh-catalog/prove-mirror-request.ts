@@ -11,6 +11,20 @@ export function buildMirrorProofHeaders(
   };
 }
 
+export function mirrorRateLimitRetryDelayMs(
+  status: number,
+  retryAfterHeader: string | null,
+  attempt: number,
+) {
+  if (status !== 429) return null;
+  const retryAfterSeconds = retryAfterHeader === null ? Number.NaN : Number(retryAfterHeader);
+  const requestedMs =
+    Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+      ? retryAfterSeconds * 1_000
+      : 1_000 * 2 ** attempt;
+  return Math.max(1_000, requestedMs);
+}
+
 export type RecoverableMirrorRun = {
   runId: string;
   status: "running" | "paused" | "reconciling";

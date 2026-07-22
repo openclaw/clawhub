@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSkillsShMirrorObservation,
   buildSkillsShMirrorDetail,
@@ -11,11 +11,16 @@ import {
   fetchSkillsShCatalogPage,
   fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
+  skillsShSourceRetryAfterSeconds,
   SkillsShCatalogOwnerProofRequiredError,
   validateSkillsShCatalogGitHubOwnerProof,
 } from "./skillsShCatalogSource";
 
 describe("skills.sh Vercel source boundary", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("retains each upstream scanner status and source link independently", () => {
     expect(
       buildSkillsShMirrorUpstreamScanners(
@@ -310,6 +315,26 @@ describe("skills.sh Vercel source boundary", () => {
       content: "12345678",
       contentBytes: 8,
       sourceBytes: 10,
+      truncated: true,
+    });
+  });
+
+  it("derives a deterministic content hash from bounded detail when upstream omits one", () => {
+    const detail = buildSkillsShMirrorDetail(
+      {
+        id: "patrick-erichsen/skills/html",
+        source: "patrick-erichsen/skills",
+        slug: "html",
+        installs: 42,
+        hash: null,
+        files: [{ path: "SKILL.md", contents: "abcdef" }],
+      },
+      3,
+    );
+
+    expect(detail).toMatchObject({
+      sourceContentHash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      content: "abc",
       truncated: true,
     });
   });
@@ -1135,6 +1160,127 @@ describe("skills.sh Vercel source boundary", () => {
 
     expect(batch.sourceRequests).toBe(4);
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("paces authenticated mirror API requests below the upstream minute limit", async () => {
+    vi.useFakeTimers();
+    const requestTimes: number[] = [];
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      requestTimes.push(Date.now());
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ audits: [] }));
+      }
+      return new Response(
+        JSON.stringify({
+          hash: "a".repeat(64),
+          files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+        }),
+      );
+    });
+
+    const batchPromise = fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        minimumApiRequestIntervalMs: 125,
+      },
+    );
+    await vi.runAllTimersAsync();
+    await batchPromise;
+
+    expect(requestTimes).toHaveLength(3);
+    expect(requestTimes[1]! - requestTimes[0]!).toBeGreaterThanOrEqual(125);
+    expect(requestTimes[2]! - requestTimes[1]!).toBeGreaterThanOrEqual(125);
+    vi.useRealTimers();
+  });
+
+  it("honors the full Retry-After delay before retrying a 429", async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "17" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          data: [],
+          pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+        }),
+      );
+    });
+
+    const pagePromise = fetchSkillsShCatalogPage(
+      { page: 0, perPage: 500 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+    await vi.advanceTimersByTimeAsync(16_999);
+    expect(attempts).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await pagePromise;
+    expect(attempts).toBe(2);
+  });
+
+  it("preserves Retry-After when bounded source retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async () => {
+      return new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "17" },
+      });
+    });
+
+    const pagePromise = fetchSkillsShCatalogPage(
+      { page: 0, perPage: 500 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    ).catch((error: unknown) => error);
+    await vi.runAllTimersAsync();
+    const error = await pagePromise;
+
+    expect(error).toBeInstanceOf(Error);
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(17);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("delegates long Retry-After waits without shortening the upstream cooldown", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "120" },
+      });
+    });
+
+    const error = await fetchSkillsShCatalogPage(
+      { page: 0, perPage: 500 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    ).catch((value: unknown) => value);
+
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("fails closed without OIDC and above the 500-row boundary", async () => {

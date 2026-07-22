@@ -5,11 +5,14 @@ import { dirname, resolve } from "node:path";
 import {
   buildMirrorProofHeaders,
   findRecoverableMirrorRun,
+  mirrorRateLimitRetryDelayMs,
   type RecoverableMirrorRun,
 } from "./prove-mirror-request";
 
 const OUTPUT_PATH = resolve("proof/claw-563/skills-sh-mirror-test-proof.json");
 const PROJECTED_SCALE = 700_000;
+const MAX_RATE_LIMIT_RETRIES_PER_RUN = 30;
+const MAX_RATE_LIMIT_WAIT_MS_PER_RUN = 30 * 60 * 1_000;
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -40,16 +43,19 @@ async function callRaw(body: Record<string, unknown>) {
     status: response.status,
     elapsedMs: performance.now() - startedAt,
     payload,
+    retryAfter: response.headers.get("retry-after"),
   };
+}
+
+function callFailure(body: Record<string, unknown>, result: Awaited<ReturnType<typeof callRaw>>) {
+  return new Error(
+    `${String(body.operation)} returned HTTP ${result.status}: ${JSON.stringify(result.payload)}`,
+  );
 }
 
 async function call(body: Record<string, unknown>) {
   const result = await callRaw(body);
-  if (!result.ok) {
-    throw new Error(
-      `${String(body.operation)} returned HTTP ${result.status}: ${JSON.stringify(result.payload)}`,
-    );
-  }
+  if (!result.ok) throw callFailure(body, result);
   return result;
 }
 
@@ -62,11 +68,21 @@ async function runMirror(
   reason: string,
   provePauseResume: boolean,
   recoverableRun: RecoverableMirrorRun | null = null,
+  capturedSource: CapturedMirrorSource | null = null,
 ) {
   const attemptStartedAt = Date.now();
   const start = recoverableRun
     ? { payload: recoverableRun }
-    : await call({ operation: "start", reason });
+    : capturedSource
+      ? await call({
+          operation: "start-replay",
+          reason,
+          capturedRunId: capturedSource.capturedRunId,
+          sourceTotal: capturedSource.externalIds.length,
+          sourcePageSize: capturedSource.sourcePageSize,
+          sourceMeasuredAt: capturedSource.sourceMeasuredAt,
+        })
+      : await call({ operation: "start", reason });
   const runId = requireRunId(start.payload);
   let page = recoverableRun?.page ?? 0;
   let offset = recoverableRun?.offset ?? 0;
@@ -74,6 +90,8 @@ async function runMirror(
   let pauseProof: Record<string, unknown> | null = null;
   let run = start.payload as Record<string, unknown>;
   let recovery: Record<string, unknown> | null = null;
+  let rateLimitRetries = 0;
+  let rateLimitWaitMs = 0;
   if (recoverableRun) {
     recovery = {
       runId,
@@ -92,7 +110,45 @@ async function runMirror(
     }
   }
   while (run.status === "running") {
-    const step = await call({ operation: "step", runId, page, offset });
+    const stepRequest = capturedSource
+      ? {
+          operation: "step-replay",
+          runId,
+          page,
+          offset,
+          pageLength: Math.min(
+            capturedSource.sourcePageSize,
+            capturedSource.externalIds.length - page * capturedSource.sourcePageSize,
+          ),
+          hasMore: (page + 1) * capturedSource.sourcePageSize < capturedSource.externalIds.length,
+          sourceTotal: capturedSource.externalIds.length,
+          externalIds: capturedSource.externalIds.slice(
+            page * capturedSource.sourcePageSize + offset,
+            page * capturedSource.sourcePageSize + offset + 50,
+          ),
+        }
+      : { operation: "step", runId, page, offset };
+    if (
+      capturedSource &&
+      (!Array.isArray(stepRequest.externalIds) || stepRequest.externalIds.length < 1)
+    ) {
+      throw new Error(`captured mirror replay has no rows for cursor ${page}:${offset}`);
+    }
+    const step = await callRaw(stepRequest);
+    if (!step.ok) {
+      const delayMs = mirrorRateLimitRetryDelayMs(step.status, step.retryAfter, rateLimitRetries);
+      if (
+        delayMs === null ||
+        rateLimitRetries >= MAX_RATE_LIMIT_RETRIES_PER_RUN ||
+        rateLimitWaitMs + delayMs > MAX_RATE_LIMIT_WAIT_MS_PER_RUN
+      ) {
+        throw callFailure(stepRequest, step);
+      }
+      rateLimitRetries += 1;
+      rateLimitWaitMs += delayMs;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
     run = step.payload;
     steps += 1;
     if (typeof run.page !== "number" || typeof run.offset !== "number") {
@@ -149,13 +205,19 @@ async function runMirror(
     steps,
     reconciliationBatches,
     pauseProof,
+    rateLimitRecovery: {
+      retries: rateLimitRetries,
+      waitedMs: rateLimitWaitMs,
+      retryBudget: MAX_RATE_LIMIT_RETRIES_PER_RUN,
+      waitBudgetMs: MAX_RATE_LIMIT_WAIT_MS_PER_RUN,
+    },
     elapsedMs: Date.now() - (recoverableRun?.startedAt ?? attemptStartedAt),
     attemptElapsedMs: Date.now() - attemptStartedAt,
   };
 }
 
 async function collectPages(
-  operation: "page" | "detail-page",
+  operation: "page" | "detail-page" | "facet-page",
   validate: (document: Record<string, unknown>) => void,
 ) {
   const documents: Record<string, unknown>[] = [];
@@ -193,6 +255,12 @@ async function collectPages(
 }
 
 type MirrorRunProof = Awaited<ReturnType<typeof runMirror>>;
+type CapturedMirrorSource = {
+  capturedRunId: string;
+  externalIds: string[];
+  sourceMeasuredAt: string;
+  sourcePageSize: number;
+};
 
 function runCounts(runResult: MirrorRunProof) {
   const counts = runResult.run.counts;
@@ -243,7 +311,7 @@ function assertRunProof(runResult: MirrorRunProof, mode: "first" | "identical") 
   }
 }
 
-function validateDigest(document: Record<string, unknown>) {
+function validateDigestIsolation(document: Record<string, unknown>) {
   if (
     document.active !== true ||
     document.publicVisible !== false ||
@@ -251,6 +319,10 @@ function validateDigest(document: Record<string, unknown>) {
   ) {
     throw new Error(`mirror digest isolation failed: ${String(document.externalId)}`);
   }
+}
+
+function validateDigest(document: Record<string, unknown>) {
+  validateDigestIsolation(document);
   for (const field of [
     "normalizedSlug",
     "normalizedSlugFirstToken",
@@ -258,10 +330,26 @@ function validateDigest(document: Record<string, unknown>) {
     "normalizedDisplayNameFirstToken",
     "searchText",
     "upstreamSourceType",
+    "inferredClassifierVersion",
+    "inferredTopicClassifierVersion",
+    "inferredInputHash",
+    "inferredTopicInputHash",
   ]) {
     if (typeof document[field] !== "string" || !document[field]) {
       throw new Error(`mirror digest lacks ${field}: ${String(document.externalId)}`);
     }
+  }
+  if (
+    !Array.isArray(document.inferredCategories) ||
+    document.inferredCategories.length < 1 ||
+    document.inferredCategories.length > 3 ||
+    !Array.isArray(document.inferredTopics) ||
+    document.inferredTopics.length > 5 ||
+    !["high", "medium", "low"].includes(String(document.inferredCategoryConfidence)) ||
+    !["high", "medium", "low"].includes(String(document.inferredTopicConfidence)) ||
+    typeof document.inferredAt !== "number"
+  ) {
+    throw new Error(`mirror digest lacks bounded inference: ${String(document.externalId)}`);
   }
   const scanners = document.upstreamScanners;
   if (!scanners || typeof scanners !== "object" || Array.isArray(scanners)) {
@@ -277,6 +365,19 @@ function validateDigest(document: Record<string, unknown>) {
     ) {
       throw new Error(`mirror digest lacks ${provider} status: ${String(document.externalId)}`);
     }
+  }
+}
+
+function validateFacet(document: Record<string, unknown>) {
+  if (
+    document.active !== true ||
+    !["category", "topic"].includes(String(document.kind)) ||
+    typeof document.term !== "string" ||
+    !document.term ||
+    typeof document.externalId !== "string" ||
+    typeof document.installs !== "number"
+  ) {
+    throw new Error(`mirror facet is invalid: ${String(document.externalId)}`);
   }
 }
 
@@ -338,15 +439,48 @@ try {
   const latestRunConflicts = Array.isArray(statusAfterFirstRun.latestRunConflicts)
     ? (statusAfterFirstRun.latestRunConflicts as Record<string, unknown>[])
     : [];
-  const identicalRerun = await runMirror(
-    "CLAW-563 complete authenticated mirror identical rerun",
+  const capturedAfterLive = await collectPages("page", validateDigestIsolation);
+  const liveCapturedSource: CapturedMirrorSource = {
+    capturedRunId: firstRun.runId,
+    externalIds: capturedAfterLive.documents.map((document) => {
+      if (typeof document.externalId !== "string") {
+        throw new Error("captured mirror digest lacks externalId");
+      }
+      return document.externalId;
+    }),
+    sourceMeasuredAt: String(firstRun.source.measuredAt),
+    sourcePageSize: Number(firstRun.source.pageSize),
+  };
+  const normalizationRun = await runMirror(
+    "CLAW-563 authenticated captured snapshot normalization",
     false,
+    null,
+    liveCapturedSource,
+  );
+  const capturedAfterNormalization = await collectPages("page", validateDigest);
+  const normalizedCapturedSource: CapturedMirrorSource = {
+    ...liveCapturedSource,
+    capturedRunId: normalizationRun.runId,
+    externalIds: capturedAfterNormalization.documents.map((document) => {
+      if (typeof document.externalId !== "string") {
+        throw new Error("normalized mirror digest lacks externalId");
+      }
+      return document.externalId;
+    }),
+  };
+  const identicalRerun = await runMirror(
+    "CLAW-563 authenticated captured snapshot identical rerun",
+    false,
+    null,
+    normalizedCapturedSource,
   );
   assertRunProof(firstRun, "first");
+  assertRunProof(normalizationRun, "first");
   assertRunProof(identicalRerun, "identical");
-  const [digests, details] = await Promise.all([
+  const [digests, details, facets] = await Promise.all([
     collectPages("page", validateDigest),
     collectPages("detail-page", validateDetail),
+    collectPages("facet-page", validateFacet),
   ]);
   const firstCounts = runCounts(firstRun);
   const quarantinedCount = firstCounts.quarantined ?? 0;
@@ -357,6 +491,9 @@ try {
     throw new Error(
       `mirror digest count ${digests.count} does not match accepted or preserved total ${expectedDigestCount}`,
     );
+  }
+  if (facets.count < digests.count) {
+    throw new Error("mirror facets do not cover every digest category fallback");
   }
   const quarantineSamples = latestRunConflicts
     .filter(
@@ -378,7 +515,8 @@ try {
     throw new Error("mirror proof changed scan isolation state");
   }
   const firstOperations = firstRun.run.operations as Record<string, number>;
-  const serializedStorageBytes = digests.serializedBytes + details.serializedBytes;
+  const serializedStorageBytes =
+    digests.serializedBytes + details.serializedBytes + facets.serializedBytes;
   const rows = digests.count;
   const sourceRows = Number(firstRun.source.total);
   const perRow = {
@@ -407,17 +545,19 @@ try {
       pageSize: firstRun.source.pageSize,
       measuredAt: firstRun.source.measuredAt,
       corpusBelowRequestedTenThousand: Number(firstRun.source.total) < 10_000,
-      advertisedRateLimitHeaders: "none",
+      documentedRateLimitRequestsPerMinute: 600,
       fetchPolicy: {
         mirrorBatchRows: 50,
         sourcePageRows: 500,
         detailAndPageConcurrency: 8,
+        minimumApiRequestIntervalMs: 125,
         identityPage:
           "512 KiB structural HTML fallback only for exact no-install well-known owner/repo rows",
-        recovery: "durable cursor restart after source failure",
+        recovery: "durable cursor retry with bounded Retry-After recovery",
       },
     },
     firstRun,
+    normalizationRun,
     identicalRerun,
     quarantine: {
       rejected: firstCounts.rejected,
@@ -435,6 +575,11 @@ try {
         count: details.count,
         serializedBytes: details.serializedBytes,
         pageReads: details.calls,
+      },
+      facets: {
+        count: facets.count,
+        serializedBytes: facets.serializedBytes,
+        pageReads: facets.calls,
       },
       totalSerializedBytes: serializedStorageBytes,
       bytesPerSourceRow: perRow.serializedStorageBytes,

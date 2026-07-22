@@ -13,6 +13,8 @@ const MAX_UPSTREAM_SCANNER_URL_LENGTH = 2_048;
 const MAX_UPSTREAM_SOURCE_TYPE_LENGTH = 64;
 const MAX_IDENTITY_PAGE_BYTES = 512 * 1024;
 const MAX_IDENTITY_PAGE_REDIRECTS = 2;
+const MINIMUM_API_REQUEST_INTERVAL_MS = 125;
+const MAX_INLINE_RETRY_AFTER_MS = 30_000;
 const CLAWHUB_VERCEL_OWNER_ID = "team_pLdjXbfy0XvPRiNmAygTjTSH";
 const CLAWHUB_VERCEL_PROJECT_ID = "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc";
 const CLAWHUB_TEST_CONVEX_URL = "https://academic-chihuahua-392.convex.cloud";
@@ -181,7 +183,24 @@ type SkillsShFetchOptions = {
   env?: SkillsShCatalogSourceEnv;
   fetchImpl?: typeof fetch;
   oidcToken?: string;
+  minimumApiRequestIntervalMs?: number;
 };
+
+class SkillsShSourceHttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfterSeconds: number | null,
+  ) {
+    super(`skills.sh catalog source returned HTTP ${status}`);
+    this.name = "SkillsShSourceHttpError";
+  }
+}
+
+export function skillsShSourceRetryAfterSeconds(error: unknown) {
+  return error instanceof SkillsShSourceHttpError && error.status === 429
+    ? error.retryAfterSeconds
+    : null;
+}
 
 async function fetchSkillsShApiResponse(
   path: string,
@@ -199,8 +218,16 @@ async function fetchSkillsShApiResponse(
     });
     if (response.ok) return response;
     if (allowNotFound && response.status === 404) return null;
-    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
-      throw new Error(`skills.sh catalog source returned HTTP ${response.status}`);
+    const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
+    if (
+      (response.status !== 429 && response.status < 500) ||
+      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
+      (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
+    ) {
+      throw new SkillsShSourceHttpError(
+        response.status,
+        retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
+      );
     }
     await waitForSkillsShRetry(response, attempt);
   }
@@ -721,22 +748,23 @@ export function buildSkillsShMirrorDetail(detail: SkillsShCatalogDetail, maxByte
       }
       return left.path.length - right.path.length || left.path.localeCompare(right.path);
     });
-  const sourceContentHash =
+  const upstreamSourceContentHash =
     typeof detail.hash === "string" && /^[a-f0-9]{64}$/i.test(detail.hash)
       ? detail.hash.toLowerCase()
       : undefined;
   const selected = candidates[0];
   if (!selected) {
     return {
-      ...(sourceContentHash ? { sourceContentHash } : {}),
+      ...(upstreamSourceContentHash ? { sourceContentHash: upstreamSourceContentHash } : {}),
       sourceFileCount: files.length,
       contentKind: "none" as const,
     };
   }
   const sourceBytes = Buffer.byteLength(selected.content, "utf8");
   const content = truncateUtf8(selected.content, maxBytes);
+  const sourceContentHash = upstreamSourceContentHash ?? sha256Hex(content);
   return {
-    ...(sourceContentHash ? { sourceContentHash } : {}),
+    sourceContentHash,
     sourceFileCount: files.length,
     contentKind: selected.contentKind,
     path: selected.path,
@@ -768,11 +796,44 @@ async function fetchSkillsShJson<T>(path: string, options: SkillsShFetchOptions 
 }
 
 async function waitForSkillsShRetry(response: Response, attempt: number) {
-  const retryAfterSeconds = Number(response.headers.get("retry-after"));
-  const delayMs = Number.isFinite(retryAfterSeconds)
-    ? Math.min(5_000, Math.max(0, retryAfterSeconds * 1_000))
-    : 250 * 2 ** attempt;
+  const delayMs = skillsShRetryAfterMs(response, attempt);
   await new Promise((resolve) => setTimeout(resolve, delayMs));
+}
+
+function skillsShRetryAfterMs(response: Response, attempt: number) {
+  const header = response.headers.get("retry-after")?.trim();
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return seconds * 1_000;
+    }
+    const dateMs = Date.parse(header);
+    if (Number.isFinite(dateMs)) {
+      return Math.max(0, dateMs - Date.now());
+    }
+  }
+  return Math.min(5_000, 250 * 2 ** attempt);
+}
+
+function requestUrl(input: string | URL | Request) {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
+function createRequestPacer(minimumIntervalMs: number) {
+  let nextRequestAt = 0;
+  let queue = Promise.resolve();
+  return async () => {
+    const turn = queue.then(async () => {
+      const delayMs = Math.max(0, nextRequestAt - Date.now());
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      nextRequestAt = Date.now() + minimumIntervalMs;
+    });
+    queue = turn.catch(() => undefined);
+    await turn;
+  };
 }
 
 export async function fetchSkillsShCatalogPage(
@@ -854,6 +915,8 @@ export async function fetchSkillsShMirrorBatch(
     env?: SkillsShCatalogSourceEnv;
     fetchImpl?: typeof fetch;
     oidcToken?: string;
+    minimumApiRequestIntervalMs?: number;
+    beforeRequest?: () => Promise<void> | void;
   } = {},
 ) {
   assertIntegerInRange("page", args.page, 0, 100_000);
@@ -861,10 +924,19 @@ export async function fetchSkillsShMirrorBatch(
   assertIntegerInRange("limit", args.limit, 1, 50);
   assertIntegerInRange("maxDetailBytes", args.maxDetailBytes, 1, 64 * 1024);
   const baseFetch = options.fetchImpl ?? fetch;
+  const minimumApiRequestIntervalMs =
+    options.minimumApiRequestIntervalMs ??
+    (options.fetchImpl ? 0 : MINIMUM_API_REQUEST_INTERVAL_MS);
+  assertIntegerInRange("minimumApiRequestIntervalMs", minimumApiRequestIntervalMs, 0, 1_000);
+  const paceApiRequest = createRequestPacer(minimumApiRequestIntervalMs);
   let sourceRequests = 0;
   // Count every list, detail, audit, and identity-page attempt through one wrapper.
   const monitoredFetch: typeof fetch = async (input, init) => {
+    await options.beforeRequest?.();
     sourceRequests += 1;
+    if (minimumApiRequestIntervalMs > 0 && requestUrl(input).startsWith(`${SKILLS_SH_API_BASE}/`)) {
+      await paceApiRequest();
+    }
     return await baseFetch(input, init);
   };
   const fetchOptions = { ...options, fetchImpl: monitoredFetch };

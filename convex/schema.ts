@@ -3019,6 +3019,8 @@ const skillsShMirrorRuns = defineTable({
   sourceMeasuredAt: v.string(),
   page: v.number(),
   offset: v.number(),
+  batchLeaseToken: v.optional(v.string()),
+  batchLeaseExpiresAt: v.optional(v.number()),
   reconcileCursor: v.optional(v.string()),
   counts: skillsShMirrorRunCountsValidator,
   operations: v.object({
@@ -3045,6 +3047,12 @@ const skillsShMirrorUpstreamScannerValidator = v.object({
   sourceUrl: v.optional(v.string()),
 });
 
+const skillsShMirrorClassificationConfidenceValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
 const skillsShMirrorDigests = defineTable({
   externalId: v.string(),
   sourceType: v.union(v.literal("github"), v.literal("well-known")),
@@ -3070,6 +3078,15 @@ const skillsShMirrorDigests = defineTable({
     socket: skillsShMirrorUpstreamScannerValidator,
     snyk: skillsShMirrorUpstreamScannerValidator,
   }),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredCategoryConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
   sourceFreshnessStatus: v.union(v.literal("observed-only"), v.literal("stale")),
   detailStatus: v.union(v.literal("available"), v.literal("missing")),
   observationFingerprint: v.string(),
@@ -3099,7 +3116,6 @@ const skillsShMirrorDigests = defineTable({
   })
   .index("by_active_and_source_type_and_owner_and_repo_and_external_id", {
     fields: ["active", "sourceType", "owner", "repo", "externalId"],
-    staged: true,
   })
   .index("by_active_and_upstream_installs", {
     fields: ["active", "upstreamInstalls"],
@@ -3135,6 +3151,25 @@ const skillsShMirrorDetails = defineTable({
   .index("by_digest_id", {
     fields: ["digestId"],
   });
+
+const skillsShMirrorFacets = defineTable({
+  digestId: v.id("skillsShMirrorDigests"),
+  externalId: v.string(),
+  kind: v.union(v.literal("category"), v.literal("topic")),
+  term: v.string(),
+  active: v.boolean(),
+  installs: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_digest_id_and_kind_and_term", ["digestId", "kind", "term"])
+  .index("by_active_and_kind_and_term_and_installs_and_external_id", [
+    "active",
+    "kind",
+    "term",
+    "installs",
+    "externalId",
+  ]);
 
 const skillsShMirrorConflicts = defineTable({
   runId: v.id("skillsShMirrorRuns"),
@@ -3856,6 +3891,7 @@ export default defineSchema({
   skillsShMirrorRuns,
   skillsShMirrorDigests,
   skillsShMirrorDetails,
+  skillsShMirrorFacets,
   skillsShMirrorConflicts,
   publisherAbuseScoreRuns,
   publisherAbuseTemporalScanSamples,
