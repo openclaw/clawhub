@@ -81,6 +81,13 @@ describe("skills", () => {
           installedAt: 1,
           pinned: true,
           pinReason: "awaiting moderation review",
+          sourceRef: "skills-sh:openclaw/skills/demo",
+          sourceKind: "skills-sh",
+          sourceRepository: "openclaw/skills",
+          sourcePath: "skills/demo",
+          sourceUrl: "https://github.com/openclaw/skills/tree/abc/skills/demo",
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
         },
       },
     });
@@ -88,6 +95,15 @@ describe("skills", () => {
     expect(read.skills.demo?.version).toBe("1.0.0");
     expect(read.skills.demo?.pinned).toBe(true);
     expect(read.skills.demo?.pinReason).toBe("awaiting moderation review");
+    expect(read.skills.demo).toMatchObject({
+      sourceRef: "skills-sh:openclaw/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "openclaw/skills",
+      sourcePath: "skills/demo",
+      sourceUrl: "https://github.com/openclaw/skills/tree/abc/skills/demo",
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
+    });
   });
 
   it("returns empty lockfile on invalid json", async () => {
@@ -300,6 +316,14 @@ describe("skills", () => {
       version: 1,
       registry: "https://example.com",
       slug: "demo",
+      sourceRef: "skills-sh:openclaw/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "openclaw/skills",
+      sourcePath: "skills/demo",
+      sourceUrl: "https://github.com/openclaw/skills/tree/abc/skills/demo",
+      canonicalRef: "@openclaw/demo",
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
       installedVersion: "1.2.3",
       installedAt: 123,
     };

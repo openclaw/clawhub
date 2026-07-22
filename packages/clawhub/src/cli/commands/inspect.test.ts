@@ -360,13 +360,13 @@ describe("cmdInspect", () => {
 });
 
 describe("cmdVerifySkill", () => {
-  it("prints exact skills.sh catalog verification from the standard verify route", async () => {
-    const sourceRef = "skills-sh/patrick-erichsen/skills/html";
+  it("prints an explicit unscanned skills.sh verification from the standard verify route", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const payload = {
       schema: "clawhub.skill.verify.v1",
-      ok: true,
-      decision: "pass",
-      reasons: [],
+      ok: false,
+      decision: "fail",
+      reasons: ["Not scanned by ClawHub"],
       slug: sourceRef,
       displayName: "HTML Artifact Chooser",
       pageUrl: "https://clawhub.ai/skills-sh/patrick-erichsen/skills/html",
@@ -385,8 +385,14 @@ describe("cmdVerifySkill", () => {
         bundleFingerprints: ["c".repeat(64)],
         files: [{ path: "SKILL.md", size: 42, sha256: "d".repeat(64) }],
       },
-      provenance: { source: "skills-sh-catalog" },
-      security: { status: "clean", passed: true },
+      provenance: {
+        source: "skills.sh",
+        reference: sourceRef,
+      },
+      security: {
+        clawhubScan: "unscanned",
+        label: "Not scanned by ClawHub",
+      },
       signature: { status: "unsigned" },
     };
     httpMocks.apiRequest.mockResolvedValueOnce(payload);
@@ -398,12 +404,45 @@ describe("cmdVerifySkill", () => {
     expect(url.pathname).toBe(`${ApiRoutes.skills}/html/verify`);
     expect(url.searchParams.get("reference")).toBe(sourceRef);
     expect(JSON.parse(String(mockLog.mock.calls[0]?.[0]))).toEqual(payload);
+    expect(process.exitCode).toBe(1);
   });
 
-  it("rejects colon-form skills.sh verification references", async () => {
+  it("rejects legacy slash-form skills.sh verification references before network access", async () => {
     await expect(
-      cmdVerifySkill(makeGlobalOpts(), "skills-sh:patrick-erichsen/skills/html"),
-    ).rejects.toThrow("Invalid skills.sh ref: use skills-sh/owner/repo/slug");
+      cmdVerifySkill(makeGlobalOpts(), "skills-sh/patrick-erichsen/skills/html"),
+    ).rejects.toThrow("Invalid skills.sh ref: use skills-sh:owner/repo/slug");
+    expect(authTokenMocks.getOptionalAuthToken).not.toHaveBeenCalled();
+    expect(registryMocks.getRegistry).not.toHaveBeenCalled();
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unscanned skills.sh verification that fabricates a pass", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: sourceRef,
+      displayName: "HTML",
+      pageUrl: "https://clawhub.ai/skills-sh/patrick-erichsen/skills/html",
+      publisherHandle: null,
+      publisherDisplayName: null,
+      publisherProfileUrl: null,
+      version: "a".repeat(40),
+      resolvedFrom: "latest",
+      tag: null,
+      createdAt: 123,
+      card: {},
+      artifact: {},
+      provenance: { source: "skills.sh", reference: sourceRef },
+      security: { clawhubScan: "unscanned", label: "Not scanned by ClawHub" },
+      signature: {},
+    });
+
+    await expect(cmdVerifySkill(makeGlobalOpts(), sourceRef)).rejects.toThrow(
+      'skills.sh verification must report "Not scanned by ClawHub" rather than pass',
+    );
   });
 
   it("fetches and prints JSON verification by default", async () => {
