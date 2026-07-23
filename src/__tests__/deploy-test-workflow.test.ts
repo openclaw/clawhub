@@ -141,6 +141,7 @@ describe("Test deploy workflow", () => {
     expect(deployStep?.run).toContain("--build-env CONVEX_DEPLOY_KEY=");
     expect(deployStep?.run).not.toContain("--build-env VERCEL_ENV=");
     expect(deployStep?.run).toContain("--build-env VERCEL_TARGET_ENV=test");
+    expect(deployStep?.run).toContain("--env VERCEL_TARGET_ENV=test");
     expect(deployStep?.run).toContain("--build-env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test");
     expect(deployStep?.run).toContain("--build-env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test");
     expect(deployStep?.run).toContain("--env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test");

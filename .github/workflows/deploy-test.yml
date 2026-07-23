@@ -224,6 +224,7 @@ jobs:
               --build-env VITE_CONVEX_SITE_URL="$VITE_CONVEX_SITE_URL" \
               --build-env VITE_SITE_URL="$TEST_SITE_URL" \
               --env CONVEX_DEPLOY_KEY= \
+              --env VERCEL_TARGET_ENV=test \
               --env CLAWHUB_ENV=test \
               --env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
               --env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
