@@ -52,7 +52,6 @@ const OpenClawProfileSchema = type({
             }).optional(),
             lightContext: "boolean?",
             isolatedSession: "boolean?",
-            skipWhenBusy: "boolean?",
             timeoutSeconds: "number?",
         }).optional(),
         humanDelay: type({
