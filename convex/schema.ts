@@ -2967,6 +2967,52 @@ const skillsShCatalogScanAttempts = defineTable({
   .index("by_status_and_created_at", ["status", "createdAt"])
   .index("by_dispatch_kind_and_status_and_created_at", ["dispatchKind", "status", "createdAt"]);
 
+const skillsShAdoptions = defineTable({
+  entryId: v.id("skillsShCatalogEntries"),
+  actorUserId: v.id("users"),
+  publisherId: v.id("publishers"),
+  destinationKind: v.union(v.literal("create"), v.literal("replace")),
+  destinationSkillId: v.optional(v.id("skills")),
+  destinationFingerprint: v.string(),
+  ownershipKind: v.union(v.literal("personal"), v.literal("organization")),
+  status: v.union(
+    v.literal("pending_scan"),
+    v.literal("ready_to_promote"),
+    v.literal("rejected"),
+    v.literal("stale"),
+    v.literal("canceled"),
+    v.literal("promoted"),
+  ),
+  idempotencyKey: v.string(),
+  externalId: v.string(),
+  githubOwnerId: v.number(),
+  owner: v.string(),
+  repo: v.string(),
+  slug: v.string(),
+  githubPath: v.string(),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  sourceContentHash: v.string(),
+  sourceSnapshotId: v.string(),
+  scanAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
+  scanVerdict: v.optional(
+    v.union(
+      v.literal("clean"),
+      v.literal("suspicious"),
+      v.literal("malicious"),
+      v.literal("failed"),
+    ),
+  ),
+  rejectionReason: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher_and_idempotency_key", ["publisherId", "idempotencyKey"])
+  .index("by_scan_attempt_id", ["scanAttemptId"])
+  .index("by_entry_and_publisher_and_created_at", ["entryId", "publisherId", "createdAt"])
+  .index("by_actor_and_created_at", ["actorUserId", "createdAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"]);
+
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),
   modelConfig: publisherAbuseModelConfigValidator,
@@ -3649,6 +3695,7 @@ export default defineSchema({
   skillsShCatalogRuns,
   skillsShCatalogEntries,
   skillsShCatalogScanAttempts,
+  skillsShAdoptions,
   publisherAbuseScoreRuns,
   publisherAbuseTemporalScanSamples,
   publisherAbuseTemporalScanCandidates,

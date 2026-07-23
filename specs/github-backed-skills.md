@@ -72,6 +72,81 @@ not create or mutate `skills` rows during its planning gates.
   leave native skills, download history, scan jobs, publishers, and aliases
   unchanged.
 
+## Mirrored skill adoption
+
+Adoption is an explicit authenticated workflow, not a side effect of discovery
+or matching publisher names.
+
+- Personal adoption compares the current user's immutable GitHub provider
+  account ID with the mirrored entry's immutable `githubOwnerId`.
+- Organization adoption requires the publisher's matching immutable
+  `githubOrgId` plus a current active GitHub organization membership with
+  `role=admin`. Membership proof older than 15 minutes fails closed.
+- The preview freezes and displays the exact repository, path, commit, folder
+  content hash, mirror source-content hash, and destination route.
+- If the selected publisher already owns the destination skill, the preview
+  identifies that exact skill and shows the retained identity, downloads,
+  bookmarks, comments, official state, versions, and audit history.
+- A directly uploaded or otherwise unrelated same-slug skill is still an
+  eligible controlled destination. No prior source match is required because
+  the verified owner explicitly confirms the canonical-source switch.
+- The request also freezes the destination's active version and canonical
+  source fingerprint. Same-row content or source changes while scanning make
+  the request stale.
+- Any existing destination alias, ownership-verification mismatch, or mirrored
+  source drift blocks the request. The frozen destination includes its
+  publisher route; a route or content change while scanning makes the request
+  stale and requires a new preview and confirmation.
+
+The per-item start input is intentionally narrow so single and bulk workflows
+share one authorization boundary:
+
+```text
+{ publisherId, externalId, sourceContentHash, idempotencyKey }
+```
+
+The interactive `startInteractive` mutation also requires the preview's
+destination fingerprint and fails if that exact destination changed before the
+request mutation. The bulk `start` port remains exactly compatible with the
+four exact-source fields above and reclassifies the destination atomically.
+
+The idempotency key is deterministic for the publisher and exact mirrored
+fingerprint. Starting an adoption persists a durable frozen request in
+`skillsShAdoptions`; it does not attach the entry to a publisher or mutate a
+native skill. A stale or canceled request can be confirmed again as a new
+attempt with the same deterministic exact-source idempotency key.
+
+The adoption states are:
+
+```text
+pending_scan -> ready_to_promote
+             -> rejected
+             -> stale
+             -> canceled
+ready_to_promote -> promoted
+```
+
+Only a real ClawHub scan execution created after the adoption request, matching
+every frozen source field, and durably bound to exactly one adoption may move
+the request to `ready_to_promote`. The catalog run, attempt, scan request, and
+worker job must all be newer than the adoption; terminal completion timestamps
+must also be post-request, so a fresh wrapper cannot reuse an older result.
+In the current Local/Test-only producer contract, `dispatchKind: "real"` marks
+that execution while the shared job source remains `skills-sh-catalog-test`;
+production source expansion belongs to the later shared mirror/schema lane.
+Clean and suspicious verdicts are eligible; malicious and failed verdicts
+reject the request. A canceled attempt clears the binding and leaves the
+adoption pending for a later scan. Final scan dispatch and native promotion
+integration remain separate: the current groundwork stops at
+`ready_to_promote`.
+
+Promotion must revalidate the frozen destination in the same transaction. A new
+destination creates the native skill. A controlled existing destination keeps
+the same `skills` row, route, metrics, bookmarks, comments, official state,
+versions, and audit history; only active content and canonical source may
+change. Pending, rejected, stale, or canceled requests leave both the mirrored
+entry and any existing native skill untouched.
+
 `skills` stores the public catalog row and install state:
 
 - `installKind: "github"`

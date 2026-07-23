@@ -221,6 +221,9 @@ export const RETENTION_POLICIES = {
   skillsShCatalogScanAttempts: permanent(
     "Exact-hash skills.sh scan attempts are durable audit and deduplication history.",
   ),
+  skillsShAdoptions: permanent(
+    "Verified ownership, frozen source identity, destination intent, and scan outcome are durable adoption audit history.",
+  ),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
   publisherAbuseTemporalScanSamples: ephemeral(
     "Exact temporal percentile samples are temporary scan working state.",
