@@ -3374,6 +3374,14 @@ describe("securityScan", () => {
         skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
         files: [{ storageId: "storage:catalog-1" }],
       },
+      {
+        _id: "skillScanRequests:retained-catalog",
+        sourceKind: "skills-sh-catalog",
+        securityScanJobId: "securityScanJobs:retained-catalog",
+        skillVersionId: "skillVersions:adopted",
+        writtenBack: true,
+        files: [{ storageId: "storage:retained-adopted-version" }],
+      },
     ];
     const githubFileChunk = {
       _id: "skillScanRequestFileChunks:github",
@@ -3463,9 +3471,9 @@ describe("securityScan", () => {
 
     expect(result).toEqual({
       ok: true,
-      deletedRequests: 4,
+      deletedRequests: 5,
       deferredRequests: 0,
-      deletedJobs: 4,
+      deletedJobs: 5,
       deletedFiles: 5,
       done: true,
     });
@@ -3486,6 +3494,8 @@ describe("securityScan", () => {
       "skillScanRequests:github",
       "securityScanJobs:catalog",
       "skillScanRequests:catalog",
+      "securityScanJobs:retained-catalog",
+      "skillScanRequests:retained-catalog",
     ]);
     expect(docs["skillsShCatalogScanAttempts:catalog"]).toMatchObject({
       status: "failed",

@@ -20,11 +20,11 @@ import {
   shouldPublishSkillsShCatalogEntry,
   shouldServePublishedSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
-import { buildExternalSkillMetricPatch } from "./lib/skillStats";
 import {
   hasSameAdoptedContent,
   shouldPromoteAdoptedCandidate,
 } from "./lib/skillsShRefreshLifecycle";
+import { buildExternalSkillMetricPatch } from "./lib/skillStats";
 import { validateFilePath } from "./lib/skillZip";
 import { enqueueSkillsShCatalogScanRequest } from "./securityScan";
 
@@ -1485,6 +1485,7 @@ type AdmitScansArgs = {
   externalIds: string[];
   dispatchKind: "deterministic" | "real";
   actorUserId?: Id<"users">;
+  adoptionId?: Id<"skillsShAdoptions">;
   artifacts?: StagingLiveArtifact[];
 };
 
@@ -1538,9 +1539,19 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     if (!args.actorUserId) {
       throw new ConvexError("real Test scan admission requires an authenticated operator");
     }
-    const actor = await ctx.db.get(args.actorUserId);
-    if (actor?.role !== "admin") {
-      throw new ConvexError("real Test scan admission requires an admin operator");
+    const [actor, adoption] = await Promise.all([
+      ctx.db.get(args.actorUserId),
+      args.adoptionId ? ctx.db.get(args.adoptionId) : null,
+    ]);
+    const adoptionAuthorized =
+      adoption?.actorUserId === args.actorUserId &&
+      adoption.status === "pending_scan" &&
+      externalIds.length === 1 &&
+      adoption.externalId === externalIds[0];
+    if (actor?.role !== "admin" && !adoptionAuthorized) {
+      throw new ConvexError(
+        "real Test scan admission requires an admin operator or exact verified adoption",
+      );
     }
   }
   const artifactInputs = args.artifacts ?? [];
@@ -1579,6 +1590,12 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
   let admitted = 0;
   let skipped = 0;
   const admittedExternalIds: string[] = [];
+  const admittedAttempts: Array<{
+    externalId: string;
+    attemptId: Id<"skillsShCatalogScanAttempts">;
+    reused: boolean;
+  }> = [];
+  let reused = 0;
   let readsUsed = args.dispatchKind === "real" ? 8 : 7;
   let writesUsed = 0;
   const runWriteCount = 1;
@@ -1597,12 +1614,24 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     if (
       !entry ||
       (sourceRow && entry.sourceContentHash !== sourceRow.sourceContentHash) ||
-      (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId) ||
-      entry.scanStatus !== "planned"
+      (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId)
     ) {
       skipped += 1;
       continue;
     }
+    const adoption = args.adoptionId ? await ctx.db.get(args.adoptionId) : null;
+    if (args.adoptionId) {
+      if (
+        !adoption ||
+        adoption.entryId !== entry._id ||
+        adoption.actorUserId !== args.actorUserId ||
+        adoption.externalId !== entry.externalId ||
+        adoption.sourceContentHash !== entry.sourceContentHash
+      ) {
+        throw new ConvexError("skills.sh adoption scan source linkage is invalid");
+      }
+    }
+    const artifact = artifacts.get(externalId);
     const existingAttempt = await ctx.db
       .query("skillsShCatalogScanAttempts")
       .withIndex("by_entry_and_source_content_hash", (q) =>
@@ -1636,6 +1665,42 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
         githubContentHash: existingAttempt.githubContentHash,
         sourceContentHash: existingAttempt.sourceContentHash,
       });
+    const existingAttemptAdoption = existingAttempt
+      ? await ctx.db
+          .query("skillsShAdoptions")
+          .withIndex("by_scan_attempt_id", (q) => q.eq("scanAttemptId", existingAttempt._id))
+          .unique()
+      : null;
+    if (existingAttempt) readsUsed += 1;
+    const canReuseExistingAttempt =
+      adoption !== null &&
+      artifact !== undefined &&
+      existingAttemptIsExact &&
+      (existingAttempt.status === "queued" || existingAttempt.status === "running") &&
+      existingAttempt.artifactContentHash?.toLowerCase() ===
+        artifact.artifactContentHash.toLowerCase() &&
+      existingAttempt.skillScanRequestId !== undefined &&
+      existingAttempt.securityScanJobId !== undefined &&
+      (!existingAttemptAdoption || existingAttemptAdoption._id === adoption._id);
+    if (canReuseExistingAttempt && existingAttempt) {
+      if (adoption.scanAttemptId && adoption.scanAttemptId !== existingAttempt._id) {
+        throw new ConvexError("skills.sh adoption already has a bound scan attempt");
+      }
+      if (adoption.scanAttemptId !== existingAttempt._id) {
+        await ctx.db.patch(adoption._id, {
+          scanAttemptId: existingAttempt._id,
+          updatedAt: now,
+        });
+        writesUsed += 1;
+      }
+      reused += 1;
+      admittedAttempts.push({
+        externalId,
+        attemptId: existingAttempt._id,
+        reused: true,
+      });
+      continue;
+    }
     const existingAttemptBlocksAdmission =
       existingAttemptIsExact &&
       (existingAttempt.status === "queued" ||
@@ -1649,6 +1714,10 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
       skipped += 1;
       continue;
     }
+    if (entry.scanStatus !== "planned") {
+      skipped += 1;
+      continue;
+    }
     if (run.counts.scansAdmitted + admitted >= effectiveRunAdmissionLimit) {
       throw new ConvexError("skills.sh catalog run scan-admission budget exceeded");
     }
@@ -1658,7 +1727,6 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     if (queueHealth.catalogQueued + admitted >= control.maxCatalogQueued) {
       throw new ConvexError("skills.sh catalog queued-scan budget exceeded");
     }
-    const artifact = artifacts.get(externalId);
     if (args.dispatchKind === "real") {
       if (
         !artifact ||
@@ -1681,7 +1749,7 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     }
     // skillScanRequests embeds its validated file manifest in one document, so file count
     // does not change the six real-admission writes before the final run patch.
-    const admissionWriteCost = args.dispatchKind === "real" ? 6 : 2;
+    const admissionWriteCost = args.dispatchKind === "real" ? (args.adoptionId ? 7 : 6) : 2;
     if (writesUsed + admissionWriteCost + runWriteCount > run.budgets.maxWritesPerBatch) {
       throw new ConvexError("skills.sh catalog scan-admission write budget exceeded");
     }
@@ -1717,6 +1785,20 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
       });
       writesUsed += 4;
     }
+    if (args.adoptionId) {
+      const pendingAdoption = await ctx.db.get(args.adoptionId);
+      if (!pendingAdoption || pendingAdoption.status !== "pending_scan") {
+        throw new ConvexError("skills.sh adoption is not waiting for a scan");
+      }
+      if (pendingAdoption.scanAttemptId && pendingAdoption.scanAttemptId !== attemptId) {
+        throw new ConvexError("skills.sh adoption already has a bound scan attempt");
+      }
+      await ctx.db.patch(pendingAdoption._id, {
+        scanAttemptId: attemptId,
+        updatedAt: now,
+      });
+      writesUsed += 1;
+    }
     await ctx.db.patch(entry._id, {
       scanStatus: "queued",
       publicVisible: entry.publicVisible && entry.publishedScanAttemptId !== undefined,
@@ -1725,6 +1807,7 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     writesUsed += 2;
     admitted += 1;
     admittedExternalIds.push(externalId);
+    admittedAttempts.push({ externalId, attemptId, reused: false });
   }
   const nextCounts = {
     ...run.counts,
@@ -1744,8 +1827,10 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
   return {
     requested: externalIds.length,
     admitted,
+    reused,
     skipped,
     admittedExternalIds,
+    admittedAttempts,
     queueHealth,
     counts: nextCounts,
   };
@@ -1772,6 +1857,7 @@ export const admitValidatedRealScansInternal = internalMutation({
     runId: v.id("skillsShCatalogRuns"),
     externalIds: v.array(v.string()),
     actorUserId: v.id("users"),
+    adoptionId: v.optional(v.id("skillsShAdoptions")),
     artifacts: v.array(stagingLiveArtifactValidator),
   },
   handler: async (ctx, args) => {
@@ -1787,6 +1873,7 @@ export const admitRealScansInternal: ReturnType<typeof internalAction> = interna
     runId: v.id("skillsShCatalogRuns"),
     externalIds: v.array(v.string()),
     actorUserId: v.id("users"),
+    adoptionId: v.optional(v.id("skillsShAdoptions")),
     artifacts: v.array(stagingLiveArtifactValidator),
   },
   handler: async (ctx, args) => {
@@ -1812,6 +1899,7 @@ export const admitRealScansInternal: ReturnType<typeof internalAction> = interna
       runId: args.runId,
       externalIds,
       actorUserId: args.actorUserId,
+      adoptionId: args.adoptionId,
       artifacts: Array.from(validatedArtifacts.values()),
     });
   },

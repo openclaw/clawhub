@@ -131,6 +131,7 @@ import type * as lib_skillTags from "../lib/skillTags.js";
 import type * as lib_skillZip from "../lib/skillZip.js";
 import type * as lib_skills_index from "../lib/skills/index.js";
 import type * as lib_skills_slugResolution from "../lib/skills/slugResolution.js";
+import type * as lib_skillsShAdoptionSource from "../lib/skillsShAdoptionSource.js";
 import type * as lib_skillsShBulkAdoption from "../lib/skillsShBulkAdoption.js";
 import type * as lib_skillsShCatalogEnvironment from "../lib/skillsShCatalogEnvironment.js";
 import type * as lib_skillsShCatalogFixtures from "../lib/skillsShCatalogFixtures.js";
@@ -315,6 +316,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillZip": typeof lib_skillZip;
   "lib/skills/index": typeof lib_skills_index;
   "lib/skills/slugResolution": typeof lib_skills_slugResolution;
+  "lib/skillsShAdoptionSource": typeof lib_skillsShAdoptionSource;
   "lib/skillsShBulkAdoption": typeof lib_skillsShBulkAdoption;
   "lib/skillsShCatalogEnvironment": typeof lib_skillsShCatalogEnvironment;
   "lib/skillsShCatalogFixtures": typeof lib_skillsShCatalogFixtures;

@@ -2002,6 +2002,16 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
           (request.lastError === "Catalog scan analysis failed" &&
             job.lastError === "Catalog scan analysis failed"))
       ) {
+        const adoption = await ctx.db
+          .query("skillsShAdoptions")
+          .withIndex("by_scan_attempt_id", (q) => q.eq("scanAttemptId", attempt._id))
+          .unique();
+        if (adoption) {
+          await ctx.scheduler.runAfter(0, internal.skillsShAdoption.recordScanOutcomeInternal, {
+            adoptionId: adoption._id,
+            scanAttemptId: attempt._id,
+          });
+        }
         const terminalEntry = await ctx.db.get(attempt.entryId);
         return {
           ok: true as const,
@@ -2236,6 +2246,16 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
         updatedAt: now,
       });
     }
+    const adoption = await ctx.db
+      .query("skillsShAdoptions")
+      .withIndex("by_scan_attempt_id", (q) => q.eq("scanAttemptId", attempt._id))
+      .unique();
+    if (adoption) {
+      await ctx.scheduler.runAfter(0, internal.skillsShAdoption.recordScanOutcomeInternal, {
+        adoptionId: adoption._id,
+        scanAttemptId: attempt._id,
+      });
+    }
     return { ok: true as const, applied: true as const, publicVisible };
   },
 });
@@ -2326,6 +2346,14 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
         deferredRequests += 1;
         continue;
       }
+      if (
+        request.sourceKind === "skills-sh-catalog" &&
+        request.skillVersionId &&
+        !request.writtenBack
+      ) {
+        deferredRequests += 1;
+        continue;
+      }
       if (request.sourceKind === "skills-sh-catalog" && request.skillsShCatalogAttemptId) {
         const attempt = await ctx.db.get(request.skillsShCatalogAttemptId);
         const run = attempt ? await ctx.db.get(attempt.runId) : null;
@@ -2372,7 +2400,7 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
       if (
         request.sourceKind === "upload" ||
         request.sourceKind === "github" ||
-        request.sourceKind === "skills-sh-catalog"
+        (request.sourceKind === "skills-sh-catalog" && !request.skillVersionId)
       ) {
         for (const file of [...request.files, ...fileChunks.flatMap((chunk) => chunk.files)]) {
           try {

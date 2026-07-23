@@ -1268,6 +1268,19 @@ export const listActiveByUpstreamInstallsInternal = internalQuery({
   },
 });
 
+export const listActiveByUpstreamInstallsPageInternal = internalQuery({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_and_upstream_installs", (q) => q.eq("active", true))
+      .order("desc")
+      .paginate(args.paginationOpts);
+  },
+});
+
 async function listActiveByFacet(
   ctx: QueryCtx,
   args: {

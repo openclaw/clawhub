@@ -22,6 +22,15 @@ export type SkillsShMirrorDigest = {
     socket: SkillsShMirrorUpstreamScanner;
     snyk: SkillsShMirrorUpstreamScanner;
   };
+  inferredCategories?: string[];
+  inferredTopics?: string[];
+  inferredCategoryConfidence?: "high" | "medium" | "low";
+  inferredTopicConfidence?: "high" | "medium" | "low";
+  inferredClassifierVersion?: string;
+  inferredTopicClassifierVersion?: string;
+  inferredInputHash?: string;
+  inferredTopicInputHash?: string;
+  inferredAt?: number;
   sourceFreshnessStatus: "observed-only";
   detailStatus: "available" | "missing";
   active: boolean;
@@ -135,6 +144,8 @@ export function buildSkillsShMirrorSearchResult(digest: SkillsShMirrorDigest) {
     repo: identity.repo,
     slug: identity.slug,
     displayName: digest.displayName,
+    categories: digest.inferredCategories?.length ? digest.inferredCategories : ["other"],
+    topics: digest.inferredTopics ?? [],
     upstreamInstalls: digest.upstreamInstalls,
     lastObservedAt: digest.lastObservedAt,
   };

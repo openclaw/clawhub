@@ -2483,6 +2483,134 @@ describe("skills.sh catalog overload control plane", () => {
     );
   });
 
+  it("binds an exact in-flight real scan to a verified adoption instead of duplicating it", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const actorUserId = await t.run(
+      async (ctx) =>
+        await ctx.db.insert("users", {
+          handle: "catalog-adoption-operator",
+          displayName: "Catalog Adoption Operator",
+          role: "admin",
+        }),
+    );
+    await t.mutation(internal.skillsShCatalog.configureFixtureControlInternal, {
+      ...BASE_CONTROL,
+      mode: "staging-live",
+      maxEntriesPerRun: 500,
+      maxEntriesPerBatch: 1,
+      maxPlannedScans: 1,
+      maxScanAdmissionsPerBatch: 1,
+      maxScanAdmissionsPerRun: 1,
+      maxScanAdmissionsPerDay: 2,
+      maxCatalogQueued: 2,
+      maxCatalogInFlight: 2,
+      realScanAllowlist: ["nvidia/skills/aiq-deploy"],
+    });
+    const sourceRow = {
+      ...frozenSnapshot.rows.find((row) => row.externalId === "nvidia/skills/aiq-deploy")!,
+      githubPath: "skills/aiq-deploy",
+      githubCommit: "a".repeat(40),
+    };
+    const firstArtifact = await storeAuthenticatedTestArtifact(
+      t,
+      sourceRow,
+      "shared adoption artifact",
+    );
+    const { runId } = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-adoption-operator",
+      reason: "prove exact attempt reuse",
+      snapshotId: "skills-sh-test-live-500:adoption-reuse",
+      sourceCapturedAt: "2026-07-21T00:00:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId,
+      cursor: 0,
+      rows: [firstArtifact.row],
+    });
+    await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId,
+      externalIds: [sourceRow.externalId],
+      actorUserId,
+      artifacts: [firstArtifact.artifact],
+    });
+    const [attempt] = await collectAttempts(t, runId);
+    const adoptionId = await t.run(async (ctx) => {
+      const entry = await ctx.db.get(attempt!.entryId);
+      if (
+        entry?.githubOwnerId === undefined ||
+        !entry.githubPath ||
+        !entry.githubCommit ||
+        !entry.githubContentHash
+      ) {
+        throw new Error("exact catalog entry missing");
+      }
+      const now = Date.now();
+      const publisherId = await ctx.db.insert("publishers", {
+        kind: "user",
+        handle: "catalog-adopter",
+        displayName: "Catalog Adopter",
+        linkedUserId: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      return await ctx.db.insert("skillsShAdoptions", {
+        entryId: entry._id,
+        actorUserId,
+        publisherId,
+        destinationKind: "create",
+        destinationFingerprint: "create:@catalog-adopter/aiq-deploy",
+        ownershipKind: "personal",
+        status: "pending_scan",
+        idempotencyKey: "skills-sh-adoption:test-reuse",
+        externalId: entry.externalId,
+        githubOwnerId: entry.githubOwnerId,
+        owner: entry.owner,
+        repo: entry.repo,
+        slug: entry.slug,
+        githubPath: entry.githubPath,
+        githubCommit: entry.githubCommit,
+        githubContentHash: entry.githubContentHash,
+        sourceContentHash: entry.sourceContentHash,
+        sourceSnapshotId: entry.sourceSnapshotId,
+        scanRunId: runId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const duplicateArtifact = await storeAuthenticatedTestArtifact(
+      t,
+      sourceRow,
+      "shared adoption artifact",
+    );
+
+    const reused = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId,
+      externalIds: [sourceRow.externalId],
+      actorUserId,
+      adoptionId,
+      artifacts: [duplicateArtifact.artifact],
+    });
+
+    expect(reused).toMatchObject({
+      admitted: 0,
+      reused: 1,
+      admittedAttempts: [
+        {
+          attemptId: attempt?._id,
+          reused: true,
+        },
+      ],
+    });
+    expect(await collectAttempts(t, runId)).toHaveLength(1);
+    await expect(t.run(async (ctx) => await ctx.db.get(adoptionId))).resolves.toMatchObject({
+      status: "pending_scan",
+      scanAttemptId: attempt?._id,
+    });
+  });
+
   it("defers expiry cleanup for an active catalog job and accepts its later result", async () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);

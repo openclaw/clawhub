@@ -3230,6 +3230,10 @@ const skillsShAdoptions = defineTable({
   githubContentHash: v.string(),
   sourceContentHash: v.string(),
   sourceSnapshotId: v.string(),
+  sourceUrl: v.optional(v.string()),
+  canonicalRepository: v.optional(v.string()),
+  mirrorDigestId: v.optional(v.id("skillsShMirrorDigests")),
+  scanRunId: v.optional(v.id("skillsShCatalogRuns")),
   scanAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
   scanVerdict: v.optional(
     v.union(
@@ -3240,11 +3244,21 @@ const skillsShAdoptions = defineTable({
     ),
   ),
   rejectionReason: v.optional(v.string()),
+  stagedSkillId: v.optional(v.id("skills")),
+  stagedVersionId: v.optional(v.id("skillVersions")),
+  stagedVersionCreated: v.optional(v.boolean()),
+  staticScanAttempts: v.optional(v.number()),
+  staticScanLastError: v.optional(v.string()),
+  promotedSkillId: v.optional(v.id("skills")),
+  promotedVersionId: v.optional(v.id("skillVersions")),
+  canonicalRef: v.optional(v.string()),
+  promotedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
   .index("by_publisher_and_idempotency_key", ["publisherId", "idempotencyKey"])
   .index("by_scan_attempt_id", ["scanAttemptId"])
+  .index("by_external_id_and_status", ["externalId", "status"])
   .index("by_entry_and_publisher_and_created_at", ["entryId", "publisherId", "createdAt"])
   .index("by_actor_and_created_at", ["actorUserId", "createdAt"])
   .index("by_status_and_updated_at", ["status", "updatedAt"]);

@@ -378,8 +378,11 @@ async function loadSkillsShMirrorSearchCandidates(
   args: SearchSkillsArgs,
   limit: number,
 ): Promise<Array<MixedSkillCandidate<SkillsShSearchResult>>> {
-  if (args.highlightedOnly || args.categorySlug !== undefined || args.topic !== undefined)
-    return [];
+  if (args.highlightedOnly) return [];
+  const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
+  if (categorySlug === null) return [];
+  const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
+  if (args.topic !== undefined && !topic) return [];
   const query = args.query.trim();
   const normalizedQuery = normalizeSkillSearchText(query);
   const firstToken = getFirstSearchToken(query);
@@ -447,6 +450,12 @@ async function loadSkillsShMirrorSearchCandidates(
       );
       const match = classifySkillsShMirrorMatch(query, queryTokens, digest);
       if (!publicResult || !match) return null;
+      if (
+        (categorySlug && !publicResult.categories.includes(categorySlug)) ||
+        (topic && !publicResult.topics.includes(topic))
+      ) {
+        return null;
+      }
       const textScore = getLexicalBoost(queryTokens, digest.displayName, digest.slug);
       return {
         key: `skills-sh:${digest.externalId}`,
@@ -463,6 +472,100 @@ async function loadSkillsShMirrorSearchCandidates(
       (candidate): candidate is MixedSkillCandidate<SkillsShSearchResult> => candidate !== null,
     );
 }
+
+export const listSkillsShMirrorBrowse: ReturnType<typeof action> = action({
+  args: {
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+    categorySlug: v.optional(v.string()),
+    topic: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    page: Array<NonNullable<ReturnType<typeof buildSkillsShMirrorSearchResult>>>;
+    nextCursor: string | null;
+    hasMore: boolean;
+  }> => {
+    const requestedLimit = Math.floor(args.limit ?? 25);
+    if (requestedLimit <= 0) return { page: [], nextCursor: null, hasMore: false };
+    const limit = Math.min(requestedLimit, 50);
+    const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
+    if (categorySlug === null) return { page: [], nextCursor: null, hasMore: false };
+    const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
+    if (args.topic !== undefined && !topic) {
+      return { page: [], nextCursor: null, hasMore: false };
+    }
+
+    type DigestPage = {
+      page: Doc<"skillsShMirrorDigests">[];
+      isDone: boolean;
+      continueCursor: string;
+    };
+    const buildPage = (digests: Doc<"skillsShMirrorDigests">[]) =>
+      digests.flatMap((digest) => {
+        const result = buildSkillsShMirrorSearchResult(digest as unknown as SkillsShMirrorDigest);
+        if (
+          !result ||
+          (categorySlug && !result.categories.includes(categorySlug)) ||
+          (topic && !result.topics.includes(topic))
+        ) {
+          return [];
+        }
+        return [result];
+      });
+
+    if (!categorySlug && !topic) {
+      const result = (await ctx.runQuery(
+        internal.skillsShMirror.listActiveByUpstreamInstallsPageInternal,
+        {
+          paginationOpts: { numItems: limit, cursor: args.cursor ?? null },
+        },
+      )) as DigestPage;
+      return {
+        page: buildPage(result.page),
+        nextCursor: result.isDone ? null : result.continueCursor,
+        hasMore: !result.isDone,
+      };
+    }
+
+    const page: Array<NonNullable<ReturnType<typeof buildSkillsShMirrorSearchResult>>> = [];
+    let cursor = args.cursor ?? null;
+    let isDone = false;
+    let pagesRead = 0;
+    while (page.length < limit && !isDone && pagesRead < 20) {
+      const paginationOpts = { numItems: limit - page.length, cursor };
+      const result =
+        categorySlug === "other"
+          ? ((await ctx.runQuery(internal.skillsShMirror.listActiveByUpstreamInstallsPageInternal, {
+              paginationOpts,
+            })) as DigestPage)
+          : categorySlug
+            ? ((await ctx.runQuery(internal.skillsShMirror.listActiveByCategoryInternal, {
+                categorySlug,
+                paginationOpts,
+              })) as DigestPage)
+            : ((await ctx.runQuery(internal.skillsShMirror.listActiveByTopicInternal, {
+                topic: topic!,
+                paginationOpts,
+              })) as DigestPage);
+      page.push(...buildPage(result.page));
+      pagesRead += 1;
+      isDone = result.isDone;
+      const nextCursor = isDone ? null : result.continueCursor;
+      if (!isDone && (!nextCursor || nextCursor === cursor)) {
+        throw new Error("skills.sh mirror browse cursor did not advance");
+      }
+      cursor = nextCursor;
+    }
+    return {
+      page,
+      nextCursor: isDone ? null : cursor,
+      hasMore: !isDone,
+    };
+  },
+});
 
 async function searchNativeSkillResults(
   ctx: ActionCtx,

@@ -5,11 +5,26 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import schema from "./schema";
+import { promoteReadyInternal } from "./skillsShAdoption";
 
 const modules = import.meta.glob("./**/*.ts");
 
+type WrappedHandler<TArgs> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
+};
+
+const promoteReadyHandler = (
+  promoteReadyInternal as unknown as WrappedHandler<{ adoptionId: Id<"skillsShAdoptions"> }>
+)._handler;
+
 const LOCAL_ENV = {
   CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
+};
+const TEST_ENV = {
+  CLAWHUB_ENV: "test",
+  CLAWHUB_DISABLE_CRONS: "1",
+  CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
+  CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
 };
 
 type AdoptionFixture = Awaited<ReturnType<typeof seedAdoptionFixture>>;
@@ -175,6 +190,118 @@ async function getPreview(fixture: AdoptionFixture) {
     });
 }
 
+async function insertMirrorDigest(fixture: AdoptionFixture) {
+  return await fixture.t.run(async (ctx) => {
+    const runId = await ctx.db.insert("skillsShMirrorRuns", {
+      snapshotId: "snapshot-1",
+      status: "completed",
+      sourceTotal: 1,
+      sourcePageSize: 1,
+      sourceMeasuredAt: new Date().toISOString(),
+      page: 1,
+      offset: 1,
+      counts: {
+        observed: 1,
+        inserted: 1,
+        updated: 0,
+        unchanged: 0,
+        rejected: 0,
+        conflicts: 0,
+        tombstoned: 0,
+        reactivated: 0,
+        detailsInserted: 0,
+        detailsUpdated: 0,
+        detailsUnchanged: 0,
+        detailsMissing: 1,
+        detailsTruncated: 0,
+        scansPlanned: 0,
+        scansAdmitted: 0,
+      },
+      operations: {
+        functionCalls: 1,
+        dbReads: 0,
+        dbWrites: 1,
+        sourceRequests: 1,
+        sourceBytes: 1,
+      },
+      actor: "test",
+      reason: "test",
+      startedAt: fixture.now,
+      completedAt: fixture.now,
+      updatedAt: fixture.now,
+    });
+    return await ctx.db.insert("skillsShMirrorDigests", {
+      externalId: "acme/skills/demo",
+      sourceType: "github",
+      owner: "acme",
+      repo: "skills",
+      slug: "demo",
+      normalizedSlug: "demo",
+      normalizedSlugFirstToken: "demo",
+      displayName: "Demo",
+      normalizedDisplayName: "demo",
+      normalizedDisplayNameFirstToken: "demo",
+      searchText: "demo",
+      sourceUrl: "https://skills.sh/acme/skills/demo",
+      canonicalRepoUrl: "https://github.com/acme/skills",
+      githubPath: "skills/demo",
+      githubCommit: "a".repeat(40),
+      sourceContentHash: "c".repeat(64),
+      upstreamInstalls: 123,
+      upstreamScanners: {
+        genAgentTrustHub: { status: "unavailable" },
+        socket: { status: "unavailable" },
+        snyk: { status: "unavailable" },
+      },
+      inferredCategories: ["development"],
+      inferredTopics: ["html"],
+      inferredCategoryConfidence: "high",
+      inferredTopicConfidence: "medium",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-input",
+      inferredTopicInputHash: "topic-input",
+      inferredAt: fixture.now,
+      sourceFreshnessStatus: "observed-only",
+      detailStatus: "missing",
+      observationFingerprint: "fingerprint",
+      sourceSnapshotId: "snapshot-1",
+      lastObservedRunId: runId,
+      active: true,
+      publicVisible: false,
+      installable: false,
+      firstObservedAt: fixture.now,
+      lastObservedAt: fixture.now,
+      createdAt: fixture.now,
+      updatedAt: fixture.now,
+    });
+  });
+}
+
+async function startMirroredAdoption(fixture: AdoptionFixture) {
+  await insertMirrorDigest(fixture);
+  const preview = await fixture.t.query(internal.skillsShAdoption.getMirroredPreviewInternal, {
+    actorUserId: fixture.userId,
+    publisherId: fixture.publisherId,
+    externalId: "acme/skills/demo",
+    githubOwnerId: 42,
+    canonicalRepository: "acme/skills",
+  });
+  if (!preview?.destination.fingerprint) throw new Error("mirrored preview missing");
+  return await fixture.t.mutation(internal.skillsShAdoption.materializeMirroredAdoptionInternal, {
+    actorUserId: fixture.userId,
+    publisherId: fixture.publisherId,
+    externalId: "acme/skills/demo",
+    sourceContentHash: "c".repeat(64),
+    idempotencyKey: preview.idempotencyKey,
+    expectedDestinationFingerprint: preview.destination.fingerprint,
+    githubOwnerId: 42,
+    canonicalRepository: "acme/skills",
+    githubPath: "skills/demo",
+    githubCommit: "a".repeat(40),
+  });
+}
+
 async function insertSucceededScan(
   fixture: AdoptionFixture,
   adoptionId: Id<"skillsShAdoptions">,
@@ -187,7 +314,7 @@ async function insertSucceededScan(
     const scanCreatedAt = adoption.createdAt;
     const runId = await ctx.db.insert("skillsShCatalogRuns", {
       fixtureId: "skills-sh-test-live-500",
-      snapshotId: "snapshot-1",
+      snapshotId: adoption.sourceSnapshotId,
       sourceKind: "staging-live",
       sourceCapturedAt: new Date().toISOString(),
       snapshotCaptureFetches: 1,
@@ -238,15 +365,15 @@ async function insertSucceededScan(
     const createdAttemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
       entryId: fixture.entryId,
       runId,
-      externalId: "acme/skills/demo",
-      githubOwnerId: 42,
-      owner: "acme",
-      repo: "skills",
-      slug: "demo",
-      githubPath: "skills/demo",
-      githubCommit: "a".repeat(40),
-      githubContentHash: "b".repeat(64),
-      sourceContentHash: "c".repeat(64),
+      externalId: adoption.externalId,
+      githubOwnerId: adoption.githubOwnerId,
+      owner: adoption.owner,
+      repo: adoption.repo,
+      slug: adoption.slug,
+      githubPath: adoption.githubPath,
+      githubCommit: adoption.githubCommit,
+      githubContentHash: adoption.githubContentHash,
+      sourceContentHash: adoption.sourceContentHash,
       artifactContentHash,
       source: "skills-sh-catalog-test",
       dispatchKind: "real",
@@ -296,6 +423,15 @@ async function insertSucceededScan(
     await ctx.db.patch(requestId, {
       securityScanJobId: jobId,
       skillsShCatalogAttemptId: createdAttemptId,
+      ...(verdict !== "failed"
+        ? {
+            llmAnalysis: {
+              status: verdict,
+              verdict,
+              checkedAt: scanCreatedAt + 1,
+            },
+          }
+        : {}),
     });
     await ctx.db.patch(createdAttemptId, {
       skillScanRequestId: requestId,
@@ -311,7 +447,46 @@ async function insertSucceededScan(
 }
 
 describe("skills.sh adoption", () => {
+  it("does not schedule another static scan when a promotion callback is replayed", async () => {
+    const adoptionId = "skillsShAdoptions:replayed" as Id<"skillsShAdoptions">;
+    const skillId = "skills:staged" as Id<"skills">;
+    const versionId = "skillVersions:staged" as Id<"skillVersions">;
+    const runAfter = vi.fn();
+    const db = {
+      get: vi.fn().mockResolvedValue({
+        _id: adoptionId,
+        status: "ready_to_promote",
+        stagedSkillId: skillId,
+        stagedVersionId: versionId,
+      }),
+      query: vi.fn(),
+      normalizeId: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      system: {},
+    };
+
+    await expect(
+      promoteReadyHandler(
+        {
+          db,
+          scheduler: { runAfter },
+        },
+        { adoptionId },
+      ),
+    ).resolves.toEqual({
+      status: "ready_to_promote",
+      skillId,
+      versionId,
+      canonicalRef: null,
+    });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
@@ -357,6 +532,107 @@ describe("skills.sh adoption", () => {
     );
   });
 
+  it("authorizes the immutable canonical GitHub owner while preserving redirected external identity", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    await fixture.t.run(async (ctx) => {
+      const runId = await ctx.db.insert("skillsShMirrorRuns", {
+        snapshotId: "mirror-snapshot-1",
+        status: "completed",
+        sourceTotal: 1,
+        sourcePageSize: 1,
+        sourceMeasuredAt: new Date().toISOString(),
+        page: 1,
+        offset: 1,
+        counts: {
+          observed: 1,
+          inserted: 1,
+          updated: 0,
+          unchanged: 0,
+          rejected: 0,
+          conflicts: 0,
+          tombstoned: 0,
+          reactivated: 0,
+          detailsInserted: 0,
+          detailsUpdated: 0,
+          detailsUnchanged: 0,
+          detailsMissing: 1,
+          detailsTruncated: 0,
+          scansPlanned: 0,
+          scansAdmitted: 0,
+        },
+        operations: {
+          functionCalls: 1,
+          dbReads: 0,
+          dbWrites: 1,
+          sourceRequests: 1,
+          sourceBytes: 1,
+        },
+        actor: "test",
+        reason: "test",
+        startedAt: fixture.now,
+        completedAt: fixture.now,
+        updatedAt: fixture.now,
+      });
+      await ctx.db.insert("skillsShMirrorDigests", {
+        externalId: "acme/skills/demo",
+        sourceType: "github",
+        owner: "acme",
+        repo: "skills",
+        slug: "demo",
+        normalizedSlug: "demo",
+        normalizedSlugFirstToken: "demo",
+        displayName: "Demo",
+        normalizedDisplayName: "demo",
+        normalizedDisplayNameFirstToken: "demo",
+        searchText: "demo",
+        sourceUrl: "https://skills.sh/acme/skills/demo",
+        canonicalRepoUrl: "https://github.com/openclaw/openclaw",
+        githubPath: "skills/demo",
+        githubCommit: "a".repeat(40),
+        sourceContentHash: "c".repeat(64),
+        upstreamInstalls: 123,
+        upstreamScanners: {
+          genAgentTrustHub: { status: "unavailable" },
+          socket: { status: "unavailable" },
+          snyk: { status: "unavailable" },
+        },
+        sourceFreshnessStatus: "observed-only",
+        detailStatus: "missing",
+        observationFingerprint: "fingerprint",
+        sourceSnapshotId: "mirror-snapshot-1",
+        lastObservedRunId: runId,
+        active: true,
+        publicVisible: false,
+        installable: false,
+        firstObservedAt: fixture.now,
+        lastObservedAt: fixture.now,
+        createdAt: fixture.now,
+        updatedAt: fixture.now,
+      });
+    });
+
+    await expect(
+      fixture.t.query(internal.skillsShAdoption.getMirroredPreviewInternal, {
+        actorUserId: fixture.userId,
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        githubOwnerId: 42,
+        canonicalRepository: "openclaw/openclaw",
+      }),
+    ).resolves.toMatchObject({
+      canStart: true,
+      source: {
+        externalId: "acme/skills/demo",
+        repository: "acme/skills",
+      },
+      ownership: { verified: true },
+    });
+  });
+
   it("fails closed when personal GitHub identity is missing or mismatched", async () => {
     useLocalEnvironment();
     const missing = await seedAdoptionFixture({ destination: "none" });
@@ -373,6 +649,116 @@ describe("skills.sh adoption", () => {
       canStart: false,
       ownership: { kind: "personal", verified: false, reason: "github_identity_mismatch" },
     });
+  });
+
+  it("does not rewrite frozen promoted provenance during an idempotent mirrored retry", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    await insertMirrorDigest(fixture);
+    const preview = await fixture.t.query(internal.skillsShAdoption.getMirroredPreviewInternal, {
+      actorUserId: fixture.userId,
+      publisherId: fixture.publisherId,
+      externalId: "acme/skills/demo",
+      githubOwnerId: 42,
+      canonicalRepository: "acme/skills",
+    });
+    if (!preview?.destination.fingerprint) throw new Error("mirrored preview missing");
+    const args = {
+      actorUserId: fixture.userId,
+      publisherId: fixture.publisherId,
+      externalId: "acme/skills/demo",
+      sourceContentHash: "c".repeat(64),
+      idempotencyKey: preview.idempotencyKey,
+      expectedDestinationFingerprint: preview.destination.fingerprint,
+      githubOwnerId: 42,
+      githubPath: "skills/demo",
+      githubCommit: "a".repeat(40),
+    };
+    const first = await fixture.t.mutation(
+      internal.skillsShAdoption.materializeMirroredAdoptionInternal,
+      {
+        ...args,
+        canonicalRepository: "acme/skills",
+      },
+    );
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(first.adoptionId, {
+        status: "promoted",
+        canonicalRepository: "acme/skills",
+      });
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.materializeMirroredAdoptionInternal, {
+        ...args,
+        canonicalRepository: "openclaw/openclaw",
+      }),
+    ).resolves.toMatchObject({
+      adoptionId: first.adoptionId,
+      created: false,
+      shouldAdmit: false,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => await ctx.db.get(first.adoptionId)),
+    ).resolves.toMatchObject({
+      status: "promoted",
+      canonicalRepository: "acme/skills",
+    });
+  });
+
+  it("resets a terminal matching catalog entry before retrying scan admission", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    await insertMirrorDigest(fixture);
+    const preview = await fixture.t.query(internal.skillsShAdoption.getMirroredPreviewInternal, {
+      actorUserId: fixture.userId,
+      publisherId: fixture.publisherId,
+      externalId: "acme/skills/demo",
+      githubOwnerId: 42,
+      canonicalRepository: "acme/skills",
+    });
+    if (!preview?.destination.fingerprint) throw new Error("mirrored preview missing");
+    const args = {
+      actorUserId: fixture.userId,
+      publisherId: fixture.publisherId,
+      externalId: "acme/skills/demo",
+      sourceContentHash: "c".repeat(64),
+      idempotencyKey: preview.idempotencyKey,
+      expectedDestinationFingerprint: preview.destination.fingerprint,
+      githubOwnerId: 42,
+      canonicalRepository: "acme/skills",
+      githubPath: "skills/demo",
+      githubCommit: "a".repeat(40),
+    };
+    const first = await fixture.t.mutation(
+      internal.skillsShAdoption.materializeMirroredAdoptionInternal,
+      args,
+    );
+    await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(first.adoptionId);
+      if (!adoption) throw new Error("adoption missing");
+      await ctx.db.patch(adoption.entryId, { scanStatus: "failed" });
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.materializeMirroredAdoptionInternal, args),
+    ).resolves.toMatchObject({
+      adoptionId: first.adoptionId,
+      created: false,
+      shouldAdmit: true,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => {
+        const adoption = await ctx.db.get(first.adoptionId);
+        return adoption ? await ctx.db.get(adoption.entryId) : null;
+      }),
+    ).resolves.toMatchObject({ scanStatus: "planned" });
   });
 
   it("requires a fresh active GitHub organization admin proof", async () => {
@@ -828,6 +1214,93 @@ describe("skills.sh adoption", () => {
     expect(second.adoptionId).not.toBe(first.adoptionId);
   });
 
+  it("cancels an unbound failed admission so the exact adoption can be retried", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    const preview = await getPreview(fixture);
+    const args = {
+      publisherId: fixture.publisherId,
+      externalId: "acme/skills/demo",
+      sourceContentHash: "c".repeat(64),
+      idempotencyKey: preview!.idempotencyKey,
+    };
+    const actor = fixture.t.withIdentity({ subject: fixture.userId });
+    const first = await actor.mutation(api.skillsShAdoption.start, args);
+    const runId = await fixture.t.run(
+      async (ctx) =>
+        await ctx.db.insert("skillsShCatalogRuns", {
+          fixtureId: "skills-sh-test-live-500",
+          snapshotId: "snapshot-1",
+          sourceKind: "staging-live",
+          snapshotCaptureFetches: 0,
+          dryRun: false,
+          status: "completed",
+          cursor: 1,
+          scanCursor: 0,
+          fixtureLength: 1,
+          counts: {
+            observed: 1,
+            wouldInsert: 0,
+            wouldUpdate: 1,
+            inserted: 0,
+            updated: 1,
+            unchanged: 0,
+            rejected: 0,
+            scansPlanned: 1,
+            scansAdmitted: 0,
+            scansCompleted: 0,
+            scansCanceled: 0,
+          },
+          budgets: {
+            maxEntriesPerRun: 1,
+            maxEntriesPerBatch: 1,
+            maxWritesPerBatch: 20,
+            maxPlannedScans: 1,
+            maxScanAdmissionsPerBatch: 1,
+            maxScanAdmissionsPerRun: 1,
+            maxScanAdmissionsPerDay: 3,
+          },
+          operations: { functionCalls: 1, dbReads: 4, dbWrites: 2 },
+          actor: `skills-sh-adoption:${fixture.userId}`,
+          reason: "test retry",
+          batchesProcessed: 1,
+          scanAdmissionBatches: 0,
+          lastBatchWrites: 2,
+          lastBatchReads: 4,
+          startedAt: fixture.now,
+          completedAt: fixture.now,
+          updatedAt: fixture.now,
+        }),
+    );
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(first.adoptionId, { scanRunId: runId });
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.failMirroredStartInternal, {
+        adoptionId: first.adoptionId,
+        runId,
+      }),
+    ).resolves.toEqual({ safeToDeleteArtifact: true });
+    const second = await actor.mutation(api.skillsShAdoption.start, args);
+
+    expect(second).toMatchObject({ created: true, status: "pending_scan" });
+    expect(second.adoptionId).not.toBe(first.adoptionId);
+    await expect(
+      fixture.t.run(async (ctx) => await ctx.db.get(first.adoptionId)),
+    ).resolves.toMatchObject({
+      status: "canceled",
+      rejectionReason: "scan_admission_failed",
+    });
+    await expect(fixture.t.run(async (ctx) => await ctx.db.get(runId))).resolves.toMatchObject({
+      status: "failed",
+      lastError: "skills.sh adoption scan admission failed",
+    });
+  });
+
   it("stales an obsolete pending request before accepting a newly confirmed destination", async () => {
     useLocalEnvironment();
     const fixture = await seedAdoptionFixture({
@@ -928,6 +1401,1121 @@ describe("skills.sh adoption", () => {
       status: "rejected",
       verdict: "malicious",
       scanAttemptId: attemptId,
+    });
+  });
+
+  it("keeps a staged adoption private until its static scan finishes", async () => {
+    useLocalEnvironment();
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    const storedFile = await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      const storageId = await ctx.storage.store(new Blob(["# Demo"], { type: "text/markdown" }));
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        files: [
+          {
+            path: "SKILL.md",
+            size: 6,
+            storageId,
+            sha256: "f".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      });
+      return { requestId: attempt.skillScanRequestId, storageId };
+    });
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    const staged = await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    const state = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      const skill = adoption?.stagedSkillId ? await ctx.db.get(adoption.stagedSkillId) : null;
+      const version = adoption?.stagedVersionId ? await ctx.db.get(adoption.stagedVersionId) : null;
+      const request = await ctx.db.get(storedFile.requestId);
+      return { adoption, skill, version, request };
+    });
+
+    expect(staged).toMatchObject({ status: "ready_to_promote", canonicalRef: null });
+    expect(state.adoption).toMatchObject({ status: "ready_to_promote" });
+    expect(state.adoption).not.toHaveProperty("canonicalRef");
+    expect(state.adoption).not.toHaveProperty("promotedSkillId");
+    expect(state.adoption).not.toHaveProperty("promotedVersionId");
+    expect(state.version).toMatchObject({ publicationStatus: "pending" });
+    expect(state.request).toMatchObject({ skillVersionId: state.version?._id });
+    expect(state.skill?.latestVersionId).toBeUndefined();
+    await expect(
+      fixture.t.query(internal.skillsShAdoption.getPromotedByExternalIdInternal, {
+        externalId: "acme/skills/demo",
+      }),
+    ).resolves.toBeNull();
+
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(storedFile.requestId, { expiresAt: 0 });
+    });
+    await expect(
+      fixture.t.mutation(internal.securityScan.pruneExpiredSkillScanRequestsInternal, {
+        batchSize: 10,
+      }),
+    ).resolves.toMatchObject({
+      deletedRequests: 0,
+      deferredRequests: 1,
+      deletedFiles: 0,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => ({
+        request: await ctx.db.get(storedFile.requestId),
+        hasFile: Boolean(await ctx.storage.get(storedFile.storageId)),
+      })),
+    ).resolves.toMatchObject({
+      request: { skillVersionId: state.version?._id, writtenBack: false },
+      hasFile: true,
+    });
+  });
+
+  it("binds mirrored inference metadata to a newly staged native skill", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    const started = await startMirroredAdoption(fixture);
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+
+    const state = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      const skill = adoption?.stagedSkillId ? await ctx.db.get(adoption.stagedSkillId) : null;
+      return { adoption, skill };
+    });
+    expect(state.skill).toMatchObject({
+      inferredCategories: ["development"],
+      inferredTopics: ["html"],
+      inferredFromVersionId: state.adoption?.stagedVersionId,
+      inferredCategoryConfidence: "high",
+      inferredTopicConfidence: "medium",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-input",
+      inferredTopicInputHash: "topic-input",
+      inferredAt: fixture.now,
+    });
+    expect(state.skill?.latestVersionId).toBeUndefined();
+  });
+
+  it("stales a staged mirrored promotion when its digest advances to another source hash", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    const started = await startMirroredAdoption(fixture);
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    const staged = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      if (!adoption?.mirrorDigestId || !adoption.stagedSkillId || !adoption.stagedVersionId) {
+        throw new Error("staged mirrored adoption missing");
+      }
+      await ctx.db.patch(adoption.mirrorDigestId, {
+        sourceContentHash: "d".repeat(64),
+        displayName: "Newer snapshot",
+        inferredCategories: ["operations"],
+        inferredTopics: ["newer"],
+        upstreamInstalls: 999_999,
+      });
+      await ctx.db.patch(adoption.stagedVersionId, {
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      return {
+        skillId: adoption.stagedSkillId,
+        versionId: adoption.stagedVersionId,
+      };
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      skillId: null,
+      versionId: null,
+      canonicalRef: null,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => ({
+        adoption: await ctx.db.get(started.adoptionId),
+        skill: await ctx.db.get(staged.skillId),
+        version: await ctx.db.get(staged.versionId),
+      })),
+    ).resolves.toMatchObject({
+      adoption: {
+        status: "stale",
+        rejectionReason: "catalog_source_changed",
+      },
+      skill: null,
+      version: null,
+    });
+  });
+
+  it("does not replace native inference metadata until mirrored promotion succeeds", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(fixture.destinationSkillId!, {
+        inferredCategories: ["operations"],
+        inferredTopics: ["legacy"],
+        inferredClassifierVersion: "legacy-v1",
+      });
+    });
+    const started = await startMirroredAdoption(fixture);
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => await ctx.db.get(fixture.destinationSkillId!)),
+    ).resolves.toMatchObject({
+      inferredCategories: ["operations"],
+      inferredTopics: ["legacy"],
+      inferredClassifierVersion: "legacy-v1",
+    });
+
+    const stagedVersionId = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      if (!adoption?.stagedVersionId) throw new Error("staged version missing");
+      await ctx.db.patch(adoption.stagedVersionId, {
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      return adoption.stagedVersionId;
+    });
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "promoted",
+      skillId: fixture.destinationSkillId,
+      versionId: stagedVersionId,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => await ctx.db.get(fixture.destinationSkillId!)),
+    ).resolves.toMatchObject({
+      inferredCategories: ["development"],
+      inferredTopics: ["html"],
+      inferredFromVersionId: stagedVersionId,
+      inferredCategoryConfidence: "high",
+      inferredTopicConfidence: "medium",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-input",
+      inferredTopicInputHash: "topic-input",
+      inferredAt: fixture.now,
+    });
+  });
+
+  it("releases a staged scan request for pruning when the destination becomes stale", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    const requestId = await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      const storageId = await ctx.storage.store(new Blob(["# Demo"], { type: "text/markdown" }));
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        files: [
+          {
+            path: "SKILL.md",
+            size: 6,
+            storageId,
+            sha256: "f".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      });
+      return attempt.skillScanRequestId;
+    });
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    const stagedVersionId = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      if (!adoption?.stagedVersionId) throw new Error("staged version missing");
+      await ctx.db.patch(adoption.stagedVersionId, {
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      await ctx.db.patch(fixture.destinationSkillId!, {
+        githubCurrentCommit: "f".repeat(40),
+        githubCurrentContentHash: "0".repeat(64),
+        updatedAt: fixture.now + 1,
+      });
+      return adoption.stagedVersionId;
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      skillId: fixture.destinationSkillId,
+    });
+    const staleState = await fixture.t.run(async (ctx) => ({
+      request: await ctx.db.get(requestId),
+      version: await ctx.db.get(stagedVersionId),
+    }));
+    expect(staleState.request).toMatchObject({ writtenBack: true });
+    expect(staleState.request).not.toHaveProperty("skillVersionId");
+    expect(staleState.version).toBeNull();
+  });
+
+  it("retries staged static scan execution and cleans up after bounded failures", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    const started = await startMirroredAdoption(fixture);
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    const staged = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      const attempt = await ctx.db.get(attemptId);
+      if (!adoption?.stagedSkillId || !adoption.stagedVersionId || !attempt?.skillScanRequestId) {
+        throw new Error("staged adoption missing");
+      }
+      return {
+        skillId: adoption.stagedSkillId,
+        versionId: adoption.stagedVersionId,
+        requestId: attempt.skillScanRequestId,
+      };
+    });
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await expect(
+        fixture.t.mutation(internal.skillsShAdoption.beginStagedStaticScanInternal, {
+          adoptionId: started.adoptionId,
+          skillId: staged.skillId,
+          versionId: staged.versionId,
+        }),
+      ).resolves.toEqual({ shouldRun: true, attempt });
+      await expect(
+        fixture.t.mutation(internal.skillsShAdoption.recordStagedStaticScanFailureInternal, {
+          adoptionId: started.adoptionId,
+          skillId: staged.skillId,
+          versionId: staged.versionId,
+          attempt,
+          error: "transient static scanner outage",
+        }),
+      ).resolves.toEqual({
+        retry: attempt < 3,
+        canceled: attempt === 3,
+      });
+    }
+
+    const failureState = await fixture.t.run(async (ctx) => ({
+      adoption: await ctx.db.get(started.adoptionId),
+      request: await ctx.db.get(staged.requestId),
+      skill: await ctx.db.get(staged.skillId),
+      version: await ctx.db.get(staged.versionId),
+    }));
+    expect(failureState).toMatchObject({
+      adoption: {
+        status: "canceled",
+        staticScanAttempts: 3,
+        staticScanLastError: "transient static scanner outage",
+        rejectionReason: "static_scan_execution_failed",
+      },
+      request: {
+        writtenBack: true,
+      },
+      skill: null,
+      version: null,
+    });
+    expect(failureState.request).not.toHaveProperty("skillVersionId");
+  });
+
+  it("releases a newly created destination when the staged static scan is malicious", async () => {
+    useLocalEnvironment();
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    const staged = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      if (!adoption?.stagedSkillId || !adoption.stagedVersionId) {
+        throw new Error("staged adoption missing");
+      }
+      await ctx.db.patch(adoption.stagedVersionId, {
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["test.malicious"],
+          findings: [],
+          summary: "Malicious test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      return {
+        skillId: adoption.stagedSkillId,
+        versionId: adoption.stagedVersionId,
+        requestId: attempt.skillScanRequestId,
+      };
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      skillId: null,
+      versionId: null,
+    });
+
+    const state = await fixture.t.run(async (ctx) => ({
+      adoption: await ctx.db.get(started.adoptionId),
+      skill: await ctx.db.get(staged.skillId),
+      version: await ctx.db.get(staged.versionId),
+      request: await ctx.db.get(staged.requestId),
+      fingerprints: await ctx.db
+        .query("skillVersionFingerprints")
+        .withIndex("by_version", (q) => q.eq("versionId", staged.versionId))
+        .collect(),
+    }));
+    expect(state.adoption).toMatchObject({
+      status: "rejected",
+      rejectionReason: "static_scan_malicious",
+    });
+    expect(state.adoption).not.toHaveProperty("stagedSkillId");
+    expect(state.adoption).not.toHaveProperty("stagedVersionId");
+    expect(state.skill).toBeNull();
+    expect(state.version).toBeNull();
+    expect(state.request?.skillVersionId).toBeUndefined();
+    expect(state.fingerprints).toEqual([]);
+    await expect(getPreview(fixture)).resolves.toMatchObject({
+      canStart: true,
+      destination: { kind: "create" },
+    });
+  });
+
+  it("blocks a reused malicious version and restores the prior published destination", async () => {
+    useLocalEnvironment();
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    const exact = await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      const storageId = await ctx.storage.store(new Blob(["# Demo"], { type: "text/markdown" }));
+      const file = {
+        path: "SKILL.md",
+        size: 6,
+        storageId,
+        sha256: "f".repeat(64),
+        contentType: "text/markdown",
+      };
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        files: [file],
+        llmAnalysis: {
+          status: "clean",
+          verdict: "clean",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      const previousVersionId = await ctx.db.insert("skillVersions", {
+        skillId: fixture.destinationSkillId!,
+        version: "previous",
+        publicationStatus: "published",
+        fingerprint: "8".repeat(64),
+        changelog: "Previous safe version",
+        files: [],
+        parsed: { frontmatter: { description: "Previous safe content" } },
+        createdBy: fixture.userId,
+        createdAt: fixture.now - 1,
+        sha256hash: "8".repeat(64),
+      });
+      for (let index = 0; index < 55; index += 1) {
+        await ctx.db.insert("skillVersions", {
+          skillId: fixture.destinationSkillId!,
+          version: `blocked-${index}`,
+          publicationStatus: "blocked",
+          fingerprint: String(index).padStart(64, "0"),
+          changelog: "Blocked historical version",
+          files: [],
+          parsed: { frontmatter: {} },
+          createdBy: fixture.userId,
+          createdAt: fixture.now + index + 1,
+          sha256hash: String(index).padStart(64, "0"),
+        });
+      }
+      const versionId = await ctx.db.insert("skillVersions", {
+        skillId: fixture.destinationSkillId!,
+        version: "a".repeat(40),
+        publicationStatus: "published",
+        fingerprint: "9".repeat(64),
+        changelog: "Existing exact commit",
+        sourceProvenance: {
+          kind: "github",
+          url: `https://github.com/acme/skills/tree/${"a".repeat(40)}/skills/demo`,
+          repo: "acme/skills",
+          ref: "a".repeat(40),
+          commit: "a".repeat(40),
+          path: "skills/demo",
+          importedAt: fixture.now,
+        },
+        files: [file],
+        parsed: { frontmatter: {} },
+        createdBy: fixture.userId,
+        createdAt: fixture.now,
+        sha256hash: "9".repeat(64),
+      });
+      return {
+        previousVersionId,
+        requestId: attempt.skillScanRequestId,
+        versionId,
+      };
+    });
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.patch(fixture.destinationSkillId!, {
+        latestVersionId: exact.versionId,
+        tags: { latest: exact.versionId, risky: exact.versionId },
+        latestVersionSummary: {
+          version: "a".repeat(40),
+          createdAt: fixture.now,
+          changelog: "Existing exact commit",
+        },
+      });
+      await ctx.db.patch(exact.versionId, {
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["test.malicious"],
+          findings: [],
+          summary: "Malicious test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      skillId: fixture.destinationSkillId,
+      versionId: exact.versionId,
+    });
+
+    const state = await fixture.t.run(async (ctx) => ({
+      adoption: await ctx.db.get(started.adoptionId),
+      skill: await ctx.db.get(fixture.destinationSkillId!),
+      version: await ctx.db.get(exact.versionId),
+      request: await ctx.db.get(exact.requestId),
+    }));
+    expect(state.adoption).toMatchObject({
+      status: "rejected",
+      rejectionReason: "static_scan_malicious",
+    });
+    expect(state.version).toMatchObject({ publicationStatus: "blocked" });
+    expect(state.skill).toMatchObject({
+      moderationStatus: "active",
+      latestVersionId: exact.previousVersionId,
+      latestVersionSummary: {
+        version: "previous",
+        changelog: "Previous safe version",
+        description: "Previous safe content",
+      },
+      tags: { latest: exact.previousVersionId },
+    });
+    expect(state.request).toMatchObject({ writtenBack: true });
+  });
+
+  it("removes tags to a reused malicious historical version without replacing the safe latest", async () => {
+    useLocalEnvironment();
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      const storageId = await ctx.storage.store(new Blob(["# Demo"], { type: "text/markdown" }));
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        files: [
+          {
+            path: "SKILL.md",
+            size: 6,
+            storageId,
+            sha256: "f".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+        llmAnalysis: {
+          status: "clean",
+          verdict: "clean",
+          checkedAt: fixture.now + 1,
+        },
+      });
+    });
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    const staged = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      if (!adoption?.stagedVersionId) throw new Error("staged version missing");
+      const safeVersionId = await ctx.db.insert("skillVersions", {
+        skillId: fixture.destinationSkillId!,
+        version: "safe-latest",
+        publicationStatus: "published",
+        fingerprint: "8".repeat(64),
+        changelog: "Safe current version",
+        files: [],
+        parsed: { frontmatter: { description: "Safe current content" } },
+        createdBy: fixture.userId,
+        createdAt: fixture.now - 1,
+        sha256hash: "8".repeat(64),
+      });
+      await ctx.db.patch(fixture.destinationSkillId!, {
+        latestVersionId: safeVersionId,
+        tags: {
+          latest: safeVersionId,
+          risky: adoption.stagedVersionId,
+        },
+        latestVersionSummary: {
+          version: "safe-latest",
+          createdAt: fixture.now - 1,
+          changelog: "Safe current version",
+          description: "Safe current content",
+        },
+      });
+      await ctx.db.patch(adoption.stagedVersionId, {
+        staticScan: {
+          status: "malicious",
+          reasonCodes: ["test.malicious"],
+          findings: [],
+          summary: "Malicious test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      return { safeVersionId, versionId: adoption.stagedVersionId };
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      skillId: fixture.destinationSkillId,
+      versionId: staged.versionId,
+    });
+    await expect(
+      fixture.t.run(async (ctx) => ({
+        skill: await ctx.db.get(fixture.destinationSkillId!),
+        version: await ctx.db.get(staged.versionId),
+      })),
+    ).resolves.toMatchObject({
+      skill: {
+        latestVersionId: staged.safeVersionId,
+        tags: { latest: staged.safeVersionId },
+      },
+      version: { publicationStatus: "blocked" },
+    });
+  });
+
+  it("fails closed when the commit-named destination version has different content", async () => {
+    useLocalEnvironment();
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    await fixture.t.run(async (ctx) => {
+      await ctx.db.insert("skillVersions", {
+        skillId: fixture.destinationSkillId!,
+        version: "a".repeat(40),
+        publicationStatus: "published",
+        fingerprint: "1".repeat(64),
+        changelog: "Conflicting historical version",
+        sourceProvenance: {
+          kind: "github",
+          url: `https://github.com/acme/skills/tree/${"a".repeat(40)}/skills/demo`,
+          repo: "acme/skills",
+          ref: "a".repeat(40),
+          commit: "a".repeat(40),
+          path: "skills/demo",
+          importedAt: fixture.now,
+        },
+        files: [],
+        parsed: { frontmatter: {} },
+        createdBy: fixture.userId,
+        createdAt: fixture.now,
+        sha256hash: "1".repeat(64),
+      });
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        llmAnalysis: {
+          status: "clean",
+          verdict: "clean",
+          checkedAt: fixture.now + 1,
+        },
+      });
+    });
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const state = await fixture.t.run(async (ctx) => ({
+      adoption: await ctx.db.get(started.adoptionId),
+      skill: await ctx.db.get(fixture.destinationSkillId!),
+    }));
+    expect(state.adoption).toMatchObject({
+      status: "stale",
+      rejectionReason: "destination_version_conflict",
+    });
+    expect(state.skill).toMatchObject({ stats: { versions: 4 } });
+    expect(state.skill?.latestVersionId).toBeUndefined();
+  });
+
+  it("reuses an exact commit version without retaining duplicate scan blobs", async () => {
+    useLocalEnvironment();
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    const exact = await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId) throw new Error("scan request missing");
+      const existingStorageId = await ctx.storage.store(
+        new Blob(["# Demo"], { type: "text/markdown" }),
+      );
+      const requestStorageId = await ctx.storage.store(
+        new Blob(["# Demo"], { type: "text/markdown" }),
+      );
+      const file = {
+        path: "SKILL.md",
+        size: 6,
+        sha256: "f".repeat(64),
+        contentType: "text/markdown",
+      };
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        files: [{ ...file, storageId: requestStorageId }],
+        llmAnalysis: {
+          status: "clean",
+          verdict: "clean",
+          checkedAt: fixture.now + 1,
+        },
+      });
+      const versionId = await ctx.db.insert("skillVersions", {
+        skillId: fixture.destinationSkillId!,
+        version: "a".repeat(40),
+        publicationStatus: "published",
+        fingerprint: "9".repeat(64),
+        changelog: "Existing exact commit",
+        sourceProvenance: {
+          kind: "github",
+          url: `https://github.com/acme/skills/tree/${"a".repeat(40)}/skills/demo`,
+          repo: "acme/skills",
+          ref: "a".repeat(40),
+          commit: "a".repeat(40),
+          path: "skills/demo",
+          importedAt: fixture.now,
+        },
+        files: [{ ...file, storageId: existingStorageId }],
+        parsed: { frontmatter: {} },
+        createdBy: fixture.userId,
+        createdAt: fixture.now,
+        sha256hash: "9".repeat(64),
+      });
+      return { versionId, requestId: attempt.skillScanRequestId };
+    });
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const state = await fixture.t.run(async (ctx) => ({
+      adoption: await ctx.db.get(started.adoptionId),
+      skill: await ctx.db.get(fixture.destinationSkillId!),
+      version: await ctx.db.get(exact.versionId),
+      request: await ctx.db.get(exact.requestId),
+    }));
+    expect(state.adoption).toMatchObject({
+      status: "promoted",
+      promotedVersionId: exact.versionId,
+    });
+    expect(state.version).toMatchObject({
+      llmAnalysis: { status: "clean", verdict: "clean" },
+      staticScan: { status: "clean" },
+    });
+    expect(state.request).toMatchObject({ writtenBack: true });
+    expect(state.request?.skillVersionId).toBeUndefined();
+    expect(state.skill).toMatchObject({
+      latestVersionId: exact.versionId,
+      stats: { versions: 4 },
+    });
+  });
+
+  it("promotes a completed scan callback as a native archive while preserving destination history", async () => {
+    for (const [name, value] of Object.entries(TEST_ENV)) vi.stubEnv(name, value);
+    vi.useFakeTimers();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "owned",
+    });
+    const preview = await getPreview(fixture);
+    const started = await fixture.t
+      .withIdentity({ subject: fixture.userId })
+      .mutation(api.skillsShAdoption.start, {
+        publisherId: fixture.publisherId,
+        externalId: "acme/skills/demo",
+        sourceContentHash: "c".repeat(64),
+        idempotencyKey: preview!.idempotencyKey,
+      });
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+    const linked = await fixture.t.run(async (ctx) => {
+      const attempt = await ctx.db.get(attemptId);
+      if (!attempt?.skillScanRequestId || !attempt.securityScanJobId) {
+        throw new Error("scan execution missing");
+      }
+      const storageId = await ctx.storage.store(
+        new Blob(["---\nname: demo\ndescription: Adopted demo\n---\n# Demo\n"], {
+          type: "text/markdown",
+        }),
+      );
+      await ctx.db.patch(attempt.skillScanRequestId, {
+        status: "running",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 57,
+            storageId,
+            sha256: "f".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+        completedAt: undefined,
+      });
+      await ctx.db.patch(attempt.securityScanJobId, {
+        status: "running",
+        leaseToken: "adoption-lease",
+        leaseExpiresAt: fixture.now + 60_000,
+        workerId: "adoption-worker",
+        completedAt: undefined,
+      });
+      await ctx.db.patch(attempt._id, {
+        status: "running",
+        verdict: undefined,
+        completedAt: undefined,
+      });
+      await ctx.db.patch(fixture.entryId, {
+        scanStatus: "queued",
+      });
+      return {
+        scanId: attempt.skillScanRequestId,
+        jobId: attempt.securityScanJobId,
+        artifactContentHash: attempt.artifactContentHash!,
+      };
+    });
+
+    vi.setSystemTime(fixture.now + 2_000);
+    await fixture.t.mutation(internal.securityScan.completeCatalogSkillScanJobInternal, {
+      attemptId,
+      scanId: linked.scanId,
+      jobId: linked.jobId,
+      leaseToken: "adoption-lease",
+      artifactContentHash: linked.artifactContentHash,
+      verdict: "clean",
+      runId: "adoption-clawscan-run",
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        confidence: "high",
+        summary: "No unsafe behavior found.",
+        checkedAt: fixture.now + 2_000,
+      },
+    });
+    await fixture.t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const state = await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      const skill = fixture.destinationSkillId
+        ? await ctx.db.get(fixture.destinationSkillId)
+        : null;
+      const version = adoption?.promotedVersionId
+        ? await ctx.db.get(adoption.promotedVersionId)
+        : null;
+      const request = version
+        ? await ctx.db
+            .query("skillScanRequests")
+            .withIndex("by_skill_version_id_and_created_at", (q) =>
+              q.eq("skillVersionId", version._id),
+            )
+            .first()
+        : null;
+      const fingerprints = version
+        ? await ctx.db
+            .query("skillVersionFingerprints")
+            .withIndex("by_version", (q) => q.eq("versionId", version._id))
+            .collect()
+        : [];
+      const cardJob = version
+        ? await ctx.db
+            .query("skillCardGenerationJobs")
+            .withIndex("by_skill_version", (q) => q.eq("skillVersionId", version._id))
+            .first()
+        : null;
+      return { adoption, skill, version, request, fingerprints, cardJob };
+    });
+
+    expect(state.adoption).toMatchObject({
+      status: "promoted",
+      promotedSkillId: fixture.destinationSkillId,
+      canonicalRef: "@alice/demo",
+    });
+    expect(state.skill).toMatchObject({
+      _id: fixture.destinationSkillId,
+      statsDownloads: 800,
+      statsStars: 90,
+      stats: {
+        downloads: 800,
+        stars: 90,
+        comments: 7,
+        versions: 5,
+      },
+      latestVersionSummary: {
+        version: "a".repeat(40),
+      },
+    });
+    expect(state.skill?.installKind).toBeUndefined();
+    expect(state.version).toMatchObject({
+      version: "a".repeat(40),
+      publicationStatus: "published",
+      sourceProvenance: {
+        repo: "acme/skills",
+        commit: "a".repeat(40),
+        path: "skills/demo",
+      },
+      files: [{ path: "SKILL.md" }],
+    });
+    expect(state.request).toMatchObject({
+      skillVersionId: state.version?._id,
+      writtenBack: true,
+    });
+    expect(state.version?.staticScan).toMatchObject({
+      status: "clean",
+      checkedAt: expect.any(Number),
+    });
+    expect(state.fingerprints).toContainEqual(
+      expect.objectContaining({
+        versionId: state.version?._id,
+        fingerprint: "9".repeat(64),
+        kind: "source",
+      }),
+    );
+    expect(state.cardJob).toMatchObject({
+      skillVersionId: state.version?._id,
+      status: "queued",
+      source: "scan",
+    });
+    await expect(
+      fixture.t.query(internal.skillsShAdoption.getPromotedByExternalIdInternal, {
+        externalId: "acme/skills/demo",
+      }),
+    ).resolves.toMatchObject({
+      state: "promoted",
+      canonicalRef: "@alice/demo",
+      skillId: fixture.destinationSkillId,
+      versionId: state.version?._id,
+      githubCommit: "a".repeat(40),
+      sourceContentHash: "c".repeat(64),
+    });
+
+    await fixture.t.run(async (ctx) => {
+      if (!state.version) throw new Error("promoted version missing");
+      await ctx.db.patch(state.version._id, { publicationStatus: "blocked" });
+    });
+    await expect(
+      fixture.t.query(internal.skillsShAdoption.getPromotedByExternalIdInternal, {
+        externalId: "acme/skills/demo",
+      }),
+    ).resolves.toEqual({
+      state: "invalidated",
+      externalId: "acme/skills/demo",
+      reference: "skills-sh:acme/skills/demo",
     });
   });
 });

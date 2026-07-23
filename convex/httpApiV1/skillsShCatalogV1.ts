@@ -53,16 +53,20 @@ const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
 const MAX_CONTROLLED_CANARY_FILES = 100;
 
 export function parseSkillsShCatalogReference(value: string) {
-  const segments = value
-    .trim()
-    .split("/")
-    .map((segment) => segment.trim().toLowerCase());
-  if (segments.length !== 4 || segments[0] !== "skills-sh") return null;
-  const [owner, repo, slug] = segments.slice(1);
+  const normalized = value.trim().toLowerCase();
+  const externalId = normalized.startsWith("skills-sh:")
+    ? normalized.slice("skills-sh:".length)
+    : normalized.startsWith("skills-sh/")
+      ? normalized.slice("skills-sh/".length)
+      : null;
+  if (!externalId) return null;
+  const segments = externalId.split("/").map((segment) => segment.trim().toLowerCase());
+  if (segments.length !== 3) return null;
+  const [owner, repo, slug] = segments;
   if (!owner || !repo || !slug || [owner, repo, slug].some((part) => part.includes(":"))) {
     return null;
   }
-  return { owner, repo, slug };
+  return { owner, repo, slug, reference: `skills-sh:${owner}/${repo}/${slug}` };
 }
 
 async function runMutationRef<T>(
