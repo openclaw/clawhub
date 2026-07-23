@@ -41,7 +41,7 @@ const SKILLS_VIEW_OPTIONS = [
   { value: "all", label: "All" },
   { value: "trending", label: "Trending" },
   { value: "top", label: "Top" },
-  { value: "stars", label: "Most starred" },
+  { value: "stars", label: "Most bookmarked" },
   { value: "featured", label: "Featured" },
 ];
 

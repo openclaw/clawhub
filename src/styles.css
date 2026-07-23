@@ -32673,6 +32673,222 @@ a[class*="rounded-full"] {
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
 }
 
+.skills-sh-bulk-header,
+.skills-sh-bulk-toolbar,
+.skills-sh-bulk-selection-bar,
+.skills-sh-bulk-confirm,
+.skills-sh-bulk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.skills-sh-bulk-header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.skills-sh-bulk-publisher {
+  display: grid;
+  gap: 7px;
+  width: min(320px, 100%);
+}
+
+.skills-sh-bulk-publisher label {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+}
+
+.skills-sh-bulk-toolbar {
+  padding: 24px 0 14px;
+}
+
+.skills-sh-bulk-toolbar h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+}
+
+.skills-sh-bulk-toolbar p,
+.skills-sh-bulk-empty p {
+  margin: 4px 0 0;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.skills-sh-bulk-selection-bar {
+  min-height: 42px;
+  padding: 8px 12px;
+  border-block: 1px solid var(--line);
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+.skills-sh-bulk-selection-bar button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.skills-sh-bulk-selection-bar button:disabled {
+  color: var(--ink-muted);
+  cursor: default;
+}
+
+.skills-sh-bulk-list {
+  display: grid;
+}
+
+.skills-sh-bulk-row {
+  position: relative;
+  min-height: 88px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.skills-sh-bulk-row[data-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.skills-sh-bulk-row > input {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  accent-color: var(--accent);
+}
+
+.skills-sh-bulk-row-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.skills-sh-bulk-row-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.skills-sh-bulk-row-main p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+}
+
+.skills-sh-bulk-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink-soft);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.skills-sh-bulk-status[data-status="new-destination"],
+.skills-sh-bulk-status[data-status="replacement"],
+.skills-sh-bulk-status[data-status="promoted"] {
+  border-color: color-mix(in srgb, var(--status-success-fg) 32%, var(--line));
+  color: var(--status-success-fg);
+}
+
+.skills-sh-bulk-installs {
+  min-width: 54px;
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  text-align: right;
+}
+
+.skills-sh-bulk-row-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  color: var(--ink-soft);
+}
+
+.skills-sh-bulk-row-link:hover {
+  color: var(--ink);
+}
+
+.skills-sh-bulk-footer {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0;
+}
+
+.skills-sh-bulk-confirm {
+  align-items: flex-start;
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+}
+
+.skills-sh-bulk-confirm label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 720px;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.skills-sh-bulk-confirm input {
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  flex: 0 0 17px;
+  accent-color: var(--accent);
+}
+
+.skills-sh-bulk-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 180px;
+  justify-content: center;
+  border-block: 1px solid var(--line);
+  color: var(--ink-muted);
+}
+
+@media (max-width: 700px) {
+  .skills-sh-bulk-header,
+  .skills-sh-bulk-toolbar,
+  .skills-sh-bulk-confirm {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .skills-sh-bulk-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .skills-sh-bulk-installs {
+    display: none;
+  }
+
+  .skills-sh-bulk-row-link {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
 .dashboard-import-banner-art-wrap {
   display: flex;
   align-items: center;

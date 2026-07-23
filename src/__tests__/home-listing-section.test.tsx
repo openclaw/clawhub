@@ -41,6 +41,7 @@ vi.mock("../../convex/_generated/api", () => ({
     },
     search: {
       searchSkills: "search:searchSkills",
+      listSkillsShMirrorBrowse: "search:listSkillsShMirrorBrowse",
     },
   },
 }));
@@ -96,11 +97,22 @@ function renderSkillsListing() {
   return result;
 }
 
+function mockSearchSkillsResult(result: unknown[]) {
+  convexActionMock.mockImplementation((name: string) =>
+    Promise.resolve(
+      name === "search:listSkillsShMirrorBrowse"
+        ? { page: [], nextCursor: null, hasMore: false }
+        : result,
+    ),
+  );
+}
+
 describe("HomeListingSection", () => {
   beforeEach(() => {
     navigateMock.mockReset();
     convexQueryMock.mockReset();
     convexActionMock.mockReset();
+    convexActionMock.mockResolvedValue({ page: [], nextCursor: null, hasMore: false });
     fetchPluginCatalogMock.mockReset();
     convexQueryMock.mockResolvedValue({
       page: [
@@ -312,7 +324,7 @@ describe("HomeListingSection", () => {
   });
 
   it("opens listing search from the toolbar icon and with slash", async () => {
-    convexActionMock.mockResolvedValue([
+    mockSearchSkillsResult([
       {
         skill: {
           _id: "skills:1",
@@ -349,8 +361,71 @@ describe("HomeListingSection", () => {
     });
   });
 
+  it("renders mirrored skills.sh search results without native publisher ownership", async () => {
+    mockSearchSkillsResult([
+      {
+        source: "skills.sh",
+        externalId: "patrick-erichsen/skills/html",
+        route: "/skills-sh/patrick-erichsen/skills/html",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+        displayName: "HTML Artifact Chooser",
+        categories: ["development"],
+        topics: [],
+        upstreamInstalls: 100,
+        lastObservedAt: 1,
+        score: 2,
+      },
+    ]);
+
+    renderSkillsListing();
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
+    fireEvent.change(searchInput, { target: { value: "html" } });
+
+    await waitFor(() => {
+      expect(screen.getByText("HTML Artifact Chooser")).toBeTruthy();
+      expect(screen.getByText("patrick-erichsen/skills")).toBeTruthy();
+      expect(screen.getByText("Not scanned by ClawHub")).toBeTruthy();
+      expect(screen.queryByText("@patrick-erichsen")).toBeNull();
+    });
+  });
+
+  it("labels well-known mirrored results without undefined repository segments", async () => {
+    mockSearchSkillsResult([
+      {
+        source: "skills.sh",
+        externalId: "example.com/html",
+        route: "/skills-sh/site/example.com/html",
+        reference: "skills-sh:example.com/html",
+        sourceHost: "example.com",
+        slug: "html",
+        displayName: "Well-known HTML",
+        categories: ["development"],
+        topics: [],
+        upstreamInstalls: 50,
+        lastObservedAt: 1,
+        score: 2,
+      },
+    ]);
+
+    renderSkillsListing();
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(await screen.findByRole("searchbox", { name: "Search skills" }), {
+      target: { value: "html" },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Well-known HTML")).toBeTruthy();
+      expect(screen.getByText("example.com")).toBeTruthy();
+      expect(screen.queryByText("undefined/undefined")).toBeNull();
+    });
+  });
+
   it("searches skills inside the selected category before truncating results", async () => {
-    convexActionMock.mockResolvedValue([
+    mockSearchSkillsResult([
       {
         skill: {
           _id: "skills:dev-alpha",
@@ -390,7 +465,7 @@ describe("HomeListingSection", () => {
   });
 
   it("keeps listing search fetch-on-query instead of serving repeated queries from tab cache", async () => {
-    convexActionMock.mockResolvedValue([
+    mockSearchSkillsResult([
       {
         skill: {
           _id: "skills:alpha",
@@ -597,7 +672,7 @@ describe("HomeListingSection", () => {
   });
 
   it("keeps Featured active for skill search", async () => {
-    convexActionMock.mockResolvedValue([
+    mockSearchSkillsResult([
       {
         skill: {
           _id: "skills:featured-search",

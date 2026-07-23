@@ -60,6 +60,9 @@ export function DashboardImportBanner({ ownerHandle }: DashboardImportBannerProp
           <GitHubLogo className="h-4 w-4" />
           Import skills
         </Link>
+        <Link to="/skills-sh-adopt" className="dashboard-import-banner-action">
+          Adopt mirrored
+        </Link>
         <button
           type="button"
           className="dashboard-import-banner-dismiss"

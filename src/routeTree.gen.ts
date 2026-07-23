@@ -39,6 +39,7 @@ import { Route as PluginsNameRouteImport } from './routes/plugins/$name'
 import { Route as PluginsNewRouteImport } from './routes/plugins/new'
 import { Route as PluginsPublishRouteImport } from './routes/plugins/publish'
 import { Route as PublishersIndexRouteImport } from './routes/publishers/index'
+import { Route as SkillsShAdoptIndexRouteImport } from './routes/skills-sh-adopt/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as SkillsPublishRouteImport } from './routes/skills/publish'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
@@ -57,6 +58,7 @@ import { Route as OwnerSkillsSlugSecurityAuditRouteImport } from './routes/$owne
 import { Route as OwnerSkillsSlugSettingsRouteImport } from './routes/$owner/skills/$slug/settings'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as PluginsScopeNameSecurityAuditRouteImport } from './routes/plugins/$scope/$name/security-audit'
+import { Route as SkillsShAdoptOwnerRepoSlugRouteImport } from './routes/skills-sh-adopt/$owner/$repo/$slug'
 import { Route as SkillsShOwnerRepoSlugRouteImport } from './routes/skills-sh/$owner/$repo/$slug'
 import { Route as OwnerPluginsSlugSecurityScannerRouteImport } from './routes/$owner/plugins/$slug/security/$scanner'
 import { Route as OwnerSkillsSlugSecurityScannerRouteImport } from './routes/$owner/skills/$slug/security/$scanner'
@@ -213,6 +215,11 @@ const PublishersIndexRoute = PublishersIndexRouteImport.update({
   path: '/publishers/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SkillsShAdoptIndexRoute = SkillsShAdoptIndexRouteImport.update({
+  id: '/skills-sh-adopt/',
+  path: '/skills-sh-adopt/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SkillsIndexRoute = SkillsIndexRouteImport.update({
   id: '/skills/',
   path: '/skills/',
@@ -309,6 +316,12 @@ const PluginsScopeNameSecurityAuditRoute =
     path: '/security-audit',
     getParentRoute: () => PluginsScopeNameRoute,
   } as any)
+const SkillsShAdoptOwnerRepoSlugRoute =
+  SkillsShAdoptOwnerRepoSlugRouteImport.update({
+    id: '/skills-sh-adopt/$owner/$repo/$slug',
+    path: '/skills-sh-adopt/$owner/$repo/$slug',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const SkillsShOwnerRepoSlugRoute = SkillsShOwnerRepoSlugRouteImport.update({
   id: '/skills-sh/$owner/$repo/$slug',
   path: '/skills-sh/$owner/$repo/$slug',
@@ -373,6 +386,7 @@ export interface FileRoutesByFullPath {
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
+  '/skills-sh-adopt/': typeof SkillsShAdoptIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
@@ -388,6 +402,7 @@ export interface FileRoutesByFullPath {
   '/$owner/skills/$slug/settings': typeof OwnerSkillsSlugSettingsRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
+  '/skills-sh-adopt/$owner/$repo/$slug': typeof SkillsShAdoptOwnerRepoSlugRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
@@ -428,6 +443,7 @@ export interface FileRoutesByTo {
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
   '/publishers': typeof PublishersIndexRoute
+  '/skills-sh-adopt': typeof SkillsShAdoptIndexRoute
   '/skills': typeof SkillsIndexRoute
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
@@ -443,6 +459,7 @@ export interface FileRoutesByTo {
   '/$owner/skills/$slug/settings': typeof OwnerSkillsSlugSettingsRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
+  '/skills-sh-adopt/$owner/$repo/$slug': typeof SkillsShAdoptOwnerRepoSlugRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
@@ -484,6 +501,7 @@ export interface FileRoutesById {
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
+  '/skills-sh-adopt/': typeof SkillsShAdoptIndexRoute
   '/skills/': typeof SkillsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
@@ -499,6 +517,7 @@ export interface FileRoutesById {
   '/$owner/skills/$slug/settings': typeof OwnerSkillsSlugSettingsRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
+  '/skills-sh-adopt/$owner/$repo/$slug': typeof SkillsShAdoptOwnerRepoSlugRoute
   '/skills-sh/$owner/$repo/$slug': typeof SkillsShOwnerRepoSlugRoute
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
@@ -541,6 +560,7 @@ export interface FileRouteTypes {
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
+    | '/skills-sh-adopt/'
     | '/skills/'
     | '/users/'
     | '/$owner/$slug/security-audit'
@@ -556,6 +576,7 @@ export interface FileRouteTypes {
     | '/$owner/skills/$slug/settings'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
+    | '/skills-sh-adopt/$owner/$repo/$slug'
     | '/skills-sh/$owner/$repo/$slug'
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
@@ -596,6 +617,7 @@ export interface FileRouteTypes {
     | '/packages'
     | '/plugins'
     | '/publishers'
+    | '/skills-sh-adopt'
     | '/skills'
     | '/users'
     | '/$owner/$slug/security-audit'
@@ -611,6 +633,7 @@ export interface FileRouteTypes {
     | '/$owner/skills/$slug/settings'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
+    | '/skills-sh-adopt/$owner/$repo/$slug'
     | '/skills-sh/$owner/$repo/$slug'
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
@@ -651,6 +674,7 @@ export interface FileRouteTypes {
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
+    | '/skills-sh-adopt/'
     | '/skills/'
     | '/users/'
     | '/$owner/$slug/security-audit'
@@ -666,6 +690,7 @@ export interface FileRouteTypes {
     | '/$owner/skills/$slug/settings'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
+    | '/skills-sh-adopt/$owner/$repo/$slug'
     | '/skills-sh/$owner/$repo/$slug'
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
@@ -707,12 +732,14 @@ export interface RootRouteChildren {
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
+  SkillsShAdoptIndexRoute: typeof SkillsShAdoptIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   OwnerPluginsSlugRoute: typeof OwnerPluginsSlugRouteWithChildren
   OwnerSkillsSlugRoute: typeof OwnerSkillsSlugRouteWithChildren
   PackagesScopeNameRoute: typeof PackagesScopeNameRoute
   PluginsScopeNameRoute: typeof PluginsScopeNameRouteWithChildren
+  SkillsShAdoptOwnerRepoSlugRoute: typeof SkillsShAdoptOwnerRepoSlugRoute
   SkillsShOwnerRepoSlugRoute: typeof SkillsShOwnerRepoSlugRoute
 }
 
@@ -928,6 +955,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PublishersIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/skills-sh-adopt/': {
+      id: '/skills-sh-adopt/'
+      path: '/skills-sh-adopt'
+      fullPath: '/skills-sh-adopt/'
+      preLoaderRoute: typeof SkillsShAdoptIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/skills/': {
       id: '/skills/'
       path: '/skills'
@@ -1053,6 +1087,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/plugins/$scope/$name/security-audit'
       preLoaderRoute: typeof PluginsScopeNameSecurityAuditRouteImport
       parentRoute: typeof PluginsScopeNameRoute
+    }
+    '/skills-sh-adopt/$owner/$repo/$slug': {
+      id: '/skills-sh-adopt/$owner/$repo/$slug'
+      path: '/skills-sh-adopt/$owner/$repo/$slug'
+      fullPath: '/skills-sh-adopt/$owner/$repo/$slug'
+      preLoaderRoute: typeof SkillsShAdoptOwnerRepoSlugRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/skills-sh/$owner/$repo/$slug': {
       id: '/skills-sh/$owner/$repo/$slug'
@@ -1201,12 +1242,14 @@ const rootRouteChildren: RootRouteChildren = {
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,
+  SkillsShAdoptIndexRoute: SkillsShAdoptIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   OwnerPluginsSlugRoute: OwnerPluginsSlugRouteWithChildren,
   OwnerSkillsSlugRoute: OwnerSkillsSlugRouteWithChildren,
   PackagesScopeNameRoute: PackagesScopeNameRoute,
   PluginsScopeNameRoute: PluginsScopeNameRouteWithChildren,
+  SkillsShAdoptOwnerRepoSlugRoute: SkillsShAdoptOwnerRepoSlugRoute,
   SkillsShOwnerRepoSlugRoute: SkillsShOwnerRepoSlugRoute,
 }
 export const routeTree = rootRouteImport

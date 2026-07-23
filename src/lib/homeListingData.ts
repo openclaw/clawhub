@@ -4,15 +4,24 @@ import { convexHttp } from "../convex/client";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
 import type { PublicSkill, PublicUser } from "./publicUser";
+import type { SkillsShSearchResult } from "./skillsShCatalog";
 
 export type HomeListingKind = "skills" | "plugins";
 export type HomeListingTab = "featured" | "popular" | "trending";
 
-export type HomeSkillListingEntry = {
+export type HomeNativeSkillListingEntry = {
   skill: PublicSkill;
+  nativeDownloads?: number;
   ownerHandle?: string | null;
   owner?: PublicUser | null;
 };
+
+type HomeSkillsShListingEntry = {
+  source: "skills.sh";
+  result: SkillsShSearchResult;
+};
+
+export type HomeSkillListingEntry = HomeNativeSkillListingEntry | HomeSkillsShListingEntry;
 
 export type HomeListingCacheEntry =
   | { kind: "skills"; items: HomeSkillListingEntry[]; hasMore: boolean }
@@ -71,10 +80,28 @@ export function skillMatchesAnyHomeCategory(skill: PublicSkill, categorySlugs: r
   return categorySlugs.some((slug) => categories.some((category) => category.slug === slug));
 }
 
-export function uniqueHomeSkillEntries(entries: HomeSkillListingEntry[]) {
+export function skillsShMatchesAnyHomeCategory(
+  result: SkillsShSearchResult,
+  categorySlugs: readonly string[],
+) {
+  return (
+    categorySlugs.length === 0 || categorySlugs.some((slug) => result.categories?.includes(slug))
+  );
+}
+
+function isHomeSkillsShListingEntry(
+  entry: HomeSkillListingEntry,
+): entry is HomeSkillsShListingEntry {
+  return "source" in entry && entry.source === "skills.sh";
+}
+
+function uniqueHomeSkillEntries(entries: HomeSkillListingEntry[]) {
   const byId = new Map<string, HomeSkillListingEntry>();
   for (const entry of entries) {
-    byId.set(String(entry.skill._id), entry);
+    const key = isHomeSkillsShListingEntry(entry)
+      ? `skills-sh:${entry.result.externalId}`
+      : `native:${entry.skill._id}`;
+    byId.set(key, entry);
   }
   return [...byId.values()];
 }
@@ -89,13 +116,25 @@ export function uniqueHomePlugins(items: PackageListItem[]) {
 
 function sortHomeSkillEntries(entries: HomeSkillListingEntry[]) {
   return [...entries].sort((left, right) => {
-    return (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0);
+    const leftDownloads = isHomeSkillsShListingEntry(left)
+      ? left.result.upstreamInstalls
+      : (left.nativeDownloads ?? left.skill.stats.downloads);
+    const rightDownloads = isHomeSkillsShListingEntry(right)
+      ? right.result.upstreamInstalls
+      : (right.nativeDownloads ?? right.skill.stats.downloads);
+    return rightDownloads - leftDownloads;
   });
 }
 
 function sortFeaturedHomeSkillEntries(entries: HomeSkillListingEntry[]) {
   return [...entries].sort((left, right) => {
-    return (right.skill.badges?.highlighted?.at ?? 0) - (left.skill.badges?.highlighted?.at ?? 0);
+    const leftFeaturedAt = isHomeSkillsShListingEntry(left)
+      ? 0
+      : (left.skill.badges?.highlighted?.at ?? 0);
+    const rightFeaturedAt = isHomeSkillsShListingEntry(right)
+      ? 0
+      : (right.skill.badges?.highlighted?.at ?? 0);
+    return rightFeaturedAt - leftFeaturedAt;
   });
 }
 
@@ -113,8 +152,8 @@ export async function fetchHomeSkillListing(
     const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
       limit: requestLimit,
     });
-    const items = ((result as { items?: HomeSkillListingEntry[] }).items ?? []).filter((entry) =>
-      skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
+    const items = ((result as { items?: HomeNativeSkillListingEntry[] }).items ?? []).filter(
+      (entry) => skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
     );
     return {
       page: uniqueHomeSkillEntries(items).slice(0, numItems),
@@ -126,7 +165,7 @@ export async function fetchHomeSkillListing(
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
     categoriesToFetch.map(async (categorySlug) => {
-      const page: HomeSkillListingEntry[] = [];
+      const page: HomeNativeSkillListingEntry[] = [];
       let cursor: string | null | undefined;
       let hasMore = false;
 
@@ -141,7 +180,7 @@ export async function fetchHomeSkillListing(
         });
         if (Array.isArray(result)) break;
 
-        const resultPage = ((result as { page?: HomeSkillListingEntry[] }).page ?? []).filter(
+        const resultPage = ((result as { page?: HomeNativeSkillListingEntry[] }).page ?? []).filter(
           (entry) => skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
         );
         page.push(...resultPage);
@@ -155,12 +194,61 @@ export async function fetchHomeSkillListing(
       return { page, hasMore };
     }),
   );
-  const pages = results.flatMap((result) => result.page);
+  const externalLimit = Math.min(requestLimit, 50);
+  const externalResults =
+    tab === "popular"
+      ? await Promise.all(
+          categoriesToFetch.map(async (categorySlug) => {
+            const items: HomeSkillsShListingEntry[] = [];
+            let cursor: string | null | undefined;
+            let hasMore = false;
+
+            try {
+              while (items.length < requestLimit) {
+                const result = (await convexHttp.action(api.search.listSkillsShMirrorBrowse, {
+                  limit: Math.min(externalLimit, requestLimit - items.length),
+                  cursor: cursor ?? undefined,
+                  categorySlug: categorySlug ?? undefined,
+                })) as {
+                  page: SkillsShSearchResult[];
+                  nextCursor: string | null;
+                  hasMore: boolean;
+                };
+                items.push(
+                  ...result.page
+                    .filter((external) => skillsShMatchesAnyHomeCategory(external, categorySlugs))
+                    .map(
+                      (external): HomeSkillsShListingEntry => ({
+                        source: "skills.sh",
+                        result: external,
+                      }),
+                    ),
+                );
+
+                const nextCursor = result.hasMore ? result.nextCursor : null;
+                hasMore = Boolean(nextCursor);
+                if (!nextCursor || nextCursor === cursor) break;
+                cursor = nextCursor;
+              }
+            } catch {
+              return { items: [], hasMore: false };
+            }
+
+            return { items, hasMore };
+          }),
+        )
+      : [];
+  const pages: HomeSkillListingEntry[] = [
+    ...results.flatMap((result) => result.page),
+    ...externalResults.flatMap((result) => result.items),
+  ];
   const unique = uniqueHomeSkillEntries(pages);
   const sorted =
     tab === "featured" ? sortFeaturedHomeSkillEntries(unique) : sortHomeSkillEntries(unique);
   const hasMore =
-    sorted.length > numItems || (tab !== "featured" && results.some((result) => result.hasMore));
+    sorted.length > numItems ||
+    (tab !== "featured" && results.some((result) => result.hasMore)) ||
+    externalResults.some((result) => result.hasMore);
   const page = sorted.slice(0, numItems);
   return { page, hasMore };
 }

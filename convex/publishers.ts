@@ -44,7 +44,7 @@ import {
   isHandleReservedForAnotherUser,
 } from "./lib/reservedHandles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
-import { readCanonicalStat } from "./lib/skillStats";
+import { readCanonicalStat, readPublicDownloads } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
@@ -388,7 +388,7 @@ function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): Publish
   for (const skill of rows.skills) {
     stats.skills += 1;
     stats.installs += readCanonicalStat(skill, "installsAllTime");
-    stats.downloads += readCanonicalStat(skill, "downloads");
+    stats.downloads += readPublicDownloads(skill);
     stats.stars += readCanonicalStat(skill, "stars");
   }
 
@@ -416,7 +416,7 @@ function getPublisherPublishedItems(
       inferredCategories: skill.inferredCategories,
       latestVersionId: skill.latestVersionId,
       inferredFromVersionId: skill.inferredFromVersionId,
-      downloads: readCanonicalStat(skill, "downloads"),
+      downloads: readPublicDownloads(skill),
       installs: readCanonicalStat(skill, "installsAllTime"),
     })),
     ...rows.packages.map((pkg) => ({
@@ -551,7 +551,7 @@ function toPublisherSkillCatalogItem(
     icon: skill.icon ?? null,
     href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
     installs: readCanonicalStat(skill, "installsAllTime"),
-    downloads: readCanonicalStat(skill, "downloads"),
+    downloads: readPublicDownloads(skill),
     stars: readCanonicalStat(skill, "stars"),
     isOfficial: publisherOfficial || Boolean(skill.badges?.official),
     updatedAt: skill.updatedAt,
@@ -2578,7 +2578,7 @@ export const listStarredPage = query({
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             installs: readCanonicalStat(skill, "installsAllTime"),
-            downloads: readCanonicalStat(skill, "downloads"),
+            downloads: readPublicDownloads(skill),
             stars: readCanonicalStat(skill, "stars"),
             isOfficial: official || Boolean(skill.badges?.official),
             updatedAt: skill.updatedAt,

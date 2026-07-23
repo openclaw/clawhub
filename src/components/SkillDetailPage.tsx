@@ -763,8 +763,8 @@ export function SkillDetailPage({
       });
       void router.invalidate();
     } catch (error) {
-      console.error("Failed to toggle star", error);
-      toast.error(getUserFacingConvexError(error, "Unable to update star. Please try again."));
+      console.error("Failed to toggle bookmark", error);
+      toast.error(getUserFacingConvexError(error, "Unable to update bookmark. Please try again."));
     }
   };
 

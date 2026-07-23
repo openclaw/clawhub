@@ -25,13 +25,23 @@ export const reportCliInstallInternal = internalMutation({
     slug: v.string(),
     ownerHandle: v.optional(v.string()),
     sourceRef: v.optional(v.string()),
+    sourceKind: v.optional(v.literal("skills-sh")),
+    sourceRepository: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    canonicalRef: v.optional(v.string()),
+    clawhubScan: v.optional(v.union(v.literal("unscanned"), v.literal("scanned"))),
+    trustLabel: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Unclaimed catalog installs have no native skill row yet. Keep the source
-    // identity in the request without guessing from a same-slug native skill.
-    if (args.sourceRef?.trim().toLowerCase().startsWith("skills-sh/")) return;
-    await upsertUserSkillInstall(ctx, args);
+    const identity = resolveInstallTelemetryIdentity(args);
+    if (!identity) return;
+    await upsertUserSkillInstall(ctx, {
+      userId: args.userId,
+      ...identity,
+      version: args.version,
+    });
   },
 });
 
@@ -143,6 +153,31 @@ async function upsertUserSkillInstall(
     lastVersion: version,
   });
   await insertStatEvent(ctx, { skillId: skill._id, kind: "install_new" });
+}
+
+function resolveInstallTelemetryIdentity(params: {
+  slug: string;
+  ownerHandle?: string;
+  sourceRef?: string;
+  sourceKind?: "skills-sh";
+  canonicalRef?: string;
+  clawhubScan?: "unscanned" | "scanned";
+  trustLabel?: string;
+}) {
+  const sourceRef = params.sourceRef?.trim().toLowerCase();
+  const isSkillsSh =
+    params.sourceKind === "skills-sh" ||
+    sourceRef?.startsWith("skills-sh:") === true ||
+    sourceRef?.startsWith("skills-sh/") === true;
+  // The client may report the resolver's canonicalRef for lineage, but that is
+  // not server-authoritative proof that the external source belongs to a
+  // native skill. Adoption telemetry can be attributed after the backend owns
+  // a persisted source-to-native mapping.
+  if (isSkillsSh) return null;
+  return {
+    slug: params.slug,
+    ownerHandle: params.ownerHandle,
+  };
 }
 
 async function resolveInstallTelemetrySkill(

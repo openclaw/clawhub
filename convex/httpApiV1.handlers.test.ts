@@ -1922,8 +1922,7 @@ describe("httpApiV1 handlers", () => {
           displayName: "Demo",
           summary: "Summary",
           updatedAt: 1,
-          statsDownloads: 42,
-          stats: { downloads: 1 },
+          stats: { downloads: 50 },
         },
         version: { version: "1.0.0" },
         ownerHandle: "openclaw",
@@ -1951,7 +1950,7 @@ describe("httpApiV1 handlers", () => {
           displayName: "Demo",
           summary: "Summary",
           version: "1.0.0",
-          downloads: 42,
+          downloads: 50,
           updatedAt: 1,
           ownerHandle: "openclaw",
           owner: {
@@ -2864,85 +2863,272 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("skill install resolver returns the exact approved skills.sh GitHub descriptor", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      expect(args).toEqual({
-        owner: "patrick-erichsen",
-        repo: "skills",
-        slug: "html",
-      });
-      return {
-        install: {
-          ok: true,
-          slug: "skills-sh/patrick-erichsen/skills/html",
-          installKind: "github",
-          github: {
-            repo: "patrick-erichsen/skills",
-            path: "skills/html",
-            commit: "050daba89f6b6636470add5cb300aac46a412cf8",
-            contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-            sourceUrl:
-              "https://github.com/patrick-erichsen/skills/tree/050daba89f6b6636470add5cb300aac46a412cf8/skills/html",
+  const unclaimedSkillsShDigest = {
+    externalId: "patrick-erichsen/skills/html",
+    sourceType: "github",
+    owner: "patrick-erichsen",
+    repo: "skills",
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+    canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
+    githubPath: "skills/html",
+    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+    upstreamInstalls: 100,
+    upstreamScanners: {
+      genAgentTrustHub: { status: "unavailable" },
+      socket: { status: "unavailable" },
+      snyk: { status: "unavailable" },
+    },
+    sourceFreshnessStatus: "observed-only",
+    detailStatus: "available",
+    active: true,
+    publicVisible: false,
+    installable: false,
+    lastObservedAt: 123,
+  };
+
+  const promotedCommit = "050daba89f6b6636470add5cb300aac46a412cf8";
+  const promotedSourceContentHash =
+    "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f";
+  const promotedSkillsShAlias = {
+    state: "promoted",
+    externalId: "patrick-erichsen/skills/html",
+    reference: "skills-sh:patrick-erichsen/skills/html",
+    canonicalRef: "@openclaw/html",
+    publisherHandle: "openclaw",
+    slug: "html",
+    skillId: "skills:html",
+    versionId: "skillVersions:html",
+    githubRepository: "patrick-erichsen/skills",
+    githubPath: "skills/html",
+    githubCommit: promotedCommit,
+    sourceContentHash: promotedSourceContentHash,
+    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+  };
+
+  const promotedNativeVersion = {
+    _id: "skillVersions:html",
+    skillId: "skills:html",
+    version: promotedCommit,
+    publicationStatus: "published",
+    createdAt: 123,
+    fingerprint: "source-fingerprint",
+    files: [
+      {
+        path: "SKILL.md",
+        size: 5,
+        storageId: "storage:skill",
+        sha256: "source-sha",
+        contentType: "text/markdown",
+      },
+      {
+        path: "skill-card.md",
+        size: 12,
+        storageId: "storage:card",
+        sha256: "card-sha",
+        contentType: "text/markdown",
+      },
+    ],
+    parsed: {},
+    sourceProvenance: {
+      kind: "github",
+      url: `https://github.com/patrick-erichsen/skills/tree/${promotedCommit}/skills/html`,
+      repo: "patrick-erichsen/skills",
+      ref: promotedCommit,
+      commit: promotedCommit,
+      path: "skills/html",
+      importedAt: 100,
+    },
+    staticScan: {
+      status: "clean",
+      reasonCodes: [],
+      summary: "Static scan clean.",
+      checkedAt: 121,
+    },
+    llmAnalysis: {
+      status: "clean",
+      verdict: "clean",
+      summary: "ClawScan clean.",
+      checkedAt: 122,
+    },
+  };
+
+  async function makePromotedVerifyRunQuery(
+    version: Record<string, unknown> = promotedNativeVersion,
+    alias: Record<string, unknown> = promotedSkillsShAlias,
+  ) {
+    const files = version.files as typeof promotedNativeVersion.files;
+    const generatedBundleFingerprint = await buildBundleFingerprint(files);
+    return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("externalId" in args) return alias;
+      if (args.slug === "html" && args.ownerHandle === "openclaw") {
+        return {
+          skill: {
+            _id: "skills:html",
+            slug: "html",
+            displayName: "HTML Artifact Chooser",
+            summary: "Build HTML artifacts",
+            tags: {},
+            stats: {},
+            createdAt: 100,
+            updatedAt: 123,
+            latestVersionId: "skillVersions:newer",
           },
-        },
-      };
+          latestVersion: { _id: "skillVersions:newer", version: "3.0.0" },
+          owner: {
+            _id: "users:openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw",
+          },
+        };
+      }
+      if ("versionId" in args) return version;
+      if ("skillVersionId" in args) {
+        return [
+          {
+            fingerprint: generatedBundleFingerprint,
+            kind: "generated-bundle",
+            createdAt: 123,
+          },
+        ];
+      }
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
+  }
+
+  function makePromotedInstallRunQuery(
+    alias: Record<string, unknown> = promotedSkillsShAlias,
+    version: Record<string, unknown> = promotedNativeVersion,
+  ) {
+    let canonicalSlugReads = 0;
+    return vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("externalId" in args) return alias;
+      if (args.slug === "html" && args.ownerHandle === "openclaw") {
+        canonicalSlugReads += 1;
+        if (canonicalSlugReads === 1) {
+          return {
+            _id: "skills:html",
+            slug: "html",
+            displayName: "HTML Artifact Chooser",
+            latestVersionSummary: { version: "3.0.0" },
+          };
+        }
+        return {
+          skill: {
+            _id: "skills:html",
+            slug: "html",
+            displayName: "HTML Artifact Chooser",
+          },
+        };
+      }
+      if (args.versionId === "skillVersions:html") return version;
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+  }
+
+  it("skill install resolver follows a promoted skills.sh alias to its native archive", async () => {
+    const runQuery = makePromotedInstallRunQuery();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/skills/html/install?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({
+    await expect(response.json()).resolves.toEqual({
       ok: true,
-      slug: "skills-sh/patrick-erichsen/skills/html",
-      installKind: "github",
-      github: {
-        repo: "patrick-erichsen/skills",
-        path: "skills/html",
-        commit: "050daba89f6b6636470add5cb300aac46a412cf8",
+      slug: "skills-sh:patrick-erichsen/skills/html",
+      installKind: "archive",
+      archive: {
+        version: promotedCommit,
+        downloadUrl: `https://example.com/api/v1/download?slug=html&ownerHandle=openclaw&version=${promotedCommit}`,
       },
+      provenance: {
+        source: "skills.sh",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+        repository: "patrick-erichsen/skills",
+        path: "skills/html",
+        sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+      },
+      trust: {
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
     });
-    expect(runQuery).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["skills-sh:patrick-erichsen/skills/html", "skills-sh/patrick-erichsen/skills/weather"])(
-    "skill install resolver rejects invalid exact catalog reference %s",
-    async (reference) => {
-      const runQuery = vi.fn();
-      const runMutation = vi.fn().mockResolvedValue(okRate());
+  it("direct skills.sh install route follows a promoted alias to its native archive", async () => {
+    const response = await __handlers.skillsShCatalogPublicV1Handler(
+      makeCtx({ runQuery: makePromotedInstallRunQuery() }),
+      new Request("https://example.com/api/v1/skills-sh/patrick-erichsen/skills/html/install"),
+    );
 
-      const response = await __handlers.skillsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
-        new Request(
-          `https://example.com/api/v1/skills/html/install?reference=${encodeURIComponent(reference)}`,
-        ),
-      );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      slug: "skills-sh:patrick-erichsen/skills/html",
+      installKind: "archive",
+      trust: {
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
+    });
+  });
 
-      expect(response.status).toBe(400);
-      expect(runQuery).not.toHaveBeenCalled();
-    },
-  );
-
-  it("skill install resolver never falls back to a native slug for a hidden catalog reference", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      expect(args).toEqual({
-        owner: "patrick-erichsen",
-        repo: "skills",
-        slug: "html",
-      });
-      return null;
+  it("skill install resolver rejects a promoted alias whose native version is not scanned", async () => {
+    const runQuery = makePromotedInstallRunQuery(promotedSkillsShAlias, {
+      ...promotedNativeVersion,
+      llmAnalysis: undefined,
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/skills/html/install?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver rejects a promoted alias whose exact version is blocked", async () => {
+    const runQuery = makePromotedInstallRunQuery(promotedSkillsShAlias, {
+      ...promotedNativeVersion,
+      publicationStatus: "blocked",
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver never falls back after a promoted alias is invalidated", async () => {
+    const runQuery = makePromotedInstallRunQuery({
+      state: "invalidated",
+      externalId: promotedSkillsShAlias.externalId,
+      reference: promotedSkillsShAlias.reference,
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
     );
 
@@ -2951,62 +3137,310 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(1);
   });
 
-  it("skill verification returns the exact approved skills.sh scan envelope", async () => {
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      expect(args).toEqual({
-        owner: "patrick-erichsen",
-        repo: "skills",
-        slug: "html",
-      });
-      return {
-        ref: "skills-sh/patrick-erichsen/skills/html",
-        route: "/skills-sh/patrick-erichsen/skills/html",
-        displayName: "HTML Artifact Chooser",
-        repository: "patrick-erichsen/skills",
-        githubPath: "skills/html",
-        githubCommit: "1".repeat(40),
-        githubContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-        security: {
-          verdict: "clean",
-          source: "clawhub",
-          attemptId: "skillsShCatalogScanAttempts:canary",
-          scannedAt: 123,
-        },
-        artifact: {
-          contentHash: "c".repeat(64),
-          files: [
-            {
-              path: "SKILL.md",
-              size: 42,
-              sha256: "d".repeat(64),
-              contentType: "text/markdown",
-            },
-          ],
-        },
-      };
+  it("skill install resolver withholds a promoted alias until its static scan finishes", async () => {
+    const runQuery = makePromotedInstallRunQuery(promotedSkillsShAlias, {
+      ...promotedNativeVersion,
+      staticScan: undefined,
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver rejects a promoted alias whose native scan is malicious", async () => {
+    const runQuery = makePromotedInstallRunQuery(promotedSkillsShAlias, {
+      ...promotedNativeVersion,
+      llmAnalysis: {
+        ...promotedNativeVersion.llmAnalysis,
+        status: "malicious",
+        verdict: "malicious",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill install resolver derives a missing promoted skills.sh source URL", async () => {
+    const runQuery = makePromotedInstallRunQuery({
+      ...promotedSkillsShAlias,
+      sourceUrl: null,
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      provenance: {
+        source: "skills.sh",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+        sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+      },
+    });
+  });
+
+  it("skill install resolver returns the exact unscanned skills.sh GitHub descriptor", async () => {
+    let lookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      expect(args).toEqual({
+        externalId: "patrick-erichsen/skills/html",
+      });
+      lookupCount += 1;
+      return lookupCount === 1 ? null : unclaimedSkillsShDigest;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      slug: "skills-sh:patrick-erichsen/skills/html",
+      installKind: "github",
+      github: {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit: "050daba89f6b6636470add5cb300aac46a412cf8",
+      },
+      provenance: {
+        source: "skills.sh",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+      },
+      trust: {
+        clawhubScan: "unscanned",
+        label: "Not scanned by ClawHub",
+      },
+      canonicalRef: null,
+    });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("direct skills.sh install route returns the exact unscanned GitHub descriptor", async () => {
+    let lookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      expect(args).toEqual({
+        externalId: "patrick-erichsen/skills/html",
+      });
+      lookupCount += 1;
+      return lookupCount === 1 ? null : unclaimedSkillsShDigest;
+    });
+    const response = await __handlers.skillsShCatalogPublicV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/skills-sh/patrick-erichsen/skills/html/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      slug: "skills-sh:patrick-erichsen/skills/html",
+      installKind: "github",
+      github: {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit: "050daba89f6b6636470add5cb300aac46a412cf8",
+      },
+      trust: {
+        clawhubScan: "unscanned",
+        label: "Not scanned by ClawHub",
+      },
+      canonicalRef: null,
+    });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    "skills-sh:patrick-erichsen/skills/weather",
+    "skills-sh/patrick-erichsen/skills/weather",
+  ])("skill install resolver rejects invalid exact catalog reference %s", async (reference) => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/skills/html/install?reference=${encodeURIComponent(reference)}`,
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("skill install resolver never falls back to a native slug for a hidden catalog reference", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      expect(args).toEqual({
+        externalId: "patrick-erichsen/skills/html",
+      });
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/install?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("skill verification follows a promoted skills.sh alias through native verification", async () => {
+    const runQuery = await makePromotedVerifyRunQuery();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: "skills-sh:patrick-erichsen/skills/html",
+      publisherHandle: "openclaw",
+      version: promotedCommit,
+      resolvedFrom: "version",
+      provenance: {
+        source: "skills.sh",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+        repository: "patrick-erichsen/skills",
+        path: "skills/html",
+        sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+      },
+      security: {
+        status: "clean",
+        passed: true,
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
+    });
+  });
+
+  it("skill verification rejects a promoted alias whose native version has different lineage", async () => {
+    const runQuery = await makePromotedVerifyRunQuery({
+      ...promotedNativeVersion,
+      sourceProvenance: {
+        ...promotedNativeVersion.sourceProvenance,
+        repo: "other/skills",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill verification rejects a promoted alias whose exact version is pending", async () => {
+    const runQuery = await makePromotedVerifyRunQuery({
+      ...promotedNativeVersion,
+      publicationStatus: "pending",
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+  });
+
+  it("skill verification never falls back after a promoted alias is invalidated", async () => {
+    const runQuery = await makePromotedVerifyRunQuery(promotedNativeVersion, {
+      state: "invalidated",
+      externalId: promotedSkillsShAlias.externalId,
+      reference: promotedSkillsShAlias.reference,
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.text()).resolves.toBe("Skill not found");
+    expect(runQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it("skill verification returns the exact unscanned skills.sh failure envelope", async () => {
+    let lookupCount = 0;
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      expect(args).toEqual({
+        externalId: "patrick-erichsen/skills/html",
+      });
+      lookupCount += 1;
+      return lookupCount === 1 ? null : unclaimedSkillsShDigest;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
     );
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       schema: "clawhub.skill.verify.v1",
-      ok: true,
-      decision: "pass",
-      reasons: [],
-      slug: "skills-sh/patrick-erichsen/skills/html",
+      ok: false,
+      decision: "fail",
+      reasons: ["Not scanned by ClawHub"],
+      slug: "skills-sh:patrick-erichsen/skills/html",
       displayName: "HTML Artifact Chooser",
       pageUrl: "https://example.com/skills-sh/patrick-erichsen/skills/html",
       publisherHandle: null,
       publisherDisplayName: null,
       publisherProfileUrl: null,
-      version: "1".repeat(40),
+      version: "050daba89f6b6636470add5cb300aac46a412cf8",
       resolvedFrom: "latest",
       tag: null,
       createdAt: 123,
@@ -3020,68 +3454,52 @@ describe("httpApiV1 handlers", () => {
       },
       artifact: {
         sourceFingerprint: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-        bundleFingerprints: ["c".repeat(64)],
-        files: [
-          {
-            path: "SKILL.md",
-            size: 42,
-            sha256: "d".repeat(64),
-            contentType: "text/markdown",
-          },
-        ],
+        bundleFingerprints: ["a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f"],
+        files: [],
       },
       provenance: {
-        source: "skills-sh-catalog",
-        reference: "skills-sh/patrick-erichsen/skills/html",
-        repository: "patrick-erichsen/skills",
-        path: "skills/html",
-        commit: "1".repeat(40),
-        contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-        scanAttemptId: "skillsShCatalogScanAttempts:canary",
-        artifactContentHash: "c".repeat(64),
+        source: "skills.sh",
+        reference: "skills-sh:patrick-erichsen/skills/html",
       },
       security: {
-        status: "clean",
-        passed: true,
-        rawStatus: "clean",
-        verdict: "clean",
-        source: "clawhub",
-        attemptId: "skillsShCatalogScanAttempts:canary",
+        status: "unscanned",
+        passed: false,
+        rawStatus: "unscanned",
+        verdict: "unscanned",
+        source: "skills.sh",
         checkedAt: 123,
+        clawhubScan: "unscanned",
+        label: "Not scanned by ClawHub",
       },
       signature: {
         status: "unsigned",
       },
     });
-    expect(runQuery).toHaveBeenCalledTimes(1);
+    expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
-  it("skill verification preserves suspicious publication while failing the security decision", async () => {
-    const runQuery = vi.fn(async () => ({
-      ref: "skills-sh/patrick-erichsen/skills/html",
-      route: "/skills-sh/patrick-erichsen/skills/html",
-      displayName: "HTML Artifact Chooser",
-      repository: "patrick-erichsen/skills",
-      githubPath: "skills/html",
-      githubCommit: "1".repeat(40),
-      githubContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-      security: {
-        verdict: "suspicious",
-        source: "clawhub",
-        attemptId: "skillsShCatalogScanAttempts:canary",
-        scannedAt: 123,
-      },
-      artifact: {
-        contentHash: "c".repeat(64),
-        files: [{ path: "SKILL.md", size: 42, sha256: "d".repeat(64) }],
-      },
-    }));
+  it("skill verification ignores stale scan-shaped fields and remains unscanned", async () => {
+    let lookupCount = 0;
+    const runQuery = vi.fn(async () => {
+      lookupCount += 1;
+      return lookupCount === 1
+        ? null
+        : {
+            ...unclaimedSkillsShDigest,
+            security: {
+              verdict: "clean",
+              source: "clawhub",
+              attemptId: "skillsShCatalogScanAttempts:canary",
+              scannedAt: 123,
+            },
+          };
+    });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
     );
 
@@ -3090,42 +3508,40 @@ describe("httpApiV1 handlers", () => {
       schema: "clawhub.skill.verify.v1",
       ok: false,
       decision: "fail",
-      reasons: ["security.status_not_clean"],
-      slug: "skills-sh/patrick-erichsen/skills/html",
+      reasons: ["Not scanned by ClawHub"],
+      slug: "skills-sh:patrick-erichsen/skills/html",
       security: {
-        status: "suspicious",
+        status: "unscanned",
         passed: false,
-        verdict: "suspicious",
-        attemptId: "skillsShCatalogScanAttempts:canary",
+        verdict: "unscanned",
+        clawhubScan: "unscanned",
       },
     });
-    expect(runQuery).toHaveBeenCalledTimes(1);
+    expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
-  it.each(["skills-sh:patrick-erichsen/skills/html", "skills-sh/patrick-erichsen/skills/weather"])(
-    "skill verification rejects invalid exact catalog reference %s",
-    async (reference) => {
-      const runQuery = vi.fn();
-      const runMutation = vi.fn().mockResolvedValue(okRate());
+  it.each([
+    "skills-sh:patrick-erichsen/skills/weather",
+    "skills-sh/patrick-erichsen/skills/weather",
+  ])("skill verification rejects invalid exact catalog reference %s", async (reference) => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
 
-      const response = await __handlers.skillsGetRouterV1Handler(
-        makeCtx({ runQuery, runMutation }),
-        new Request(
-          `https://example.com/api/v1/skills/html/verify?reference=${encodeURIComponent(reference)}`,
-        ),
-      );
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/skills/html/verify?reference=${encodeURIComponent(reference)}`,
+      ),
+    );
 
-      expect(response.status).toBe(400);
-      expect(runQuery).not.toHaveBeenCalled();
-    },
-  );
+    expect(response.status).toBe(400);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
 
   it("skill verification never falls back to a native slug for a hidden catalog reference", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       expect(args).toEqual({
-        owner: "patrick-erichsen",
-        repo: "skills",
-        slug: "html",
+        externalId: "patrick-erichsen/skills/html",
       });
       return null;
     });
@@ -3134,13 +3550,13 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%2Fpatrick-erichsen%2Fskills%2Fhtml",
+        "https://example.com/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml",
       ),
     );
 
     expect(response.status).toBe(404);
     await expect(response.text()).resolves.toBe("Skill not found");
-    expect(runQuery).toHaveBeenCalledTimes(1);
+    expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
   it("skill install resolver returns a pinned GitHub descriptor for scan-clean source-backed skills", async () => {

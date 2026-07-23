@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const convexQueryMock = vi.fn();
+const convexActionMock = vi.fn();
 const fetchPluginCatalogMock = vi.fn();
 
 vi.mock("../convex/client", () => ({
   convexHttp: {
     query: (...args: unknown[]) => convexQueryMock(...args),
+    action: (...args: unknown[]) => convexActionMock(...args),
   },
 }));
 
@@ -14,6 +16,9 @@ vi.mock("../../convex/_generated/api", () => ({
     skills: {
       listPublicPageV4: "skills:listPublicPageV4",
       listPublicTrendingPage: "skills:listPublicTrendingPage",
+    },
+    search: {
+      listSkillsShMirrorBrowse: "search:listSkillsShMirrorBrowse",
     },
   },
 }));
@@ -43,7 +48,9 @@ const featuredPlugin = {
 describe("homeListingData", () => {
   beforeEach(() => {
     convexQueryMock.mockReset();
+    convexActionMock.mockReset();
     fetchPluginCatalogMock.mockReset();
+    convexActionMock.mockResolvedValue({ page: [], nextCursor: null, hasMore: false });
     convexQueryMock.mockResolvedValue({
       page: [
         {
@@ -155,7 +162,9 @@ describe("homeListingData", () => {
       HOME_LISTING_PAGE_SIZE,
     );
 
-    expect(result.page.map((entry) => entry.skill.slug)).toEqual(["newest", "older"]);
+    expect(
+      result.page.map((entry) => ("skill" in entry ? entry.skill.slug : entry.result.slug)),
+    ).toEqual(["newest", "older"]);
     expect(convexQueryMock).toHaveBeenCalledTimes(2);
     expect(convexQueryMock).toHaveBeenNthCalledWith(
       1,
@@ -167,6 +176,177 @@ describe("homeListingData", () => {
       "skills:listPublicPageV4",
       expect.objectContaining({ categorySlug: "integrations" }),
     );
+  });
+
+  it("includes category-matched mirrored skills in Top browse order", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:native",
+            slug: "native",
+            displayName: "Native",
+            categories: ["development"],
+            stats: { downloads: 10 },
+          },
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+    convexActionMock.mockResolvedValue({
+      page: [
+        {
+          source: "skills.sh",
+          externalId: "acme/skills/external",
+          route: "/skills-sh/acme/skills/external",
+          reference: "skills-sh:acme/skills/external",
+          owner: "acme",
+          repo: "skills",
+          slug: "external",
+          displayName: "External",
+          categories: ["development"],
+          topics: [],
+          upstreamInstalls: 1_000,
+          lastObservedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+
+    const result = await fetchHomeSkillListing("popular", ["development"], 20);
+
+    expect(result.page[0]).toMatchObject({
+      source: "skills.sh",
+      result: { externalId: "acme/skills/external" },
+    });
+    expect(convexActionMock).toHaveBeenCalledWith("search:listSkillsShMirrorBrowse", {
+      limit: 20,
+      cursor: undefined,
+      categorySlug: "development",
+    });
+  });
+
+  it("keeps native Top results when mirrored browse is unavailable", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:native",
+            slug: "native",
+            displayName: "Native",
+            categories: ["development"],
+            stats: { downloads: 10 },
+          },
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+    convexActionMock.mockRejectedValue(new Error("mirror unavailable"));
+
+    const result = await fetchHomeSkillListing("popular", ["development"], 20);
+
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        skill: expect.objectContaining({ slug: "native" }),
+      }),
+    ]);
+    expect(result.hasMore).toBe(false);
+  });
+
+  it("orders mixed Top results by native downloads without double-counting skills.sh installs", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          nativeDownloads: 10,
+          skill: {
+            _id: "skills:native",
+            slug: "native",
+            displayName: "Native",
+            categories: ["development"],
+            stats: { downloads: 1_010 },
+          },
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+    convexActionMock.mockResolvedValue({
+      page: [
+        {
+          source: "skills.sh",
+          externalId: "acme/skills/external",
+          route: "/skills-sh/acme/skills/external",
+          reference: "skills-sh:acme/skills/external",
+          owner: "acme",
+          repo: "skills",
+          slug: "external",
+          displayName: "External",
+          categories: ["development"],
+          topics: [],
+          upstreamInstalls: 100,
+          lastObservedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+
+    const result = await fetchHomeSkillListing("popular", ["development"], 20);
+
+    expect(
+      result.page.map((entry) => ("skill" in entry ? entry.skill.slug : entry.result.slug)),
+    ).toEqual(["external", "native"]);
+  });
+
+  it("continues mirrored Top browse beyond the action page cap", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      nextCursor: null,
+    });
+    const externalRows = Array.from({ length: 60 }, (_, index) => ({
+      source: "skills.sh",
+      externalId: `acme/skills/external-${index}`,
+      route: `/skills-sh/acme/skills/external-${index}`,
+      reference: `skills-sh:acme/skills/external-${index}`,
+      owner: "acme",
+      repo: "skills",
+      slug: `external-${index}`,
+      displayName: `External ${index}`,
+      categories: ["development"],
+      topics: [],
+      upstreamInstalls: 1_000 - index,
+      lastObservedAt: 1,
+    }));
+    convexActionMock
+      .mockResolvedValueOnce({
+        page: externalRows.slice(0, 50),
+        nextCursor: "external:50",
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        page: externalRows.slice(50),
+        nextCursor: null,
+        hasMore: false,
+      });
+
+    const result = await fetchHomeSkillListing("popular", ["development"], 60);
+
+    expect(result.page).toHaveLength(60);
+    expect(result.hasMore).toBe(false);
+    expect(convexActionMock).toHaveBeenNthCalledWith(1, "search:listSkillsShMirrorBrowse", {
+      limit: 50,
+      cursor: undefined,
+      categorySlug: "development",
+    });
+    expect(convexActionMock).toHaveBeenNthCalledWith(2, "search:listSkillsShMirrorBrowse", {
+      limit: 10,
+      cursor: "external:50",
+      categorySlug: "development",
+    });
   });
 
   it("sorts filtered Featured plugins newest-first by featuredAt", async () => {

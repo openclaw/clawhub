@@ -26,6 +26,10 @@ import {
   isExactSkillsShCatalogAttempt,
   shouldPublishSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
+import {
+  hasSameAdoptedContent,
+  shouldPromoteAdoptedCandidate,
+} from "./lib/skillsShRefreshLifecycle";
 import { redactWorkerPublicText } from "./lib/workerTextRedaction";
 import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
@@ -1998,6 +2002,16 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
           (request.lastError === "Catalog scan analysis failed" &&
             job.lastError === "Catalog scan analysis failed"))
       ) {
+        const adoption = await ctx.db
+          .query("skillsShAdoptions")
+          .withIndex("by_scan_attempt_id", (q) => q.eq("scanAttemptId", attempt._id))
+          .unique();
+        if (adoption) {
+          await ctx.scheduler.runAfter(0, internal.skillsShAdoption.recordScanOutcomeInternal, {
+            adoptionId: adoption._id,
+            scanAttemptId: attempt._id,
+          });
+        }
         const terminalEntry = await ctx.db.get(attempt.entryId);
         return {
           ok: true as const,
@@ -2036,18 +2050,26 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
         .withIndex("by_key", (q) => q.eq("key", "global"))
         .unique(),
     ]);
+    const publishedAttempt = entry?.publishedScanAttemptId
+      ? await ctx.db.get(entry.publishedScanAttemptId)
+      : null;
+    const publishedAttemptReadCost = entry?.publishedScanAttemptId ? 1 : 0;
     const now = Date.now();
     const terminalizeWithoutResult = async (reason: "run-canceled" | "stale-attempt") => {
-      const entryStillCurrent = entry?.sourceContentHash === attempt.sourceContentHash;
+      const entryStillCurrent = entry
+        ? attempt.dispatchKind === "deterministic"
+          ? entry.sourceContentHash === attempt.sourceContentHash
+          : hasSameAdoptedContent(entry, attempt)
+        : false;
       await ctx.db.patch(attempt._id, {
         status: "canceled",
         completedAt: now,
         updatedAt: now,
       });
-      if (entryStillCurrent) {
+      if (entry && entryStillCurrent) {
         await ctx.db.patch(entry._id, {
           scanStatus: "canceled",
-          publicVisible: false,
+          publicVisible: entry.publicVisible && entry.publishedScanAttemptId !== undefined,
           updatedAt: now,
         });
       }
@@ -2123,12 +2145,20 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
             source: attempt.source,
           }
         : null;
-    if (!entry || !attemptIdentity || !isExactSkillsShCatalogAttempt(entry, attemptIdentity)) {
+    if (
+      !entry ||
+      !attemptIdentity ||
+      !shouldPromoteAdoptedCandidate({
+        current: entry,
+        candidate: attemptIdentity,
+        verdict: "clean",
+      })
+    ) {
       return await terminalizeWithoutResult("stale-attempt");
     }
 
     const scanFailed = args.verdict === "failed";
-    const publicVisible =
+    const candidatePromoted =
       attempt.publicationRolledBackAt === undefined &&
       shouldPublishSkillsShCatalogEntry({
         control,
@@ -2136,16 +2166,57 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
         attempt: attemptIdentity,
         verdict: args.verdict,
       });
+    const pointerOnlyPromotion =
+      candidatePromoted && !isExactSkillsShCatalogAttempt(entry, attemptIdentity);
+    const preservesPublishedArtifact =
+      entry.publicVisible &&
+      entry.publishedScanAttemptId !== undefined &&
+      (args.verdict !== "malicious" ||
+        (publishedAttempt !== null && !hasSameAdoptedContent(publishedAttempt, attemptIdentity)));
+    const publicVisible = candidatePromoted || preservesPublishedArtifact;
     await ctx.db.patch(attempt._id, {
       status: scanFailed ? "failed" : "succeeded",
       verdict: args.verdict,
+      ...(candidatePromoted && !pointerOnlyPromotion
+        ? { previousPublishedAttemptId: entry.publishedScanAttemptId }
+        : {}),
       completedAt: now,
       updatedAt: now,
     });
+    const publishedScanAttemptId = pointerOnlyPromotion
+      ? await ctx.db.insert("skillsShCatalogScanAttempts", {
+          entryId: entry._id,
+          runId: attempt.runId,
+          externalId: entry.externalId,
+          githubOwnerId: entry.githubOwnerId,
+          owner: entry.owner,
+          repo: entry.repo,
+          slug: entry.slug,
+          ...(entry.githubPath ? { githubPath: entry.githubPath } : {}),
+          ...(entry.githubCommit ? { githubCommit: entry.githubCommit } : {}),
+          ...(entry.githubContentHash ? { githubContentHash: entry.githubContentHash } : {}),
+          sourceContentHash: entry.sourceContentHash,
+          ...(attempt.artifactContentHash
+            ? { artifactContentHash: attempt.artifactContentHash }
+            : {}),
+          source: attempt.source,
+          dispatchKind: attempt.dispatchKind,
+          priority: "low",
+          status: "succeeded",
+          verdict: args.verdict,
+          verdictSourceAttemptId: attempt.verdictSourceAttemptId ?? attempt._id,
+          previousPublishedAttemptId: entry.publishedScanAttemptId,
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+      : candidatePromoted
+        ? attempt._id
+        : entry.publishedScanAttemptId;
     await ctx.db.patch(entry._id, {
       scanStatus: args.verdict,
       publicVisible,
-      publishedScanAttemptId: publicVisible ? attempt._id : undefined,
+      publishedScanAttemptId,
       updatedAt: now,
     });
     await ctx.db.patch(request._id, {
@@ -2177,10 +2248,20 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
         },
         operations: {
           functionCalls: run.operations.functionCalls + 1,
-          dbReads: run.operations.dbReads + 5,
-          dbWrites: run.operations.dbWrites + 5,
+          dbReads: run.operations.dbReads + 5 + publishedAttemptReadCost,
+          dbWrites: run.operations.dbWrites + (pointerOnlyPromotion ? 6 : 5),
         },
         updatedAt: now,
+      });
+    }
+    const adoption = await ctx.db
+      .query("skillsShAdoptions")
+      .withIndex("by_scan_attempt_id", (q) => q.eq("scanAttemptId", attempt._id))
+      .unique();
+    if (adoption) {
+      await ctx.scheduler.runAfter(0, internal.skillsShAdoption.recordScanOutcomeInternal, {
+        adoptionId: adoption._id,
+        scanAttemptId: attempt._id,
       });
     }
     return { ok: true as const, applied: true as const, publicVisible };
@@ -2273,6 +2354,14 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
         deferredRequests += 1;
         continue;
       }
+      if (
+        request.sourceKind === "skills-sh-catalog" &&
+        request.skillVersionId &&
+        !request.writtenBack
+      ) {
+        deferredRequests += 1;
+        continue;
+      }
       if (request.sourceKind === "skills-sh-catalog" && request.skillsShCatalogAttemptId) {
         const attempt = await ctx.db.get(request.skillsShCatalogAttemptId);
         const run = attempt ? await ctx.db.get(attempt.runId) : null;
@@ -2319,7 +2408,7 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
       if (
         request.sourceKind === "upload" ||
         request.sourceKind === "github" ||
-        request.sourceKind === "skills-sh-catalog"
+        (request.sourceKind === "skills-sh-catalog" && !request.skillVersionId)
       ) {
         for (const file of [...request.files, ...fileChunks.flatMap((chunk) => chunk.files)]) {
           try {
@@ -3011,12 +3100,15 @@ async function terminalizeBlockedCatalogRetry(
 
   const entry = await ctx.db.get(attempt.entryId);
   const entryShouldBeTerminalized =
-    entry?.sourceContentHash === attempt.sourceContentHash &&
+    entry !== null &&
+    (attempt.dispatchKind === "deterministic"
+      ? entry.sourceContentHash === attempt.sourceContentHash
+      : hasSameAdoptedContent(entry, attempt)) &&
     (entry.scanStatus === "planned" || entry.scanStatus === "queued");
   if (entryShouldBeTerminalized) {
     await ctx.db.patch(entry._id, {
       scanStatus: canceled ? "canceled" : "failed",
-      publicVisible: false,
+      publicVisible: entry.publicVisible && entry.publishedScanAttemptId !== undefined,
       updatedAt: now,
     });
   }

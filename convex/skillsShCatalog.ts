@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, query } from "./functions";
+import { newestReusableAllowedAttempt } from "./lib/skillsShAttemptHistory";
 import {
   assertSkillsShCatalogControlMutationAllowed,
   assertSkillsShFixtureEnvironmentAllowed,
@@ -16,8 +17,15 @@ import {
 import {
   buildSkillsShCatalogInstallResolution,
   isExactSkillsShCatalogAttempt,
+  resolveSkillsShCatalogActiveSource,
   shouldPublishSkillsShCatalogEntry,
+  shouldServePublishedSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
+import {
+  hasSameAdoptedContent,
+  shouldPromoteAdoptedCandidate,
+} from "./lib/skillsShRefreshLifecycle";
+import { buildExternalSkillMetricPatch } from "./lib/skillStats";
 import { validateFilePath } from "./lib/skillZip";
 import { enqueueSkillsShCatalogScanRequest } from "./securityScan";
 
@@ -68,6 +76,7 @@ const stagingLiveRowValidator = v.object({
   claimPublisherHandle: v.optional(v.string()),
   sourceContentHash: v.string(),
   installs: v.number(),
+  githubStars: v.optional(v.number()),
 });
 const sourceVerificationValidator = v.object({
   githubOwnerId: v.number(),
@@ -167,8 +176,21 @@ async function reconcileNativeSkill(
     const source = await ctx.db.get(skill.githubSourceId);
     reads += 1;
     if (source?.repo.trim().toLowerCase() !== `${row.owner}/${row.repo}`) continue;
+    const metricPatch = buildExternalSkillMetricPatch({
+      skillsShInstalls: row.installs,
+      githubStars: row.githubStars,
+    });
+    const metricPatchChanged = Object.entries(metricPatch).some(
+      ([field, value]) => skill[field as keyof typeof skill] !== value,
+    );
     return {
       reads,
+      nativeMetricUpdate: metricPatchChanged
+        ? {
+            skillId: skill._id,
+            patch: metricPatch,
+          }
+        : undefined,
       reconciliation: {
         kind: "exact-native" as const,
         nativeSkillId: skill._id,
@@ -198,6 +220,37 @@ async function reconcileNativeSkill(
     },
   };
 }
+
+export const syncNativeSkillMetricsFromCatalogEntryInternal = internalMutation({
+  args: {
+    entryId: v.id("skillsShCatalogEntries"),
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const [entry, skill] = await Promise.all([ctx.db.get(args.entryId), ctx.db.get(args.skillId)]);
+    if (
+      !entry ||
+      !skill ||
+      entry.reconciliation?.kind !== "exact-native" ||
+      entry.reconciliation.nativeSkillId !== args.skillId
+    ) {
+      return { applied: false };
+    }
+    const patch = buildExternalSkillMetricPatch({
+      skillsShInstalls: entry.installs,
+      githubStars: entry.githubStars,
+    });
+    const changed = Object.entries(patch).some(
+      ([field, value]) => skill[field as keyof typeof skill] !== value,
+    );
+    if (!changed) return { applied: false };
+
+    // The skills-table trigger in functions.ts refreshes the search digest from
+    // this patch, keeping the batch write budget independent of digest fan-out.
+    await ctx.db.patch(skill._id, patch);
+    return { applied: true };
+  },
+});
 
 function incrementReconciliationCounts(
   counts: ReturnType<typeof normalizedCounts>,
@@ -720,8 +773,7 @@ export const startControlledCanaryScanRunInternal = internalMutation({
     });
     await ctx.db.patch(entry._id, {
       scanStatus: "planned",
-      publicVisible: false,
-      publishedScanAttemptId: undefined,
+      publicVisible: entry.publicVisible && entry.publishedScanAttemptId !== undefined,
       updatedAt: now,
     });
     return { runId, externalId: expected.externalId, reused: false as const };
@@ -952,21 +1004,32 @@ export const processStagingLiveBatchInternal = internalMutation({
       const observationUnchanged = existing
         ? sameFixtureObservation(existing, row, native.reconciliation)
         : false;
-      const contentChanged = existing
-        ? existing.sourceContentHash !== row.sourceContentHash
-        : false;
-      const existingAttempt =
-        existing && control.scanPlanningEnabled
-          ? await ctx.db
-              .query("skillsShCatalogScanAttempts")
-              .withIndex("by_entry_and_source_content_hash", (q) =>
-                q.eq("entryId", existing._id).eq("sourceContentHash", row.sourceContentHash),
-              )
-              .filter((q) => q.neq(q.field("status"), "canceled"))
-              .order("desc")
-              .first()
+      const contentChanged = existing ? !hasSameAdoptedContent(existing, row) : false;
+      const attemptHistory = existing
+        ? await findAdoptedAttemptHistory(ctx, existing._id, row)
+        : { existingAttempt: null, reusableAllowedAttempt: null, readsUsed: 0 };
+      readsUsed += attemptHistory.readsUsed;
+      const { existingAttempt, reusableAllowedAttempt } = attemptHistory;
+      const publishedAttempt =
+        existing?.publishedScanAttemptId !== undefined
+          ? await ctx.db.get(existing.publishedScanAttemptId)
           : null;
-      if (existing && control.scanPlanningEnabled) readsUsed += 1;
+      if (existing?.publishedScanAttemptId !== undefined) readsUsed += 1;
+      const reusableAllowedRefresh =
+        existing !== null &&
+        reusableAllowedAttempt !== null &&
+        (existing.publishedScanAttemptId !== reusableAllowedAttempt._id ||
+          !isExactSkillsShCatalogAttempt(row, {
+            externalId: reusableAllowedAttempt.externalId,
+            githubOwnerId: reusableAllowedAttempt.githubOwnerId ?? 0,
+            owner: reusableAllowedAttempt.owner ?? "",
+            repo: reusableAllowedAttempt.repo ?? "",
+            slug: reusableAllowedAttempt.slug ?? "",
+            githubPath: reusableAllowedAttempt.githubPath,
+            githubCommit: reusableAllowedAttempt.githubCommit,
+            githubContentHash: reusableAllowedAttempt.githubContentHash,
+            sourceContentHash: reusableAllowedAttempt.sourceContentHash,
+          }));
       const shouldPlanScan =
         control.scanPlanningEnabled &&
         counts.scansPlanned < run.budgets.maxPlannedScans &&
@@ -974,17 +1037,63 @@ export const processStagingLiveBatchInternal = internalMutation({
         // for automatic replanning; failed hashes require an explicit retry policy.
         !existingAttempt &&
         (!existing || contentChanged || existing.scanStatus !== "planned");
-      if (writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
+      const metricScheduleWriteCost = native.nativeMetricUpdate ? 1 : 0;
+      const observationWriteCost = 1 + (reusableAllowedRefresh ? 1 : 0) + metricScheduleWriteCost;
+      if (writesUsed + observationWriteCost + 1 > run.budgets.maxWritesPerBatch) break;
 
       incrementReconciliationCounts(counts, native.reconciliation);
       counts.observed += 1;
       cursor += 1;
       if (shouldPlanScan) counts.scansPlanned += 1;
+      let entryId = existing?._id;
       if (existing) {
         if (observationUnchanged) counts.unchanged += 1;
         else {
           counts.wouldUpdate += 1;
           counts.updated += 1;
+        }
+        let publishedScanAttemptId = existing.publishedScanAttemptId;
+        let publicVisible = existing.publicVisible && publishedAttempt !== null;
+        let scanStatus: Doc<"skillsShCatalogEntries">["scanStatus"] = shouldPlanScan
+          ? "planned"
+          : contentChanged && existingAttempt
+            ? scanStatusFromAttempt(existingAttempt)
+            : contentChanged
+              ? "not-planned"
+              : existing.scanStatus;
+        if (reusableAllowedRefresh && reusableAllowedAttempt?.verdict) {
+          const completedAt =
+            reusableAllowedAttempt.completedAt ?? reusableAllowedAttempt.updatedAt;
+          publishedScanAttemptId = await ctx.db.insert("skillsShCatalogScanAttempts", {
+            entryId: existing._id,
+            runId: run._id,
+            externalId: row.externalId,
+            githubOwnerId: row.githubOwnerId,
+            owner: row.owner,
+            repo: row.repo,
+            slug: row.slug,
+            ...(row.githubPath ? { githubPath: row.githubPath } : {}),
+            ...(row.githubCommit ? { githubCommit: row.githubCommit } : {}),
+            ...(row.githubContentHash ? { githubContentHash: row.githubContentHash } : {}),
+            sourceContentHash: row.sourceContentHash,
+            ...(reusableAllowedAttempt.artifactContentHash
+              ? { artifactContentHash: reusableAllowedAttempt.artifactContentHash }
+              : {}),
+            source: reusableAllowedAttempt.source,
+            dispatchKind: reusableAllowedAttempt.dispatchKind,
+            priority: "low",
+            status: "succeeded",
+            verdict: reusableAllowedAttempt.verdict,
+            verdictSourceAttemptId:
+              reusableAllowedAttempt.verdictSourceAttemptId ?? reusableAllowedAttempt._id,
+            previousPublishedAttemptId: existing.publishedScanAttemptId,
+            completedAt,
+            createdAt: now,
+            updatedAt: now,
+          });
+          publicVisible = existing.publicVisible;
+          scanStatus = reusableAllowedAttempt.verdict;
+          writesUsed += 1;
         }
         await ctx.db.patch(existing._id, {
           sourceKind: "staging-live",
@@ -1000,23 +1109,19 @@ export const processStagingLiveBatchInternal = internalMutation({
           githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
+          githubStars: row.githubStars,
           sourceSnapshotId: run.snapshotId,
           reconciliation: native.reconciliation,
-          publicVisible: false,
-          scanStatus: shouldPlanScan
-            ? "planned"
-            : contentChanged && existingAttempt
-              ? scanStatusFromAttempt(existingAttempt)
-              : contentChanged
-                ? "not-planned"
-                : existing.scanStatus,
+          publicVisible,
+          publishedScanAttemptId,
+          scanStatus,
           lastObservedAt: now,
           updatedAt: now,
         });
       } else {
         counts.wouldInsert += 1;
         counts.inserted += 1;
-        await ctx.db.insert("skillsShCatalogEntries", {
+        entryId = await ctx.db.insert("skillsShCatalogEntries", {
           externalId: row.externalId,
           sourceKind: "staging-live",
           githubOwnerId: row.githubOwnerId,
@@ -1031,6 +1136,7 @@ export const processStagingLiveBatchInternal = internalMutation({
           githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
+          githubStars: row.githubStars,
           sourceSnapshotId: run.snapshotId,
           reconciliation: native.reconciliation,
           publicVisible: false,
@@ -1042,6 +1148,17 @@ export const processStagingLiveBatchInternal = internalMutation({
         });
       }
       writesUsed += 1;
+      if (entryId && native.nativeMetricUpdate) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+          {
+            entryId,
+            skillId: native.nativeMetricUpdate.skillId,
+          },
+        );
+        writesUsed += 1;
+      }
     }
 
     if (cursor !== args.cursor + args.rows.length) {
@@ -1148,13 +1265,20 @@ export const processFixtureBatchInternal = internalMutation({
         !existingAttempt &&
         (!existing || contentChanged || existing.scanStatus !== "planned");
       const entryWriteRequired = !run.dryRun;
-      if (entryWriteRequired && writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
+      const metricScheduleWriteCost = entryWriteRequired && native.nativeMetricUpdate ? 1 : 0;
+      if (
+        entryWriteRequired &&
+        writesUsed + 2 + metricScheduleWriteCost > run.budgets.maxWritesPerBatch
+      ) {
+        break;
+      }
 
       incrementReconciliationCounts(counts, native.reconciliation);
       counts.observed += 1;
       cursor += 1;
       entriesProcessed += 1;
       if (shouldPlanScan) counts.scansPlanned += 1;
+      let entryId = existing?._id;
       if (existing) {
         if (observationUnchanged) counts.unchanged += 1;
         else {
@@ -1176,6 +1300,7 @@ export const processFixtureBatchInternal = internalMutation({
             githubContentHash: row.githubContentHash,
             sourceContentHash: row.sourceContentHash,
             installs: row.installs,
+            githubStars: row.githubStars,
             sourceSnapshotId: fixture.snapshotId,
             reconciliation: native.reconciliation,
             // This gate has no publication seam; every catalog write reasserts dark visibility.
@@ -1192,12 +1317,23 @@ export const processFixtureBatchInternal = internalMutation({
           });
           writesUsed += 1;
         }
+        if (entryId && entryWriteRequired && native.nativeMetricUpdate) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+            {
+              entryId,
+              skillId: native.nativeMetricUpdate.skillId,
+            },
+          );
+          writesUsed += 1;
+        }
         continue;
       }
 
       counts.wouldInsert += 1;
       if (!run.dryRun) {
-        await ctx.db.insert("skillsShCatalogEntries", {
+        entryId = await ctx.db.insert("skillsShCatalogEntries", {
           externalId: row.externalId,
           sourceKind: fixture.sourceKind,
           githubOwnerId: row.githubOwnerId,
@@ -1212,6 +1348,7 @@ export const processFixtureBatchInternal = internalMutation({
           githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
+          githubStars: row.githubStars,
           sourceSnapshotId: fixture.snapshotId,
           reconciliation: native.reconciliation,
           publicVisible: false,
@@ -1223,6 +1360,17 @@ export const processFixtureBatchInternal = internalMutation({
         });
         writesUsed += 1;
         counts.inserted += 1;
+        if (native.nativeMetricUpdate) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+            {
+              entryId,
+              skillId: native.nativeMetricUpdate.skillId,
+            },
+          );
+          writesUsed += 1;
+        }
       }
     }
 
@@ -1346,8 +1494,53 @@ type AdmitScansArgs = {
   externalIds: string[];
   dispatchKind: "deterministic" | "real";
   actorUserId?: Id<"users">;
+  adoptionId?: Id<"skillsShAdoptions">;
   artifacts?: StagingLiveArtifact[];
 };
+
+async function hasValidReusableAdoptionScanLinkage(
+  ctx: MutationCtx,
+  args: {
+    adoption: Doc<"skillsShAdoptions">;
+    attempt: Doc<"skillsShCatalogScanAttempts">;
+    artifactContentHash: string;
+  },
+) {
+  const [run, scanRequest, scanJob, linkedAdoption] = await Promise.all([
+    ctx.db.get(args.attempt.runId),
+    args.attempt.skillScanRequestId ? ctx.db.get(args.attempt.skillScanRequestId) : null,
+    args.attempt.securityScanJobId ? ctx.db.get(args.attempt.securityScanJobId) : null,
+    ctx.db
+      .query("skillsShAdoptions")
+      .withIndex("by_scan_attempt_id", (q) => q.eq("scanAttemptId", args.attempt._id))
+      .unique(),
+  ]);
+  const activeStatuses = new Set(["queued", "running"]);
+  return (
+    args.adoption.scanAttemptId === args.attempt._id &&
+    args.adoption.scanRunId === args.attempt.runId &&
+    linkedAdoption?._id === args.adoption._id &&
+    run?.snapshotId === args.adoption.sourceSnapshotId &&
+    run._creationTime > args.adoption._creationTime &&
+    args.attempt._creationTime > args.adoption._creationTime &&
+    args.attempt.artifactContentHash?.toLowerCase() === args.artifactContentHash.toLowerCase() &&
+    activeStatuses.has(args.attempt.status) &&
+    scanRequest?._creationTime !== undefined &&
+    scanRequest._creationTime > args.adoption._creationTime &&
+    activeStatuses.has(scanRequest.status) &&
+    scanRequest.sourceKind === "skills-sh-catalog" &&
+    scanRequest.requestedJobSource === "skills-sh-catalog-test" &&
+    scanRequest.skillsShCatalogAttemptId === args.attempt._id &&
+    scanRequest.securityScanJobId === scanJob?._id &&
+    scanRequest.sha256hash === args.attempt.artifactContentHash &&
+    scanJob?._creationTime !== undefined &&
+    scanJob._creationTime > args.adoption._creationTime &&
+    activeStatuses.has(scanJob.status) &&
+    scanJob.source === "skills-sh-catalog-test" &&
+    scanJob.targetKind === "skillScanRequest" &&
+    scanJob.skillScanRequestId === scanRequest._id
+  );
+}
 
 async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
   const environment = assertSkillsShFixtureEnvironmentAllowed();
@@ -1399,9 +1592,19 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     if (!args.actorUserId) {
       throw new ConvexError("real Test scan admission requires an authenticated operator");
     }
-    const actor = await ctx.db.get(args.actorUserId);
-    if (actor?.role !== "admin") {
-      throw new ConvexError("real Test scan admission requires an admin operator");
+    const [actor, adoption] = await Promise.all([
+      ctx.db.get(args.actorUserId),
+      args.adoptionId ? ctx.db.get(args.adoptionId) : null,
+    ]);
+    const adoptionAuthorized =
+      adoption?.actorUserId === args.actorUserId &&
+      adoption.status === "pending_scan" &&
+      externalIds.length === 1 &&
+      adoption.externalId === externalIds[0];
+    if (actor?.role !== "admin" && !adoptionAuthorized) {
+      throw new ConvexError(
+        "real Test scan admission requires an admin operator or exact verified adoption",
+      );
     }
   }
   const artifactInputs = args.artifacts ?? [];
@@ -1440,6 +1643,12 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
   let admitted = 0;
   let skipped = 0;
   const admittedExternalIds: string[] = [];
+  const admittedAttempts: Array<{
+    externalId: string;
+    attemptId: Id<"skillsShCatalogScanAttempts">;
+    reused: boolean;
+  }> = [];
+  let reused = 0;
   let readsUsed = args.dispatchKind === "real" ? 8 : 7;
   let writesUsed = 0;
   const runWriteCount = 1;
@@ -1458,12 +1667,24 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     if (
       !entry ||
       (sourceRow && entry.sourceContentHash !== sourceRow.sourceContentHash) ||
-      (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId) ||
-      entry.scanStatus !== "planned"
+      (run.sourceKind === "staging-live" && entry.sourceSnapshotId !== run.snapshotId)
     ) {
       skipped += 1;
       continue;
     }
+    const adoption = args.adoptionId ? await ctx.db.get(args.adoptionId) : null;
+    if (args.adoptionId) {
+      if (
+        !adoption ||
+        adoption.entryId !== entry._id ||
+        adoption.actorUserId !== args.actorUserId ||
+        adoption.externalId !== entry.externalId ||
+        adoption.sourceContentHash !== entry.sourceContentHash
+      ) {
+        throw new ConvexError("skills.sh adoption scan source linkage is invalid");
+      }
+    }
+    const artifact = artifacts.get(externalId);
     const existingAttempt = await ctx.db
       .query("skillsShCatalogScanAttempts")
       .withIndex("by_entry_and_source_content_hash", (q) =>
@@ -1497,7 +1718,56 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
         githubContentHash: existingAttempt.githubContentHash,
         sourceContentHash: existingAttempt.sourceContentHash,
       });
+    const reusableAttempt = adoption?.scanAttemptId
+      ? await ctx.db.get(adoption.scanAttemptId)
+      : null;
+    if (adoption?.scanAttemptId) readsUsed += 1;
+    const reusableAttemptIsExact =
+      reusableAttempt?.githubOwnerId !== undefined &&
+      reusableAttempt.owner !== undefined &&
+      reusableAttempt.repo !== undefined &&
+      reusableAttempt.slug !== undefined &&
+      isExactSkillsShCatalogAttempt(entry, {
+        externalId: reusableAttempt.externalId,
+        githubOwnerId: reusableAttempt.githubOwnerId,
+        owner: reusableAttempt.owner,
+        repo: reusableAttempt.repo,
+        slug: reusableAttempt.slug,
+        githubPath: reusableAttempt.githubPath,
+        githubCommit: reusableAttempt.githubCommit,
+        githubContentHash: reusableAttempt.githubContentHash,
+        sourceContentHash: reusableAttempt.sourceContentHash,
+      });
+    const reusableLinkageValid =
+      adoption !== null &&
+      artifact !== undefined &&
+      reusableAttempt !== null &&
+      reusableAttemptIsExact &&
+      (await hasValidReusableAdoptionScanLinkage(ctx, {
+        adoption,
+        attempt: reusableAttempt,
+        artifactContentHash: artifact.artifactContentHash,
+      }));
+    if (reusableAttempt) readsUsed += 4;
+    if (adoption?.scanAttemptId && !reusableLinkageValid) {
+      throw new ConvexError("skills.sh adoption scan linkage is invalid");
+    }
+    const canReuseExistingAttempt =
+      adoption !== null &&
+      artifact !== undefined &&
+      reusableAttempt !== null &&
+      reusableLinkageValid;
+    if (canReuseExistingAttempt && reusableAttempt) {
+      reused += 1;
+      admittedAttempts.push({
+        externalId,
+        attemptId: reusableAttempt._id,
+        reused: true,
+      });
+      continue;
+    }
     const existingAttemptBlocksAdmission =
+      adoption === null &&
       existingAttemptIsExact &&
       (existingAttempt.status === "queued" ||
         existingAttempt.status === "running" ||
@@ -1510,6 +1780,10 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
       skipped += 1;
       continue;
     }
+    if (entry.scanStatus !== "planned") {
+      skipped += 1;
+      continue;
+    }
     if (run.counts.scansAdmitted + admitted >= effectiveRunAdmissionLimit) {
       throw new ConvexError("skills.sh catalog run scan-admission budget exceeded");
     }
@@ -1519,7 +1793,6 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     if (queueHealth.catalogQueued + admitted >= control.maxCatalogQueued) {
       throw new ConvexError("skills.sh catalog queued-scan budget exceeded");
     }
-    const artifact = artifacts.get(externalId);
     if (args.dispatchKind === "real") {
       if (
         !artifact ||
@@ -1542,7 +1815,7 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
     }
     // skillScanRequests embeds its validated file manifest in one document, so file count
     // does not change the six real-admission writes before the final run patch.
-    const admissionWriteCost = args.dispatchKind === "real" ? 6 : 2;
+    const admissionWriteCost = args.dispatchKind === "real" ? (args.adoptionId ? 7 : 6) : 2;
     if (writesUsed + admissionWriteCost + runWriteCount > run.budgets.maxWritesPerBatch) {
       throw new ConvexError("skills.sh catalog scan-admission write budget exceeded");
     }
@@ -1578,15 +1851,29 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
       });
       writesUsed += 4;
     }
+    if (args.adoptionId) {
+      const pendingAdoption = await ctx.db.get(args.adoptionId);
+      if (!pendingAdoption || pendingAdoption.status !== "pending_scan") {
+        throw new ConvexError("skills.sh adoption is not waiting for a scan");
+      }
+      if (pendingAdoption.scanAttemptId && pendingAdoption.scanAttemptId !== attemptId) {
+        throw new ConvexError("skills.sh adoption already has a bound scan attempt");
+      }
+      await ctx.db.patch(pendingAdoption._id, {
+        scanAttemptId: attemptId,
+        updatedAt: now,
+      });
+      writesUsed += 1;
+    }
     await ctx.db.patch(entry._id, {
       scanStatus: "queued",
-      publicVisible: false,
-      publishedScanAttemptId: undefined,
+      publicVisible: entry.publicVisible && entry.publishedScanAttemptId !== undefined,
       updatedAt: now,
     });
     writesUsed += 2;
     admitted += 1;
     admittedExternalIds.push(externalId);
+    admittedAttempts.push({ externalId, attemptId, reused: false });
   }
   const nextCounts = {
     ...run.counts,
@@ -1606,8 +1893,10 @@ async function admitScans(ctx: MutationCtx, args: AdmitScansArgs) {
   return {
     requested: externalIds.length,
     admitted,
+    reused,
     skipped,
     admittedExternalIds,
+    admittedAttempts,
     queueHealth,
     counts: nextCounts,
   };
@@ -1634,6 +1923,7 @@ export const admitValidatedRealScansInternal = internalMutation({
     runId: v.id("skillsShCatalogRuns"),
     externalIds: v.array(v.string()),
     actorUserId: v.id("users"),
+    adoptionId: v.optional(v.id("skillsShAdoptions")),
     artifacts: v.array(stagingLiveArtifactValidator),
   },
   handler: async (ctx, args) => {
@@ -1649,6 +1939,7 @@ export const admitRealScansInternal: ReturnType<typeof internalAction> = interna
     runId: v.id("skillsShCatalogRuns"),
     externalIds: v.array(v.string()),
     actorUserId: v.id("users"),
+    adoptionId: v.optional(v.id("skillsShAdoptions")),
     artifacts: v.array(stagingLiveArtifactValidator),
   },
   handler: async (ctx, args) => {
@@ -1674,6 +1965,7 @@ export const admitRealScansInternal: ReturnType<typeof internalAction> = interna
       runId: args.runId,
       externalIds,
       actorUserId: args.actorUserId,
+      adoptionId: args.adoptionId,
       artifacts: Array.from(validatedArtifacts.values()),
     });
   },
@@ -1862,7 +2154,14 @@ export const recordRealScanResultInternal = internalMutation({
       return { applied: false, reason: "run-canceled" };
     }
     const entry = await ctx.db.get(attempt.entryId);
-    if (!entry || entry.sourceContentHash !== attempt.sourceContentHash) {
+    if (
+      !entry ||
+      !shouldPromoteAdoptedCandidate({
+        current: entry,
+        candidate: attempt,
+        verdict: "clean",
+      })
+    ) {
       const now = Date.now();
       await ctx.db.patch(attempt._id, {
         status: "canceled",
@@ -1883,17 +2182,86 @@ export const recordRealScanResultInternal = internalMutation({
       });
       return { applied: false, reason: "stale-attempt" };
     }
+    const control = await getControlDoc(ctx);
+    const attemptIdentity =
+      attempt.githubOwnerId !== undefined &&
+      attempt.owner !== undefined &&
+      attempt.repo !== undefined &&
+      attempt.slug !== undefined
+        ? {
+            externalId: attempt.externalId,
+            githubOwnerId: attempt.githubOwnerId,
+            owner: attempt.owner,
+            repo: attempt.repo,
+            slug: attempt.slug,
+            githubPath: attempt.githubPath,
+            githubCommit: attempt.githubCommit,
+            githubContentHash: attempt.githubContentHash,
+            sourceContentHash: attempt.sourceContentHash,
+            dispatchKind: attempt.dispatchKind,
+            source: attempt.source,
+          }
+        : null;
     const now = Date.now();
     const succeeded = args.verdict !== "failed";
+    const candidatePromoted =
+      attemptIdentity !== null &&
+      attempt.publicationRolledBackAt === undefined &&
+      shouldPublishSkillsShCatalogEntry({
+        control,
+        entry,
+        attempt: attemptIdentity,
+        verdict: args.verdict,
+      });
+    const pointerOnlyPromotion =
+      candidatePromoted &&
+      attemptIdentity !== null &&
+      !isExactSkillsShCatalogAttempt(entry, attemptIdentity);
+    const publicVisible =
+      candidatePromoted || (entry.publicVisible && entry.publishedScanAttemptId !== undefined);
     await ctx.db.patch(attempt._id, {
       status: succeeded ? "succeeded" : "failed",
       verdict: args.verdict,
+      ...(candidatePromoted && !pointerOnlyPromotion
+        ? { previousPublishedAttemptId: entry.publishedScanAttemptId }
+        : {}),
       completedAt: now,
       updatedAt: now,
     });
+    const publishedScanAttemptId = pointerOnlyPromotion
+      ? await ctx.db.insert("skillsShCatalogScanAttempts", {
+          entryId: entry._id,
+          runId: attempt.runId,
+          externalId: entry.externalId,
+          githubOwnerId: entry.githubOwnerId,
+          owner: entry.owner,
+          repo: entry.repo,
+          slug: entry.slug,
+          ...(entry.githubPath ? { githubPath: entry.githubPath } : {}),
+          ...(entry.githubCommit ? { githubCommit: entry.githubCommit } : {}),
+          ...(entry.githubContentHash ? { githubContentHash: entry.githubContentHash } : {}),
+          sourceContentHash: entry.sourceContentHash,
+          ...(attempt.artifactContentHash
+            ? { artifactContentHash: attempt.artifactContentHash }
+            : {}),
+          source: attempt.source,
+          dispatchKind: attempt.dispatchKind,
+          priority: "low",
+          status: "succeeded",
+          verdict: args.verdict,
+          verdictSourceAttemptId: attempt.verdictSourceAttemptId ?? attempt._id,
+          previousPublishedAttemptId: entry.publishedScanAttemptId,
+          completedAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })
+      : candidatePromoted
+        ? attempt._id
+        : entry.publishedScanAttemptId;
     await ctx.db.patch(entry._id, {
       scanStatus: args.verdict,
-      publicVisible: false,
+      publicVisible,
+      publishedScanAttemptId,
       updatedAt: now,
     });
     await ctx.db.patch(run._id, {
@@ -1904,11 +2272,11 @@ export const recordRealScanResultInternal = internalMutation({
       operations: addOperations(run.operations, {
         functionCalls: 1,
         dbReads: 3,
-        dbWrites: 3,
+        dbWrites: pointerOnlyPromotion ? 4 : 3,
       }),
       updatedAt: now,
     });
-    return { applied: true, publicVisible: false };
+    return { applied: true, publicVisible };
   },
 });
 
@@ -2552,8 +2920,7 @@ export const getPublicEntry = query({
       control.mode !== "staging-live" ||
       control.paused ||
       !control.publicVisibilityEnabled ||
-      !entry?.publicVisible ||
-      (entry.scanStatus !== "clean" && entry.scanStatus !== "suspicious")
+      !entry?.publicVisible
     ) {
       return null;
     }
@@ -2564,8 +2931,8 @@ export const getPublicEntry = query({
       !attempt ||
       attempt.status !== "succeeded" ||
       attempt.publicationRolledBackAt !== undefined ||
-      attempt.verdict !== entry.scanStatus ||
-      !shouldPublishSkillsShCatalogEntry({
+      (attempt.verdict !== "clean" && attempt.verdict !== "suspicious") ||
+      !shouldServePublishedSkillsShCatalogEntry({
         control,
         entry,
         attempt: {
@@ -2586,20 +2953,49 @@ export const getPublicEntry = query({
     ) {
       return null;
     }
-    const install = buildSkillsShCatalogInstallResolution(entry);
+    const activeSource = resolveSkillsShCatalogActiveSource({
+      entry,
+      attempt: {
+        externalId: attempt.externalId,
+        githubOwnerId: attempt.githubOwnerId ?? 0,
+        owner: attempt.owner ?? "",
+        repo: attempt.repo ?? "",
+        slug: attempt.slug ?? "",
+        githubPath: attempt.githubPath,
+        githubCommit: attempt.githubCommit,
+        githubContentHash: attempt.githubContentHash,
+        sourceContentHash: attempt.sourceContentHash,
+      },
+    });
+    const install = buildSkillsShCatalogInstallResolution(activeSource);
     if (!install) return null;
-    const scanRequest = attempt.skillScanRequestId
-      ? await ctx.db.get(attempt.skillScanRequestId)
+    const verdictSourceAttempt = attempt.verdictSourceAttemptId
+      ? await ctx.db.get(attempt.verdictSourceAttemptId)
+      : attempt;
+    if (
+      !verdictSourceAttempt ||
+      verdictSourceAttempt.status !== "succeeded" ||
+      verdictSourceAttempt.publicationRolledBackAt !== undefined ||
+      verdictSourceAttempt.verdict !== attempt.verdict ||
+      verdictSourceAttempt.sourceContentHash !== attempt.sourceContentHash ||
+      verdictSourceAttempt.githubContentHash !== attempt.githubContentHash ||
+      verdictSourceAttempt.dispatchKind !== attempt.dispatchKind ||
+      verdictSourceAttempt.source !== attempt.source
+    ) {
+      return null;
+    }
+    const scanRequest = verdictSourceAttempt?.skillScanRequestId
+      ? await ctx.db.get(verdictSourceAttempt.skillScanRequestId)
       : null;
     const artifact =
-      attempt.artifactContentHash &&
+      verdictSourceAttempt?.artifactContentHash &&
       scanRequest?.sourceKind === "skills-sh-catalog" &&
       scanRequest.status === "succeeded" &&
-      scanRequest.skillsShCatalogAttemptId === attempt._id &&
-      scanRequest.securityScanJobId === attempt.securityScanJobId &&
-      scanRequest.sha256hash === attempt.artifactContentHash
+      scanRequest.skillsShCatalogAttemptId === verdictSourceAttempt._id &&
+      scanRequest.securityScanJobId === verdictSourceAttempt.securityScanJobId &&
+      scanRequest.sha256hash === verdictSourceAttempt.artifactContentHash
         ? {
-            contentHash: attempt.artifactContentHash,
+            contentHash: verdictSourceAttempt.artifactContentHash,
             files: scanRequest.files.map(({ path, size, sha256, contentType }) => ({
               path,
               size,
@@ -2613,7 +3009,7 @@ export const getPublicEntry = query({
       route: `/skills-sh/${entry.externalId}`,
       displayName: entry.displayName,
       summary:
-        entry.scanStatus === "suspicious"
+        attempt.verdict === "suspicious"
           ? "GitHub-backed skill indexed by skills.sh and flagged as suspicious by ClawHub."
           : "GitHub-backed skill indexed by skills.sh and verified by ClawHub.",
       owner: {
@@ -2621,16 +3017,16 @@ export const getPublicEntry = query({
         githubUrl: `https://github.com/${entry.owner}`,
       },
       repository: `${entry.owner}/${entry.repo}`,
-      githubPath: entry.githubPath,
-      githubCommit: entry.githubCommit,
-      githubContentHash: entry.githubContentHash,
+      githubPath: activeSource.githubPath,
+      githubCommit: activeSource.githubCommit,
+      githubContentHash: activeSource.githubContentHash,
       sourceUrl: entry.sourceUrl,
       installs: entry.installs,
       security: {
-        verdict: entry.scanStatus,
+        verdict: attempt.verdict,
         source: "clawhub" as const,
-        attemptId: attempt._id,
-        scannedAt: attempt.completedAt ?? attempt.updatedAt,
+        attemptId: verdictSourceAttempt._id,
+        scannedAt: verdictSourceAttempt.completedAt ?? verdictSourceAttempt.updatedAt,
       },
       artifact,
       install,
@@ -2660,6 +3056,7 @@ export const rollbackPublicationInternal = internalMutation({
       .query("skillsShCatalogEntries")
       .withIndex("by_external_id", (q) => q.eq("externalId", args.externalId.trim().toLowerCase()))
       .unique();
+    const control = await getControlDoc(ctx);
     const attempt = await ctx.db.get(args.attemptId);
     const attemptIdentity =
       attempt?.githubOwnerId !== undefined &&
@@ -2683,7 +3080,11 @@ export const rollbackPublicationInternal = internalMutation({
       !attempt ||
       attempt.entryId !== entry._id ||
       !attemptIdentity ||
-      !isExactSkillsShCatalogAttempt(entry, attemptIdentity) ||
+      attemptIdentity.externalId !== entry.externalId ||
+      attemptIdentity.githubOwnerId !== entry.githubOwnerId ||
+      attemptIdentity.owner !== entry.owner ||
+      attemptIdentity.repo !== entry.repo ||
+      attemptIdentity.slug !== entry.slug ||
       attempt.status !== "succeeded" ||
       attempt.dispatchKind !== "real" ||
       attempt.source !== "skills-sh-catalog-test" ||
@@ -2695,6 +3096,7 @@ export const rollbackPublicationInternal = internalMutation({
       return {
         externalId: entry.externalId,
         publicVisible: entry.publicVisible,
+        restoredAttemptId: entry.publishedScanAttemptId,
         alreadyRolledBack: true,
         actor: args.actor.trim(),
         reason: args.reason.trim(),
@@ -2704,15 +3106,72 @@ export const rollbackPublicationInternal = internalMutation({
       throw new ConvexError("skills.sh publication rollback attempt is not currently published");
     }
     const now = Date.now();
+    const restoredAttempt = attempt.previousPublishedAttemptId
+      ? await ctx.db.get(attempt.previousPublishedAttemptId)
+      : null;
+    const restoredVerdictSourceAttempt = restoredAttempt?.verdictSourceAttemptId
+      ? await ctx.db.get(restoredAttempt.verdictSourceAttemptId)
+      : restoredAttempt;
+    const restoredAttemptCanServe =
+      restoredAttempt === null ||
+      (restoredAttempt.status === "succeeded" &&
+        restoredAttempt.publicationRolledBackAt === undefined &&
+        (restoredAttempt.verdict === "clean" || restoredAttempt.verdict === "suspicious") &&
+        shouldServePublishedSkillsShCatalogEntry({
+          control,
+          entry,
+          attempt: {
+            externalId: restoredAttempt.externalId,
+            githubOwnerId: restoredAttempt.githubOwnerId ?? 0,
+            owner: restoredAttempt.owner ?? "",
+            repo: restoredAttempt.repo ?? "",
+            slug: restoredAttempt.slug ?? "",
+            githubPath: restoredAttempt.githubPath,
+            githubCommit: restoredAttempt.githubCommit,
+            githubContentHash: restoredAttempt.githubContentHash,
+            sourceContentHash: restoredAttempt.sourceContentHash,
+            dispatchKind: restoredAttempt.dispatchKind,
+            source: restoredAttempt.source,
+          },
+          verdict: restoredAttempt.verdict,
+        }) &&
+        buildSkillsShCatalogInstallResolution(
+          resolveSkillsShCatalogActiveSource({
+            entry,
+            attempt: {
+              externalId: restoredAttempt.externalId,
+              githubOwnerId: restoredAttempt.githubOwnerId ?? 0,
+              owner: restoredAttempt.owner ?? "",
+              repo: restoredAttempt.repo ?? "",
+              slug: restoredAttempt.slug ?? "",
+              githubPath: restoredAttempt.githubPath,
+              githubCommit: restoredAttempt.githubCommit,
+              githubContentHash: restoredAttempt.githubContentHash,
+              sourceContentHash: restoredAttempt.sourceContentHash,
+            },
+          }),
+        ) !== null &&
+        restoredVerdictSourceAttempt !== null &&
+        restoredVerdictSourceAttempt.status === "succeeded" &&
+        restoredVerdictSourceAttempt.publicationRolledBackAt === undefined &&
+        restoredVerdictSourceAttempt.verdict === restoredAttempt.verdict &&
+        restoredVerdictSourceAttempt.sourceContentHash === restoredAttempt.sourceContentHash &&
+        restoredVerdictSourceAttempt.githubContentHash === restoredAttempt.githubContentHash &&
+        restoredVerdictSourceAttempt.dispatchKind === restoredAttempt.dispatchKind &&
+        restoredVerdictSourceAttempt.source === restoredAttempt.source);
+    if (restoredAttempt && (restoredAttempt.entryId !== entry._id || !restoredAttemptCanServe)) {
+      throw new ConvexError("skills.sh publication rollback predecessor is not allowed");
+    }
     await ctx.db.patch(attempt._id, { publicationRolledBackAt: now, updatedAt: now });
     await ctx.db.patch(entry._id, {
-      publicVisible: false,
-      publishedScanAttemptId: undefined,
+      publicVisible: restoredAttempt !== null,
+      publishedScanAttemptId: restoredAttempt?._id,
       updatedAt: now,
     });
     return {
       externalId: entry.externalId,
-      publicVisible: false,
+      publicVisible: restoredAttempt !== null,
+      restoredAttemptId: restoredAttempt?._id,
       alreadyRolledBack: false,
       actor: args.actor.trim(),
       reason: args.reason.trim(),
@@ -2759,6 +3218,7 @@ function sameFixtureObservation(
     existing.githubContentHash === row.githubContentHash &&
     existing.sourceContentHash === row.sourceContentHash &&
     existing.installs === row.installs &&
+    existing.githubStars === row.githubStars &&
     existingReconciliation?.kind === reconciliation.kind &&
     existingReconciliation.nativeSkillId === reconciliation.nativeSkillId &&
     existingReconciliation.nativeSlug === reconciliation.nativeSlug &&
@@ -2774,6 +3234,48 @@ function scanStatusFromAttempt(
   if (attempt.status === "queued" || attempt.status === "running") return "queued";
   if (attempt.status === "canceled") return "canceled";
   return attempt.verdict ?? "failed";
+}
+
+async function findAdoptedAttemptHistory(
+  ctx: MutationCtx,
+  entryId: Id<"skillsShCatalogEntries">,
+  row: ReturnType<typeof normalizeIdentity>,
+) {
+  const findAttempt = async (
+    status: Doc<"skillsShCatalogScanAttempts">["status"],
+    verdict: Doc<"skillsShCatalogScanAttempts">["verdict"],
+  ) =>
+    await ctx.db
+      .query("skillsShCatalogScanAttempts")
+      .withIndex("by_entry_hash_ghash_kind_source_active_status_verdict", (q) =>
+        q
+          .eq("entryId", entryId)
+          .eq("sourceContentHash", row.sourceContentHash)
+          .eq("githubContentHash", row.githubContentHash)
+          .eq("dispatchKind", "real")
+          .eq("source", "skills-sh-catalog-test")
+          .eq("publicationRolledBackAt", undefined)
+          .eq("status", status)
+          .eq("verdict", verdict),
+      )
+      .order("desc")
+      .first();
+  const attempts = await Promise.all([
+    findAttempt("queued", undefined),
+    findAttempt("running", undefined),
+    findAttempt("failed", undefined),
+    findAttempt("failed", "failed"),
+    findAttempt("succeeded", "clean"),
+    findAttempt("succeeded", "suspicious"),
+    findAttempt("succeeded", "malicious"),
+  ]);
+  const matchingAttempts = attempts
+    .filter((attempt): attempt is Doc<"skillsShCatalogScanAttempts"> => attempt !== null)
+    .filter((attempt) => hasSameAdoptedContent(row, attempt))
+    .sort((left, right) => right._creationTime - left._creationTime);
+  const existingAttempt = matchingAttempts[0] ?? null;
+  const reusableAllowedAttempt = newestReusableAllowedAttempt(matchingAttempts);
+  return { existingAttempt, reusableAllowedAttempt, readsUsed: attempts.length };
 }
 
 function fixtureObservationConflicts(
@@ -2966,10 +3468,15 @@ async function cancelAttempt(
   });
   dbWrites += 1;
   const entry = await ctx.db.get(attempt.entryId);
-  if (entry?.scanStatus === "queued" && entry.sourceContentHash === attempt.sourceContentHash) {
+  const entryStillCurrent =
+    entry?.scanStatus === "queued" &&
+    (attempt.dispatchKind === "deterministic"
+      ? entry.sourceContentHash === attempt.sourceContentHash
+      : hasSameAdoptedContent(entry, attempt));
+  if (entryStillCurrent) {
     await ctx.db.patch(entry._id, {
       scanStatus: "canceled",
-      publicVisible: false,
+      publicVisible: entry.publicVisible && entry.publishedScanAttemptId !== undefined,
       updatedAt: now,
     });
     return { canceled: true, dbReads, dbWrites: dbWrites + 1 };

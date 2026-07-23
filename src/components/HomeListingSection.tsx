@@ -33,23 +33,32 @@ import {
   homeListingCacheKey as listingCacheKey,
   itemMatchesAnyHomeCategory as itemMatchesAnyCategory,
   skillMatchesAnyHomeCategory as skillMatchesAnyCategory,
+  skillsShMatchesAnyHomeCategory,
   uniqueHomePlugins as uniquePlugins,
-  uniqueHomeSkillEntries as uniqueSkillEntries,
   type HomeListingCacheEntry,
   type HomeListingInitialData,
   type HomeListingKind as ListingKind,
   type HomeListingTab as ListingTab,
+  type HomeNativeSkillListingEntry,
   type HomeSkillListingEntry as SkillPageEntry,
 } from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import {
+  isSkillsShSearchResult,
+  SKILLS_SH_TRUST_LABEL,
+  skillsShRepositoryLabel,
+  type SkillsShSearchEntry,
+  type SkillsShSearchResult,
+} from "../lib/skillsShCatalog";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
+import { Badge } from "./ui/badge";
 
 type ListingView = "list" | "grid";
 
@@ -82,11 +91,33 @@ function isTypingTarget(target: EventTarget | null) {
   );
 }
 
-type SkillSearchHit = {
-  skill: PublicSkill;
-  ownerHandle?: string | null;
-  owner?: PublicUser | null;
-};
+type SkillSearchHit =
+  | SkillsShSearchEntry
+  | {
+      skill: PublicSkill;
+      ownerHandle?: string | null;
+      owner?: PublicUser | null;
+    };
+
+type HomeSkillEntry = SkillPageEntry;
+
+function isHomeSkillsShEntry(
+  entry: HomeSkillEntry,
+): entry is Extract<HomeSkillEntry, { source: "skills.sh" }> {
+  return "source" in entry && entry.source === "skills.sh";
+}
+
+function uniqueHomeSkillSearchEntries(entries: HomeSkillEntry[]) {
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = isHomeSkillsShEntry(entry)
+      ? `skills-sh:${entry.result.externalId}`
+      : `native:${entry.skill._id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 function HomeListingEmptyPanel({
   variant,
@@ -171,7 +202,7 @@ function HomeListingResults({
   );
 }
 
-function skillLink(entry: SkillPageEntry) {
+function skillLink(entry: HomeNativeSkillListingEntry) {
   const owner =
     entry.ownerHandle?.trim() ||
     entry.owner?.handle?.trim() ||
@@ -179,7 +210,13 @@ function skillLink(entry: SkillPageEntry) {
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(entry.skill.slug)}`;
 }
 
-function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
+function HomeListingSkillRow({
+  entry,
+  showStats,
+}: {
+  entry: HomeNativeSkillListingEntry;
+  showStats: boolean;
+}) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
 
@@ -214,6 +251,39 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
           </span>
         </div>
       ) : null}
+    </Link>
+  );
+}
+
+function HomeListingSkillsShRow({ result }: { result: SkillsShSearchResult }) {
+  return (
+    <Link to={result.route} className="home-v2-listing-row">
+      <span className="home-v2-listing-row-icon" aria-hidden="true">
+        <MarketplaceIcon
+          kind="skill"
+          label={result.displayName}
+          categorySlug={result.categories?.[0]}
+          size="sm"
+        />
+      </span>
+      <div className="home-v2-listing-row-body">
+        <div className="home-v2-listing-row-title">
+          <span className="home-v2-listing-row-name" title={result.displayName}>
+            {truncateText(result.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
+          <span className="home-v2-listing-row-by">{skillsShRepositoryLabel(result)}</span>
+          <Badge variant="warning" size="sm">
+            {SKILLS_SH_TRUST_LABEL}
+          </Badge>
+        </div>
+        <p className="home-v2-listing-row-summary">Indexed from skills.sh</p>
+      </div>
+      <div className="home-v2-listing-row-stats" aria-label="skills.sh installs">
+        <span>
+          <Download size={13} aria-hidden="true" />
+          {formatCompactStat(result.upstreamInstalls)}
+        </span>
+      </div>
     </Link>
   );
 }
@@ -257,7 +327,13 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   );
 }
 
-function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
+function HomeListingSkillCard({
+  entry,
+  showStats,
+}: {
+  entry: HomeNativeSkillListingEntry;
+  showStats: boolean;
+}) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
 
@@ -294,6 +370,39 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
           </span>
         </div>
       ) : null}
+    </Link>
+  );
+}
+
+function HomeListingSkillsShCard({ result }: { result: SkillsShSearchResult }) {
+  return (
+    <Link to={result.route} className="home-v2-listing-card oc-card oc-card-interactive">
+      <div className="home-v2-listing-card-head">
+        <span className="home-v2-listing-card-icon" aria-hidden="true">
+          <MarketplaceIcon
+            kind="skill"
+            label={result.displayName}
+            categorySlug={result.categories?.[0]}
+            size="sm"
+          />
+        </span>
+        <div className="home-v2-listing-card-id">
+          <span className="home-v2-listing-card-name" title={result.displayName}>
+            {truncateText(result.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
+          <span className="home-v2-listing-card-by">{skillsShRepositoryLabel(result)}</span>
+        </div>
+        <Badge variant="warning" size="sm">
+          {SKILLS_SH_TRUST_LABEL}
+        </Badge>
+      </div>
+      <p className="home-v2-listing-card-summary">Indexed from skills.sh</p>
+      <div className="home-v2-listing-card-stats" aria-label="skills.sh installs">
+        <span>
+          <Download size={13} aria-hidden="true" />
+          {formatCompactStat(result.upstreamInstalls)}
+        </span>
+      </div>
     </Link>
   );
 }
@@ -401,7 +510,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchSkills, setSearchSkills] = useState<SkillPageEntry[]>([]);
+  const [searchSkills, setSearchSkills] = useState<HomeSkillEntry[]>([]);
   const [searchPlugins, setSearchPlugins] = useState<PackageListItem[]>([]);
   const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
   const [listingHasMore, setListingHasMore] = useState(initialListing?.hasMore ?? false);
@@ -592,15 +701,21 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               ),
             ).then((results) => {
               if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-              const rows = uniqueSkillEntries(
+              const rows = uniqueHomeSkillSearchEntries(
                 results.flatMap((hits) =>
-                  (hits as SkillSearchHit[])
-                    .map((hit) => ({
+                  (hits as SkillSearchHit[]).flatMap((hit): HomeSkillEntry[] => {
+                    if (isSkillsShSearchResult(hit)) {
+                      return skillsShMatchesAnyHomeCategory(hit, categorySlugs)
+                        ? [{ source: "skills.sh", result: hit }]
+                        : [];
+                    }
+                    const entry = {
                       skill: hit.skill,
                       ownerHandle: hit.ownerHandle,
                       owner: hit.owner,
-                    }))
-                    .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs)),
+                    };
+                    return skillMatchesAnyCategory(entry.skill, categorySlugs) ? [entry] : [];
+                  }),
                 ),
               );
               const items = rows.slice(0, fetchLimit);
@@ -908,7 +1023,13 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
         >
           <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
             {visibleSkills.map((entry) =>
-              view === "grid" ? (
+              isHomeSkillsShEntry(entry) ? (
+                view === "grid" ? (
+                  <HomeListingSkillsShCard key={entry.result.externalId} result={entry.result} />
+                ) : (
+                  <HomeListingSkillsShRow key={entry.result.externalId} result={entry.result} />
+                )
+              ) : view === "grid" ? (
                 <HomeListingSkillCard
                   key={entry.skill._id}
                   entry={entry}

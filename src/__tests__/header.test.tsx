@@ -525,6 +525,43 @@ describe("Header", () => {
     });
   });
 
+  it("labels well-known mirrored typeahead results by source host", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          type: "skills-sh",
+          result: {
+            source: "skills.sh",
+            externalId: "example.com/weather",
+            route: "/skills-sh/site/example.com/weather",
+            reference: "skills-sh:example.com/weather",
+            sourceHost: "example.com",
+            slug: "weather",
+            displayName: "Well-known Weather",
+            categories: ["development"],
+            topics: [],
+            upstreamInstalls: 10,
+            lastObservedAt: 1,
+            score: 2,
+          },
+        },
+      ],
+      pluginResults: [],
+      creatorResults: [],
+    });
+
+    render(<Header />);
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+
+    expect(
+      screen.getByText("Well-known Weather").closest(".navbar-search-typeahead-row")?.textContent,
+    ).toContain("skills.sh · example.com");
+    expect(screen.queryByText(/undefined\/undefined/)).toBeNull();
+  });
+
   it("navigates creator typeahead rows to profiles and creator footers to scoped search", () => {
     navigateMock.mockReset();
 
@@ -687,7 +724,7 @@ describe("Header", () => {
     expect(labels).toEqual(["Home", "Skills", "Plugins", "Creators", "Docs"]);
   });
 
-  it("links profile and starred skills from the signed-in avatar menu", () => {
+  it("links profile and bookmarks from the signed-in avatar menu", () => {
     profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -710,7 +747,7 @@ describe("Header", () => {
     expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
+    expect(screen.getByText("Bookmarks").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
   });

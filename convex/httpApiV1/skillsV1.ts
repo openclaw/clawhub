@@ -50,7 +50,12 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
-import { readCanonicalStat } from "../lib/skillStats";
+import { parseSkillsShCatalogReference } from "../lib/skillsShCatalogReference";
+import {
+  buildUnclaimedSkillsShInstallResolution,
+  buildUnclaimedSkillsShVerifyResponse,
+  type SkillsShMirrorDigest,
+} from "../lib/skillsShMirrorPublic";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -81,8 +86,6 @@ import {
   text,
   toOptionalNumber,
 } from "./shared";
-import { parseSkillsShCatalogReference } from "./skillsShCatalogV1";
-
 const MAX_EXPORT_FILE_COUNT = 10_000;
 const MAX_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_EXPORT_PAGE_LIMIT = 250;
@@ -101,7 +104,6 @@ type SearchSkillEntry = {
       stars?: number;
       installs?: number;
     };
-    statsDownloads?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;
   ownerHandle?: string | null;
@@ -368,6 +370,12 @@ const internalRefs = internal as unknown as {
     resolveSkillAppealForUserInternal: unknown;
     setSkillFeaturedForUserInternal: unknown;
   };
+  skillsShMirror: {
+    getByExternalIdInternal: unknown;
+  };
+  skillsShAdoption: {
+    getPromotedByExternalIdInternal: unknown;
+  };
 };
 
 async function runQueryRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
@@ -381,6 +389,8 @@ async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): P
 async function runActionRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): Promise<T> {
   return (await ctx.runAction(ref as never, args as never)) as T;
 }
+
+const SKILLS_SH_SCANNED_LABEL = "Scanned by ClawHub";
 
 function isMultipartRequest(request: Request) {
   return (
@@ -670,6 +680,114 @@ function buildSkillSecuritySnapshot(
 }
 
 type VerificationResolvedFrom = "latest" | "version" | "tag";
+
+type PromotedSkillsShAlias = {
+  state: "promoted";
+  externalId: string;
+  reference: string;
+  canonicalRef: string;
+  publisherHandle: string;
+  slug: string;
+  skillId: Id<"skills">;
+  versionId: Id<"skillVersions">;
+  githubRepository: string;
+  githubPath: string;
+  githubCommit: string;
+  sourceContentHash: string;
+  sourceUrl: string | null;
+};
+
+type InvalidatedPromotedSkillsShAlias = {
+  state: "invalidated";
+  externalId: string;
+  reference: string;
+};
+
+type PromotedSkillsShAliasLookup = PromotedSkillsShAlias | InvalidatedPromotedSkillsShAlias;
+
+type ResolvedPromotedSkillsShAlias = Omit<PromotedSkillsShAlias, "sourceUrl"> & {
+  sourceUrl: string;
+};
+
+function normalizePromotedSkillsShAlias(
+  alias: PromotedSkillsShAlias,
+  expected: { externalId: string; reference: string; slug: string },
+): ResolvedPromotedSkillsShAlias | null {
+  if (
+    alias.externalId === expected.externalId &&
+    alias.reference === expected.reference &&
+    alias.slug === expected.slug &&
+    alias.canonicalRef === `@${alias.publisherHandle}/${alias.slug}` &&
+    alias.publisherHandle.trim().length > 0 &&
+    alias.githubRepository.trim().length > 0 &&
+    alias.githubPath.trim().length > 0 &&
+    /^[a-f0-9]{40}$/.test(alias.githubCommit) &&
+    /^[a-f0-9]{64}$/.test(alias.sourceContentHash)
+  ) {
+    return {
+      ...alias,
+      sourceUrl:
+        typeof alias.sourceUrl === "string" && alias.sourceUrl.trim().length > 0
+          ? alias.sourceUrl.trim()
+          : `https://skills.sh/${expected.externalId}`,
+    };
+  }
+  return null;
+}
+
+function buildPromotedSkillsShProvenance(
+  alias: ResolvedPromotedSkillsShAlias,
+  nativeProvenance?: Doc<"skillVersions">["sourceProvenance"],
+) {
+  return {
+    ...nativeProvenance,
+    source: "skills.sh" as const,
+    reference: alias.reference,
+    repository: alias.githubRepository,
+    path: alias.githubPath,
+    sourceUrl: alias.sourceUrl,
+  };
+}
+
+function isPromotedNativeVersion(
+  alias: ResolvedPromotedSkillsShAlias,
+  version: Doc<"skillVersions">,
+) {
+  if (
+    version._id !== alias.versionId ||
+    version.version.toLowerCase() !== alias.githubCommit ||
+    version.publicationStatus !== "published"
+  ) {
+    return false;
+  }
+  const provenance = version.sourceProvenance;
+  if (!provenance) return false;
+  const repository = provenance.repo
+    .trim()
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+  const expectedRepository = alias.githubRepository
+    .trim()
+    .replace(/\.git$/i, "")
+    .toLowerCase();
+  const path = provenance.path?.trim().replace(/^\/+|\/+$/g, "");
+  const expectedPath = alias.githubPath.trim().replace(/^\/+|\/+$/g, "");
+  if (
+    repository !== expectedRepository ||
+    path !== expectedPath ||
+    provenance.commit?.toLowerCase() !== alias.githubCommit
+  ) {
+    return false;
+  }
+
+  const security = buildVerifySecurity(version);
+  const staticStatus = normalizeVerificationStatus(version.staticScan?.status);
+  return (
+    Boolean(version.llmAnalysis) &&
+    ["clean", "suspicious"].includes(security.status) &&
+    ["clean", "suspicious"].includes(staticStatus)
+  );
+}
 
 type SkillVersionFingerprintSummary = {
   fingerprint: string;
@@ -1394,7 +1512,9 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
           displayName: result.skill?.displayName,
           summary: result.skill?.summary ?? null,
           version: result.version?.version ?? null,
-          downloads: result.skill ? readCanonicalStat(result.skill, "downloads") : 0,
+          // searchSkills already returns the ordinary public skill shape, including
+          // the combined presentation value and no source-attribution fields.
+          downloads: result.skill?.stats.downloads ?? 0,
           updatedAt: result.skill?.updatedAt,
           ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
           owner,
@@ -1835,9 +1955,102 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       if (!catalogRef || catalogRef.slug !== slug) {
         return text("Invalid skills.sh reference", 400, rate.headers);
       }
-      const entry = await ctx.runQuery(api.skillsShCatalog.getPublicEntry, catalogRef);
-      if (!entry) return text("Skill not found", 404, rate.headers);
-      return json(entry.install, 200, rate.headers);
+      const externalId = `${catalogRef.owner}/${catalogRef.repo}/${catalogRef.slug}`;
+      const promotedRecord = await runQueryRef<PromotedSkillsShAliasLookup | null>(
+        ctx,
+        internalRefs.skillsShAdoption.getPromotedByExternalIdInternal,
+        { externalId },
+      );
+      if (promotedRecord?.state === "invalidated") {
+        return text("Skill not found", 404, rate.headers);
+      }
+      if (promotedRecord?.state === "promoted") {
+        const promoted = normalizePromotedSkillsShAlias(promotedRecord, {
+          externalId,
+          reference: `skills-sh:${externalId}`,
+          slug: catalogRef.slug,
+        });
+        if (!promoted) return text("Skill not found", 404, rate.headers);
+        const canonicalLookupArgs = {
+          slug: promoted.slug,
+          ownerHandle: promoted.publisherHandle,
+        };
+        const skill = await runQueryRef<
+          | (InstallResolverSkill & {
+              _id: Id<"skills">;
+              softDeletedAt?: number;
+              moderationStatus?: "active" | "hidden" | "removed";
+            })
+          | null
+        >(ctx, internalRefs.skills.getSkillBySlugInternal, canonicalLookupArgs);
+        if (
+          !skill ||
+          skill._id !== promoted.skillId ||
+          skill.softDeletedAt ||
+          skill.moderationStatus === "removed"
+        ) {
+          return text("Skill not found", 404, rate.headers);
+        }
+        const publicSkillResult = (await ctx.runQuery(
+          api.skills.getBySlug,
+          canonicalLookupArgs,
+        )) as GetBySlugResult;
+        if (publicSkillResult?.skill?._id !== promoted.skillId) {
+          return text("Skill not found", 404, rate.headers);
+        }
+        const nativeVersion = await runQueryRef<Doc<"skillVersions"> | null>(
+          ctx,
+          internalRefs.skills.getVersionByIdInternal,
+          { versionId: promoted.versionId },
+        );
+        if (
+          !nativeVersion ||
+          !isSkillVersionForSkill(nativeVersion, skill._id) ||
+          nativeVersion.softDeletedAt ||
+          !isPromotedNativeVersion(promoted, nativeVersion)
+        ) {
+          return text("Skill not found", 404, rate.headers);
+        }
+        const resolution = buildSkillInstallResolution({
+          origin: publicApiOrigin(request),
+          skill: {
+            slug: skill.slug,
+            displayName: skill.displayName,
+            latestVersionSummary: { version: nativeVersion.version },
+          },
+          source: null,
+          ownerHandle: promoted.publisherHandle,
+        });
+        if (!resolution.ok) {
+          return json({ ...resolution, slug: promoted.reference }, resolution.status, rate.headers);
+        }
+        if (resolution.installKind !== "archive") {
+          return text("Skill not found", 404, rate.headers);
+        }
+        return json(
+          {
+            ...resolution,
+            slug: promoted.reference,
+            provenance: buildPromotedSkillsShProvenance(promoted),
+            trust: {
+              clawhubScan: "scanned",
+              label: SKILLS_SH_SCANNED_LABEL,
+            },
+            canonicalRef: promoted.canonicalRef,
+          },
+          200,
+          rate.headers,
+        );
+      }
+      const digest = await runQueryRef<SkillsShMirrorDigest | null>(
+        ctx,
+        internalRefs.skillsShMirror.getByExternalIdInternal,
+        { externalId },
+      );
+      const resolution = digest ? buildUnclaimedSkillsShInstallResolution(digest) : null;
+      return resolution
+        ? json(resolution, 200, rate.headers)
+        : text("Skill not found", 404, rate.headers);
     }
     const forceInstall = parseBooleanQueryParam(installUrl.searchParams.get("forceInstall"));
     const skill = (await runQueryRef<
@@ -2279,6 +2492,8 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const verifyUrl = new URL(request.url);
     const versionParam = verifyUrl.searchParams.get("version")?.trim();
     const tagParam = verifyUrl.searchParams.get("tag")?.trim();
+    let promotedAlias: ResolvedPromotedSkillsShAlias | null = null;
+    let verifyLookupArgs = skillLookupArgs;
     if (versionParam && tagParam) return text("Use either version or tag", 400, rate.headers);
     if (verifyUrl.searchParams.has("reference")) {
       const reference = verifyUrl.searchParams.get("reference") ?? "";
@@ -2286,73 +2501,51 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       if (!catalogRef || catalogRef.slug !== slug || versionParam || tagParam) {
         return text("Invalid skills.sh reference", 400, rate.headers);
       }
-      const entry = await ctx.runQuery(api.skillsShCatalog.getPublicEntry, catalogRef);
-      if (!entry?.artifact) return text("Skill not found", 404, rate.headers);
-      const securityPassed = entry.security.verdict === "clean";
-      const reasons = securityPassed ? [] : ["security.status_not_clean"];
-      return json(
-        {
-          schema: "clawhub.skill.verify.v1",
-          ok: securityPassed,
-          decision: securityPassed ? "pass" : "fail",
-          reasons,
-          slug: entry.ref,
-          displayName: entry.displayName,
-          pageUrl: `${publicApiOrigin(request)}${entry.route}`,
-          publisherHandle: null,
-          publisherDisplayName: null,
-          publisherProfileUrl: null,
-          version: entry.githubCommit,
-          resolvedFrom: "latest",
-          tag: null,
-          createdAt: entry.security.scannedAt,
-          card: {
-            available: false,
-            path: "skill-card.md",
-            url: null,
-            sha256: null,
-            size: null,
-            contentType: null,
-          },
-          artifact: {
-            sourceFingerprint: entry.githubContentHash,
-            bundleFingerprints: [entry.artifact.contentHash],
-            files: entry.artifact.files,
-          },
-          provenance: {
-            source: "skills-sh-catalog",
-            reference: entry.ref,
-            repository: entry.repository,
-            path: entry.githubPath,
-            commit: entry.githubCommit,
-            contentHash: entry.githubContentHash,
-            scanAttemptId: entry.security.attemptId,
-            artifactContentHash: entry.artifact.contentHash,
-          },
-          security: {
-            status: entry.security.verdict,
-            passed: securityPassed,
-            rawStatus: entry.security.verdict,
-            verdict: entry.security.verdict,
-            source: entry.security.source,
-            attemptId: entry.security.attemptId,
-            checkedAt: entry.security.scannedAt,
-          },
-          signature: {
-            status: "unsigned",
-          },
-        },
-        200,
-        rate.headers,
+      const externalId = `${catalogRef.owner}/${catalogRef.repo}/${catalogRef.slug}`;
+      const promotedRecord = await runQueryRef<PromotedSkillsShAliasLookup | null>(
+        ctx,
+        internalRefs.skillsShAdoption.getPromotedByExternalIdInternal,
+        { externalId },
       );
+      if (promotedRecord?.state === "invalidated") {
+        return text("Skill not found", 404, rate.headers);
+      }
+      if (promotedRecord?.state === "promoted") {
+        promotedAlias = normalizePromotedSkillsShAlias(promotedRecord, {
+          externalId,
+          reference: `skills-sh:${externalId}`,
+          slug: catalogRef.slug,
+        });
+        if (!promotedAlias) return text("Skill not found", 404, rate.headers);
+        verifyLookupArgs = {
+          slug: promotedAlias.slug,
+          ownerHandle: promotedAlias.publisherHandle,
+        };
+      } else {
+        const digest = await runQueryRef<SkillsShMirrorDigest | null>(
+          ctx,
+          internalRefs.skillsShMirror.getByExternalIdInternal,
+          { externalId },
+        );
+        const verification = digest
+          ? buildUnclaimedSkillsShVerifyResponse({
+              digest,
+              origin: publicApiOrigin(request),
+            })
+          : null;
+        return verification
+          ? json(verification, 200, rate.headers)
+          : text("Skill not found", 404, rate.headers);
+      }
     }
 
     const skillResult = (await runQueryRef<GetBySlugResult>(
       ctx,
       internalRefs.skills.getVerifyTargetBySlugInternal,
-      skillLookupArgs,
+      verifyLookupArgs,
     )) as GetBySlugResult;
-    if (!skillResult?.skill) {
+    if (!skillResult?.skill || (promotedAlias && skillResult.skill._id !== promotedAlias.skillId)) {
+      if (promotedAlias) return text("Skill not found", 404, rate.headers);
       const hidden = await describeOwnerVisibleSkillState(ctx, request, slug, ownerHandle);
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return skillNotFoundOrAmbiguousResponse(
@@ -2364,19 +2557,23 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       );
     }
 
-    let resolvedFrom: VerificationResolvedFrom = "latest";
-    let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
+    let resolvedFrom: VerificationResolvedFrom = promotedAlias ? "version" : "latest";
+    let version: Doc<"skillVersions"> | null = promotedAlias
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-          versionId: skillResult.skill.latestVersionId,
+          versionId: promotedAlias.versionId,
         })
-      : null;
-    if (versionParam) {
+      : skillResult.skill.latestVersionId
+        ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+            versionId: skillResult.skill.latestVersionId,
+          })
+        : null;
+    if (!promotedAlias && versionParam) {
       resolvedFrom = "version";
       version = await ctx.runQuery(internal.skills.getVersionBySkillAndVersionInternal, {
         skillId: skillResult.skill._id,
         version: versionParam,
       });
-    } else if (tagParam) {
+    } else if (!promotedAlias && tagParam) {
       resolvedFrom = "tag";
       const versionId = skillResult.skill.tags[tagParam];
       version = versionId
@@ -2388,6 +2585,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    if (promotedAlias && !isPromotedNativeVersion(promotedAlias, version)) {
+      return text("Skill not found", 404, rate.headers);
+    }
 
     const fingerprintEntries = ((await ctx.runQuery(
       internal.skills.listVersionFingerprintsInternal,
@@ -2409,6 +2609,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     });
     const publisherOwnerHandle = skillResult.owner?.handle ?? null;
     const ownerDisplayName = skillResult.owner?.displayName ?? null;
+    const verificationSecurity = promotedAlias
+      ? {
+          ...security,
+          clawhubScan: "scanned" as const,
+          label: SKILLS_SH_SCANNED_LABEL,
+        }
+      : security;
 
     return json(
       {
@@ -2416,7 +2623,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         ok: reasons.length === 0,
         decision: reasons.length === 0 ? "pass" : "fail",
         reasons,
-        slug: skillResult.skill.slug,
+        slug: promotedAlias?.reference ?? skillResult.skill.slug,
         displayName: skillResult.skill.displayName,
         pageUrl: publisherOwnerHandle
           ? `https://clawhub.ai/${publisherOwnerHandle}/skills/${skillResult.skill.slug}`
@@ -2464,16 +2671,19 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           bundleFingerprints,
           files: sourceFilesForVerify(version.files, bundleFingerprints),
         },
-        provenance: version.sourceProvenance
-          ? {
-              ...version.sourceProvenance,
-              source: "server-resolved-github-import",
-            }
-          : {
-              source: "unavailable",
-              reason: "No server-resolved GitHub import provenance is stored for this version.",
-            },
-        security,
+        provenance: promotedAlias
+          ? buildPromotedSkillsShProvenance(promotedAlias, version.sourceProvenance)
+          : version.sourceProvenance
+            ? {
+                ...version.sourceProvenance,
+                source: "server-resolved-github-import",
+              }
+            : {
+                source: "unavailable",
+                reason: "No server-resolved GitHub import provenance is stored for this version.",
+              },
+        security: verificationSecurity,
+        ...(promotedAlias ? { canonicalRef: promotedAlias.canonicalRef } : {}),
         signature: {
           status: "unsigned",
         },

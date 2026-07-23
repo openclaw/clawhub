@@ -40,6 +40,22 @@ function makeSkill(slug: string) {
   };
 }
 
+function makeSkillsShResult() {
+  return {
+    source: "skills.sh" as const,
+    externalId: "patrick-erichsen/skills/html",
+    route: "/skills-sh/patrick-erichsen/skills/html",
+    reference: "skills-sh:patrick-erichsen/skills/html",
+    owner: "patrick-erichsen",
+    repo: "skills",
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    upstreamInstalls: 100,
+    lastObservedAt: 1,
+    score: 2,
+  };
+}
+
 function makePlugin(name: string) {
   return {
     name,
@@ -111,9 +127,11 @@ describe("useUnifiedSearch", () => {
       }),
     );
 
-    expect(result.current.skillResults.map((entry) => entry.skill.slug)).toEqual([
-      "japanese-reading-grader",
-    ]);
+    expect(
+      result.current.skillResults.flatMap((entry) =>
+        entry.type === "skill" ? [entry.skill.slug] : [],
+      ),
+    ).toEqual(["japanese-reading-grader"]);
     expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
     expect(result.current.skillHasMore).toBe(true);
 
@@ -162,7 +180,11 @@ describe("useUnifiedSearch", () => {
       query: "ghost",
       paginationOpts: { cursor: null, numItems: 3 },
     });
-    expect(result.current.skillResults.map((entry) => entry.skill.slug)).toEqual(["one", "two"]);
+    expect(
+      result.current.skillResults.flatMap((entry) =>
+        entry.type === "skill" ? [entry.skill.slug] : [],
+      ),
+    ).toEqual(["one", "two"]);
     expect(result.current.pluginResults.map((entry) => entry.plugin.name)).toEqual([
       "one-plugin",
       "two-plugin",
@@ -182,6 +204,31 @@ describe("useUnifiedSearch", () => {
     expect(result.current.skillHasMore).toBe(true);
     expect(result.current.pluginHasMore).toBe(true);
     expect(result.current.creatorHasMore).toBe(true);
+  });
+
+  it("preserves mirrored skills.sh results as external catalog entries", async () => {
+    searchSkillsMock.mockResolvedValue([makeSkill("native-html"), makeSkillsShResult()]);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [], continueCursor: null, isDone: true });
+
+    const { result } = renderHook(() =>
+      useUnifiedSearch("html", "skills", {
+        debounceMs: 0,
+        limits: { skills: 5 },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.skillCount).toBe(2);
+    });
+    expect(result.current.skillResults.map((entry) => entry.type)).toEqual(["skill", "skills-sh"]);
+    expect(result.current.skillResults[1]).toMatchObject({
+      type: "skills-sh",
+      result: {
+        route: "/skills-sh/patrick-erichsen/skills/html",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+      },
+    });
   });
 
   it("caps requested skill and plugin limits at the backend search maximum", async () => {

@@ -8,8 +8,9 @@ import {
   getSkillCategoryBySlug,
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
+import { isSkillsShSearchResult, type SkillsShSearchResult } from "../../lib/skillsShCatalog";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
-import type { SkillListEntry, SkillSearchEntry } from "./-types";
+import { isExternalSkillListEntry, type SkillListEntry, type SkillSearchEntry } from "./-types";
 
 const pageSize = 25;
 const maxConsecutiveEmptyPagesPerFetch = 3;
@@ -55,6 +56,32 @@ type SkillsNavigate = (options: {
 
 type ListStatus = "loading" | "idle" | "loadingMore" | "done";
 
+type BrowseStream = {
+  cursor: string | null | undefined;
+  buffer: SkillListEntry[];
+};
+
+type BrowsePageResult = {
+  page: SkillListEntry[];
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+function mixedBrowsePopularity(entry: SkillListEntry) {
+  return isExternalSkillListEntry(entry)
+    ? entry.result.upstreamInstalls
+    : (entry.nativeDownloads ?? entry.skill.stats.downloads);
+}
+
+function compareMixedBrowseEntries(left: SkillListEntry, right: SkillListEntry) {
+  const popularity = mixedBrowsePopularity(right) - mixedBrowsePopularity(left);
+  if (popularity !== 0) return popularity;
+  if (isExternalSkillListEntry(left) !== isExternalSkillListEntry(right)) {
+    return isExternalSkillListEntry(left) ? 1 : -1;
+  }
+  return 0;
+}
+
 export function buildSkillsSearchKey({
   categorySlug,
   featuredOnly,
@@ -92,6 +119,7 @@ export function useSkillsBrowseModel({
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
   const searchSkills = useAction(api.search.searchSkills);
+  const listSkillsShMirrorBrowse = useAction(api.search.listSkillsShMirrorBrowse);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
   const urlCategory = useMemo(() => getSkillCategoryBySlug(search.category), [search.category]);
@@ -110,7 +138,16 @@ export function useSkillsBrowseModel({
         ? "relevance"
         : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
   const listSort = sort === "trending" ? undefined : toListSort(sort);
-  const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
+  const dir =
+    sort === "relevance" || sort === "recommended" || sort === "downloads"
+      ? "desc"
+      : parseDir(search.dir, sort);
+  const mixedPopularityBrowse =
+    !featuredOnly &&
+    dir === "desc" &&
+    (sort === "downloads" ||
+      (sort === "recommended" && (Boolean(activeCategory) || Boolean(activeTopic))));
+  const effectiveListSort = mixedPopularityBrowse ? "downloads" : listSort;
   const searchKey = buildSkillsSearchKey({
     query: trimmedQuery,
     featuredOnly,
@@ -130,17 +167,22 @@ export function useSkillsBrowseModel({
 
   // One-shot paginated fetches (no reactive subscription)
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
-  const [listCursor, setListCursor] = useState<string | null>(null);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
   const [listAutoLoadPaused, setListAutoLoadPaused] = useState(false);
+  const nativeListStream = useRef<BrowseStream>({ cursor: undefined, buffer: [] });
+  const externalListStream = useRef<BrowseStream>({ cursor: undefined, buffer: [] });
   const fetchGeneration = useRef(0);
 
   const fetchPage = useCallback(
-    async (cursor: string | null, generation: number) => {
-      let pageCursor = cursor;
+    async (generation: number, replace: boolean) => {
+      const nativeStream = nativeListStream.current;
+      const externalStream = externalListStream.current;
       let consecutiveEmptyPages = 0;
-      try {
-        if (sort === "trending") {
+      let nativeFailed = false;
+      let externalFailed = false;
+
+      if (sort === "trending") {
+        try {
           const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
             limit: pageSize,
             nonSuspiciousOnly: true,
@@ -149,64 +191,199 @@ export function useSkillsBrowseModel({
           });
           if (generation !== fetchGeneration.current) return;
           setListResults(result.items);
-          setListCursor(null);
           setListAutoLoadPaused(false);
           setListStatus("done");
+        } catch (err) {
+          if (generation !== fetchGeneration.current) return;
+          if (!isNavigationAbortError(err)) {
+            console.error("Failed to fetch skills page:", err);
+          }
+          setListAutoLoadPaused(true);
+          setListStatus("idle");
+        }
+        return;
+      }
+
+      if (!mixedPopularityBrowse) {
+        let result: BrowsePageResult | null = null;
+        try {
+          while (nativeStream.cursor !== null) {
+            const requestCursor: string | null | undefined = nativeStream.cursor;
+            result = (await convexHttp.query(api.skills.listPublicPageV4, {
+              cursor: requestCursor ?? undefined,
+              numItems: pageSize,
+              ...(effectiveListSort ? { sort: effectiveListSort } : {}),
+              dir,
+              highlightedOnly: featuredOnly,
+              categorySlug: activeCategory?.slug,
+              topic: activeTopic,
+              ...(activeCategory ? { officialFirst: true } : {}),
+              categoryKeywords,
+              excludeCategoryKeywords,
+            })) as BrowsePageResult;
+            if (generation !== fetchGeneration.current) return;
+            const nextCursor: string | null =
+              result.hasMore && result.nextCursor != null && result.nextCursor !== requestCursor
+                ? result.nextCursor
+                : null;
+            nativeStream.cursor = nextCursor;
+            if (result.page.length > 0 || !nextCursor) break;
+            consecutiveEmptyPages += 1;
+            if (consecutiveEmptyPages >= maxConsecutiveEmptyPagesPerFetch) break;
+          }
+        } catch (err) {
+          if (generation !== fetchGeneration.current) return;
+          if (!isNavigationAbortError(err)) {
+            console.error("Failed to fetch native skills page:", err);
+          }
+          setListAutoLoadPaused(nativeStream.cursor !== null);
+          setListStatus(nativeStream.cursor === null ? "done" : "idle");
           return;
         }
-        while (true) {
-          const result = await convexHttp.query(api.skills.listPublicPageV4, {
-            cursor: pageCursor ?? undefined,
-            numItems: pageSize,
-            ...(listSort ? { sort: listSort } : {}),
-            dir,
-            highlightedOnly: featuredOnly,
-            categorySlug: activeCategory?.slug,
-            topic: activeTopic,
-            ...(activeCategory ? { officialFirst: true } : {}),
-            categoryKeywords,
-            excludeCategoryKeywords,
-          });
+        if (generation !== fetchGeneration.current) return;
+        const page = result?.page ?? [];
+        setListResults((current) => (replace ? page : [...current, ...page]));
+        const hasMore = nativeStream.cursor !== null;
+        setListAutoLoadPaused(page.length === 0 && hasMore);
+        setListStatus(hasMore ? "idle" : "done");
+        return;
+      }
+
+      const fillNativeBuffer = async () => {
+        if (nativeStream.buffer.length > 0 || nativeStream.cursor === null || nativeFailed) return;
+        while (nativeStream.buffer.length === 0 && nativeStream.cursor !== null) {
+          const requestCursor: string | null | undefined = nativeStream.cursor;
+          let result: BrowsePageResult;
+          try {
+            result = (await convexHttp.query(api.skills.listPublicPageV4, {
+              cursor: requestCursor ?? undefined,
+              numItems: pageSize,
+              ...(effectiveListSort ? { sort: effectiveListSort } : {}),
+              dir,
+              highlightedOnly: featuredOnly,
+              categorySlug: activeCategory?.slug,
+              topic: activeTopic,
+              ...(activeCategory && !mixedPopularityBrowse ? { officialFirst: true } : {}),
+              categoryKeywords,
+              excludeCategoryKeywords,
+            })) as BrowsePageResult;
+          } catch (err) {
+            nativeFailed = true;
+            if (!isNavigationAbortError(err)) {
+              console.error("Failed to fetch native skills page:", err);
+            }
+            return;
+          }
           if (generation !== fetchGeneration.current) return;
-          const nextCursor =
-            result.hasMore && result.nextCursor != null && result.nextCursor !== pageCursor
+          const nextCursor: string | null =
+            result.hasMore && result.nextCursor != null && result.nextCursor !== requestCursor
               ? result.nextCursor
               : null;
-
-          // Filtered scans can yield empty transport pages before reaching visible results.
-          if (result.page.length === 0 && nextCursor) {
+          nativeStream.cursor = nextCursor;
+          nativeStream.buffer.push(...result.page);
+          if (nativeStream.buffer.length === 0 && nextCursor) {
             consecutiveEmptyPages += 1;
-            if (consecutiveEmptyPages < maxConsecutiveEmptyPagesPerFetch) {
-              pageCursor = nextCursor;
-              continue;
+            if (consecutiveEmptyPages >= maxConsecutiveEmptyPagesPerFetch) {
+              nativeFailed = true;
+              return;
             }
           }
+        }
+      };
 
-          setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
-          setListCursor(nextCursor);
-          setListAutoLoadPaused(result.page.length === 0 && Boolean(nextCursor));
-          setListStatus(nextCursor ? "idle" : "done");
+      const fillExternalBuffer = async () => {
+        if (
+          !mixedPopularityBrowse ||
+          externalStream.buffer.length > 0 ||
+          externalStream.cursor === null ||
+          externalFailed
+        ) {
           return;
         }
-      } catch (err) {
-        if (generation !== fetchGeneration.current) return;
-        if (!isNavigationAbortError(err)) {
-          console.error("Failed to fetch skills page:", err);
+        let externalResults: {
+          page: SkillsShSearchResult[];
+          nextCursor: string | null;
+          hasMore: boolean;
+        };
+        try {
+          const response = await listSkillsShMirrorBrowse({
+            limit: pageSize,
+            cursor: externalStream.cursor ?? undefined,
+            categorySlug: activeCategory?.slug,
+            topic: activeTopic,
+          });
+          externalResults = Array.isArray(response)
+            ? {
+                page: response as SkillsShSearchResult[],
+                nextCursor: null,
+                hasMore: false,
+              }
+            : (response as typeof externalResults);
+          if (
+            !externalResults ||
+            !Array.isArray(externalResults.page) ||
+            typeof externalResults.hasMore !== "boolean" ||
+            (externalResults.hasMore &&
+              (!externalResults.nextCursor || externalResults.nextCursor === externalStream.cursor))
+          ) {
+            throw new Error("Mirrored skills browse returned an invalid page");
+          }
+        } catch (err) {
+          externalFailed = true;
+          if (!isNavigationAbortError(err)) {
+            console.error("Failed to fetch mirrored skills page:", err);
+          }
+          return;
         }
-        // Reset to idle so the user can retry via "Load more"
-        setListCursor(pageCursor);
-        setListAutoLoadPaused(Boolean(pageCursor));
-        setListStatus(pageCursor ? "idle" : "done");
+        if (generation !== fetchGeneration.current) return;
+        externalStream.cursor = externalResults.hasMore ? externalResults.nextCursor : null;
+        externalStream.buffer.push(
+          ...externalResults.page.map(
+            (external): SkillListEntry => ({
+              source: "skills.sh",
+              result: external,
+            }),
+          ),
+        );
+        if (externalStream.buffer.length === 0 && externalStream.cursor !== null) {
+          externalFailed = true;
+        }
+      };
+
+      const page: SkillListEntry[] = [];
+      while (page.length < pageSize) {
+        await Promise.all([fillNativeBuffer(), fillExternalBuffer()]);
+        if (generation !== fetchGeneration.current) return;
+        const native = nativeStream.buffer[0];
+        const external = externalStream.buffer[0];
+        if (!native && !external) break;
+        if (!external || (native && compareMixedBrowseEntries(native, external) <= 0)) {
+          page.push(nativeStream.buffer.shift()!);
+        } else {
+          page.push(externalStream.buffer.shift()!);
+        }
       }
+
+      if (generation !== fetchGeneration.current) return;
+      setListResults((current) => (replace ? page : [...current, ...page]));
+      const hasMore =
+        nativeStream.buffer.length > 0 ||
+        nativeStream.cursor !== null ||
+        externalStream.buffer.length > 0 ||
+        externalStream.cursor !== null;
+      setListAutoLoadPaused((nativeFailed || externalFailed || page.length === 0) && hasMore);
+      setListStatus(hasMore ? "idle" : "done");
     },
     [
       activeCategory?.slug,
       activeTopic,
       categoryKeywords,
       dir,
+      effectiveListSort,
       excludeCategoryKeywords,
       featuredOnly,
-      listSort,
+      listSkillsShMirrorBrowse,
+      mixedPopularityBrowse,
       sort,
     ],
   );
@@ -218,15 +395,19 @@ export function useSkillsBrowseModel({
     }
     fetchGeneration.current += 1;
     const generation = fetchGeneration.current;
+    nativeListStream.current = { cursor: undefined, buffer: [] };
+    externalListStream.current = {
+      cursor: mixedPopularityBrowse ? undefined : null,
+      buffer: [],
+    };
     setListResults([]);
-    setListCursor(null);
     setListAutoLoadPaused(false);
     setListStatus("loading");
-    void fetchPage(null, generation);
+    void fetchPage(generation, true);
     return () => {
       fetchGeneration.current += 1;
     };
-  }, [hasQuery, fetchPage]);
+  }, [hasQuery, fetchPage, mixedPopularityBrowse]);
 
   const isLoadingList = listStatus === "loading";
   const canLoadMoreList = listStatus === "idle";
@@ -307,65 +488,104 @@ export function useSkillsBrowseModel({
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
-      return searchResults.map((entry) => ({
-        skill: entry.skill,
-        latestVersion: entry.version,
-        ownerHandle: entry.ownerHandle ?? null,
-        owner: entry.owner ?? null,
-        searchScore: entry.score,
-      }));
+      return searchResults.map(
+        (entry): SkillListEntry =>
+          isSkillsShSearchResult(entry)
+            ? {
+                source: "skills.sh",
+                result: entry,
+                searchScore: entry.score,
+              }
+            : {
+                skill: entry.skill,
+                latestVersion: entry.version,
+                ownerHandle: entry.ownerHandle ?? null,
+                owner: entry.owner ?? null,
+                searchScore: entry.score,
+              },
+      );
     }
     return listResults;
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
     const topicItems = activeTopic
-      ? baseItems.filter((entry) => getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic))
+      ? baseItems.filter((entry) =>
+          isExternalSkillListEntry(entry)
+            ? entry.result.topics?.includes(activeTopic)
+            : getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic),
+        )
       : baseItems;
     const categoryItems = activeCategory
       ? topicItems.filter((entry) =>
-          getSkillCategoriesForSkill(entry.skill).some(
-            (category) => category.slug === activeCategory.slug,
-          ),
+          isExternalSkillListEntry(entry)
+            ? entry.result.categories?.includes(activeCategory.slug)
+            : getSkillCategoriesForSkill(entry.skill).some(
+                (category) => category.slug === activeCategory.slug,
+              ),
         )
       : topicItems;
-    if (!hasQuery) {
+    if (!hasQuery && mixedPopularityBrowse) {
+      return [...categoryItems].sort(compareMixedBrowseEntries);
+    }
+    if (
+      !hasQuery &&
+      (sort !== "downloads" || !categoryItems.some((entry) => isExternalSkillListEntry(entry)))
+    ) {
       return categoryItems;
     }
     const multiplier = dir === "asc" ? 1 : -1;
     const results = [...categoryItems];
     results.sort((a, b) => {
       const tieBreak = () => {
-        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier;
+        const updated =
+          ((isExternalSkillListEntry(a) ? a.result.lastObservedAt : a.skill.updatedAt) -
+            (isExternalSkillListEntry(b) ? b.result.lastObservedAt : b.skill.updatedAt)) *
+          multiplier;
         if (updated !== 0) return updated;
-        return a.skill.slug.localeCompare(b.skill.slug);
+        const aSlug = isExternalSkillListEntry(a) ? a.result.slug : a.skill.slug;
+        const bSlug = isExternalSkillListEntry(b) ? b.result.slug : b.skill.slug;
+        return aSlug.localeCompare(bSlug);
       };
       switch (sort) {
         case "relevance":
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
         case "downloads":
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
+          return (
+            ((isExternalSkillListEntry(a)
+              ? a.result.upstreamInstalls
+              : (a.nativeDownloads ?? a.skill.stats.downloads)) -
+              (isExternalSkillListEntry(b)
+                ? b.result.upstreamInstalls
+                : (b.nativeDownloads ?? b.skill.stats.downloads))) *
+              multiplier || tieBreak()
+          );
         case "stars":
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak();
+          return (
+            ((isExternalSkillListEntry(a) ? 0 : a.skill.stats.stars) -
+              (isExternalSkillListEntry(b) ? 0 : b.skill.stats.stars)) *
+              multiplier || tieBreak()
+          );
         case "updated":
-          return (
-            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
-            a.skill.slug.localeCompare(b.skill.slug)
-          );
-        case "name":
-          return (
-            (a.skill.displayName.localeCompare(b.skill.displayName) ||
-              a.skill.slug.localeCompare(b.skill.slug)) * multiplier
-          );
-        default:
-          return (
-            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
-            a.skill.slug.localeCompare(b.skill.slug)
-          );
+          return tieBreak();
+        case "name": {
+          const aName = isExternalSkillListEntry(a) ? a.result.displayName : a.skill.displayName;
+          const bName = isExternalSkillListEntry(b) ? b.result.displayName : b.skill.displayName;
+          return aName.localeCompare(bName) * multiplier || tieBreak();
+        }
+        default: {
+          const aCreated = isExternalSkillListEntry(a)
+            ? a.result.lastObservedAt
+            : a.skill.createdAt;
+          const bCreated = isExternalSkillListEntry(b)
+            ? b.result.lastObservedAt
+            : b.skill.createdAt;
+          return (aCreated - bCreated) * multiplier || tieBreak();
+        }
       }
     });
     return results;
-  }, [activeCategory, activeTopic, baseItems, dir, hasQuery, sort]);
+  }, [activeCategory, activeTopic, baseItems, dir, hasQuery, mixedPopularityBrowse, sort]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
@@ -383,9 +603,9 @@ export function useSkillsBrowseModel({
       setSearchLimit((value) => value + pageSize);
     } else {
       setListStatus("loadingMore");
-      void fetchPage(listCursor, fetchGeneration.current);
+      void fetchPage(fetchGeneration.current, false);
     }
-  }, [canLoadMore, fetchPage, hasQuery, isLoadingMore, listCursor]);
+  }, [canLoadMore, fetchPage, hasQuery, isLoadingMore]);
 
   useEffect(() => {
     if (!isLoadingMore) {

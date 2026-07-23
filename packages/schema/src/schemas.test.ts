@@ -235,8 +235,16 @@ describe("clawhub-schema", () => {
         event: "install",
         slug: "demo",
         ownerHandle: "alice",
-        sourceRef: "skills-sh/alice/skills/demo",
-        version: "1.0.0",
+        sourceRef: "skills-sh:alice/skills/demo",
+        sourceKind: "skills-sh",
+        sourceRepository: "alice/skills",
+        sourcePath: "skills/demo",
+        sourceUrl:
+          "https://github.com/alice/skills/tree/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skills/demo",
+        canonicalRef: "@alice/demo",
+        clawhubScan: "scanned",
+        trustLabel: "Scanned by ClawHub",
+        version: "a".repeat(40),
       },
       "Install telemetry",
     );
@@ -258,7 +266,15 @@ describe("clawhub-schema", () => {
       event: "install",
       slug: "demo",
       ownerHandle: "alice",
-      sourceRef: "skills-sh/alice/skills/demo",
+      sourceRef: "skills-sh:alice/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "alice/skills",
+      sourcePath: "skills/demo",
+      sourceUrl:
+        "https://github.com/alice/skills/tree/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skills/demo",
+      canonicalRef: "@alice/demo",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
     });
     expect(legacy).toMatchObject({ roots: [{ rootId: "root" }] });
   });

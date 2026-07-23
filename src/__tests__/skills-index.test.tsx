@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
@@ -107,7 +108,7 @@ describe("SkillsIndex", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Top", "Most starred", "Featured"]);
+    expect(sortOptions).toEqual(["All", "Trending", "Top", "Most bookmarked", "Featured"]);
   });
 
   it("offers Top without exposing downloads as a browse view", async () => {
@@ -144,7 +145,7 @@ describe("SkillsIndex", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
     const sortOptions = screen.getAllByRole("option").map((option) => option.textContent);
 
-    expect(views).toEqual(["All", "Trending", "Top", "Most starred", "Featured"]);
+    expect(views).toEqual(["All", "Trending", "Top", "Most bookmarked", "Featured"]);
     expect(sortOptions).toEqual(["Recently updated", "Newest", "Name"]);
   });
 
@@ -277,6 +278,282 @@ describe("SkillsIndex", () => {
 
     expect(screen.getByText("Skill 1")).toBeTruthy();
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("continues mirrored pagination without restarting the native stream", async () => {
+    searchMock = { sort: "downloads" };
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [
+          {
+            source: "skills.sh",
+            externalId: "acme/skills/external-1",
+            route: "/skills-sh/acme/skills/external-1",
+            reference: "skills-sh:acme/skills/external-1",
+            owner: "acme",
+            repo: "skills",
+            slug: "external-1",
+            displayName: "External 1",
+            categories: ["development"],
+            topics: [],
+            upstreamInstalls: 100,
+            lastObservedAt: 1,
+          },
+        ],
+        nextCursor: "external:1",
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({
+        page: [
+          {
+            source: "skills.sh",
+            externalId: "acme/skills/external-2",
+            route: "/skills-sh/acme/skills/external-2",
+            reference: "skills-sh:acme/skills/external-2",
+            owner: "acme",
+            repo: "skills",
+            slug: "external-2",
+            displayName: "External 2",
+            categories: ["development"],
+            topics: [],
+            upstreamInstalls: 90,
+            lastObservedAt: 1,
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      });
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("native-1", "Native 1")],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    expect(await screen.findByText("External 1")).toBeTruthy();
+    expect(await screen.findByText("External 2")).toBeTruthy();
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(1);
+    expect(mirrorAction).toHaveBeenNthCalledWith(2, {
+      limit: 25,
+      cursor: "external:1",
+      categorySlug: undefined,
+      topic: undefined,
+    });
+  });
+
+  it("keeps native browse results when mirrored browse fails", async () => {
+    searchMock = { sort: "downloads" };
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi.fn().mockRejectedValue(new Error("mirror unavailable"));
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("native-survives", "Native survives", { downloads: 100 })],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("Native survives")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+  });
+
+  it("keeps mirrored results in direct ascending Top URLs by canonicalizing the direction", async () => {
+    searchMock = { sort: "downloads", dir: "asc" };
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi.fn().mockResolvedValue({
+      page: [makeExternalResult("external-top", 100)],
+      nextCursor: null,
+      hasMore: false,
+    });
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query.mockResolvedValue({
+      page: [makeListResult("native-top", "Native Top", { downloads: 90 })],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("External 100")).toBeTruthy();
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ dir: "desc" }));
+    expect(mirrorAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("orders mixed Top results by native downloads without double-counting skills.sh installs", async () => {
+    searchMock = { sort: "downloads" };
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi.fn().mockResolvedValue({
+      page: [makeExternalResult("external-top", 100)],
+      nextCursor: null,
+      hasMore: false,
+    });
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("native-top", "Native Top", {
+          downloads: 1_010,
+          nativeDownloads: 10,
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("External 100")).toBeTruthy();
+    const pageText = document.body.textContent ?? "";
+    expect(pageText.indexOf("External 100")).toBeLessThan(pageText.indexOf("Native Top"));
+  });
+
+  it("buffers mixed popularity pages before exposing lower-ranked mirrored rows", async () => {
+    searchMock = { sort: "downloads" };
+    vi.stubGlobal("IntersectionObserver", undefined);
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi.fn().mockResolvedValue({
+      page: Array.from({ length: 25 }, (_, index) =>
+        makeExternalResult(`external-${100 - index}`, 100 - index),
+      ),
+      nextCursor: "external:2",
+      hasMore: true,
+    });
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: Array.from({ length: 25 }, (_, index) =>
+          makeListResult(`native-${200 - index}`, `Native ${200 - index}`, {
+            downloads: 200 - index,
+          }),
+        ),
+        hasMore: true,
+        nextCursor: "native:2",
+      })
+      .mockResolvedValueOnce({
+        page: Array.from({ length: 25 }, (_, index) =>
+          makeListResult(`native-${175 - index}`, `Native ${175 - index}`, {
+            downloads: 175 - index,
+          }),
+        ),
+        hasMore: false,
+        nextCursor: null,
+      });
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("Native 200")).toBeTruthy();
+    expect(screen.getByText("Native 176")).toBeTruthy();
+    expect(screen.queryByText("External 100")).toBeNull();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(await screen.findByText("Native 175")).toBeTruthy();
+    expect(screen.getByText("Native 151")).toBeTruthy();
+    expect(screen.queryByText("External 100")).toBeNull();
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
+    expect(mirrorAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("includes mirrored rows in recommended category browse", async () => {
+    searchMock = { category: "development" };
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi.fn().mockResolvedValue({
+      page: [
+        {
+          source: "skills.sh",
+          externalId: "acme/skills/external",
+          route: "/skills-sh/acme/skills/external",
+          reference: "skills-sh:acme/skills/external",
+          owner: "acme",
+          repo: "skills",
+          slug: "external",
+          displayName: "External Category Skill",
+          categories: ["development"],
+          topics: [],
+          upstreamInstalls: 100,
+          lastObservedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("External Category Skill")).toBeTruthy();
+    expect(mirrorAction).toHaveBeenCalledWith({
+      limit: 25,
+      cursor: undefined,
+      categorySlug: "development",
+      topic: undefined,
+    });
+  });
+
+  it("keeps category name sorting native-only until the mirror has a matching index", async () => {
+    searchMock = { category: "development", sort: "name", dir: "asc" };
+    const searchAction = vi.fn().mockResolvedValue([]);
+    const mirrorAction = vi.fn().mockResolvedValue({
+      page: [],
+      nextCursor: null,
+      hasMore: false,
+    });
+    convexReactMocks.useAction.mockImplementation((ref: unknown) =>
+      getFunctionName(ref as never) === "search:listSkillsShMirrorBrowse"
+        ? mirrorAction
+        : searchAction,
+    );
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("native-1", "Native Name", {
+          categories: ["development"],
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("Native Name")).toBeTruthy();
+    expect(mirrorAction).not.toHaveBeenCalled();
   });
 
   it("does not render the publish CTA on the skills browse page", async () => {
@@ -729,11 +1006,12 @@ describe("SkillsIndex", () => {
     expect(args).toEqual(
       expect.objectContaining({
         categorySlug: "development",
-        officialFirst: true,
+        sort: "downloads",
         categoryKeywords: expect.arrayContaining(["developer"]),
         excludeCategoryKeywords: undefined,
       }),
     );
+    expect(args).not.toHaveProperty("officialFirst");
     expect(screen.getByText("Blockscout for Web3 Dev")).toBeTruthy();
     expect(screen.getByText("Developer Utils")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
@@ -848,7 +1126,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
-  it("preserves backend official-first ordering on category pages", async () => {
+  it("uses the shared popularity order when category browse includes the mirror", async () => {
     searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({
       page: [
@@ -871,7 +1149,8 @@ describe("SkillsIndex", () => {
       (node) => node.textContent,
     );
     expect(titles).toEqual(["Official Dev", "Community Dev"]);
-    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ officialFirst: true }));
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ sort: "downloads" }));
+    expect(getLastListPageArgs()).not.toHaveProperty("officialFirst");
   });
 
   it("does not render the warning filter", async () => {
@@ -1080,10 +1359,13 @@ function makeListResult(
     summary?: string;
     topics?: string[];
     categories?: string[];
+    downloads?: number;
+    nativeDownloads?: number;
     official?: boolean;
   } = {},
 ) {
   return {
+    nativeDownloads: options.nativeDownloads,
     skill: {
       _id: `skill_${slug}`,
       slug,
@@ -1094,7 +1376,7 @@ function makeListResult(
       badges: options.official ? { official: { byUserId: "users:admin", at: 1 } } : {},
       tags: {},
       stats: {
-        downloads: 0,
+        downloads: options.downloads ?? 0,
         installs: 0,
         stars: 0,
         versions: 1,
@@ -1106,6 +1388,23 @@ function makeListResult(
     },
     latestVersion: null,
     ownerHandle: null,
+  };
+}
+
+function makeExternalResult(slug: string, upstreamInstalls: number) {
+  return {
+    source: "skills.sh" as const,
+    externalId: `acme/skills/${slug}`,
+    route: `/skills-sh/acme/skills/${slug}`,
+    reference: `skills-sh:acme/skills/${slug}`,
+    owner: "acme",
+    repo: "skills",
+    slug,
+    displayName: `External ${upstreamInstalls}`,
+    categories: ["development"],
+    topics: [],
+    upstreamInstalls,
+    lastObservedAt: 1,
   };
 }
 

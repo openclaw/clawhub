@@ -82,8 +82,8 @@ export function Stars() {
       startTransition(() => {
         updateOptimisticSkills({ type: "restore", skill });
       });
-      console.error("Failed to unstar skill:", err);
-      toast.error("Unable to unstar this skill. Please try again.");
+      console.error("Failed to remove skill bookmark:", err);
+      toast.error("Unable to remove this bookmark. Please try again.");
     });
   };
 
@@ -95,8 +95,8 @@ export function Stars() {
     return (
       <SignInPrompt
         icon={Star}
-        title="Sign in to see your highlights"
-        description="Star skills for quick access later."
+        title="Sign in to see your bookmarks"
+        description="Bookmark skills for quick access later."
       />
     );
   }
@@ -109,7 +109,7 @@ export function Stars() {
     <main className="browse-page">
       <header className="stars-header">
         <h1 className="stars-header-title font-display text-3xl font-black leading-none text-[color:var(--ink)]">
-          Your highlights
+          Your bookmarks
         </h1>
         {hasStars ? (
           <div className="stars-header-controls">
@@ -126,24 +126,24 @@ export function Stars() {
             >
               <SelectTrigger
                 className="stars-sort-trigger h-8 min-w-[140px] text-xs font-semibold"
-                aria-label="Sort starred skills"
+                aria-label="Sort bookmarked skills"
               >
                 <ArrowDownUp className="mr-1.5 h-3.5 w-3.5" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="starred">Recently starred</SelectItem>
+                <SelectItem value="starred">Recently bookmarked</SelectItem>
                 <SelectItem value="updated" disabled={!canSortCompleteSet}>
                   Recently updated
                 </SelectItem>
                 <SelectItem value="stars" disabled={!canSortCompleteSet}>
-                  Most stars
+                  Most bookmarked
                 </SelectItem>
               </SelectContent>
             </Select>
             <nav
               className="publisher-filter-tabs publisher-view-tabs stars-view-tabs"
-              aria-label="Starred skills view"
+              aria-label="Bookmarked skills view"
             >
               <Link
                 to="/stars"
@@ -172,8 +172,8 @@ export function Stars() {
       {skills.length === 0 ? (
         <EmptyState
           icon={Star}
-          title="No stars yet"
-          description="Browse skills and star your favorites."
+          title="No bookmarks yet"
+          description="Browse skills and bookmark your favorites."
           action={{ label: "Browse skills", href: "/skills" }}
         />
       ) : activeView === "grid" ? (
@@ -198,7 +198,7 @@ export function Stars() {
                     e.stopPropagation();
                     handleUnstar(skill);
                   }}
-                  aria-label={`Unstar ${skill.displayName}`}
+                  aria-label={`Remove bookmark for ${skill.displayName}`}
                   className="stars-card-unstar text-[color:var(--gold)] hover:text-status-error-fg"
                 >
                   <Star className="h-4 w-4 fill-current" />
@@ -220,7 +220,7 @@ export function Stars() {
                   e.stopPropagation();
                   handleUnstar(skill);
                 }}
-                aria-label={`Unstar ${skill.displayName}`}
+                aria-label={`Remove bookmark for ${skill.displayName}`}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--gold)] hover:text-status-error-fg"
               >
                 <Star className="h-4 w-4 fill-current" />

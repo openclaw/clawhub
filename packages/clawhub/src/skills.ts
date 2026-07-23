@@ -17,6 +17,13 @@ export type SkillOrigin = {
   slug: string;
   ownerHandle?: string;
   sourceRef?: string;
+  sourceKind?: "skills-sh";
+  sourceRepository?: string;
+  sourcePath?: string;
+  sourceUrl?: string;
+  canonicalRef?: string;
+  clawhubScan?: "unscanned" | "scanned";
+  trustLabel?: string;
   installedVersion: string;
   installedAt: number;
   fingerprint?: string;
@@ -217,6 +224,17 @@ export async function readSkillOrigin(skillFolder: string): Promise<SkillOrigin 
         slug: parsed.slug,
         ownerHandle: typeof parsed.ownerHandle === "string" ? parsed.ownerHandle : undefined,
         sourceRef: typeof parsed.sourceRef === "string" ? parsed.sourceRef : undefined,
+        sourceKind: parsed.sourceKind === "skills-sh" ? "skills-sh" : undefined,
+        sourceRepository:
+          typeof parsed.sourceRepository === "string" ? parsed.sourceRepository : undefined,
+        sourcePath: typeof parsed.sourcePath === "string" ? parsed.sourcePath : undefined,
+        sourceUrl: typeof parsed.sourceUrl === "string" ? parsed.sourceUrl : undefined,
+        canonicalRef: typeof parsed.canonicalRef === "string" ? parsed.canonicalRef : undefined,
+        clawhubScan:
+          parsed.clawhubScan === "unscanned" || parsed.clawhubScan === "scanned"
+            ? parsed.clawhubScan
+            : undefined,
+        trustLabel: typeof parsed.trustLabel === "string" ? parsed.trustLabel : undefined,
         installedVersion: parsed.installedVersion,
         installedAt: parsed.installedAt,
         fingerprint: typeof parsed.fingerprint === "string" ? parsed.fingerprint : undefined,

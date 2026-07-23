@@ -72,6 +72,81 @@ not create or mutate `skills` rows during its planning gates.
   leave native skills, download history, scan jobs, publishers, and aliases
   unchanged.
 
+## Mirrored skill adoption
+
+Adoption is an explicit authenticated workflow, not a side effect of discovery
+or matching publisher names.
+
+- Personal adoption compares the current user's immutable GitHub provider
+  account ID with the mirrored entry's immutable `githubOwnerId`.
+- Organization adoption requires the publisher's matching immutable
+  `githubOrgId` plus a current active GitHub organization membership with
+  `role=admin`. Membership proof older than 15 minutes fails closed.
+- The preview freezes and displays the exact repository, path, commit, folder
+  content hash, mirror source-content hash, and destination route.
+- If the selected publisher already owns the destination skill, the preview
+  identifies that exact skill and shows the retained identity, downloads,
+  bookmarks, comments, official state, versions, and audit history.
+- A directly uploaded or otherwise unrelated same-slug skill is still an
+  eligible controlled destination. No prior source match is required because
+  the verified owner explicitly confirms the canonical-source switch.
+- The request also freezes the destination's active version and canonical
+  source fingerprint. Same-row content or source changes while scanning make
+  the request stale.
+- Any existing destination alias, ownership-verification mismatch, or mirrored
+  source drift blocks the request. The frozen destination includes its
+  publisher route; a route or content change while scanning makes the request
+  stale and requires a new preview and confirmation.
+
+The per-item start input is intentionally narrow so single and bulk workflows
+share one authorization boundary:
+
+```text
+{ publisherId, externalId, sourceContentHash, idempotencyKey }
+```
+
+The interactive `startInteractive` mutation also requires the preview's
+destination fingerprint and fails if that exact destination changed before the
+request mutation. The bulk `start` port remains exactly compatible with the
+four exact-source fields above and reclassifies the destination atomically.
+
+The idempotency key is deterministic for the publisher and exact mirrored
+fingerprint. Starting an adoption persists a durable frozen request in
+`skillsShAdoptions`; it does not attach the entry to a publisher or mutate a
+native skill. A stale or canceled request can be confirmed again as a new
+attempt with the same deterministic exact-source idempotency key.
+
+The adoption states are:
+
+```text
+pending_scan -> ready_to_promote
+             -> rejected
+             -> stale
+             -> canceled
+ready_to_promote -> promoted
+```
+
+Only a real ClawHub scan execution created after the adoption request, matching
+every frozen source field, and durably bound to exactly one adoption may move
+the request to `ready_to_promote`. The catalog run, attempt, scan request, and
+worker job must all be newer than the adoption; terminal completion timestamps
+must also be post-request, so a fresh wrapper cannot reuse an older result.
+In the current Local/Test-only producer contract, `dispatchKind: "real"` marks
+that execution while the shared job source remains `skills-sh-catalog-test`;
+production source expansion belongs to the later shared mirror/schema lane.
+Clean and suspicious verdicts are eligible; malicious and failed verdicts
+reject the request. A canceled attempt clears the binding and leaves the
+adoption pending for a later scan. Final scan dispatch and native promotion
+integration remain separate: the current groundwork stops at
+`ready_to_promote`.
+
+Promotion must revalidate the frozen destination in the same transaction. A new
+destination creates the native skill. A controlled existing destination keeps
+the same `skills` row, route, metrics, bookmarks, comments, official state,
+versions, and audit history; only active content and canonical source may
+change. Pending, rejected, stale, or canceled requests leave both the mirrored
+entry and any existing native skill untouched.
+
 `skills` stores the public catalog row and install state:
 
 - `installKind: "github"`
@@ -84,6 +159,35 @@ not create or mutate `skills` rows during its planning gates.
 - `githubCurrentCheckedAt`
 - `githubScanStatus`: `pending`, `clean`, `suspicious`, `malicious`, or `failed`
 - `githubRemovedAt`
+
+## Permanent external skills.sh mirror
+
+The full authenticated skills.sh mirror is separate from both native `skills`
+and the controlled scan-admission catalog. It stores source observations in
+`skillsShMirrorDigests` and bounded detail content in `skillsShMirrorDetails`;
+controls, durable run cursors, and conflicts remain in their own mirror tables.
+
+- GitHub identities are exact `owner/repo/slug` values. Well-known identities
+  are exact `sourceHost/slug` values and must not invent a repository owner.
+- Every digest is permanently `publicVisible: false` and `installable: false`.
+  Mirror ingestion never creates native skills, publisher attachment, claims,
+  scan plans, or scan jobs.
+- The digest stores normalized slug/display-name fields and a lean
+  `searchText`. Exact, prefix, first-token, popularity, freshness, and
+  full-text indexes are staged before activation on the permanent Test corpus.
+- Gen Agent Trust Hub, Socket, and Snyk observations are stored independently
+  with a bounded status plus optional source timestamp and source link. These
+  are upstream claims only and must never be serialized as a ClawHub verdict.
+- Detail storage retains at most one preferred `SKILL.md` or `README.md`,
+  capped at 64 KiB. The complete upstream file tree is never persisted for an
+  unclaimed mirror row.
+- Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
+  another source batch is fetched; resume continues at the exact stored cursor.
+  Reconciliation tombstones disappeared rows and reactivates later
+  observations without deleting or changing native skills.
+- The mirror has no scheduler in this stage. Production activation, public
+  search/detail/install behavior, claims, and publisher attachment require
+  separately accepted work.
 
 ## Publisher Gate
 
@@ -250,17 +354,30 @@ returns:
 OpenClaw downloads the GitHub archive for that commit and extracts only the skill
 path. The local lock/origin version is the commit SHA.
 
-Controlled unclaimed skills.sh catalog entries use the repository-qualified
-reference `skills-sh/<owner>/<repo>/<slug>`. The colon form
-`skills-sh:<owner>/<repo>/<slug>` is invalid and must be rejected by clients and
-HTTP handlers.
+Controlled skills.sh catalog entries use the repository-qualified reference
+`skills-sh:<owner>/<repo>/<slug>`. The legacy slash form
+`skills-sh/<owner>/<repo>/<slug>` is invalid for new CLI input and must be
+rejected by clients.
 
-In Local and the permanent Test environment, an unclaimed catalog entry remains
-hidden and non-installable until a real low-priority ClawHub scan completes for
-the exact catalog identity, immutable GitHub owner ID, repository, path, commit,
-folder content hash, source content hash, and scan attempt. Clean and suspicious
-verdicts may publish only that exact attempt. Malicious, failed, canceled, or
-stale callbacks cannot publish it.
+Unclaimed mirrored entries remain external and do not create ClawHub scan work.
+Their latest successful synchronized snapshot supplies the exact source pointer,
+commit, provenance, bounded detail content, upstream checks, and explicit
+`Not scanned by ClawHub` trust state. Deletion, reappearance, redirect, and
+same-version conflict observations are retained as non-destructive mirror
+lifecycle state.
+
+Once a listing enters the adopted/native trust lane, every changed content hash
+creates an immutable candidate bound to its repository, path, commit, content
+hash, and scan attempt. The prior allowed version remains active and installable
+while that candidate is planned, queued, failed, rejected, canceled, or stale.
+Only the candidate's own clean or allowed-suspicious verdict may atomically
+replace the active version.
+
+Pointer-only changes with the same content hash create immutable provenance
+candidates without a new scan. They retain explicit lineage to the original
+scan attempt, which remains the security proof exposed by verification.
+Rollback restores the most recent prior allowed candidate; rejected and stale
+candidates remain in history but are never selected.
 
 The public Test route is `/skills-sh/<owner>/<repo>/<slug>`. Its install resolver
 returns the same commit-pinned GitHub descriptor used by native GitHub-backed

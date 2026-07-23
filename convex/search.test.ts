@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
 import {
@@ -8,6 +9,7 @@ import {
   getExactSkillSlugMatch,
   hydrateResults,
   lexicalFallbackSkills,
+  listSkillsShMirrorBrowse,
   searchSkills,
 } from "./search";
 
@@ -28,12 +30,46 @@ type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
   _handler: (ctx: unknown, args: unknown) => Promise<Array<Result>>;
 };
 
-const searchSkillsHandler = (
+const rawSearchSkillsHandler = (
   searchSkills as unknown as WrappedHandler<{
     skill: { slug: string; _id: string };
     score: number;
   }>
 )._handler;
+const listSkillsShMirrorBrowseHandler = (
+  listSkillsShMirrorBrowse as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<{
+      page: Array<{ externalId: string }>;
+      nextCursor: string | null;
+      hasMore: boolean;
+    }>;
+  }
+)._handler;
+const skillsShMirrorSearchRefs = new Set([
+  "skillsShMirror:listActiveByNormalizedSlugInternal",
+  "skillsShMirror:listActiveByNormalizedDisplayNameInternal",
+  "skillsShMirror:listActiveByNormalizedSlugPrefixInternal",
+  "skillsShMirror:listActiveByNormalizedDisplayNamePrefixInternal",
+  "skillsShMirror:listActiveByNormalizedSlugFirstTokenPrefixInternal",
+  "skillsShMirror:listActiveByNormalizedDisplayNameFirstTokenPrefixInternal",
+  "skillsShMirror:searchActiveBySearchTextInternal",
+]);
+const searchSkillsHandler = async (ctx: Record<string, unknown>, args: unknown) => {
+  const runQuery = ctx.runQuery as (ref: unknown, args: unknown) => Promise<unknown>;
+  return await rawSearchSkillsHandler(
+    {
+      ...ctx,
+      runQuery: async (ref: unknown, queryArgs: unknown) =>
+        skillsShMirrorSearchRefs.has(getFunctionName(ref as never))
+          ? []
+          : await runQuery(ref, queryArgs),
+    },
+    args,
+  );
+};
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
 const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
   ._handler;
@@ -252,6 +288,321 @@ describe("search helpers", () => {
     );
 
     expect(result.map((entry) => entry.skill.slug)).toEqual(["focused-helper"]);
+  });
+
+  it("starts bounded mirror recall while native recall is pending and preserves an exact external match", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    let resolveNativeExact!: (value: null) => void;
+    const nativeExact = new Promise<null>((resolve) => {
+      resolveNativeExact = resolve;
+    });
+    const mirrorCalls: Array<{ name: string; args: { limit: number } }> = [];
+    const nativeSummary = {
+      skill: makePublicSkill({
+        id: "skills:native-summary",
+        slug: "markup-helper",
+        displayName: "Markup Helper",
+        summary: "Includes HTML examples.",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const mirrorDigest = makeSkillsShMirrorDigest();
+    const runQuery = vi.fn(async (ref: unknown, args: unknown) => {
+      const name = getFunctionName(ref as never);
+      if (name.startsWith("skillsShMirror:")) {
+        mirrorCalls.push({ name, args: args as { limit: number } });
+        return [mirrorDigest];
+      }
+      if (name === "search:getExactSkillSlugMatch") return await nativeExact;
+      if (name === "search:directPrefixSkillMatches") return [];
+      if (name === "search:lexicalFallbackSkills") return [nativeSummary];
+      throw new Error(`Unexpected query ${name}`);
+    });
+
+    const pending = rawSearchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "html", limit: 2 },
+    );
+
+    await vi.waitFor(() => expect(mirrorCalls).toHaveLength(7));
+    expect(mirrorCalls.every(({ args }) => args.limit > 0 && args.limit <= 50)).toBe(true);
+    resolveNativeExact(null);
+
+    const result = (await pending) as unknown as Array<
+      { source: "skills.sh"; externalId: string } | { skill: { slug: string } }
+    >;
+    expect(result[0]).toMatchObject({
+      source: "skills.sh",
+      externalId: "patrick-erichsen/skills/html",
+    });
+    expect(result[1]).toMatchObject({ skill: { slug: "markup-helper" } });
+  });
+
+  it("ranks a native result above an unscanned mirror result in the same relevance tier", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const nativeExact = {
+      nativeDownloads: 1,
+      skill: makePublicSkill({
+        id: "skills:native-html",
+        slug: "html",
+        displayName: "HTML",
+        downloads: 1,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const mirrorDigest = makeSkillsShMirrorDigest();
+    const runQuery = vi.fn(async (ref: unknown) => {
+      const name = getFunctionName(ref as never);
+      if (name.startsWith("skillsShMirror:")) return [mirrorDigest];
+      if (name === "search:getExactSkillSlugMatch") return [nativeExact];
+      if (name === "search:directPrefixSkillMatches") return [];
+      if (name === "search:lexicalFallbackSkills") return [];
+      throw new Error(`Unexpected query ${name}`);
+    });
+
+    const result = (await rawSearchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "html", limit: 2 },
+    )) as unknown as Array<
+      { source: "skills.sh"; externalId: string } | { skill: { slug: string } }
+    >;
+
+    expect(result[0]).toMatchObject({ skill: { slug: "html" } });
+    expect(result[1]).toMatchObject({
+      source: "skills.sh",
+      externalId: "patrick-erichsen/skills/html",
+    });
+  });
+
+  it("keeps a matching mirrored skill in category-filtered search", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const mirrorDigest = makeSkillsShMirrorDigest();
+    const runQuery = vi.fn(async (ref: unknown) => {
+      const name = getFunctionName(ref as never);
+      if (name.startsWith("skillsShMirror:")) return [mirrorDigest];
+      if (name === "search:getExactSkillSlugMatch") return [];
+      if (name === "search:directPrefixSkillMatches") return [];
+      if (name === "search:lexicalFallbackSkills") return [];
+      throw new Error(`Unexpected query ${name}`);
+    });
+
+    const result = (await rawSearchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "html", categorySlug: "development", limit: 2 },
+    )) as unknown as Array<{ source: "skills.sh"; categories: string[] }>;
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        source: "skills.sh",
+        categories: ["development"],
+      }),
+    ]);
+  });
+
+  it("normalizes unclassified mirrored skills into other-filtered search", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const mirrorDigest = {
+      ...makeSkillsShMirrorDigest(),
+      inferredCategories: undefined,
+    };
+    const runQuery = vi.fn(async (ref: unknown) => {
+      const name = getFunctionName(ref as never);
+      if (name.startsWith("skillsShMirror:")) return [mirrorDigest];
+      if (name === "search:getExactSkillSlugMatch") return [];
+      if (name === "search:directPrefixSkillMatches") return [];
+      if (name === "search:lexicalFallbackSkills") return [];
+      throw new Error(`Unexpected query ${name}`);
+    });
+
+    const result = (await rawSearchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "html", categorySlug: "other", limit: 2 },
+    )) as unknown as Array<{ source: "skills.sh"; categories: string[] }>;
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        source: "skills.sh",
+        categories: ["other"],
+      }),
+    ]);
+  });
+
+  it("lists category browse rows from the indexed mirror facet in popularity order", async () => {
+    const mirrorDigest = makeSkillsShMirrorDigest();
+    const runQuery = vi.fn(async (ref: unknown, args: unknown) => {
+      expect(getFunctionName(ref as never)).toBe("skillsShMirror:listActiveByCategoryInternal");
+      expect(args).toEqual({
+        categorySlug: "development",
+        paginationOpts: { numItems: 25, cursor: null },
+      });
+      return {
+        page: [mirrorDigest],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+
+    await expect(
+      listSkillsShMirrorBrowseHandler({ runQuery }, { categorySlug: "development", limit: 25 }),
+    ).resolves.toEqual({
+      page: [
+        expect.objectContaining({
+          externalId: mirrorDigest.externalId,
+          categories: ["development"],
+          upstreamInstalls: 100,
+        }),
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
+  it("normalizes unclassified mirrored skills into other-category browse", async () => {
+    const mirrorDigest = {
+      ...makeSkillsShMirrorDigest(),
+      inferredCategories: undefined,
+    };
+    const runQuery = vi.fn(async (ref: unknown, args: unknown) => {
+      expect(getFunctionName(ref as never)).toBe(
+        "skillsShMirror:listActiveByUpstreamInstallsPageInternal",
+      );
+      expect(args).toEqual({
+        paginationOpts: { numItems: 25, cursor: null },
+      });
+      return {
+        page: [mirrorDigest],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+
+    await expect(
+      listSkillsShMirrorBrowseHandler({ runQuery }, { categorySlug: "other", limit: 25 }),
+    ).resolves.toMatchObject({
+      page: [expect.objectContaining({ categories: ["other"] })],
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
+  it("continues the category facet until a category and topic intersection is filled", async () => {
+    const nonmatching = { ...makeSkillsShMirrorDigest(), inferredTopics: [] };
+    const matching = makeSkillsShMirrorDigest();
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [nonmatching],
+        isDone: false,
+        continueCursor: "category:1",
+      })
+      .mockResolvedValueOnce({
+        page: [matching],
+        isDone: false,
+        continueCursor: "category:2",
+      });
+
+    await expect(
+      listSkillsShMirrorBrowseHandler(
+        { runQuery },
+        { categorySlug: "development", topic: "html", limit: 1 },
+      ),
+    ).resolves.toEqual({
+      page: [expect.objectContaining({ externalId: matching.externalId, topics: ["html"] })],
+      nextCursor: "category:2",
+      hasMore: true,
+    });
+    expect(runQuery.mock.calls.map(([, args]) => args)).toEqual([
+      {
+        categorySlug: "development",
+        paginationOpts: { numItems: 1, cursor: null },
+      },
+      {
+        categorySlug: "development",
+        paginationOpts: { numItems: 1, cursor: "category:1" },
+      },
+    ]);
+  });
+
+  it("returns an exact continuation after the bounded filtered-browse work budget", async () => {
+    const nonmatching = { ...makeSkillsShMirrorDigest(), inferredTopics: [] };
+    const matching = makeSkillsShMirrorDigest();
+    const firstRunQuery = vi.fn(async (_ref: unknown, args: unknown) => {
+      const cursor = (args as { paginationOpts: { cursor: string | null } }).paginationOpts.cursor;
+      const pageNumber = cursor ? Number(cursor.split(":")[1]) : 0;
+      return {
+        page: [nonmatching],
+        isDone: false,
+        continueCursor: `category:${pageNumber + 1}`,
+      };
+    });
+
+    await expect(
+      listSkillsShMirrorBrowseHandler(
+        { runQuery: firstRunQuery },
+        { categorySlug: "development", topic: "html", limit: 1 },
+      ),
+    ).resolves.toEqual({
+      page: [],
+      nextCursor: "category:20",
+      hasMore: true,
+    });
+    expect(firstRunQuery).toHaveBeenCalledTimes(20);
+
+    const secondRunQuery = vi.fn(async (_ref: unknown, args: unknown) => {
+      expect(args).toEqual({
+        categorySlug: "development",
+        paginationOpts: { numItems: 1, cursor: "category:20" },
+      });
+      return {
+        page: [matching],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+    await expect(
+      listSkillsShMirrorBrowseHandler(
+        { runQuery: secondRunQuery },
+        {
+          cursor: "category:20",
+          categorySlug: "development",
+          topic: "html",
+          limit: 1,
+        },
+      ),
+    ).resolves.toEqual({
+      page: [expect.objectContaining({ externalId: matching.externalId, topics: ["html"] })],
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
+  it("passes the continuation cursor through unfiltered popularity browse", async () => {
+    const mirrorDigest = makeSkillsShMirrorDigest();
+    const runQuery = vi.fn(async (ref: unknown, args: unknown) => {
+      expect(getFunctionName(ref as never)).toBe(
+        "skillsShMirror:listActiveByUpstreamInstallsPageInternal",
+      );
+      expect(args).toEqual({
+        paginationOpts: { numItems: 25, cursor: "installs:25" },
+      });
+      return {
+        page: [mirrorDigest],
+        isDone: false,
+        continueCursor: "installs:50",
+      };
+    });
+
+    await expect(
+      listSkillsShMirrorBrowseHandler({ runQuery }, { cursor: "installs:25", limit: 25 }),
+    ).resolves.toMatchObject({
+      page: [expect.objectContaining({ externalId: mirrorDigest.externalId })],
+      nextCursor: "installs:50",
+      hasMore: true,
+    });
   });
 
   it("uses normalized prefix matches so lowercase name queries do not depend on vector recall", async () => {
@@ -2014,6 +2365,54 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
   });
 
+  it("keeps skills.sh installs out of the native download ranking tie-breaker", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const indexed = {
+      nativeDownloads: 10,
+      skill: makePublicSkill({
+        id: "skills:indexed",
+        slug: "tool-indexed",
+        displayName: "Tool",
+        downloads: 10_010,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const native = {
+      nativeDownloads: 20,
+      skill: makePublicSkill({
+        id: "skills:native",
+        slug: "tool-native",
+        displayName: "Tool",
+        downloads: 20,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([indexed, native]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-native", "tool-indexed"]);
+    expect(result[0]).not.toHaveProperty("nativeDownloads");
+  });
+
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
     // Derive digest from makeSkillDoc so it stays in sync with schema changes.
     const skillDoc = makeSkillDoc({
@@ -2336,6 +2735,41 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["search-term-clean"]);
   });
 });
+
+function makeSkillsShMirrorDigest() {
+  return {
+    externalId: "patrick-erichsen/skills/html",
+    sourceType: "github" as const,
+    owner: "patrick-erichsen",
+    repo: "skills",
+    slug: "html",
+    normalizedSlug: "html",
+    normalizedSlugFirstToken: "html",
+    displayName: "HTML Artifact Chooser",
+    normalizedDisplayName: "html artifact chooser",
+    normalizedDisplayNameFirstToken: "html",
+    searchText: "patrick-erichsen skills html artifact chooser",
+    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+    canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
+    githubPath: "skills/html",
+    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+    upstreamInstalls: 100,
+    upstreamScanners: {
+      genAgentTrustHub: { status: "unavailable" },
+      socket: { status: "pass" },
+      snyk: { status: "warning" },
+    },
+    inferredCategories: ["development"],
+    inferredTopics: ["html"],
+    sourceFreshnessStatus: "observed-only" as const,
+    detailStatus: "available" as const,
+    active: true,
+    publicVisible: false as const,
+    installable: false as const,
+    lastObservedAt: 123,
+  };
+}
 
 function makePublicSkill(params: {
   id: string;

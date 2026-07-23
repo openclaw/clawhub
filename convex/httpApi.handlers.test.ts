@@ -327,8 +327,16 @@ describe("httpApi handlers", () => {
           event: "install",
           slug: "weather",
           ownerHandle: "openclaw",
-          sourceRef: "skills-sh/openclaw/skills/weather",
-          version: "1.0.0",
+          sourceRef: "skills-sh:openclaw/skills/weather",
+          sourceKind: "skills-sh",
+          sourceRepository: "openclaw/skills",
+          sourcePath: "skills/weather",
+          sourceUrl:
+            "https://github.com/openclaw/skills/tree/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skills/weather",
+          canonicalRef: "@openclaw/weather",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+          version: "a".repeat(40),
           rootId: "abc",
           rootLabel: "~/skills",
         }),
@@ -340,8 +348,16 @@ describe("httpApi handlers", () => {
       userId: "users:1",
       slug: "weather",
       ownerHandle: "openclaw",
-      sourceRef: "skills-sh/openclaw/skills/weather",
-      version: "1.0.0",
+      sourceRef: "skills-sh:openclaw/skills/weather",
+      sourceKind: "skills-sh",
+      sourceRepository: "openclaw/skills",
+      sourcePath: "skills/weather",
+      sourceUrl:
+        "https://github.com/openclaw/skills/tree/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skills/weather",
+      canonicalRef: "@openclaw/weather",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      version: "a".repeat(40),
     });
   });
 

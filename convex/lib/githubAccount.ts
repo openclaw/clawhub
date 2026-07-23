@@ -11,6 +11,7 @@ const MIN_ACCOUNT_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 type GitHubAccountGateCtx = Pick<ActionCtx, "runQuery" | "runMutation">;
 
 type GitHubUser = {
+  id?: string | number;
   login?: string;
   name?: string;
   avatar_url?: string;
@@ -51,6 +52,23 @@ export async function fetchGitHubCreatedAtByProviderAccountId(providerAccountId:
   const parsed = payload.created_at ? Date.parse(payload.created_at) : Number.NaN;
   if (!Number.isFinite(parsed)) throw new ConvexError("GitHub account lookup failed");
   return parsed;
+}
+
+export async function fetchGitHubLoginByProviderAccountId(providerAccountId: string) {
+  const response = await fetchGitHubUserByNumericId(providerAccountId);
+  if (!response.ok) {
+    if (response.status === 403 || response.status === 429) {
+      throw new ConvexError("GitHub API rate limit exceeded — please try again in a few minutes");
+    }
+    throw new ConvexError("GitHub account lookup failed");
+  }
+
+  const payload = (await response.json()) as GitHubUser;
+  const login = payload.login?.trim();
+  if (!login || String(payload.id) !== providerAccountId) {
+    throw new ConvexError("GitHub account lookup failed");
+  }
+  return login;
 }
 
 export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId: Id<"users">) {

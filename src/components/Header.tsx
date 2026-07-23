@@ -32,6 +32,7 @@ import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { buildPublisherProfileHref, buildSkillDetailHref } from "../lib/ownerRoute";
 import { buildPluginDetailHref, displayPluginPackageName } from "../lib/pluginRoutes";
 import { SITE_NAME } from "../lib/site";
+import { skillsShRepositoryLabel } from "../lib/skillsShCatalog";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -168,7 +169,14 @@ export default function Header() {
     if (!hasNavSearchQuery) return [];
     const items: TypeaheadItem[] = [];
     for (const result of skillResults) {
-      items.push({ kind: "skill", key: `skill-${result.skill._id}`, result });
+      items.push({
+        kind: "skill",
+        key:
+          result.type === "skills-sh"
+            ? `skills-sh-${result.result.externalId}`
+            : `skill-${result.skill._id}`,
+        result,
+      });
     }
     if (skillResults.length > 0) {
       items.push({
@@ -311,6 +319,13 @@ export default function Header() {
 
   const navigateToTypeaheadItem = (item: TypeaheadItem) => {
     if (item.kind === "skill") {
+      if (item.result.type === "skills-sh") {
+        void navigate({ to: item.result.result.route });
+        setNavSearchQuery("");
+        setTypeaheadOpen(false);
+        setMobileSearchOpen(false);
+        return;
+      }
       const resultOwnerHandle = item.result.ownerHandle?.trim();
       if (!resultOwnerHandle) {
         void navigate({
@@ -649,7 +664,7 @@ export default function Header() {
                   <DropdownMenuItem asChild>
                     <Link to="/stars" className="flex items-center gap-2">
                       <Star size={14} aria-hidden="true" />
-                      Stars
+                      Bookmarks
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
@@ -1019,6 +1034,13 @@ function getTypeaheadOptionId(item: TypeaheadItem) {
 
 function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
   if (item.kind === "skill") {
+    if (item.result.type === "skills-sh") {
+      return (
+        <span className="navbar-search-typeahead-icon" aria-hidden="true">
+          <MarketplaceIcon kind="skill" label={item.result.result.displayName} size="xs" />
+        </span>
+      );
+    }
     const label = item.result.skill.displayName || item.result.skill.slug;
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
@@ -1060,6 +1082,12 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
 
 function getTypeaheadRowBody(item: TypeaheadItem) {
   if (item.kind === "skill") {
+    if (item.result.type === "skills-sh") {
+      return {
+        title: item.result.result.displayName,
+        meta: `skills.sh · ${skillsShRepositoryLabel(item.result.result)}`,
+      };
+    }
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
     return {
       title: item.result.skill.displayName,
