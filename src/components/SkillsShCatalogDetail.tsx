@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import {
   buildSkillsShInstallCommands,
+  isSkillsShCatalogInstallable,
   SKILLS_SH_TRUST_LABEL,
   skillsShRepositoryLabel,
   type SkillsShCatalogDetail,
@@ -29,6 +30,7 @@ const CHECK_PRESENTATION = {
 
 export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDetail }) {
   const installCommands = buildSkillsShInstallCommands(entry.reference);
+  const installable = isSkillsShCatalogInstallable(entry);
   return (
     <main className="py-10 sm:py-14">
       <Container size="narrow">
@@ -96,27 +98,37 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
           <h2 className="font-display text-lg font-bold text-[color:var(--oc-text-primary)]">
             Install
           </h2>
-          <div className="mt-3 grid gap-3">
-            {installCommands.map(({ client, command }) => (
-              <div key={client}>
-                <p className="mb-1 text-xs font-semibold text-[color:var(--oc-text-muted)]">
-                  {client}
-                </p>
-                <div className="flex min-w-0 items-center gap-2 rounded-[var(--oc-radius-inset)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-surface)] p-2 pl-3">
-                  <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-[color:var(--oc-text-primary)]">
-                    {command}
-                  </code>
-                  <InstallCopyButton
-                    text={command}
-                    ariaLabel={`Copy ${client} install command`}
-                    showLabel={false}
-                    variant="ghost"
-                    size="icon-sm"
-                  />
+          {installable ? (
+            <div className="mt-3 grid gap-3">
+              {installCommands.map(({ client, command }) => (
+                <div key={client}>
+                  <p className="mb-1 text-xs font-semibold text-[color:var(--oc-text-muted)]">
+                    {client}
+                  </p>
+                  <div className="flex min-w-0 items-center gap-2 rounded-[var(--oc-radius-inset)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-surface)] p-2 pl-3">
+                    <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-sm text-[color:var(--oc-text-primary)]">
+                      {command}
+                    </code>
+                    <InstallCopyButton
+                      text={command}
+                      ariaLabel={`Copy ${client} install command`}
+                      showLabel={false}
+                      variant="ghost"
+                      size="icon-sm"
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <Alert variant="warn" className="mt-3">
+              <ShieldAlert aria-hidden="true" size={17} />
+              <AlertDescription>
+                This snapshot does not include a commit-pinned GitHub folder, so it cannot be
+                installed yet.
+              </AlertDescription>
+            </Alert>
+          )}
         </section>
 
         <section className="border-b border-[color:var(--oc-border-subtle)] py-7">

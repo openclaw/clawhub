@@ -39,6 +39,20 @@ describe("SkillsShCatalogDetailPage", () => {
     ).toBeTruthy();
   });
 
+  it("does not advertise install commands without a commit-pinned GitHub folder", () => {
+    const entry = makeEntry();
+    delete entry.githubCommit;
+    render(<SkillsShCatalogDetailPage entry={entry} />);
+
+    expect(
+      screen.getByText(
+        "This snapshot does not include a commit-pinned GitHub folder, so it cannot be installed yet.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/^openclaw skills install /)).toBeNull();
+    expect(screen.queryByText(/^clawhub install /)).toBeNull();
+  });
+
   it("renders only the stored bounded source content and no file explorer", () => {
     render(<SkillsShCatalogDetailPage entry={makeEntry()} />);
 
@@ -66,7 +80,7 @@ function makeEntry(): SkillsShCatalogDetail {
     canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
     githubPath: "skills/html",
     githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-    sourceContentHash: "content-hash",
+    sourceContentHash: "a".repeat(64),
     upstreamInstalls: 100,
     lastObservedAt: Date.now() - 60_000,
     upstreamChecks: [

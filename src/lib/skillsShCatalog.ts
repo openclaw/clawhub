@@ -67,6 +67,21 @@ export function buildSkillsShInstallCommands(reference: string) {
   ] as const;
 }
 
+export function isSkillsShCatalogInstallable(
+  detail: Pick<SkillsShCatalogDetail, "githubCommit" | "githubPath" | "sourceContentHash">,
+) {
+  const path = detail.githubPath?.trim().replace(/^\/+|\/+$/g, "");
+  const commit = detail.githubCommit?.trim().toLowerCase();
+  const contentHash = detail.sourceContentHash?.trim().toLowerCase();
+  return Boolean(
+    path &&
+    commit &&
+    contentHash &&
+    /^[a-f0-9]{40}$/.test(commit) &&
+    /^[a-f0-9]{64}$/.test(contentHash),
+  );
+}
+
 export function isSkillsShSearchResult(value: unknown): value is SkillsShSearchEntry {
   return (
     value !== null &&
