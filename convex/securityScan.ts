@@ -2172,10 +2172,8 @@ export const completeCatalogSkillScanJobInternal = internalMutation({
       entry.publicVisible &&
       entry.publishedScanAttemptId !== undefined &&
       (args.verdict !== "malicious" ||
-        (publishedAttempt !== null &&
-          !hasSameAdoptedContent(publishedAttempt, attemptIdentity)));
-    const publicVisible =
-      candidatePromoted || preservesPublishedArtifact;
+        (publishedAttempt !== null && !hasSameAdoptedContent(publishedAttempt, attemptIdentity)));
+    const publicVisible = candidatePromoted || preservesPublishedArtifact;
     await ctx.db.patch(attempt._id, {
       status: scanFailed ? "failed" : "succeeded",
       verdict: args.verdict,
