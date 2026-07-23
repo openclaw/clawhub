@@ -61,6 +61,7 @@ import { Route as SkillsShOwnerRepoSlugRouteImport } from './routes/skills-sh/$o
 import { Route as OwnerPluginsSlugSecurityScannerRouteImport } from './routes/$owner/plugins/$slug/security/$scanner'
 import { Route as OwnerSkillsSlugSecurityScannerRouteImport } from './routes/$owner/skills/$slug/security/$scanner'
 import { Route as PluginsScopeNameSecurityScannerRouteImport } from './routes/plugins/$scope/$name/security/$scanner'
+import { Route as OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRouteImport } from './routes/$owner/skills/$slug/[.]well-known/agent-skills/index[.]json'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -331,6 +332,12 @@ const PluginsScopeNameSecurityScannerRoute =
     path: '/security/$scanner',
     getParentRoute: () => PluginsScopeNameRoute,
   } as any)
+const OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute =
+  OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRouteImport.update({
+    id: '/.well-known/agent-skills/index.json',
+    path: '/.well-known/agent-skills/index.json',
+    getParentRoute: () => OwnerSkillsSlugRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -385,6 +392,7 @@ export interface FileRoutesByFullPath {
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
+  '/$owner/skills/$slug/.well-known/agent-skills/index.json': typeof OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -439,6 +447,7 @@ export interface FileRoutesByTo {
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
+  '/$owner/skills/$slug/.well-known/agent-skills/index.json': typeof OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -494,6 +503,7 @@ export interface FileRoutesById {
   '/$owner/plugins/$slug/security/$scanner': typeof OwnerPluginsSlugSecurityScannerRoute
   '/$owner/skills/$slug/security/$scanner': typeof OwnerSkillsSlugSecurityScannerRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
+  '/$owner/skills/$slug/.well-known/agent-skills/index.json': typeof OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -550,6 +560,7 @@ export interface FileRouteTypes {
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
     | '/plugins/$scope/$name/security/$scanner'
+    | '/$owner/skills/$slug/.well-known/agent-skills/index.json'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -604,6 +615,7 @@ export interface FileRouteTypes {
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
     | '/plugins/$scope/$name/security/$scanner'
+    | '/$owner/skills/$slug/.well-known/agent-skills/index.json'
   id:
     | '__root__'
     | '/'
@@ -658,6 +670,7 @@ export interface FileRouteTypes {
     | '/$owner/plugins/$slug/security/$scanner'
     | '/$owner/skills/$slug/security/$scanner'
     | '/plugins/$scope/$name/security/$scanner'
+    | '/$owner/skills/$slug/.well-known/agent-skills/index.json'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -1069,6 +1082,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsScopeNameSecurityScannerRouteImport
       parentRoute: typeof PluginsScopeNameRoute
     }
+    '/$owner/skills/$slug/.well-known/agent-skills/index.json': {
+      id: '/$owner/skills/$slug/.well-known/agent-skills/index.json'
+      path: '/.well-known/agent-skills/index.json'
+      fullPath: '/$owner/skills/$slug/.well-known/agent-skills/index.json'
+      preLoaderRoute: typeof OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRouteImport
+      parentRoute: typeof OwnerSkillsSlugRoute
+    }
   }
 }
 
@@ -1119,12 +1139,15 @@ interface OwnerSkillsSlugRouteChildren {
   OwnerSkillsSlugSecurityAuditRoute: typeof OwnerSkillsSlugSecurityAuditRoute
   OwnerSkillsSlugSettingsRoute: typeof OwnerSkillsSlugSettingsRoute
   OwnerSkillsSlugSecurityScannerRoute: typeof OwnerSkillsSlugSecurityScannerRoute
+  OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute: typeof OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute
 }
 
 const OwnerSkillsSlugRouteChildren: OwnerSkillsSlugRouteChildren = {
   OwnerSkillsSlugSecurityAuditRoute: OwnerSkillsSlugSecurityAuditRoute,
   OwnerSkillsSlugSettingsRoute: OwnerSkillsSlugSettingsRoute,
   OwnerSkillsSlugSecurityScannerRoute: OwnerSkillsSlugSecurityScannerRoute,
+  OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute:
+    OwnerSkillsSlugDotwellKnownAgentSkillsIndexDotjsonRoute,
 }
 
 const OwnerSkillsSlugRouteWithChildren = OwnerSkillsSlugRoute._addFileChildren(

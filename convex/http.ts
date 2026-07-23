@@ -1,5 +1,6 @@
 import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import { httpRouter } from "convex/server";
+import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
 import { downloadZip } from "./downloads";
 import {
@@ -73,6 +74,13 @@ import {
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+
+// Convex routes HEAD through the matching GET action and strips the body.
+http.route({
+  pathPrefix: "/api/v1/agent-skills/",
+  method: "GET",
+  handler: agentSkillsHttp,
+});
 
 http.route({
   path: ApiRoutes.download,

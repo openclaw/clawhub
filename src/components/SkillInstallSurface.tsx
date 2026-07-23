@@ -5,8 +5,10 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { copyText, InstallCopyButton } from "./InstallCopyButton";
 import {
   buildSkillInstallTarget,
+  buildSkillPageUrl,
   formatOpenClawInstallCommand,
   formatOpenClawPrompt,
+  formatSkillsCliInstallCommand,
   type SkillPromptMode,
 } from "./skillDetailUtils";
 import { Button } from "./ui/button";
@@ -193,10 +195,13 @@ export function SkillCommandLineCard({
   clawdis,
 }: SkillInstallSurfaceProps) {
   const headingId = useId();
-  const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
+  type InstallTab = "cli" | "skills" | "prompt";
+  const [activeInstallTab, setActiveInstallTab] = useState<InstallTab>("cli");
   const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
   const openClawCommand = formatOpenClawInstallCommand(installTarget);
+  const skillPageUrl = buildSkillPageUrl(ownerHandle, ownerId, slug);
+  const skillsCliCommand = skillPageUrl ? formatSkillsCliInstallCommand(skillPageUrl) : null;
   const promptPreview = formatOpenClawPrompt({
     mode: "install-and-setup",
     skillName: displayName,
@@ -205,13 +210,21 @@ export function SkillCommandLineCard({
     ownerId,
     clawdis,
   });
-  const activeInstallText = activeInstallTab === "prompt" ? promptPreview : openClawCommand;
-  const selectInstallTab = (tab: "cli" | "prompt") => {
+  const activeInstallText =
+    activeInstallTab === "prompt"
+      ? promptPreview
+      : activeInstallTab === "skills" && skillsCliCommand
+        ? skillsCliCommand
+        : openClawCommand;
+  const installTabOrder: InstallTab[] = ["cli", "skills", "prompt"];
+  const selectInstallTab = (tab: InstallTab) => {
     if (tab === activeInstallTab) {
       return;
     }
 
-    setInstallTabDirection(tab === "prompt" ? "right" : "left");
+    setInstallTabDirection(
+      installTabOrder.indexOf(tab) > installTabOrder.indexOf(activeInstallTab) ? "right" : "left",
+    );
     setActiveInstallTab(tab);
   };
 
@@ -230,6 +243,16 @@ export function SkillCommandLineCard({
           >
             CLI
           </button>
+          {skillsCliCommand ? (
+            <button
+              type="button"
+              className={`skill-install-tab${activeInstallTab === "skills" ? " is-active" : ""}`}
+              aria-pressed={activeInstallTab === "skills"}
+              onClick={() => selectInstallTab("skills")}
+            >
+              npx skills
+            </button>
+          ) : null}
           <button
             type="button"
             className={`skill-install-tab${activeInstallTab === "prompt" ? " is-active" : ""}`}
@@ -244,10 +267,10 @@ export function SkillCommandLineCard({
       <div className="skill-install-command-wrap">
         <div
           className={`skill-install-command-shell${
-            activeInstallTab === "cli" ? " skill-install-command-shell-cli" : ""
+            activeInstallTab !== "prompt" ? " skill-install-command-shell-cli" : ""
           }`}
         >
-          {activeInstallTab === "cli" ? (
+          {activeInstallTab !== "prompt" ? (
             <span className="skill-install-command-prompt" aria-hidden="true">
               $
             </span>
@@ -260,7 +283,7 @@ export function SkillCommandLineCard({
             } skill-install-command-reveal`}
             tabIndex={0}
           >
-            {activeInstallTab === "cli" ? (
+            {activeInstallTab !== "prompt" ? (
               <OpenClawCliInstallCommand command={activeInstallText} />
             ) : (
               <code translate="no">{activeInstallText}</code>
@@ -269,7 +292,11 @@ export function SkillCommandLineCard({
           <InstallCopyButton
             text={activeInstallText}
             ariaLabel={
-              activeInstallTab === "prompt" ? "Copy OpenClaw prompt" : "Copy OpenClaw CLI command"
+              activeInstallTab === "prompt"
+                ? "Copy OpenClaw prompt"
+                : activeInstallTab === "skills"
+                  ? "Copy npx skills command"
+                  : "Copy OpenClaw CLI command"
             }
             className="skill-install-command-inline-button"
             showLabel={false}
