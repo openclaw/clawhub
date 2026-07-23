@@ -2068,6 +2068,32 @@ describe("skills.sh catalog overload control plane", () => {
       return { entryId, priorAttemptId, currentAttemptId };
     });
 
+    await t.run(
+      async (ctx) =>
+        await ctx.db.patch(seeded.priorAttemptId, {
+          source: "skills-sh-catalog-fixture",
+        }),
+    );
+    await expect(
+      t.mutation(internal.skillsShCatalog.rollbackPublicationInternal, {
+        externalId: "openclaw/skills/rollback-history",
+        attemptId: seeded.currentAttemptId,
+        actor: "catalog-refresh-operator",
+        reason: "reject a predecessor that cannot serve",
+        confirm: "rollback-skills-sh-test-publication",
+      }),
+    ).rejects.toThrow("skills.sh publication rollback predecessor is not allowed");
+    expect(await t.run(async (ctx) => await ctx.db.get(seeded.entryId))).toMatchObject({
+      publicVisible: true,
+      publishedScanAttemptId: seeded.currentAttemptId,
+    });
+    await t.run(
+      async (ctx) =>
+        await ctx.db.patch(seeded.priorAttemptId, {
+          source: "skills-sh-catalog-test",
+        }),
+    );
+
     const rolledBack = await t.mutation(internal.skillsShCatalog.rollbackPublicationInternal, {
       externalId: "openclaw/skills/rollback-history",
       attemptId: seeded.currentAttemptId,
@@ -2483,7 +2509,7 @@ describe("skills.sh catalog overload control plane", () => {
     );
   });
 
-  it("binds an exact in-flight real scan to a verified adoption instead of duplicating it", async () => {
+  it("admits a post-adoption scan and reuses only its fully linked retry", async () => {
     useEnvironment(TEST_ENV);
     const t = convexTest(schema, modules);
     const actorUserId = await t.run(
@@ -2580,35 +2606,91 @@ describe("skills.sh catalog overload control plane", () => {
         updatedAt: now,
       });
     });
-    const duplicateArtifact = await storeAuthenticatedTestArtifact(
+    const adoptionArtifact = await storeAuthenticatedTestArtifact(
       t,
       sourceRow,
       "shared adoption artifact",
     );
+    const adoptionRun = await t.mutation(internal.skillsShCatalog.startStagingLiveRunInternal, {
+      actor: "catalog-adoption-operator",
+      reason: "prove post-adoption attempt reuse",
+      snapshotId: "skills-sh-test-live-500:adoption-reuse",
+      sourceCapturedAt: "2026-07-21T00:01:00.000Z",
+      snapshotCaptureFetches: 1,
+      fixtureLength: 500,
+    });
+    await t.mutation(internal.skillsShCatalog.processStagingLiveBatchInternal, {
+      runId: adoptionRun.runId,
+      cursor: 0,
+      rows: [adoptionArtifact.row],
+    });
+    await t.run(async (ctx) => {
+      await Promise.all([
+        ctx.db.patch(adoptionId, {
+          scanRunId: adoptionRun.runId,
+          updatedAt: Date.now(),
+        }),
+        ctx.db.patch(attempt!.entryId, {
+          scanStatus: "planned",
+          updatedAt: Date.now(),
+        }),
+      ]);
+    });
 
-    const reused = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
-      runId,
+    const admitted = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId: adoptionRun.runId,
       externalIds: [sourceRow.externalId],
       actorUserId,
       adoptionId,
-      artifacts: [duplicateArtifact.artifact],
+      artifacts: [adoptionArtifact.artifact],
+    });
+    expect(admitted).toMatchObject({ admitted: 1, reused: 0 });
+    const [adoptionAttempt] = await collectAttempts(t, adoptionRun.runId);
+    expect(adoptionAttempt?._id).not.toBe(attempt?._id);
+    await expect(t.run(async (ctx) => await ctx.db.get(adoptionId))).resolves.toMatchObject({
+      status: "pending_scan",
+      scanAttemptId: adoptionAttempt?._id,
     });
 
+    const reused = await t.action(internal.skillsShCatalog.admitRealScansInternal, {
+      runId: adoptionRun.runId,
+      externalIds: [sourceRow.externalId],
+      actorUserId,
+      adoptionId,
+      artifacts: [adoptionArtifact.artifact],
+    });
     expect(reused).toMatchObject({
       admitted: 0,
       reused: 1,
       admittedAttempts: [
         {
-          attemptId: attempt?._id,
+          attemptId: adoptionAttempt?._id,
           reused: true,
         },
       ],
     });
     expect(await collectAttempts(t, runId)).toHaveLength(1);
+    expect(await collectAttempts(t, adoptionRun.runId)).toHaveLength(1);
     await expect(t.run(async (ctx) => await ctx.db.get(adoptionId))).resolves.toMatchObject({
       status: "pending_scan",
-      scanAttemptId: attempt?._id,
+      scanAttemptId: adoptionAttempt?._id,
     });
+
+    await t.run(
+      async (ctx) =>
+        await ctx.db.patch(adoptionAttempt!.securityScanJobId!, {
+          skillScanRequestId: undefined,
+        }),
+    );
+    await expect(
+      t.action(internal.skillsShCatalog.admitRealScansInternal, {
+        runId: adoptionRun.runId,
+        externalIds: [sourceRow.externalId],
+        actorUserId,
+        adoptionId,
+        artifacts: [adoptionArtifact.artifact],
+      }),
+    ).rejects.toThrow("skills.sh adoption scan linkage is invalid");
   });
 
   it("defers expiry cleanup for an active catalog job and accepts its later result", async () => {

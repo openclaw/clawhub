@@ -6,6 +6,8 @@ const MAX_FILES = 100;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 80 * 1024 * 1024;
 const MAX_BLOB_RESPONSE_BYTES = MAX_FILE_BYTES * 2 + 64 * 1024;
+const MAX_COMMIT_RESPONSE_BYTES = 256 * 1024;
+const MAX_TREE_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 type MirrorSource = {
   externalId: string;
@@ -114,6 +116,7 @@ export async function fetchExactSkillsShAdoptionSource(
     `https://api.github.com/repos/${canonicalRepository}/git/commits/${expectedCommit}`,
     headers,
     fetchImpl,
+    MAX_COMMIT_RESPONSE_BYTES,
   );
   const commitSha = typeof commit.sha === "string" ? commit.sha.toLowerCase() : "";
   const tree = commit.tree as Record<string, unknown> | undefined;
@@ -126,6 +129,7 @@ export async function fetchExactSkillsShAdoptionSource(
     `https://api.github.com/repos/${canonicalRepository}/git/trees/${treeSha}?recursive=1`,
     headers,
     fetchImpl,
+    MAX_TREE_RESPONSE_BYTES,
   );
   if (treePayload.truncated !== false || !Array.isArray(treePayload.tree)) {
     throw new Error("GitHub returned an incomplete skills.sh source tree");

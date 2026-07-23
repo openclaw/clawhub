@@ -534,6 +534,7 @@ export const listSkillsShMirrorBrowse: ReturnType<typeof action> = action({
     let cursor = args.cursor ?? null;
     let isDone = false;
     let pagesRead = 0;
+    // Bound one action invocation; nextCursor resumes the exact facet scan without dropping rows.
     while (page.length < limit && !isDone && pagesRead < 20) {
       const paginationOpts = { numItems: limit - page.length, cursor };
       const result =

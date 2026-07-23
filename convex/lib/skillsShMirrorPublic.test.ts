@@ -211,4 +211,32 @@ describe("skills.sh mirror public contract", () => {
       }),
     ).toBeNull();
   });
+
+  it("rejects misleading GitHub paths and encodes valid path segments", () => {
+    for (const githubPath of [
+      "../other",
+      "skills/../other",
+      "skills\\other",
+      "skills//other",
+      "skills/./other",
+      "skills/other?tab=readme",
+      "skills/other#readme",
+      "skills/\nother",
+    ]) {
+      expect(buildUnclaimedSkillsShInstallResolution({ ...digest, githubPath })).toBeNull();
+    }
+
+    expect(
+      buildUnclaimedSkillsShInstallResolution({
+        ...digest,
+        githubPath: "skills/demo name",
+      }),
+    ).toMatchObject({
+      github: {
+        path: "skills/demo name",
+        sourceUrl:
+          "https://github.com/patrick-erichsen/skills/tree/050daba89f6b6636470add5cb300aac46a412cf8/skills/demo%20name",
+      },
+    });
+  });
 });

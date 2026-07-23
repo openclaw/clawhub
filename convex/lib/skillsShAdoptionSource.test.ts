@@ -16,6 +16,8 @@ function githubFetchFixture(options: {
   tree: Array<{ path: string; sha: string; size?: number }>;
   blobs: Record<string, string>;
   blobContentLengths?: Record<string, number>;
+  commitContentLength?: number;
+  treeContentLength?: number;
 }) {
   return vi.fn(async (input: string | URL | Request) => {
     const url = input instanceof Request ? input.url : input.toString();
@@ -32,20 +34,30 @@ function githubFetchFixture(options: {
     if (
       url === `https://api.github.com/repos/${options.canonicalRepository}/git/commits/${COMMIT}`
     ) {
-      return Response.json({ sha: COMMIT, tree: { sha: "tree-sha" } });
+      return Response.json(
+        { sha: COMMIT, tree: { sha: "tree-sha" } },
+        options.commitContentLength
+          ? { headers: { "content-length": String(options.commitContentLength) } }
+          : undefined,
+      );
     }
     if (
       url ===
       `https://api.github.com/repos/${options.canonicalRepository}/git/trees/tree-sha?recursive=1`
     ) {
-      return Response.json({
-        truncated: false,
-        tree: options.tree.map((entry) => ({
-          ...entry,
-          type: "blob",
-          size: entry.size ?? options.blobs[entry.sha]?.length ?? 0,
-        })),
-      });
+      return Response.json(
+        {
+          truncated: false,
+          tree: options.tree.map((entry) => ({
+            ...entry,
+            type: "blob",
+            size: entry.size ?? options.blobs[entry.sha]?.length ?? 0,
+          })),
+        },
+        options.treeContentLength
+          ? { headers: { "content-length": String(options.treeContentLength) } }
+          : undefined,
+      );
     }
     const blobPrefix = `https://api.github.com/repos/${options.canonicalRepository}/git/blobs/`;
     if (url.startsWith(blobPrefix)) {
@@ -206,6 +218,34 @@ describe("fetchExactSkillsShAdoptionSource", () => {
       tree: [{ path: "skills/demo/SKILL.md", sha: "skill", size: 6 }],
       blobs: { skill: "# Demo" },
       blobContentLengths: { skill: Number.MAX_SAFE_INTEGER },
+    });
+
+    await expect(
+      fetchExactSkillsShAdoptionSource(
+        {
+          externalId: "acme/skills/demo",
+          owner: "acme",
+          repo: "skills",
+          githubPath: "skills/demo",
+          githubCommit: COMMIT,
+          sourceContentHash: "b".repeat(64),
+        },
+        fetchImpl,
+      ),
+    ).rejects.toThrow("GitHub source response is too large");
+  });
+
+  it.each([
+    ["commit", { commitContentLength: Number.MAX_SAFE_INTEGER }],
+    ["tree", { treeContentLength: Number.MAX_SAFE_INTEGER }],
+  ])("bounds oversized %s metadata responses", async (_name, responseLengths) => {
+    vi.stubEnv("GITHUB_TOKEN", "test-token");
+    const fetchImpl = githubFetchFixture({
+      requestedRepository: "acme/skills",
+      canonicalRepository: "acme/skills",
+      tree: [{ path: "skills/demo/SKILL.md", sha: "skill", size: 6 }],
+      blobs: { skill: "# Demo" },
+      ...responseLengths,
     });
 
     await expect(

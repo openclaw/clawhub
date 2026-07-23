@@ -182,6 +182,37 @@ describe("skills.sh Vercel source boundary", () => {
     await result;
   });
 
+  it("preserves a short controlled-source Retry-After after retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const fetchImpl = vi.fn(async () => {
+      return new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "17" },
+      });
+    });
+    let failure: unknown;
+    const result = fetchSkillsShMirrorControlledBatch(
+      {
+        page: 20,
+        offset: 0,
+        limit: 1,
+        maxDetailBytes: 64 * 1024,
+        sourceTotal: 9_572,
+        externalIds: ["steipete/clawdis/discrawl"],
+      },
+      { fetchImpl: fetchImpl as typeof fetch },
+    ).catch((error: unknown) => {
+      failure = error;
+    });
+
+    await vi.advanceTimersByTimeAsync(51_000);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(skillsShSourceRetryAfterSeconds(failure)).toBe(17);
+    expect(vi.getTimerCount()).toBe(0);
+    await result;
+  });
+
   it("delegates long controlled-source cooldowns without holding the batch lease", async () => {
     const fetchImpl = vi.fn(async () => {
       return new Response("rate limited", {

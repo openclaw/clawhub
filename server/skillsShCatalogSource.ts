@@ -2068,6 +2068,12 @@ export async function fetchSkillsShMirrorControlledBatch(
               Math.max(1, Math.ceil(retryAfterMs / 1_000)),
             );
           }
+          if (attempt === MAX_SOURCE_ATTEMPTS - 1 && response.status === 429) {
+            throw new SkillsShSourceHttpError(
+              response.status,
+              Math.max(1, Math.ceil(retryAfterMs / 1_000)),
+            );
+          }
           if (attempt < MAX_SOURCE_ATTEMPTS - 1) {
             await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
           }

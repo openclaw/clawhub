@@ -527,6 +527,59 @@ describe("search helpers", () => {
     ]);
   });
 
+  it("returns an exact continuation after the bounded filtered-browse work budget", async () => {
+    const nonmatching = { ...makeSkillsShMirrorDigest(), inferredTopics: [] };
+    const matching = makeSkillsShMirrorDigest();
+    const firstRunQuery = vi.fn(async (_ref: unknown, args: unknown) => {
+      const cursor = (args as { paginationOpts: { cursor: string | null } }).paginationOpts.cursor;
+      const pageNumber = cursor ? Number(cursor.split(":")[1]) : 0;
+      return {
+        page: [nonmatching],
+        isDone: false,
+        continueCursor: `category:${pageNumber + 1}`,
+      };
+    });
+
+    await expect(
+      listSkillsShMirrorBrowseHandler(
+        { runQuery: firstRunQuery },
+        { categorySlug: "development", topic: "html", limit: 1 },
+      ),
+    ).resolves.toEqual({
+      page: [],
+      nextCursor: "category:20",
+      hasMore: true,
+    });
+    expect(firstRunQuery).toHaveBeenCalledTimes(20);
+
+    const secondRunQuery = vi.fn(async (_ref: unknown, args: unknown) => {
+      expect(args).toEqual({
+        categorySlug: "development",
+        paginationOpts: { numItems: 1, cursor: "category:20" },
+      });
+      return {
+        page: [matching],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+    await expect(
+      listSkillsShMirrorBrowseHandler(
+        { runQuery: secondRunQuery },
+        {
+          cursor: "category:20",
+          categorySlug: "development",
+          topic: "html",
+          limit: 1,
+        },
+      ),
+    ).resolves.toEqual({
+      page: [expect.objectContaining({ externalId: matching.externalId, topics: ["html"] })],
+      nextCursor: null,
+      hasMore: false,
+    });
+  });
+
   it("passes the continuation cursor through unfiltered popularity browse", async () => {
     const mirrorDigest = makeSkillsShMirrorDigest();
     const runQuery = vi.fn(async (ref: unknown, args: unknown) => {

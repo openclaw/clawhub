@@ -194,12 +194,31 @@ export function buildSkillsShMirrorGitHubSourceUrl(args: {
   commit: string;
   path: string;
 }) {
-  return `https://github.com/${args.owner}/${args.repo}/tree/${args.commit}/${args.path}`;
+  const encodedPath =
+    args.path === "." ? "." : args.path.split("/").map(encodeURIComponent).join("/");
+  return `https://github.com/${args.owner}/${args.repo}/tree/${args.commit}/${encodedPath}`;
+}
+
+function normalizedGitHubPath(value: string | undefined) {
+  const path = value?.trim().replace(/^\/+|\/+$/g, "");
+  if (!path) return null;
+  if (path === ".") return path;
+  if (
+    Array.from(path).some((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint <= 0x1f || codePoint === 0x7f || "\\?#".includes(character);
+    })
+  ) {
+    return null;
+  }
+  const segments = path.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null;
+  return path;
 }
 
 export function buildUnclaimedSkillsShInstallResolution(digest: SkillsShMirrorDigest) {
   const identity = buildSkillsShMirrorIdentity(digest);
-  const path = digest.githubPath?.trim().replace(/^\/+|\/+$/g, "");
+  const path = normalizedGitHubPath(digest.githubPath);
   const commit = digest.githubCommit?.trim().toLowerCase();
   const contentHash = digest.sourceContentHash?.trim().toLowerCase();
   if (
