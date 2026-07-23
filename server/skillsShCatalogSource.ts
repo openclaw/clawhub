@@ -15,12 +15,205 @@ const MAX_IDENTITY_PAGE_BYTES = 512 * 1024;
 const MAX_IDENTITY_PAGE_REDIRECTS = 2;
 const MAX_GITHUB_TREE_BYTES = 8 * 1024 * 1024;
 const MAX_GITHUB_TREE_ENTRIES = 100_000;
+const MAX_CONTROLLED_DETAIL_BYTES = 1024 * 1024;
+const MAX_PROOF_METADATA_BYTES = 1024 * 1024;
+const MAX_PROOF_SNAPSHOT_BYTES = 32 * 1024;
+const MAX_PROOF_SOURCE_ROWS = 50_000;
 const GITHUB_LOCATOR_CONCURRENCY = 8;
 const MINIMUM_API_REQUEST_INTERVAL_MS = 125;
 const MAX_INLINE_RETRY_AFTER_MS = 30_000;
 const CLAWHUB_VERCEL_OWNER_ID = "team_pLdjXbfy0XvPRiNmAygTjTSH";
 const CLAWHUB_VERCEL_PROJECT_ID = "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc";
 const CLAWHUB_TEST_CONVEX_URL = "https://academic-chihuahua-392.convex.cloud";
+
+const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS = [
+  {
+    externalId: "patrick-erichsen/skills/html",
+    owner: "patrick-erichsen",
+    repo: "skills",
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    sourceUrl: "https://www.skills.sh/patrick-erichsen/skills/html",
+    githubPath: "skills/html",
+    detailPath: "skills/html/SKILL.md",
+    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+    sourceContentHash: "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff",
+  },
+  {
+    externalId: "steipete/clawdis/discrawl",
+    owner: "steipete",
+    repo: "clawdis",
+    slug: "discrawl",
+    displayName: "Discrawl",
+    sourceUrl: "https://www.skills.sh/steipete/clawdis/discrawl",
+    githubPath: ".agents/skills/discrawl",
+    detailPath: ".agents/skills/discrawl/SKILL.md",
+    githubCommit: "690ed564419291ca6e832dc69b53061300075b62",
+    sourceContentHash: "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d",
+  },
+] as const;
+
+type SkillsShMirrorControlledSupplement = {
+  externalId: string;
+  owner: string;
+  repo: string;
+  slug: string;
+  displayName: string;
+  sourceUrl: string;
+  githubPath: string;
+  detailPath: string;
+  githubCommit: string;
+  sourceContentHash: string;
+};
+
+export const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENT_COUNT =
+  SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.length;
+export const SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS = SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.map(
+  (row) => row.externalId,
+);
+const SKILLS_SH_MIRROR_PROOF_SNAPSHOT_PREFIX = "skills-sh:proof:";
+
+function normalizeControlledSupplementIds(values: unknown[]) {
+  const allowed = new Set<string>(SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS);
+  const normalized = values.map((value) =>
+    typeof value === "string" ? value.trim().toLowerCase() : "",
+  );
+  if (
+    normalized.some((value) => !allowed.has(value)) ||
+    new Set(normalized).size !== normalized.length
+  ) {
+    throw new Error("skills.sh mirror controlled identities are invalid");
+  }
+  return SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS.filter((externalId) =>
+    normalized.includes(externalId),
+  );
+}
+
+export function buildSkillsShMirrorProofSnapshotId(args: {
+  catalogTotal: number;
+  controlledExternalIds: string[];
+  controlledOverlayExternalIds?: string[];
+  controlledSupplementExternalIds?: string[];
+  evidence?: SkillsShMirrorProofEvidence;
+}) {
+  assertIntegerInRange("catalogTotal", args.catalogTotal, 1, MAX_PROOF_SOURCE_ROWS);
+  const controlledExternalIds = normalizeControlledSupplementIds(args.controlledExternalIds);
+  const controlledOverlayExternalIds = normalizeControlledSupplementIds(
+    args.controlledOverlayExternalIds ?? [],
+  );
+  const controlledSupplementExternalIds = normalizeControlledSupplementIds(
+    args.controlledSupplementExternalIds ?? controlledExternalIds,
+  );
+  if (
+    controlledOverlayExternalIds.some((externalId) =>
+      controlledSupplementExternalIds.includes(externalId),
+    ) ||
+    controlledExternalIds.some(
+      (externalId) =>
+        !controlledOverlayExternalIds.includes(externalId) &&
+        !controlledSupplementExternalIds.includes(externalId),
+    ) ||
+    controlledOverlayExternalIds.some(
+      (externalId) => !controlledExternalIds.includes(externalId),
+    ) ||
+    controlledSupplementExternalIds.some(
+      (externalId) => !controlledExternalIds.includes(externalId),
+    )
+  ) {
+    throw new Error("skills.sh mirror controlled proof partition is invalid");
+  }
+  const encodedPayload = Buffer.from(
+    JSON.stringify({
+      catalogTotal: args.catalogTotal,
+      controlledExternalIds,
+      controlledOverlayExternalIds,
+      controlledSupplementExternalIds,
+    }),
+  ).toString("base64url");
+  const compact = `${SKILLS_SH_MIRROR_PROOF_SNAPSHOT_PREFIX}${encodedPayload}`;
+  if (!args.evidence) return compact;
+  const evidence = validateSkillsShMirrorProofEvidence(args.evidence);
+  const serializedEvidence = JSON.stringify(evidence);
+  const snapshotId =
+    `${compact}.${sha256Hex(`${encodedPayload}.${serializedEvidence}`)}.` +
+    Buffer.from(serializedEvidence).toString("base64url");
+  if (Buffer.byteLength(snapshotId, "utf8") > MAX_PROOF_SNAPSHOT_BYTES) {
+    throw new Error("skills.sh mirror proof source metadata is too large");
+  }
+  return snapshotId;
+}
+
+export function parseSkillsShMirrorProofSnapshotId(snapshotId: string) {
+  if (!snapshotId.startsWith(SKILLS_SH_MIRROR_PROOF_SNAPSHOT_PREFIX)) {
+    throw new Error("skills.sh mirror run lacks proof source metadata");
+  }
+  let payload: unknown;
+  let evidence: SkillsShMirrorProofEvidence | undefined;
+  let sourceSnapshotHash: string | undefined;
+  try {
+    const [encodedPayload, snapshotHash, encodedEvidence, ...unexpected] = snapshotId
+      .slice(SKILLS_SH_MIRROR_PROOF_SNAPSHOT_PREFIX.length)
+      .split(".");
+    if (
+      unexpected.length > 0 ||
+      (snapshotHash !== undefined && encodedEvidence === undefined) ||
+      (snapshotHash === undefined && encodedEvidence !== undefined)
+    ) {
+      throw new Error("invalid proof snapshot segments");
+    }
+    payload = JSON.parse(Buffer.from(encodedPayload ?? "", "base64url").toString("utf8"));
+    if (snapshotHash && encodedEvidence) {
+      const serializedEvidence = Buffer.from(encodedEvidence, "base64url").toString("utf8");
+      if (
+        !/^[a-f0-9]{64}$/.test(snapshotHash) ||
+        sha256Hex(`${encodedPayload}.${serializedEvidence}`) !== snapshotHash
+      ) {
+        throw new Error("invalid proof snapshot hash");
+      }
+      evidence = validateSkillsShMirrorProofEvidence(JSON.parse(serializedEvidence));
+      sourceSnapshotHash = snapshotHash;
+    }
+  } catch {
+    throw new Error("skills.sh mirror proof source metadata is invalid");
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new Error("skills.sh mirror proof source metadata is invalid");
+  }
+  const record = payload as Record<string, unknown>;
+  if (
+    !Number.isInteger(record.catalogTotal) ||
+    Number(record.catalogTotal) < 1 ||
+    Number(record.catalogTotal) > MAX_PROOF_SOURCE_ROWS
+  ) {
+    throw new Error("skills.sh mirror proof catalog total is invalid");
+  }
+  if (!Array.isArray(record.controlledExternalIds)) {
+    throw new Error("skills.sh mirror proof controlled identities are invalid");
+  }
+  const controlledExternalIds = normalizeControlledSupplementIds(record.controlledExternalIds);
+  const controlledOverlayExternalIds = normalizeControlledSupplementIds(
+    Array.isArray(record.controlledOverlayExternalIds) ? record.controlledOverlayExternalIds : [],
+  );
+  const controlledSupplementExternalIds = normalizeControlledSupplementIds(
+    Array.isArray(record.controlledSupplementExternalIds)
+      ? record.controlledSupplementExternalIds
+      : controlledExternalIds,
+  );
+  buildSkillsShMirrorProofSnapshotId({
+    catalogTotal: Number(record.catalogTotal),
+    controlledExternalIds,
+    controlledOverlayExternalIds,
+    controlledSupplementExternalIds,
+  });
+  return {
+    catalogTotal: Number(record.catalogTotal),
+    controlledExternalIds,
+    controlledOverlayExternalIds,
+    controlledSupplementExternalIds,
+    ...(sourceSnapshotHash ? { sourceSnapshotHash } : {}),
+    ...(evidence ? { evidence } : {}),
+  };
+}
 
 export type SkillsShCatalogSourceEnv = {
   CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED?: string;
@@ -87,6 +280,76 @@ type SkillsShCatalogPage = {
 
 type SkillsShCatalogSearch = {
   data: SkillsShCatalogListRow[];
+};
+
+type SkillsShCatalogPagination = SkillsShCatalogPage["pagination"];
+
+export type SkillsShMirrorProofEvidence = {
+  pagination: {
+    endpointExhausted: true;
+    databaseCoverage: "leaderboard-only";
+    page0: SkillsShCatalogPagination;
+    requestedPages: Array<{
+      page: number;
+      count: number;
+      hasMore: boolean;
+      identityHash: string;
+      contentHash: string;
+    }>;
+    finalNonemptyPage: {
+      page: number;
+      count: number;
+      pagination: SkillsShCatalogPagination;
+    };
+    firstBeyondEndPage: {
+      page: number;
+      count: number;
+      pagination: SkillsShCatalogPagination;
+    };
+    uniqueIds: number;
+    duplicateIds: number;
+  };
+  fields: {
+    sampledExternalId: string;
+    leaderboard: {
+      topLevelKeys: string[];
+      paginationKeys: string[];
+      rowKeys: string[];
+      taxonomyFields: string[];
+    };
+    search: {
+      topLevelKeys: string[];
+      rowKeys: string[];
+      taxonomyFields: string[];
+    };
+    detail: {
+      topLevelKeys: string[];
+      fileKeys: string[];
+      taxonomyFields: string[];
+    };
+    page: {
+      url: string;
+      jsonLdDocuments: Array<{ type: string | null; keys: string[] }>;
+      taxonomyFields: string[];
+    };
+    rsc: {
+      objectKeys: string[];
+      taxonomyFields: string[];
+    };
+    normalizedUpstreamTaxonomyFields: string[];
+  };
+};
+
+export type SkillsShMirrorCapturedSourcePage = {
+  page: number;
+  sourceTotal: number;
+  pageLength: number;
+  hasMore: boolean;
+  identityHash: string;
+  contentHash: string;
+  sourceBytes: number;
+  serializedBytes: number;
+  rows: SkillsShCatalogListRow[];
 };
 
 type HashQualifiedSkillsShCatalogDetail = SkillsShCatalogDetail & {
@@ -1096,6 +1359,437 @@ export async function fetchSkillsShCatalogPage(
   );
 }
 
+function validateSkillsShMirrorProofEvidence(value: unknown): SkillsShMirrorProofEvidence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("skills.sh mirror proof evidence is invalid");
+  }
+  const serialized = JSON.stringify(value);
+  if (Buffer.byteLength(serialized, "utf8") > MAX_PROOF_SNAPSHOT_BYTES) {
+    throw new Error("skills.sh mirror proof evidence is too large");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    !record.pagination ||
+    typeof record.pagination !== "object" ||
+    Array.isArray(record.pagination) ||
+    !record.fields ||
+    typeof record.fields !== "object" ||
+    Array.isArray(record.fields)
+  ) {
+    throw new Error("skills.sh mirror proof evidence is invalid");
+  }
+  return value as SkillsShMirrorProofEvidence;
+}
+
+function sortedObjectKeys(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? Object.keys(value).sort()
+    : [];
+}
+
+function sortedArrayObjectKeys(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.flatMap((entry) => sortedObjectKeys(entry)))).sort();
+}
+
+function collectObjectKeys(value: unknown, keys = new Set<string>()) {
+  if (Array.isArray(value)) {
+    for (const entry of value) collectObjectKeys(entry, keys);
+    return keys;
+  }
+  if (!value || typeof value !== "object") return keys;
+  for (const [key, entry] of Object.entries(value)) {
+    keys.add(key);
+    collectObjectKeys(entry, keys);
+  }
+  return keys;
+}
+
+function normalizedTaxonomyFields(value: unknown) {
+  return Array.from(collectObjectKeys(value))
+    .filter((key) => /^(?:category|categories|topic|topics|tags)$/i.test(key))
+    .sort();
+}
+
+function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[]) {
+  return sha256Hex(rows.map((row) => `${row.id.trim().toLowerCase()}\n`).join(""));
+}
+
+function skillsShPageContentHash(rows: SkillsShCatalogListRow[]) {
+  return sha256Hex(JSON.stringify(rows));
+}
+
+function parseSkillsShPageFieldEvidence(html: string) {
+  const document = parse(html);
+  const jsonLdValues = htmlElements(
+    document,
+    (element) =>
+      element.tagName === "script" &&
+      htmlAttribute(element, "type")?.toLowerCase() === "application/ld+json",
+  ).flatMap((element): unknown[] => {
+    try {
+      const value = JSON.parse(htmlText(element)) as unknown;
+      return value && typeof value === "object" && !Array.isArray(value) ? [value] : [];
+    } catch {
+      return [];
+    }
+  });
+  const jsonLdDocuments = jsonLdValues.map((value) => {
+    const record = value as Record<string, unknown>;
+    return {
+      type: typeof record["@type"] === "string" ? record["@type"] : null,
+      keys: sortedObjectKeys(value),
+    };
+  });
+  return {
+    jsonLdDocuments,
+    taxonomyFields: normalizedTaxonomyFields(jsonLdValues),
+  };
+}
+
+function parseSkillsShRscFieldEvidence(rsc: string) {
+  const values: unknown[] = [];
+  for (const line of rsc.split("\n")) {
+    const separator = line.indexOf(":");
+    if (separator < 0) continue;
+    let encoded = line.slice(separator + 1);
+    if (encoded.startsWith("I[")) encoded = encoded.slice(1);
+    if (!["[", "{", '"'].includes(encoded[0] ?? "") && !/^(?:null|true|false|-?\d)/.test(encoded)) {
+      continue;
+    }
+    try {
+      values.push(JSON.parse(encoded));
+    } catch {
+      // Flight control rows are not all standalone JSON values.
+    }
+  }
+  return {
+    objectKeys: Array.from(collectObjectKeys(values)).sort(),
+    taxonomyFields: normalizedTaxonomyFields(values),
+  };
+}
+
+function exactSkillsShProofMetadataUrl(value: string, expectedPath: string, rsc: boolean) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const searchKeys = Array.from(url.searchParams.keys());
+  const validSearch = rsc
+    ? searchKeys.length === 1 &&
+      searchKeys[0] === "_rsc" &&
+      url.searchParams.get("_rsc") === "clawhub-proof"
+    : searchKeys.length === 0;
+  return url.protocol === "https:" &&
+    ["skills.sh", "www.skills.sh"].includes(url.hostname.toLowerCase()) &&
+    !url.port &&
+    !url.username &&
+    !url.password &&
+    !url.hash &&
+    url.pathname.toLowerCase() === expectedPath &&
+    validSearch
+    ? url
+    : null;
+}
+
+async function fetchSkillsShProofText(
+  url: string,
+  options: {
+    fetchImpl: typeof fetch;
+    headers?: Record<string, string>;
+    expectedPath: string;
+    rsc: boolean;
+  },
+) {
+  const initialUrl = exactSkillsShProofMetadataUrl(url, options.expectedPath, options.rsc);
+  if (!initialUrl) {
+    throw new Error("skills.sh proof metadata URL is outside the exact skills.sh route");
+  }
+  for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
+    let requestUrl = initialUrl;
+    let response: Response | null = null;
+    for (let redirect = 0; redirect <= MAX_IDENTITY_PAGE_REDIRECTS; redirect += 1) {
+      response = await options.fetchImpl(requestUrl, {
+        redirect: "manual",
+        headers: {
+          "User-Agent": "clawhub/skills-sh-mirror-proof",
+          ...options.headers,
+        },
+      });
+      if (!isRedirectStatus(response.status)) break;
+      const location = response.headers.get("location");
+      const redirected = location
+        ? exactSkillsShProofMetadataUrl(
+            new URL(location, requestUrl).href,
+            options.expectedPath,
+            options.rsc,
+          )
+        : null;
+      await cancelResponseBody(response);
+      if (!redirected) {
+        throw new Error("skills.sh proof metadata redirect is outside the exact skills.sh route");
+      }
+      if (redirect === MAX_IDENTITY_PAGE_REDIRECTS) {
+        throw new Error("skills.sh proof metadata exceeded the redirect limit");
+      }
+      requestUrl = redirected;
+    }
+    if (!response) throw new Error("skills.sh proof metadata response is missing");
+    if (response.ok) {
+      const body = await readBoundedResponseBytes(response, MAX_PROOF_METADATA_BYTES);
+      if (!body.ok || body.bytes === null) {
+        throw new Error("skills.sh proof metadata response is too large");
+      }
+      return new TextDecoder().decode(body.bytes);
+    }
+    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
+      await cancelResponseBody(response);
+      throw new Error(`skills.sh proof metadata returned HTTP ${response.status}`);
+    }
+    await waitForSkillsShRetry(response, attempt);
+  }
+  throw new Error("skills.sh proof metadata exhausted retries");
+}
+
+export async function measureSkillsShMirrorProofSource(
+  options: {
+    env?: SkillsShCatalogSourceEnv;
+    fetchImpl?: typeof fetch;
+    oidcToken?: string;
+    minimumApiRequestIntervalMs?: number;
+  } = {},
+) {
+  const minimumApiRequestIntervalMs =
+    options.minimumApiRequestIntervalMs ??
+    (options.fetchImpl ? 0 : MINIMUM_API_REQUEST_INTERVAL_MS);
+  assertIntegerInRange("minimumApiRequestIntervalMs", minimumApiRequestIntervalMs, 0, 1_000);
+  const pace = createRequestPacer(minimumApiRequestIntervalMs);
+  const present = new Set<string>();
+  const rowKeys = new Set<string>();
+  const taxonomyFields = new Set<string>();
+  const requestedPages: SkillsShMirrorProofEvidence["pagination"]["requestedPages"] = [];
+  const sourcePages: SkillsShMirrorCapturedSourcePage[] = [];
+  let page = 0;
+  let sourceRequests = 0;
+  let observedRows = 0;
+  let catalogTotal: number | null = null;
+  let firstPage: SkillsShCatalogPage | null = null;
+  let finalNonemptyPage: SkillsShMirrorProofEvidence["pagination"]["finalNonemptyPage"] | null =
+    null;
+  let sampleRow: SkillsShCatalogListRow | null = null;
+  while (true) {
+    await pace();
+    const response = await fetchSkillsShCatalogPage(
+      { page, perPage: MAX_SOURCE_PAGE_SIZE },
+      options,
+    );
+    sourceRequests += 1;
+    if (
+      response.pagination.page !== page ||
+      response.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
+      response.data.length > MAX_SOURCE_PAGE_SIZE
+    ) {
+      throw new Error("skills.sh proof source returned an invalid page contract");
+    }
+    if (catalogTotal === null) catalogTotal = response.pagination.total;
+    if (catalogTotal > MAX_PROOF_SOURCE_ROWS) {
+      throw new Error(
+        `skills.sh proof source total ${catalogTotal} exceeds ${MAX_PROOF_SOURCE_ROWS} rows`,
+      );
+    }
+    if (response.pagination.total !== catalogTotal) {
+      throw new Error("skills.sh catalog source total changed during proof measurement");
+    }
+    firstPage ??= response;
+    const identityHash = skillsShPageIdentityHash(response.data);
+    const contentHash = skillsShPageContentHash(response.data);
+    requestedPages.push({
+      page,
+      count: response.data.length,
+      hasMore: response.pagination.hasMore,
+      identityHash,
+      contentHash,
+    });
+    observedRows += response.data.length;
+    if (observedRows > catalogTotal || observedRows > MAX_PROOF_SOURCE_ROWS) {
+      throw new Error("skills.sh proof source exceeded its reported total");
+    }
+    if (response.data.length > 0) {
+      finalNonemptyPage = {
+        page,
+        count: response.data.length,
+        pagination: response.pagination,
+      };
+      const captured = {
+        page,
+        sourceTotal: catalogTotal,
+        pageLength: response.data.length,
+        hasMore: response.pagination.hasMore,
+        identityHash,
+        contentHash,
+        sourceBytes: Buffer.byteLength(JSON.stringify(response), "utf8"),
+        rows: response.data,
+      };
+      sourcePages.push({
+        ...captured,
+        serializedBytes: Buffer.byteLength(JSON.stringify(captured), "utf8"),
+      });
+    }
+    for (const row of response.data) {
+      present.add(row.id.trim().toLowerCase());
+      for (const key of sortedObjectKeys(row)) rowKeys.add(key);
+      for (const key of normalizedTaxonomyFields(row)) taxonomyFields.add(key);
+      if (!sampleRow && row.id.split("/").length === 3) sampleRow = row;
+    }
+    if (!response.pagination.hasMore) break;
+    if (
+      observedRows >= catalogTotal ||
+      page + 1 >= Math.ceil(MAX_PROOF_SOURCE_ROWS / MAX_SOURCE_PAGE_SIZE)
+    ) {
+      throw new Error("skills.sh proof source pagination exceeds its bounded total");
+    }
+    page += 1;
+  }
+  if (catalogTotal === null || catalogTotal < 1) {
+    throw new Error("skills.sh proof source is empty");
+  }
+  if (observedRows !== catalogTotal) {
+    throw new Error(`skills.sh proof source observed ${observedRows} of ${catalogTotal} rows`);
+  }
+  if (present.size !== observedRows) {
+    throw new Error(
+      `skills.sh proof source contains duplicate identities: ${observedRows - present.size}`,
+    );
+  }
+  if (!firstPage || !finalNonemptyPage || !sampleRow) {
+    throw new Error("skills.sh proof source lacks a metadata sample");
+  }
+  const beyondEndPageNumber = page + 1;
+  await pace();
+  const beyondEnd = await fetchSkillsShCatalogPage(
+    { page: beyondEndPageNumber, perPage: MAX_SOURCE_PAGE_SIZE },
+    options,
+  );
+  sourceRequests += 1;
+  requestedPages.push({
+    page: beyondEndPageNumber,
+    count: beyondEnd.data.length,
+    hasMore: beyondEnd.pagination.hasMore,
+    identityHash: skillsShPageIdentityHash(beyondEnd.data),
+    contentHash: skillsShPageContentHash(beyondEnd.data),
+  });
+  if (
+    beyondEnd.pagination.page !== beyondEndPageNumber ||
+    beyondEnd.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
+    beyondEnd.pagination.total !== catalogTotal ||
+    beyondEnd.pagination.hasMore ||
+    beyondEnd.data.length !== 0
+  ) {
+    throw new Error("skills.sh proof source did not return an empty beyond-end page");
+  }
+  await pace();
+  const search = await searchSkillsShCatalog(
+    {
+      query: sampleRow.slug,
+      owner: sampleRow.source.split("/")[0],
+      limit: 10,
+    },
+    options,
+  );
+  sourceRequests += 1;
+  await pace();
+  const detail = await fetchSkillsShCatalogDetail(sampleRow.id, options);
+  sourceRequests += 1;
+  const expectedPagePath = `/${sampleRow.id.trim().toLowerCase()}`;
+  const pageHtml = await fetchSkillsShProofText(sampleRow.url, {
+    fetchImpl: options.fetchImpl ?? fetch,
+    expectedPath: expectedPagePath,
+    rsc: false,
+  });
+  sourceRequests += 1;
+  const rscUrl = new URL(sampleRow.url);
+  rscUrl.searchParams.set("_rsc", "clawhub-proof");
+  const rsc = await fetchSkillsShProofText(rscUrl.href, {
+    fetchImpl: options.fetchImpl ?? fetch,
+    headers: {
+      Accept: "text/x-component",
+      RSC: "1",
+    },
+    expectedPath: expectedPagePath,
+    rsc: true,
+  });
+  sourceRequests += 1;
+  const pageFields = parseSkillsShPageFieldEvidence(pageHtml);
+  const rscFields = parseSkillsShRscFieldEvidence(rsc);
+  const searchTaxonomyFields = normalizedTaxonomyFields(search);
+  const detailTaxonomyFields = normalizedTaxonomyFields(detail);
+  const normalizedUpstreamTaxonomyFields = Array.from(
+    new Set([
+      ...taxonomyFields,
+      ...searchTaxonomyFields,
+      ...detailTaxonomyFields,
+      ...pageFields.taxonomyFields,
+      ...rscFields.taxonomyFields,
+    ]),
+  ).sort();
+  return {
+    catalogTotal,
+    controlledExternalIds: [...SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS],
+    controlledOverlayExternalIds: SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS.filter((externalId) =>
+      present.has(externalId),
+    ),
+    controlledSupplementExternalIds: SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS.filter(
+      (externalId) => !present.has(externalId),
+    ),
+    pageSize: MAX_SOURCE_PAGE_SIZE,
+    sourceRequests,
+    sourcePages,
+    evidence: {
+      pagination: {
+        endpointExhausted: true,
+        databaseCoverage: "leaderboard-only",
+        page0: firstPage.pagination,
+        requestedPages,
+        finalNonemptyPage,
+        firstBeyondEndPage: {
+          page: beyondEndPageNumber,
+          count: 0,
+          pagination: beyondEnd.pagination,
+        },
+        uniqueIds: present.size,
+        duplicateIds: observedRows - present.size,
+      },
+      fields: {
+        sampledExternalId: sampleRow.id,
+        leaderboard: {
+          topLevelKeys: sortedObjectKeys(firstPage),
+          paginationKeys: sortedObjectKeys(firstPage.pagination),
+          rowKeys: Array.from(rowKeys).sort(),
+          taxonomyFields: Array.from(taxonomyFields).sort(),
+        },
+        search: {
+          topLevelKeys: sortedObjectKeys(search),
+          rowKeys: sortedArrayObjectKeys(search.data),
+          taxonomyFields: searchTaxonomyFields,
+        },
+        detail: {
+          topLevelKeys: sortedObjectKeys(detail),
+          fileKeys: sortedArrayObjectKeys(detail.files),
+          taxonomyFields: detailTaxonomyFields,
+        },
+        page: {
+          url: sampleRow.url,
+          ...pageFields,
+        },
+        rsc: rscFields,
+        normalizedUpstreamTaxonomyFields,
+      },
+    } satisfies SkillsShMirrorProofEvidence,
+  };
+}
+
 export async function searchSkillsShCatalog(
   args: {
     query: string;
@@ -1159,6 +1853,7 @@ export async function fetchSkillsShMirrorBatch(
     minimumApiRequestIntervalMs?: number;
     beforeRequest?: () => Promise<void> | void;
     githubLocatorResolver?: typeof resolveSkillsShMirrorGitHubLocators | null;
+    sourcePage?: SkillsShCatalogPage;
   } = {},
 ) {
   assertIntegerInRange("page", args.page, 0, 100_000);
@@ -1182,10 +1877,12 @@ export async function fetchSkillsShMirrorBatch(
     return await baseFetch(input, init);
   };
   const fetchOptions = { ...options, fetchImpl: monitoredFetch };
-  const sourcePage = await fetchSkillsShCatalogPage(
-    { page: args.page, perPage: MAX_SOURCE_PAGE_SIZE },
-    fetchOptions,
-  );
+  const sourcePage =
+    options.sourcePage ??
+    (await fetchSkillsShCatalogPage(
+      { page: args.page, perPage: MAX_SOURCE_PAGE_SIZE },
+      fetchOptions,
+    ));
   if (
     sourcePage.pagination.page !== args.page ||
     sourcePage.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
@@ -1290,10 +1987,149 @@ export async function fetchSkillsShMirrorBatch(
     offset: args.offset,
     pageLength: sourcePage.data.length,
     sourceTotal: sourcePage.pagination.total,
+    sourcePageIdentityHash: skillsShPageIdentityHash(sourcePage.data),
     hasMore: sourcePage.pagination.hasMore,
     sourceRequests,
-    sourceBytes: Buffer.byteLength(JSON.stringify(sourcePage), "utf8") + rowSourceBytes,
+    sourceBytes:
+      (options.sourcePage ? 0 : Buffer.byteLength(JSON.stringify(sourcePage), "utf8")) +
+      rowSourceBytes,
     rows: located.rows,
+  };
+}
+
+export async function fetchSkillsShMirrorControlledBatch(
+  args: {
+    page: number;
+    offset: number;
+    limit: number;
+    maxDetailBytes: number;
+    sourceTotal: number;
+    externalIds: string[];
+  },
+  options: {
+    fetchImpl?: typeof fetch;
+    beforeRequest?: () => Promise<void> | void;
+  } = {},
+) {
+  const controlledExternalIds = normalizeControlledSupplementIds(args.externalIds);
+  if (controlledExternalIds.length < 1) throw new Error("controlled mirror supplement is empty");
+  assertIntegerInRange("offset", args.offset, 0, controlledExternalIds.length - 1);
+  assertIntegerInRange("limit", args.limit, 1, 50);
+  assertIntegerInRange("maxDetailBytes", args.maxDetailBytes, 1, 64 * 1024);
+  const supplementsByExternalId = new Map(
+    SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS.map((row) => [row.externalId, row]),
+  );
+  const selected = controlledExternalIds
+    .slice(args.offset, args.offset + args.limit)
+    .map((externalId) => supplementsByExternalId.get(externalId)!);
+  if (selected.length < 1) throw new Error("controlled mirror supplement is exhausted");
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let sourceBytes = 0;
+  let sourceRequests = 0;
+  const rows = await Promise.all(
+    selected.map(async (supplement) => {
+      const rawUrl =
+        `https://raw.githubusercontent.com/${supplement.owner}/${supplement.repo}/` +
+        `${supplement.githubCommit}/${supplement.detailPath}`;
+      let response: Response | null = null;
+      for (let attempt = 0; attempt < MAX_SOURCE_ATTEMPTS; attempt += 1) {
+        await options.beforeRequest?.();
+        sourceRequests += 1;
+        try {
+          response = await fetchImpl(rawUrl, {
+            headers: { Accept: "text/plain", "User-Agent": "clawhub/skills-sh-mirror" },
+          });
+        } catch {
+          response = null;
+        }
+        if (response?.ok) break;
+        if (response && response.status !== 429 && response.status < 500) {
+          await cancelResponseBody(response);
+          throw new Error(
+            `controlled skills.sh mirror source returned HTTP ${response.status}: ${supplement.externalId}`,
+          );
+        }
+        if (response) {
+          await waitForSkillsShRetry(response, attempt);
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+        }
+      }
+      if (!response?.ok) {
+        throw new Error(
+          `controlled skills.sh mirror source fetch failed: ${supplement.externalId}`,
+        );
+      }
+      const body = await readBoundedResponseBytes(response, MAX_CONTROLLED_DETAIL_BYTES);
+      sourceBytes += body.sourceBytes;
+      if (!body.ok || body.bytes === null) {
+        throw new Error(
+          `controlled skills.sh mirror source is too large: ${supplement.externalId}`,
+        );
+      }
+      const fullContent = new TextDecoder().decode(body.bytes);
+      return buildSkillsShMirrorControlledObservation(
+        supplement,
+        fullContent,
+        body.sourceBytes,
+        args.maxDetailBytes,
+      );
+    }),
+  );
+  return {
+    page: args.page,
+    offset: args.offset,
+    pageLength: controlledExternalIds.length,
+    sourceTotal: args.sourceTotal,
+    hasMore: false,
+    sourceRequests,
+    sourceBytes,
+    rows,
+  };
+}
+
+export function buildSkillsShMirrorControlledObservation(
+  supplement: SkillsShMirrorControlledSupplement,
+  fullContent: string,
+  sourceBytes: number,
+  maxDetailBytes: number,
+) {
+  assertIntegerInRange("sourceBytes", sourceBytes, 0, MAX_CONTROLLED_DETAIL_BYTES);
+  assertIntegerInRange("maxDetailBytes", maxDetailBytes, 1, 64 * 1024);
+  const sourceContentHash = sha256Hex(fullContent);
+  if (sourceContentHash !== supplement.sourceContentHash) {
+    throw new Error(`controlled skills.sh mirror source hash changed: ${supplement.externalId}`);
+  }
+  const content = truncateUtf8(fullContent, maxDetailBytes);
+  const unavailable = { status: "unavailable" as const };
+  return {
+    externalId: supplement.externalId,
+    sourceType: "github" as const,
+    upstreamSourceType: "controlled-github",
+    owner: supplement.owner,
+    repo: supplement.repo,
+    slug: supplement.slug,
+    displayName: supplement.displayName,
+    sourceUrl: supplement.sourceUrl,
+    canonicalRepoUrl: `https://github.com/${supplement.owner}/${supplement.repo}`,
+    githubPath: supplement.githubPath,
+    githubCommit: supplement.githubCommit,
+    sourceContentHash,
+    upstreamInstalls: 0,
+    upstreamScanners: {
+      genAgentTrustHub: unavailable,
+      socket: unavailable,
+      snyk: unavailable,
+    },
+    detail: {
+      contentKind: "skill-md" as const,
+      path: supplement.detailPath,
+      content,
+      contentBytes: Buffer.byteLength(content, "utf8"),
+      sourceBytes,
+      sourceFileCount: 1,
+      truncated: sourceBytes > maxDetailBytes,
+    },
   };
 }
 

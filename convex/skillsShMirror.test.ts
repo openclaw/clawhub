@@ -19,6 +19,11 @@ function useTestEnvironment() {
   for (const [name, value] of Object.entries(TEST_ENV)) vi.stubEnv(name, value);
 }
 
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 const githubRow = {
   externalId: "vercel-labs/skills/find-skills",
   sourceType: "github" as const,
@@ -112,11 +117,17 @@ async function configure(t: ReturnType<typeof convexTest>) {
   });
 }
 
-async function startRun(t: ReturnType<typeof convexTest>, snapshotId: string, sourceTotal = 2) {
+async function startRun(
+  t: ReturnType<typeof convexTest>,
+  snapshotId: string,
+  sourceTotal = 2,
+  sourceSnapshotHash?: string,
+) {
   return (await t.mutation(internal.skillsShMirror.startRunInternal, {
     actor: "codex-test",
     reason: "CLAW-563 mirror test",
     snapshotId,
+    ...(sourceSnapshotHash ? { sourceSnapshotHash } : {}),
     sourceTotal,
     sourcePageSize: 500,
     sourceMeasuredAt: "2026-07-22T20:14:10.881Z",
@@ -177,6 +188,110 @@ describe("skills.sh external mirror", () => {
       completedAt: null,
     });
     expect(started.runId).toEqual(expect.any(String));
+  });
+
+  it("stores immutable source pages and returns them with the exact leased cursor", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const snapshotHash = "a".repeat(64);
+    const rows = [
+      {
+        id: "vercel-labs/skills/find-skills",
+        installUrl: "https://github.com/vercel-labs/skills",
+        installs: 42,
+        name: "Find Skills",
+        slug: "find-skills",
+        source: "vercel-labs/skills",
+        sourceType: "github",
+        url: "https://skills.sh/vercel-labs/skills/find-skills",
+      },
+    ];
+    const identityHash = await sha256Hex(`${rows[0]!.id}\n`);
+    const contentHash = await sha256Hex(JSON.stringify(rows));
+    const sourcePage = {
+      snapshotHash,
+      page: 0,
+      sourceTotal: 1,
+      pageLength: 1,
+      hasMore: false,
+      identityHash,
+      contentHash,
+      sourceBytes: 512,
+      serializedBytes: 768,
+      rows,
+    };
+
+    await expect(
+      t.mutation(internal.skillsShMirror.storeSourcePageInternal, sourcePage),
+    ).resolves.toEqual({ stored: true, page: 0, rows: 1 });
+    await expect(
+      t.mutation(internal.skillsShMirror.storeSourcePageInternal, sourcePage),
+    ).resolves.toEqual({ stored: false, page: 0, rows: 1 });
+    await expect(
+      t.mutation(internal.skillsShMirror.storeSourcePageInternal, {
+        ...sourcePage,
+        sourceBytes: sourcePage.sourceBytes + 1,
+      }),
+    ).rejects.toThrow("captured skills.sh source page is immutable");
+    await expect(
+      t.mutation(internal.skillsShMirror.storeSourcePageInternal, {
+        ...sourcePage,
+        contentHash: "d".repeat(64),
+      }),
+    ).rejects.toThrow("captured skills.sh source page content hash mismatch");
+
+    const { runId } = await startRun(t, "skills-sh:proof:captured", 1, snapshotHash);
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken: "lease:captured",
+      }),
+    ).resolves.toMatchObject({
+      sourcePage: {
+        snapshotHash,
+        page: 0,
+        sourceTotal: 1,
+        pageLength: 1,
+        hasMore: false,
+        identityHash,
+        contentHash,
+        rows,
+      },
+    });
+    await expect(
+      t.query(internal.skillsShMirror.getSourceCaptureSummaryInternal, { snapshotHash }),
+    ).resolves.toEqual({
+      snapshotHash,
+      pageDocuments: 1,
+      rows: 1,
+      sourceBytes: 512,
+      serializedBytes: 768,
+    });
+  });
+
+  it("counts a captured-page lookup even when the controlled page has no source document", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const snapshotHash = "a".repeat(64);
+    const { runId } = await startRun(t, "skills-sh:proof:controlled", 1, snapshotHash);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(runId, { page: 1 });
+    });
+
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId,
+        page: 1,
+        offset: 0,
+        leaseToken: "lease:controlled",
+      }),
+    ).resolves.toMatchObject({ sourcePage: null });
+    const run = await t.run(async (ctx) => await ctx.db.get(runId));
+    expect(run?.operations.dbReads).toBe(5);
   });
 
   it("cancels a stale captured run so a fresh authenticated run can start", async () => {
@@ -244,7 +359,17 @@ describe("skills.sh external mirror", () => {
       page: 0,
       offset: 0,
       leaseToken: "lease:worker",
-    })) as { leaseExpiresAt: number };
+    })) as {
+      leaseExpiresAt: number;
+      snapshotId: string;
+      sourcePageSize: number;
+      sourceTotal: number;
+    };
+    expect(first).toMatchObject({
+      snapshotId: "snapshot:lease-renewal",
+      sourcePageSize: 500,
+      sourceTotal: 1,
+    });
     await t.run(async (ctx) => {
       await ctx.db.patch(runId, { batchLeaseExpiresAt: first.leaseExpiresAt - 60_000 });
     });
@@ -372,7 +497,7 @@ describe("skills.sh external mirror", () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);
     await configure(t);
-    const { runId } = await startRun(t, "snapshot:first");
+    const { runId } = await startRun(t, "skills-sh:proof:compact.evidence-hash.evidence");
 
     const result = await processBatch(t, {
       runId,
@@ -404,6 +529,24 @@ describe("skills.sh external mirror", () => {
     expect(await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect())).toEqual(
       [],
     );
+    const storedSourceReferences = await t.run(async (ctx) => {
+      const digest = await ctx.db
+        .query("skillsShMirrorDigests")
+        .withIndex("by_external_id", (q) => q.eq("externalId", githubRow.externalId))
+        .unique();
+      const detail = await ctx.db
+        .query("skillsShMirrorDetails")
+        .withIndex("by_external_id", (q) => q.eq("externalId", githubRow.externalId))
+        .unique();
+      return {
+        digest: digest?.sourceSnapshotId,
+        detail: detail?.sourceSnapshotId,
+      };
+    });
+    expect(storedSourceReferences).toEqual({
+      digest: "skills-sh:proof:compact.evidence-hash",
+      detail: "skills-sh:proof:compact.evidence-hash",
+    });
     expect(
       await t.query(internal.skillsShMirror.getByExternalIdInternal, {
         externalId: githubRow.externalId,

@@ -3017,6 +3017,8 @@ const skillsShMirrorRunCountsValidator = v.object({
 
 const skillsShMirrorRuns = defineTable({
   snapshotId: v.string(),
+  sourceSnapshotHash: v.optional(v.string()),
+  sourceCaptureWrites: v.optional(v.number()),
   status: v.union(
     v.literal("running"),
     v.literal("paused"),
@@ -3051,6 +3053,31 @@ const skillsShMirrorRuns = defineTable({
   .index("by_status_and_updated_at", {
     fields: ["status", "updatedAt"],
   });
+
+const skillsShMirrorSourcePages = defineTable({
+  snapshotHash: v.string(),
+  page: v.number(),
+  sourceTotal: v.number(),
+  pageLength: v.number(),
+  hasMore: v.boolean(),
+  identityHash: v.string(),
+  contentHash: v.string(),
+  sourceBytes: v.number(),
+  serializedBytes: v.number(),
+  rows: v.array(
+    v.object({
+      id: v.string(),
+      installUrl: v.union(v.string(), v.null()),
+      installs: v.number(),
+      name: v.string(),
+      slug: v.string(),
+      source: v.string(),
+      sourceType: v.string(),
+      url: v.string(),
+    }),
+  ),
+  createdAt: v.number(),
+}).index("by_snapshot_hash_and_page", ["snapshotHash", "page"]);
 
 const skillsShMirrorUpstreamScannerValidator = v.object({
   status: v.string(),
@@ -3947,6 +3974,7 @@ export default defineSchema({
   skillsShCatalogScanAttempts,
   skillsShMirrorControls,
   skillsShMirrorRuns,
+  skillsShMirrorSourcePages,
   skillsShMirrorDigests,
   skillsShMirrorDetails,
   skillsShMirrorFacets,

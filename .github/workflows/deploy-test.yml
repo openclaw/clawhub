@@ -303,7 +303,7 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Load and prove the complete authenticated mirror
+      - name: Load and prove the authenticated leaderboard mirror foundation
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
@@ -320,7 +320,7 @@ jobs:
                 "reason":"CLAW-563 proof cleanup",
                 "confirm":"enable-skills-sh-mirror-test",
                 "enabled":false,
-                "maxRowsPerRun":10000,
+                "maxRowsPerRun":50000,
                 "maxRowsPerBatch":50,
                 "maxDetailBytes":65536
               }' > claw563-control-disabled.json 2>&1
@@ -392,13 +392,36 @@ jobs:
             .digest.sourceType == "github" and
             .digest.owner == "patrick-erichsen" and
             .digest.repo == "skills" and
-            .digest.githubPath != null and
-            .digest.githubCommit != null and
-            .digest.sourceContentHash != null and
+            .digest.githubPath == "skills/html" and
+            .digest.githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .digest.sourceContentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
             .digest.active == true and
             .digest.publicVisible == false and
             .digest.installable == false
           ' claw563-controlled-entry.json >/dev/null
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer $operator_token" \
+            --header "Content-Type: application/json" \
+            --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            --data '{"operation":"read","externalId":"steipete/clawdis/discrawl"}' \
+            "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-discrawl-entry.json
+          jq -e '
+            .digest.externalId == "steipete/clawdis/discrawl" and
+            .digest.sourceType == "github" and
+            .digest.owner == "steipete" and
+            .digest.repo == "clawdis" and
+            .digest.githubPath == ".agents/skills/discrawl" and
+            .digest.githubCommit == "690ed564419291ca6e832dc69b53061300075b62" and
+            .digest.sourceContentHash == "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d" and
+            .digest.active == true and
+            .digest.publicVisible == false and
+            .digest.installable == false
+          ' claw563-discrawl-entry.json >/dev/null
 
           jq -n \
             --arg sourceSha "$DEPLOY_SHA" \
@@ -427,6 +450,7 @@ jobs:
             proof/claw-563/skills-sh-mirror-test-proof.json
             claw563-proof-output.json
             claw563-controlled-entry.json
+            claw563-discrawl-entry.json
             claw563-control-disabled.json
             claw563-cleanup.json
             claw563-deployment.json

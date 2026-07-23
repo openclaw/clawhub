@@ -15,7 +15,7 @@ const CONTROL_KEY = "global";
 const ENABLE_CONFIRM = "enable-skills-sh-mirror-test";
 const PAUSE_CONFIRM = "set-skills-sh-mirror-pause";
 const CANCEL_CONFIRM = "cancel-skills-sh-mirror-test-run";
-const MAX_ROWS_PER_RUN = 10_000;
+const MAX_ROWS_PER_RUN = 50_000;
 const MAX_ROWS_PER_BATCH = 50;
 const MAX_DETAIL_BYTES = 64 * 1024;
 const MAX_RECONCILE_ROWS = 250;
@@ -30,6 +30,7 @@ const MAX_INFERRED_TOPICS = 5;
 const MAX_INFERENCE_METADATA_LENGTH = 128;
 const BATCH_LEASE_DURATION_MS = 5 * 60 * 1_000;
 const MAX_BATCH_LEASE_TOKEN_LENGTH = 128;
+const SKILLS_SH_PROOF_SNAPSHOT_PREFIX = "skills-sh:proof:";
 const PRESERVE_EXISTING_QUARANTINE_REASONS = new Set(["identity-page-fetch-failed"]);
 
 const detailValidator = v.object({
@@ -59,6 +60,17 @@ const classificationConfidenceValidator = v.union(
   v.literal("medium"),
   v.literal("low"),
 );
+
+const sourceListRowValidator = v.object({
+  id: v.string(),
+  installUrl: v.union(v.string(), v.null()),
+  installs: v.number(),
+  name: v.string(),
+  slug: v.string(),
+  source: v.string(),
+  sourceType: v.string(),
+  url: v.string(),
+});
 
 const rowValidator = v.object({
   externalId: v.string(),
@@ -104,6 +116,32 @@ function assertIntegerInRange(name: string, value: number, min: number, max: num
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new ConvexError(`${name} must be an integer between ${min} and ${max}`);
   }
+}
+
+function normalizedSourceSnapshotHash(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(normalized)) {
+    throw new ConvexError("sourceSnapshotHash must be a SHA-256 hex digest");
+  }
+  return normalized;
+}
+
+async function sha256Hex(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  let hex = "";
+  for (const byte of new Uint8Array(digest)) {
+    hex += byte.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
+function compactSourceSnapshotId(snapshotId: string) {
+  if (!snapshotId.startsWith(SKILLS_SH_PROOF_SNAPSHOT_PREFIX)) return snapshotId;
+  const evidenceHashSeparator = snapshotId.indexOf(".", SKILLS_SH_PROOF_SNAPSHOT_PREFIX.length);
+  if (evidenceHashSeparator === -1) return snapshotId;
+  const evidenceSeparator = snapshotId.indexOf(".", evidenceHashSeparator + 1);
+  // The retained hash identifies the exact measured pagination evidence without copying it to rows.
+  return evidenceSeparator === -1 ? snapshotId : snapshotId.slice(0, evidenceSeparator);
 }
 
 function emptyCounts(): Doc<"skillsShMirrorRuns">["counts"] {
@@ -476,6 +514,8 @@ type SummarizableMirrorRun = Pick<
   Doc<"skillsShMirrorRuns">,
   | "_id"
   | "snapshotId"
+  | "sourceSnapshotHash"
+  | "sourceCaptureWrites"
   | "status"
   | "sourceTotal"
   | "sourcePageSize"
@@ -493,6 +533,8 @@ function summarizeRun(run: SummarizableMirrorRun) {
   return {
     runId: run._id,
     snapshotId: run.snapshotId,
+    sourceSnapshotHash: run.sourceSnapshotHash ?? null,
+    sourceCaptureWrites: run.sourceCaptureWrites ?? 0,
     status: run.status,
     sourceTotal: run.sourceTotal,
     sourcePageSize: run.sourcePageSize,
@@ -555,6 +597,8 @@ export const startRunInternal = internalMutation({
     actor: v.string(),
     reason: v.string(),
     snapshotId: v.string(),
+    sourceSnapshotHash: v.optional(v.string()),
+    sourceCaptureWrites: v.optional(v.number()),
     sourceTotal: v.number(),
     sourcePageSize: v.number(),
     sourceMeasuredAt: v.string(),
@@ -567,6 +611,7 @@ export const startRunInternal = internalMutation({
     if (Number.isNaN(Date.parse(args.sourceMeasuredAt))) {
       throw new ConvexError("sourceMeasuredAt must be an ISO timestamp");
     }
+    assertIntegerInRange("sourceCaptureWrites", args.sourceCaptureWrites ?? 0, 0, 100);
     const activeRuns = await ctx.db
       .query("skillsShMirrorRuns")
       .withIndex("by_started_at")
@@ -583,6 +628,10 @@ export const startRunInternal = internalMutation({
     const now = Date.now();
     const run = {
       snapshotId: args.snapshotId.trim(),
+      ...(args.sourceSnapshotHash
+        ? { sourceSnapshotHash: normalizedSourceSnapshotHash(args.sourceSnapshotHash) }
+        : {}),
+      sourceCaptureWrites: args.sourceCaptureWrites ?? 0,
       status: "running" as const,
       sourceTotal: args.sourceTotal,
       sourcePageSize: args.sourcePageSize,
@@ -604,6 +653,110 @@ export const startRunInternal = internalMutation({
     };
     const runId = await ctx.db.insert("skillsShMirrorRuns", run);
     return summarizeRun({ _id: runId, ...run });
+  },
+});
+
+export const storeSourcePageInternal = internalMutation({
+  args: {
+    snapshotHash: v.string(),
+    page: v.number(),
+    sourceTotal: v.number(),
+    pageLength: v.number(),
+    hasMore: v.boolean(),
+    identityHash: v.string(),
+    contentHash: v.string(),
+    sourceBytes: v.number(),
+    serializedBytes: v.number(),
+    rows: v.array(sourceListRowValidator),
+  },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    const control = requireActiveControl(await getControl(ctx));
+    const snapshotHash = normalizedSourceSnapshotHash(args.snapshotHash);
+    const identityHash = normalizedSourceSnapshotHash(args.identityHash);
+    const contentHash = normalizedSourceSnapshotHash(args.contentHash);
+    assertIntegerInRange("page", args.page, 0, Math.ceil(control.maxRowsPerRun / 500) - 1);
+    assertIntegerInRange("sourceTotal", args.sourceTotal, 1, control.maxRowsPerRun);
+    assertIntegerInRange("pageLength", args.pageLength, 1, 500);
+    assertIntegerInRange("rows.length", args.rows.length, 1, 500);
+    assertIntegerInRange("sourceBytes", args.sourceBytes, 1, 1024 * 1024);
+    assertIntegerInRange("serializedBytes", args.serializedBytes, 1, 1024 * 1024);
+    if (args.rows.length !== args.pageLength) {
+      throw new ConvexError("captured skills.sh source page length mismatch");
+    }
+    const [computedIdentityHash, computedContentHash] = await Promise.all([
+      sha256Hex(args.rows.map((row) => `${row.id.trim().toLowerCase()}\n`).join("")),
+      sha256Hex(JSON.stringify(args.rows)),
+    ]);
+    if (computedIdentityHash !== identityHash) {
+      throw new ConvexError("captured skills.sh source page identity hash mismatch");
+    }
+    if (computedContentHash !== contentHash) {
+      throw new ConvexError("captured skills.sh source page content hash mismatch");
+    }
+    const existing = await ctx.db
+      .query("skillsShMirrorSourcePages")
+      .withIndex("by_snapshot_hash_and_page", (q) =>
+        q.eq("snapshotHash", snapshotHash).eq("page", args.page),
+      )
+      .unique();
+    const value = {
+      snapshotHash,
+      page: args.page,
+      sourceTotal: args.sourceTotal,
+      pageLength: args.pageLength,
+      hasMore: args.hasMore,
+      identityHash,
+      contentHash,
+      sourceBytes: args.sourceBytes,
+      serializedBytes: args.serializedBytes,
+      rows: args.rows,
+    };
+    if (existing) {
+      const comparable = {
+        snapshotHash: existing.snapshotHash,
+        page: existing.page,
+        sourceTotal: existing.sourceTotal,
+        pageLength: existing.pageLength,
+        hasMore: existing.hasMore,
+        identityHash: existing.identityHash,
+        contentHash: existing.contentHash,
+        sourceBytes: existing.sourceBytes,
+        serializedBytes: existing.serializedBytes,
+        rows: existing.rows,
+      };
+      if (JSON.stringify(comparable) !== JSON.stringify(value)) {
+        throw new ConvexError("captured skills.sh source page is immutable");
+      }
+      return { stored: false as const, page: existing.page, rows: existing.pageLength };
+    }
+    await ctx.db.insert("skillsShMirrorSourcePages", {
+      ...value,
+      createdAt: Date.now(),
+    });
+    return { stored: true as const, page: args.page, rows: args.pageLength };
+  },
+});
+
+export const getSourceCaptureSummaryInternal = internalQuery({
+  args: { snapshotHash: v.string() },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    const snapshotHash = normalizedSourceSnapshotHash(args.snapshotHash);
+    const pages = await ctx.db
+      .query("skillsShMirrorSourcePages")
+      .withIndex("by_snapshot_hash_and_page", (q) => q.eq("snapshotHash", snapshotHash))
+      .take(Math.ceil(MAX_ROWS_PER_RUN / 500) + 1);
+    if (pages.length > Math.ceil(MAX_ROWS_PER_RUN / 500)) {
+      throw new ConvexError("captured skills.sh source exceeds the page limit");
+    }
+    return {
+      snapshotHash,
+      pageDocuments: pages.length,
+      rows: pages.reduce((sum, page) => sum + page.pageLength, 0),
+      sourceBytes: pages.reduce((sum, page) => sum + page.sourceBytes, 0),
+      serializedBytes: pages.reduce((sum, page) => sum + page.serializedBytes, 0),
+    };
   },
 });
 
@@ -718,18 +871,30 @@ export const claimBatchLeaseInternal = internalMutation({
       }
     }
     const leaseExpiresAt = now + BATCH_LEASE_DURATION_MS;
+    const sourcePage = run.sourceSnapshotHash
+      ? await ctx.db
+          .query("skillsShMirrorSourcePages")
+          .withIndex("by_snapshot_hash_and_page", (q) =>
+            q.eq("snapshotHash", run.sourceSnapshotHash!).eq("page", run.page),
+          )
+          .unique()
+      : null;
     await ctx.db.patch(run._id, {
       batchLeaseToken: leaseToken,
       batchLeaseExpiresAt: leaseExpiresAt,
       operations: addOperations(run.operations, {
         functionCalls: 1,
-        dbReads: 2,
+        dbReads: run.sourceSnapshotHash ? 3 : 2,
         dbWrites: 1,
       }),
       updatedAt: now,
     });
     return {
       runId: run._id,
+      snapshotId: run.snapshotId,
+      sourceTotal: run.sourceTotal,
+      sourcePageSize: run.sourcePageSize,
+      sourcePage,
       page: run.page,
       offset: run.offset,
       leaseToken,
@@ -820,6 +985,7 @@ export const processBatchInternal = internalMutation({
     let reads = 2;
     let writes = 0;
     const now = Date.now();
+    const sourceSnapshotId = compactSourceSnapshotId(run.snapshotId);
     for (let index = 0; index < args.rows.length; index += 1) {
       const batchRow: BatchRow = args.rows[index]!;
       counts.observed += 1;
@@ -962,7 +1128,7 @@ export const processBatchInternal = internalMutation({
           sourceFreshnessStatus: "observed-only",
           detailStatus: row.detail ? "available" : "missing",
           observationFingerprint: fingerprint,
-          sourceSnapshotId: run.snapshotId,
+          sourceSnapshotId,
           lastObservedRunId: run._id,
           active: true,
           publicVisible: false,
@@ -1014,7 +1180,7 @@ export const processBatchInternal = internalMutation({
           sourceFreshnessStatus: "observed-only",
           detailStatus: row.detail ? "available" : "missing",
           observationFingerprint: fingerprint,
-          sourceSnapshotId: run.snapshotId,
+          sourceSnapshotId,
           lastObservedRunId: run._id,
           active: true,
           publicVisible: false,
@@ -1047,7 +1213,7 @@ export const processBatchInternal = internalMutation({
           digestId,
           ...row.detail,
           ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),
-          sourceSnapshotId: run.snapshotId,
+          sourceSnapshotId,
           lastObservedRunId: run._id,
           createdAt: now,
           updatedAt: now,
@@ -1060,7 +1226,7 @@ export const processBatchInternal = internalMutation({
         if (row.detail.truncated) counts.detailsTruncated += 1;
         if (existingDetail.lastObservedRunId !== run._id) {
           await ctx.db.patch(existingDetail._id, {
-            sourceSnapshotId: run.snapshotId,
+            sourceSnapshotId,
             lastObservedRunId: run._id,
             updatedAt: now,
           });
@@ -1071,7 +1237,7 @@ export const processBatchInternal = internalMutation({
           digestId,
           ...row.detail,
           sourceContentHash: row.sourceContentHash,
-          sourceSnapshotId: run.snapshotId,
+          sourceSnapshotId,
           lastObservedRunId: run._id,
           updatedAt: now,
         });

@@ -7,10 +7,42 @@ const getVercelOidcTokenMock = vi.fn();
 const readBodyMock = vi.fn();
 const fetchPageMock = vi.fn();
 const fetchBatchMock = vi.fn();
+const fetchControlledBatchMock = vi.fn();
+const measureProofSourceMock = vi.fn();
+const buildProofSnapshotIdMock = vi.fn();
+const parseProofSnapshotIdMock = vi.fn();
 const sourcePolicyMock = vi.fn();
 const sourceRetryAfterMock = vi.fn();
 const enrichClassificationsMock = vi.fn();
 const buildReplayRowsMock = vi.fn();
+
+function capturedSourcePage(
+  page = 3,
+  pageLength = 500,
+  hasMore = true,
+  identityHash = `page-${page}`,
+) {
+  return {
+    page,
+    sourceTotal: 9_571,
+    pageLength,
+    hasMore,
+    identityHash,
+    contentHash: `content-${page}`,
+    rows: [
+      {
+        id: "vercel-labs/skills/find-skills",
+        installUrl: "https://github.com/vercel-labs/skills",
+        installs: 42,
+        name: "Find Skills",
+        slug: "find-skills",
+        source: "vercel-labs/skills",
+        sourceType: "github",
+        url: "https://skills.sh/vercel-labs/skills/find-skills",
+      },
+    ],
+  };
+}
 
 vi.mock("h3", () => ({
   defineEventHandler: (handler: unknown) => handler,
@@ -23,9 +55,13 @@ vi.mock("@vercel/oidc", () => ({
 }));
 
 vi.mock("./skillsShCatalogSource", () => ({
+  buildSkillsShMirrorProofSnapshotId: (...args: unknown[]) => buildProofSnapshotIdMock(...args),
   fetchSkillsShCatalogPage: (...args: unknown[]) => fetchPageMock(...args),
   fetchSkillsShMirrorBatch: (...args: unknown[]) => fetchBatchMock(...args),
+  fetchSkillsShMirrorControlledBatch: (...args: unknown[]) => fetchControlledBatchMock(...args),
   getSkillsShCatalogTestSourcePolicy: (...args: unknown[]) => sourcePolicyMock(...args),
+  measureSkillsShMirrorProofSource: (...args: unknown[]) => measureProofSourceMock(...args),
+  parseSkillsShMirrorProofSnapshotId: (...args: unknown[]) => parseProofSnapshotIdMock(...args),
   skillsShSourceRetryAfterSeconds: (...args: unknown[]) => sourceRetryAfterMock(...args),
 }));
 
@@ -41,6 +77,10 @@ describe("skills.sh permanent Test mirror route", () => {
     readBodyMock.mockReset();
     fetchPageMock.mockReset();
     fetchBatchMock.mockReset();
+    fetchControlledBatchMock.mockReset();
+    measureProofSourceMock.mockReset();
+    buildProofSnapshotIdMock.mockReset();
+    parseProofSnapshotIdMock.mockReset();
     sourcePolicyMock.mockReset();
     sourceRetryAfterMock.mockReset();
     enrichClassificationsMock.mockReset();
@@ -50,6 +90,37 @@ describe("skills.sh permanent Test mirror route", () => {
     sourcePolicyMock.mockReturnValue({ allowed: true, environment: "test" });
     getHeaderMock.mockReturnValue("Bearer operator-token");
     getVercelOidcTokenMock.mockResolvedValue("request-oidc-token");
+    buildProofSnapshotIdMock.mockReturnValue("skills-sh:proof:snapshot");
+    parseProofSnapshotIdMock.mockReturnValue({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: [],
+      controlledSupplementExternalIds: [
+        "patrick-erichsen/skills/html",
+        "steipete/clawdis/discrawl",
+      ],
+      sourceSnapshotHash: "a".repeat(64),
+      evidence: {
+        pagination: {
+          requestedPages: [
+            {
+              page: 3,
+              count: 500,
+              hasMore: true,
+              identityHash: "page-3",
+              contentHash: "content-3",
+            },
+            {
+              page: 19,
+              count: 71,
+              hasMore: false,
+              identityHash: "page-19",
+              contentHash: "content-19",
+            },
+          ],
+        },
+      },
+    });
   });
 
   afterEach(() => {
@@ -59,18 +130,46 @@ describe("skills.sh permanent Test mirror route", () => {
 
   it("starts from a freshly measured authenticated source total", async () => {
     readBodyMock.mockResolvedValue({ operation: "start", reason: "CLAW-563 proof" });
-    fetchPageMock.mockResolvedValue({
-      data: Array.from({ length: 500 }),
-      pagination: { page: 0, perPage: 500, total: 9_571, hasMore: true },
+    measureProofSourceMock.mockResolvedValue({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      pageSize: 500,
+      sourceRequests: 20,
+      sourcePages: [
+        {
+          ...capturedSourcePage(0, 500, true, "page-0"),
+          sourceBytes: 10_000,
+          serializedBytes: 10_200,
+        },
+      ],
     });
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-source-page-store") {
+        return new Response(JSON.stringify({ stored: true, page: body.page, rows: 500 }));
+      }
+      if (body.operation === "mirror-source-summary") {
+        return new Response(
+          JSON.stringify({
+            snapshotHash: "a".repeat(64),
+            pageDocuments: 1,
+            rows: 500,
+            sourceBytes: 10_000,
+            serializedBytes: 10_200,
+          }),
+        );
+      }
       if (body.operation === "mirror-run") {
         return new Response(JSON.stringify({ status: "running", page: 3, offset: 50 }));
       }
       expect(body).toMatchObject({
         operation: "mirror-start",
-        sourceTotal: 9_571,
+        snapshotId: "skills-sh:proof:snapshot",
+        sourceSnapshotHash: "a".repeat(64),
+        sourceCaptureWrites: 1,
+        sourceTotal: 9_572,
         sourcePageSize: 500,
         reason: "CLAW-563 proof",
       });
@@ -94,12 +193,87 @@ describe("skills.sh permanent Test mirror route", () => {
       status: "running",
       page: 0,
       offset: 0,
-      sourceTotal: 9_571,
+      sourceTotal: 9_572,
+      sourceCatalogTotal: 9_571,
+      controlledOverlayTotal: 1,
+      controlledSupplementTotal: 1,
+      sourceMeasurementRequests: 20,
+      sourceCapture: {
+        snapshotHash: "a".repeat(64),
+        pageDocuments: 1,
+        rows: 500,
+        sourceBytes: 10_000,
+        serializedBytes: 10_200,
+        requestDbWrites: 1,
+      },
     });
-    expect(fetchPageMock).toHaveBeenCalledWith(
-      { page: 0, perPage: 500 },
+    expect(measureProofSourceMock).toHaveBeenCalledWith(
       expect.objectContaining({ oidcToken: "request-oidc-token" }),
     );
+  });
+
+  it("records zero capture writes when immutable source pages are reused", async () => {
+    readBodyMock.mockResolvedValue({ operation: "start", reason: "CLAW-563 recovered proof" });
+    measureProofSourceMock.mockResolvedValue({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: [],
+      controlledSupplementExternalIds: [
+        "patrick-erichsen/skills/html",
+        "steipete/clawdis/discrawl",
+      ],
+      pageSize: 500,
+      sourceRequests: 20,
+      sourcePages: [
+        {
+          ...capturedSourcePage(0, 500, true, "page-0"),
+          sourceBytes: 10_000,
+          serializedBytes: 10_200,
+        },
+      ],
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-source-page-store") {
+        return new Response(JSON.stringify({ stored: false, page: body.page, rows: 500 }));
+      }
+      if (body.operation === "mirror-source-summary") {
+        return new Response(
+          JSON.stringify({
+            snapshotHash: "a".repeat(64),
+            pageDocuments: 1,
+            rows: 500,
+            sourceBytes: 10_000,
+            serializedBytes: 10_200,
+          }),
+        );
+      }
+      expect(body).toMatchObject({
+        operation: "mirror-start",
+        sourceCaptureWrites: 0,
+      });
+      return new Response(
+        JSON.stringify({
+          runId: "skillsShMirrorRuns:recovered",
+          status: "running",
+          page: 0,
+          offset: 0,
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      runId: "skillsShMirrorRuns:recovered",
+      sourceCapture: {
+        pageDocuments: 1,
+        requestDbWrites: 0,
+      },
+    });
   });
 
   it("passes through a completed reconciliation run summary", async () => {
@@ -255,6 +429,7 @@ describe("skills.sh permanent Test mirror route", () => {
       hasMore: true,
       sourceRequests: 101,
       sourceBytes: 123_456,
+      sourcePageIdentityHash: "page-3",
       rows: [{ externalId: "vercel-labs/skills/find-skills" }],
     });
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
@@ -267,7 +442,15 @@ describe("skills.sh permanent Test mirror route", () => {
           offset: 50,
           leaseToken: expect.any(String),
         });
-        return new Response(JSON.stringify(body));
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_573,
+            sourcePage: capturedSourcePage(),
+          }),
+        );
       }
       if (body.operation === "mirror-classification-states") {
         expect(body).toEqual({
@@ -306,6 +489,159 @@ describe("skills.sh permanent Test mirror route", () => {
     );
   });
 
+  it("replaces a live controlled row with its pinned Test observation", async () => {
+    parseProofSnapshotIdMock.mockReturnValue({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      evidence: {
+        pagination: {
+          requestedPages: [
+            {
+              page: 3,
+              count: 500,
+              hasMore: true,
+              identityHash: "page-3",
+              contentHash: "content-3",
+            },
+          ],
+        },
+      },
+    });
+    readBodyMock.mockResolvedValue({
+      operation: "step",
+      runId: "skillsShMirrorRuns:test",
+      page: 3,
+      offset: 50,
+    });
+    fetchBatchMock.mockResolvedValue({
+      page: 3,
+      offset: 50,
+      pageLength: 500,
+      sourceTotal: 9_571,
+      hasMore: true,
+      sourceRequests: 5,
+      sourceBytes: 5_000,
+      sourcePageIdentityHash: "page-3",
+      rows: [
+        { externalId: "patrick-erichsen/skills/html", sourceContentHash: "mutable" },
+        { externalId: "vercel-labs/skills/find-skills" },
+      ],
+    });
+    fetchControlledBatchMock.mockResolvedValue({
+      page: 3,
+      offset: 50,
+      pageLength: 1,
+      sourceTotal: 9_572,
+      hasMore: false,
+      sourceRequests: 1,
+      sourceBytes: 1_000,
+      rows: [
+        {
+          externalId: "patrick-erichsen/skills/html",
+          sourceContentHash: "pinned",
+        },
+      ],
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_572,
+            sourcePage: capturedSourcePage(),
+          }),
+        );
+      }
+      if (body.operation === "mirror-classification-states") {
+        expect(body.externalIds).toEqual([
+          "patrick-erichsen/skills/html",
+          "vercel-labs/skills/find-skills",
+        ]);
+        return new Response(JSON.stringify({ states: [] }));
+      }
+      expect(body).toMatchObject({
+        operation: "mirror-batch",
+        sourceTotal: 9_572,
+        sourceRequests: 6,
+        sourceBytes: 6_000,
+        rows: [
+          {
+            externalId: "patrick-erichsen/skills/html",
+            sourceContentHash: "pinned",
+          },
+          { externalId: "vercel-labs/skills/find-skills" },
+        ],
+      });
+      return new Response(JSON.stringify({ status: "running", page: 3, offset: 100 }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(fetchControlledBatchMock).toHaveBeenCalledWith(
+      {
+        page: 3,
+        offset: 0,
+        limit: 1,
+        maxDetailBytes: 65_536,
+        sourceTotal: 9_572,
+        externalIds: ["patrick-erichsen/skills/html"],
+      },
+      expect.objectContaining({ beforeRequest: expect.any(Function) }),
+    );
+  });
+
+  it("releases the claimed batch lease when snapshot validation fails", async () => {
+    parseProofSnapshotIdMock.mockImplementation(() => {
+      throw new Error("invalid proof snapshot");
+    });
+    readBodyMock.mockResolvedValue({
+      operation: "step",
+      runId: "skillsShMirrorRuns:test",
+      page: 3,
+      offset: 50,
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "invalid",
+            sourcePageSize: 500,
+            sourceTotal: 9_572,
+          }),
+        );
+      }
+      expect(body).toMatchObject({
+        operation: "mirror-batch-release",
+        runId: "skillsShMirrorRuns:test",
+        page: 3,
+        offset: 50,
+        leaseToken: expect.any(String),
+      });
+      return new Response(JSON.stringify({ released: true }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      message: expect.stringContaining("invalid proof snapshot"),
+    });
+    expect(convexFetch).toHaveBeenCalledTimes(2);
+    expect(fetchBatchMock).not.toHaveBeenCalled();
+  });
+
   it("renews the durable lease during a long source batch", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-22T20:00:00.000Z"));
@@ -314,6 +650,7 @@ describe("skills.sh permanent Test mirror route", () => {
       runId: "skillsShMirrorRuns:test",
       page: 3,
       offset: 50,
+      sourceTotal: 9_573,
     });
     fetchBatchMock.mockImplementation(async (_args, options) => {
       await options.beforeRequest();
@@ -327,12 +664,24 @@ describe("skills.sh permanent Test mirror route", () => {
         hasMore: true,
         sourceRequests: 101,
         sourceBytes: 123_456,
+        sourcePageIdentityHash: "page-3",
         rows: [{ externalId: "vercel-labs/skills/find-skills" }],
       };
     });
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (body.operation === "mirror-batch-claim" || body.operation === "mirror-batch-release") {
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_573,
+            sourcePage: capturedSourcePage(),
+          }),
+        );
+      }
+      if (body.operation === "mirror-batch-release") {
         return new Response(JSON.stringify(body));
       }
       if (body.operation === "mirror-classification-states") {
@@ -391,18 +740,121 @@ describe("skills.sh permanent Test mirror route", () => {
     expect(fetchBatchMock).not.toHaveBeenCalled();
   });
 
-  it("returns a retryable response without advancing the durable cursor on source rate limits", async () => {
+  it("releases the lease when the ordered leaderboard page changed", async () => {
     readBodyMock.mockResolvedValue({
       operation: "step",
       runId: "skillsShMirrorRuns:test",
       page: 3,
       offset: 50,
     });
+    fetchBatchMock.mockResolvedValue({
+      page: 3,
+      offset: 50,
+      pageLength: 500,
+      sourceTotal: 9_571,
+      hasMore: true,
+      sourceRequests: 5,
+      sourceBytes: 5_000,
+      sourcePageIdentityHash: "changed-page-3",
+      rows: [{ externalId: "vercel-labs/skills/find-skills" }],
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_573,
+            sourcePage: capturedSourcePage(),
+          }),
+        );
+      }
+      expect(body.operation).toBe("mirror-batch-release");
+      return new Response(JSON.stringify({ released: true }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      message: expect.stringContaining("ordered leaderboard page changed"),
+    });
+    expect(convexFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("releases the lease when the measured leaderboard pagination state changed", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "step",
+      runId: "skillsShMirrorRuns:test",
+      page: 3,
+      offset: 50,
+    });
+    fetchBatchMock.mockResolvedValue({
+      page: 3,
+      offset: 50,
+      pageLength: 500,
+      sourceTotal: 9_571,
+      hasMore: false,
+      sourceRequests: 5,
+      sourceBytes: 5_000,
+      sourcePageIdentityHash: "page-3",
+      rows: [{ externalId: "vercel-labs/skills/find-skills" }],
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_573,
+            sourcePage: capturedSourcePage(),
+          }),
+        );
+      }
+      expect(body.operation).toBe("mirror-batch-release");
+      return new Response(JSON.stringify({ released: true }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      message: expect.stringContaining("ordered leaderboard page changed"),
+    });
+    expect(convexFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns a retryable response without advancing the durable cursor on source rate limits", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "step",
+      runId: "skillsShMirrorRuns:test",
+      page: 3,
+      offset: 50,
+      sourceTotal: 9_573,
+    });
     fetchBatchMock.mockRejectedValue(new Error("source rate limited"));
     sourceRetryAfterMock.mockReturnValue(17);
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
-      if (body.operation === "mirror-batch-claim") return new Response(JSON.stringify(body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_573,
+            sourcePage: capturedSourcePage(),
+          }),
+        );
+      }
       expect(body).toMatchObject({
         operation: "mirror-batch-release",
         runId: "skillsShMirrorRuns:test",
@@ -454,6 +906,149 @@ describe("skills.sh permanent Test mirror route", () => {
       page: [{ kind: "category", term: "development" }],
       isDone: true,
     });
+  });
+
+  it("appends the bounded controlled GitHub proof page after the authenticated catalog", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "step",
+      runId: "skillsShMirrorRuns:test",
+      page: 20,
+      offset: 0,
+    });
+    fetchControlledBatchMock.mockResolvedValue({
+      page: 20,
+      offset: 0,
+      pageLength: 2,
+      sourceTotal: 9_573,
+      hasMore: false,
+      sourceRequests: 2,
+      sourceBytes: 11_085,
+      rows: [
+        { externalId: "patrick-erichsen/skills/html" },
+        { externalId: "steipete/clawdis/discrawl" },
+      ],
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_573,
+          }),
+        );
+      }
+      if (body.operation === "mirror-classification-states") {
+        expect(body.externalIds).toEqual([
+          "patrick-erichsen/skills/html",
+          "steipete/clawdis/discrawl",
+        ]);
+        return new Response(JSON.stringify({ states: [] }));
+      }
+      expect(body).toMatchObject({
+        operation: "mirror-batch",
+        page: 20,
+        offset: 0,
+        pageLength: 2,
+        sourceTotal: 9_573,
+        hasMore: false,
+      });
+      return new Response(JSON.stringify({ status: "reconciling", page: 21, offset: 0 }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "reconciling" });
+    expect(fetchControlledBatchMock).toHaveBeenCalledWith(
+      {
+        page: 20,
+        offset: 0,
+        limit: 50,
+        maxDetailBytes: 65_536,
+        sourceTotal: 9_573,
+        externalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      },
+      expect.objectContaining({ beforeRequest: expect.any(Function) }),
+    );
+    expect(fetchBatchMock).not.toHaveBeenCalled();
+    expect(getVercelOidcTokenMock).not.toHaveBeenCalled();
+  });
+
+  it("completes on the leaderboard page when every controlled identity is already present", async () => {
+    parseProofSnapshotIdMock.mockReturnValue({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledSupplementExternalIds: [],
+      evidence: {
+        pagination: {
+          requestedPages: [
+            {
+              page: 19,
+              count: 71,
+              hasMore: false,
+              identityHash: "page-19",
+              contentHash: "content-19",
+            },
+          ],
+        },
+      },
+    });
+    readBodyMock.mockResolvedValue({
+      operation: "step",
+      runId: "skillsShMirrorRuns:test",
+      page: 19,
+      offset: 70,
+    });
+    fetchBatchMock.mockResolvedValue({
+      page: 19,
+      offset: 70,
+      pageLength: 71,
+      sourceTotal: 9_571,
+      hasMore: false,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      sourcePageIdentityHash: "page-19",
+      rows: [{ externalId: "owner/repo/final" }],
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            ...body,
+            snapshotId: "skills-sh:proof:snapshot",
+            sourcePageSize: 500,
+            sourceTotal: 9_571,
+            sourcePage: capturedSourcePage(19, 71, false, "page-19"),
+          }),
+        );
+      }
+      if (body.operation === "mirror-classification-states") {
+        return new Response(JSON.stringify({ states: [] }));
+      }
+      expect(body).toMatchObject({
+        operation: "mirror-batch",
+        page: 19,
+        offset: 70,
+        sourceTotal: 9_571,
+        hasMore: false,
+      });
+      return new Response(JSON.stringify({ status: "reconciling", page: 20, offset: 0 }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ status: "reconciling" });
+    expect(fetchControlledBatchMock).not.toHaveBeenCalled();
   });
 
   it("starts and steps a lease-guarded captured replay without source auth", async () => {

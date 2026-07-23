@@ -258,6 +258,81 @@ describe("skills.sh catalog Test HTTP API", () => {
     );
   });
 
+  it("stores and summarizes immutable mirror source pages", async () => {
+    const staging = {
+      environment: "test",
+      deploymentName: "academic-chihuahua-392",
+      buildSha: "test-sha",
+      control: {},
+    };
+    const rows = [
+      {
+        id: "vercel-labs/skills/find-skills",
+        installUrl: "https://github.com/vercel-labs/skills",
+        installs: 42,
+        name: "Find Skills",
+        slug: "find-skills",
+        source: "vercel-labs/skills",
+        sourceType: "github",
+        url: "https://skills.sh/vercel-labs/skills/find-skills",
+      },
+    ];
+    const runMutation = vi.fn(async () => ({ stored: true, page: 0, rows: 1 }));
+    const storeCtx = { runQuery: vi.fn(async () => staging), runMutation } as never;
+    const storeResponse = await skillsShCatalogTestV1Handler(
+      storeCtx,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-source-page-store",
+          snapshotHash: "a".repeat(64),
+          page: 0,
+          sourceTotal: 1,
+          pageLength: 1,
+          hasMore: false,
+          identityHash: "b".repeat(64),
+          contentHash: "c".repeat(64),
+          sourceBytes: 512,
+          serializedBytes: 768,
+          rows,
+        }),
+      }),
+    );
+
+    expect(storeResponse.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        snapshotHash: "a".repeat(64),
+        page: 0,
+        rows,
+      }),
+    );
+
+    const summary = {
+      snapshotHash: "a".repeat(64),
+      pageDocuments: 1,
+      rows: 1,
+      sourceBytes: 512,
+      serializedBytes: 768,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce(staging).mockResolvedValueOnce(summary);
+    const summaryResponse = await skillsShCatalogTestV1Handler(
+      { runQuery } as never,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-source-summary",
+          snapshotHash: "a".repeat(64),
+        }),
+      }),
+    );
+
+    expect(summaryResponse.status).toBe(200);
+    expect(await summaryResponse.json()).toEqual(summary);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
   it("routes guarded mirror batch lease claims and releases", async () => {
     const runMutation = vi
       .fn()

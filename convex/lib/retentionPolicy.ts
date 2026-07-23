@@ -223,6 +223,9 @@ export const RETENTION_POLICIES = {
   ),
   skillsShMirrorControls: permanent("Durable skills.sh external mirror operator controls."),
   skillsShMirrorRuns: permanent("Skills.sh external mirror cursor and reconciliation history."),
+  skillsShMirrorSourcePages: permanent(
+    "Immutable authenticated leaderboard source pages retained for mirror provenance.",
+  ),
   skillsShMirrorDigests: permanent("Normalized skills.sh external search digests."),
   skillsShMirrorDetails: permanent("Bounded skills.sh external detail content."),
   skillsShMirrorFacets: permanent("Indexed skills.sh external category and topic metadata."),

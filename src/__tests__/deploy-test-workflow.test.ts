@@ -131,4 +131,19 @@ describe("Test deploy workflow", () => {
     expect(aliasStep?.run).not.toContain("${{ steps.vercel.outputs.deployment_url }}");
     expect(aliasStep?.run).toContain('--scope "$VERCEL_SCOPE"');
   });
+
+  it("proves both immutable controlled mirror entries before cleanup", async () => {
+    const workflow = await readWorkflow();
+    const step = workflow.jobs?.["claw563-mirror-load"]?.steps?.find(
+      (candidate) =>
+        candidate.name === "Load and prove the authenticated leaderboard mirror foundation",
+    );
+    const run = step?.run ?? "";
+
+    expect(run).toContain('"externalId":"patrick-erichsen/skills/html"');
+    expect(run).toContain('"externalId":"steipete/clawdis/discrawl"');
+    expect(run).toContain("050daba89f6b6636470add5cb300aac46a412cf8");
+    expect(run).toContain("690ed564419291ca6e832dc69b53061300075b62");
+    expect(run).toContain("claw563-discrawl-entry.json");
+  });
 });

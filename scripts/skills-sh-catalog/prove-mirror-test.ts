@@ -3,6 +3,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
+  SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS,
+  parseSkillsShMirrorProofSnapshotId,
+} from "../../server/skillsShCatalogSource";
+import {
   buildMirrorStepRequest,
   buildMirrorProofHeaders,
   capturedMirrorSourceRunId,
@@ -94,7 +98,12 @@ async function runMirror(
     start.payload,
     recoverableRun ? "recover" : capturedSource ? "start-replay" : "start",
   );
+  const startPayload = start.payload as Record<string, unknown>;
   const runId = requireRunId(startRun);
+  const proofSource =
+    capturedSource === null
+      ? parseSkillsShMirrorProofSnapshotId(String(startRun.snapshotId))
+      : null;
   let page = recoverableRun?.page ?? 0;
   let offset = recoverableRun?.offset ?? 0;
   let steps = 0;
@@ -121,7 +130,12 @@ async function runMirror(
     }
   }
   while (run.status === "running") {
-    const stepRequest = buildMirrorStepRequest({ runId, page, offset, capturedSource });
+    const stepRequest = buildMirrorStepRequest({
+      runId,
+      page,
+      offset,
+      capturedSource,
+    });
     const step = await callRaw(stepRequest);
     if (!step.ok) {
       const delayMs = mirrorRateLimitRetryDelayMs(step.status, step.retryAfter, rateLimitRetries);
@@ -150,7 +164,14 @@ async function runMirror(
         runId,
         reason: "CLAW-563 deliberate pause proof",
       });
-      const blocked = await callRaw({ operation: "step", runId, page, offset });
+      const blocked = await callRaw(
+        buildMirrorStepRequest({
+          runId,
+          page,
+          offset,
+          capturedSource,
+        }),
+      );
       if (blocked.ok || !JSON.stringify(blocked.payload).includes("paused")) {
         throw new Error("paused mirror step did not fail closed");
       }
@@ -181,9 +202,20 @@ async function runMirror(
     runId,
     run,
     source: {
-      total: start.payload.sourceTotal,
-      measuredAt: start.payload.sourceMeasuredAt,
-      pageSize: start.payload.sourcePageSize,
+      total: startPayload.sourceTotal,
+      catalogTotal: proofSource?.catalogTotal ?? startPayload.sourceTotal,
+      controlledExternalIds: proofSource?.controlledExternalIds ?? [],
+      controlledOverlayExternalIds: proofSource?.controlledOverlayExternalIds ?? [],
+      controlledSupplementExternalIds: proofSource?.controlledSupplementExternalIds ?? [],
+      evidence: proofSource?.evidence ?? null,
+      capture:
+        startPayload.sourceCapture &&
+        typeof startPayload.sourceCapture === "object" &&
+        !Array.isArray(startPayload.sourceCapture)
+          ? startPayload.sourceCapture
+          : null,
+      measuredAt: startPayload.sourceMeasuredAt,
+      pageSize: startPayload.sourcePageSize,
     },
     recovery,
     steps,
@@ -247,11 +279,18 @@ type CapturedMirrorSource = {
 };
 
 function completedLiveRunProof(run: CompletedLiveMirrorRun): MirrorRunProof {
+  const proofSource = parseSkillsShMirrorProofSnapshotId(run.snapshotId);
   return {
     runId: run.runId,
     run,
     source: {
       total: run.sourceTotal,
+      catalogTotal: proofSource.catalogTotal,
+      controlledExternalIds: proofSource.controlledExternalIds,
+      controlledOverlayExternalIds: proofSource.controlledOverlayExternalIds,
+      controlledSupplementExternalIds: proofSource.controlledSupplementExternalIds,
+      evidence: proofSource.evidence ?? null,
+      capture: null,
       measuredAt: run.sourceMeasuredAt,
       pageSize: run.sourcePageSize,
     },
@@ -437,7 +476,7 @@ let proof: Record<string, unknown>;
 await call({
   operation: "configure",
   enabled: true,
-  reason: "CLAW-563 full authenticated Test mirror proof",
+  reason: "CLAW-563 authenticated leaderboard foundation proof",
 });
 try {
   const isolationBefore = (await call({ operation: "isolation" })).payload;
@@ -479,7 +518,7 @@ try {
   const firstRun = completedLiveRun
     ? completedLiveRunProof(completedLiveRun)
     : await runMirror(
-        "CLAW-563 complete authenticated mirror",
+        "CLAW-563 complete authenticated leaderboard enumeration",
         true,
         recoveredNormalizationRun ? null : recoverableRun,
       );
@@ -533,6 +572,30 @@ try {
     collectPages("facet-page", validateFacet),
   ]);
   const firstCounts = runCounts(firstRun);
+  const sourceEvidence = firstRun.source.evidence;
+  if (!sourceEvidence) {
+    throw new Error("live mirror run lacks durable source pagination and field evidence");
+  }
+  if (sourceEvidence.fields.normalizedUpstreamTaxonomyFields.length > 0) {
+    throw new Error(
+      "skills.sh now exposes normalized taxonomy fields; mirror ingestion must prefer them",
+    );
+  }
+  const sourceSnapshotHash = parseSkillsShMirrorProofSnapshotId(
+    String(firstRun.run.snapshotId),
+  ).sourceSnapshotHash;
+  if (!sourceSnapshotHash) {
+    throw new Error("live mirror run lacks a durable source snapshot hash");
+  }
+  const sourceCaptureSummary = (firstRun.source.capture ??
+    (await call({ operation: "source-summary", snapshotHash: sourceSnapshotHash }))
+      .payload) as Record<string, unknown>;
+  const sourceCapture = {
+    ...sourceCaptureSummary,
+    actualDbWrites: Number(
+      sourceCaptureSummary.requestDbWrites ?? firstRun.run.sourceCaptureWrites ?? 0,
+    ),
+  };
   const firstAccounting = mirrorRunAccounting(Number(firstRun.source.total), firstCounts);
   const quarantinedCount = firstAccounting.quarantined;
   const quarantinedPreservedCount = firstCounts.quarantinedPreserved ?? 0;
@@ -545,6 +608,12 @@ try {
   }
   if (facets.count < digests.count) {
     throw new Error("mirror facets do not cover every digest category fallback");
+  }
+  const digestExternalIds = new Set(digests.documents.map((document) => document.externalId));
+  for (const externalId of SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS) {
+    if (!digestExternalIds.has(externalId)) {
+      throw new Error(`mirror proof lacks controlled supplement ${externalId}`);
+    }
   }
   const quarantineSamples = liveRunConflicts
     .filter(
@@ -567,15 +636,21 @@ try {
   }
   const firstOperations = firstRun.run.operations as Record<string, number>;
   const serializedStorageBytes =
-    digests.serializedBytes + details.serializedBytes + facets.serializedBytes;
+    digests.serializedBytes +
+    details.serializedBytes +
+    facets.serializedBytes +
+    Number(sourceCaptureSummary.serializedBytes ?? 0);
   const rows = digests.count;
   const sourceRows = Number(firstRun.source.total);
+  const sourceMeasurementRequests = sourceEvidence.pagination.requestedPages.length + 4;
   const perRow = {
     serializedStorageBytes: serializedStorageBytes / rows,
-    dbWrites: firstOperations.dbWrites / sourceRows,
-    dbReads: firstOperations.dbReads / sourceRows,
-    sourceRequests: firstOperations.sourceRequests / sourceRows,
-    sourceBytes: firstOperations.sourceBytes / sourceRows,
+    dbWrites: (firstOperations.dbWrites + sourceCapture.actualDbWrites) / sourceRows,
+    dbReads:
+      (firstOperations.dbReads + Number(sourceCaptureSummary.pageDocuments ?? 0)) / sourceRows,
+    sourceRequests: (firstOperations.sourceRequests + sourceMeasurementRequests) / sourceRows,
+    sourceBytes:
+      (firstOperations.sourceBytes + Number(sourceCaptureSummary.sourceBytes ?? 0)) / sourceRows,
   };
   proof = {
     generatedAt: new Date().toISOString(),
@@ -592,10 +667,34 @@ try {
     },
     sourceContract: {
       authenticated: "Vercel OIDC",
-      measuredTotal: firstRun.source.total,
+      scope: "paginated skills.sh leaderboard",
+      databaseEnumeration: "out of v1 scope; exhaustive feed not required",
+      endpointExhausted: true,
+      databaseCoverageProven: false,
+      measuredLeaderboardTotal: firstRun.source.catalogTotal,
+      proofSourceTotal: firstRun.source.total,
+      measurementRequests: sourceMeasurementRequests,
+      endpointExhaustion: sourceEvidence.pagination,
+      rawFieldSets: sourceEvidence.fields,
+      taxonomyEnrichment: {
+        upstreamNormalizedFields: sourceEvidence.fields.normalizedUpstreamTaxonomyFields,
+        fallbackApplied: true,
+        fallbackGenerator: "ClawHub local deterministic catalog classifier",
+        llmGenerated: false,
+      },
+      controlledSupplement: {
+        authority: "immutable GitHub content",
+        environment: "permanent Test only",
+        productionFullSyncStrategy: false,
+        requiredCount: firstRun.source.controlledExternalIds.length,
+        observedRequiredExternalIds: firstRun.source.controlledExternalIds,
+        overlayExternalIds: firstRun.source.controlledOverlayExternalIds,
+        supplementExternalIds: firstRun.source.controlledSupplementExternalIds,
+        contractRequiredExternalIds: SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS,
+      },
+      durableSourceCapture: sourceCapture,
       pageSize: firstRun.source.pageSize,
       measuredAt: firstRun.source.measuredAt,
-      corpusBelowRequestedTenThousand: Number(firstRun.source.total) < 10_000,
       documentedRateLimitRequestsPerMinute: 600,
       fetchPolicy: {
         mirrorBatchRows: 50,
@@ -642,8 +741,10 @@ try {
       unchanged: true,
     },
     indexedReads,
-    projectedFullScale: {
+    projectedHypotheticalDatabaseScale: {
       assumedRows: PROJECTED_SCALE,
+      enumerationAvailable: false,
+      proofStatus: "cost projection only, not a completed database sync",
       serializedStorageBytes: Math.ceil(perRow.serializedStorageBytes * PROJECTED_SCALE),
       dbWrites: Math.ceil(perRow.dbWrites * PROJECTED_SCALE),
       dbReads: Math.ceil(perRow.dbReads * PROJECTED_SCALE),

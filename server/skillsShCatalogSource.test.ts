@@ -3,7 +3,9 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildSkillsShMirrorProofSnapshotId,
   buildSkillsShMirrorObservation,
+  buildSkillsShMirrorControlledObservation,
   buildSkillsShMirrorDetail,
   buildSkillsShMirrorUpstreamScanners,
   captureSkillsShCatalogTestSnapshot,
@@ -12,6 +14,8 @@ import {
   fetchSkillsShCatalogPage,
   fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
+  measureSkillsShMirrorProofSource,
+  parseSkillsShMirrorProofSnapshotId,
   resolveSkillsShMirrorGitHubLocators,
   skillsShSourceRetryAfterSeconds,
   SkillsShCatalogOwnerProofRequiredError,
@@ -90,6 +94,482 @@ describe("skills.sh Vercel source boundary", () => {
       socket: { status: "unavailable" },
       snyk: { status: "unavailable" },
     });
+  });
+
+  it("builds a hidden controlled observation only from exact immutable content", () => {
+    const fullContent = "# Controlled\n\nThis content is longer than the retained prefix.";
+    const supplement = {
+      externalId: "owner/repo/controlled",
+      owner: "owner",
+      repo: "repo",
+      slug: "controlled",
+      displayName: "Controlled",
+      sourceUrl: "https://www.skills.sh/owner/repo/controlled",
+      githubPath: "skills/controlled",
+      detailPath: "skills/controlled/SKILL.md",
+      githubCommit: "0123456789abcdef0123456789abcdef01234567",
+      sourceContentHash: createHash("sha256").update(fullContent).digest("hex"),
+    };
+
+    expect(
+      buildSkillsShMirrorControlledObservation(
+        supplement,
+        fullContent,
+        Buffer.byteLength(fullContent),
+        16,
+      ),
+    ).toMatchObject({
+      externalId: "owner/repo/controlled",
+      sourceType: "github",
+      upstreamSourceType: "controlled-github",
+      canonicalRepoUrl: "https://github.com/owner/repo",
+      githubPath: "skills/controlled",
+      githubCommit: "0123456789abcdef0123456789abcdef01234567",
+      sourceContentHash: supplement.sourceContentHash,
+      upstreamInstalls: 0,
+      upstreamScanners: {
+        genAgentTrustHub: { status: "unavailable" },
+        socket: { status: "unavailable" },
+        snyk: { status: "unavailable" },
+      },
+      detail: {
+        path: "skills/controlled/SKILL.md",
+        contentBytes: 16,
+        sourceBytes: Buffer.byteLength(fullContent),
+        sourceFileCount: 1,
+        truncated: true,
+      },
+    });
+    expect(() =>
+      buildSkillsShMirrorControlledObservation(
+        { ...supplement, sourceContentHash: "0".repeat(64) },
+        fullContent,
+        Buffer.byteLength(fullContent),
+        16,
+      ),
+    ).toThrow("controlled skills.sh mirror source hash changed");
+  });
+
+  it("supplements only controlled identities absent from the authenticated catalog", async () => {
+    const controlledRow = {
+      id: "patrick-erichsen/skills/html",
+      installUrl: null,
+      installs: 1,
+      name: "HTML",
+      slug: "html",
+      source: "patrick-erichsen/skills",
+      sourceType: "github",
+      url: "https://www.skills.sh/patrick-erichsen/skills/html",
+    };
+    const pages = [
+      {
+        data: Array.from({ length: 500 }, (_, index) =>
+          index === 0
+            ? controlledRow
+            : {
+                id: `owner/repo/other-${index}`,
+                installUrl: null,
+                installs: 1,
+                name: `Other ${index}`,
+                slug: `other-${index}`,
+                source: "owner/repo",
+                sourceType: "github",
+                url: `https://www.skills.sh/owner/repo/other-${index}`,
+              },
+        ),
+        pagination: { page: 0, perPage: 500, total: 501, hasMore: true },
+      },
+      {
+        data: [
+          {
+            id: "owner/repo/other",
+            installUrl: null,
+            installs: 1,
+            name: "Other",
+            slug: "other",
+            source: "owner/repo",
+            sourceType: "github",
+            url: "https://www.skills.sh/owner/repo/other",
+          },
+        ],
+        pagination: { page: 1, perPage: 500, total: 501, hasMore: false },
+      },
+      {
+        data: [],
+        pagination: { page: 2, perPage: 500, total: 501, hasMore: false },
+      },
+    ];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=")) {
+        return new Response(JSON.stringify(pages.shift()));
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(
+          JSON.stringify({
+            count: 1,
+            data: [controlledRow],
+            durationMs: 3,
+            query: "html",
+            searchType: "full-text",
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/skills/patrick-erichsen/skills/html")) {
+        return new Response(
+          JSON.stringify({
+            files: [{ contents: "# HTML", path: "skills/html/SKILL.md" }],
+            hash: "a".repeat(64),
+            id: controlledRow.id,
+            installs: 1,
+            slug: "html",
+            source: "patrick-erichsen/skills",
+          }),
+        );
+      }
+      if (url.includes("?_rsc=")) {
+        return new Response(
+          '0:["$","div",null,{"children":"HTML","className":"skill"}]\n1:{"prompt":"use html"}\n',
+          { headers: { "Content-Type": "text/x-component" } },
+        );
+      }
+      if (url === controlledRow.url) {
+        return new Response(
+          '<!doctype html><script type="application/ld+json">' +
+            '{"@context":"https://schema.org","@type":"SoftwareApplication",' +
+            '"applicationCategory":"DeveloperApplication","name":"HTML"}' +
+            "</script>",
+          { headers: { "Content-Type": "text/html; charset=utf-8" } },
+        );
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const measured = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    });
+
+    expect(measured).toMatchObject({
+      catalogTotal: 501,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      pageSize: 500,
+      sourceRequests: 7,
+      sourcePages: [
+        {
+          page: 0,
+          sourceTotal: 501,
+          pageLength: 500,
+          hasMore: true,
+        },
+        {
+          page: 1,
+          sourceTotal: 501,
+          pageLength: 1,
+          hasMore: false,
+        },
+      ],
+      evidence: {
+        pagination: {
+          endpointExhausted: true,
+          databaseCoverage: "leaderboard-only",
+          page0: { page: 0, perPage: 500, total: 501, hasMore: true },
+          requestedPages: [
+            { page: 0, count: 500, hasMore: true },
+            { page: 1, count: 1, hasMore: false },
+            { page: 2, count: 0, hasMore: false },
+          ],
+          finalNonemptyPage: {
+            page: 1,
+            count: 1,
+            pagination: { page: 1, perPage: 500, total: 501, hasMore: false },
+          },
+          firstBeyondEndPage: {
+            page: 2,
+            count: 0,
+            pagination: { page: 2, perPage: 500, total: 501, hasMore: false },
+          },
+          uniqueIds: 501,
+          duplicateIds: 0,
+        },
+        fields: {
+          sampledExternalId: "patrick-erichsen/skills/html",
+          leaderboard: {
+            topLevelKeys: ["data", "pagination"],
+            paginationKeys: ["hasMore", "page", "perPage", "total"],
+            rowKeys: [
+              "id",
+              "installUrl",
+              "installs",
+              "name",
+              "slug",
+              "source",
+              "sourceType",
+              "url",
+            ],
+            taxonomyFields: [],
+          },
+          search: {
+            topLevelKeys: ["count", "data", "durationMs", "query", "searchType"],
+            rowKeys: [
+              "id",
+              "installUrl",
+              "installs",
+              "name",
+              "slug",
+              "source",
+              "sourceType",
+              "url",
+            ],
+            taxonomyFields: [],
+          },
+          detail: {
+            topLevelKeys: ["files", "hash", "id", "installs", "slug", "source"],
+            fileKeys: ["contents", "path"],
+            taxonomyFields: [],
+          },
+          page: {
+            url: controlledRow.url,
+            jsonLdDocuments: [
+              {
+                type: "SoftwareApplication",
+                keys: ["@context", "@type", "applicationCategory", "name"],
+              },
+            ],
+            taxonomyFields: [],
+          },
+          rsc: {
+            objectKeys: ["children", "className", "prompt"],
+            taxonomyFields: [],
+          },
+          normalizedUpstreamTaxonomyFields: [],
+        },
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(7);
+  });
+
+  it("round-trips immutable proof source metadata through the run snapshot", () => {
+    const evidence = {
+      pagination: {
+        endpointExhausted: true as const,
+        databaseCoverage: "leaderboard-only" as const,
+        page0: { page: 0, perPage: 500, total: 9_571, hasMore: true },
+        requestedPages: [
+          {
+            page: 0,
+            count: 500,
+            hasMore: true,
+            identityHash: "page-0",
+            contentHash: "content-page-0",
+          },
+        ],
+        finalNonemptyPage: {
+          page: 19,
+          count: 71,
+          pagination: { page: 19, perPage: 500, total: 9_571, hasMore: false },
+        },
+        firstBeyondEndPage: {
+          page: 20,
+          count: 0,
+          pagination: { page: 20, perPage: 500, total: 9_571, hasMore: false },
+        },
+        uniqueIds: 9_571,
+        duplicateIds: 0,
+      },
+      fields: {
+        sampledExternalId: "vercel-labs/skills/find-skills",
+        leaderboard: {
+          topLevelKeys: ["data", "pagination"],
+          paginationKeys: ["hasMore", "page", "perPage", "total"],
+          rowKeys: ["id"],
+          taxonomyFields: [],
+        },
+        search: { topLevelKeys: ["data"], rowKeys: ["id"], taxonomyFields: [] },
+        detail: { topLevelKeys: ["id"], fileKeys: [], taxonomyFields: [] },
+        page: {
+          url: "https://www.skills.sh/vercel-labs/skills/find-skills",
+          jsonLdDocuments: [],
+          taxonomyFields: [],
+        },
+        rsc: { objectKeys: [], taxonomyFields: [] },
+        normalizedUpstreamTaxonomyFields: [],
+      },
+    };
+    const snapshotId = buildSkillsShMirrorProofSnapshotId({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      evidence,
+    });
+    expect(parseSkillsShMirrorProofSnapshotId(snapshotId)).toEqual({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      sourceSnapshotHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      evidence,
+    });
+    const changedSnapshotId = buildSkillsShMirrorProofSnapshotId({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      evidence: {
+        ...evidence,
+        pagination: {
+          ...evidence.pagination,
+          requestedPages: [
+            {
+              page: 0,
+              count: 500,
+              hasMore: true,
+              identityHash: "different-page-0",
+              contentHash: "different-content-page-0",
+            },
+          ],
+        },
+      },
+    });
+    expect(snapshotId.split(".").slice(0, 2).join(".")).not.toBe(
+      changedSnapshotId.split(".").slice(0, 2).join("."),
+    );
+    const changedPartitionSnapshotId = buildSkillsShMirrorProofSnapshotId({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["steipete/clawdis/discrawl"],
+      controlledSupplementExternalIds: ["patrick-erichsen/skills/html"],
+      evidence,
+    });
+    const [changedPayload] = changedPartitionSnapshotId.split(".");
+    const [, snapshotHash, encodedEvidence] = snapshotId.split(".");
+    expect(() =>
+      parseSkillsShMirrorProofSnapshotId([changedPayload, snapshotHash, encodedEvidence].join(".")),
+    ).toThrow("skills.sh mirror proof source metadata is invalid");
+    const tamperedSnapshotId = snapshotId.replace(/.$/, (value) => (value === "A" ? "B" : "A"));
+    expect(() => parseSkillsShMirrorProofSnapshotId(tamperedSnapshotId)).toThrow(
+      "skills.sh mirror proof source metadata is invalid",
+    );
+  });
+
+  it("rejects proof metadata redirects outside the exact skills.sh route", async () => {
+    const row = {
+      id: "owner/repo/skill",
+      installUrl: "https://github.com/owner/repo",
+      installs: 1,
+      name: "Skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=0")) {
+        return new Response(
+          JSON.stringify({
+            data: [row],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills?page=1")) {
+        return new Response(
+          JSON.stringify({
+            data: [],
+            pagination: { page: 1, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(JSON.stringify({ data: [row] }));
+      }
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            id: row.id,
+            source: row.source,
+            slug: row.slug,
+            installs: row.installs,
+            hash: "a".repeat(64),
+            files: [],
+          }),
+        );
+      }
+      if (url === row.url) {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: "http://127.0.0.1/internal" },
+        });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    await expect(
+      measureSkillsShMirrorProofSource({
+        oidcToken: "oidc-token",
+        fetchImpl: fetchImpl as typeof fetch,
+        minimumApiRequestIntervalMs: 0,
+      }),
+    ).rejects.toThrow("outside the exact skills.sh route");
+    expect(fetchImpl).not.toHaveBeenCalledWith("http://127.0.0.1/internal", expect.anything());
+  });
+
+  it("rejects duplicate identities before declaring the leaderboard exhausted", async () => {
+    const duplicateRow = {
+      id: "owner/repo/duplicate",
+      installUrl: "https://github.com/owner/repo",
+      installs: 1,
+      name: "Duplicate",
+      slug: "duplicate",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/duplicate",
+    };
+    const pages = [
+      {
+        data: [duplicateRow],
+        pagination: { page: 0, perPage: 500, total: 2, hasMore: true },
+      },
+      {
+        data: [duplicateRow],
+        pagination: { page: 1, perPage: 500, total: 2, hasMore: false },
+      },
+    ];
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(pages.shift())));
+
+    await expect(
+      measureSkillsShMirrorProofSource({
+        oidcToken: "oidc-token",
+        fetchImpl,
+        minimumApiRequestIntervalMs: 0,
+      }),
+    ).rejects.toThrow("duplicate identities");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects an over-capacity leaderboard from the first measured page", async () => {
+    const fetchImpl = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          data: [],
+          pagination: { page: 0, perPage: 500, total: 50_001, hasMore: true },
+        }),
+      );
+    });
+
+    await expect(
+      measureSkillsShMirrorProofSource({
+        oidcToken: "oidc-token",
+        fetchImpl: fetchImpl as typeof fetch,
+        minimumApiRequestIntervalMs: 0,
+      }),
+    ).rejects.toThrow("skills.sh proof source total 50001 exceeds 50000 rows");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("normalizes GitHub and well-known rows without inventing repository identity", () => {
@@ -731,6 +1211,58 @@ describe("skills.sh Vercel source boundary", () => {
       ],
       sourceRequests: 3,
     });
+  });
+
+  it("uses the durable captured page without refetching the mutable leaderboard", async () => {
+    const row = {
+      id: "vercel-labs/skills/find-skills",
+      installUrl: "https://github.com/vercel-labs/skills",
+      installs: 42,
+      name: "Find Skills",
+      slug: "find-skills",
+      source: "vercel-labs/skills",
+      sourceType: "github",
+      url: "https://skills.sh/vercel-labs/skills/find-skills",
+    };
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("?page=")) throw new Error("leaderboard refetch is forbidden");
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ audits: [] }));
+      }
+      return new Response(
+        JSON.stringify({
+          id: row.id,
+          source: row.source,
+          slug: row.slug,
+          installs: row.installs,
+          hash: "a".repeat(64),
+          files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+        }),
+      );
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 3, offset: 0, limit: 1, maxDetailBytes: 64 * 1024 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+        sourcePage: {
+          data: [row],
+          pagination: { page: 3, perPage: 500, total: 1, hasMore: false },
+        },
+      },
+    );
+
+    expect(batch).toMatchObject({
+      page: 3,
+      pageLength: 1,
+      sourceTotal: 1,
+      sourceRequests: 2,
+      rows: [{ externalId: row.id }],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
   it("uses only the injected Vercel OIDC token for source authentication", async () => {

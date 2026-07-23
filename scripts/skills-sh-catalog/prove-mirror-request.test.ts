@@ -110,6 +110,21 @@ describe("skills.sh mirror proof request headers", () => {
     });
   });
 
+  it("keeps live source steps bound to the server-side run", () => {
+    expect(
+      buildMirrorStepRequest({
+        runId: "live-run",
+        page: 3,
+        offset: 50,
+      }),
+    ).toEqual({
+      operation: "step",
+      runId: "live-run",
+      page: 3,
+      offset: 50,
+    });
+  });
+
   it("normalizes reconciliation responses through completion", async () => {
     const responses = [
       { run: { runId: "run", status: "reconciling", page: 20, offset: 0 } },
