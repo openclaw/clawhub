@@ -649,7 +649,7 @@ export default function Header() {
                   <DropdownMenuItem asChild>
                     <Link to="/stars" className="flex items-center gap-2">
                       <Star size={14} aria-hidden="true" />
-                      Stars
+                      Bookmarks
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

@@ -87,7 +87,7 @@ describe("Stars", () => {
 
     render(<Stars />);
 
-    expect(screen.getByText("Sign in to see your highlights")).toBeTruthy();
+    expect(screen.getByText("Sign in to see your bookmarks")).toBeTruthy();
     expect(screen.getByRole("button", { name: /sign in/i })).toBeTruthy();
   });
 
@@ -101,7 +101,7 @@ describe("Stars", () => {
     render(<Stars />);
 
     expect(document.querySelector(".skeleton-list")).toBeTruthy();
-    expect(screen.queryByText("No stars yet")).toBeNull();
+    expect(screen.queryByText("No bookmarks yet")).toBeNull();
   });
 
   it("shows empty state when user has no stars", () => {
@@ -112,9 +112,9 @@ describe("Stars", () => {
 
     render(<Stars />);
 
-    expect(screen.getByText("No stars yet")).toBeTruthy();
+    expect(screen.getByText("No bookmarks yet")).toBeTruthy();
     expect(screen.getByRole("link", { name: "Browse skills" })).toBeTruthy();
-    expect(screen.queryByRole("combobox", { name: "Sort starred skills" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Sort bookmarked skills" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Grid view" })).toBeNull();
     expect(screen.queryByRole("link", { name: "List view" })).toBeNull();
   });
@@ -128,8 +128,8 @@ describe("Stars", () => {
     render(<Stars />);
 
     expect(screen.getByRole("heading", { name: "Test Skill" })).toBeTruthy();
-    expect(screen.getByLabelText("Unstar Test Skill")).toBeTruthy();
-    expect(screen.getByText("Your highlights")).toBeTruthy();
+    expect(screen.getByLabelText("Remove bookmark for Test Skill")).toBeTruthy();
+    expect(screen.getByText("Your bookmarks")).toBeTruthy();
   });
 
   it("calls toggleStar when unstar button is clicked", () => {
@@ -140,7 +140,7 @@ describe("Stars", () => {
     });
 
     render(<Stars />);
-    const unstarBtn = screen.getByLabelText("Unstar Test Skill");
+    const unstarBtn = screen.getByLabelText("Remove bookmark for Test Skill");
     fireEvent.click(unstarBtn);
 
     expect(toggleStarMock).toHaveBeenCalledWith({ skillId: "skill_1" });
