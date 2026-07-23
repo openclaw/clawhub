@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getVercelOidcToken, verifyVercelOidcToken, type VercelOidcPayload } from "@vercel/oidc";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
+import { buildGitHubApiHeaders } from "../convex/lib/githubAuth";
 
 const SKILLS_SH_API_BASE = "https://skills.sh/api/v1";
 const MAX_SOURCE_PAGE_SIZE = 500;
@@ -12,6 +13,9 @@ const MAX_UPSTREAM_SCANNER_URL_LENGTH = 2_048;
 const MAX_UPSTREAM_SOURCE_TYPE_LENGTH = 64;
 const MAX_IDENTITY_PAGE_BYTES = 512 * 1024;
 const MAX_IDENTITY_PAGE_REDIRECTS = 2;
+const MAX_GITHUB_TREE_BYTES = 8 * 1024 * 1024;
+const MAX_GITHUB_TREE_ENTRIES = 100_000;
+const GITHUB_LOCATOR_CONCURRENCY = 8;
 const MINIMUM_API_REQUEST_INTERVAL_MS = 125;
 const MAX_INLINE_RETRY_AFTER_MS = 30_000;
 const CLAWHUB_VERCEL_OWNER_ID = "team_pLdjXbfy0XvPRiNmAygTjTSH";
@@ -182,6 +186,26 @@ type SkillsShFetchOptions = {
   fetchImpl?: typeof fetch;
   oidcToken?: string;
   minimumApiRequestIntervalMs?: number;
+};
+
+type SkillsShMirrorGitHubLocatorRow = {
+  externalId: string;
+  sourceType?: string;
+  owner?: string;
+  repo?: string;
+  slug?: string;
+  githubPath?: string;
+  githubCommit?: string;
+  detail?: {
+    path: string;
+    content: string;
+    truncated: boolean;
+  };
+};
+
+type GitHubRepoTreeSnapshot = {
+  commit: string;
+  blobs: Array<{ path: string; sha: string }>;
 };
 
 class SkillsShSourceHttpError extends Error {
@@ -725,6 +749,215 @@ function truncateUtf8(value: string, maxBytes: number) {
   return truncated.replace(/\uFFFD$/u, "");
 }
 
+function gitBlobSha(content: string) {
+  const bytes = Buffer.from(content, "utf8");
+  return createHash("sha1").update(`blob ${bytes.byteLength}\0`).update(bytes).digest("hex");
+}
+
+function normalizedRepoRelativePath(value: string) {
+  const normalized = value.trim().replaceAll("\\", "/").replace(/^\/+/, "");
+  if (
+    !normalized ||
+    normalized.includes("\0") ||
+    normalized.split("/").some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function githubCommitFromArchiveRedirect(value: string, owner: string, repo: string) {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const parts = url.pathname.split("/").filter(Boolean);
+  const commit = parts[3]?.toLowerCase();
+  return url.protocol === "https:" &&
+    url.hostname === "codeload.github.com" &&
+    parts.length === 4 &&
+    parts[0]?.toLowerCase() === owner &&
+    parts[1]?.toLowerCase() === repo &&
+    parts[2] === "zip" &&
+    commit &&
+    /^[a-f0-9]{40}$/.test(commit)
+    ? commit
+    : null;
+}
+
+async function fetchGitHubRepoTreeSnapshot(
+  owner: string,
+  repo: string,
+  options: {
+    fetchImpl: typeof fetch;
+    beforeRequest?: () => Promise<void> | void;
+    accountRequest: () => void;
+    accountBytes: (sourceBytes: number) => void;
+  },
+): Promise<GitHubRepoTreeSnapshot | null> {
+  // GitHub resolves HEAD.zip to an immutable codeload commit URL. Fail closed
+  // if that redirect ever stops carrying the exact repository commit SHA.
+  const archiveUrl = `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/archive/HEAD.zip`;
+  await options.beforeRequest?.();
+  options.accountRequest();
+  let archive: Response;
+  try {
+    archive = await options.fetchImpl(archiveUrl, {
+      headers: { Accept: "application/zip", "User-Agent": "clawhub/skills-sh-mirror" },
+      redirect: "manual",
+    });
+  } catch {
+    return null;
+  }
+  const location = archive.headers.get("location");
+  // Source byte accounting includes only response bodies consumed by this
+  // process; this redirect body is canceled unread and contributes zero.
+  await cancelResponseBody(archive);
+  const commit = location ? githubCommitFromArchiveRedirect(location, owner, repo) : null;
+  if (!commit) return null;
+
+  const headers = await buildGitHubApiHeaders({
+    userAgent: "clawhub/skills-sh-mirror",
+    fetchImpl: options.fetchImpl,
+  });
+  await options.beforeRequest?.();
+  options.accountRequest();
+  let treeResponse: Response;
+  try {
+    treeResponse = await options.fetchImpl(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/${commit}?recursive=1`,
+      { headers },
+    );
+  } catch {
+    return null;
+  }
+  if (!treeResponse.ok) {
+    await cancelResponseBody(treeResponse);
+    return null;
+  }
+  let body: Awaited<ReturnType<typeof readBoundedResponseBytes>>;
+  try {
+    body = await readBoundedResponseBytes(treeResponse, MAX_GITHUB_TREE_BYTES);
+  } catch {
+    return null;
+  }
+  options.accountBytes(body.sourceBytes);
+  if (!body.ok || body.bytes === null) return null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(body.bytes));
+  } catch {
+    return null;
+  }
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const record = payload as Record<string, unknown>;
+  if (record.truncated === true || !Array.isArray(record.tree)) return null;
+  if (record.tree.length > MAX_GITHUB_TREE_ENTRIES) return null;
+  const blobs = record.tree.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const entry = value as Record<string, unknown>;
+    const path = typeof entry.path === "string" ? normalizedRepoRelativePath(entry.path) : null;
+    const sha = typeof entry.sha === "string" ? entry.sha.trim().toLowerCase() : "";
+    return entry.type === "blob" && path && /^[a-f0-9]{40}$/.test(sha) ? [{ path, sha }] : [];
+  });
+  return { commit, blobs };
+}
+
+export async function resolveSkillsShMirrorGitHubLocators<T extends SkillsShMirrorGitHubLocatorRow>(
+  rows: T[],
+  options: {
+    fetchImpl?: typeof fetch;
+    beforeRequest?: () => Promise<void> | void;
+    fullDetailContentByExternalId?: ReadonlyMap<string, string>;
+  } = {},
+) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let sourceRequests = 0;
+  let sourceBytes = 0;
+  const accountRequest = () => {
+    sourceRequests += 1;
+  };
+  const accountBytes = (bytes: number) => {
+    sourceBytes += bytes;
+  };
+  const cache = new Map<string, Promise<GitHubRepoTreeSnapshot | null>>();
+  const nextRows = [...rows];
+  const groups = new Map<string, Array<{ index: number; row: T }>>();
+  rows.forEach((row, index) => {
+    if (
+      row.sourceType !== "github" ||
+      !row.owner ||
+      !row.repo ||
+      !row.slug ||
+      !row.detail ||
+      (row.detail.truncated && !options.fullDetailContentByExternalId?.has(row.externalId)) ||
+      (row.githubPath && row.githubCommit)
+    ) {
+      return;
+    }
+    const key = `${row.owner.toLowerCase()}/${row.repo.toLowerCase()}`;
+    const group = groups.get(key) ?? [];
+    group.push({ index, row });
+    groups.set(key, group);
+  });
+
+  const groupEntries = Array.from(groups);
+  let nextGroup = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(GITHUB_LOCATOR_CONCURRENCY, groupEntries.length) }, async () => {
+      while (nextGroup < groupEntries.length) {
+        const [key, group] = groupEntries[nextGroup++]!;
+        let snapshotPromise = cache.get(key);
+        if (!snapshotPromise) {
+          const [owner, repo] = key.split("/") as [string, string];
+          snapshotPromise = fetchGitHubRepoTreeSnapshot(owner, repo, {
+            fetchImpl,
+            beforeRequest: options.beforeRequest,
+            accountRequest,
+            accountBytes,
+          }).then((snapshot) => {
+            if (!snapshot) cache.delete(key);
+            return snapshot;
+          });
+          cache.set(key, snapshotPromise);
+        }
+        const snapshot = await snapshotPromise;
+        if (!snapshot) continue;
+        for (const { index, row } of group) {
+          const relativePath = normalizedRepoRelativePath(row.detail!.path);
+          if (!relativePath) continue;
+          const fullContent =
+            options.fullDetailContentByExternalId?.get(row.externalId) ?? row.detail!.content;
+          const expectedBlobSha = gitBlobSha(fullContent);
+          const suffix = `/${relativePath.toLowerCase()}`;
+          const matches = snapshot.blobs.filter((blob) => {
+            const path = blob.path.toLowerCase();
+            if (
+              blob.sha !== expectedBlobSha ||
+              (!path.endsWith(suffix) && path !== relativePath.toLowerCase())
+            ) {
+              return false;
+            }
+            const folder = blob.path.slice(0, -relativePath.length).replace(/\/+$/, "");
+            return folder.split("/").at(-1)?.toLowerCase() === row.slug!.toLowerCase();
+          });
+          if (matches.length !== 1) continue;
+          const githubPath = matches[0]!.path.slice(0, -relativePath.length).replace(/\/+$/, "");
+          if (!githubPath) continue;
+          nextRows[index] = {
+            ...row,
+            githubPath,
+            githubCommit: snapshot.commit,
+          };
+        }
+      }
+    }),
+  );
+  return { rows: nextRows, sourceRequests, sourceBytes };
+}
+
 export function buildSkillsShMirrorDetail(detail: SkillsShCatalogDetail, maxBytes: number) {
   assertIntegerInRange("maxBytes", maxBytes, 1, 64 * 1024);
   const files = (detail.files ?? [])
@@ -770,7 +1003,7 @@ export function buildSkillsShMirrorDetail(detail: SkillsShCatalogDetail, maxByte
   }
   const sourceBytes = Buffer.byteLength(selected.content, "utf8");
   const content = truncateUtf8(selected.content, maxBytes);
-  const sourceContentHash = upstreamSourceContentHash ?? sha256Hex(content);
+  const sourceContentHash = upstreamSourceContentHash ?? sha256Hex(selected.content);
   return {
     sourceContentHash,
     sourceFileCount: files.length,
@@ -925,6 +1158,7 @@ export async function fetchSkillsShMirrorBatch(
     oidcToken?: string;
     minimumApiRequestIntervalMs?: number;
     beforeRequest?: () => Promise<void> | void;
+    githubLocatorResolver?: typeof resolveSkillsShMirrorGitHubLocators | null;
   } = {},
 ) {
   assertIntegerInRange("page", args.page, 0, 100_000);
@@ -979,6 +1213,7 @@ export async function fetchSkillsShMirrorBatch(
       })
     | ReturnType<typeof safeMirrorIdentityError>
   >({ length: listRows.length });
+  const fullDetailContentByExternalId = new Map<string, string>();
   // Count only response-body bytes the mirror consumed; canceled unread bodies contribute zero.
   let rowSourceBytes = 0;
   let nextIndex = 0;
@@ -1008,6 +1243,14 @@ export async function fetchSkillsShMirrorBatch(
           Buffer.byteLength(JSON.stringify(detailPayload), "utf8") +
           (auditPayload === null ? 0 : Buffer.byteLength(JSON.stringify(auditPayload), "utf8"));
         const detail = buildSkillsShMirrorDetail(detailPayload, args.maxDetailBytes);
+        if (detail.contentKind !== "none") {
+          const fullDetail = (detailPayload.files ?? [])
+            .map(mirrorDetailFile)
+            .find((file) => file?.path === detail.path);
+          if (fullDetail) {
+            fullDetailContentByExternalId.set(identity.row.externalId, fullDetail.content);
+          }
+        }
         rows[index] = {
           ...identity.row,
           ...(detail.sourceContentHash ? { sourceContentHash: detail.sourceContentHash } : {}),
@@ -1029,6 +1272,19 @@ export async function fetchSkillsShMirrorBatch(
       }
     }),
   );
+  const githubLocatorResolver =
+    options.githubLocatorResolver === undefined
+      ? resolveSkillsShMirrorGitHubLocators
+      : options.githubLocatorResolver;
+  const located = githubLocatorResolver
+    ? await githubLocatorResolver(rows, {
+        fetchImpl: baseFetch,
+        beforeRequest: options.beforeRequest,
+        fullDetailContentByExternalId,
+      })
+    : { rows, sourceRequests: 0, sourceBytes: 0 };
+  sourceRequests += located.sourceRequests;
+  rowSourceBytes += located.sourceBytes;
   return {
     page: args.page,
     offset: args.offset,
@@ -1037,7 +1293,7 @@ export async function fetchSkillsShMirrorBatch(
     hasMore: sourcePage.pagination.hasMore,
     sourceRequests,
     sourceBytes: Buffer.byteLength(JSON.stringify(sourcePage), "utf8") + rowSourceBytes,
-    rows,
+    rows: located.rows,
   };
 }
 

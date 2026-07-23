@@ -602,6 +602,62 @@ describe("skills.sh external mirror", () => {
     ]);
   });
 
+  it("removes stale detail when an available observation becomes missing before replay", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const firstRun = await startRun(t, "snapshot:detail-available", 1);
+    await processBatch(t, {
+      runId: firstRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [githubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: firstRun.runId,
+      limit: 10,
+    });
+
+    const secondRun = await startRun(t, "snapshot:detail-missing", 1);
+    await processBatch(t, {
+      runId: secondRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 512,
+      rows: [{ ...githubRow, detail: undefined }],
+    });
+
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({ detailStatus: "missing", lastObservedRunId: secondRun.runId });
+    expect(
+      await t.query(internal.skillsShMirror.getDetailByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toBeNull();
+    expect(
+      await t.query(internal.skillsShMirror.getReplayRowsInternal, {
+        externalIds: [githubRow.externalId],
+      }),
+    ).toEqual([
+      {
+        digest: expect.objectContaining({ detailStatus: "missing" }),
+        detail: null,
+      },
+    ]);
+  });
+
   it("preserves an existing digest when identity-page transport is quarantined", async () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);

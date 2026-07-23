@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildSkillsShMirrorObservation,
@@ -11,6 +12,7 @@ import {
   fetchSkillsShCatalogPage,
   fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
+  resolveSkillsShMirrorGitHubLocators,
   skillsShSourceRetryAfterSeconds,
   SkillsShCatalogOwnerProofRequiredError,
   validateSkillsShCatalogGitHubOwnerProof,
@@ -319,7 +321,7 @@ describe("skills.sh Vercel source boundary", () => {
     });
   });
 
-  it("derives a deterministic content hash from bounded detail when upstream omits one", () => {
+  it("derives a deterministic content hash from the full detail before truncation", () => {
     const detail = buildSkillsShMirrorDetail(
       {
         id: "patrick-erichsen/skills/html",
@@ -333,10 +335,251 @@ describe("skills.sh Vercel source boundary", () => {
     );
 
     expect(detail).toMatchObject({
-      sourceContentHash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      sourceContentHash: "bef57ec7f53a6d40beb640a780a639c83bc29ac8a9816f1fc6c5c6dcd93c4721",
       content: "abc",
       truncated: true,
     });
+  });
+
+  it("resolves an immutable GitHub path and commit from the exact full detail blob", async () => {
+    const content = "# HTML Artifact Chooser\n";
+    const boundedContent = content.slice(0, 8);
+    const blobSha = createHash("sha1")
+      .update(`blob ${Buffer.byteLength(content)}\0`)
+      .update(content)
+      .digest("hex");
+    const commit = "050daba89f6b6636470add5cb300aac46a412cf8";
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "https://github.com/patrick-erichsen/skills/archive/HEAD.zip") {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: `https://codeload.github.com/Patrick-Erichsen/skills/zip/${commit}`,
+          },
+        });
+      }
+      if (url.includes(`/git/trees/${commit}?recursive=1`)) {
+        return new Response(
+          JSON.stringify({
+            truncated: false,
+            tree: [
+              { path: "skills/html/SKILL.md", type: "blob", sha: blobSha },
+              { path: "README.md", type: "blob", sha: "f".repeat(40) },
+            ],
+          }),
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    await expect(
+      resolveSkillsShMirrorGitHubLocators(
+        [
+          {
+            externalId: "patrick-erichsen/skills/html",
+            sourceType: "github",
+            owner: "patrick-erichsen",
+            repo: "skills",
+            slug: "html",
+            detail: {
+              path: "SKILL.md",
+              content: boundedContent,
+              truncated: true,
+            },
+          },
+        ],
+        {
+          fetchImpl: fetchImpl as typeof fetch,
+          fullDetailContentByExternalId: new Map([["patrick-erichsen/skills/html", content]]),
+        },
+      ),
+    ).resolves.toEqual({
+      rows: [
+        expect.objectContaining({
+          githubPath: "skills/html",
+          githubCommit: commit,
+        }),
+      ],
+      sourceRequests: 2,
+      sourceBytes: expect.any(Number),
+    });
+  });
+
+  it("propagates lease heartbeat failures during GitHub locator resolution", async () => {
+    const beforeRequest = vi
+      .fn<() => Promise<void>>()
+      .mockResolvedValueOnce()
+      .mockRejectedValueOnce(new Error("mirror batch lease expired"));
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "https://github.com/patrick-erichsen/skills/archive/HEAD.zip") {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location:
+              "https://codeload.github.com/patrick-erichsen/skills/zip/050daba89f6b6636470add5cb300aac46a412cf8",
+          },
+        });
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    await expect(
+      resolveSkillsShMirrorGitHubLocators(
+        [
+          {
+            externalId: "patrick-erichsen/skills/html",
+            sourceType: "github",
+            owner: "patrick-erichsen",
+            repo: "skills",
+            slug: "html",
+            detail: {
+              path: "SKILL.md",
+              content: "# HTML Artifact Chooser\n",
+              truncated: false,
+            },
+          },
+        ],
+        { fetchImpl: fetchImpl as typeof fetch, beforeRequest },
+      ),
+    ).rejects.toThrow("mirror batch lease expired");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes a repository HEAD snapshot for each mirror batch", async () => {
+    const content = "# HTML Artifact Chooser\n";
+    const blobSha = createHash("sha1")
+      .update(`blob ${Buffer.byteLength(content)}\0`)
+      .update(content)
+      .digest("hex");
+    const commits = ["0".repeat(39) + "1", "0".repeat(39) + "2"];
+    let archiveRequest = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === "https://github.com/patrick-erichsen/skills/archive/HEAD.zip") {
+        const commit = commits[archiveRequest++]!;
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: `https://codeload.github.com/patrick-erichsen/skills/zip/${commit}`,
+          },
+        });
+      }
+      if (url.includes("/git/trees/")) {
+        return new Response(
+          JSON.stringify({
+            truncated: false,
+            tree: [{ path: "skills/html/SKILL.md", type: "blob", sha: blobSha }],
+          }),
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+    const rows = [
+      {
+        externalId: "patrick-erichsen/skills/html",
+        sourceType: "github",
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+        detail: { path: "SKILL.md", content, truncated: false },
+      },
+    ];
+
+    const first = await resolveSkillsShMirrorGitHubLocators(rows, {
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const second = await resolveSkillsShMirrorGitHubLocators(rows, {
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    expect(first.rows[0]).toMatchObject({ githubCommit: commits[0] });
+    expect(second.rows[0]).toMatchObject({ githubCommit: commits[1] });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it("forwards authoritative GitHub locators into a live mirror batch", async () => {
+    const content = "# HTML Artifact Chooser\n";
+    const commit = "050daba89f6b6636470add5cb300aac46a412cf8";
+    const blobSha = createHash("sha1")
+      .update(`blob ${Buffer.byteLength(content)}\0`)
+      .update(content)
+      .digest("hex");
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "patrick-erichsen/skills/html",
+                installUrl: "https://github.com/patrick-erichsen/skills",
+                installs: 42,
+                name: "HTML Artifact Chooser",
+                slug: "html",
+                source: "patrick-erichsen/skills",
+                sourceType: "github",
+                url: "https://skills.sh/patrick-erichsen/skills/html",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ audits: [] }));
+      }
+      if (url.includes("/api/v1/skills/patrick-erichsen/skills/html")) {
+        return new Response(
+          JSON.stringify({
+            id: "patrick-erichsen/skills/html",
+            source: "patrick-erichsen/skills",
+            slug: "html",
+            installs: 42,
+            hash: null,
+            files: [{ path: "SKILL.md", contents: content }],
+          }),
+        );
+      }
+      if (url === "https://github.com/patrick-erichsen/skills/archive/HEAD.zip") {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: `https://codeload.github.com/Patrick-Erichsen/skills/zip/${commit}`,
+          },
+        });
+      }
+      if (url.includes(`/git/trees/${commit}?recursive=1`)) {
+        return new Response(
+          JSON.stringify({
+            truncated: false,
+            tree: [{ path: "skills/html/SKILL.md", type: "blob", sha: blobSha }],
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 * 1024 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+      },
+    );
+
+    expect(batch).toMatchObject({
+      sourceRequests: 5,
+      rows: [
+        {
+          externalId: "patrick-erichsen/skills/html",
+          githubPath: "skills/html",
+          githubCommit: commit,
+        },
+      ],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
   });
 
   it("fetches one bounded mirror batch from an exact source page and offset", async () => {
@@ -406,6 +649,7 @@ describe("skills.sh Vercel source boundary", () => {
       {
         env: { VERCEL_OIDC_TOKEN: "request-token" },
         fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
       },
     );
 
@@ -531,7 +775,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -616,7 +864,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -680,7 +932,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -750,7 +1006,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 2, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -824,7 +1084,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -904,7 +1168,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -954,7 +1222,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -1003,7 +1275,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -1068,7 +1344,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 2, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -1118,7 +1398,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.rows).toEqual([
@@ -1171,7 +1455,11 @@ describe("skills.sh Vercel source boundary", () => {
     await expect(
       fetchSkillsShMirrorBatch(
         { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-        { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+        {
+          oidcToken: "request-bound-oidc",
+          fetchImpl: fetchImpl as typeof fetch,
+          githubLocatorResolver: null,
+        },
       ),
     ).rejects.toThrow("skills.sh catalog source returned HTTP 401");
   });
@@ -1230,7 +1518,11 @@ describe("skills.sh Vercel source boundary", () => {
 
     const batch = await fetchSkillsShMirrorBatch(
       { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
-      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
     );
 
     expect(batch.sourceRequests).toBe(4);
@@ -1279,6 +1571,7 @@ describe("skills.sh Vercel source boundary", () => {
         oidcToken: "request-bound-oidc",
         fetchImpl: fetchImpl as typeof fetch,
         minimumApiRequestIntervalMs: 125,
+        githubLocatorResolver: null,
       },
     );
     await vi.runAllTimersAsync();

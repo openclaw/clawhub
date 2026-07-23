@@ -976,6 +976,10 @@ export const processBatchInternal = internalMutation({
       reads += 1;
       if (!row.detail) {
         counts.detailsMissing += 1;
+        if (existingDetail) {
+          await ctx.db.delete(existingDetail._id);
+          writes += 1;
+        }
       } else if (!existingDetail) {
         await ctx.db.insert("skillsShMirrorDetails", {
           externalId: row.externalId,
@@ -1418,7 +1422,12 @@ export const getReplayRowsInternal = internalQuery({
             `skills.sh mirror replay row is missing or inactive: ${externalId}`,
           );
         }
-        return { digest, detail };
+        const currentDetail =
+          digest.detailStatus === "available" &&
+          detail?.lastObservedRunId === digest.lastObservedRunId
+            ? detail
+            : null;
+        return { digest, detail: currentDetail };
       }),
     );
   },
