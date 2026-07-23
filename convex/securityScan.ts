@@ -374,6 +374,7 @@ const internalRefs = internal as unknown as {
     getCodexScanQueueHealthInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getJobTargetInternal: unknown;
+    listReadySourceJobsForClaimInternal: unknown;
     recordGitHubSkillScanResultInternal: unknown;
     completeCatalogSkillScanJobInternal: unknown;
     recordSkillScanRequestFailedInternal: unknown;
@@ -2736,6 +2737,47 @@ export const clearQueuedBackfillJobsForLocalDev = internalMutation({
   },
 });
 
+type ReadySourceJobsForClaimPage = {
+  page: Doc<"securityScanJobs">[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
+export async function listReadySourceJobsForClaimHandler(
+  ctx: QueryCtx,
+  args: {
+    source: SecurityScanJobSource;
+    now: number;
+    cursor: string | null;
+    numItems: number;
+    excludeGitHubSkillSync: boolean;
+  },
+): Promise<ReadySourceJobsForClaimPage> {
+  const query = ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_status_source_next_run_at", (q) =>
+      q.eq("status", "queued").eq("source", args.source).lte("nextRunAt", args.now),
+    );
+  const eligibleQuery = args.excludeGitHubSkillSync
+    ? query.filter((q) => q.neq(q.field("rolloutGate"), "github-skill-sync"))
+    : query;
+  return await eligibleQuery.order("asc").paginate({
+    cursor: args.cursor,
+    numItems: args.numItems,
+  });
+}
+
+export const listReadySourceJobsForClaimInternal = internalQuery({
+  args: {
+    source: jobSourceValidator,
+    now: v.number(),
+    cursor: v.union(v.string(), v.null()),
+    numItems: v.number(),
+    excludeGitHubSkillSync: v.boolean(),
+  },
+  handler: listReadySourceJobsForClaimHandler,
+});
+
 export const claimQueuedJobsInternal = internalMutation({
   args: {
     workerId: v.string(),
@@ -2818,24 +2860,22 @@ export const claimQueuedJobsInternal = internalMutation({
         // or canceled jobs cannot hide later runnable backlog after the cap is lowered.
         takeLimit = MAX_CODEX_SCAN_CLAIM_LIMIT;
       }
-      const query = ctx.db
-        .query("securityScanJobs")
-        .withIndex("by_status_source_next_run_at", (q) =>
-          q.eq("status", "queued").eq("source", source).lte("nextRunAt", now),
-        );
-      const eligibleQuery = githubSkillSyncEnabled
-        ? query
-        : query.filter((q) => q.neq(q.field("rolloutGate"), "github-skill-sync"));
-      const ordered = eligibleQuery.order("asc");
-      if (githubSkillSyncEnabled) return await ordered.take(takeLimit);
-
       const eligible: Doc<"securityScanJobs">[] = [];
       let cursor: string | null = null;
       do {
-        const page = await ordered.paginate({
-          cursor,
-          numItems: MAX_CODEX_SCAN_CLAIM_LIMIT,
-        });
+        const page: ReadySourceJobsForClaimPage = await runQueryRef<ReadySourceJobsForClaimPage>(
+          ctx,
+          internalRefs.securityScan.listReadySourceJobsForClaimInternal,
+          {
+            source,
+            now,
+            cursor,
+            numItems: githubSkillSyncEnabled
+              ? Math.min(takeLimit, MAX_CODEX_SCAN_CLAIM_LIMIT)
+              : MAX_CODEX_SCAN_CLAIM_LIMIT,
+            excludeGitHubSkillSync: !githubSkillSyncEnabled,
+          },
+        );
         for (const job of page.page) {
           if (await isJobRolloutClaimable(job)) eligible.push(job);
           if (eligible.length >= takeLimit) return eligible;
@@ -2873,8 +2913,17 @@ export const claimQueuedJobsInternal = internalMutation({
 
     const claimed = [];
     let catalogClaims = 0;
-    for (const job of ready) {
+    for (const selectedJob of ready) {
       if (claimed.length >= capacity) break;
+      const job = await ctx.db.get(selectedJob._id);
+      if (
+        !job ||
+        job.status !== "queued" ||
+        job.source !== selectedJob.source ||
+        job.nextRunAt > now
+      ) {
+        continue;
+      }
       if (!(await isJobRolloutClaimable(job))) continue;
       let catalogAttemptId: Id<"skillsShCatalogScanAttempts"> | null = null;
       if (job.source === "skills-sh-catalog-test") {

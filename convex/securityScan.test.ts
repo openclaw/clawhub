@@ -34,6 +34,7 @@ import {
   requestSkillRescanForUserInternal,
   requestSkillRescan,
   hydrateCodexScanJob,
+  listReadySourceJobsForClaimHandler,
 } from "./securityScan";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -1226,19 +1227,24 @@ function makeClaimCtx(
     };
   });
 
-  return {
-    ctx: {
-      db: {
-        query,
-        patch,
-        get: vi.fn(async (id: string) => docs[id] ?? null),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        normalizeId: vi.fn(() => null),
-        system: {},
-      },
+  const ctx = {
+    db: {
+      query,
+      patch,
+      get: vi.fn(async (id: string) => docs[id] ?? jobs.find((job) => job._id === id) ?? null),
+      insert: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(() => null),
+      system: {},
     },
+    runQuery: vi.fn(async (_ref: unknown, args: unknown) =>
+      listReadySourceJobsForClaimHandler(ctx as never, args as never),
+    ),
+  };
+
+  return {
+    ctx,
     patches,
     patch,
     query,
