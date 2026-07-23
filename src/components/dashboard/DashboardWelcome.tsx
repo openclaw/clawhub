@@ -64,7 +64,7 @@ export function DashboardWelcome({ ownerHandle, publisherSelector }: DashboardWe
               Skills
             </Link>
             <Link to="/plugins">Plugins</Link>
-            <Link to="/creators">Creators</Link>
+            <Link to="/official">Official</Link>
             <a href={CLAWHUB_DOCS_URL} target="_blank" rel="noreferrer">
               Docs
               <ArrowUpRight size={12} aria-hidden="true" />

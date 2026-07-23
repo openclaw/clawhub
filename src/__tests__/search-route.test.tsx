@@ -421,7 +421,7 @@ describe("search route", () => {
     expect(screen.queryByRole("button", { name: "Search all types" })).toBeNull();
   });
 
-  it("links to creators browse when creator search has no matches", async () => {
+  it("links to official organizations when creator search has no matches", async () => {
     searchMock = { q: "zzzz", type: "creators" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -429,9 +429,9 @@ describe("search route", () => {
     render(<Component />);
 
     expect(screen.getByText('No matches for "zzzz"')).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Show all creators" }).getAttribute("href")).toBe(
-      "/creators",
-    );
+    expect(
+      screen.getByRole("link", { name: "Browse official organizations" }).getAttribute("href"),
+    ).toBe("/official");
     expect(screen.queryByRole("link", { name: "Show all skills" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Show all plugins" })).toBeNull();
   });

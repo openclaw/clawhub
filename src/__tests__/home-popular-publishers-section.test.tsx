@@ -38,7 +38,7 @@ vi.mock("@tanstack/react-router", () => ({
       className={className}
       data-search={search ? JSON.stringify(search) : undefined}
       href={
-        params?.slug ? `/${params.slug}` : params?.handle ? `/user/${params.handle}` : "/creators"
+        params?.slug ? `/${params.slug}` : params?.handle ? `/user/${params.handle}` : "/official"
       }
     >
       {children}
@@ -105,9 +105,7 @@ describe("HomePopularPublishersSection", () => {
     expect(convexQueryMock).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Official creators" })).toBeTruthy();
     expect(screen.getByText("Explore skills and plugins from official creators.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Browse creators" }).dataset.search).toBe(
-      '{"official":true,"kind":"orgs"}',
-    );
+    expect(screen.getByRole("link", { name: "Browse official" }).dataset.search).toBeUndefined();
 
     await enterPublisherSection();
     await waitFor(() => expect(convexQueryMock).toHaveBeenCalledTimes(1));

@@ -13,6 +13,7 @@ import { OfficialBadge } from "./OfficialBadge";
 
 type PublisherListItemProps = {
   publisher: PublicPublisherListItem;
+  showOfficialBadge?: boolean;
   variant?: "list" | "grid" | "highlight";
 };
 
@@ -29,7 +30,11 @@ function PublishedRail({ items }: { items: PublicPublisherPublishedItem[] }) {
   );
 }
 
-export function PublisherListItem({ publisher, variant = "list" }: PublisherListItemProps) {
+export function PublisherListItem({
+  publisher,
+  showOfficialBadge = true,
+  variant = "list",
+}: PublisherListItemProps) {
   const handle = publisher.handle.trim();
   if (!handle) return null;
 
@@ -57,7 +62,7 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
           <span className="publisher-card-identity">
             <span className="publisher-card-title-row">
               <span className="publisher-card-name">{publisher.displayName}</span>
-              {publisher.official ? <OfficialBadge /> : null}
+              {showOfficialBadge && publisher.official ? <OfficialBadge /> : null}
             </span>
             <span className="publisher-card-handle">@{handle}</span>
           </span>

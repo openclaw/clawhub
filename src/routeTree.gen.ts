@@ -28,7 +28,7 @@ import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as AuthDocsRouteImport } from './routes/auth/docs'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as CliDeviceRouteImport } from './routes/cli/device'
-import { Route as CreatorsIndexRouteImport } from './routes/creators/index'
+import { Route as OfficialIndexRouteImport } from './routes/official/index'
 import { Route as OrgsHandleRouteImport } from './routes/orgs/$handle'
 import { Route as PHandleRouteImport } from './routes/p/$handle'
 import { Route as PackagesIndexRouteImport } from './routes/packages/index'
@@ -158,9 +158,9 @@ const CliDeviceRoute = CliDeviceRouteImport.update({
   path: '/cli/device',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CreatorsIndexRoute = CreatorsIndexRouteImport.update({
-  id: '/creators/',
-  path: '/creators/',
+const OfficialIndexRoute = OfficialIndexRouteImport.update({
+  id: '/official/',
+  path: '/official/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrgsHandleRoute = OrgsHandleRouteImport.update({
@@ -369,7 +369,7 @@ export interface FileRoutesByFullPath {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/creators/': typeof CreatorsIndexRoute
+  '/official/': typeof OfficialIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
@@ -424,7 +424,7 @@ export interface FileRoutesByTo {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/creators': typeof CreatorsIndexRoute
+  '/official': typeof OfficialIndexRoute
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
   '/publishers': typeof PublishersIndexRoute
@@ -480,7 +480,7 @@ export interface FileRoutesById {
   '/skills/publish': typeof SkillsPublishRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
-  '/creators/': typeof CreatorsIndexRoute
+  '/official/': typeof OfficialIndexRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
@@ -537,7 +537,7 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/creators/'
+    | '/official/'
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
@@ -592,7 +592,7 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/creators'
+    | '/official'
     | '/packages'
     | '/plugins'
     | '/publishers'
@@ -647,7 +647,7 @@ export interface FileRouteTypes {
     | '/skills/publish'
     | '/u/$handle'
     | '/user/$handle'
-    | '/creators/'
+    | '/official/'
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
@@ -703,7 +703,7 @@ export interface RootRouteChildren {
   SkillsPublishRoute: typeof SkillsPublishRoute
   UHandleRoute: typeof UHandleRoute
   UserHandleRoute: typeof UserHandleRoute
-  CreatorsIndexRoute: typeof CreatorsIndexRoute
+  OfficialIndexRoute: typeof OfficialIndexRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
@@ -851,11 +851,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CliDeviceRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/creators/': {
-      id: '/creators/'
-      path: '/creators'
-      fullPath: '/creators/'
-      preLoaderRoute: typeof CreatorsIndexRouteImport
+    '/official/': {
+      id: '/official/'
+      path: '/official'
+      fullPath: '/official/'
+      preLoaderRoute: typeof OfficialIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orgs/$handle': {
@@ -1197,7 +1197,7 @@ const rootRouteChildren: RootRouteChildren = {
   SkillsPublishRoute: SkillsPublishRoute,
   UHandleRoute: UHandleRoute,
   UserHandleRoute: UserHandleRoute,
-  CreatorsIndexRoute: CreatorsIndexRoute,
+  OfficialIndexRoute: OfficialIndexRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,

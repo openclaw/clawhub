@@ -126,18 +126,18 @@ function publicRouteCases(): PublicRouteCase[] {
       },
     },
     {
-      label: "creators browse",
-      path: () => "/creators",
+      label: "official browse",
+      path: () => "/official",
       assert: async (page) => {
-        await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
+        await expect(page.getByRole("heading", { name: /^Official/ })).toBeVisible();
       },
     },
     {
       label: "publishers browse redirect",
       path: () => "/publishers",
       assert: async (page) => {
-        await expect(page).toHaveURL(/\/creators/);
-        await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
+        await expect(page).toHaveURL(/\/official/);
+        await expect(page.getByRole("heading", { name: /^Official/ })).toBeVisible();
       },
     },
     {
@@ -241,3 +241,10 @@ for (const route of publicRouteCases()) {
     await expectPublicRouteHealthy(page, route, fixtures);
   });
 }
+
+test("removed creators route renders not found", async ({ page }) => {
+  await stubExternalMediaInVitePreview(page);
+  await page.goto("/creators", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.getByRole("heading", { name: "We couldn't find that page." })).toBeVisible();
+});

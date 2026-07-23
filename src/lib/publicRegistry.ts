@@ -8,7 +8,7 @@ export const PublicRegistryPaths = {
   home: "/",
   skills: "/skills",
   plugins: "/plugins",
-  creators: "/creators",
+  official: "/official",
   search: "/search",
   audits: "/audits",
   publishSkill: "/skills/publish",
@@ -27,9 +27,9 @@ export const PUBLIC_REGISTRY_SURFACES = [
     summary: "Browse and search OpenClaw plugin package records.",
   },
   {
-    label: "Creators",
-    path: PublicRegistryPaths.creators,
-    summary: "Browse public user and organization creators.",
+    label: "Official",
+    path: PublicRegistryPaths.official,
+    summary: "Browse official organizations publishing on ClawHub.",
   },
   {
     label: "Search",

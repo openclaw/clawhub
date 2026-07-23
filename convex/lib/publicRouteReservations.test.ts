@@ -5,7 +5,7 @@ import {
 } from "./publicRouteReservations";
 
 describe("public route reservations", () => {
-  it.each(["admin", "clawhub", "creators", "docs", "plugins", "publishers", "skills"])(
+  it.each(["admin", "clawhub", "docs", "official", "plugins", "publishers", "skills"])(
     "reserves @%s as a public owner handle",
     (handle) => {
       expect(isReservedPublicOwnerHandle(handle)).toBe(true);
@@ -15,6 +15,10 @@ describe("public route reservations", () => {
   it.each(["codex", "tencent"])("reserves @%s as an OpenClaw alias", (handle) => {
     expect(isReservedOpenClawExtensionHandle(handle)).toBe(true);
     expect(isReservedPublicOwnerHandle(handle)).toBe(false);
+  });
+
+  it("releases the removed creators route handle", () => {
+    expect(isReservedPublicOwnerHandle("creators")).toBe(false);
   });
 
   it("does not normalize at-sign prefixes", () => {

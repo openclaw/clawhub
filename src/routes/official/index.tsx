@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BadgeCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import {
@@ -9,8 +8,6 @@ import {
   BrowseSearchInput,
   BrowseSearchPanel,
   BrowseSearchTrigger,
-  BrowseTabs,
-  BrowseViewToggle,
   useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
 import { PublisherListItem } from "../../components/PublisherListItem";
@@ -19,17 +16,11 @@ import { convexHttp } from "../../convex/client";
 import type { PublicPublisherListItem } from "../../lib/publicUser";
 import { getClawHubSiteUrl, SITE_NAME } from "../../lib/site";
 
-type PublisherKindSearch = "orgs" | "people";
-type PublisherViewSearch = "list" | "grid";
-
-type PublishersSearchState = {
-  kind?: PublisherKindSearch;
-  official?: boolean;
+type OfficialSearchState = {
   q?: string;
-  view?: PublisherViewSearch;
 };
 
-type PublishersLoaderResult = {
+type OfficialLoaderResult = {
   page: PublicPublisherListItem[];
   counts: {
     all: number;
@@ -46,72 +37,39 @@ type PublishersLoaderResult = {
 };
 
 const PUBLISHER_PAGE_SIZE = 25;
-const PUBLISHER_KIND_OPTIONS = [
-  { value: undefined, label: "All" },
-  {
-    value: "official",
-    label: "Official",
-    icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
-  },
-  { value: "orgs", label: "Organizations", mobileLabel: "Orgs" },
-  { value: "people", label: "Users" },
-];
 
-function normalizePublisherKind(value: unknown): PublisherKindSearch | undefined {
-  if (value === "orgs") return "orgs";
-  if (value === "people" || value === "builders" || value === "individuals") return "people";
-  return undefined;
-}
-
-async function loadPublishersPage({
+async function loadOfficialOrganizationsPage({
   cursor,
-  kind,
-  official,
   query,
 }: {
   cursor: string | null;
-  kind?: PublisherKindSearch;
-  official?: boolean;
   query?: string;
-}): Promise<PublishersLoaderResult> {
-  const baseArgs = {
-    kind: kind === "orgs" ? ("org" as const) : kind === "people" ? ("user" as const) : undefined,
+}): Promise<OfficialLoaderResult> {
+  return (await convexHttp.query(api.publishers.listPublicPage, {
+    kind: "org",
+    official: true,
     query,
     paginationOpts: { cursor, numItems: PUBLISHER_PAGE_SIZE },
-  };
-
-  return (await convexHttp.query(api.publishers.listPublicPage, {
-    ...baseArgs,
-    ...(official ? { official: true } : {}),
-  })) as PublishersLoaderResult;
+  })) as OfficialLoaderResult;
 }
 
-export const Route = createFileRoute("/creators/")({
-  validateSearch: (search): PublishersSearchState => ({
-    kind: normalizePublisherKind(search.kind),
-    official:
-      search.official === true || search.official === "true" || search.official === "1"
-        ? true
-        : undefined,
+export const Route = createFileRoute("/official/")({
+  validateSearch: (search): OfficialSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
-    view: search.view === "grid" ? "grid" : undefined,
   }),
   loaderDeps: ({ search }) => ({
-    kind: search.kind,
-    official: search.official,
     q: search.q,
   }),
   head: () => {
     const siteUrl = getClawHubSiteUrl();
-    const title = `Creators · ${SITE_NAME}`;
-    const description =
-      "Discover the people and organizations publishing skills, plugins, packages, and ecosystem tooling on ClawHub.";
+    const title = `Official · ${SITE_NAME}`;
+    const description = "The organizations behind the top skills and plugins on ClawHub.";
 
     return {
       links: [
         {
           rel: "canonical",
-          href: `${siteUrl}/creators`,
+          href: `${siteUrl}/official`,
         },
       ],
       meta: [
@@ -120,26 +78,24 @@ export const Route = createFileRoute("/creators/")({
         { property: "og:title", content: title },
         { property: "og:description", content: description },
         { property: "og:type", content: "website" },
-        { property: "og:url", content: `${siteUrl}/creators` },
+        { property: "og:url", content: `${siteUrl}/official` },
         { name: "twitter:title", content: title },
         { name: "twitter:description", content: description },
       ],
     };
   },
-  loader: async ({ deps }): Promise<PublishersLoaderResult> =>
-    await loadPublishersPage({
+  loader: async ({ deps }): Promise<OfficialLoaderResult> =>
+    await loadOfficialOrganizationsPage({
       cursor: null,
-      kind: deps.kind,
-      official: deps.official,
       query: deps.q,
     }),
-  component: PublishersIndex,
+  component: OfficialIndex,
 });
 
-function PublishersIndex() {
+function OfficialIndex() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const result = Route.useLoaderData() as PublishersLoaderResult;
+  const result = Route.useLoaderData() as OfficialLoaderResult;
   const [query, setQuery] = useState(search.q ?? "");
   const [publishers, setPublishers] = useState(result.page);
   const [nextCursor, setNextCursor] = useState<string | null>(
@@ -150,14 +106,7 @@ function PublishersIndex() {
   const loadMoreInFlightRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchNavigateTimer = useRef<number>(0);
-  const activeKind = search.kind;
-  const officialOnly = search.official === true;
-  const activeView = search.view ?? "list";
   const canLoadMore = Boolean(nextCursor);
-  const hasQuery = Boolean(search.q?.trim());
-  const showHighlights = !hasQuery && !activeKind && !officialOnly;
-  const highlightedPublishers = showHighlights ? publishers.slice(0, 3) : [];
-  const directoryPublishers = showHighlights ? publishers.slice(3) : publishers;
 
   useEffect(() => {
     window.clearTimeout(searchNavigateTimer.current);
@@ -176,7 +125,7 @@ function PublishersIndex() {
     (next: string, replace: boolean) => {
       const trimmed = next.trim();
       void navigate({
-        search: (prev: PublishersSearchState) => ({
+        search: (prev: OfficialSearchState) => ({
           ...prev,
           q: trimmed ? next : undefined,
         }),
@@ -202,7 +151,7 @@ function PublishersIndex() {
     setQuery("");
     searchInputRef.current?.focus();
     void navigate({
-      search: (prev: PublishersSearchState) => ({
+      search: (prev: OfficialSearchState) => ({
         ...prev,
         q: undefined,
       }),
@@ -220,62 +169,13 @@ function PublishersIndex() {
     inputRef: searchInputRef,
   });
 
-  const handleKindChange = useCallback(
-    (kind: string | undefined) => {
-      void navigate({
-        search: (prev: PublishersSearchState) => ({
-          ...prev,
-          kind: normalizePublisherKind(kind),
-          official: undefined,
-        }),
-        replace: true,
-      });
-    },
-    [navigate],
-  );
-
-  const handleOfficialChange = useCallback(() => {
-    void navigate({
-      search: (prev: PublishersSearchState) => ({
-        ...prev,
-        kind: undefined,
-        official: true,
-      }),
-      replace: true,
-    });
-  }, [navigate]);
-
-  const handlePublisherTabChange = useCallback(
-    (value: string | undefined) => {
-      if (value === "official") {
-        handleOfficialChange();
-        return;
-      }
-
-      handleKindChange(value);
-    },
-    [handleKindChange, handleOfficialChange],
-  );
-
-  const handleToggleView = useCallback(() => {
-    void navigate({
-      search: (prev: PublishersSearchState) => ({
-        ...prev,
-        view: prev.view === "grid" ? undefined : "grid",
-      }),
-      replace: true,
-    });
-  }, [navigate]);
-
   const loadMore = useCallback(async () => {
     if (!nextCursor || loadMoreInFlightRef.current) return;
     loadMoreInFlightRef.current = true;
     setIsLoadingMore(true);
     try {
-      const page = await loadPublishersPage({
+      const page = await loadOfficialOrganizationsPage({
         cursor: nextCursor,
-        kind: activeKind,
-        official: officialOnly || undefined,
         query: search.q,
       });
       setPublishers((previous) => [...previous, ...page.page]);
@@ -284,7 +184,7 @@ function PublishersIndex() {
       setIsLoadingMore(false);
       loadMoreInFlightRef.current = false;
     }
-  }, [activeKind, nextCursor, officialOnly, search.q]);
+  }, [nextCursor, search.q]);
 
   useEffect(() => {
     if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
@@ -304,32 +204,31 @@ function PublishersIndex() {
   }, [canLoadMore, loadMore]);
 
   return (
-    <main className="browse-page browse-page-borderless-header publishers-browse-page">
-      <div className="browse-page-header">
-        <h1 className="browse-title">Creators</h1>
+    <main className="browse-page browse-page-borderless-header official-browse-page">
+      <div className="browse-page-header official-page-header">
+        <div className="browse-page-header-main">
+          <h1 className="browse-title">Official</h1>
+          <p className="official-page-description">
+            The organizations behind the top skills and plugins on ClawHub
+          </p>
+        </div>
       </div>
+
       <BrowseControls>
         <BrowseControlsRow>
-          <BrowseTabs
-            ariaLabel="Publisher type"
-            options={PUBLISHER_KIND_OPTIONS}
-            value={officialOnly ? "official" : activeKind}
-            onChange={handlePublisherTabChange}
-          />
           <BrowseActions>
             <BrowseSearchTrigger
               open={browseSearch.open}
               onOpen={browseSearch.openSearch}
-              label="Search publishers"
+              label="Search official organizations"
             />
-            <BrowseViewToggle view={activeView} onToggle={handleToggleView} />
           </BrowseActions>
         </BrowseControlsRow>
         <BrowseSearchPanel open={browseSearch.open}>
           <BrowseSearchInput
             inputRef={searchInputRef}
-            label="publisher search"
-            placeholder="Search publishers..."
+            label="official organization search"
+            placeholder="Search official organizations..."
             value={query}
             onChange={handleQueryChange}
             onClear={browseSearch.closeSearch}
@@ -341,42 +240,24 @@ function PublishersIndex() {
 
       <div className="browse-layout">
         <div className="browse-results">
-          {highlightedPublishers.length > 0 ? (
-            <section className="publisher-highlights" aria-labelledby="publisher-highlights-title">
-              <div className="publisher-section-heading">
-                <h2 id="publisher-highlights-title">Popular creators</h2>
-              </div>
-              <div className="publisher-highlight-grid">
-                {highlightedPublishers.map((publisher) => (
-                  <PublisherListItem
-                    key={publisher._id}
-                    publisher={publisher}
-                    variant="highlight"
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
           {publishers.length === 0 ? (
             <div className="empty-state">
-              <p className="empty-state-title">No publishers found</p>
-            </div>
-          ) : activeView === "grid" ? (
-            <div className={`publisher-directory-list publisher-directory-${activeView}`}>
-              {directoryPublishers.map((publisher) => (
-                <PublisherListItem key={publisher._id} publisher={publisher} variant="grid" />
-              ))}
+              <p className="empty-state-title">No official organizations found</p>
             </div>
           ) : (
             <div className="browse-list-stack">
               <div className="browse-list-head browse-list-head-publishers" aria-hidden="true">
-                <span className="browse-list-head-label">Creator</span>
+                <span className="browse-list-head-label">Organization</span>
                 <span className="browse-list-head-label browse-list-head-stat">Activity</span>
               </div>
               <div className="publisher-directory-list">
-                {directoryPublishers.map((publisher) => (
-                  <PublisherListItem key={publisher._id} publisher={publisher} variant="list" />
+                {publishers.map((publisher) => (
+                  <PublisherListItem
+                    key={publisher._id}
+                    publisher={publisher}
+                    variant="list"
+                    showOfficialBadge={false}
+                  />
                 ))}
               </div>
             </div>

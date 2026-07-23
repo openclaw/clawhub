@@ -21,6 +21,15 @@ describe("PublisherListItem", () => {
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
+  it("can hide the official mark when the surrounding page already communicates it", () => {
+    const { container } = render(
+      <PublisherListItem publisher={makePublisher()} showOfficialBadge={false} />,
+    );
+
+    expect(screen.queryByLabelText("Official")).toBeNull();
+    expect(container.querySelector(".official-badge")).toBeNull();
+  });
+
   it("renders downloads as the adoption metric", () => {
     render(<PublisherListItem publisher={makePublisher()} />);
 
