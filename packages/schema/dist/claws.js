@@ -406,10 +406,12 @@ export function validateClawManifest(value) {
     }
     const openClawProfilePath = parsed.metadata?.["openclaw.config"];
     if (openClawProfilePath !== undefined &&
-        (!isSafePackagePath(openClawProfilePath) || !/\.ya?ml$/i.test(openClawProfilePath))) {
+        (openClawProfilePath.includes("\\") ||
+            !isSafePackagePath(openClawProfilePath) ||
+            !/\.ya?ml$/i.test(openClawProfilePath))) {
         issues.push({
             path: "$.metadata.openclaw.config",
-            message: "Must reference a safe package-relative .yml or .yaml file.",
+            message: "Must reference a forward-slash package-relative .yml or .yaml file.",
         });
     }
     const workspaceTargets = new Set();

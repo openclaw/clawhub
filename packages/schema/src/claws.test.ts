@@ -116,17 +116,19 @@ describe("Claw manifest contract", () => {
     ).toBe(false);
   });
 
-  it.each(["../openclaw.yml", "/profiles/openclaw.yml", "profiles/openclaw.json"])(
-    "rejects unsafe or non-YAML OpenClaw profile pointer %s",
-    (profilePath) => {
-      const result = validateClawManifest({
-        ...fixture,
-        metadata: { "openclaw.config": profilePath },
-      });
+  it.each([
+    "../openclaw.yml",
+    "/profiles/openclaw.yml",
+    "profiles/openclaw.json",
+    "profiles\\openclaw.yml",
+  ])("rejects unsafe or non-YAML OpenClaw profile pointer %s", (profilePath) => {
+    const result = validateClawManifest({
+      ...fixture,
+      metadata: { "openclaw.config": profilePath },
+    });
 
-      expect(result.ok).toBe(false);
-    },
-  );
+    expect(result.ok).toBe(false);
+  });
 
   it("fails closed on unknown fields", () => {
     expect(validateClawManifest({ ...fixture, model: "gpt-5" }).ok).toBe(false);
