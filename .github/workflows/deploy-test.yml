@@ -210,7 +210,6 @@ jobs:
               --meta githubSha="${{ steps.revision.outputs.deploy_sha }}" \
               --meta clawhubEnvironment=test \
               --build-env CONVEX_DEPLOY_KEY= \
-              --build-env VERCEL_ENV=test \
               --build-env VERCEL_TARGET_ENV=test \
               --build-env CLAWHUB_ENV=test \
               --build-env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \

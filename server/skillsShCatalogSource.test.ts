@@ -2380,6 +2380,21 @@ describe("skills.sh Vercel source boundary", () => {
     expect(
       getSkillsShCatalogTestSourcePolicy({
         CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
+        VERCEL_ENV: "test",
+        VERCEL_TARGET_ENV: "test",
+        VITE_CLAWHUB_DEPLOY_ENV: "test",
+        VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
+        CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      environment: "test",
+      reason: "skills.sh live Test discovery requires the Vercel Preview runtime",
+    });
+
+    expect(
+      getSkillsShCatalogTestSourcePolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         VERCEL_ENV: "preview",
         VERCEL_TARGET_ENV: "test",
         VITE_CLAWHUB_DEPLOY_ENV: "test",
