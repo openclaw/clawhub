@@ -22,7 +22,9 @@ export function getPackageScopeOwnerMismatch(name, ownerHandle) {
         message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
     };
 }
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
+// Publication stays narrower until a family has a complete validation path.
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export const PackageVerificationTierSchema = type('"structural"|"source-linked"|"provenance-verified"|"rebuild-verified"');
 export const PackageVerificationScopeSchema = type('"artifact-only"|"dependency-graph-aware"');
@@ -255,7 +257,7 @@ const PackagePublishMetadataFields = {
     name: "string",
     displayName: "string?",
     ownerHandle: "string?",
-    family: PackageFamilySchema,
+    family: PackagePublishFamilySchema,
     version: "string",
     changelog: "string",
     manualOverrideReason: "string?",
