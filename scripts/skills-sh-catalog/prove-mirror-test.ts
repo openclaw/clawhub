@@ -447,9 +447,13 @@ try {
     ? capturedMirrorSourceRunId(recoverableRun.snapshotId)
     : null;
   const recoveredNormalizationRun = recoveredLiveRunId ? recoverableRun : null;
-  const completedLiveRun = recoveredLiveRunId
+  let completedLiveRun = recoveredLiveRunId
     ? findCompletedLiveMirrorRun(statusBefore, recoveredLiveRunId)
     : null;
+  if (recoveredLiveRunId && !completedLiveRun) {
+    const recoveredLive = await call({ operation: "run", runId: recoveredLiveRunId });
+    completedLiveRun = findCompletedLiveMirrorRun(recoveredLive.payload, recoveredLiveRunId);
+  }
   if (recoveredNormalizationRun && !completedLiveRun) {
     throw new Error(
       `captured mirror recovery lacks completed live source run ${recoveredLiveRunId}`,

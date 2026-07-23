@@ -148,6 +148,7 @@ describe("skills.sh mirror proof request headers", () => {
     expect(capturedMirrorSourceRunId("skills-sh-captured:live-run")).toBe("live-run");
     expect(capturedMirrorSourceRunId("skills-sh:live-run")).toBeNull();
     expect(findCompletedLiveMirrorRun(payload, "live-run")).toEqual(liveRun);
+    expect(findCompletedLiveMirrorRun(liveRun, "live-run")).toEqual(liveRun);
     expect(findCompletedLiveMirrorRun(payload, "missing")).toBeNull();
   });
 

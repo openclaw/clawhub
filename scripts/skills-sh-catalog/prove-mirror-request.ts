@@ -191,8 +191,8 @@ export function findCompletedLiveMirrorRun(
   payload: Record<string, unknown>,
   runId?: string | null,
 ): CompletedLiveMirrorRun | null {
-  if (!Array.isArray(payload.runs)) return null;
-  for (const value of payload.runs) {
+  const candidates = [payload, ...(Array.isArray(payload.runs) ? payload.runs : [])];
+  for (const value of candidates) {
     if (!value || typeof value !== "object" || Array.isArray(value)) continue;
     const run = value as Record<string, unknown>;
     if (
