@@ -250,17 +250,30 @@ returns:
 OpenClaw downloads the GitHub archive for that commit and extracts only the skill
 path. The local lock/origin version is the commit SHA.
 
-Controlled unclaimed skills.sh catalog entries use the repository-qualified
-reference `skills-sh/<owner>/<repo>/<slug>`. The colon form
+Controlled skills.sh catalog entries use the repository-qualified reference
+`skills-sh/<owner>/<repo>/<slug>`. The colon form
 `skills-sh:<owner>/<repo>/<slug>` is invalid and must be rejected by clients and
 HTTP handlers.
 
-In Local and the permanent Test environment, an unclaimed catalog entry remains
-hidden and non-installable until a real low-priority ClawHub scan completes for
-the exact catalog identity, immutable GitHub owner ID, repository, path, commit,
-folder content hash, source content hash, and scan attempt. Clean and suspicious
-verdicts may publish only that exact attempt. Malicious, failed, canceled, or
-stale callbacks cannot publish it.
+Unclaimed mirrored entries remain external and do not create ClawHub scan work.
+Their latest successful synchronized snapshot supplies the exact source pointer,
+commit, provenance, bounded detail content, upstream checks, and explicit
+`Not scanned by ClawHub` trust state. Deletion, reappearance, redirect, and
+same-version conflict observations are retained as non-destructive mirror
+lifecycle state.
+
+Once a listing enters the adopted/native trust lane, every changed content hash
+creates an immutable candidate bound to its repository, path, commit, content
+hash, and scan attempt. The prior allowed version remains active and installable
+while that candidate is planned, queued, failed, rejected, canceled, or stale.
+Only the candidate's own clean or allowed-suspicious verdict may atomically
+replace the active version.
+
+Pointer-only changes with the same content hash create immutable provenance
+candidates without a new scan. They retain explicit lineage to the original
+scan attempt, which remains the security proof exposed by verification.
+Rollback restores the most recent prior allowed candidate; rejected and stale
+candidates remain in history but are never selected.
 
 The public Test route is `/skills-sh/<owner>/<repo>/<slug>`. Its install resolver
 returns the same commit-pinned GitHub descriptor used by native GitHub-backed

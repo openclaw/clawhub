@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSkillsShCatalogInstallResolution,
+  resolveSkillsShCatalogActiveSource,
   shouldPublishSkillsShCatalogEntry,
 } from "./skillsShCatalogPublication";
 
@@ -45,7 +46,7 @@ describe("skills.sh catalog publication", () => {
     },
   );
 
-  it("rejects a stale callback whose commit no longer matches the entry", () => {
+  it("accepts a pointer-only refresh while serving the explicit active candidate", () => {
     expect(
       shouldPublishSkillsShCatalogEntry({
         control,
@@ -53,7 +54,34 @@ describe("skills.sh catalog publication", () => {
         attempt,
         verdict: "clean",
       }),
+    ).toBe(true);
+    expect(
+      resolveSkillsShCatalogActiveSource({
+        entry: { ...entry, githubCommit: "1".repeat(40) },
+        attempt,
+      }),
+    ).toMatchObject({
+      githubCommit: attempt.githubCommit,
+      sourceContentHash: entry.sourceContentHash,
+    });
+  });
+
+  it("keeps the prior allowed source active while changed content is pending", () => {
+    const changed = {
+      ...entry,
+      githubCommit: "2".repeat(40),
+      githubContentHash: "2".repeat(64),
+      sourceContentHash: "changed-source-hash",
+    };
+    expect(
+      shouldPublishSkillsShCatalogEntry({
+        control,
+        entry: changed,
+        attempt,
+        verdict: "clean",
+      }),
     ).toBe(false);
+    expect(resolveSkillsShCatalogActiveSource({ entry: changed, attempt })).toEqual(attempt);
   });
 
   it.each(["malicious", "failed"] as const)("never publishes a %s result", (verdict) => {
