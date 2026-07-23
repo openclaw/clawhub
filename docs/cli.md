@@ -96,7 +96,8 @@ Stores your API token + cached registry URL.
 
 ### `star <skill>` / `unstar <skill>`
 
-- Adds/removes a skill from your highlights.
+- Adds/removes a skill from your Bookmarks. Command names remain `star` and
+  `unstar` for compatibility.
 - Calls `POST /api/v1/stars/<slug>` and `DELETE /api/v1/stars/<slug>`.
 - `--yes` skips confirmation.
 

@@ -208,7 +208,24 @@ describe("skills.listDashboardPaginated", () => {
   it("paginates user dashboard skills through an active owner index", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const { ctx, indexCalls } = makeCtx({
-      by_owner_active_updated: [makeSkill("slack")],
+      by_owner_active_updated: [
+        makeSkill("slack", {
+          statsDownloads: 12,
+          statsSkillsShInstalls: 8,
+          statsGithubStars: 99,
+          statsInstallsCurrent: 3,
+          statsInstallsAllTime: 7,
+          statsStars: 4,
+          stats: {
+            downloads: 12,
+            installsCurrent: 3,
+            installsAllTime: 7,
+            stars: 4,
+            versions: 1,
+            comments: 0,
+          },
+        }),
+      ],
     });
 
     const result = await handler(
@@ -220,7 +237,20 @@ describe("skills.listDashboardPaginated", () => {
     );
 
     expect(indexCalls).toContain("by_owner_active_updated");
-    expect(result.page).toEqual([expect.objectContaining({ slug: "slack" })]);
+    expect(result.page).toEqual([
+      expect.objectContaining({
+        slug: "slack",
+        stats: expect.objectContaining({ downloads: 20 }),
+        metricSources: {
+          clawHubDownloads: 12,
+          skillsShInstalls: 8,
+          openClawInstallsCurrent: 3,
+          openClawInstallsAllTime: 7,
+          githubStars: 99,
+          bookmarks: 4,
+        },
+      }),
+    ]);
   });
 
   it("includes linked-user legacy skills when paginating a personal publisher", async () => {

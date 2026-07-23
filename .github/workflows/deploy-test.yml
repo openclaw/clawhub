@@ -5,7 +5,18 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+  pull_request:
+    types: [synchronize, labeled]
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact branch SHA permitted for a temporary protected Test deploy
+        required: false
+        type: string
+      branch_test_confirm:
+        description: Confirmation phrase for the CLAW-563 branch-only Test deploy
+        required: false
+        type: string
 
 concurrency:
   group: deploy-test
@@ -18,7 +29,16 @@ jobs:
   deploy-test:
     if: >-
       (github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main') ||
+      (github.ref == 'refs/heads/main' ||
+      (github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
+      github.actor == 'Patrick-Erichsen' &&
+      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test' &&
+      inputs.expected_sha != ''))) ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor == 'Patrick-Erichsen' &&
+      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')) ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -30,11 +50,17 @@ jobs:
       deployment_url: ${{ steps.vercel.outputs.deployment_url }}
       deploy_sha: ${{ steps.revision.outputs.deploy_sha }}
       fixture_version: ${{ steps.revision.outputs.fixture_version }}
+      branch_test: ${{ steps.revision.outputs.branch_test }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          ref: >-
+            ${{
+              github.event_name == 'workflow_run' && github.event.workflow_run.head_sha ||
+              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+              github.ref
+            }}
 
       - name: Resolve deployment revision
         id: revision
@@ -44,8 +70,30 @@ jobs:
           git fetch --no-tags origin main
           main_sha="$(git rev-parse origin/main)"
           if [[ "$deploy_sha" != "$main_sha" ]]; then
-            echo "::error::Refusing stale Test deploy: $deploy_sha is not current main $main_sha"
-            exit 1
+            branch_test_allowed=false
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-563-skills-sh-mirror-10k ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-563-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$branch_test_allowed" != true ]]; then
+              echo "::error::Refusing non-main Test deploy without the exact CLAW-563 branch guard"
+              exit 1
+            fi
+            echo "branch_test=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch_test=false" >> "$GITHUB_OUTPUT"
           fi
           fixture_version="$(
             git hash-object convex/devSeed.ts convex/lib/testSeed.ts |
@@ -138,6 +186,7 @@ jobs:
           ' <<< "$capabilities"
 
       - name: Apply additive Test fixtures
+        if: steps.revision.outputs.branch_test != 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_DEPLOYMENT: ${{ vars.CONVEX_DEPLOYMENT }}
@@ -164,20 +213,22 @@ jobs:
               --meta githubSha="${{ steps.revision.outputs.deploy_sha }}" \
               --meta clawhubEnvironment=test \
               --build-env CONVEX_DEPLOY_KEY= \
-              --build-env VERCEL_ENV=test \
               --build-env VERCEL_TARGET_ENV=test \
               --build-env CLAWHUB_ENV=test \
               --build-env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
               --build-env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
+              --build-env CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED=1 \
               --build-env SITE_URL="$TEST_SITE_URL" \
               --build-env VITE_CLAWHUB_DEPLOY_ENV=test \
               --build-env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
               --build-env VITE_CONVEX_SITE_URL="$VITE_CONVEX_SITE_URL" \
               --build-env VITE_SITE_URL="$TEST_SITE_URL" \
               --env CONVEX_DEPLOY_KEY= \
+              --env VERCEL_TARGET_ENV=test \
               --env CLAWHUB_ENV=test \
               --env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
               --env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
+              --env CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED=1 \
               --env SITE_URL="$TEST_SITE_URL" \
               --env VITE_CLAWHUB_DEPLOY_ENV=test \
               --env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
@@ -256,3 +307,173 @@ jobs:
             echo "- Fixture version: \`${FIXTURE_VERSION:-unresolved}\`"
             echo "- Result: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  claw563-mirror-load:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Load and prove the authenticated leaderboard mirror foundation
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          operator_token=""
+          cleanup() {
+            set +e
+            bunx convex run --no-push skillsShMirror:configureInternal \
+              '{
+                "actor":"CLAW-563 Test workflow",
+                "reason":"CLAW-563 proof cleanup",
+                "confirm":"enable-skills-sh-mirror-test",
+                "enabled":false,
+                "maxRowsPerRun":50000,
+                "maxRowsPerBatch":50,
+                "maxDetailBytes":65536
+              }' > claw563-control-disabled.json 2>&1
+            disable_exit=$?
+            bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}' >/dev/null
+            token_rotation_exit=$?
+            if [[ -n "$operator_token" ]]; then
+              revoked_status="$(
+                curl \
+                  --silent \
+                  --output /dev/null \
+                  --write-out '%{http_code}' \
+                  --header "Authorization: Bearer $operator_token" \
+                  https://academic-chihuahua-392.convex.site/api/v1/operator/skills-sh/catalog-test
+              )"
+            else
+              revoked_status="not-created"
+            fi
+            jq -n \
+              --argjson disableExit "$disable_exit" \
+              --argjson tokenRotationExit "$token_rotation_exit" \
+              --arg revokedStatus "$revoked_status" \
+              '{
+                disableExit:$disableExit,
+                tokenRotationExit:$tokenRotationExit,
+                revokedStatus:$revokedStatus
+              }' > claw563-cleanup.json
+            set -e
+            [[
+              "$disable_exit" -eq 0 &&
+              "$token_rotation_exit" -eq 0 &&
+              "$revoked_status" == "401"
+            ]]
+          }
+          trap cleanup EXIT
+
+          deployment_json="$(bunx convex run --no-push appMeta:getDeploymentInfo)"
+          build_sha="$(jq -r '.appBuildSha // empty' <<<"$deployment_json")"
+          if [[ "$build_sha" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Unexpected Convex Test build SHA: $build_sha"
+            exit 1
+          fi
+
+          token_seed="$(bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}')"
+          operator_token="$(jq -r '.admin.token // empty' <<<"$token_seed")"
+          token_seed=""
+          if [[ -z "$operator_token" ]]; then
+            echo "::error::Test admin fixture token is missing"
+            exit 1
+          fi
+          echo "::add-mask::$operator_token"
+
+          export CLAWHUB_TEST_MIRROR_GATE_URL="$TEST_SITE_URL/ops/skills-sh/mirror-test"
+          export CLAWHUB_TEST_OPERATOR_TOKEN="$operator_token"
+          bun run skills-sh:prove-mirror > claw563-proof-output.json
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer $operator_token" \
+            --header "Content-Type: application/json" \
+            --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            --data '{"operation":"read","externalId":"patrick-erichsen/skills/html"}' \
+            "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-controlled-entry.json
+          jq -e '
+            .digest.externalId == "patrick-erichsen/skills/html" and
+            .digest.sourceType == "github" and
+            .digest.owner == "patrick-erichsen" and
+            .digest.repo == "skills" and
+            .digest.githubPath == "skills/html" and
+            .digest.githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .digest.sourceContentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .digest.active == true and
+            .digest.publicVisible == false and
+            .digest.installable == false
+          ' claw563-controlled-entry.json >/dev/null
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer $operator_token" \
+            --header "Content-Type: application/json" \
+            --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            --data '{"operation":"read","externalId":"steipete/clawdis/discrawl"}' \
+            "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-discrawl-entry.json
+          jq -e '
+            .digest.externalId == "steipete/clawdis/discrawl" and
+            .digest.sourceType == "github" and
+            .digest.owner == "steipete" and
+            .digest.repo == "clawdis" and
+            .digest.githubPath == ".agents/skills/discrawl" and
+            .digest.githubCommit == "690ed564419291ca6e832dc69b53061300075b62" and
+            .digest.sourceContentHash == "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d" and
+            .digest.active == true and
+            .digest.publicVisible == false and
+            .digest.installable == false
+          ' claw563-discrawl-entry.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw563-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .disableExit == 0 and
+            .tokenRotationExit == 0 and
+            .revokedStatus == "401"
+          ' claw563-cleanup.json >/dev/null
+
+      - name: Upload permanent Test mirror proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw563-mirror-proof
+          if-no-files-found: warn
+          path: |
+            proof/claw-563/skills-sh-mirror-test-proof.json
+            claw563-proof-output.json
+            claw563-controlled-entry.json
+            claw563-discrawl-entry.json
+            claw563-control-disabled.json
+            claw563-cleanup.json
+            claw563-deployment.json

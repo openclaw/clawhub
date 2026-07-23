@@ -283,7 +283,12 @@ const listPublishedPageHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
-      page: Array<{ displayName: string; href: string; kind: "skill" | "plugin" }>;
+      page: Array<{
+        displayName: string;
+        href: string;
+        kind: "skill" | "plugin";
+        downloads: number;
+      }>;
       continueCursor: string;
       isDone: boolean;
     }
@@ -3139,6 +3144,7 @@ describe("publishers membership controls", () => {
       slug: "demo",
       displayName: "Demo Skill",
       moderationStatus: "active",
+      statsSkillsShInstalls: 6,
       stats: { downloads: 10, stars: 1, installsCurrent: 1, installsAllTime: 2 },
       updatedAt: 5,
     };
@@ -3188,6 +3194,7 @@ describe("publishers membership controls", () => {
     });
 
     expect(firstPage.page.map((item) => item.kind)).toEqual(["skill"]);
+    expect(firstPage.page[0]?.downloads).toBe(16);
     expect(firstPage.continueCursor).toBe("1");
     expect(firstPage.isDone).toBe(false);
     expect(secondPage.page.map((item) => item.kind)).toEqual(["plugin"]);
@@ -3231,6 +3238,7 @@ describe("publishers membership controls", () => {
       displayName: "Modern Low",
       moderationStatus: "active",
       statsDownloads: 7,
+      statsSkillsShInstalls: 100,
       stats: { downloads: 7, stars: 1, installsCurrent: 1, installsAllTime: 2 },
       updatedAt: 6,
     };
@@ -3283,6 +3291,7 @@ describe("publishers membership controls", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
     legacyLookup.first.mockResolvedValue(null);
+    expect(firstPage.page[0]?.displayName).toBe("Legacy High");
     const secondPage = await listPublishedPageHandler(ctx as never, {
       handle: "legacy",
       kind: "skill",
@@ -3463,6 +3472,7 @@ describe("publishers membership controls", () => {
       ownerPublisherId: "publishers:openclaw",
       softDeletedAt: undefined,
       moderationStatus: "active",
+      statsSkillsShInstalls: 8,
       stats: { downloads: 42, stars: 2, installsCurrent: 4, installsAllTime: 7 },
     };
     const pkg = {
@@ -3509,7 +3519,7 @@ describe("publishers membership controls", () => {
       skills: 1,
       packages: 1,
       installs: 12,
-      downloads: 50,
+      downloads: 58,
       stars: 3,
     });
   });

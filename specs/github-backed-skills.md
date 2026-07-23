@@ -85,6 +85,35 @@ not create or mutate `skills` rows during its planning gates.
 - `githubScanStatus`: `pending`, `clean`, `suspicious`, `malicious`, or `failed`
 - `githubRemovedAt`
 
+## Permanent external skills.sh mirror
+
+The full authenticated skills.sh mirror is separate from both native `skills`
+and the controlled scan-admission catalog. It stores source observations in
+`skillsShMirrorDigests` and bounded detail content in `skillsShMirrorDetails`;
+controls, durable run cursors, and conflicts remain in their own mirror tables.
+
+- GitHub identities are exact `owner/repo/slug` values. Well-known identities
+  are exact `sourceHost/slug` values and must not invent a repository owner.
+- Every digest is permanently `publicVisible: false` and `installable: false`.
+  Mirror ingestion never creates native skills, publisher attachment, claims,
+  scan plans, or scan jobs.
+- The digest stores normalized slug/display-name fields and a lean
+  `searchText`. Exact, prefix, first-token, popularity, freshness, and
+  full-text indexes are staged before activation on the permanent Test corpus.
+- Gen Agent Trust Hub, Socket, and Snyk observations are stored independently
+  with a bounded status plus optional source timestamp and source link. These
+  are upstream claims only and must never be serialized as a ClawHub verdict.
+- Detail storage retains at most one preferred `SKILL.md` or `README.md`,
+  capped at 64 KiB. The complete upstream file tree is never persisted for an
+  unclaimed mirror row.
+- Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
+  another source batch is fetched; resume continues at the exact stored cursor.
+  Reconciliation tombstones disappeared rows and reactivates later
+  observations without deleting or changing native skills.
+- The mirror has no scheduler in this stage. Production activation, public
+  search/detail/install behavior, claims, and publisher attachment require
+  separately accepted work.
+
 ## Publisher Gate
 
 GitHub-backed source sync is official-publisher-only for now.

@@ -27,6 +27,14 @@ export type DashboardSkill = Pick<
   ownerPath: string;
   detailHref?: string;
   settingsHref?: string;
+  metricSources?: {
+    clawHubDownloads: number;
+    skillsShInstalls: number;
+    openClawInstallsCurrent: number;
+    openClawInstallsAllTime: number;
+    githubStars: number;
+    bookmarks: number;
+  };
   pendingReview?: boolean;
   qualityDecision?: "pass" | "quarantine" | "reject";
   latestVersion: {

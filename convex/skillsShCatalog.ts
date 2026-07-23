@@ -19,6 +19,7 @@ import {
   isExactSkillsShCatalogAttempt,
   shouldPublishSkillsShCatalogEntry,
 } from "./lib/skillsShCatalogPublication";
+import { buildExternalSkillMetricPatch } from "./lib/skillStats";
 import { validateFilePath } from "./lib/skillZip";
 import { enqueueSkillsShCatalogScanRequest } from "./securityScan";
 
@@ -37,6 +38,10 @@ const MAX_WRITES_PER_BATCH = 100;
 const MAX_SCAN_ADMISSIONS_PER_BATCH = 100;
 const MAX_SCAN_ADMISSIONS_PER_RUN = 500;
 const MAX_REAL_TEST_ADMISSIONS = 10;
+const CLEARED_EXTERNAL_SKILL_METRICS = {
+  statsSkillsShInstalls: undefined,
+  statsGithubStars: undefined,
+};
 const MAX_DETERMINISTIC_COMPLETIONS_PER_BATCH = 50;
 
 const fixtureIdValidator = v.union(
@@ -69,6 +74,7 @@ const stagingLiveRowValidator = v.object({
   claimPublisherHandle: v.optional(v.string()),
   sourceContentHash: v.string(),
   installs: v.number(),
+  githubStars: v.optional(v.number()),
 });
 const sourceVerificationValidator = v.object({
   githubOwnerId: v.number(),
@@ -168,8 +174,21 @@ async function reconcileNativeSkill(
     const source = await ctx.db.get(skill.githubSourceId);
     reads += 1;
     if (source?.repo.trim().toLowerCase() !== `${row.owner}/${row.repo}`) continue;
+    const metricPatch = buildExternalSkillMetricPatch({
+      skillsShInstalls: row.installs,
+      githubStars: row.githubStars,
+    });
+    const metricPatchChanged = Object.entries(metricPatch).some(
+      ([field, value]) => skill[field as keyof typeof skill] !== value,
+    );
     return {
       reads,
+      nativeMetricUpdate: metricPatchChanged
+        ? {
+            skillId: skill._id,
+            patch: metricPatch,
+          }
+        : undefined,
       reconciliation: {
         kind: "exact-native" as const,
         nativeSkillId: skill._id,
@@ -199,6 +218,54 @@ async function reconcileNativeSkill(
     },
   };
 }
+
+function nativeMetricSyncSkillIds(
+  existing: Doc<"skillsShCatalogEntries"> | null,
+  native: Awaited<ReturnType<typeof reconcileNativeSkill>>,
+) {
+  const skillIds = new Set<Id<"skills">>();
+  if ("nativeMetricUpdate" in native && native.nativeMetricUpdate) {
+    skillIds.add(native.nativeMetricUpdate.skillId);
+  }
+  const previous = existing?.reconciliation;
+  if (
+    previous?.kind === "exact-native" &&
+    previous.nativeSkillId &&
+    (native.reconciliation.kind !== "exact-native" ||
+      native.reconciliation.nativeSkillId !== previous.nativeSkillId)
+  ) {
+    skillIds.add(previous.nativeSkillId);
+  }
+  return [...skillIds];
+}
+
+export const syncNativeSkillMetricsFromCatalogEntryInternal = internalMutation({
+  args: {
+    entryId: v.id("skillsShCatalogEntries"),
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const [entry, skill] = await Promise.all([ctx.db.get(args.entryId), ctx.db.get(args.skillId)]);
+    if (!entry || !skill) return { applied: false };
+    const patch =
+      entry.reconciliation?.kind === "exact-native" &&
+      entry.reconciliation.nativeSkillId === args.skillId
+        ? buildExternalSkillMetricPatch({
+            skillsShInstalls: entry.installs,
+            githubStars: entry.githubStars,
+          })
+        : CLEARED_EXTERNAL_SKILL_METRICS;
+    const changed = Object.entries(patch).some(
+      ([field, value]) => skill[field as keyof typeof skill] !== value,
+    );
+    if (!changed) return { applied: false };
+
+    // The skills-table trigger in functions.ts refreshes the search digest from
+    // this patch, keeping the batch write budget independent of digest fan-out.
+    await ctx.db.patch(skill._id, patch);
+    return { applied: true };
+  },
+});
 
 function incrementReconciliationCounts(
   counts: ReturnType<typeof normalizedCounts>,
@@ -950,6 +1017,7 @@ export const processStagingLiveBatchInternal = internalMutation({
       }
       const native = await reconcileNativeSkill(ctx, row, now);
       readsUsed += native.reads;
+      const metricSkillIds = nativeMetricSyncSkillIds(existing, native);
       const observationUnchanged = existing
         ? sameFixtureObservation(existing, row, native.reconciliation)
         : false;
@@ -981,6 +1049,7 @@ export const processStagingLiveBatchInternal = internalMutation({
       counts.observed += 1;
       cursor += 1;
       if (shouldPlanScan) counts.scansPlanned += 1;
+      let entryId = existing?._id;
       if (existing) {
         if (observationUnchanged) counts.unchanged += 1;
         else {
@@ -1001,6 +1070,7 @@ export const processStagingLiveBatchInternal = internalMutation({
           githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
+          githubStars: row.githubStars,
           sourceSnapshotId: run.snapshotId,
           reconciliation: native.reconciliation,
           publicVisible: false,
@@ -1017,7 +1087,7 @@ export const processStagingLiveBatchInternal = internalMutation({
       } else {
         counts.wouldInsert += 1;
         counts.inserted += 1;
-        await ctx.db.insert("skillsShCatalogEntries", {
+        entryId = await ctx.db.insert("skillsShCatalogEntries", {
           externalId: row.externalId,
           sourceKind: "staging-live",
           githubOwnerId: row.githubOwnerId,
@@ -1032,6 +1102,7 @@ export const processStagingLiveBatchInternal = internalMutation({
           githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
+          githubStars: row.githubStars,
           sourceSnapshotId: run.snapshotId,
           reconciliation: native.reconciliation,
           publicVisible: false,
@@ -1043,6 +1114,18 @@ export const processStagingLiveBatchInternal = internalMutation({
         });
       }
       writesUsed += 1;
+      if (entryId) {
+        for (const skillId of metricSkillIds) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+            {
+              entryId,
+              skillId,
+            },
+          );
+        }
+      }
     }
 
     if (cursor !== args.cursor + args.rows.length) {
@@ -1122,6 +1205,7 @@ export const processFixtureBatchInternal = internalMutation({
       }
       const native = await reconcileNativeSkill(ctx, row, now);
       readsUsed += native.reads;
+      const metricSkillIds = nativeMetricSyncSkillIds(existing, native);
 
       const observationUnchanged = existing
         ? sameFixtureObservation(existing, row, native.reconciliation)
@@ -1149,13 +1233,16 @@ export const processFixtureBatchInternal = internalMutation({
         !existingAttempt &&
         (!existing || contentChanged || existing.scanStatus !== "planned");
       const entryWriteRequired = !run.dryRun;
-      if (entryWriteRequired && writesUsed + 2 > run.budgets.maxWritesPerBatch) break;
+      if (entryWriteRequired && writesUsed + 2 > run.budgets.maxWritesPerBatch) {
+        break;
+      }
 
       incrementReconciliationCounts(counts, native.reconciliation);
       counts.observed += 1;
       cursor += 1;
       entriesProcessed += 1;
       if (shouldPlanScan) counts.scansPlanned += 1;
+      let entryId = existing?._id;
       if (existing) {
         if (observationUnchanged) counts.unchanged += 1;
         else {
@@ -1177,6 +1264,7 @@ export const processFixtureBatchInternal = internalMutation({
             githubContentHash: row.githubContentHash,
             sourceContentHash: row.sourceContentHash,
             installs: row.installs,
+            githubStars: row.githubStars,
             sourceSnapshotId: fixture.snapshotId,
             reconciliation: native.reconciliation,
             // This gate has no publication seam; every catalog write reasserts dark visibility.
@@ -1193,12 +1281,24 @@ export const processFixtureBatchInternal = internalMutation({
           });
           writesUsed += 1;
         }
+        if (entryId && entryWriteRequired) {
+          for (const skillId of metricSkillIds) {
+            await ctx.scheduler.runAfter(
+              0,
+              internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+              {
+                entryId,
+                skillId,
+              },
+            );
+          }
+        }
         continue;
       }
 
       counts.wouldInsert += 1;
       if (!run.dryRun) {
-        await ctx.db.insert("skillsShCatalogEntries", {
+        entryId = await ctx.db.insert("skillsShCatalogEntries", {
           externalId: row.externalId,
           sourceKind: fixture.sourceKind,
           githubOwnerId: row.githubOwnerId,
@@ -1213,6 +1313,7 @@ export const processFixtureBatchInternal = internalMutation({
           githubContentHash: row.githubContentHash,
           sourceContentHash: row.sourceContentHash,
           installs: row.installs,
+          githubStars: row.githubStars,
           sourceSnapshotId: fixture.snapshotId,
           reconciliation: native.reconciliation,
           publicVisible: false,
@@ -1224,6 +1325,16 @@ export const processFixtureBatchInternal = internalMutation({
         });
         writesUsed += 1;
         counts.inserted += 1;
+        for (const skillId of metricSkillIds) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+            {
+              entryId,
+              skillId,
+            },
+          );
+        }
       }
     }
 
@@ -2362,6 +2473,7 @@ export const rollbackFixtureRunInternal = internalMutation({
     }
     const fixture = getSkillsShCatalogFixture(run.fixtureId);
     let deletedEntries = 0;
+    let nativeSkillsChanged = 0;
     for (let index = 0; index < fixture.length; index += 1) {
       const expected = normalizeIdentity(fixture.rowAt(index));
       const entry = await ctx.db
@@ -2384,6 +2496,21 @@ export const rollbackFixtureRunInternal = internalMutation({
           `Controlled canary has retained scan history: ${expected.externalId}`,
         );
       }
+      const nativeSkillId =
+        entry.reconciliation?.kind === "exact-native"
+          ? entry.reconciliation.nativeSkillId
+          : undefined;
+      if (nativeSkillId) {
+        const nativeSkill = await ctx.db.get(nativeSkillId);
+        if (
+          nativeSkill &&
+          (nativeSkill.statsSkillsShInstalls !== undefined ||
+            nativeSkill.statsGithubStars !== undefined)
+        ) {
+          await ctx.db.patch(nativeSkillId, CLEARED_EXTERNAL_SKILL_METRICS);
+          nativeSkillsChanged += 1;
+        }
+      }
       await ctx.db.delete(entry._id);
       deletedEntries += 1;
     }
@@ -2392,7 +2519,7 @@ export const rollbackFixtureRunInternal = internalMutation({
       actor: args.actor.trim(),
       reason: args.reason.trim(),
       deletedEntries,
-      nativeSkillsChanged: 0,
+      nativeSkillsChanged,
     };
   },
 });
@@ -2760,6 +2887,7 @@ function sameFixtureObservation(
     existing.githubContentHash === row.githubContentHash &&
     existing.sourceContentHash === row.sourceContentHash &&
     existing.installs === row.installs &&
+    existing.githubStars === row.githubStars &&
     existingReconciliation?.kind === reconciliation.kind &&
     existingReconciliation.nativeSkillId === reconciliation.nativeSkillId &&
     existingReconciliation.nativeSlug === reconciliation.nativeSlug &&

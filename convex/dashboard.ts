@@ -11,7 +11,7 @@ import {
 } from "./lib/downloadTrend";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { canAccessPublisherOwnerScope } from "./lib/publishers";
-import { readCanonicalStat } from "./lib/skillStats";
+import { readPublicDownloads } from "./lib/skillStats";
 
 const dashboardMetricSelectionValidator = v.union(
   v.object({ kind: v.literal("skill"), slug: v.string() }),
@@ -46,7 +46,7 @@ async function aggregateSkillDownloads(ctx: QueryCtx, skills: Doc<"skills">[], e
   );
   for (const trend of trends) addPoints(points, trend);
   return {
-    allTimeDownloads: skills.reduce((sum, skill) => sum + readCanonicalStat(skill, "downloads"), 0),
+    allTimeDownloads: skills.reduce((sum, skill) => sum + readPublicDownloads(skill), 0),
     points,
   };
 }

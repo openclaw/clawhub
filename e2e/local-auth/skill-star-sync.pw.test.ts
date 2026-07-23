@@ -22,7 +22,7 @@ test.skip(
 test.setTimeout(180_000);
 
 async function gotoUntilStarButtonReady(page: Page, detailPath: string): Promise<Locator> {
-  const starButton = page.getByRole("button", { name: "Star skill" });
+  const starButton = page.getByRole("button", { name: "Bookmark skill" });
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= 4; attempt += 1) {
@@ -96,14 +96,14 @@ test("starring a skill survives refresh with the synchronized count", async ({
 
   await starButton.click();
 
-  const unstarButton = page.getByRole("button", { name: "Unstar skill" });
+  const unstarButton = page.getByRole("button", { name: "Remove bookmark" });
   await expect(unstarButton).toBeVisible({ timeout: 30_000 });
   await expect(unstarButton).toContainText("1", { timeout: 30_000 });
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForHydration(page);
 
-  const refreshedUnstarButton = page.getByRole("button", { name: "Unstar skill" });
+  const refreshedUnstarButton = page.getByRole("button", { name: "Remove bookmark" });
   await expect(refreshedUnstarButton).toBeVisible({ timeout: 30_000 });
   await expect(refreshedUnstarButton).toContainText("1", { timeout: 30_000 });
 

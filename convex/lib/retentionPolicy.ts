@@ -221,6 +221,15 @@ export const RETENTION_POLICIES = {
   skillsShCatalogScanAttempts: permanent(
     "Exact-hash skills.sh scan attempts are durable audit and deduplication history.",
   ),
+  skillsShMirrorControls: permanent("Durable skills.sh external mirror operator controls."),
+  skillsShMirrorRuns: permanent("Skills.sh external mirror cursor and reconciliation history."),
+  skillsShMirrorSourcePages: permanent(
+    "Immutable authenticated leaderboard source pages retained for mirror provenance.",
+  ),
+  skillsShMirrorDigests: permanent("Normalized skills.sh external search digests."),
+  skillsShMirrorDetails: permanent("Bounded skills.sh external detail content."),
+  skillsShMirrorFacets: permanent("Indexed skills.sh external category and topic metadata."),
+  skillsShMirrorConflicts: permanent("Skills.sh external observation conflict audit history."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
   publisherAbuseTemporalScanSamples: ephemeral(
     "Exact temporal percentile samples are temporary scan working state.",
