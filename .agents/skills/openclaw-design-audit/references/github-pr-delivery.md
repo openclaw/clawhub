@@ -4,7 +4,7 @@ The scheduled ClawHub audit opens a pull request directly against
 `openclaw/clawhub`. It does not create or update a tracker issue.
 
 The schedule and credentials live in the consumer repository's GitHub Actions
-workflow. This design-system skill defines the audit and delivery contract; it
+workflow. This Carapace skill defines the audit and delivery contract; it
 does not schedule itself.
 
 ## Branch And Scope
@@ -18,7 +18,7 @@ does not schedule itself.
 
 1. Checkout `openclaw/clawhub` with full history and fetch remote `main`.
 2. Reset only the dedicated automation branch to `origin/main`.
-3. Install the design system at the workflow's pinned Git tag.
+3. Install Carapace at the workflow's pinned Git tag.
 4. Run source checks, browser checks, and report generation.
 5. Apply only fixes allowed by `fix-policy.md`.
 6. Write reports under the consumer's established audit-artifact path.
@@ -32,7 +32,7 @@ does not schedule itself.
 
 The title must identify the audit and date. The body includes:
 
-- design-system version
+- Carapace version
 - audited ClawHub SHA
 - count by severity
 - commands and routes checked

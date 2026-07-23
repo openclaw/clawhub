@@ -195,13 +195,28 @@ unit_fields_other() {
     fi
 }
 
+# Newline before each pipeline `|` so stored queries read one stage per line.
+# The split only tracks plain '...'/"..." literals, so it bails out and stores
+# the query untouched when it holds a construct whose string boundaries it
+# cannot follow: a backslash escape, an @-verbatim literal (where `\` is not an
+# escape), or a // comment. Formatting is cosmetic, silently rewriting a query
+# is not, so anything ambiguous stays on one line.
+format_pipeline() {
+    if [[ "$1" == *\\* || "$1" == *"@'"* || "$1" == *'@"'* || "$1" == *"//"* ]]; then
+        printf '%s' "$1"
+        return
+    fi
+    jq -rn --arg apl "$1" \
+        '$apl | gsub("(?<s>\"[^\"]*\"|'\''[^'\'']*'\'')|(?<p> \\| )"; if .s then .s else "\n| " end)'
+}
+
 # Build the query object. Both APL and MPL land in `query.apl` (shared API
 # field); MPL also gets `query.metricsDataset`.
 build_query() {
     if [[ -n "$MPL" ]]; then
-        jq -n --arg apl "$MPL" --arg ds "$DATASET" '{apl: $apl, metricsDataset: $ds}'
+        jq -n --arg apl "$(format_pipeline "$MPL")" --arg ds "$DATASET" '{apl: $apl, metricsDataset: $ds}'
     else
-        jq -n --arg apl "$APL" '{apl: $apl}'
+        jq -n --arg apl "$(format_pipeline "$APL")" '{apl: $apl}'
     fi
 }
 

@@ -1,6 +1,6 @@
 ---
 name: openclaw-design-audit
-description: Audit OpenClaw frontend code and rendered interfaces for design-system drift, token misuse, primitive reimplementation, accessibility problems, responsive defects, and off-brand copy. Use for design reviews, compliance checks, or scheduled audit-and-fix workflows.
+description: Audit OpenClaw frontend code and rendered interfaces for Carapace drift, token misuse, primitive reimplementation, accessibility problems, responsive defects, and off-brand copy. Use for design reviews, compliance checks, or scheduled audit-and-fix workflows.
 ---
 
 # OpenClaw Design Audit
@@ -11,10 +11,10 @@ unless a documented rule makes them violations.
 ## Workflow
 
 1. Read [rubric.md](references/rubric.md) and run every applicable category.
-2. Read the consumer's installed design-system version and current commit SHA.
-3. Read the version-matched
-   [token contract](../openclaw-design-system/references/tokens.md) and
-   [consumer adapters](../openclaw-design-system/references/consumer-adapters.md).
+2. Read the consumer's installed Carapace version and current commit SHA.
+3. Read the version-matched token contract and consumer adapters from the
+   installed product guidance skill: `openclaw-carapace` for new installs or
+   the `openclaw-design-system` compatibility alias for an upgraded lock.
 4. Read the brand or marketing references when those categories apply.
 5. Run deterministic source checks before judgment-based review.
 6. Inspect representative rendered routes at desktop and mobile sizes.
@@ -31,7 +31,7 @@ Each finding must include:
 - category and severity
 - stable rule ID
 - concise remediation
-- design-system reference
+- Carapace reference
 - whether the finding is mechanical or judgment-based
 
 ## Curation

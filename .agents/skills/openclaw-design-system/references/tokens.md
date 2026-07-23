@@ -1,7 +1,9 @@
 # Token Contract
 
 Import `@openclaw/design-system` for the complete foundation or use focused
-exports when the consumer must control reset and adapter order.
+exports when the consumer must control reset and adapter order. This legacy
+specifier is intentional for consumers that have not migrated their dependency
+to `@openclaw/carapace`.
 
 ## Layers
 
@@ -19,13 +21,16 @@ exports when the consumer must control reset and adapter order.
 - Page background: `--oc-bg-page`
 - Ordinary surface: `--oc-bg-surface`
 - Elevated surface: `--oc-bg-elevated`
-- Primary, secondary, muted text: `--oc-text-primary`,
-  `--oc-text-secondary`, `--oc-text-muted`
+- Inset and inverted surfaces: `--oc-bg-recessed`, `--oc-bg-contrast`
+- Primary, secondary, muted, inactive, inverse, and link text:
+  `--oc-text-primary`, `--oc-text-secondary`, `--oc-text-muted`,
+  `--oc-text-inactive`, `--oc-text-inverse`, `--oc-text-link`
 - Primary action: `--oc-accent-primary`; hover:
   `--oc-accent-primary-hover`
 - Secondary accent: `--oc-accent-secondary`
-- Subtle and accent borders: `--oc-border-subtle`,
-  `--oc-border-accent`
+- Neutral control backgrounds: `--oc-control-bg`, `--oc-control-bg-hover`
+- Subtle, strong, and accent borders: `--oc-border-subtle`,
+  `--oc-border-strong`, `--oc-border-accent`
 - Focus: `--oc-focus-ring`
 
 Use `color-mix()` from semantic variables for a local translucent state. Add a

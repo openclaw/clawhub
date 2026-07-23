@@ -53,7 +53,7 @@ scripts/datasets prod
 scripts/datasets prod --kind otel:metrics:v1
 
 # Fetch the metrics query spec
-scripts/metrics-spec prod
+scripts/metrics-spec
 
 # List available metrics in a dataset
 scripts/metrics-info prod my-dataset metrics
