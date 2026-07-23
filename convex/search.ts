@@ -111,6 +111,7 @@ const MAX_DIRECT_SKILL_TOPIC_CANDIDATES = 100;
 // Scoped direct recall fans out across up to nine indexed reads in one query.
 // Keep each source small enough that the aggregate stays below Convex read limits.
 const MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES = 250;
+const MAX_LIST_STYLE_SKILL_SEARCH_RESULTS = 200;
 const MIN_VECTOR_SEARCH_CANDIDATES = 50;
 const MAX_VECTOR_SEARCH_CANDIDATES = 128;
 const MAX_EXACT_SLUG_MATCHES = 25;
@@ -315,10 +316,16 @@ function prefixUpperBound(value: string) {
   return `${value}\uffff`;
 }
 
+function normalizeListStyleSearchLimit(limit: number | undefined) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return 25;
+  return Math.min(Math.max(Math.trunc(limit), 1), MAX_LIST_STYLE_SKILL_SEARCH_RESULTS);
+}
+
 export const searchSkills: ReturnType<typeof action> = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
+    mode: v.optional(v.union(v.literal("prefix"), v.literal("exact"))),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
     excludePendingScan: v.optional(v.boolean()),
@@ -334,6 +341,63 @@ export const searchSkills: ReturnType<typeof action> = action({
     if (args.topic !== undefined && !topic) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
+    if (args.mode === "exact") {
+      const exactLimit = normalizeListStyleSearchLimit(args.limit);
+      const exactSlugMatches = isSlugLikeQuery(query.toLowerCase())
+        ? ((await ctx.runQuery(internal.search.getExactSkillSlugMatch, {
+            slug: query.toLowerCase(),
+            nonSuspiciousOnly: args.nonSuspiciousOnly,
+            categorySlug,
+            topic,
+          })) as SkillSearchEntry[])
+        : [];
+      return exactSlugMatches
+        .filter(
+          (entry) =>
+            (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+        )
+        .sort(compareSkillTrustAndUsage)
+        .slice(0, exactLimit)
+        .map((entry) => ({
+          ...entry,
+          score:
+            EXACT_SLUG_BOOST +
+            getPopularityBoost({
+              installsAllTime: entry.skill.stats.installs,
+              stars: entry.skill.stats.stars,
+            }),
+        }));
+    }
+    if (args.mode === "prefix") {
+      const prefixLimit = normalizeListStyleSearchLimit(args.limit);
+      const prefixMatches = (await ctx.runQuery(internal.search.listPrefixSkillSlugMatches, {
+        prefix: query,
+        limit: prefixLimit,
+        highlightedOnly: args.highlightedOnly,
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+        categorySlug,
+        topic,
+      })) as SkillSearchEntry[];
+      return prefixMatches
+        .filter((entry) => !args.excludePendingScan || entry.skill.githubScanStatus !== "pending")
+        .sort(
+          (a, b) =>
+            a.skill.slug.localeCompare(b.skill.slug) ||
+            compareSkillTrustAndUsage(a, b) ||
+            b.skill.updatedAt - a.skill.updatedAt,
+        )
+        .slice(0, prefixLimit)
+        .map((entry) => ({
+          ...entry,
+          score:
+            SLUG_PREFIX_BOOST +
+            getPopularityBoost({
+              installsAllTime: entry.skill.stats.installs,
+              stars: entry.skill.stats.stars,
+            }),
+        }));
+    }
     const rawExactSlugMatches = isSlugLikeQuery(query)
       ? ((await ctx.runQuery(internal.search.getExactSkillSlugMatch, {
           slug: query.toLowerCase(),
@@ -509,6 +573,89 @@ export const searchSkills: ReturnType<typeof action> = action({
       )
       .slice(0, limit);
     return rankedMatches.map(({ rankTier: _rankTier, ...entry }) => entry);
+  },
+});
+
+export const listPrefixSkillSlugMatches = internalQuery({
+  args: {
+    prefix: v.string(),
+    limit: v.optional(v.number()),
+    highlightedOnly: v.optional(v.boolean()),
+    nonSuspiciousOnly: v.optional(v.boolean()),
+    categorySlug: v.optional(v.string()),
+    topic: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
+    const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
+    if (categorySlug === null) return [];
+    const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
+    if (args.topic !== undefined && !topic) return [];
+    const normalizedPrefix = normalizeSkillSearchText(args.prefix);
+    if (!normalizedPrefix) return [];
+    const resultLimit = normalizeListStyleSearchLimit(args.limit);
+    const scanLimit = Math.min(
+      Math.max(resultLimit * 4, resultLimit),
+      MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES,
+    );
+    const upperBound = prefixUpperBound(normalizedPrefix);
+    const digests = await collectFilteredSkillDigestCandidates(
+      () =>
+        args.nonSuspiciousOnly
+          ? ctx.db
+              .query("skillSearchDigest")
+              .withIndex("by_nonsuspicious_normalized_slug", (q) =>
+                q
+                  .eq("softDeletedAt", undefined)
+                  .eq("isSuspicious", false)
+                  .gte("normalizedSlug", normalizedPrefix)
+                  .lt("normalizedSlug", upperBound),
+              )
+          : ctx.db
+              .query("skillSearchDigest")
+              .withIndex("by_active_normalized_slug", (q) =>
+                q
+                  .eq("softDeletedAt", undefined)
+                  .gte("normalizedSlug", normalizedPrefix)
+                  .lt("normalizedSlug", upperBound),
+              ),
+      {
+        limit: resultLimit,
+        scanLimit,
+        matches: (digest) => {
+          const skill = digestToHydratableSkill(digest);
+          return (
+            !shouldExcludeSkillFromPublicBrowse(skill) &&
+            (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+            matchesCatalogFilters(skill, categorySlug, topic)
+          );
+        },
+      },
+    );
+    if (digests.length === 0) return [];
+
+    const getOwnerInfo = makeOwnerInfoGetter(ctx);
+    const entries = await Promise.all(
+      digests.map(async (digest): Promise<SkillSearchEntry | null> => {
+        const skill = digestToHydratableSkill(digest);
+        if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
+        if (args.highlightedOnly && !isSkillHighlighted(skill)) return null;
+        if (!matchesCatalogFilters(skill, categorySlug, topic)) return null;
+        const preResolved = digestToOwnerInfo(digest);
+        const resolved = preResolved?.owner
+          ? await withOfficialOwnerInfo(ctx, preResolved)
+          : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        const publicSkill = toPublicSearchSkill(skill);
+        if (!publicSkill || !resolved.owner) return null;
+        return {
+          skill: publicSkill,
+          version: null as Doc<"skillVersions"> | null,
+          ownerHandle: resolved.ownerHandle,
+          owner: resolved.owner,
+        };
+      }),
+    );
+
+    return entries.filter((entry): entry is SkillSearchEntry => entry !== null);
   },
 });
 

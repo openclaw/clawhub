@@ -8,6 +8,7 @@ import {
   getExactSkillSlugMatch,
   hydrateResults,
   lexicalFallbackSkills,
+  listPrefixSkillSlugMatches,
   searchSkills,
 } from "./search";
 
@@ -36,6 +37,8 @@ const searchSkillsHandler = (
 )._handler;
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
 const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
+  ._handler;
+const listPrefixSkillSlugMatchesHandler = (listPrefixSkillSlugMatches as unknown as WrappedHandler)
   ._handler;
 const getExactSkillSlugMatchHandler = (
   getExactSkillSlugMatch as unknown as {
@@ -289,6 +292,98 @@ describe("search helpers", () => {
         "by_active_normalized_slug_first_token",
         "by_active_normalized_display_name_first_token",
       ]),
+    );
+  });
+
+  it("lists skill slug prefixes through the indexed list-style search path", async () => {
+    const skills = [
+      makeSkillDoc({
+        id: "skills:aigroup-alpha",
+        slug: "aigroup-alpha",
+        displayName: "Aigroup Alpha",
+      }),
+      makeSkillDoc({
+        id: "skills:aigroup-beta",
+        slug: "aigroup-beta",
+        displayName: "Aigroup Beta",
+      }),
+      makeSkillDoc({
+        id: "skills:other",
+        slug: "other",
+        displayName: "Other",
+      }),
+    ];
+    const ctx = makeDirectPrefixCtx(skills);
+
+    const result = await listPrefixSkillSlugMatchesHandler(ctx, {
+      prefix: "aigroup-",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["aigroup-alpha", "aigroup-beta"]);
+    expect(ctx.usedIndexes).toContain("by_active_normalized_slug");
+    expect(ctx.usedSearchIndexes).toEqual([]);
+  });
+
+  it("exact mode bypasses vector and fallback recall", async () => {
+    const exactEntry = {
+      skill: makePublicSkill({
+        id: "skills:exact",
+        slug: "exact-skill",
+        displayName: "Exact Skill",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce([exactEntry]);
+    const vectorSearch = vi.fn();
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch,
+        runQuery,
+      },
+      { query: "exact-skill", mode: "exact", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["exact-skill"]);
+    expect(vectorSearch).not.toHaveBeenCalled();
+    expect(runQuery).toHaveBeenCalledOnce();
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ slug: "exact-skill" }),
+    );
+  });
+
+  it("prefix mode bypasses vector and semantic fallback recall", async () => {
+    const prefixEntry = {
+      skill: makePublicSkill({
+        id: "skills:a",
+        slug: "aigroup-alpha",
+        displayName: "Aigroup Alpha",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce([prefixEntry]);
+    const vectorSearch = vi.fn();
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch,
+        runQuery,
+      },
+      { query: "aigroup-", mode: "prefix", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["aigroup-alpha"]);
+    expect(vectorSearch).not.toHaveBeenCalled();
+    expect(runQuery).toHaveBeenCalledOnce();
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ prefix: "aigroup-", limit: 10 }),
     );
   });
 

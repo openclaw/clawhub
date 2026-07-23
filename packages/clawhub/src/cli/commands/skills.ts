@@ -66,6 +66,12 @@ type SkillReportTriageOptions = {
   yes?: boolean;
 };
 
+type SkillSearchOptions = {
+  limit?: number;
+  prefix?: boolean;
+  exact?: boolean;
+};
+
 type SkillRef = {
   slug: string;
   ownerHandle?: string;
@@ -281,8 +287,16 @@ function formatSearchOwner(entry: {
   return entry.owner?.displayName ?? "unknown owner";
 }
 
-export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
+export async function cmdSearch(
+  opts: GlobalOpts,
+  query: string,
+  options: number | SkillSearchOptions = {},
+) {
   if (!query) fail("Query required");
+  const searchOptions = typeof options === "number" ? { limit: options } : options;
+  if (searchOptions.prefix && searchOptions.exact) {
+    fail("Choose either --prefix or --exact, not both");
+  }
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -290,8 +304,13 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
   try {
     const url = registryUrl(ApiRoutes.search, registry);
     url.searchParams.set("q", query);
-    const effectiveLimit = typeof limit === "number" && Number.isFinite(limit) ? limit : 25;
+    const effectiveLimit =
+      typeof searchOptions.limit === "number" && Number.isFinite(searchOptions.limit)
+        ? searchOptions.limit
+        : 25;
     url.searchParams.set("limit", String(effectiveLimit));
+    if (searchOptions.prefix) url.searchParams.set("mode", "prefix");
+    if (searchOptions.exact) url.searchParams.set("mode", "exact");
     const result = await apiRequest(
       registry,
       { method: "GET", url: url.toString(), token },
