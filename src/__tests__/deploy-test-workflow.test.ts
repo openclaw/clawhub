@@ -51,7 +51,7 @@ describe("Test deploy workflow", () => {
       branches: ["main"],
     });
     expect(workflow.on?.pull_request).toEqual({
-      types: ["opened", "reopened", "synchronize", "labeled"],
+      types: ["synchronize"],
     });
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.concurrency).toEqual({
@@ -67,6 +67,7 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain(
       "github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k'",
     );
+    expect(job?.if).toContain("github.event.pull_request.head.repo.full_name == github.repository");
     expect(job?.if).toContain("github.actor == 'Patrick-Erichsen'");
     expect(job?.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(job?.if).toContain("github.event.workflow_run.event == 'push'");
@@ -76,6 +77,8 @@ describe("Test deploy workflow", () => {
     expect(revision).toContain("deploy-claw-563-to-permanent-test");
     expect(revision).toContain("${{ inputs.expected_sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
+    expect(revision).toContain("${{ github.event.pull_request.head.repo.full_name }}");
+    expect(revision).toContain("$GITHUB_REPOSITORY");
   });
 
   it("uses only the Test environment and narrowly scoped secrets", async () => {

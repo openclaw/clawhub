@@ -215,6 +215,26 @@ async function reconcileNativeSkill(
   };
 }
 
+function nativeMetricSyncSkillIds(
+  existing: Doc<"skillsShCatalogEntries"> | null,
+  native: Awaited<ReturnType<typeof reconcileNativeSkill>>,
+) {
+  const skillIds = new Set<Id<"skills">>();
+  if ("nativeMetricUpdate" in native && native.nativeMetricUpdate) {
+    skillIds.add(native.nativeMetricUpdate.skillId);
+  }
+  const previous = existing?.reconciliation;
+  if (
+    previous?.kind === "exact-native" &&
+    previous.nativeSkillId &&
+    (native.reconciliation.kind !== "exact-native" ||
+      native.reconciliation.nativeSkillId !== previous.nativeSkillId)
+  ) {
+    skillIds.add(previous.nativeSkillId);
+  }
+  return [...skillIds];
+}
+
 export const syncNativeSkillMetricsFromCatalogEntryInternal = internalMutation({
   args: {
     entryId: v.id("skillsShCatalogEntries"),
@@ -222,18 +242,18 @@ export const syncNativeSkillMetricsFromCatalogEntryInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const [entry, skill] = await Promise.all([ctx.db.get(args.entryId), ctx.db.get(args.skillId)]);
-    if (
-      !entry ||
-      !skill ||
-      entry.reconciliation?.kind !== "exact-native" ||
-      entry.reconciliation.nativeSkillId !== args.skillId
-    ) {
-      return { applied: false };
-    }
-    const patch = buildExternalSkillMetricPatch({
-      skillsShInstalls: entry.installs,
-      githubStars: entry.githubStars,
-    });
+    if (!entry || !skill) return { applied: false };
+    const patch =
+      entry.reconciliation?.kind === "exact-native" &&
+      entry.reconciliation.nativeSkillId === args.skillId
+        ? buildExternalSkillMetricPatch({
+            skillsShInstalls: entry.installs,
+            githubStars: entry.githubStars,
+          })
+        : {
+            statsSkillsShInstalls: undefined,
+            statsGithubStars: undefined,
+          };
     const changed = Object.entries(patch).some(
       ([field, value]) => skill[field as keyof typeof skill] !== value,
     );
@@ -996,6 +1016,7 @@ export const processStagingLiveBatchInternal = internalMutation({
       }
       const native = await reconcileNativeSkill(ctx, row, now);
       readsUsed += native.reads;
+      const metricSkillIds = nativeMetricSyncSkillIds(existing, native);
       const observationUnchanged = existing
         ? sameFixtureObservation(existing, row, native.reconciliation)
         : false;
@@ -1092,15 +1113,17 @@ export const processStagingLiveBatchInternal = internalMutation({
         });
       }
       writesUsed += 1;
-      if (entryId && native.nativeMetricUpdate) {
-        await ctx.scheduler.runAfter(
-          0,
-          internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
-          {
-            entryId,
-            skillId: native.nativeMetricUpdate.skillId,
-          },
-        );
+      if (entryId) {
+        for (const skillId of metricSkillIds) {
+          await ctx.scheduler.runAfter(
+            0,
+            internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+            {
+              entryId,
+              skillId,
+            },
+          );
+        }
       }
     }
 
@@ -1181,6 +1204,7 @@ export const processFixtureBatchInternal = internalMutation({
       }
       const native = await reconcileNativeSkill(ctx, row, now);
       readsUsed += native.reads;
+      const metricSkillIds = nativeMetricSyncSkillIds(existing, native);
 
       const observationUnchanged = existing
         ? sameFixtureObservation(existing, row, native.reconciliation)
@@ -1256,15 +1280,17 @@ export const processFixtureBatchInternal = internalMutation({
           });
           writesUsed += 1;
         }
-        if (entryId && entryWriteRequired && native.nativeMetricUpdate) {
-          await ctx.scheduler.runAfter(
-            0,
-            internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
-            {
-              entryId,
-              skillId: native.nativeMetricUpdate.skillId,
-            },
-          );
+        if (entryId && entryWriteRequired) {
+          for (const skillId of metricSkillIds) {
+            await ctx.scheduler.runAfter(
+              0,
+              internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
+              {
+                entryId,
+                skillId,
+              },
+            );
+          }
         }
         continue;
       }
@@ -1298,13 +1324,13 @@ export const processFixtureBatchInternal = internalMutation({
         });
         writesUsed += 1;
         counts.inserted += 1;
-        if (native.nativeMetricUpdate) {
+        for (const skillId of metricSkillIds) {
           await ctx.scheduler.runAfter(
             0,
             internal.skillsShCatalog.syncNativeSkillMetricsFromCatalogEntryInternal,
             {
               entryId,
-              skillId: native.nativeMetricUpdate.skillId,
+              skillId,
             },
           );
         }

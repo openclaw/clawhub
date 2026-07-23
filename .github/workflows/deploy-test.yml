@@ -6,7 +6,7 @@ on:
     types: [completed]
     branches: [main]
   pull_request:
-    types: [opened, reopened, synchronize, labeled]
+    types: [synchronize]
   workflow_dispatch:
     inputs:
       expected_sha:
@@ -36,6 +36,7 @@ jobs:
       inputs.expected_sha != ''))) ||
       (github.event_name == 'pull_request' &&
       github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor == 'Patrick-Erichsen') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
@@ -80,6 +81,7 @@ jobs:
             if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
               [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
               [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
             then
               branch_test_allowed=true

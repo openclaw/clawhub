@@ -409,6 +409,51 @@ describe("skills.sh controlled hidden metadata canary", () => {
     });
   });
 
+  it("clears upstream metrics when an exact native match becomes a route collision", async () => {
+    vi.useFakeTimers();
+    useEnvironment(LOCAL_ENV);
+    const t = convexTest(schema, modules);
+    const nativeSkillId = await seedNativeSkill(t, {
+      exactSource: true,
+      downloads: 143,
+      skillsShInstalls: 2,
+      githubStars: 300,
+      seedDigest: true,
+    });
+    await configureCanary(t);
+
+    await runCanary(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await t.run(async (ctx) => {
+      await ctx.db.patch(nativeSkillId, {
+        githubCurrentCommit: "f".repeat(40),
+      });
+    });
+
+    const { run } = await runCanary(t);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const native = await t.run(async (ctx) => await ctx.db.get(nativeSkillId));
+    const digest = await t.run(async (ctx) =>
+      ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", nativeSkillId))
+        .unique(),
+    );
+
+    expect(run.counts).toMatchObject({
+      exactNativeMatches: 0,
+      routeCollisions: 1,
+    });
+    expect(native?.statsSkillsShInstalls).toBeUndefined();
+    expect(native?.statsGithubStars).toBeUndefined();
+    expect(digest?.statsSkillsShInstalls).toBeUndefined();
+    expect(digest?.statsGithubStars).toBeUndefined();
+    expect(native).toMatchObject({
+      statsDownloads: 143,
+      stats: { downloads: 143 },
+    });
+  });
+
   it("records a route collision without changing or attaching the native skill", async () => {
     useEnvironment(LOCAL_ENV);
     const t = convexTest(schema, modules);
