@@ -498,7 +498,7 @@ describe("HomeListingSection", () => {
                 slug: "trending-skill",
                 displayName: "Trending Skill",
                 summary: "Hot this week.",
-                stats: { installs: 999 },
+                stats: { stars: 12, downloads: 340, installs: 999 },
               },
               ownerHandle: "builder",
             },
@@ -534,7 +534,7 @@ describe("HomeListingSection", () => {
       expect(convexQueryMock).toHaveBeenCalledWith("skills:listPublicTrendingPage", { limit: 20 });
       expect(screen.getByText("Trending Skill")).toBeTruthy();
     });
-    expect(screen.queryByText("Popularity")).toBeNull();
+    expect(screen.getByLabelText("Popularity").textContent).toBe("12340");
     expect(screen.queryByText("999")).toBeNull();
   });
 
