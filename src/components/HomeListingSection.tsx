@@ -431,7 +431,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       : plugins;
   const activeStatus = isSearchMode ? searchStatus : status;
   const isEmpty = activeStatus === "idle" && activeItems.length === 0;
-  const showSkillStats = !(kind === "skills" && tab === "trending" && !isSearchMode);
+  const showSkillStats = true;
   const showListingMore =
     activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
