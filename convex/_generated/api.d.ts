@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as agentSkillsHttp from "../agentSkillsHttp.js";
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
 import type * as catalogClassification from "../catalogClassification.js";
@@ -50,6 +51,7 @@ import type * as httpApiV1_whoamiV1 from "../httpApiV1/whoamiV1.js";
 import type * as httpPreflight from "../httpPreflight.js";
 import type * as leaderboards from "../leaderboards.js";
 import type * as lib_access from "../lib/access.js";
+import type * as lib_agentSkillsDiscovery from "../lib/agentSkillsDiscovery.js";
 import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_artifactText from "../lib/artifactText.js";
@@ -193,6 +195,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  agentSkillsHttp: typeof agentSkillsHttp;
   appMeta: typeof appMeta;
   auth: typeof auth;
   catalogClassification: typeof catalogClassification;
@@ -235,6 +238,7 @@ declare const fullApi: ApiFromModules<{
   httpPreflight: typeof httpPreflight;
   leaderboards: typeof leaderboards;
   "lib/access": typeof lib_access;
+  "lib/agentSkillsDiscovery": typeof lib_agentSkillsDiscovery;
   "lib/apiTokenAuth": typeof lib_apiTokenAuth;
   "lib/artifactModeration": typeof lib_artifactModeration;
   "lib/artifactText": typeof lib_artifactText;

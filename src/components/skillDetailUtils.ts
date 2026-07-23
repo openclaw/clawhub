@@ -181,6 +181,10 @@ export function formatOpenClawInstallCommand(slug: string) {
   return `openclaw skills install ${slug}`;
 }
 
+export function formatSkillsCliInstallCommand(skillPageUrl: string) {
+  return `npx skills add ${skillPageUrl}`;
+}
+
 export function formatClawHubInstallCommand(slug: string, pm: SkillPackageManager) {
   switch (pm) {
     case "npm":

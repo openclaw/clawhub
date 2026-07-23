@@ -217,6 +217,21 @@ const githubSkillScanStatusValidator = v.union(
   v.literal("failed"),
 );
 
+export const getArchiveScanBySkillAndContentHashInternal = internalQuery({
+  args: {
+    skillId: v.id("skills"),
+    contentHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("githubSkillScans")
+      .withIndex("by_skill_and_content_hash", (q) =>
+        q.eq("skillId", args.skillId).eq("contentHash", args.contentHash),
+      )
+      .unique();
+  },
+});
+
 export const getSourceByRepoInternal = internalQuery({
   args: { repo: v.string() },
   handler: async (ctx, args): Promise<SourceForSync | null> => {

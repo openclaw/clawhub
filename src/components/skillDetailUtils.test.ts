@@ -7,6 +7,7 @@ import {
   formatClawHubInstallCommand,
   formatOpenClawInstallCommand,
   formatOpenClawPrompt,
+  formatSkillsCliInstallCommand,
 } from "./skillDetailUtils";
 
 describe("skill detail install helpers", () => {
@@ -35,6 +36,9 @@ describe("skill detail install helpers", () => {
     );
     expect(formatClawHubInstallCommand("@steipete/weather", "bun")).toBe(
       "bunx clawhub@latest install @steipete/weather",
+    );
+    expect(formatSkillsCliInstallCommand("https://clawhub.ai/steipete/skills/weather")).toBe(
+      "npx skills add https://clawhub.ai/steipete/skills/weather",
     );
   });
 
