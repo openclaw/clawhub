@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { FunctionReturnType } from "convex/server";
 import type { ReactNode } from "react";
@@ -799,6 +799,93 @@ describe("Settings", () => {
     expect(
       screen.getByRole("button", { name: "Enable GitHub Skill Sync" }).hasAttribute("disabled"),
     ).toBe(true);
+  });
+
+  it("ignores a preview response after the selected repository changes", async () => {
+    const listRepositories = vi.fn().mockResolvedValue({
+      publisher: { _id: "publisher_patrick", handle: "patrick", kind: "user" },
+      page: 1,
+      perPage: 100,
+      hasMore: false,
+      repositories: [
+        {
+          repositoryId: "1",
+          repo: "patrick-erichsen/skills",
+          ownerId: "123",
+          ownerLogin: "patrick-erichsen",
+          defaultBranch: "main",
+          archived: false,
+          disabled: false,
+          fork: false,
+          pushedAt: "2026-07-23T12:00:00Z",
+          selectable: true,
+          unavailableReason: null,
+        },
+      ],
+    });
+    let resolvePreview: ((value: unknown) => void) | undefined;
+    const previewRepository = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+    useActionMock.mockImplementation((action) => {
+      const actionName = getFunctionName(action);
+      if (actionName === "githubSkillSyncSettings:listRepositories") return listRepositories;
+      if (actionName === "githubSkillSyncSettings:previewRepository") return previewRepository;
+      return vi.fn();
+    });
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership],
+    });
+
+    render(<Settings />);
+
+    await waitFor(() => expect(listRepositories).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Preview repository" }));
+    await waitFor(() => expect(previewRepository).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText("Repository URL"), {
+      target: { value: "patrick-erichsen/other-skills" },
+    });
+    await act(async () => {
+      resolvePreview?.({
+        publisher: { _id: "publisher_patrick", handle: "patrick", kind: "user" },
+        repository: {
+          requestedRepo: "patrick-erichsen/skills",
+          repositoryId: "1",
+          repo: "patrick-erichsen/skills",
+          redirected: false,
+          defaultBranch: "main",
+          commit: "a".repeat(40),
+        },
+        summary: {
+          total: 1,
+          newDestinations: 1,
+          replacements: 0,
+          unavailable: 0,
+          conflicts: 0,
+        },
+        items: [
+          {
+            slug: "html",
+            displayName: "HTML",
+            path: "skills/html",
+            contentHash: "hash-html",
+            classification: "new-destination",
+            eligible: true,
+            destination: null,
+          },
+        ],
+      });
+    });
+
+    expect(screen.getByLabelText<HTMLInputElement>("Repository URL").value).toBe(
+      "patrick-erichsen/other-skills",
+    );
+    expect(screen.queryByRole("heading", { name: "Repository preview" })).toBeNull();
   });
 
   it("shows synced repos as separate cards and lets owners delete a source", async () => {

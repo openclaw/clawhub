@@ -6,7 +6,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
-export type GitHubSkillSyncPublisherOption = {
+type GitHubSkillSyncPublisherOption = {
   publisher: {
     _id: Id<"publishers">;
     handle: string;
@@ -27,7 +27,7 @@ export type GitHubSkillSyncRepository = {
   unavailableReason: "disabled" | null;
 };
 
-export type GitHubSkillSyncPreviewItem = {
+type GitHubSkillSyncPreviewItem = {
   slug: string;
   displayName: string;
   path: string;
@@ -297,6 +297,7 @@ function classificationLabel(classification: GitHubSkillSyncPreviewItem["classif
     case "ownership-conflict":
       return "Ownership conflict";
   }
+  return assertNever(classification);
 }
 
 function classificationTone(classification: GitHubSkillSyncPreviewItem["classification"]) {
@@ -309,6 +310,11 @@ function classificationTone(classification: GitHubSkillSyncPreviewItem["classifi
     case "ownership-conflict":
       return "text-status-error-fg";
   }
+  return assertNever(classification);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported GitHub Skill Sync classification: ${String(value)}`);
 }
 
 function previewReasonLabel(reason: string) {

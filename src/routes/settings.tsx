@@ -36,6 +36,7 @@ import {
   type FormEvent,
   type ReactNode,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
@@ -331,6 +332,7 @@ export function Settings() {
   const [isLoadingGitHubRepositories, setIsLoadingGitHubRepositories] = useState(false);
   const [githubSyncPreview, setGitHubSyncPreview] = useState<GitHubSkillSyncPreview | null>(null);
   const [isPreviewingGitHubSource, setIsPreviewingGitHubSource] = useState(false);
+  const githubSyncPreviewRequestId = useRef(0);
   const [deletingSourceId, setDeletingSourceId] = useState<Id<"githubSkillSources"> | null>(null);
   const [sourceToDelete, setSourceToDelete] = useState<GitHubSkillSource | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -472,7 +474,7 @@ export function Settings() {
     ) {
       setGitHubRepositories([]);
       setGitHubRepositoriesError(null);
-      return;
+      return undefined;
     }
     let cancelled = false;
     setIsLoadingGitHubRepositories(true);
@@ -788,6 +790,8 @@ export function Settings() {
     if (!selectedSourcePublisher) return;
     const repo = parseGitHubRepoInput(githubRepo);
     if (!repo) return;
+    const requestId = githubSyncPreviewRequestId.current + 1;
+    githubSyncPreviewRequestId.current = requestId;
     setIsPreviewingGitHubSource(true);
     setGitHubSyncPreview(null);
     try {
@@ -795,12 +799,16 @@ export function Settings() {
         publisherId: selectedSourcePublisher.publisher._id,
         repo,
       });
+      if (githubSyncPreviewRequestId.current !== requestId) return;
       setGithubRepo(result.repository.repo);
       setGitHubSyncPreview(result as GitHubSkillSyncPreview);
     } catch (error) {
+      if (githubSyncPreviewRequestId.current !== requestId) return;
       toast.error(getUserFacingConvexError(error, "GitHub repository could not be previewed."));
     } finally {
-      setIsPreviewingGitHubSource(false);
+      if (githubSyncPreviewRequestId.current === requestId) {
+        setIsPreviewingGitHubSource(false);
+      }
     }
   }
 
@@ -1706,17 +1714,21 @@ export function Settings() {
                         publisherOptions={githubSourcePublishers}
                         selectedPublisherId={selectedSourcePublisher.publisher._id}
                         onPublisherChange={(publisherId) => {
+                          githubSyncPreviewRequestId.current += 1;
                           setSelectedSourcePublisherId(publisherId);
                           setGithubRepo("");
                           setGitHubSyncPreview(null);
+                          setIsPreviewingGitHubSource(false);
                         }}
                         repositories={githubRepositories}
                         repositoriesError={githubRepositoriesError}
                         isLoadingRepositories={isLoadingGitHubRepositories}
                         githubRepo={githubRepo}
                         onGithubRepoChange={(repo) => {
+                          githubSyncPreviewRequestId.current += 1;
                           setGithubRepo(repo);
                           setGitHubSyncPreview(null);
+                          setIsPreviewingGitHubSource(false);
                         }}
                         onPreview={onPreviewGitHubSource}
                         isPreviewing={isPreviewingGitHubSource}
