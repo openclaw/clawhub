@@ -1689,7 +1689,7 @@ export const finalizeStagedPromotionInternal = internalMutation({
     const digest = adoption.mirrorDigestId ? await ctx.db.get(adoption.mirrorDigestId) : null;
     if (
       adoption.mirrorDigestId &&
-      (!digest || digest.sourceContentHash !== adoption.sourceContentHash)
+      (!digest || !digest.active || digest.sourceContentHash !== adoption.sourceContentHash)
     ) {
       const now = Date.now();
       const removedStaging = await removeAdoptionCreatedStaging(
@@ -1709,6 +1709,9 @@ export const finalizeStagedPromotionInternal = internalMutation({
         }),
         ctx.db.patch(adoption._id, {
           status: "stale",
+          stagedSkillId: undefined,
+          stagedVersionId: undefined,
+          stagedVersionCreated: undefined,
           rejectionReason: "catalog_source_changed",
           updatedAt: now,
         }),
@@ -1752,6 +1755,9 @@ export const finalizeStagedPromotionInternal = internalMutation({
         }),
         ctx.db.patch(adoption._id, {
           status: "stale",
+          stagedSkillId: undefined,
+          stagedVersionId: undefined,
+          stagedVersionCreated: undefined,
           rejectionReason: "destination_changed",
           updatedAt: now,
         }),
@@ -2054,6 +2060,9 @@ export const promoteReadyInternal = internalMutation({
         versionId: adoption.promotedVersionId ?? null,
         canonicalRef: adoption.canonicalRef ?? null,
       };
+    }
+    if (adoption.status !== "ready_to_promote") {
+      throw new ConvexError("skills.sh adoption is not ready to promote");
     }
     if (adoption.stagedSkillId && adoption.stagedVersionId) {
       return {

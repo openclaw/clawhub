@@ -1623,6 +1623,71 @@ describe("skills.sh adoption", () => {
       skill: null,
       version: null,
     });
+    const staleAdoption = await fixture.t.run(async (ctx) => await ctx.db.get(started.adoptionId));
+    expect(staleAdoption).not.toHaveProperty("stagedSkillId");
+    expect(staleAdoption).not.toHaveProperty("stagedVersionId");
+    expect(staleAdoption).not.toHaveProperty("stagedVersionCreated");
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).rejects.toThrow("skills.sh adoption is not ready to promote");
+  });
+
+  it("stales a staged mirrored promotion when its digest is tombstoned", async () => {
+    useLocalEnvironment();
+    const fixture = await seedAdoptionFixture({
+      githubProviderAccountId: "42",
+      destination: "none",
+    });
+    const started = await startMirroredAdoption(fixture);
+    const attemptId = await insertSucceededScan(fixture, started.adoptionId);
+
+    await fixture.t.mutation(internal.skillsShAdoption.recordScanOutcomeInternal, {
+      adoptionId: started.adoptionId,
+      scanAttemptId: attemptId,
+    });
+    await fixture.t.mutation(internal.skillsShAdoption.promoteReadyInternal, {
+      adoptionId: started.adoptionId,
+    });
+    await fixture.t.run(async (ctx) => {
+      const adoption = await ctx.db.get(started.adoptionId);
+      if (!adoption?.mirrorDigestId || !adoption.stagedVersionId) {
+        throw new Error("staged mirrored adoption missing");
+      }
+      await ctx.db.patch(adoption.mirrorDigestId, {
+        active: false,
+        tombstonedAt: fixture.now + 1,
+      });
+      await ctx.db.patch(adoption.stagedVersionId, {
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "Clean test fixture",
+          engineVersion: "test",
+          checkedAt: fixture.now + 1,
+        },
+      });
+    });
+
+    await expect(
+      fixture.t.mutation(internal.skillsShAdoption.finalizeStagedPromotionInternal, {
+        adoptionId: started.adoptionId,
+      }),
+    ).resolves.toMatchObject({
+      status: "stale",
+      skillId: null,
+      versionId: null,
+      canonicalRef: null,
+    });
+    const adoption = await fixture.t.run(async (ctx) => await ctx.db.get(started.adoptionId));
+    expect(adoption).toMatchObject({
+      status: "stale",
+      rejectionReason: "catalog_source_changed",
+    });
+    expect(adoption).not.toHaveProperty("stagedSkillId");
+    expect(adoption).not.toHaveProperty("stagedVersionId");
   });
 
   it("does not replace native inference metadata until mirrored promotion succeeds", async () => {
@@ -1767,9 +1832,13 @@ describe("skills.sh adoption", () => {
       skillId: fixture.destinationSkillId,
     });
     const staleState = await fixture.t.run(async (ctx) => ({
+      adoption: await ctx.db.get(started.adoptionId),
       request: await ctx.db.get(requestId),
       version: await ctx.db.get(stagedVersionId),
     }));
+    expect(staleState.adoption).not.toHaveProperty("stagedSkillId");
+    expect(staleState.adoption).not.toHaveProperty("stagedVersionId");
+    expect(staleState.adoption).not.toHaveProperty("stagedVersionCreated");
     expect(staleState.request).toMatchObject({ writtenBack: true });
     expect(staleState.request).not.toHaveProperty("skillVersionId");
     expect(staleState.version).toBeNull();

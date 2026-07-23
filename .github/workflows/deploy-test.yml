@@ -149,6 +149,37 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Revalidate protected deployment revision
+        env:
+          DEPLOY_BRANCH: >-
+            ${{
+              github.event_name == 'workflow_run' && github.event.workflow_run.head_branch ||
+              github.event_name == 'pull_request' && github.event.pull_request.head.ref ||
+              github.ref_name
+            }}
+          DEPLOY_REPOSITORY: >-
+            ${{
+              github.event_name == 'workflow_run' &&
+              github.event.workflow_run.head_repository.full_name ||
+              github.event_name == 'pull_request' &&
+              github.event.pull_request.head.repo.full_name ||
+              github.repository
+            }}
+          DEPLOY_SHA: ${{ steps.revision.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$DEPLOY_REPOSITORY" != "$GITHUB_REPOSITORY" ]]; then
+            echo "::error::Refusing Test deploy from external repository ${DEPLOY_REPOSITORY}"
+            exit 1
+          fi
+          git fetch --no-tags origin \
+            "+refs/heads/${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}"
+          current_sha="$(git rev-parse "refs/remotes/origin/${DEPLOY_BRANCH}")"
+          if [[ "$current_sha" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Refusing superseded Test deploy: ${DEPLOY_SHA} is no longer ${DEPLOY_BRANCH} head"
+            exit 1
+          fi
+
       - name: Stamp Convex build SHA
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}

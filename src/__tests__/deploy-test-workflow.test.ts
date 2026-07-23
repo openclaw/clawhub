@@ -45,6 +45,8 @@ describe("Test deploy workflow", () => {
     const job = workflow.jobs?.["deploy-test"];
     const steps = job?.steps ?? [];
     const revision = steps.find((step) => step.name === "Resolve deployment revision")?.run ?? "";
+    const revalidation =
+      steps.find((step) => step.name === "Revalidate protected deployment revision")?.run ?? "";
 
     expect(workflow.on?.workflow_run).toEqual({
       workflows: ["CI"],
@@ -78,6 +80,31 @@ describe("Test deploy workflow", () => {
       EXPECTED_SHA: "${{ inputs.expected_sha }}",
     });
     expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
+    expect(revalidation).toContain(
+      "+refs/heads/${DEPLOY_BRANCH}:refs/remotes/origin/${DEPLOY_BRANCH}",
+    );
+    expect(revalidation).toContain('"$current_sha" != "$DEPLOY_SHA"');
+    expect(
+      steps.find((step) => step.name === "Revalidate protected deployment revision")?.env,
+    ).toMatchObject({
+      DEPLOY_BRANCH: expect.stringContaining("github.event.workflow_run.head_branch"),
+      DEPLOY_REPOSITORY: expect.stringContaining(
+        "github.event.workflow_run.head_repository.full_name",
+      ),
+      DEPLOY_SHA: "${{ steps.revision.outputs.deploy_sha }}",
+    });
+    expect(
+      steps.find((step) => step.name === "Revalidate protected deployment revision")?.env
+        ?.DEPLOY_BRANCH,
+    ).toContain("github.event.pull_request.head.ref");
+    expect(
+      steps.find((step) => step.name === "Revalidate protected deployment revision")?.env
+        ?.DEPLOY_REPOSITORY,
+    ).toContain("github.event.pull_request.head.repo.full_name");
+    expect(revalidation).toContain('"$DEPLOY_REPOSITORY" != "$GITHUB_REPOSITORY"');
+    expect(
+      steps.findIndex((step) => step.name === "Revalidate protected deployment revision"),
+    ).toBe(steps.findIndex((step) => step.name === "Stamp Convex build SHA") - 1);
   });
 
   it("uses only the Test environment and narrowly scoped secrets", async () => {

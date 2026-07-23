@@ -482,9 +482,7 @@ class SkillsShSourceHttpError extends Error {
 }
 
 export function skillsShSourceRetryAfterSeconds(error: unknown) {
-  return error instanceof SkillsShSourceHttpError && error.status === 429
-    ? error.retryAfterSeconds
-    : null;
+  return error instanceof SkillsShSourceHttpError ? error.retryAfterSeconds : null;
 }
 
 async function fetchSkillsShApiResponse(
@@ -1554,11 +1552,27 @@ async function fetchSkillsShProofText(
       }
       return new TextDecoder().decode(body.bytes);
     }
-    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
+    const retryable = response.status === 429 || response.status >= 500;
+    const retryAfterMs = skillsShRetryAfterMs(response, attempt);
+    if (
+      !retryable ||
+      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
+      retryAfterMs > MAX_INLINE_RETRY_AFTER_MS
+    ) {
       await cancelResponseBody(response);
+      if (
+        response.status === 429 ||
+        (response.status >= 500 && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
+      ) {
+        throw new SkillsShSourceHttpError(
+          response.status,
+          Math.max(1, Math.ceil(retryAfterMs / 1_000)),
+        );
+      }
       throw new Error(`skills.sh proof metadata returned HTTP ${response.status}`);
     }
-    await waitForSkillsShRetry(response, attempt);
+    await cancelResponseBody(response);
+    await new Promise((resolve) => setTimeout(resolve, retryAfterMs));
   }
   throw new Error("skills.sh proof metadata exhausted retries");
 }
@@ -1583,6 +1597,15 @@ export async function measureSkillsShMirrorProofSource(
   const sourcePages: SkillsShMirrorCapturedSourcePage[] = [];
   let page = 0;
   let sourceRequests = 0;
+  const sourceFetchImpl = options.fetchImpl ?? fetch;
+  const accountedFetchImpl: typeof fetch = async (input, init) => {
+    sourceRequests += 1;
+    return await sourceFetchImpl(input, init);
+  };
+  const sourceOptions = {
+    ...options,
+    fetchImpl: accountedFetchImpl,
+  };
   let observedRows = 0;
   let catalogTotal: number | null = null;
   let firstPage: SkillsShCatalogPage | null = null;
@@ -1593,9 +1616,8 @@ export async function measureSkillsShMirrorProofSource(
     await pace();
     const response = await fetchSkillsShCatalogPage(
       { page, perPage: MAX_SOURCE_PAGE_SIZE },
-      options,
+      sourceOptions,
     );
-    sourceRequests += 1;
     if (
       response.pagination.page !== page ||
       response.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
@@ -1680,9 +1702,8 @@ export async function measureSkillsShMirrorProofSource(
   await pace();
   const beyondEnd = await fetchSkillsShCatalogPage(
     { page: beyondEndPageNumber, perPage: MAX_SOURCE_PAGE_SIZE },
-    options,
+    sourceOptions,
   );
-  sourceRequests += 1;
   requestedPages.push({
     page: beyondEndPageNumber,
     count: beyondEnd.data.length,
@@ -1706,23 +1727,20 @@ export async function measureSkillsShMirrorProofSource(
       owner: sampleRow.source.split("/")[0],
       limit: 10,
     },
-    options,
+    sourceOptions,
   );
-  sourceRequests += 1;
   await pace();
-  const detail = await fetchSkillsShCatalogDetail(sampleRow.id, options);
-  sourceRequests += 1;
+  const detail = await fetchSkillsShCatalogDetail(sampleRow.id, sourceOptions);
   const expectedPagePath = `/${sampleRow.id.trim().toLowerCase()}`;
   const pageHtml = await fetchSkillsShProofText(sampleRow.url, {
-    fetchImpl: options.fetchImpl ?? fetch,
+    fetchImpl: accountedFetchImpl,
     expectedPath: expectedPagePath,
     rsc: false,
   });
-  sourceRequests += 1;
   const rscUrl = new URL(sampleRow.url);
   rscUrl.searchParams.set("_rsc", "clawhub-proof");
   const rsc = await fetchSkillsShProofText(rscUrl.href, {
-    fetchImpl: options.fetchImpl ?? fetch,
+    fetchImpl: accountedFetchImpl,
     headers: {
       Accept: "text/x-component",
       RSC: "1",
@@ -1730,7 +1748,6 @@ export async function measureSkillsShMirrorProofSource(
     expectedPath: expectedPagePath,
     rsc: true,
   });
-  sourceRequests += 1;
   const pageFields = parseSkillsShPageFieldEvidence(pageHtml);
   const rscFields = parseSkillsShRscFieldEvidence(rsc);
   const searchTaxonomyFields = normalizedTaxonomyFields(search);

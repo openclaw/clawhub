@@ -286,6 +286,8 @@ describe("skills.sh Vercel source boundary", () => {
         pagination: { page: 2, perPage: 500, total: 501, hasMore: false },
       },
     ];
+    const cancelProofPageBody = vi.fn();
+    let proofPageAttempts = 0;
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (url.includes("/api/v1/skills?page=")) {
@@ -321,6 +323,13 @@ describe("skills.sh Vercel source boundary", () => {
         );
       }
       if (url === controlledRow.url) {
+        proofPageAttempts += 1;
+        if (proofPageAttempts === 1) {
+          return new Response(new ReadableStream({ cancel: cancelProofPageBody }), {
+            status: 503,
+            headers: { "retry-after": "0" },
+          });
+        }
         return new Response(
           '<!doctype html><script type="application/ld+json">' +
             '{"@context":"https://schema.org","@type":"SoftwareApplication",' +
@@ -344,7 +353,7 @@ describe("skills.sh Vercel source boundary", () => {
       controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
       controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
       pageSize: 500,
-      sourceRequests: 7,
+      sourceRequests: 8,
       sourcePages: [
         {
           page: 0,
@@ -436,7 +445,8 @@ describe("skills.sh Vercel source boundary", () => {
         },
       },
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(7);
+    expect(fetchImpl).toHaveBeenCalledTimes(8);
+    expect(cancelProofPageBody).toHaveBeenCalledTimes(1);
   });
 
   it("round-trips immutable proof source metadata through the run snapshot", () => {
@@ -604,6 +614,71 @@ describe("skills.sh Vercel source boundary", () => {
       }),
     ).rejects.toThrow("outside the exact skills.sh route");
     expect(fetchImpl).not.toHaveBeenCalledWith("http://127.0.0.1/internal", expect.anything());
+  });
+
+  it("delegates long proof metadata cooldowns without waiting inline", async () => {
+    const row = {
+      id: "owner/repo/skill",
+      installUrl: "https://github.com/owner/repo",
+      installs: 1,
+      name: "Skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    const cancel = vi.fn();
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=0")) {
+        return new Response(
+          JSON.stringify({
+            data: [row],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills?page=1")) {
+        return new Response(
+          JSON.stringify({
+            data: [],
+            pagination: { page: 1, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(JSON.stringify({ data: [row] }));
+      }
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            id: row.id,
+            source: row.source,
+            slug: row.slug,
+            installs: row.installs,
+            hash: "a".repeat(64),
+            files: [],
+          }),
+        );
+      }
+      if (url === row.url) {
+        return new Response(new ReadableStream({ cancel }), {
+          status: 503,
+          headers: { "retry-after": "120" },
+        });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const error = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    }).catch((value: unknown) => value);
+
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it("rejects duplicate identities before declaring the leaderboard exhausted", async () => {
