@@ -40,6 +40,21 @@ Local fixture seeding is command-driven by default:
   baseline restore. It validates the archive, refuses every deployment except
   `academic-chihuahua-392`, and uses Convex `--replace-all` so cross-project table IDs restore
   correctly.
+- After creating a read-only production snapshot with `bunx convex export --prod`, run
+  `bun run seed:test:ranking-export -- --snapshot <snapshot.zip> --dataset-version
+ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five fixed tables:
+  public skills, public plugins, their daily aggregate rows, and active bookmarks used only to aggregate
+  bookmark creation counts by skill/day. The emitted JSON contains no Convex ids or user, device,
+  session, IP, auth, moderation, or private telemetry fields and is rejected unless it covers an
+  exact 60-day window.
+- `bun run seed:test:ranking-import -- --dataset <dataset.json> --backup-dir <empty-dir>` targets
+  only `academic-chihuahua-392`. It replaces prior imported ranking rows, preserves deterministic
+  feature and skills.sh fixture rows as overlays, records version/checksum/count/time-range
+  metadata, and leaves an exact three-table backup. Immediately before replacement it re-exports
+  and hashes all three target tables, aborting without mutation if the reserved Test lane changed
+  after the backup snapshot. Use `--readback --dataset-version <version>` for
+  24-hour/60-day proof, `--cleanup` with the original dataset to remove that version, or
+  `--rollback --backup-dir <dir>` to restore the pre-import tables.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
 

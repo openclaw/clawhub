@@ -66,6 +66,8 @@
     "seed:public-corpus": "bun run setup:worktree -- --quiet && bunx convex dev --once --typecheck=disable && bun scripts/public-corpus/seed-public-corpus.ts",
     "seed:test": "bun scripts/seed-test.ts",
     "seed:test:import-snapshot": "bun scripts/staging-seed/import-test-snapshot.ts",
+    "seed:test:ranking-export": "bun scripts/ranking-metrics/export-prod-ranking-metrics.ts",
+    "seed:test:ranking-import": "bun scripts/ranking-metrics/import-test-ranking-metrics.ts",
     "seed:test:sanitize-snapshot": "bun scripts/staging-seed/sanitize-prod-snapshot.ts",
     "seed:test:validate-snapshot": "bun scripts/staging-seed/validate-sanitized-snapshot.ts",
     "setup:worktree": "bun scripts/setup-worktree.ts",

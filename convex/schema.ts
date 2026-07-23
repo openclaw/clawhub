@@ -2027,6 +2027,9 @@ const packageDailyStats = defineTable({
   day: v.number(),
   downloads: v.number(),
   installs: v.number(),
+  bookmarks: v.optional(v.number()),
+  rankingDatasetVersion: v.optional(v.string()),
+  rankingImportedAt: v.optional(v.number()),
   updatedAt: v.number(),
 })
   .index("by_package_day", ["packageId", "day"])
@@ -2482,6 +2485,9 @@ const skillDailyStats = defineTable({
   day: v.number(),
   downloads: v.number(),
   installs: v.number(),
+  bookmarks: v.optional(v.number()),
+  rankingDatasetVersion: v.optional(v.string()),
+  rankingImportedAt: v.optional(v.number()),
   updatedAt: v.number(),
 })
   .index("by_skill_day", ["skillId", "day"])
@@ -2515,6 +2521,25 @@ const globalStats = defineTable({
   activePluginsCount: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
+
+const rankingMetricImports = defineTable({
+  datasetVersion: v.string(),
+  checksum: v.string(),
+  generatedAt: v.string(),
+  importedAt: v.number(),
+  startDay: v.number(),
+  endDay: v.number(),
+  targetCount: v.number(),
+  skillTargetCount: v.number(),
+  packageTargetCount: v.number(),
+  dailyRowCount: v.number(),
+  importedSkillRows: v.number(),
+  importedPackageRows: v.number(),
+  unresolvedTargets: v.number(),
+  skippedOverlayRows: v.number(),
+})
+  .index("by_dataset_version", ["datasetVersion"])
+  .index("by_imported_at", ["importedAt"]);
 
 const skillStatEvents = defineTable({
   skillId: v.id("skills"),
@@ -3926,6 +3951,7 @@ export default defineSchema({
   skillLeaderboards,
   skillStatBackfillState,
   globalStats,
+  rankingMetricImports,
   skillStatEvents,
   skillStatUpdateCursors,
   skillStatDocSyncLeases,

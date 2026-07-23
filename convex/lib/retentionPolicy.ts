@@ -190,6 +190,9 @@ export const RETENTION_POLICIES = {
   skillLeaderboards: derived("Leaderboard snapshots can be rebuilt from stats.", "skillDailyStats"),
   skillStatBackfillState: permanent("Backfill cursor state."),
   globalStats: derived("Global stats aggregate can be recalculated.", "skills/packages"),
+  rankingMetricImports: permanent(
+    "Versioned Test ranking import provenance is retained until explicit cleanup.",
+  ),
   skillStatEvents: ephemeral(
     "Skill stat event log is retained only after both consumers pass it.",
     {
