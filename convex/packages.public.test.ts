@@ -18,6 +18,8 @@ import {
   list,
   publishPackageForTrustedPublisherInternal,
   publishPackageForUserInternal,
+  generateChangelogPreview,
+  assertCanGenerateChangelogPreviewInternal,
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
   getManageContext,
@@ -392,6 +394,27 @@ const publishPackageForTrustedPublisherInternalHandler = (
       payload: unknown;
     },
     unknown
+  >
+)._handler;
+const generateChangelogPreviewHandler = (
+  generateChangelogPreview as unknown as WrappedHandler<
+    {
+      name: string;
+      family: "code-plugin" | "bundle-plugin";
+      version: string;
+      readmeText: string;
+      filePaths?: string[];
+    },
+    { changelog: string }
+  >
+)._handler;
+const assertCanGenerateChangelogPreviewInternalHandler = (
+  assertCanGenerateChangelogPreviewInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      name: string;
+    },
+    { ok: true }
   >
 )._handler;
 
@@ -2504,7 +2527,205 @@ function makeSoftDeletePackageCtx(options?: {
   };
 }
 
+function makePackagePreviewAccessCtx(options: {
+  actorUserId: string;
+  actorRole?: "user" | "admin" | "moderator";
+  pkg: ReturnType<typeof makePackageDoc> | null;
+  membershipRole?: "owner" | "admin" | "publisher";
+}) {
+  const publisher = options.pkg?.ownerPublisherId
+    ? {
+        _id: options.pkg.ownerPublisherId,
+        kind: "org",
+        handle: "owner-org",
+        displayName: "Owner Org",
+      }
+    : null;
+
+  return {
+    db: {
+      get: vi.fn(async (id: string) => {
+        if (id === options.actorUserId) return { _id: id, role: options.actorRole ?? "user" };
+        if (publisher && id === publisher._id) return publisher;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "packages") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(options.pkg),
+            })),
+          };
+        }
+        if (table === "publisherMembers") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(
+                options.membershipRole && publisher
+                  ? {
+                      _id: "publisherMembers:preview",
+                      publisherId: publisher._id,
+                      userId: options.actorUserId,
+                      role: options.membershipRole,
+                    }
+                  : null,
+              ),
+            })),
+          };
+        }
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    },
+  };
+}
+
 describe("packages public queries", () => {
+  it("generates a package changelog preview from prior release history", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:preview" as never);
+    const previousKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const runQuery = vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "users:preview",
+          role: "user",
+        })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({
+          _id: "packages:demo",
+          latestReleaseId: "packageReleases:demo-1",
+          softDeletedAt: undefined,
+        })
+        .mockResolvedValueOnce({
+          _id: "packageReleases:demo-1",
+          files: [{ path: "README.md", storageId: "storage:readme", sha256: "old" }],
+        });
+      const storageGet = vi.fn(async () => new Blob(["# Demo\n\nOld README"]));
+
+      const result = await generateChangelogPreviewHandler(
+        {
+          runQuery,
+          storage: { get: storageGet },
+        } as never,
+        {
+          name: "demo-plugin",
+          family: "code-plugin",
+          version: "1.2.0",
+          readmeText: "# Demo\n\nNew README",
+          filePaths: ["README.md", "src/index.ts"],
+        },
+      );
+
+      expect(result.changelog).toContain("Updated README and package contents");
+      expect(runQuery).toHaveBeenCalledTimes(4);
+      expect(storageGet).toHaveBeenCalledWith("storage:readme");
+    } finally {
+      if (previousKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousKey;
+      }
+    }
+  });
+
+  it("blocks package changelog previews before reading release storage when access is denied", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:preview" as never);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "users:preview",
+        role: "user",
+      })
+      .mockRejectedValueOnce(new Error("Forbidden"));
+    const storageGet = vi.fn();
+
+    await expect(
+      generateChangelogPreviewHandler(
+        {
+          runQuery,
+          storage: { get: storageGet },
+        } as never,
+        {
+          name: "demo-plugin",
+          family: "code-plugin",
+          version: "1.2.0",
+          readmeText: "# Demo\n\nNew README",
+          filePaths: ["README.md"],
+        },
+      ),
+    ).rejects.toThrow("Forbidden");
+
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-owner package changelog previews for existing packages", async () => {
+    const pkg = makePackageDoc({
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:owner-org",
+    });
+
+    await expect(
+      assertCanGenerateChangelogPreviewInternalHandler(
+        makePackagePreviewAccessCtx({
+          actorUserId: "users:viewer",
+          pkg,
+        }) as never,
+        { actorUserId: "users:viewer", name: "demo-plugin" },
+      ),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("allows direct owners to generate package changelog previews", async () => {
+    await expect(
+      assertCanGenerateChangelogPreviewInternalHandler(
+        makePackagePreviewAccessCtx({
+          actorUserId: "users:owner",
+          pkg: makePackageDoc({ ownerUserId: "users:owner" }),
+        }) as never,
+        { actorUserId: "users:owner", name: "demo-plugin" },
+      ),
+    ).resolves.toEqual({ ok: true });
+  });
+
+  it.each(["owner", "admin", "publisher"] as const)(
+    "allows org %s members to generate package changelog previews",
+    async (membershipRole) => {
+      const pkg = makePackageDoc({
+        ownerUserId: "users:creator",
+        ownerPublisherId: "publishers:owner-org",
+      });
+
+      await expect(
+        assertCanGenerateChangelogPreviewInternalHandler(
+          makePackagePreviewAccessCtx({
+            actorUserId: "users:publisher-member",
+            pkg,
+            membershipRole,
+          }) as never,
+          { actorUserId: "users:publisher-member", name: "demo-plugin" },
+        ),
+      ).resolves.toEqual({ ok: true });
+    },
+  );
+
+  it.each(["admin", "moderator"] as const)(
+    "allows platform %s users to generate package changelog previews",
+    async (actorRole) => {
+      await expect(
+        assertCanGenerateChangelogPreviewInternalHandler(
+          makePackagePreviewAccessCtx({
+            actorUserId: "users:staff",
+            actorRole,
+            pkg: makePackageDoc({ ownerUserId: "users:owner" }),
+          }) as never,
+          { actorUserId: "users:staff", name: "demo-plugin" },
+        ),
+      ).resolves.toEqual({ ok: true });
+    },
+  );
+
   it("keeps partially consumed plugin export family pages active", async () => {
     const ctx = makePluginExportCtx([
       makePluginExportDigest("newer-code", "code-plugin", 300),

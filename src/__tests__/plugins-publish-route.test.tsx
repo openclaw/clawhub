@@ -32,6 +32,7 @@ vi.mock("sonner", () => ({
 
 const generateUploadUrl = vi.fn();
 const publishRelease = vi.fn();
+const generateChangelogPreview = vi.fn();
 const fetchMock = vi.fn();
 const writeTextMock = vi.fn();
 const useAuthStatusMock = vi.fn();
@@ -42,7 +43,10 @@ const originalFetch = globalThis.fetch;
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useMutation: () => generateUploadUrl,
-  useAction: () => publishRelease,
+  useAction: (fn: unknown) => {
+    const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+    return name === "packages:generateChangelogPreview" ? generateChangelogPreview : publishRelease;
+  },
   useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
@@ -134,6 +138,7 @@ describe("plugins publish route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
     publishRelease.mockReset();
+    generateChangelogPreview.mockReset();
     fetchMock.mockReset();
     writeTextMock.mockReset();
     useAuthStatusMock.mockReset();
@@ -163,6 +168,7 @@ describe("plugins publish route", () => {
     });
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    generateChangelogPreview.mockResolvedValue({ changelog: "- Updated package." });
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
       ok: true,
       json: async () => ({
@@ -579,6 +585,126 @@ describe("plugins publish route", () => {
         categories: ["tools"],
         topics: ["GPU development"],
       }),
+    });
+  });
+
+  it("auto-fills a package changelog preview from the uploaded README", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    generateChangelogPreview.mockResolvedValueOnce({
+      changelog: "- Added README-driven install guidance.",
+    });
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledWith({
+        name: "demo-plugin",
+        family: "code-plugin",
+        version: "1.2.4",
+        readmeText: "# Demo Plugin\n\nAdds install guidance.",
+        filePaths: ["package.json", "openclaw.plugin.json", "README.md"],
+      });
+      expect(
+        (
+          screen.getByPlaceholderText(
+            "Describe what changed in this release...",
+          ) as HTMLTextAreaElement
+        ).value,
+      ).toBe("- Added README-driven install guidance.");
+    });
+  });
+
+  it("does not let a stale package changelog preview overwrite manual text", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    let resolvePreview: ((value: { changelog: string }) => void) | undefined;
+    generateChangelogPreview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
+    });
+    const changelog = screen.getByPlaceholderText(
+      "Describe what changed in this release...",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(changelog, { target: { value: "Manual release notes." } });
+    resolvePreview?.({ changelog: "- Stale generated text." });
+
+    await waitFor(() => {
+      expect(changelog.value).toBe("Manual release notes.");
     });
   });
 

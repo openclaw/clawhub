@@ -61,6 +61,8 @@ function pickPaths(values: string[]) {
 }
 
 async function generateWithOpenAI(args: {
+  subjectLabel?: string;
+  readmeLabel?: string;
   slug: string;
   version: string;
   oldReadme: string | null;
@@ -70,6 +72,8 @@ async function generateWithOpenAI(args: {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
+  const subjectLabel = args.subjectLabel ?? "Skill";
+  const readmeLabel = args.readmeLabel ?? "SKILL.md";
   const oldReadme = args.oldReadme ? clampText(args.oldReadme, MAX_README_CHARS) : "";
   const nextReadme = clampText(args.nextReadme, MAX_README_CHARS);
 
@@ -80,14 +84,14 @@ async function generateWithOpenAI(args: {
   const removedPaths = fileDiff ? pickPaths(fileDiff.removed) : [];
 
   const input = [
-    `Skill: ${args.slug}`,
+    `${subjectLabel}: ${args.slug}`,
     `Version: ${args.version}`,
     `File changes: ${diffSummary}`,
     changedPaths.length ? `Changed files (sample): ${changedPaths.join(", ")}` : null,
     addedPaths.length ? `Added files (sample): ${addedPaths.join(", ")}` : null,
     removedPaths.length ? `Removed files (sample): ${removedPaths.join(", ")}` : null,
-    oldReadme ? `Previous SKILL.md:\n${oldReadme}` : null,
-    `New SKILL.md:\n${nextReadme}`,
+    oldReadme ? `Previous ${readmeLabel}:\n${oldReadme}` : null,
+    `New ${readmeLabel}:\n${nextReadme}`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -100,8 +104,7 @@ async function generateWithOpenAI(args: {
     },
     body: JSON.stringify({
       model: CHANGELOG_MODEL,
-      instructions:
-        "Write a concise changelog for this skill version. Audience: everyone. Output plain text. Prefer 2–6 bullet points. If it is a big change, include a short 1-line summary first, then bullets. Don’t mention that you are AI. Don’t invent details; only use the inputs.",
+      instructions: `Write a concise changelog for this ${subjectLabel.toLowerCase()} version. Audience: everyone. Output plain text. Prefer 2–6 bullet points. If it is a big change, include a short 1-line summary first, then bullets. Don’t mention that you are AI. Don’t invent details; only use the inputs.`,
       input,
       max_output_tokens: 220,
     }),
@@ -135,6 +138,32 @@ function generateFallback(args: {
   }
 
   lines.push(`- Updated SKILL.md and bundle contents.`);
+  return lines.join("\n");
+}
+
+function generatePackageFallback(args: {
+  name: string;
+  version: string;
+  oldReadme: string | null;
+  nextReadme: string;
+  fileDiff: FileDiffSummary | null;
+}) {
+  const lines: string[] = [];
+  if (!args.oldReadme) {
+    lines.push(`- Initial release.`);
+    return lines.join("\n");
+  }
+
+  const diff = args.fileDiff;
+  if (diff) {
+    const parts: string[] = [];
+    if (diff.added.length) parts.push(`added ${diff.added.length}`);
+    if (diff.changed.length) parts.push(`updated ${diff.changed.length}`);
+    if (diff.removed.length) parts.push(`removed ${diff.removed.length}`);
+    if (parts.length) lines.push(`- ${parts.join(", ")} file(s).`);
+  }
+
+  lines.push(`- Updated README and package contents.`);
   return lines.join("\n");
 }
 
@@ -181,6 +210,62 @@ export async function generateChangelogForPublish(
     );
   } catch {
     return "- Updated skill.";
+  }
+}
+
+export async function generatePackageChangelogPreview(
+  ctx: ActionCtx,
+  args: {
+    name: string;
+    version: string;
+    readmeText: string;
+    filePaths?: string[];
+  },
+): Promise<string> {
+  try {
+    const pkg = (await ctx.runQuery(internal.packages.getPackageByNameInternal, {
+      name: args.name,
+    })) as Doc<"packages"> | null;
+    const previous: Doc<"packageReleases"> | null =
+      pkg?.latestReleaseId && !pkg.softDeletedAt
+        ? ((await ctx.runQuery(internal.packages.getReleaseByIdInternal, {
+            releaseId: pkg.latestReleaseId,
+          })) as Doc<"packageReleases"> | null)
+        : null;
+
+    const oldReadmeText: string | null = previous
+      ? await readReadmeFromPackageRelease(ctx, previous)
+      : null;
+    const fileDiff =
+      previous && args.filePaths
+        ? summarizeFileDiff(
+            previous.files.map((file) => ({ path: file.path, sha256: file.sha256 })),
+            args.filePaths.map((path) => ({ path })),
+          )
+        : null;
+
+    const ai = await generateWithOpenAI({
+      subjectLabel: "Package",
+      readmeLabel: "README",
+      slug: args.name,
+      version: args.version,
+      oldReadme: oldReadmeText,
+      nextReadme: args.readmeText,
+      fileDiff,
+    }).catch(() => null);
+
+    return (
+      ai ??
+      generatePackageFallback({
+        name: args.name,
+        version: args.version,
+        oldReadme: oldReadmeText,
+        nextReadme: args.readmeText,
+        fileDiff,
+      })
+    );
+  } catch {
+    return "- Updated package.";
   }
 }
 
@@ -249,10 +334,22 @@ async function readReadmeFromVersion(ctx: ActionCtx, version: Doc<"skillVersions
   return blob.text();
 }
 
+async function readReadmeFromPackageRelease(ctx: ActionCtx, release: Doc<"packageReleases">) {
+  const readmeFile = release.files.find((file) => {
+    const lower = file.path.toLowerCase();
+    return lower === "readme.md" || lower === "readme.mdx";
+  });
+  if (!readmeFile) return null;
+  const blob = await ctx.storage.get(readmeFile.storageId as Id<"_storage">);
+  if (!blob) return null;
+  return blob.text();
+}
+
 export const __test = {
   clampText,
   extractResponseText,
   formatDiffSummary,
+  generatePackageFallback,
   summarizeFileDiff,
   generateFallback,
 };

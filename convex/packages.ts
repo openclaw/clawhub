@@ -52,6 +52,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
+import { generatePackageChangelogPreview } from "./lib/changelog";
 import { sha256Hex } from "./lib/clawpack";
 import {
   ACTIVITY_TREND_DAYS,
@@ -472,6 +473,7 @@ const internalRefs = internal as unknown as {
     getByNameForViewerInternal: unknown;
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
+    assertCanGenerateChangelogPreviewInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getPackageReleaseScanBackfillBatchInternal: unknown;
     listVersionsForViewerInternal: unknown;
@@ -2779,6 +2781,28 @@ export const getManageContext = query({
     if (!latestRelease || latestRelease.softDeletedAt) return null;
 
     return toPackageManageContext(pkg, latestRelease);
+  },
+});
+
+export const assertCanGenerateChangelogPreviewInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) {
+      throw new ConvexError("Unauthorized");
+    }
+
+    const pkg = await getPackageByNormalizedName(ctx, args.name);
+    if (!pkg || pkg.softDeletedAt) return { ok: true as const };
+    if (pkg.family === "skill") throw new ConvexError("Forbidden");
+    if (actor.role === "admin" || actor.role === "moderator") return { ok: true as const };
+
+    const canPublish = await viewerCanAccessPackageOwner(ctx, pkg, args.actorUserId);
+    if (!canPublish) throw new ConvexError("Forbidden");
+    return { ok: true as const };
   },
 });
 
@@ -8311,6 +8335,32 @@ export const finalizePackagePublishAttemptInternal = internalAction({
     }
 
     return publishResult;
+  },
+});
+
+export const generateChangelogPreview: ReturnType<typeof action> = action({
+  args: {
+    name: v.string(),
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    version: v.string(),
+    readmeText: v.string(),
+    filePaths: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUserFromAction(ctx);
+    const name = normalizePackageName(args.name);
+    const version = assertPackageVersion(args.family, args.version);
+    await runQueryRef(ctx, internalRefs.packages.assertCanGenerateChangelogPreviewInternal, {
+      actorUserId: userId,
+      name,
+    });
+    const changelog = await generatePackageChangelogPreview(ctx, {
+      name,
+      version,
+      readmeText: args.readmeText,
+      filePaths: args.filePaths,
+    });
+    return { changelog };
   },
 });
 
