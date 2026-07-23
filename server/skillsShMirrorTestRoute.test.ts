@@ -74,7 +74,14 @@ describe("skills.sh permanent Test mirror route", () => {
         sourcePageSize: 500,
         reason: "CLAW-563 proof",
       });
-      return new Response(JSON.stringify({ runId: "skillsShMirrorRuns:test" }));
+      return new Response(
+        JSON.stringify({
+          runId: "skillsShMirrorRuns:test",
+          status: "running",
+          page: 0,
+          offset: 0,
+        }),
+      );
     });
     vi.stubGlobal("fetch", convexFetch);
 
@@ -84,12 +91,91 @@ describe("skills.sh permanent Test mirror route", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
       runId: "skillsShMirrorRuns:test",
+      status: "running",
+      page: 0,
+      offset: 0,
       sourceTotal: 9_571,
     });
     expect(fetchPageMock).toHaveBeenCalledWith(
       { page: 0, perPage: 500 },
       expect.objectContaining({ oidcToken: "request-oidc-token" }),
     );
+  });
+
+  it("passes through a completed reconciliation run summary", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "reconcile",
+      runId: "skillsShMirrorRuns:test",
+      limit: 250,
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(JSON.parse(String(init.body))).toEqual({
+        operation: "mirror-reconcile",
+        runId: "skillsShMirrorRuns:test",
+        limit: 250,
+      });
+      return new Response(
+        JSON.stringify({
+          runId: "skillsShMirrorRuns:test",
+          status: "completed",
+          page: 20,
+          offset: 0,
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      runId: "skillsShMirrorRuns:test",
+      status: "completed",
+      page: 20,
+      offset: 0,
+    });
+  });
+
+  it("reads bounded conflicts for the requested live run", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "conflicts",
+      runId: "skillsShMirrorRuns:live",
+      limit: 50,
+    });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      expect(JSON.parse(String(init.body))).toEqual({
+        operation: "mirror-conflicts",
+        runId: "skillsShMirrorRuns:live",
+        limit: 50,
+      });
+      return new Response(
+        JSON.stringify({
+          conflicts: [
+            {
+              runId: "skillsShMirrorRuns:live",
+              externalId: "larksuite/cli/lark-doc",
+              kind: "source-quarantine",
+            },
+          ],
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      conflicts: [
+        {
+          runId: "skillsShMirrorRuns:live",
+          externalId: "larksuite/cli/lark-doc",
+          kind: "source-quarantine",
+        },
+      ],
+    });
   });
 
   it("fetches and commits one exact page-offset batch", async () => {
@@ -342,7 +428,14 @@ describe("skills.sh permanent Test mirror route", () => {
           sourceTotal: 1,
           sourcePageSize: 500,
         });
-        return new Response(JSON.stringify({ runId: "skillsShMirrorRuns:replay" }));
+        return new Response(
+          JSON.stringify({
+            runId: "skillsShMirrorRuns:replay",
+            status: "running",
+            page: 0,
+            offset: 0,
+          }),
+        );
       }
       if (body.operation === "mirror-batch-claim") return new Response(JSON.stringify(body));
       if (body.operation === "mirror-replay-rows") {
@@ -372,6 +465,9 @@ describe("skills.sh permanent Test mirror route", () => {
     expect(startResponse.status).toBe(200);
     expect(await startResponse.json()).toMatchObject({
       runId: "skillsShMirrorRuns:replay",
+      status: "running",
+      page: 0,
+      offset: 0,
       sourceTotal: 1,
     });
     expect(stepResponse.status).toBe(200);

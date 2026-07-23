@@ -30,6 +30,7 @@ type MirrorRequest = {
     | "pause"
     | "resume"
     | "reconcile"
+    | "conflicts"
     | "status"
     | "isolation"
     | "read"
@@ -146,6 +147,15 @@ export default defineEventHandler(async (event) => {
         await callConvexOperator(authorization, {
           operation: "mirror-read",
           externalId: requireString(body.externalId, "externalId"),
+        }),
+      );
+    }
+    if (operation === "conflicts") {
+      return jsonResponse(
+        await callConvexOperator(authorization, {
+          operation: "mirror-conflicts",
+          runId: requireString(body.runId, "runId"),
+          limit: requireInteger(body.limit, "limit", 1, 50),
         }),
       );
     }

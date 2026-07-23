@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildMirrorStepRequest,
   buildMirrorProofHeaders,
+  capturedMirrorSourceRunId,
+  findCompletedLiveMirrorRun,
   findRecoverableMirrorRun,
   mirrorRateLimitRetryDelayMs,
+  reconcileMirrorRunToCompletion,
+  mirrorRunFromPayload,
   mirrorRunAccounting,
 } from "./prove-mirror-request";
 
@@ -38,6 +43,7 @@ describe("skills.sh mirror proof request headers", () => {
           },
           {
             runId: "active-run",
+            snapshotId: "skills-sh:2026-07-22T21:18:13.365Z:9571",
             status: "running",
             page: 0,
             offset: 50,
@@ -50,6 +56,7 @@ describe("skills.sh mirror proof request headers", () => {
       }),
     ).toEqual({
       runId: "active-run",
+      snapshotId: "skills-sh:2026-07-22T21:18:13.365Z:9571",
       status: "running",
       page: 0,
       offset: 50,
@@ -58,6 +65,90 @@ describe("skills.sh mirror proof request headers", () => {
       sourceMeasuredAt: "2026-07-22T21:18:13.365Z",
       startedAt: 2,
     });
+  });
+
+  it("normalizes direct and nested mirror run responses", () => {
+    expect(mirrorRunFromPayload({ runId: "run", status: "completed" }, "reconcile")).toEqual({
+      runId: "run",
+      status: "completed",
+    });
+    expect(
+      mirrorRunFromPayload(
+        { run: { runId: "run", status: "reconciling" }, cursor: "next" },
+        "reconcile",
+      ),
+    ).toEqual({
+      runId: "run",
+      status: "reconciling",
+    });
+    expect(() => mirrorRunFromPayload({ runId: "run" }, "start-replay")).toThrow(
+      'start-replay mirror response lacks run status: {"runId":"run"}',
+    );
+  });
+
+  it("keeps a resumed captured run on the replay operation and exact cursor", () => {
+    expect(
+      buildMirrorStepRequest({
+        runId: "captured-run",
+        page: 1,
+        offset: 50,
+        capturedSource: {
+          externalIds: Array.from({ length: 175 }, (_, index) => `owner/repo/skill-${index}`),
+          sourcePageSize: 100,
+        },
+      }),
+    ).toMatchObject({
+      operation: "step-replay",
+      runId: "captured-run",
+      page: 1,
+      offset: 50,
+      pageLength: 75,
+      hasMore: false,
+      sourceTotal: 175,
+      externalIds: Array.from({ length: 25 }, (_, index) => `owner/repo/skill-${index + 150}`),
+    });
+  });
+
+  it("normalizes reconciliation responses through completion", async () => {
+    const responses = [
+      { run: { runId: "run", status: "reconciling", page: 20, offset: 0 } },
+      { runId: "run", status: "completed", page: 20, offset: 0 },
+    ];
+    const reconcile = vi.fn(async () => responses.shift()!);
+
+    await expect(
+      reconcileMirrorRunToCompletion(
+        { runId: "run", status: "reconciling", page: 20, offset: 0 },
+        reconcile,
+      ),
+    ).resolves.toEqual({
+      run: { runId: "run", status: "completed", page: 20, offset: 0 },
+      reconciliationBatches: 2,
+    });
+    expect(reconcile).toHaveBeenCalledTimes(2);
+  });
+
+  it("ties a captured replay recovery to its completed authenticated source run", () => {
+    const liveRun = {
+      runId: "live-run",
+      snapshotId: "skills-sh:2026-07-22T21:18:13.365Z:9571",
+      status: "completed",
+      page: 20,
+      offset: 0,
+      sourceTotal: 9_571,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-07-22T21:18:13.365Z",
+      startedAt: 1,
+      completedAt: 2,
+      counts: { observed: 9_571 },
+      operations: { sourceRequests: 18_360 },
+    };
+    const payload = { runs: [{ ...liveRun, status: "running" }, liveRun] };
+
+    expect(capturedMirrorSourceRunId("skills-sh-captured:live-run")).toBe("live-run");
+    expect(capturedMirrorSourceRunId("skills-sh:live-run")).toBeNull();
+    expect(findCompletedLiveMirrorRun(payload, "live-run")).toEqual(liveRun);
+    expect(findCompletedLiveMirrorRun(payload, "missing")).toBeNull();
   });
 
   it("bounds rate-limit recovery delays while preserving Retry-After", () => {

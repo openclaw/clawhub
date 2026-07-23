@@ -39,6 +39,7 @@ const internalRefs = internal as unknown as {
     getStatusInternal: unknown;
     listDetailsPageInternal: unknown;
     listDigestsPageInternal: unknown;
+    listConflictsByRunInternal: unknown;
     listFacetsPageInternal: unknown;
     processBatchInternal: unknown;
     reconcileBatchInternal: unknown;
@@ -476,6 +477,17 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         200,
         rate.headers,
       );
+    }
+    if (operation === "mirror-conflicts") {
+      const conflicts = await runQueryRef(
+        ctx,
+        internalRefs.skillsShMirror.listConflictsByRunInternal,
+        {
+          runId: requireString(body, "runId"),
+          limit: requireNumber(body, "limit"),
+        },
+      );
+      return json({ conflicts }, 200, rate.headers);
     }
     if (operation === "mirror-read") {
       const externalId = requireString(body, "externalId");

@@ -153,6 +153,32 @@ describe("skills.sh external mirror", () => {
     vi.unstubAllEnvs();
   });
 
+  it("returns the durable cursor summary when starting a run", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+
+    const started = await t.mutation(internal.skillsShMirror.startRunInternal, {
+      actor: "codex-test",
+      reason: "CLAW-563 mirror test",
+      snapshotId: "snapshot:start-summary",
+      sourceTotal: 9_571,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-07-22T20:14:10.881Z",
+    });
+
+    expect(started).toMatchObject({
+      snapshotId: "snapshot:start-summary",
+      status: "running",
+      sourceTotal: 9_571,
+      sourcePageSize: 500,
+      page: 0,
+      offset: 0,
+      completedAt: null,
+    });
+    expect(started.runId).toEqual(expect.any(String));
+  });
+
   it("allows only one active batch lease for an exact durable cursor", async () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);
@@ -562,6 +588,18 @@ describe("skills.sh external mirror", () => {
         },
       ],
     });
+    expect(
+      await t.query(internal.skillsShMirror.listConflictsByRunInternal, {
+        runId,
+        limit: 50,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        runId,
+        externalId: "larksuite/cli/lark-doc",
+        kind: "source-quarantine",
+      }),
+    ]);
   });
 
   it("preserves an existing digest when identity-page transport is quarantined", async () => {

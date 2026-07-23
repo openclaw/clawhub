@@ -448,7 +448,24 @@ function runCounts(counts: Doc<"skillsShMirrorRuns">["counts"]) {
   };
 }
 
-function summarizeRun(run: Doc<"skillsShMirrorRuns">) {
+type SummarizableMirrorRun = Pick<
+  Doc<"skillsShMirrorRuns">,
+  | "_id"
+  | "snapshotId"
+  | "status"
+  | "sourceTotal"
+  | "sourcePageSize"
+  | "sourceMeasuredAt"
+  | "page"
+  | "offset"
+  | "counts"
+  | "operations"
+  | "startedAt"
+  | "completedAt"
+  | "updatedAt"
+>;
+
+function summarizeRun(run: SummarizableMirrorRun) {
   return {
     runId: run._id,
     snapshotId: run.snapshotId,
@@ -540,9 +557,9 @@ export const startRunInternal = internalMutation({
       throw new ConvexError("skills.sh mirror already has an active run");
     }
     const now = Date.now();
-    const runId = await ctx.db.insert("skillsShMirrorRuns", {
+    const run = {
       snapshotId: args.snapshotId.trim(),
-      status: "running",
+      status: "running" as const,
       sourceTotal: args.sourceTotal,
       sourcePageSize: args.sourcePageSize,
       sourceMeasuredAt: args.sourceMeasuredAt,
@@ -560,8 +577,9 @@ export const startRunInternal = internalMutation({
       reason: args.reason.trim(),
       startedAt: now,
       updatedAt: now,
-    });
-    return { runId };
+    };
+    const runId = await ctx.db.insert("skillsShMirrorRuns", run);
+    return summarizeRun({ _id: runId, ...run });
   },
 });
 
@@ -1457,6 +1475,20 @@ export const listFacetsPageInternal = internalQuery({
         q.eq("active", true),
       )
       .paginate({ cursor: args.cursor, numItems: args.limit });
+  },
+});
+
+export const listConflictsByRunInternal = internalQuery({
+  args: {
+    runId: v.id("skillsShMirrorRuns"),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    assertIntegerInRange("limit", args.limit, 1, 50);
+    return await ctx.db
+      .query("skillsShMirrorConflicts")
+      .withIndex("by_run_id", (q) => q.eq("runId", args.runId))
+      .take(args.limit);
   },
 });
 

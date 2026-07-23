@@ -352,6 +352,48 @@ describe("skills.sh catalog Test HTTP API", () => {
     expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("reads bounded mirror conflicts for an exact completed run", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        environment: "test",
+        deploymentName: "academic-chihuahua-392",
+        buildSha: "test-sha",
+        control: {},
+      })
+      .mockResolvedValueOnce([
+        {
+          runId: "skillsShMirrorRuns:live",
+          externalId: "larksuite/cli/lark-doc",
+          kind: "source-quarantine",
+        },
+      ]);
+    const ctx = { runQuery } as never;
+    const response = await skillsShCatalogTestV1Handler(
+      ctx,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-conflicts",
+          runId: "skillsShMirrorRuns:live",
+          limit: 50,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      conflicts: [
+        {
+          runId: "skillsShMirrorRuns:live",
+          externalId: "larksuite/cli/lark-doc",
+          kind: "source-quarantine",
+        },
+      ],
+    });
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
   it("reads bounded mirror classification reuse state", async () => {
     const runQuery = vi
       .fn()

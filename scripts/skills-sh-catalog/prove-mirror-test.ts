@@ -3,10 +3,16 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import {
+  buildMirrorStepRequest,
   buildMirrorProofHeaders,
+  capturedMirrorSourceRunId,
+  findCompletedLiveMirrorRun,
   findRecoverableMirrorRun,
   mirrorRateLimitRetryDelayMs,
+  reconcileMirrorRunToCompletion,
+  mirrorRunFromPayload,
   mirrorRunAccounting,
+  type CompletedLiveMirrorRun,
   type RecoverableMirrorRun,
 } from "./prove-mirror-request";
 
@@ -84,12 +90,16 @@ async function runMirror(
           sourceMeasuredAt: capturedSource.sourceMeasuredAt,
         })
       : await call({ operation: "start", reason });
-  const runId = requireRunId(start.payload);
+  const startRun = mirrorRunFromPayload(
+    start.payload,
+    recoverableRun ? "recover" : capturedSource ? "start-replay" : "start",
+  );
+  const runId = requireRunId(startRun);
   let page = recoverableRun?.page ?? 0;
   let offset = recoverableRun?.offset ?? 0;
   let steps = 0;
   let pauseProof: Record<string, unknown> | null = null;
-  let run = start.payload as Record<string, unknown>;
+  let run = startRun;
   let recovery: Record<string, unknown> | null = null;
   let rateLimitRetries = 0;
   let rateLimitWaitMs = 0;
@@ -111,30 +121,7 @@ async function runMirror(
     }
   }
   while (run.status === "running") {
-    const stepRequest = capturedSource
-      ? {
-          operation: "step-replay",
-          runId,
-          page,
-          offset,
-          pageLength: Math.min(
-            capturedSource.sourcePageSize,
-            capturedSource.externalIds.length - page * capturedSource.sourcePageSize,
-          ),
-          hasMore: (page + 1) * capturedSource.sourcePageSize < capturedSource.externalIds.length,
-          sourceTotal: capturedSource.externalIds.length,
-          externalIds: capturedSource.externalIds.slice(
-            page * capturedSource.sourcePageSize + offset,
-            page * capturedSource.sourcePageSize + offset + 50,
-          ),
-        }
-      : { operation: "step", runId, page, offset };
-    if (
-      capturedSource &&
-      (!Array.isArray(stepRequest.externalIds) || stepRequest.externalIds.length < 1)
-    ) {
-      throw new Error(`captured mirror replay has no rows for cursor ${page}:${offset}`);
-    }
+    const stepRequest = buildMirrorStepRequest({ runId, page, offset, capturedSource });
     const step = await callRaw(stepRequest);
     if (!step.ok) {
       const delayMs = mirrorRateLimitRetryDelayMs(step.status, step.retryAfter, rateLimitRetries);
@@ -150,7 +137,7 @@ async function runMirror(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       continue;
     }
-    run = step.payload;
+    run = mirrorRunFromPayload(step.payload, String(stepRequest.operation));
     steps += 1;
     if (typeof run.page !== "number" || typeof run.offset !== "number") {
       throw new Error("mirror step did not return a durable cursor");
@@ -181,16 +168,12 @@ async function runMirror(
       };
     }
   }
-  let reconciliationBatches = 0;
-  while (run.status === "reconciling") {
-    const reconciliation = await call({
-      operation: "reconcile",
-      runId,
-      limit: 250,
-    });
-    run = reconciliation.payload;
-    reconciliationBatches += 1;
-  }
+  const reconciliation = await reconcileMirrorRunToCompletion(run, async () => {
+    const result = await call({ operation: "reconcile", runId, limit: 250 });
+    return result.payload;
+  });
+  run = reconciliation.run;
+  const reconciliationBatches = reconciliation.reconciliationBatches;
   if (run.status !== "completed") {
     throw new Error(`mirror run ended in unexpected status ${String(run.status)}`);
   }
@@ -262,6 +245,35 @@ type CapturedMirrorSource = {
   sourceMeasuredAt: string;
   sourcePageSize: number;
 };
+
+function completedLiveRunProof(run: CompletedLiveMirrorRun): MirrorRunProof {
+  return {
+    runId: run.runId,
+    run,
+    source: {
+      total: run.sourceTotal,
+      measuredAt: run.sourceMeasuredAt,
+      pageSize: run.sourcePageSize,
+    },
+    recovery: {
+      runId: run.runId,
+      status: run.status,
+      cursor: { page: run.page, offset: run.offset },
+      completedBeforeProofContinuation: true,
+    },
+    steps: 0,
+    reconciliationBatches: 0,
+    pauseProof: null,
+    rateLimitRecovery: {
+      retries: 0,
+      waitedMs: 0,
+      retryBudget: MAX_RATE_LIMIT_RETRIES_PER_RUN,
+      waitBudgetMs: MAX_RATE_LIMIT_WAIT_MS_PER_RUN,
+    },
+    elapsedMs: run.completedAt - run.startedAt,
+    attemptElapsedMs: 0,
+  };
+}
 
 function runCounts(runResult: MirrorRunProof) {
   const counts = runResult.run.counts;
@@ -431,10 +443,30 @@ try {
   const isolationBefore = (await call({ operation: "isolation" })).payload;
   const statusBefore = (await call({ operation: "status" })).payload;
   const recoverableRun = findRecoverableMirrorRun(statusBefore);
-  const firstRun = await runMirror("CLAW-563 complete authenticated mirror", true, recoverableRun);
-  const statusAfterFirstRun = (await call({ operation: "status" })).payload;
-  const latestRunConflicts = Array.isArray(statusAfterFirstRun.latestRunConflicts)
-    ? (statusAfterFirstRun.latestRunConflicts as Record<string, unknown>[])
+  const recoveredLiveRunId = recoverableRun
+    ? capturedMirrorSourceRunId(recoverableRun.snapshotId)
+    : null;
+  const recoveredNormalizationRun = recoveredLiveRunId ? recoverableRun : null;
+  const completedLiveRun = recoveredLiveRunId
+    ? findCompletedLiveMirrorRun(statusBefore, recoveredLiveRunId)
+    : null;
+  if (recoveredNormalizationRun && !completedLiveRun) {
+    throw new Error(
+      `captured mirror recovery lacks completed live source run ${recoveredLiveRunId}`,
+    );
+  }
+  const firstRun = completedLiveRun
+    ? completedLiveRunProof(completedLiveRun)
+    : await runMirror(
+        "CLAW-563 complete authenticated mirror",
+        true,
+        recoveredNormalizationRun ? null : recoverableRun,
+      );
+  const conflictsAfterFirstRun = (
+    await call({ operation: "conflicts", runId: firstRun.runId, limit: 50 })
+  ).payload;
+  const liveRunConflicts = Array.isArray(conflictsAfterFirstRun.conflicts)
+    ? (conflictsAfterFirstRun.conflicts as Record<string, unknown>[])
     : [];
   const capturedAfterLive = await collectPages("page", validateDigestIsolation);
   const liveCapturedSource: CapturedMirrorSource = {
@@ -451,7 +483,7 @@ try {
   const normalizationRun = await runMirror(
     "CLAW-563 authenticated captured snapshot normalization",
     false,
-    null,
+    recoveredNormalizationRun,
     liveCapturedSource,
   );
   const capturedAfterNormalization = await collectPages("page", validateDigest);
@@ -493,7 +525,7 @@ try {
   if (facets.count < digests.count) {
     throw new Error("mirror facets do not cover every digest category fallback");
   }
-  const quarantineSamples = latestRunConflicts
+  const quarantineSamples = liveRunConflicts
     .filter(
       (conflict) => conflict.runId === firstRun.runId && conflict.kind === "source-quarantine",
     )
