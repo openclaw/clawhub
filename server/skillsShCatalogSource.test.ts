@@ -422,6 +422,71 @@ describe("skills.sh Vercel source boundary", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(7);
   });
 
+  it("delegates long proof-metadata Retry-After waits to durable recovery", async () => {
+    const row = {
+      id: "owner/repo/skill",
+      installUrl: "https://github.com/owner/repo",
+      installs: 1,
+      name: "Skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    let metadataAttempts = 0;
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=0")) {
+        return new Response(
+          JSON.stringify({
+            data: [row],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills?page=1")) {
+        return new Response(
+          JSON.stringify({
+            data: [],
+            pagination: { page: 1, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(JSON.stringify({ data: [row] }));
+      }
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            files: [],
+            hash: "a".repeat(64),
+            id: row.id,
+            installs: row.installs,
+            slug: row.slug,
+            source: row.source,
+          }),
+        );
+      }
+      if (url === row.url) {
+        metadataAttempts += 1;
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "120" },
+        });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const error = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    }).catch((value: unknown) => value);
+
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
+    expect(metadataAttempts).toBe(1);
+  });
+
   it("hashes captured leaderboard rows independently of upstream object key order", async () => {
     const row = {
       url: "https://www.skills.sh/owner/repo/skill",
@@ -1363,6 +1428,69 @@ describe("skills.sh Vercel source boundary", () => {
       ],
       sourceRequests: 3,
     });
+  });
+
+  it("accounts for exact downloaded list, detail, and audit JSON bytes", async () => {
+    const row = {
+      id: "owner/repo/skill",
+      installUrl: "https://github.com/owner/repo",
+      installs: 42,
+      name: "Skill",
+      slug: "skill",
+      source: "owner/repo",
+      sourceType: "github",
+      url: "https://www.skills.sh/owner/repo/skill",
+    };
+    const listJson = JSON.stringify(
+      {
+        data: [row],
+        pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+      },
+      null,
+      2,
+    );
+    const detailJson = JSON.stringify(
+      {
+        id: row.id,
+        source: row.source,
+        slug: row.slug,
+        installs: row.installs,
+        hash: "a".repeat(64),
+        files: [{ path: "SKILL.md", contents: "# Skill" }],
+      },
+      null,
+      4,
+    );
+    const auditJson = JSON.stringify(
+      {
+        id: row.id,
+        source: row.source,
+        slug: row.slug,
+        audits: [],
+      },
+      null,
+      3,
+    );
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("?page=0&per_page=500")) return new Response(listJson);
+      if (url.includes("/api/v1/skills/audit/")) return new Response(auditJson);
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) return new Response(detailJson);
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
+    );
+
+    expect(batch.sourceBytes).toBe(
+      Buffer.byteLength(listJson) + Buffer.byteLength(detailJson) + Buffer.byteLength(auditJson),
+    );
   });
 
   it("uses the durable captured page without refetching the mutable leaderboard", async () => {

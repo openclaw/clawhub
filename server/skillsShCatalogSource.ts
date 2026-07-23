@@ -553,7 +553,7 @@ async function fetchSkillsShMirrorAudit(id: string, options: SkillsShFetchOption
     options,
     true,
   );
-  return response === null ? null : ((await response.json()) as SkillsShCatalogAudit);
+  return response === null ? null : await parseSkillsShJsonResponse<SkillsShCatalogAudit>(response);
 }
 
 function isHtmlElement(node: HtmlNode): node is HtmlElement {
@@ -1314,9 +1314,21 @@ function requireOidcToken(env: SkillsShCatalogSourceEnv, requestOidcToken?: stri
 }
 
 async function fetchSkillsShJson<T>(path: string, options: SkillsShFetchOptions = {}): Promise<T> {
+  return (await fetchSkillsShJsonWithBytes<T>(path, options)).value;
+}
+
+async function fetchSkillsShJsonWithBytes<T>(path: string, options: SkillsShFetchOptions = {}) {
   const response = await fetchSkillsShApiResponse(path, options);
   if (response === null) throw new Error("skills.sh catalog source returned unexpected not found");
-  return (await response.json()) as T;
+  return await parseSkillsShJsonResponse<T>(response);
+}
+
+async function parseSkillsShJsonResponse<T>(response: Response) {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return {
+    value: JSON.parse(new TextDecoder().decode(bytes)) as T,
+    sourceBytes: bytes.byteLength,
+  };
 }
 
 async function waitForSkillsShRetry(response: Response, attempt: number) {
@@ -1371,9 +1383,23 @@ export async function fetchSkillsShCatalogPage(
     oidcToken?: string;
   } = {},
 ) {
+  return (await fetchSkillsShCatalogPageWithBytes(args, options)).value;
+}
+
+async function fetchSkillsShCatalogPageWithBytes(
+  args: {
+    page: number;
+    perPage: number;
+  },
+  options: {
+    env?: SkillsShCatalogSourceEnv;
+    fetchImpl?: typeof fetch;
+    oidcToken?: string;
+  } = {},
+) {
   assertIntegerInRange("page", args.page, 0, 100_000);
   assertIntegerInRange("perPage", args.perPage, 1, MAX_SOURCE_PAGE_SIZE);
-  return await fetchSkillsShJson<SkillsShCatalogPage>(
+  return await fetchSkillsShJsonWithBytes<SkillsShCatalogPage>(
     `/skills?page=${args.page}&per_page=${args.perPage}`,
     options,
   );
@@ -1577,8 +1603,19 @@ async function fetchSkillsShProofText(
       }
       return new TextDecoder().decode(body.bytes);
     }
-    if ((response.status !== 429 && response.status < 500) || attempt === MAX_SOURCE_ATTEMPTS - 1) {
+    const retryAfterMs = response.status === 429 ? skillsShRetryAfterMs(response, attempt) : null;
+    if (
+      (response.status !== 429 && response.status < 500) ||
+      attempt === MAX_SOURCE_ATTEMPTS - 1 ||
+      (retryAfterMs !== null && retryAfterMs > MAX_INLINE_RETRY_AFTER_MS)
+    ) {
       await cancelResponseBody(response);
+      if (response.status === 429) {
+        throw new SkillsShSourceHttpError(
+          response.status,
+          retryAfterMs === null ? null : Math.max(1, Math.ceil(retryAfterMs / 1_000)),
+        );
+      }
       throw new Error(`skills.sh proof metadata returned HTTP ${response.status}`);
     }
     await cancelResponseBody(response);
@@ -1615,10 +1652,11 @@ export async function measureSkillsShMirrorProofSource(
   let sampleRow: SkillsShCatalogListRow | null = null;
   while (true) {
     await pace();
-    const response = await fetchSkillsShCatalogPage(
+    const pageResponse = await fetchSkillsShCatalogPageWithBytes(
       { page, perPage: MAX_SOURCE_PAGE_SIZE },
       options,
     );
+    const response = pageResponse.value;
     sourceRequests += 1;
     if (
       response.pagination.page !== page ||
@@ -1664,7 +1702,7 @@ export async function measureSkillsShMirrorProofSource(
         hasMore: response.pagination.hasMore,
         identityHash,
         contentHash,
-        sourceBytes: Buffer.byteLength(JSON.stringify(response), "utf8"),
+        sourceBytes: pageResponse.sourceBytes,
         rows: capturedRows,
       };
       sourcePages.push({
@@ -1868,7 +1906,7 @@ export async function fetchSkillsShCatalogDetail(
 }
 
 async function fetchSkillsShMirrorDetail(id: string, options: SkillsShFetchOptions = {}) {
-  return await fetchSkillsShJson<SkillsShCatalogDetail>(
+  return await fetchSkillsShJsonWithBytes<SkillsShCatalogDetail>(
     `/skills/${normalizeSkillsShId(id)}`,
     options,
   );
@@ -1912,12 +1950,13 @@ export async function fetchSkillsShMirrorBatch(
     return await baseFetch(input, init);
   };
   const fetchOptions = { ...options, fetchImpl: monitoredFetch };
-  const sourcePage =
-    options.sourcePage ??
-    (await fetchSkillsShCatalogPage(
-      { page: args.page, perPage: MAX_SOURCE_PAGE_SIZE },
-      fetchOptions,
-    ));
+  const sourcePageResponse = options.sourcePage
+    ? { value: options.sourcePage, sourceBytes: 0 }
+    : await fetchSkillsShCatalogPageWithBytes(
+        { page: args.page, perPage: MAX_SOURCE_PAGE_SIZE },
+        fetchOptions,
+      );
+  const sourcePage = sourcePageResponse.value;
   if (
     sourcePage.pagination.page !== args.page ||
     sourcePage.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
@@ -1967,13 +2006,13 @@ export async function fetchSkillsShMirrorBatch(
           rows[index] = safeMirrorIdentityError(listRow, error);
           continue;
         }
-        const [detailPayload, auditPayload] = await Promise.all([
+        const [detailResponse, auditResponse] = await Promise.all([
           fetchSkillsShMirrorDetail(identity.row.externalId, fetchOptions),
           fetchSkillsShMirrorAudit(identity.row.externalId, fetchOptions),
         ]);
-        rowSourceBytes +=
-          Buffer.byteLength(JSON.stringify(detailPayload), "utf8") +
-          (auditPayload === null ? 0 : Buffer.byteLength(JSON.stringify(auditPayload), "utf8"));
+        rowSourceBytes += detailResponse.sourceBytes + (auditResponse?.sourceBytes ?? 0);
+        const detailPayload = detailResponse.value;
+        const auditPayload = auditResponse?.value ?? null;
         const detail = buildSkillsShMirrorDetail(detailPayload, args.maxDetailBytes);
         if (detail.contentKind !== "none") {
           const fullDetail = (detailPayload.files ?? [])
@@ -2025,9 +2064,7 @@ export async function fetchSkillsShMirrorBatch(
     sourcePageIdentityHash: skillsShPageIdentityHash(sourcePage.data),
     hasMore: sourcePage.pagination.hasMore,
     sourceRequests,
-    sourceBytes:
-      (options.sourcePage ? 0 : Buffer.byteLength(JSON.stringify(sourcePage), "utf8")) +
-      rowSourceBytes,
+    sourceBytes: sourcePageResponse.sourceBytes + rowSourceBytes,
     rows: located.rows,
   };
 }
