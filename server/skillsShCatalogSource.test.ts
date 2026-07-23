@@ -1624,6 +1624,57 @@ describe("skills.sh Vercel source boundary", () => {
     });
   });
 
+  it("delegates long identity-page Retry-After waits to durable recovery", async () => {
+    vi.useFakeTimers();
+    let identityPageAttempts = 0;
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "larksuite/cli/lark-doc",
+                installUrl: null,
+                installs: 383_123,
+                name: "lark-doc",
+                slug: "lark-doc",
+                source: "larksuite/cli",
+                sourceType: "well-known",
+                url: "https://www.skills.sh/larksuite/cli/lark-doc",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+          }),
+        );
+      }
+      if (url === "https://www.skills.sh/larksuite/cli/lark-doc") {
+        identityPageAttempts += 1;
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "120" },
+        });
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    let error: unknown;
+    void fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 },
+      {
+        oidcToken: "request-bound-oidc",
+        fetchImpl: fetchImpl as typeof fetch,
+        githubLocatorResolver: null,
+      },
+    ).catch((value: unknown) => {
+      error = value;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(skillsShSourceRetryAfterSeconds(error)).toBe(120);
+    expect(identityPageAttempts).toBe(1);
+  });
+
   it("quarantines an identity page redirect outside the exact skills.sh route", async () => {
     let redirectBodyCanceled = false;
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
