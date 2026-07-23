@@ -86,6 +86,25 @@ function requireInteger(value: number | undefined, name: string, min: number, ma
   return value;
 }
 
+function assertNoActiveMirrorRun(status: Record<string, unknown>) {
+  if (!Array.isArray(status.runs)) {
+    throw new Error("skills.sh mirror status response lacks runs");
+  }
+  const activeRun = status.runs.find((value) => {
+    if (value === null || typeof value !== "object") return false;
+    const runStatus = (value as Record<string, unknown>).status;
+    return runStatus === "running" || runStatus === "paused" || runStatus === "reconciling";
+  });
+  if (activeRun === undefined) return;
+  const runId =
+    activeRun !== null &&
+    typeof activeRun === "object" &&
+    typeof (activeRun as Record<string, unknown>).runId === "string"
+      ? `: ${(activeRun as Record<string, unknown>).runId}`
+      : "";
+  throw new Error(`skills.sh mirror already has an active run${runId}`);
+}
+
 async function callConvexOperator(authorization: string, body: Record<string, unknown>) {
   const response = await fetch(`${TEST_CONVEX_SITE_URL}${OPERATOR_PATH}`, {
     method: "POST",
@@ -224,7 +243,9 @@ export default defineEventHandler(async (event) => {
       );
     }
     if (operation === "start") {
-      await callConvexOperator(authorization, { operation: "mirror-status" });
+      assertNoActiveMirrorRun(
+        await callConvexOperator(authorization, { operation: "mirror-status" }),
+      );
       const oidcToken = await getVercelOidcToken();
       const sourceMeasuredAt = new Date().toISOString();
       const source = await measureSkillsShMirrorProofSource({ oidcToken });
