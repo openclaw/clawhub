@@ -36,12 +36,18 @@ import {
   type FormEvent,
   type ReactNode,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { EmptyState } from "../components/EmptyState";
+import {
+  GitHubSkillSyncConfiguration,
+  type GitHubSkillSyncPreview,
+  type GitHubSkillSyncRepository,
+} from "../components/GitHubSkillSyncConfiguration";
 import { copyText } from "../components/InstallCopyButton";
 import { MarketplaceIcon } from "../components/MarketplaceIcon";
 import { SignInPrompt } from "../components/SignInPrompt";
@@ -300,7 +306,8 @@ export function Settings() {
   const revokeMemberInvite = useMutation(api.publishers.revokeMemberInvite);
   const acceptMemberInvite = useMutation(api.publishers.acceptMemberInvite);
   const declineMemberInvite = useMutation(api.publishers.declineMemberInvite);
-  const configureGitHubSource = useAction(api.githubSkillSync.configurePublicGitHubSkillSource);
+  const listGitHubSyncRepositories = useAction(api.githubSkillSyncSettings.listRepositories);
+  const previewGitHubSyncRepository = useAction(api.githubSkillSyncSettings.previewRepository);
   const deleteGitHubSource = useMutation(api.githubSkillSources.deleteForPublisher);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
@@ -320,7 +327,12 @@ export function Settings() {
   const [isUploadingOrgImage, setIsUploadingOrgImage] = useState(false);
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
-  const [isSyncingSource, setIsSyncingSource] = useState(false);
+  const [githubRepositories, setGitHubRepositories] = useState<GitHubSkillSyncRepository[]>([]);
+  const [githubRepositoriesError, setGitHubRepositoriesError] = useState<string | null>(null);
+  const [isLoadingGitHubRepositories, setIsLoadingGitHubRepositories] = useState(false);
+  const [githubSyncPreview, setGitHubSyncPreview] = useState<GitHubSkillSyncPreview | null>(null);
+  const [isPreviewingGitHubSource, setIsPreviewingGitHubSource] = useState(false);
+  const githubSyncPreviewRequestId = useRef(0);
   const [deletingSourceId, setDeletingSourceId] = useState<Id<"githubSkillSources"> | null>(null);
   const [sourceToDelete, setSourceToDelete] = useState<GitHubSkillSource | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -339,22 +351,18 @@ export function Settings() {
   const manageablePublishers = (publisherMemberships ?? []).filter(
     (entry) => entry.role !== "publisher",
   );
-  const officialGitHubSourcePublishers = manageablePublishers.filter(
-    (entry) => entry.publisher.official === true,
-  );
+  const githubSourcePublishers = manageablePublishers;
   const publisherMembershipsLoaded = publisherMemberships !== undefined;
   const canConfigureGitHubSources =
     rolloutCapabilities?.githubSkillSync.selfServiceEnabled === true &&
-    officialGitHubSourcePublishers.length > 0;
+    githubSourcePublishers.length > 0;
   const effectiveActiveView =
     activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
       ? "account"
       : activeView;
   const selectedSourcePublisher =
-    officialGitHubSourcePublishers.find(
-      (entry) => entry.publisher._id === selectedSourcePublisherId,
-    ) ??
-    officialGitHubSourcePublishers[0] ??
+    githubSourcePublishers.find((entry) => entry.publisher._id === selectedSourcePublisherId) ??
+    githubSourcePublishers[0] ??
     null;
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
@@ -407,11 +415,12 @@ export function Settings() {
     shouldLoadAccountScopedQueries && activeView === "organizations" ? {} : "skip",
   ) as Array<PublisherInvite> | undefined;
   const githubSources = useQuery(
-    api.githubSkillSources.listForManageableOfficialPublishers,
+    api.githubSkillSources.listForPublisher,
     shouldLoadAccountScopedQueries &&
       effectiveActiveView === "githubSources" &&
-      canConfigureGitHubSources
-      ? {}
+      canConfigureGitHubSources &&
+      selectedSourcePublisher
+      ? { ownerPublisherId: selectedSourcePublisher.publisher._id }
       : "skip",
   ) as GitHubSkillSource[] | undefined;
   const deletionInventory = useQuery(
@@ -437,14 +446,12 @@ export function Settings() {
   }, [orgs, selectedOrgHandle]);
 
   useEffect(() => {
-    if (!officialGitHubSourcePublishers.length) {
+    if (!githubSourcePublishers.length) {
       setSelectedSourcePublisherId("");
       return;
     }
     const requestedPublisher = requestedOwnerHandle
-      ? officialGitHubSourcePublishers.find(
-          (entry) => entry.publisher.handle === requestedOwnerHandle,
-        )
+      ? githubSourcePublishers.find((entry) => entry.publisher.handle === requestedOwnerHandle)
       : null;
     if (requestedPublisher) {
       setSelectedSourcePublisherId(requestedPublisher.publisher._id);
@@ -452,14 +459,59 @@ export function Settings() {
     }
     if (
       selectedSourcePublisherId &&
-      officialGitHubSourcePublishers.some(
-        (entry) => entry.publisher._id === selectedSourcePublisherId,
-      )
+      githubSourcePublishers.some((entry) => entry.publisher._id === selectedSourcePublisherId)
     ) {
       return;
     }
-    setSelectedSourcePublisherId(officialGitHubSourcePublishers[0]?.publisher._id ?? "");
-  }, [officialGitHubSourcePublishers, requestedOwnerHandle, selectedSourcePublisherId]);
+    setSelectedSourcePublisherId(githubSourcePublishers[0]?.publisher._id ?? "");
+  }, [githubSourcePublishers, requestedOwnerHandle, selectedSourcePublisherId]);
+
+  useEffect(() => {
+    if (
+      effectiveActiveView !== "githubSources" ||
+      !canConfigureGitHubSources ||
+      !selectedSourcePublisher
+    ) {
+      setGitHubRepositories([]);
+      setGitHubRepositoriesError(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setIsLoadingGitHubRepositories(true);
+    setGitHubRepositoriesError(null);
+    setGitHubSyncPreview(null);
+    void listGitHubSyncRepositories({
+      publisherId: selectedSourcePublisher.publisher._id,
+      perPage: 100,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        const repositories = result.repositories as GitHubSkillSyncRepository[];
+        setGitHubRepositories(repositories);
+        setGithubRepo((current) => {
+          if (repositories.some((repository) => repository.repo === current)) return current;
+          return repositories.find((repository) => repository.selectable)?.repo ?? "";
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setGitHubRepositories([]);
+        setGitHubRepositoriesError(
+          getUserFacingConvexError(error, "GitHub repositories could not be loaded."),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingGitHubRepositories(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    canConfigureGitHubSources,
+    effectiveActiveView,
+    listGitHubSyncRepositories,
+    selectedSourcePublisher,
+  ]);
 
   useEffect(() => {
     if (!selectedOrg) {
@@ -733,23 +785,30 @@ export function Settings() {
     }
   }
 
-  async function onConfigureGitHubSource(event: FormEvent) {
+  async function onPreviewGitHubSource(event: FormEvent) {
     event.preventDefault();
     if (!selectedSourcePublisher) return;
     const repo = parseGitHubRepoInput(githubRepo);
     if (!repo) return;
-    setIsSyncingSource(true);
+    const requestId = githubSyncPreviewRequestId.current + 1;
+    githubSyncPreviewRequestId.current = requestId;
+    setIsPreviewingGitHubSource(true);
+    setGitHubSyncPreview(null);
     try {
-      const result = await configureGitHubSource({
-        ownerPublisherId: selectedSourcePublisher.publisher._id,
+      const result = await previewGitHubSyncRepository({
+        publisherId: selectedSourcePublisher.publisher._id,
         repo,
       });
-      setGithubRepo("");
-      toast.success(formatGitHubSourceSyncToast(result?.stats));
+      if (githubSyncPreviewRequestId.current !== requestId) return;
+      setGithubRepo(result.repository.repo);
+      setGitHubSyncPreview(result as GitHubSkillSyncPreview);
     } catch (error) {
-      toast.error(getUserFacingConvexError(error, "GitHub source could not be synced."));
+      if (githubSyncPreviewRequestId.current !== requestId) return;
+      toast.error(getUserFacingConvexError(error, "GitHub repository could not be previewed."));
     } finally {
-      setIsSyncingSource(false);
+      if (githubSyncPreviewRequestId.current === requestId) {
+        setIsPreviewingGitHubSource(false);
+      }
     }
   }
 
@@ -1641,28 +1700,43 @@ export function Settings() {
                       </span>
                       <div className="min-w-0">
                         <h3 className="text-sm font-bold text-[color:var(--ink)]">
-                          Sync GitHub skills repo
+                          Configure GitHub Skill Sync
                         </h3>
                         <p className="text-sm text-[color:var(--ink-soft)]">
-                          Add a public repo URL. ClawHub syncs metadata and scan results every 15
-                          minutes. Users install your skills directly from your GitHub repo.
+                          Select a verified public repository, inspect its destinations, then enable
+                          synchronization when the engine is available.
                         </p>
                       </div>
                     </div>
 
                     {selectedSourcePublisher ? (
-                      <GitHubSourceForm
-                        publisherOptions={officialGitHubSourcePublishers}
+                      <GitHubSkillSyncConfiguration
+                        publisherOptions={githubSourcePublishers}
                         selectedPublisherId={selectedSourcePublisher.publisher._id}
-                        onPublisherChange={setSelectedSourcePublisherId}
+                        onPublisherChange={(publisherId) => {
+                          githubSyncPreviewRequestId.current += 1;
+                          setSelectedSourcePublisherId(publisherId);
+                          setGithubRepo("");
+                          setGitHubSyncPreview(null);
+                          setIsPreviewingGitHubSource(false);
+                        }}
+                        repositories={githubRepositories}
+                        repositoriesError={githubRepositoriesError}
+                        isLoadingRepositories={isLoadingGitHubRepositories}
                         githubRepo={githubRepo}
-                        onGithubRepoChange={setGithubRepo}
-                        onConfigure={onConfigureGitHubSource}
-                        isSyncing={isSyncingSource}
+                        onGithubRepoChange={(repo) => {
+                          githubSyncPreviewRequestId.current += 1;
+                          setGithubRepo(repo);
+                          setGitHubSyncPreview(null);
+                          setIsPreviewingGitHubSource(false);
+                        }}
+                        onPreview={onPreviewGitHubSource}
+                        isPreviewing={isPreviewingGitHubSource}
+                        preview={githubSyncPreview}
                       />
                     ) : (
                       <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
-                        You need an official publisher profile before adding GitHub skill sync.
+                        You need a publisher you manage before configuring GitHub Skill Sync.
                       </p>
                     )}
                   </div>
@@ -1900,31 +1974,6 @@ export function Settings() {
       </div>
     </main>
   );
-}
-
-function formatGitHubSourceSyncToast(
-  stats:
-    | {
-        discovered?: number;
-        inserted?: number;
-        revived?: number;
-        conflicts?: number;
-      }
-    | undefined,
-) {
-  const discovered = stats?.discovered ?? 0;
-  const inserted = stats?.inserted ?? 0;
-  const revived = stats?.revived ?? 0;
-  const conflicts = stats?.conflicts ?? 0;
-  const visibleChanges = inserted + revived;
-  const details = [
-    `${discovered} ${discovered === 1 ? "skill" : "skills"} found`,
-    visibleChanges > 0
-      ? `${visibleChanges} ${visibleChanges === 1 ? "skill" : "skills"} added`
-      : null,
-    conflicts > 0 ? `${conflicts} conflict${conflicts === 1 ? "" : "s"}` : null,
-  ].filter(Boolean);
-  return `GitHub source synced (${details.join(", ")})`;
 }
 
 function DeletionResourceSummary({
@@ -2668,61 +2717,6 @@ function GitHubSourceStatusPill({ needsAttention }: { needsAttention: boolean })
     >
       {needsAttention ? "Needs attention" : "Healthy"}
     </span>
-  );
-}
-
-function GitHubSourceForm({
-  publisherOptions,
-  selectedPublisherId,
-  onPublisherChange,
-  githubRepo,
-  onGithubRepoChange,
-  onConfigure,
-  isSyncing,
-}: {
-  publisherOptions: PublisherMembership[];
-  selectedPublisherId: string;
-  onPublisherChange: (publisherId: string) => void;
-  githubRepo: string;
-  onGithubRepoChange: (repo: string) => void;
-  onConfigure: (event: FormEvent) => void;
-  isSyncing: boolean;
-}) {
-  return (
-    <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onConfigure}>
-      <div className="min-w-0 sm:w-64 sm:shrink-0">
-        <Field label="Publisher" htmlFor="settings-github-source-publisher">
-          <Select value={selectedPublisherId} onValueChange={onPublisherChange}>
-            <SelectTrigger id="settings-github-source-publisher">
-              <SelectValue placeholder="Select org" />
-            </SelectTrigger>
-            <SelectContent>
-              {publisherOptions.map((entry) => (
-                <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
-                  @{entry.publisher.handle}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="min-w-0 flex-1">
-          <Field label="GitHub repo URL" htmlFor="settings-github-repo">
-            <Input
-              id="settings-github-repo"
-              value={githubRepo}
-              onChange={(event) => onGithubRepoChange(event.target.value)}
-              placeholder="https://github.com/owner/repo"
-            />
-          </Field>
-        </div>
-        <Button type="submit" disabled={!githubRepo.trim() || isSyncing} className="shrink-0">
-          <Plus size={16} />
-          {isSyncing ? "Adding..." : "Add repo"}
-        </Button>
-      </div>
-    </form>
   );
 }
 
