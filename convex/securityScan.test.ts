@@ -5408,6 +5408,141 @@ describe("securityScan", () => {
     },
   );
 
+  it("prepares and finalizes only the skill's exact pending GitHub candidate", async () => {
+    const candidateCommit = "b".repeat(40);
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skills:1",
+        {
+          _id: "skills:1",
+          installKind: "hosted",
+          latestVersionId: "skillVersions:1",
+          githubPendingCandidateId: "githubSkillCandidates:1",
+          ownerUserId: "users:1",
+          slug: "demo",
+          displayName: "Demo",
+        },
+      ],
+      [
+        "githubSkillCandidates:1",
+        {
+          _id: "githubSkillCandidates:1",
+          skillId: "skills:1",
+          githubSourceId: "githubSkillSources:generic",
+          githubPath: "skills/demo",
+          githubCommit: candidateCommit,
+          githubContentHash: "candidate-hash",
+        },
+      ],
+    ]);
+    const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+    const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+      const id = `${table}:new-${inserts.length + 1}`;
+      docs.set(id, { _id: id, ...doc });
+      inserts.push({ table, doc });
+      return id;
+    });
+    const patch = vi.fn(async (id: string, next: Record<string, unknown>) => {
+      const doc = docs.get(id);
+      if (!doc) return;
+      for (const [key, value] of Object.entries(next)) {
+        if (value === undefined) delete doc[key];
+        else doc[key] = value;
+      }
+    });
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () =>
+          table === "githubSkillScans"
+            ? (Array.from(docs.values()).find((doc) =>
+                String(doc._id).startsWith("githubSkillScans:"),
+              ) ?? null)
+            : null,
+        ),
+        take: vi.fn(async () =>
+          table === "skillScanRequestFileChunks"
+            ? Array.from(docs.values())
+                .filter((doc) => String(doc._id).startsWith("skillScanRequestFileChunks:"))
+                .slice(0, 1)
+            : [],
+        ),
+      })),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query,
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+    const args = {
+      skillId: "skills:1",
+      contentHash: "candidate-hash",
+      commit: candidateCommit,
+      parsed: { frontmatter: {} },
+      staticScan: {
+        status: "clean" as const,
+        reasonCodes: [],
+        findings: [] as [],
+        summary: "No static findings.",
+        engineVersion: "test",
+        checkedAt: 2,
+      },
+    };
+
+    const prepared = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, args);
+
+    expect(prepared).toMatchObject({
+      ok: true,
+      prepared: true,
+      scanId: expect.stringMatching(/^githubSkillScans:/),
+      requestId: expect.stringMatching(/^skillScanRequests:/),
+    });
+    const scan = Array.from(docs.values()).find((doc) =>
+      String(doc._id).startsWith("githubSkillScans:"),
+    );
+    expect(scan).toMatchObject({
+      githubSourceId: "githubSkillSources:generic",
+      commit: candidateCommit,
+      path: "skills/demo",
+      contentHash: "candidate-hash",
+    });
+    if (!prepared.requestId) throw new Error("missing prepared request");
+    await appendGitHubSkillScanRequestFilesInternalHandler(ctx as never, {
+      requestId: prepared.requestId,
+      chunkIndex: 0,
+      files: [{ path: "SKILL.md", size: 10, storageId: "storage:1", sha256: "sha256" }],
+    });
+
+    await expect(
+      finalizeGitHubSkillScanRequestInternalHandler(ctx as never, {
+        requestId: prepared.requestId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      queued: true,
+      scanId: scan?._id,
+    });
+    expect(inserts.map((entry) => entry.table)).toEqual([
+      "githubSkillScans",
+      "skillScanRequests",
+      "skillScanRequestFileChunks",
+      "securityScanJobs",
+    ]);
+
+    await expect(
+      prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
+        ...args,
+        contentHash: "stale-hash",
+      }),
+    ).resolves.toEqual({ ok: true, skipped: "stale-or-missing" });
+  });
+
   it("does not prepare generic GitHub scan state when rollout is off", async () => {
     vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
     const insert = vi.fn();

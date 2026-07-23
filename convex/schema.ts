@@ -379,6 +379,11 @@ const githubSkillSourceIssueValidator = v.object({
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
+  githubRepositoryId: v.optional(v.string()),
+  githubOwnerId: v.optional(v.string()),
+  authorizationStatus: v.optional(v.union(v.literal("active"), v.literal("revoked"))),
+  authorizationCheckedAt: v.optional(v.number()),
+  authorizationError: v.optional(v.string()),
   defaultBranch: v.optional(v.string()),
   lastSyncStatus: v.optional(v.union(v.literal("ok"), v.literal("failed"), v.literal("skipped"))),
   lastSyncError: v.optional(v.string()),
@@ -396,6 +401,7 @@ const githubSkillSources = defineTable({
   updatedAt: v.number(),
 })
   .index("by_repo", ["repo"])
+  .index("by_github_repository_id", ["githubRepositoryId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
   .index("by_created", ["createdAt"])
@@ -488,6 +494,28 @@ const githubSkillCurrentStatusValidator = v.union(
   v.literal("missing"),
   v.literal("unknown"),
 );
+
+const githubSkillCandidates = defineTable({
+  skillId: v.id("skills"),
+  githubSourceId: v.id("githubSkillSources"),
+  githubPath: v.string(),
+  githubHasSkillCard: v.boolean(),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  upstreamVersion: v.optional(v.string()),
+  skillMarkdownPath: v.optional(v.string()),
+  skillMarkdown: v.optional(v.string()),
+  skillCardMarkdownPath: v.optional(v.string()),
+  skillCardMarkdown: v.optional(v.string()),
+  scanStatus: githubSkillScanStatusValidator,
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_skill_and_content_hash", ["skillId", "githubContentHash"])
+  .index("by_github_source", ["githubSourceId"]);
 
 const githubSkillScans = defineTable({
   skillId: v.id("skills"),
@@ -804,6 +832,7 @@ const skills = defineTable({
   githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
   githubRemovedAt: v.optional(v.number()),
+  githubPendingCandidateId: v.optional(v.id("githubSkillCandidates")),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
     v.object({
@@ -3606,6 +3635,7 @@ export default defineSchema({
   officialPublishers,
   githubSkillSources,
   githubSkillContents,
+  githubSkillCandidates,
   githubSkillScans,
   skills,
   skillSlugAliases,

@@ -1352,6 +1352,40 @@ export async function enqueueSkillsShCatalogScanRequest(
   return { requestId, jobId };
 }
 
+async function resolveGitHubSkillScanTarget(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+  args: { commit: string; contentHash: string },
+) {
+  if (
+    skill.installKind === "github" &&
+    skill.githubSourceId &&
+    skill.githubPath &&
+    skill.githubCurrentStatus === "present" &&
+    skill.githubCurrentCommit === args.commit &&
+    skill.githubCurrentContentHash === args.contentHash
+  ) {
+    return {
+      githubSourceId: skill.githubSourceId,
+      githubPath: skill.githubPath,
+    };
+  }
+  if (!skill.githubPendingCandidateId) return null;
+  const candidate = await ctx.db.get(skill.githubPendingCandidateId);
+  if (
+    !candidate ||
+    candidate.skillId !== skill._id ||
+    candidate.githubCommit !== args.commit ||
+    candidate.githubContentHash !== args.contentHash
+  ) {
+    return null;
+  }
+  return {
+    githubSourceId: candidate.githubSourceId,
+    githubPath: candidate.githubPath,
+  };
+}
+
 export const prepareGitHubSkillScanRequestInternal = internalMutation({
   args: {
     skillId: v.id("skills"),
@@ -1365,18 +1399,16 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
-    if (
-      !skill ||
-      skill.installKind !== "github" ||
-      !skill.githubSourceId ||
-      !skill.githubPath ||
-      skill.githubCurrentStatus !== "present" ||
-      skill.githubCurrentCommit !== args.commit ||
-      skill.githubCurrentContentHash !== args.contentHash
-    ) {
+    const target = skill
+      ? await resolveGitHubSkillScanTarget(ctx, skill, {
+          commit: args.commit,
+          contentHash: args.contentHash,
+        })
+      : null;
+    if (!skill || !target) {
       return { ok: true as const, skipped: "stale-or-missing" as const };
     }
-    if (!(await isGitHubSkillScanAllowed(ctx, skill.githubSourceId))) {
+    if (!(await isGitHubSkillScanAllowed(ctx, target.githubSourceId))) {
       return { ok: true as const, skipped: "rollout-disabled" as const };
     }
     const existing = await ctx.db
@@ -1387,9 +1419,9 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       .unique();
     if (existing && !args.force && existing.status !== "pending" && existing.status !== "failed") {
       await ctx.db.patch(existing._id, {
-        githubSourceId: skill.githubSourceId,
+        githubSourceId: target.githubSourceId,
         commit: args.commit,
-        path: skill.githubPath,
+        path: target.githubPath,
         staticScan: args.staticScan,
         updatedAt: Date.now(),
       });
@@ -1431,10 +1463,10 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       existing?._id ??
       (await ctx.db.insert("githubSkillScans", {
         skillId: skill._id,
-        githubSourceId: skill.githubSourceId,
+        githubSourceId: target.githubSourceId,
         contentHash: args.contentHash,
         commit: args.commit,
-        path: skill.githubPath,
+        path: target.githubPath,
         status: "pending",
         staticScan: args.staticScan,
         createdAt: now,
@@ -1442,9 +1474,9 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
       }));
     if (existing) {
       await ctx.db.patch(existing._id, {
-        githubSourceId: skill.githubSourceId,
+        githubSourceId: target.githubSourceId,
         commit: args.commit,
-        path: skill.githubPath,
+        path: target.githubPath,
         status: "pending",
         staticScan: args.staticScan,
         skillSpectorAnalysis: undefined,
@@ -1578,17 +1610,20 @@ export const finalizeGitHubSkillScanRequestInternal = internalMutation({
       throw new ConvexError("GitHub scan request was already finalized");
     }
     const skill = scan ? await ctx.db.get(scan.skillId) : null;
+    const target = skill
+      ? await resolveGitHubSkillScanTarget(ctx, skill, {
+          commit: scan.commit,
+          contentHash: scan.contentHash,
+        })
+      : null;
     if (
       !scan ||
       scan.status !== "pending" ||
       scan.skillScanRequestId !== request._id ||
       !skill ||
-      skill.installKind !== "github" ||
-      skill.githubCurrentStatus !== "present" ||
-      skill.githubSourceId !== scan.githubSourceId ||
-      skill.githubPath !== scan.path ||
-      skill.githubCurrentCommit !== scan.commit ||
-      skill.githubCurrentContentHash !== scan.contentHash
+      !target ||
+      target.githubSourceId !== scan.githubSourceId ||
+      target.githubPath !== scan.path
     ) {
       throw new ConvexError("GitHub scan request is no longer current");
     }

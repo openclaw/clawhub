@@ -171,6 +171,17 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           contentHash: "hash-other-source",
         },
       ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:hosted",
+          skillId: "skills:hosted-candidate",
+          githubSourceId: "githubSkillSources:matt",
+          githubPath: "skills/hosted-candidate",
+          githubCommit: "c".repeat(40),
+          githubContentHash: "hash-hosted-candidate",
+          scanStatus: "pending",
+        },
+      ],
       skills: [
         {
           _id: "skills:github",
@@ -212,6 +223,16 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           softDeletedAt: undefined,
         },
         {
+          _id: "skills:hosted-candidate",
+          slug: "hosted-candidate",
+          displayName: "Hosted Candidate",
+          ownerPublisherId: "publishers:openclaw",
+          latestVersionId: "skillVersions:hosted",
+          githubPendingCandidateId: "githubSkillCandidates:hosted",
+          softDeletedAt: undefined,
+          updatedAt: 2,
+        },
+        {
           _id: "skills:other-source",
           slug: "other-source",
           displayName: "Other Source",
@@ -247,6 +268,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     );
     expect(tables.githubSkillSources).toHaveLength(0);
     expect(tables.githubSkillContents).toHaveLength(0);
+    expect(tables.githubSkillCandidates).toHaveLength(0);
     expect(tables.githubSkillScans).toHaveLength(2);
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       sourceId: "githubSkillSources:matt",
@@ -280,6 +302,14 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     expect(tables.skills.find((skill) => skill._id === "skills:direct")).toMatchObject({
       softDeletedAt: undefined,
     });
+    expect(tables.skills.find((skill) => skill._id === "skills:hosted-candidate")).toMatchObject({
+      latestVersionId: "skillVersions:hosted",
+      softDeletedAt: undefined,
+      updatedAt: 123,
+    });
+    expect(
+      tables.skills.find((skill) => skill._id === "skills:hosted-candidate"),
+    ).not.toHaveProperty("githubPendingCandidateId");
     expect(tables.skills.find((skill) => skill._id === "skills:other-source")).toMatchObject({
       githubCurrentStatus: "present",
       softDeletedAt: undefined,

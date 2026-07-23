@@ -7,12 +7,14 @@ import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
 import { decodeBoundedUtf8Text } from "./lib/artifactText";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
+import { getGitHubProviderAccountId } from "./lib/githubIdentity";
 import {
   fetchGitHubZipBytes,
   type GitHubImportUrl,
   resolveGitHubCommit,
   stripGitHubZipRoot,
 } from "./lib/githubImport";
+import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import {
   buildGitHubSkillSourceSnapshot,
   buildGitHubSkillSyncPlan,
@@ -26,14 +28,18 @@ import {
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
-import { isOfficialPublisher } from "./lib/officialPublishers";
 import { requirePublisherRole } from "./lib/publishers";
 import {
   assertGenericGitHubSkillSyncEnabled,
   assertGitHubSkillSyncRuntimeEnabled,
   getRuntimeRolloutCapabilities,
+  isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
 import { isMacJunkPath, parseFrontmatter } from "./lib/skills";
+import {
+  getSkillBySlugForPublisher,
+  getSkillSlugAliasBySlugForPublisher,
+} from "./lib/skills/slugResolution";
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
@@ -51,7 +57,7 @@ const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
 
 type SourceForSync = Pick<
   Doc<"githubSkillSources">,
-  "_id" | "repo" | "ownerPublisherId" | "defaultBranch"
+  "_id" | "repo" | "ownerPublisherId" | "githubRepositoryId" | "githubOwnerId" | "defaultBranch"
 >;
 
 type SourceForSyncPage = {
@@ -117,6 +123,8 @@ type SyncDryRunResult = {
 };
 
 type GitHubRepoMetadata = {
+  repositoryId?: string;
+  ownerId?: string;
   repo: string;
   defaultBranch: string;
 };
@@ -124,7 +132,6 @@ type GitHubRepoMetadata = {
 type GitHubSkillSourceSetupContext = {
   ownerUserId: Id<"users">;
   existingSource: SourceForSync | null;
-  official: boolean;
 };
 
 type GitHubSkillVerificationTarget = {
@@ -135,6 +142,7 @@ type GitHubSkillVerificationTarget = {
     githubCurrentStatus: "present";
   };
   source: Pick<Doc<"githubSkillSources">, "_id" | "repo" | "defaultBranch">;
+  candidateId?: Id<"githubSkillCandidates">;
 };
 
 type GitHubSkillVerificationResult = {
@@ -155,6 +163,7 @@ type GitHubSkillContentTarget = {
   skillId: Id<"skills">;
   githubPath: string;
   githubCurrentContentHash: string;
+  candidateId?: Id<"githubSkillCandidates">;
 };
 
 const displayManifestStatusValidator = v.union(
@@ -288,11 +297,17 @@ export async function listSourcesForSyncHandler(
 export const listGitHubSkillContentTargetsInternal = internalQuery({
   args: { sourceId: v.id("githubSkillSources") },
   handler: async (ctx, args): Promise<GitHubSkillContentTarget[]> => {
-    const skills = await ctx.db
-      .query("skills")
-      .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
-      .collect();
-    return skills.flatMap((skill) => {
+    const [skills, candidates] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
+        .collect(),
+      ctx.db
+        .query("githubSkillCandidates")
+        .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
+        .collect(),
+    ]);
+    const currentTargets = skills.flatMap((skill) => {
       if (
         skill.installKind !== "github" ||
         skill.githubCurrentStatus !== "present" ||
@@ -309,6 +324,13 @@ export const listGitHubSkillContentTargetsInternal = internalQuery({
         },
       ];
     });
+    const candidateTargets = candidates.map((candidate) => ({
+      skillId: candidate.skillId,
+      githubPath: candidate.githubPath,
+      githubCurrentContentHash: candidate.githubContentHash,
+      candidateId: candidate._id,
+    }));
+    return [...currentTargets, ...candidateTargets];
   },
 });
 
@@ -329,6 +351,8 @@ export const getPublicGitHubSkillSourceSetupContextInternal = internalQuery({
     ownerPublisherId: v.id("publishers"),
     actorUserId: v.id("users"),
     repo: v.string(),
+    githubRepositoryId: v.string(),
+    githubOwnerId: v.string(),
   },
   handler: async (ctx, args): Promise<GitHubSkillSourceSetupContext> => {
     const { publisher } = await requirePublisherRole(ctx, {
@@ -336,12 +360,52 @@ export const getPublicGitHubSkillSourceSetupContextInternal = internalQuery({
       userId: args.actorUserId,
       allowed: ["admin"],
     });
-    const official = await isOfficialPublisher(ctx, publisher);
+    if (publisher.kind === "user") {
+      if (publisher.linkedUserId !== args.actorUserId) throw new ConvexError("Forbidden");
+      const providerId = normalizeGitHubNumericId(
+        await getGitHubProviderAccountId(ctx, args.actorUserId),
+      );
+      if (!providerId || providerId !== args.githubOwnerId) {
+        throw new ConvexError("Repository ownership does not match the selected publisher.");
+      }
+    } else {
+      const publisherOwnerId = normalizeGitHubNumericId(publisher.githubOrgId);
+      if (
+        !publisherOwnerId ||
+        !publisher.githubVerifiedAt ||
+        publisherOwnerId !== args.githubOwnerId
+      ) {
+        throw new ConvexError("Repository ownership does not match the selected publisher.");
+      }
+      const membership = await ctx.db
+        .query("githubOrgMemberships")
+        .withIndex("by_user_and_github_org", (q) =>
+          q.eq("userId", args.actorUserId).eq("githubOrgId", publisherOwnerId),
+        )
+        .unique();
+      if (
+        !membership ||
+        membership.role !== "admin" ||
+        Date.now() - membership.syncedAt > GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS
+      ) {
+        throw new ConvexError("Reconnect GitHub to verify current organization admin access.");
+      }
+    }
     const repo = normalizeRepo(args.repo);
-    const existingSource = await ctx.db
+    const sourceByRepo = await ctx.db
       .query("githubSkillSources")
       .withIndex("by_repo", (q) => q.eq("repo", repo))
       .unique();
+    const sourceByRepositoryId = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_github_repository_id", (q) =>
+        q.eq("githubRepositoryId", args.githubRepositoryId),
+      )
+      .unique();
+    if (sourceByRepo && sourceByRepositoryId && sourceByRepo._id !== sourceByRepositoryId._id) {
+      throw new ConvexError("GitHub repository identity conflicts with an existing source.");
+    }
+    const existingSource = sourceByRepositoryId ?? sourceByRepo;
     if (
       existingSource?.ownerPublisherId &&
       existingSource.ownerPublisherId !== args.ownerPublisherId
@@ -349,7 +413,7 @@ export const getPublicGitHubSkillSourceSetupContextInternal = internalQuery({
       throw new ConvexError("GitHub repo is already configured for another publisher.");
     }
     const ownerUserId = await resolveOwnerUserIdForPublisher(ctx, args.ownerPublisherId);
-    return { ownerUserId, existingSource, official };
+    return { ownerUserId, existingSource };
   },
 });
 
@@ -385,23 +449,112 @@ export const recordGitHubSkillSourceSyncAttemptInternal = internalMutation({
   handler: recordGitHubSkillSourceSyncAttemptHandler,
 });
 
+export async function revokeGitHubSkillSourceAuthorizationHandler(
+  ctx: MutationCtx,
+  args: { sourceId: Id<"githubSkillSources">; error: string; now?: number },
+) {
+  const source = await ctx.db.get(args.sourceId);
+  if (!source || isLegacyNvidiaSkillSource(source.repo)) {
+    return { ok: true as const, skipped: "missing-or-legacy-source" as const };
+  }
+  const now = args.now ?? Date.now();
+  const candidates = await ctx.db
+    .query("githubSkillCandidates")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+    .collect();
+  for (const candidate of candidates) {
+    const skill = await ctx.db.get(candidate.skillId);
+    if (skill?.githubPendingCandidateId === candidate._id) {
+      await ctx.db.patch(skill._id, {
+        githubPendingCandidateId: undefined,
+        updatedAt: now,
+      });
+    }
+    await ctx.db.delete(candidate._id);
+  }
+
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+    .collect();
+  let blockedSkills = 0;
+  for (const skill of skills) {
+    if (skill.installKind !== "github") continue;
+    const previousSkill = { ...skill };
+    const removedAt = skill.githubRemovedAt ?? now;
+    const patch = {
+      githubCurrentStatus: "missing" as const,
+      githubCurrentCheckedAt: now,
+      githubRemovedAt: removedAt,
+      githubPendingCandidateId: undefined,
+      softDeletedAt: skill.softDeletedAt ?? removedAt,
+      moderationStatus: "hidden" as const,
+      moderationReason: "github.authorization.revoked",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+      updatedAt: now,
+    };
+    await ctx.db.patch(skill._id, patch);
+    const nextSkill = { ...previousSkill, ...patch };
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+    await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, now);
+    blockedSkills += 1;
+  }
+
+  await ctx.db.patch(source._id, {
+    authorizationStatus: "revoked",
+    authorizationCheckedAt: now,
+    authorizationError: args.error,
+    lastSyncStatus: "failed",
+    lastSyncError: args.error,
+    lastSyncErrorAt: now,
+    updatedAt: now,
+  });
+  return { ok: true as const, revoked: true as const, blockedSkills };
+}
+
+export const revokeGitHubSkillSourceAuthorizationInternal = internalMutation({
+  args: {
+    sourceId: v.id("githubSkillSources"),
+    error: v.string(),
+    now: v.optional(v.number()),
+  },
+  handler: revokeGitHubSkillSourceAuthorizationHandler,
+});
+
 export const getGitHubSkillVerificationTargetInternal = internalQuery({
   args: { skillId: v.id("skills"), contentHash: v.string() },
   handler: async (ctx, args): Promise<GitHubSkillVerificationTarget | null> => {
     const skill = await ctx.db.get(args.skillId);
-    if (
-      !skill ||
-      skill.installKind !== "github" ||
-      skill.githubCurrentStatus !== "present" ||
-      !skill.githubCurrentCommit ||
-      !skill.githubCurrentContentHash ||
-      skill.githubCurrentContentHash !== args.contentHash ||
-      !skill.githubSourceId ||
-      !skill.githubPath
-    ) {
-      return null;
-    }
-    const source = await ctx.db.get(skill.githubSourceId);
+    if (!skill) return null;
+    const candidate = skill.githubPendingCandidateId
+      ? await ctx.db.get(skill.githubPendingCandidateId)
+      : null;
+    const exact =
+      candidate?.githubContentHash === args.contentHash
+        ? {
+            sourceId: candidate.githubSourceId,
+            path: candidate.githubPath,
+            commit: candidate.githubCommit,
+            contentHash: candidate.githubContentHash,
+            candidateId: candidate._id,
+          }
+        : skill.installKind === "github" &&
+            skill.githubCurrentStatus === "present" &&
+            skill.githubCurrentCommit &&
+            skill.githubCurrentContentHash === args.contentHash &&
+            skill.githubSourceId &&
+            skill.githubPath
+          ? {
+              sourceId: skill.githubSourceId,
+              path: skill.githubPath,
+              commit: skill.githubCurrentCommit,
+              contentHash: skill.githubCurrentContentHash,
+            }
+          : null;
+    if (!exact) return null;
+    const source = await ctx.db.get(exact.sourceId);
     if (!source) return null;
     return {
       skill: {
@@ -409,16 +562,17 @@ export const getGitHubSkillVerificationTargetInternal = internalQuery({
         slug: skill.slug,
         displayName: skill.displayName,
         summary: skill.summary,
-        githubPath: skill.githubPath,
-        githubCurrentCommit: skill.githubCurrentCommit,
-        githubCurrentContentHash: skill.githubCurrentContentHash,
-        githubCurrentStatus: skill.githubCurrentStatus,
+        githubPath: exact.path,
+        githubCurrentCommit: exact.commit,
+        githubCurrentContentHash: exact.contentHash,
+        githubCurrentStatus: "present",
       },
       source: {
         _id: source._id,
         repo: source.repo,
         defaultBranch: source.defaultBranch,
       },
+      ...(exact.candidateId ? { candidateId: exact.candidateId } : {}),
     };
   },
 });
@@ -428,6 +582,8 @@ export type ApplyGitHubSkillSourceSyncArgs = {
   repo: string;
   ownerUserId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
+  githubRepositoryId?: string;
+  githubOwnerId?: string;
   snapshot: GitHubSkillSourceMetadataSnapshot;
   now?: number;
 };
@@ -438,6 +594,13 @@ export async function applyGitHubSkillSourceSyncHandler(
 ): Promise<SyncOneResult> {
   const now = args.now ?? Date.now();
   const repo = normalizeRepo(args.repo);
+  if (!isLegacyNvidiaSkillSource(repo)) {
+    return await applyGenericGitHubSkillSourceSyncHandler(ctx, {
+      ...args,
+      repo,
+      now,
+    });
+  }
   const existingSource = args.sourceId
     ? await ctx.db.get(args.sourceId)
     : await ctx.db
@@ -681,6 +844,458 @@ export async function applyGitHubSkillSourceSyncHandler(
   };
 }
 
+async function applyGenericGitHubSkillSourceSyncHandler(
+  ctx: MutationCtx,
+  args: ApplyGitHubSkillSourceSyncArgs & { repo: string; now: number },
+): Promise<SyncOneResult> {
+  if (!args.ownerPublisherId || !args.githubRepositoryId || !args.githubOwnerId) {
+    throw new ConvexError("GitHub Skill Sync requires immutable repository authorization.");
+  }
+  const existingSource = args.sourceId
+    ? await ctx.db.get(args.sourceId)
+    : ((await ctx.db
+        .query("githubSkillSources")
+        .withIndex("by_github_repository_id", (q) =>
+          q.eq("githubRepositoryId", args.githubRepositoryId),
+        )
+        .unique()) ??
+      (await ctx.db
+        .query("githubSkillSources")
+        .withIndex("by_repo", (q) => q.eq("repo", args.repo))
+        .unique()));
+  if (
+    existingSource?.ownerPublisherId &&
+    existingSource.ownerPublisherId !== args.ownerPublisherId
+  ) {
+    throw new ConvexError("GitHub source is already configured for another publisher.");
+  }
+  if (
+    existingSource?.githubRepositoryId &&
+    existingSource.githubRepositoryId !== args.githubRepositoryId
+  ) {
+    throw new ConvexError("GitHub repository identity changed.");
+  }
+  if (existingSource?.githubOwnerId && existingSource.githubOwnerId !== args.githubOwnerId) {
+    throw new ConvexError("GitHub repository owner identity changed.");
+  }
+
+  const sourceId =
+    existingSource?._id ??
+    (await ctx.db.insert("githubSkillSources", {
+      repo: args.repo,
+      ownerPublisherId: args.ownerPublisherId,
+      githubRepositoryId: args.githubRepositoryId,
+      githubOwnerId: args.githubOwnerId,
+      authorizationStatus: "active",
+      authorizationCheckedAt: args.now,
+      createdAt: args.now,
+      updatedAt: args.now,
+    }));
+  const publisher = await ctx.db.get(args.ownerPublisherId);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+    throw new ConvexError("GitHub source owner publisher not found.");
+  }
+  await ctx.db.patch(sourceId, {
+    repo: args.repo,
+    ownerPublisherId: args.ownerPublisherId,
+    githubRepositoryId: args.githubRepositoryId,
+    githubOwnerId: args.githubOwnerId,
+    authorizationStatus: "active",
+    authorizationCheckedAt: args.now,
+    authorizationError: undefined,
+    defaultBranch: args.snapshot.defaultBranch,
+    lastSyncStatus: "ok",
+    lastSyncError: undefined,
+    lastSyncErrorAt: undefined,
+    displayManifestKind: "skills.sh",
+    displayManifestHash: args.snapshot.manifestHash,
+    displayManifestCommit: args.snapshot.commit,
+    displayManifestFetchedAt: args.now,
+    displayManifestStatus: args.snapshot.manifestStatus,
+    displayManifest: args.snapshot.manifest,
+    updatedAt: args.now,
+  });
+
+  const sourceSkills = await ctx.db
+    .query("skills")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+    .collect();
+  const sourceCandidates = await ctx.db
+    .query("githubSkillCandidates")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+    .collect();
+  const sourceSkillByPath = new Map(
+    sourceSkills.flatMap((skill) => (skill.githubPath ? [[skill.githubPath, skill] as const] : [])),
+  );
+  const sourceSkillBySlug = new Map(sourceSkills.map((skill) => [skill.slug, skill]));
+  const matchedSkillIds = new Set<Id<"skills">>();
+  const matchedCandidateIds = new Set<Id<"githubSkillCandidates">>();
+  const issues: GitHubSkillSourceSyncIssue[] = [];
+  const invalidSkills: NonNullable<SyncOneResult["invalidSkills"]> = [];
+  const stats = {
+    discovered: args.snapshot.skills.length,
+    inserted: 0,
+    changed: 0,
+    unchanged: 0,
+    removed: 0,
+    conflicts: 0,
+    invalid: 0,
+    revived: 0,
+  };
+
+  for (const discovered of args.snapshot.skills) {
+    try {
+      assertValidSkillSlug(discovered.slug);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      invalidSkills.push({
+        slug: discovered.slug,
+        path: discovered.path,
+        displayName: discovered.displayName,
+        error: message,
+      });
+      issues.push({
+        slug: discovered.slug,
+        path: discovered.path,
+        displayName: discovered.displayName,
+        kind: "invalid_slug",
+        severity: "error",
+        message,
+      });
+      stats.invalid += 1;
+      continue;
+    }
+
+    let skill =
+      sourceSkillByPath.get(discovered.path) ?? sourceSkillBySlug.get(discovered.slug) ?? null;
+    if (!skill) {
+      const [destination, alias] = await Promise.all([
+        getSkillBySlugForPublisher(ctx, discovered.slug, publisher),
+        getSkillSlugAliasBySlugForPublisher(ctx, discovered.slug, publisher),
+      ]);
+      if (alias && (!destination || alias.skillId !== destination._id)) {
+        issues.push(
+          githubSkillSyncConflictIssue(
+            discovered,
+            "Destination slug is already reserved by another skill redirect.",
+            publisher.handle,
+          ),
+        );
+        stats.conflicts += 1;
+        continue;
+      }
+      skill = destination;
+    }
+
+    if (!skill) {
+      const moderation = githubBackedSkillModeration("pending");
+      const skillId = await ctx.db.insert("skills", {
+        slug: discovered.slug,
+        displayName: discovered.displayName,
+        summary: discovered.summary,
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId,
+        installKind: "github",
+        githubSourceId: sourceId,
+        githubPath: discovered.path,
+        githubHasSkillCard: Boolean(discovered.skillCardMarkdownPath),
+        githubCurrentCommit: args.snapshot.commit,
+        githubCurrentContentHash: discovered.contentHash,
+        githubCurrentStatus: "present",
+        githubCurrentCheckedAt: args.now,
+        githubScanStatus: "pending",
+        latestVersionSummary: latestGitHubVersionSummary(discovered.upstreamVersion, args.now),
+        tags: {},
+        statsDownloads: 0,
+        statsStars: 0,
+        statsInstallsCurrent: 0,
+        statsInstallsAllTime: 0,
+        stats: {
+          downloads: 0,
+          stars: 0,
+          installsCurrent: 0,
+          installsAllTime: 0,
+          versions: 0,
+          comments: 0,
+        },
+        ...moderation,
+        createdAt: args.now,
+        updatedAt: args.now,
+      });
+      const insertedSkill = await ctx.db.get(skillId);
+      if (insertedSkill) {
+        await syncSkillSearchDigestForSkill(ctx, insertedSkill);
+        await adjustGlobalPublicCountForSkillChange(ctx, null, insertedSkill, args.now);
+      }
+      await scheduleGitHubSkillVerification(ctx, {
+        skillId,
+        contentHash: discovered.contentHash,
+        scanStatus: "pending",
+        now: args.now,
+      });
+      matchedSkillIds.add(skillId);
+      stats.inserted += 1;
+      continue;
+    }
+
+    if (
+      skill.ownerPublisherId !== args.ownerPublisherId ||
+      (skill.installKind === "github" &&
+        skill.githubSourceId &&
+        skill.githubSourceId !== sourceId &&
+        !skill.softDeletedAt)
+    ) {
+      issues.push(
+        githubSkillSyncConflictIssue(
+          discovered,
+          "Destination is controlled by another GitHub source.",
+          publisher.handle,
+        ),
+      );
+      stats.conflicts += 1;
+      continue;
+    }
+
+    matchedSkillIds.add(skill._id);
+    const hasAllowedGitHubSource =
+      skill.installKind === "github" &&
+      skill.githubCurrentStatus === "present" &&
+      (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious") &&
+      !skill.softDeletedAt;
+    const hasAllowedHostedSource = skill.installKind !== "github" && Boolean(skill.latestVersionId);
+    const sameCurrentContent =
+      skill.installKind === "github" &&
+      skill.githubSourceId === sourceId &&
+      skill.githubCurrentStatus === "present" &&
+      skill.githubCurrentContentHash === discovered.contentHash;
+
+    if (skill.softDeletedAt && !canAutoReviveGitHubSkill(skill)) {
+      stats.unchanged += 1;
+      continue;
+    }
+
+    if (sameCurrentContent) {
+      const previousSkill = { ...skill };
+      const patch = {
+        displayName: discovered.displayName,
+        summary: discovered.summary,
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId,
+        githubPath: discovered.path,
+        githubHasSkillCard: Boolean(discovered.skillCardMarkdownPath),
+        githubCurrentCommit: args.snapshot.commit,
+        githubCurrentCheckedAt: args.now,
+        githubRemovedAt: undefined,
+        updatedAt: args.now,
+      };
+      await ctx.db.patch(skill._id, patch);
+      const nextSkill = { ...previousSkill, ...patch };
+      await syncSkillSearchDigestForSkill(ctx, nextSkill);
+      await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, args.now);
+      stats.unchanged += 1;
+      continue;
+    }
+
+    if (hasAllowedGitHubSource || hasAllowedHostedSource) {
+      const candidateId = await upsertGitHubSkillCandidate(ctx, {
+        skill,
+        sourceId,
+        discovered,
+        commit: args.snapshot.commit,
+        now: args.now,
+      });
+      matchedCandidateIds.add(candidateId);
+      stats.changed += 1;
+      continue;
+    }
+
+    const previousSkill = { ...skill };
+    if (skill.githubPendingCandidateId) {
+      await ctx.db.delete(skill.githubPendingCandidateId);
+    }
+    const moderation = githubBackedSkillModeration("pending");
+    const patch = {
+      displayName: discovered.displayName,
+      summary: discovered.summary,
+      ownerUserId: args.ownerUserId,
+      ownerPublisherId: args.ownerPublisherId,
+      installKind: "github" as const,
+      githubSourceId: sourceId,
+      githubPath: discovered.path,
+      githubHasSkillCard: Boolean(discovered.skillCardMarkdownPath),
+      githubCurrentCommit: args.snapshot.commit,
+      githubCurrentContentHash: discovered.contentHash,
+      githubCurrentStatus: "present" as const,
+      githubCurrentCheckedAt: args.now,
+      githubScanStatus: "pending" as const,
+      githubRemovedAt: undefined,
+      githubPendingCandidateId: undefined,
+      latestVersionId: undefined,
+      latestVersionSummary: latestGitHubVersionSummary(discovered.upstreamVersion, args.now),
+      softDeletedAt: undefined,
+      updatedAt: args.now,
+      ...moderation,
+    };
+    await ctx.db.patch(skill._id, patch);
+    const nextSkill = { ...previousSkill, ...patch };
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+    await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, args.now);
+    await scheduleGitHubSkillVerification(ctx, {
+      skillId: skill._id,
+      contentHash: discovered.contentHash,
+      scanStatus: "pending",
+      now: args.now,
+    });
+    if (skill.softDeletedAt) stats.revived += 1;
+    else stats.changed += 1;
+  }
+
+  for (const skill of sourceSkills) {
+    if (matchedSkillIds.has(skill._id)) continue;
+    const previousSkill = { ...skill };
+    if (skill.githubPendingCandidateId) await ctx.db.delete(skill.githubPendingCandidateId);
+    const removedAt = skill.githubRemovedAt ?? args.now;
+    const patch = {
+      githubCurrentStatus: "missing" as const,
+      githubCurrentCheckedAt: args.now,
+      githubRemovedAt: removedAt,
+      githubPendingCandidateId: undefined,
+      softDeletedAt: skill.softDeletedAt ?? removedAt,
+      moderationStatus: "hidden" as const,
+      moderationReason: "github.upstream.removed",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+      updatedAt: args.now,
+    };
+    await ctx.db.patch(skill._id, patch);
+    const nextSkill = { ...previousSkill, ...patch };
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+    await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, args.now);
+    stats.removed += 1;
+  }
+
+  for (const candidate of sourceCandidates) {
+    if (matchedCandidateIds.has(candidate._id)) continue;
+    const skill = await ctx.db.get(candidate.skillId);
+    if (skill?.githubPendingCandidateId === candidate._id) {
+      await ctx.db.patch(skill._id, {
+        githubPendingCandidateId: undefined,
+        updatedAt: args.now,
+      });
+    }
+    await ctx.db.delete(candidate._id);
+  }
+
+  await ctx.db.patch(sourceId, {
+    lastSyncIssues: issues,
+    lastSyncInvalidSkills: invalidSkills,
+    updatedAt: args.now,
+  });
+  return {
+    ok: true,
+    repo: args.repo,
+    sourceId,
+    commit: args.snapshot.commit,
+    manifestStatus: args.snapshot.manifestStatus,
+    issues,
+    invalidSkills,
+    stats,
+  };
+}
+
+async function upsertGitHubSkillCandidate(
+  ctx: MutationCtx,
+  args: {
+    skill: Doc<"skills">;
+    sourceId: Id<"githubSkillSources">;
+    discovered: GitHubSkillSourceMetadataSnapshot["skills"][number];
+    commit: string;
+    now: number;
+  },
+) {
+  const existing = args.skill.githubPendingCandidateId
+    ? await ctx.db.get(args.skill.githubPendingCandidateId)
+    : await ctx.db
+        .query("githubSkillCandidates")
+        .withIndex("by_skill", (q) => q.eq("skillId", args.skill._id))
+        .unique();
+  const reusableScan = await ctx.db
+    .query("githubSkillScans")
+    .withIndex("by_skill_and_content_hash", (q) =>
+      q.eq("skillId", args.skill._id).eq("contentHash", args.discovered.contentHash),
+    )
+    .unique();
+  const scanStatus = reusableScan?.status ?? "pending";
+  const doc = {
+    skillId: args.skill._id,
+    githubSourceId: args.sourceId,
+    githubPath: args.discovered.path,
+    githubHasSkillCard: Boolean(args.discovered.skillCardMarkdownPath),
+    githubCommit: args.commit,
+    githubContentHash: args.discovered.contentHash,
+    displayName: args.discovered.displayName,
+    summary: args.discovered.summary,
+    upstreamVersion: args.discovered.upstreamVersion,
+    skillMarkdownPath: undefined,
+    skillMarkdown: undefined,
+    skillCardMarkdownPath: undefined,
+    skillCardMarkdown: undefined,
+    scanStatus,
+    updatedAt: args.now,
+  };
+  let candidateId: Id<"githubSkillCandidates">;
+  if (existing) {
+    candidateId = existing._id;
+    await ctx.db.patch(existing._id, doc);
+  } else {
+    candidateId = await ctx.db.insert("githubSkillCandidates", {
+      ...stripUndefined(doc),
+      createdAt: args.now,
+    } as Omit<Doc<"githubSkillCandidates">, "_id" | "_creationTime">);
+  }
+  await ctx.db.patch(args.skill._id, {
+    githubPendingCandidateId: candidateId,
+    updatedAt: args.now,
+  });
+  if (scanStatus === "pending" || scanStatus === "clean" || scanStatus === "suspicious") {
+    await scheduleGitHubSkillVerification(ctx, {
+      skillId: args.skill._id,
+      contentHash: args.discovered.contentHash,
+      scanStatus,
+      now: args.now,
+      candidateId,
+    });
+  }
+  return candidateId;
+}
+
+function githubSkillSyncConflictIssue(
+  discovered: GitHubSkillSourceMetadataSnapshot["skills"][number],
+  message: string,
+  existingOwnerHandle: string,
+): GitHubSkillSourceSyncIssue {
+  return {
+    slug: discovered.slug,
+    path: discovered.path,
+    displayName: discovered.displayName,
+    kind: "slug_conflict",
+    severity: "error",
+    message,
+    existingOwnerHandle,
+  };
+}
+
+function latestGitHubVersionSummary(version: string | undefined, now: number) {
+  if (!version) return undefined;
+  return {
+    version,
+    createdAt: now,
+    changelog: "Synced from GitHub source.",
+    changelogSource: "auto" as const,
+  };
+}
+
 async function findGitHubSkillRevivalCandidate(
   ctx: MutationCtx,
   args: {
@@ -705,6 +1320,15 @@ async function findGitHubSkillRevivalCandidate(
 
 function canReviveGitHubSkillForSource(skill: Doc<"skills">) {
   return skill.installKind === "github" && typeof skill.softDeletedAt === "number";
+}
+
+function canAutoReviveGitHubSkill(skill: Doc<"skills">) {
+  return (
+    skill.installKind === "github" &&
+    skill.githubCurrentStatus === "missing" &&
+    typeof skill.githubRemovedAt === "number" &&
+    skill.softDeletedAt === skill.githubRemovedAt
+  );
 }
 
 function hasGitHubSkillContent(
@@ -791,6 +1415,56 @@ export const upsertGitHubSkillContentInternal = internalMutation({
   handler: upsertGitHubSkillContentHandler,
 });
 
+export async function upsertGitHubSkillCandidateContentHandler(
+  ctx: MutationCtx,
+  args: {
+    candidateId: Id<"githubSkillCandidates">;
+    discovered: DiscoveredGitHubSkill;
+    commit: string;
+    now?: number;
+  },
+) {
+  const candidate = await ctx.db.get(args.candidateId);
+  const skill = candidate ? await ctx.db.get(candidate.skillId) : null;
+  if (
+    !candidate ||
+    !skill ||
+    skill.githubPendingCandidateId !== candidate._id ||
+    candidate.githubPath !== args.discovered.path ||
+    candidate.githubCommit !== args.commit ||
+    candidate.githubContentHash !== args.discovered.contentHash
+  ) {
+    return { ok: true as const, skipped: "stale-candidate" as const };
+  }
+  const now = args.now ?? Date.now();
+  await ctx.db.patch(candidate._id, {
+    skillMarkdownPath: args.discovered.skillMarkdownPath,
+    skillMarkdown: args.discovered.skillMarkdown,
+    skillCardMarkdownPath: args.discovered.skillCardMarkdownPath,
+    skillCardMarkdown: args.discovered.skillCardMarkdown,
+    updatedAt: now,
+  });
+  if (candidate.scanStatus === "clean" || candidate.scanStatus === "suspicious") {
+    return await applyGitHubSkillVerificationResultHandler(ctx, {
+      skillId: candidate.skillId,
+      contentHash: candidate.githubContentHash,
+      scanStatus: candidate.scanStatus,
+      now,
+    });
+  }
+  return { ok: true as const };
+}
+
+export const upsertGitHubSkillCandidateContentInternal = internalMutation({
+  args: {
+    candidateId: v.id("githubSkillCandidates"),
+    discovered: discoveredSkillContentValidator,
+    commit: v.string(),
+    now: v.optional(v.number()),
+  },
+  handler: upsertGitHubSkillCandidateContentHandler,
+});
+
 async function scheduleGitHubSkillVerification(
   ctx: MutationCtx,
   args: {
@@ -798,6 +1472,7 @@ async function scheduleGitHubSkillVerification(
     contentHash: string;
     scanStatus: unknown;
     now: number;
+    candidateId?: Id<"githubSkillCandidates">;
   },
 ) {
   const scan = await ctx.db
@@ -830,21 +1505,34 @@ async function scheduleGitHubSkillVerification(
     return;
   }
   const skill = await ctx.db.get(args.skillId);
-  if (
-    !skill ||
-    skill.installKind !== "github" ||
-    !skill.githubSourceId ||
-    !skill.githubPath ||
-    skill.githubCurrentStatus !== "present" ||
-    !skill.githubCurrentCommit ||
-    skill.githubCurrentContentHash !== args.contentHash
-  ) {
-    return;
-  }
+  if (!skill) return;
+  const candidate = args.candidateId ? await ctx.db.get(args.candidateId) : null;
+  const target =
+    candidate &&
+    skill.githubPendingCandidateId === candidate._id &&
+    candidate.githubContentHash === args.contentHash
+      ? {
+          sourceId: candidate.githubSourceId,
+          path: candidate.githubPath,
+          commit: candidate.githubCommit,
+        }
+      : skill.installKind === "github" &&
+          skill.githubSourceId &&
+          skill.githubPath &&
+          skill.githubCurrentStatus === "present" &&
+          skill.githubCurrentCommit &&
+          skill.githubCurrentContentHash === args.contentHash
+        ? {
+            sourceId: skill.githubSourceId,
+            path: skill.githubPath,
+            commit: skill.githubCurrentCommit,
+          }
+        : null;
+  if (!target) return;
   const pendingScanInsert = {
-    githubSourceId: skill.githubSourceId,
-    commit: skill.githubCurrentCommit,
-    path: skill.githubPath,
+    githubSourceId: target.sourceId,
+    commit: target.commit,
+    path: target.path,
     status: "pending" as const,
     updatedAt: args.now,
   };
@@ -873,6 +1561,8 @@ export const applyGitHubSkillSourceSyncInternal = internalMutation({
     repo: v.string(),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
+    githubRepositoryId: v.optional(v.string()),
+    githubOwnerId: v.optional(v.string()),
     snapshot: sourceSnapshotValidator,
     now: v.optional(v.number()),
   },
@@ -891,7 +1581,79 @@ export async function applyGitHubSkillVerificationResultHandler(
   args: ApplyGitHubSkillVerificationResultArgs,
 ) {
   const skill = await ctx.db.get(args.skillId);
-  if (!skill || skill.installKind !== "github") {
+  if (!skill) {
+    return { ok: true as const, skipped: "missing-github-skill" as const };
+  }
+  const candidate = skill.githubPendingCandidateId
+    ? await ctx.db.get(skill.githubPendingCandidateId)
+    : null;
+  if (candidate?.githubContentHash === args.contentHash) {
+    const now = args.now ?? Date.now();
+    await ctx.db.patch(candidate._id, {
+      scanStatus: args.scanStatus,
+      updatedAt: now,
+    });
+    if (args.scanStatus !== "clean" && args.scanStatus !== "suspicious") {
+      return { ok: true as const, promoted: false };
+    }
+    if (!candidate.skillMarkdown || !candidate.skillMarkdownPath) {
+      return { ok: true as const, skipped: "candidate-content-not-cached" as const };
+    }
+    if (
+      skill.softDeletedAt ||
+      skill.moderationStatus === "hidden" ||
+      skill.moderationStatus === "removed"
+    ) {
+      return { ok: true as const, skipped: "skill-no-longer-eligible" as const };
+    }
+    const previousSkill = { ...skill };
+    const moderation = githubBackedSkillModeration(args.scanStatus);
+    const patch = {
+      displayName: candidate.displayName,
+      summary: candidate.summary,
+      installKind: "github" as const,
+      githubSourceId: candidate.githubSourceId,
+      githubPath: candidate.githubPath,
+      githubHasSkillCard: candidate.githubHasSkillCard,
+      githubCurrentCommit: candidate.githubCommit,
+      githubCurrentContentHash: candidate.githubContentHash,
+      githubCurrentStatus: "present" as const,
+      githubCurrentCheckedAt: now,
+      githubScanStatus: args.scanStatus,
+      githubRemovedAt: undefined,
+      githubPendingCandidateId: undefined,
+      latestVersionId: undefined,
+      latestVersionSummary: latestGitHubVersionSummary(candidate.upstreamVersion, now),
+      softDeletedAt: undefined,
+      updatedAt: now,
+      ...moderation,
+    };
+    await upsertGitHubSkillContent(ctx, {
+      skillId: skill._id,
+      sourceId: candidate.githubSourceId,
+      discovered: {
+        slug: skill.slug,
+        displayName: candidate.displayName,
+        summary: candidate.summary,
+        upstreamVersion: candidate.upstreamVersion,
+        path: candidate.githubPath,
+        skillMarkdownPath: candidate.skillMarkdownPath,
+        skillMarkdown: candidate.skillMarkdown,
+        skillCardMarkdownPath: candidate.skillCardMarkdownPath,
+        skillCardMarkdown: candidate.skillCardMarkdown,
+        contentHash: candidate.githubContentHash,
+      },
+      commit: candidate.githubCommit,
+      now,
+    });
+    await ctx.db.patch(skill._id, patch);
+    const nextSkill = { ...previousSkill, ...patch };
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+    await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, now);
+    await ctx.db.delete(candidate._id);
+    return { ok: true as const, promoted: true };
+  }
+  if (skill.installKind !== "github") {
     return { ok: true as const, skipped: "missing-github-skill" as const };
   }
   if (
@@ -966,6 +1728,13 @@ export async function verifyGitHubSkillHandler(
       currentContentHash: discovered?.contentHash,
     };
   }
+  if (target.candidateId) {
+    await ctx.runMutation(internal.githubSkillSync.upsertGitHubSkillCandidateContentInternal, {
+      candidateId: target.candidateId,
+      discovered,
+      commit: target.skill.githubCurrentCommit,
+    });
+  }
 
   const staticScan = runStaticModerationScan({
     slug: target.skill.slug,
@@ -1023,17 +1792,19 @@ export async function configurePublicGitHubSkillSourceHandler(
   assertGitHubSkillSyncRuntimeEnabled();
   const actor = authOverride ?? (await requireUserFromAction(ctx));
   const metadata = await fetchPublicGitHubRepoMetadata(args.repo, fetcher);
+  if (!metadata.repositoryId || !metadata.ownerId) {
+    throw new ConvexError("GitHub repo identity lookup failed.");
+  }
   const setup = (await ctx.runQuery(
     internal.githubSkillSync.getPublicGitHubSkillSourceSetupContextInternal,
     {
       ownerPublisherId: args.ownerPublisherId,
       actorUserId: actor.userId,
       repo: metadata.repo,
+      githubRepositoryId: metadata.repositoryId,
+      githubOwnerId: metadata.ownerId,
     },
   )) as GitHubSkillSourceSetupContext;
-  if (!setup.official) {
-    throw new ConvexError("GitHub source sync is only available for official publishers.");
-  }
   const snapshot = await fetchGitHubSkillSourceSnapshot(
     {
       repo: metadata.repo,
@@ -1041,14 +1812,17 @@ export async function configurePublicGitHubSkillSourceHandler(
     },
     fetcher,
   );
+  const revalidatedMetadata = await revalidateGitHubRepoMetadata(metadata, fetcher);
   if (snapshot.skills.length === 0) {
     throw new ConvexError("No skills were found in that public GitHub repo.");
   }
   return await applyFetchedGitHubSkillSourceSnapshot(ctx, {
     sourceId: setup.existingSource?._id,
-    repo: metadata.repo,
+    repo: revalidatedMetadata.repo,
     ownerUserId: setup.ownerUserId,
     ownerPublisherId: args.ownerPublisherId,
+    githubRepositoryId: revalidatedMetadata.repositoryId,
+    githubOwnerId: revalidatedMetadata.ownerId,
     snapshot,
   });
 }
@@ -1069,6 +1843,8 @@ async function applyFetchedGitHubSkillSourceSnapshot(
     repo: string;
     ownerUserId: Id<"users">;
     ownerPublisherId?: Id<"publishers">;
+    githubRepositoryId?: string;
+    githubOwnerId?: string;
     snapshot: GitHubSkillSourceSnapshot;
   },
 ) {
@@ -1079,6 +1855,8 @@ async function applyFetchedGitHubSkillSourceSnapshot(
       repo: args.repo,
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId,
+      githubRepositoryId: args.githubRepositoryId,
+      githubOwnerId: args.githubOwnerId,
       snapshot: toGitHubSkillSourceMetadataSnapshot(args.snapshot),
     },
   )) as SyncOneResult;
@@ -1111,6 +1889,14 @@ async function persistGitHubSkillContentsForSnapshot(
   for (const discovered of snapshot.skills) {
     const target = targetByPath.get(discovered.path);
     if (!target || target.githubCurrentContentHash !== discovered.contentHash) continue;
+    if (target.candidateId) {
+      await ctx.runMutation(internal.githubSkillSync.upsertGitHubSkillCandidateContentInternal, {
+        candidateId: target.candidateId,
+        discovered,
+        commit: snapshot.commit,
+      });
+      continue;
+    }
     await ctx.runMutation(internal.githubSkillSync.upsertGitHubSkillContentInternal, {
       skillId: target.skillId,
       sourceId: result.sourceId,
@@ -1147,12 +1933,15 @@ export const syncGitHubSkillSource: ReturnType<typeof action> = action({
       repo,
       defaultBranch: args.defaultBranch ?? source?.defaultBranch ?? metadata.defaultBranch,
     });
+    const revalidatedMetadata = isLegacyNvidiaSkillSource(repo)
+      ? metadata
+      : await revalidateGitHubRepoMetadata(metadata, fetch);
 
     if (args.dryRun) {
       return {
         ok: true as const,
         dryRun: true as const,
-        repo,
+        repo: revalidatedMetadata.repo,
         sourceId: source?._id,
         commit: snapshot.commit,
         manifestStatus: snapshot.manifestStatus,
@@ -1162,9 +1951,11 @@ export const syncGitHubSkillSource: ReturnType<typeof action> = action({
 
     return await applyFetchedGitHubSkillSourceSnapshot(ctx, {
       sourceId: source?._id,
-      repo,
+      repo: revalidatedMetadata.repo,
       ownerUserId,
       ownerPublisherId,
+      githubRepositoryId: revalidatedMetadata.repositoryId,
+      githubOwnerId: revalidatedMetadata.ownerId,
       snapshot,
     });
   },
@@ -1211,18 +2002,32 @@ export async function syncGitHubSkillSourcesHandler(
         { publisherId: source.ownerPublisherId },
       )) as Id<"users">;
       const metadata = await fetchPublicGitHubRepoMetadata(source.repo, fetcher);
+      if (
+        !isLegacyNvidiaSkillSource(source.repo) &&
+        (!source.githubRepositoryId ||
+          !source.githubOwnerId ||
+          metadata.repositoryId !== source.githubRepositoryId ||
+          metadata.ownerId !== source.githubOwnerId)
+      ) {
+        throw new ConvexError("GitHub repository authorization no longer matches.");
+      }
       const snapshot = await fetchGitHubSkillSourceSnapshot(
         {
-          repo: source.repo,
+          repo: metadata.repo,
           defaultBranch: source.defaultBranch ?? metadata.defaultBranch,
         },
         fetcher,
       );
+      const revalidatedMetadata = isLegacyNvidiaSkillSource(source.repo)
+        ? metadata
+        : await revalidateGitHubRepoMetadata(metadata, fetcher);
       const result = await applyFetchedGitHubSkillSourceSnapshot(ctx, {
         sourceId: source._id,
-        repo: source.repo,
+        repo: revalidatedMetadata.repo,
         ownerUserId,
         ownerPublisherId: source.ownerPublisherId,
+        githubRepositoryId: revalidatedMetadata.repositoryId,
+        githubOwnerId: revalidatedMetadata.ownerId,
         snapshot,
       });
       results.push(result);
@@ -1231,11 +2036,21 @@ export async function syncGitHubSkillSourcesHandler(
       skillsRemoved += result.stats.removed;
     } catch (error) {
       const message = getErrorMessage(error);
-      await ctx.runMutation(internal.githubSkillSync.recordGitHubSkillSourceSyncAttemptInternal, {
-        sourceId: source._id,
-        status: "failed",
-        error: message,
-      });
+      if (!isLegacyNvidiaSkillSource(source.repo) && isGitHubSourceAuthorizationFailure(message)) {
+        await ctx.runMutation(
+          internal.githubSkillSync.revokeGitHubSkillSourceAuthorizationInternal,
+          {
+            sourceId: source._id,
+            error: message,
+          },
+        );
+      } else {
+        await ctx.runMutation(internal.githubSkillSync.recordGitHubSkillSourceSyncAttemptInternal, {
+          sourceId: source._id,
+          status: "failed",
+          error: message,
+        });
+      }
       logErrorEvent(Events.GitHubSkillSourceSyncSourceFailed, {
         repo: source.repo,
         sourceId: source._id,
@@ -1470,20 +2285,58 @@ async function fetchPublicGitHubRepoMetadata(
     throw new ConvexError("GitHub repo lookup failed.");
   }
   const body = (await response.json()) as Record<string, unknown>;
+  const ownerData =
+    body.owner && typeof body.owner === "object" ? (body.owner as Record<string, unknown>) : null;
+  const repositoryId = normalizeGitHubNumericId(body.id);
+  const ownerId = normalizeGitHubNumericId(ownerData?.id);
   const fullName = typeof body.full_name === "string" ? body.full_name.trim() : "";
   const visibility = typeof body.visibility === "string" ? body.visibility : "";
   if (body.private !== false || (visibility && visibility !== "public")) {
     throw new ConvexError(PUBLIC_REPO_ONLY_ERROR);
   }
   if (body.disabled === true) throw new ConvexError("GitHub repo is disabled.");
+  if ((!repositoryId || !ownerId) && !isLegacyNvidiaSkillSource(normalizedRepo)) {
+    throw new ConvexError("GitHub repo identity lookup failed.");
+  }
   const defaultBranch =
     typeof body.default_branch === "string" && body.default_branch.trim()
       ? body.default_branch.trim()
       : DEFAULT_BRANCH;
   return {
+    ...(repositoryId ? { repositoryId } : {}),
+    ...(ownerId ? { ownerId } : {}),
     repo: normalizeRepo(fullName || normalizedRepo),
     defaultBranch,
   };
+}
+
+function normalizeGitHubNumericId(value: unknown) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) {
+    return String(value);
+  }
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value.trim())) {
+    return value.trim();
+  }
+  return null;
+}
+
+function isGitHubSourceAuthorizationFailure(message: string) {
+  return (
+    message.includes("GitHub repository authorization no longer matches") ||
+    message.includes(PUBLIC_REPO_ONLY_ERROR) ||
+    message.includes("GitHub repo is disabled")
+  );
+}
+
+async function revalidateGitHubRepoMetadata(expected: GitHubRepoMetadata, fetcher: typeof fetch) {
+  if (!expected.repositoryId || !expected.ownerId) {
+    throw new ConvexError("GitHub repository authorization no longer matches.");
+  }
+  const current = await fetchPublicGitHubRepoMetadata(expected.repo, fetcher);
+  if (current.repositoryId !== expected.repositoryId || current.ownerId !== expected.ownerId) {
+    throw new ConvexError("GitHub repository authorization no longer matches.");
+  }
+  return current;
 }
 
 async function buildGitHubSkillSourceHeaders(fetcher: typeof fetch) {

@@ -50,6 +50,19 @@ skills:
 This table is not an install artifact store. OpenClaw must not install from
 `githubSkillContents`.
 
+`githubSkillCandidates` stores an exact pending replacement for a canonical
+skill while its currently allowed source remains active:
+
+- canonical `skillId`
+- immutable source repository, path, commit, and folder content hash
+- bounded display Markdown fetched from that exact commit
+- the ClawHub scan state for that exact content
+
+Candidates do not create `skillVersions`. A clean or suspicious exact verdict
+promotes the candidate onto the existing skill row and then deletes the
+candidate. Failed, malicious, stale, removed, or disconnected candidates never
+replace the active source.
+
 ## Dark skills.sh discovery metadata
 
 The skills.sh discovery pipeline has a separate hidden metadata table and does
@@ -87,15 +100,21 @@ not create or mutate `skills` rows during its planning gates.
 
 ## Publisher Gate
 
-GitHub-backed source sync is official-publisher-only for now.
+The legacy `NVIDIA/skills` source keeps its existing production behavior.
+Generic GitHub Skill Sync remains dark unless the GitHub Skill Sync rollout
+capability is enabled.
 
-Official means an exact row exists in `officialPublishers` for the publisher.
-It is not inherited from org membership, GitHub identity, OIDC, or
-`trustedPublisher`.
+When enabled, repository enrollment requires:
 
-Default official publishers are not seeded from deploy. Maintainers should mark
-official publishers explicitly using the moderation/admin CLI before enabling
-their source sync.
+- publisher-admin access
+- a public GitHub repository
+- immutable GitHub repository and owner IDs
+- the publisher's matching immutable GitHub user ID, or a verified GitHub
+  organization ID plus fresh organization-admin membership
+
+Repository names, redirects, display handles, and skills.sh owner strings do not
+authorize enrollment. The repository identity is checked again after snapshot
+fetch so a transfer cannot race source activation.
 
 ## Sync
 
@@ -152,8 +171,7 @@ uploads:
 > A normal install/update may only install content whose exact current content
 > hash has a completed, non-blocked ClawHub scan result.
 
-When a new source-backed skill appears or an existing skill's content hash
-changes:
+When a new source-backed skill appears:
 
 - set `githubScanStatus: "pending"`
 - keep the catalog entry visible with `moderationReason: "pending.scan"`, while
@@ -171,6 +189,14 @@ changes:
 - do not schedule another heavy verification action while that content hash
   already has an active queued/running scan job or a recently prepared request
 - enqueue explicit owner/moderator rescans in the high-priority manual queue
+
+When an already allowed GitHub-backed skill changes, or a Hosted Skill owned by
+the same publisher occupies the destination, ClawHub creates an exact pending
+candidate instead of overwriting the active source. The prior verified GitHub
+commit or hosted version remains active until the candidate's own exact scan is
+allowed. Promotion patches the existing canonical skill row in place, preserving
+its slug, routes, ClawHub metrics, bookmarks, prior hosted versions, and audit
+relationships.
 
 When verification succeeds cleanly:
 
@@ -221,6 +247,13 @@ If the upstream path disappears:
 
 The row may remain for audit/history, but users must not silently install an old
 ClawHub-cached revision after upstream removed or changed it.
+
+Removing a selected repository also removes its pending candidates before
+deleting the source, so an in-flight callback cannot promote disconnected
+content. Active source-backed skills become missing and hidden. Re-enrollment or
+upstream reappearance may revive the same canonical skill row, but the
+reappeared exact content returns to pending and must pass scanning before
+installation.
 
 ## Install Resolver
 
@@ -326,15 +359,18 @@ resolver and current scan/upstream state, not by stale cached UI metadata.
 
 Keep coverage for:
 
-- configuring only official publishers
+- immutable publisher/repository authorization and transfer-race rejection
 - parsing `skills.sh.json`
 - 15-minute cron registration
 - new skill -> pending scan -> blocked install
-- changed content hash -> pending scan -> no stale commit served
+- changed content hash -> pending candidate -> prior verified commit remains served
+- Hosted Skill -> pending candidate -> in-place GitHub promotion with history preserved
+- reusable exact verdict -> promotion only after exact display content is cached
 - clean verification -> pinned GitHub install descriptor
 - suspicious verification -> pinned GitHub install descriptor with suspicious review metadata
 - failed/malicious scan -> blocked install
-- removed upstream path -> hidden/blocked install
+- removed upstream path -> hidden/blocked install -> scan-gated reappearance
+- repository removal -> pending candidates canceled and active source blocked
 - cached `SKILL.md` and `skill-card.md` display content
 - no `skillVersions` for GitHub-backed skills
 - OpenClaw installing the pinned GitHub commit/path rather than ClawHub bytes

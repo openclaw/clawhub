@@ -190,6 +190,20 @@ export async function deleteForPublisherHandler(
   for (const content of contents) {
     await ctx.db.delete(content._id);
   }
+  const candidates = await ctx.db
+    .query("githubSkillCandidates")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
+    .collect();
+  for (const candidate of candidates) {
+    const skill = await ctx.db.get(candidate.skillId);
+    if (skill?.githubPendingCandidateId === candidate._id) {
+      await ctx.db.patch(skill._id, {
+        githubPendingCandidateId: undefined,
+        updatedAt: now,
+      });
+    }
+    await ctx.db.delete(candidate._id);
+  }
   await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
     sourceId: args.sourceId,
   });
