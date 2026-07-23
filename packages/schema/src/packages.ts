@@ -26,8 +26,11 @@ export function getPackageScopeOwnerMismatch(name: string, ownerHandle: string |
   };
 }
 
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
+
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
+export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
 
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export type PackageChannel = (typeof PackageChannelSchema)[inferred];
@@ -347,7 +350,7 @@ const PackagePublishMetadataFields = {
   name: "string",
   displayName: "string?",
   ownerHandle: "string?",
-  family: PackageFamilySchema,
+  family: PackagePublishFamilySchema,
   version: "string",
   changelog: "string",
   manualOverrideReason: "string?",

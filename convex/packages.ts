@@ -1,6 +1,8 @@
 import {
   ServerPackagePublishRequestSchema,
+  validateClawPackageContents,
   derivePluginCategoryTags,
+  summarizeClawManifest,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   INTERNAL_UNCATEGORIZED_CATEGORY,
@@ -60,6 +62,7 @@ import {
   getActivityTrendRangeForEndDay,
 } from "./lib/downloadTrend";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
+import { experimentalClawsEnabled, isClawFamilyPubliclyVisible } from "./lib/experimentalClaws";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
@@ -1209,8 +1212,13 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
-  const { capabilities: _capabilities, ...publicRelease } = release as Doc<"packageReleases"> & {
+  const {
+    capabilities: _capabilities,
+    extractedClawManifest: _extractedClawManifest,
+    ...publicRelease
+  } = release as Doc<"packageReleases"> & {
     capabilities?: unknown;
+    extractedClawManifest?: unknown;
   };
   const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
   if (!release.verification || !sourcePath) return publicRelease;
@@ -1318,6 +1326,7 @@ function digestMatchesFilters(
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  if (!isClawFamilyPubliclyVisible(digest.family)) return false;
   if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
     if (digest.pluginCategory) {
@@ -1364,6 +1373,7 @@ function packageMatchesListFilters(
     excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  if (!isClawFamilyPubliclyVisible(pkg.family)) return false;
   if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
   if (args.family && pkg.family !== args.family) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
@@ -2633,6 +2643,7 @@ async function getReadablePackageByName(
   const normalizedName = normalizePackageName(name);
   const pkg = await getPackageByNormalizedName(ctx, normalizedName);
   if (!pkg || pkg.softDeletedAt) return null;
+  if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
   if (pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)) {
     const canAccessOwner = await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId);
     if (pkg.channel === "private" && !canAccessOwner) return null;
@@ -2653,6 +2664,7 @@ async function getPackageReadableForPublicTrust(
 ) {
   const pkg = await getPackageByNormalizedName(ctx, normalizePackageName(name));
   if (!pkg || pkg.softDeletedAt) return null;
+  if (!isClawFamilyPubliclyVisible(pkg.family)) return null;
   if (pkg.channel === "private" && !(await viewerCanAccessPackageOwner(ctx, pkg, viewerUserId))) {
     return null;
   }
@@ -3255,7 +3267,7 @@ export const listAuditPage = query({
     const page = [];
     const membershipCache = new Map<string, Promise<boolean>>();
     for (const pkg of result.page) {
-      if (pkg.family === "skill") continue;
+      if (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") continue;
       if (!(await canViewerReadPackage(ctx, pkg, undefined, membershipCache))) continue;
 
       const owner = toPublicPublisher(
@@ -4310,6 +4322,7 @@ async function searchPackagesImpl(
       topic,
     });
     const entries = highlightedEntries
+      .filter(({ digest }) => isClawFamilyPubliclyVisible(digest.family))
       .filter(
         ({ digest }) =>
           !digest.scanStatus || !args.excludedScanStatuses?.includes(digest.scanStatus),
@@ -7579,11 +7592,17 @@ async function publishPackageImpl(
     rawPayload,
     "Package publish payload",
   );
+  if (payload.family === "claw" && !experimentalClawsEnabled()) {
+    throw new ConvexError("Experimental Claw publication is disabled");
+  }
   if (payload.family === "skill") {
     throw new ConvexError("Skill packages must use the skills publish flow");
   }
   const family = payload.family;
   const name = normalizePackageName(payload.name);
+  if (payload.family === "claw" && payload.name !== name) {
+    throw new ConvexError(`Claw package name must use canonical form ${name}`);
+  }
   const version = assertPackageVersion(family, payload.version);
   const existingPackage = await runQueryRef<Doc<"packages"> | null>(
     ctx,
@@ -7711,7 +7730,8 @@ async function publishPackageImpl(
   if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
     throw new ConvexError(getPublishTotalSizeError("package"));
   }
-  const legacyZipSha256 = await sha256Hex(buildDeterministicPackageZip(legacyZipEntries));
+  const legacyZipBytes = buildDeterministicPackageZip(legacyZipEntries);
+  const legacyZipSha256 = await sha256Hex(legacyZipBytes);
 
   if (family === "code-plugin" && (!effectiveSource?.repo || !effectiveSource?.commit)) {
     throw new ConvexError("Code plugins require source repo and commit metadata");
@@ -7721,6 +7741,14 @@ async function publishPackageImpl(
     ctx,
     files,
     (path) => path === "package.json",
+    family === "claw"
+      ? {
+          exactPath: true,
+          maxBytes: 256 * 1024,
+          label: "Claw package.json",
+          strictUtf8: true,
+        }
+      : undefined,
   );
   const pluginManifestEntry = await readOptionalTextFile(
     ctx,
@@ -7744,6 +7772,23 @@ async function publishPackageImpl(
   );
 
   const packageJson = maybeParseJson(packageJsonEntry?.text);
+  const declaredClawManifestPath =
+    family === "claw" &&
+    packageJson &&
+    typeof packageJson.openclaw === "object" &&
+    packageJson.openclaw !== null &&
+    !Array.isArray(packageJson.openclaw) &&
+    typeof (packageJson.openclaw as Record<string, unknown>).claw === "string"
+      ? ((packageJson.openclaw as Record<string, unknown>).claw as string)
+      : undefined;
+  const clawManifestEntry = declaredClawManifestPath
+    ? await readOptionalTextFile(ctx, files, (path) => path === declaredClawManifestPath, {
+        exactPath: true,
+        maxBytes: 1024 * 1024,
+        label: "Claw manifest",
+        strictUtf8: true,
+      })
+    : null;
   const pluginManifest = maybeParseJson(pluginManifestEntry?.text);
   const bundleManifest = maybeParseJson(bundleManifestEntry?.text);
   const storedPackageJson = toConvexSafeJsonValue(packageJson, {
@@ -7755,11 +7800,31 @@ async function publishPackageImpl(
   const storedBundleManifest = toConvexSafeJsonValue(bundleManifest, {
     maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
   });
-  if (packageJson) ensurePluginNameMatchesPackage(name, packageJson);
-  if (!pluginManifest) {
+  if (family !== "claw" && packageJson) ensurePluginNameMatchesPackage(name, packageJson);
+  if (family !== "claw" && !pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
   }
-  const icon = normalizePluginManifestIcon(pluginManifest);
+  const clawPackage =
+    family === "claw"
+      ? validateClawPackageContents({
+          packageName: name,
+          version,
+          packageJson,
+          files: files.map((file) => ({
+            path: file.path,
+            ...(clawManifestEntry?.file.path === file.path ? { text: clawManifestEntry.text } : {}),
+          })),
+        })
+      : null;
+  if (clawPackage && !clawPackage.ok) {
+    throw new ConvexError(
+      `Invalid Claw package: ${clawPackage.issues
+        .map((entry) => `${entry.path}: ${entry.message}`)
+        .join(" ")}`,
+    );
+  }
+  const validatedClaw = clawPackage?.ok ? clawPackage.value : undefined;
+  const icon = family === "claw" ? undefined : normalizePluginManifestIcon(pluginManifest);
   if (family === "code-plugin") {
     const validation = validateOpenClawExternalCodePluginPackageContents(
       packageJson,
@@ -7783,7 +7848,11 @@ async function publishPackageImpl(
       ? extractBundlePluginArtifacts({
           packageName: name,
           packageJson,
-          pluginManifest,
+          pluginManifest:
+            pluginManifest ??
+            (() => {
+              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+            })(),
           bundleManifest,
           bundleMetadata:
             payload.bundle || detectedBundleFormat
@@ -7805,22 +7874,32 @@ async function publishPackageImpl(
             (() => {
               throw new ConvexError("package.json is required for code plugins");
             })(),
-          pluginManifest,
+          pluginManifest:
+            pluginManifest ??
+            (() => {
+              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+            })(),
           source: effectiveSource,
         })
       : null;
 
-  const summary = summarizePackageForSearch({
-    packageName: name,
-    packageJson,
-    readmeText: readmeEntry?.text ?? null,
-  });
+  const summary =
+    validatedClaw?.manifest.agent.description?.trim() ||
+    validatedClaw?.manifest.agent.name?.trim() ||
+    summarizePackageForSearch({
+      packageName: name,
+      packageJson,
+      readmeText: readmeEntry?.text ?? null,
+    });
   let categories: string[];
   let normalizedTopics: string[];
   try {
     const declaredCategories =
       payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
-    categories = resolvePluginCategories({ declared: declaredCategories });
+    categories =
+      family === "claw"
+        ? (declaredCategories ?? [])
+        : resolvePluginCategories({ declared: declaredCategories });
     normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
@@ -7834,6 +7913,7 @@ async function publishPackageImpl(
       packageJson,
       pluginManifest,
       bundleManifest,
+      clawManifest: validatedClaw?.manifest,
       source: effectiveSource,
     },
     files,
@@ -7868,12 +7948,34 @@ async function publishPackageImpl(
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
-  const pluginManifestSummary = derivePluginManifestSummary({
-    pluginManifest,
-    ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-    compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-    files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
-  });
+  const pluginManifestSummary =
+    family === "claw"
+      ? undefined
+      : derivePluginManifestSummary({
+          pluginManifest:
+            pluginManifest ??
+            (() => {
+              throw new ConvexError("openclaw.plugin.json is required for plugin packages");
+            })(),
+          ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+          compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+          files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
+        });
+
+  const legacyZipStorageId =
+    payload.artifact?.kind === "npm-pack"
+      ? undefined
+      : await ctx.storage.store(
+          new Blob(
+            [
+              legacyZipBytes.buffer.slice(
+                legacyZipBytes.byteOffset,
+                legacyZipBytes.byteOffset + legacyZipBytes.byteLength,
+              ) as ArrayBuffer,
+            ],
+            { type: "application/zip" },
+          ),
+        );
 
   const packageInsertArgs = {
     actorUserId,
@@ -7900,9 +8002,10 @@ async function publishPackageImpl(
     integritySha256,
     sha256hash: legacyZipSha256,
     artifactKind: payload.artifact?.kind ?? "legacy-zip",
-    clawpackStorageId: payload.artifact?.storageId as Id<"_storage"> | undefined,
-    clawpackSha256: payload.artifact?.sha256,
-    clawpackSize: payload.artifact?.size,
+    clawpackStorageId:
+      (payload.artifact?.storageId as Id<"_storage"> | undefined) ?? legacyZipStorageId,
+    clawpackSha256: payload.artifact?.sha256 ?? legacyZipSha256,
+    clawpackSize: payload.artifact?.size ?? legacyZipBytes.byteLength,
     clawpackFormat: payload.artifact?.format,
     npmIntegrity: payload.artifact?.npmIntegrity,
     npmShasum: payload.artifact?.npmShasum,
@@ -7916,6 +8019,7 @@ async function publishPackageImpl(
     extractedPluginManifest: storedPluginManifest,
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     pluginManifestSummary,
+    clawManifestSummary: validatedClaw ? summarizeClawManifest(validatedClaw.manifest) : undefined,
     source: effectiveSource,
   };
 
@@ -9805,7 +9909,12 @@ export const insertReleaseInternal = internalMutation({
     ),
     name: v.string(),
     displayName: v.string(),
-    family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
+    family: v.union(
+      v.literal("skill"),
+      v.literal("code-plugin"),
+      v.literal("bundle-plugin"),
+      v.literal("claw"),
+    ),
     version: v.string(),
     publicationStatus: v.optional(v.union(v.literal("pending"), v.literal("published"))),
     changelog: v.string(),
@@ -9849,9 +9958,13 @@ export const insertReleaseInternal = internalMutation({
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
     pluginManifestSummary: v.optional(v.any()),
+    clawManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
+    if (args.family === "claw" && !experimentalClawsEnabled()) {
+      throw new ConvexError("Experimental Claw publication is disabled");
+    }
     const now = Date.now();
     const publicationStatus = args.publicationStatus ?? "published";
     const pendingPublication = publicationStatus === "pending";
@@ -10084,6 +10197,7 @@ export const insertReleaseInternal = internalMutation({
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
       pluginManifestSummary: args.pluginManifestSummary,
+      clawManifestSummary: args.clawManifestSummary,
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,

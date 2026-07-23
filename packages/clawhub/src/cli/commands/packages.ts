@@ -143,8 +143,10 @@ type PackageExploreOptions = {
   json?: boolean;
 };
 
+type PublishablePackageFamily = "code-plugin" | "bundle-plugin" | "claw";
+
 type PackagePublishOptions = {
-  family?: "code-plugin" | "bundle-plugin";
+  family?: PublishablePackageFamily;
   name?: string;
   displayName?: string;
   owner?: string;
@@ -261,7 +263,7 @@ type PackagePublishPayload = {
   name: string;
   displayName: string;
   ownerHandle?: string;
-  family: "code-plugin" | "bundle-plugin";
+  family: PublishablePackageFamily;
   version: string;
   changelog: string;
   manualOverrideReason?: string;
@@ -288,7 +290,7 @@ type PackagePublishPlan = {
     source: string;
     name: string;
     displayName: string;
-    family: "code-plugin" | "bundle-plugin";
+    family: PublishablePackageFamily;
     version: string;
     commit?: string;
     files: number;
@@ -2184,9 +2186,23 @@ function hasLooseBundleMarker(fileSet: Set<string>) {
 
 function detectPackageFamily(
   fileSet: Set<string>,
-  explicit?: "code-plugin" | "bundle-plugin",
-): "code-plugin" | "bundle-plugin" {
+  packageJson: unknown,
+  explicit?: PublishablePackageFamily,
+): PublishablePackageFamily {
   if (explicit) return explicit;
+  const packageRecord =
+    packageJson && typeof packageJson === "object" && !Array.isArray(packageJson)
+      ? (packageJson as Record<string, unknown>)
+      : undefined;
+  const openclaw =
+    packageRecord?.openclaw &&
+    typeof packageRecord.openclaw === "object" &&
+    !Array.isArray(packageRecord.openclaw)
+      ? (packageRecord.openclaw as Record<string, unknown>)
+      : undefined;
+  if (typeof openclaw?.claw === "string") {
+    return "claw";
+  }
   if (hasRealBundleManifest(fileSet)) return "bundle-plugin";
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
   if (hasLooseBundleMarker(fileSet)) return "bundle-plugin";
@@ -2318,7 +2334,7 @@ async function preparePackagePublishPlan(
     (parsedClawpack ? null : await readJsonFile(join(folder, "openclaw.plugin.json")));
   const bundleManifestInfo = await readBundleManifestInfo(filesOnDisk, folder, parsedClawpack);
   const bundleManifest = bundleManifestInfo.manifest;
-  const family = detectPackageFamily(fileSet, options.family);
+  const family = detectPackageFamily(fileSet, packageJson, options.family);
   const name =
     options.name?.trim() ||
     parsedClawpack?.packageName ||
@@ -2345,9 +2361,11 @@ async function preparePackagePublishPlan(
   if (!name) fail("--name required");
   if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
-  if (!fileSet.has("openclaw.plugin.json")) fail("openclaw.plugin.json required");
-  if (family === "code-plugin" && !semver.valid(version)) {
-    fail("--version must be valid semver for code plugins");
+  if (family !== "claw" && !fileSet.has("openclaw.plugin.json")) {
+    fail("openclaw.plugin.json required");
+  }
+  if ((family === "code-plugin" || family === "claw") && !semver.valid(version)) {
+    fail(`--version must be valid semver for ${family === "claw" ? "Claws" : "code plugins"}`);
   }
   if (family === "code-plugin") {
     if (!fileSet.has("package.json")) fail("package.json required");
@@ -2355,6 +2373,22 @@ async function preparePackagePublishPlan(
     const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
     if (validation.issues.length > 0) {
       fail(validation.issues.map((issue) => issue.message).join(" "));
+    }
+  }
+
+  if (family === "claw") {
+    const { validateClawPackageContents } = await import("../../schema/clawPackage.js");
+    const validation = validateClawPackageContents({
+      packageName: name,
+      version,
+      packageJson,
+      files: filesOnDisk.map((file) => ({
+        path: file.relPath,
+        text: new TextDecoder().decode(file.bytes),
+      })),
+    });
+    if (!validation.ok) {
+      fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
   }
 

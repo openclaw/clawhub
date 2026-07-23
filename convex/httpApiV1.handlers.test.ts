@@ -12192,6 +12192,7 @@ describe("httpApiV1 handlers", () => {
             artifactKind: "legacy-zip",
             integritySha256: "a".repeat(64),
             sha256hash: "b".repeat(64),
+            clawpackSize: 321,
           },
         };
       }
@@ -12215,6 +12216,7 @@ describe("httpApiV1 handlers", () => {
         source: "clawhub",
         artifactKind: "legacy-zip",
         artifactSha256: "b".repeat(64),
+        size: 321,
         packageName: "demo-plugin",
         version: "1.0.0",
         downloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
@@ -14445,6 +14447,126 @@ describe("httpApiV1 handlers", () => {
     expect(storageGet).toHaveBeenCalledWith("storage:1");
   });
 
+  it("serves the immutable stored legacy archive without reconstructing it", async () => {
+    const archive = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          artifactKind: "legacy-zip",
+          clawpackStorageId: "storage:archive",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:file-that-must-not-be-read",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (id: string) =>
+      id === "storage:archive" ? new Blob([archive], { type: "application/zip" }) : null,
+    );
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(archive);
+    expect(storageGet).toHaveBeenCalledTimes(1);
+    expect(storageGet).toHaveBeenCalledWith("storage:archive");
+  });
+
+  it("reconstructs compatibility ZIP downloads instead of serving stored npm tarballs", async () => {
+    const storedTarball = gzipSync(new TextEncoder().encode("not a zip"));
+    const packageJson = new TextEncoder().encode('{"name":"demo-plugin"}');
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:tarball",
+          files: [
+            {
+              path: "package.json",
+              size: packageJson.byteLength,
+              sha256: "a".repeat(64),
+              storageId: "storage:package-json",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (id: string) => {
+      if (id === "storage:tarball") return new Blob([storedTarball], { type: "application/gzip" });
+      if (id === "storage:package-json") return new Blob([packageJson]);
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/zip");
+    expect(
+      strFromU8(unzipSync(new Uint8Array(await response.arrayBuffer()))["package/package.json"]!),
+    ).toBe('{"name":"demo-plugin"}');
+    expect(storageGet).not.toHaveBeenCalledWith("storage:tarball");
+    expect(storageGet).toHaveBeenCalledWith("storage:package-json");
+  });
+
   it("allows package downloads when verification is clean even without cached vtAnalysis", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -14920,6 +15042,69 @@ describe("httpApiV1 handlers", () => {
     expect(actionCall).toBeTruthy();
     const payload = (actionCall[1] as { payload?: { files?: Array<{ path: string }> } }).payload;
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
+  });
+
+  it("multipart Claw publish accepts an npm pack without a plugin manifest", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:claw", releaseId: "rel:claw" });
+    const storageStore = vi.fn(async () => `storage:${storageStore.mock.calls.length}`);
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({
+        name: "demo-claw",
+        version: "1.0.0",
+        openclaw: { claw: "CLAW.md" },
+      }),
+      "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n",
+    });
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        name: "demo-claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+      }),
+    );
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(storageStore).toHaveBeenCalledTimes(3);
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          family: "claw",
+          artifact: expect.objectContaining({ kind: "npm-pack", npmFileCount: 2 }),
+          files: [
+            expect.objectContaining({ path: "package.json" }),
+            expect.objectContaining({ path: "CLAW.md" }),
+          ],
+        }),
+      }),
+    );
   });
 
   it("staged ClawPack publish derives artifact metadata from stored bytes", async () => {
