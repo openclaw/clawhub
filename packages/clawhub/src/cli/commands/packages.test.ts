@@ -2570,6 +2570,7 @@ describe("package commands", () => {
     try {
       const folder = join(workdir, "github-triage");
       await mkdir(join(folder, "workspace"), { recursive: true });
+      await mkdir(join(folder, "profiles"), { recursive: true });
       await writeFile(
         join(folder, "package.json"),
         JSON.stringify({
@@ -2588,6 +2589,22 @@ describe("package commands", () => {
           "agent:",
           "  id: github-triage",
           "  name: GitHub Triage",
+          "metadata:",
+          "  openclaw.config: profiles/openclaw.yml",
+          "workspace:",
+          "  bootstrapFiles:",
+          "    SOUL.md:",
+          "      source: workspace/SOUL.md",
+          "---",
+          "# GitHub Triage",
+        ].join("\n"),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "profiles", "openclaw.yml"),
+        [
+          "schemaVersion: 1",
+          "agent:",
           "  tools:",
           "    profile: coding",
           "    alsoAllow: [cron]",
@@ -2598,12 +2615,6 @@ describe("package commands", () => {
           "      enabled: true",
           "      rememberAcrossConversations: true",
           "      sources: [memory, sessions]",
-          "workspace:",
-          "  bootstrapFiles:",
-          "    SOUL.md:",
-          "      source: workspace/SOUL.md",
-          "---",
-          "# GitHub Triage",
         ].join("\n"),
         "utf8",
       );
