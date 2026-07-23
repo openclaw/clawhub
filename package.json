@@ -87,7 +87,7 @@
     "verify:convex-contract": "bun scripts/verify-convex-contract.ts"
   },
   "dependencies": {
-    "@auth/core": "0.41.2",
+    "@auth/core": "0.41.3",
     "@convex-dev/auth": "0.0.94",
     "@convex-dev/migrations": "0.3.5",
     "@convex-dev/rate-limiter": "0.3.2",
