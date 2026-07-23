@@ -176,6 +176,22 @@ describe("creators route", () => {
     expect(screen.getByText("No publishers found")).toBeTruthy();
   });
 
+  it("labels highlighted publishers as popular creators", async () => {
+    loaderDataMock.mockReturnValue({
+      page: [{ _id: "publishers:one" }],
+      counts: { all: 1, organizations: 0, individuals: 1 },
+      continueCursor: "",
+      isDone: true,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "Popular creators" })).toBeTruthy();
+    expect(screen.queryByText("Popular publishers")).toBeNull();
+  });
+
   it("does not present the bounded publisher result count as a global total", async () => {
     loaderDataMock.mockReturnValue({
       page: [],
@@ -192,7 +208,7 @@ describe("creators route", () => {
     expect(screen.getByRole("heading", { name: "Creators" })).toBeTruthy();
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Verified" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Organizations" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Users" })).toBeTruthy();
     expect(screen.queryByText("Builders")).toBeNull();

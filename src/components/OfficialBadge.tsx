@@ -10,10 +10,10 @@ export function OfficialTag({ className }: { className?: string }) {
           ? `official-tag rounded-[var(--oc-radius-control)] ${className}`
           : "official-tag rounded-[var(--oc-radius-control)]"
       }
-      aria-label="Verified"
+      aria-label="Official"
     >
       <BadgeCheck size={15} aria-hidden="true" className="official-badge-icon" />
-      Verified
+      Official
     </Badge>
   );
 }
@@ -29,14 +29,14 @@ export function OfficialBadge({ className, iconOnly = false, size = 12 }: Offici
     const iconClassName = className
       ? `official-badge-icon-only ${className}`
       : "official-badge-icon-only";
-    return <BadgeCheck size={size} className={iconClassName} aria-label="Verified" />;
+    return <BadgeCheck size={size} className={iconClassName} aria-label="Official" />;
   }
 
   return (
     <span
       className={className ? `official-badge ${className}` : "official-badge"}
-      aria-label="Verified"
-      title="Verified"
+      aria-label="Official"
+      title="Official"
     >
       <BadgeCheck size={size} aria-hidden="true" />
     </span>

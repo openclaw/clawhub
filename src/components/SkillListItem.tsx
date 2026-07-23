@@ -29,7 +29,7 @@ export function SkillListItem({
   const href =
     hrefOverride ?? `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(skill.slug)}`;
   const badges = getSkillBadges(skill);
-  const isOfficial = badges.includes("Verified") || owner?.official === true;
+  const isOfficial = badges.includes("Official") || owner?.official === true;
   const categories = getSkillCategoriesForSkill(skill);
   const categoryLabel = categories
     .slice(0, 3)
@@ -49,7 +49,7 @@ export function SkillListItem({
           </span>
           {isOfficial ? <OfficialBadge /> : null}
           {badges
-            .filter((badge) => badge !== "Verified")
+            .filter((badge) => badge !== "Official")
             .map((badge) => (
               <Badge key={badge} variant="compact">
                 {badge}

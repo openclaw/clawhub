@@ -98,8 +98,8 @@ describe("PublishedItemCard", () => {
 
   it("renders the compact official mark for official published rows", () => {
     render(<PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} />);
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
   });
 
   it("does not add source-backed chrome to GitHub-backed skill rows", () => {

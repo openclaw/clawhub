@@ -58,7 +58,6 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
             <span className="publisher-card-title-row">
               <span className="publisher-card-name">{publisher.displayName}</span>
               {publisher.official ? <OfficialBadge /> : null}
-              {publisher.kind === "org" ? <span className="publisher-card-kind">Org</span> : null}
             </span>
             <span className="publisher-card-handle">@{handle}</span>
           </span>

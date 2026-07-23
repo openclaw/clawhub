@@ -160,7 +160,7 @@ describe("HomeListingSection", () => {
       "Trending",
     ]);
     expect(screen.queryByRole("tab", { name: "New" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Verified" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Official" })).toBeNull();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(document.querySelector(".home-v2-listing-grid")).toBeTruthy();
     expect(document.querySelector(".marketplace-icon-image")?.getAttribute("src")).toBe(

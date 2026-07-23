@@ -14,16 +14,16 @@ describe("PluginListItem", () => {
   it("renders official list plugins with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} />);
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
   it("renders official plugin cards with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} variant="card" />);
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 

@@ -1584,7 +1584,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Verified" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Updated" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
@@ -1730,7 +1730,7 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Verified", "Updated"]);
+    expect(sortOptions).toEqual(["All", "Trending", "Official", "Updated"]);
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();

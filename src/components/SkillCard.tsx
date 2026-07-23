@@ -37,12 +37,12 @@ export function SkillCard({
   const ownerSegment = encodeURIComponent(String(skill.ownerUserId));
   const link = href ?? `/${ownerSegment}/${skill.slug}`;
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : [];
-  const isOfficial = badges.includes("Verified") || owner?.official === true;
-  const nonOfficialBadges = badges.filter((label) => label !== "Verified");
+  const isOfficial = badges.includes("Official") || owner?.official === true;
+  const nonOfficialBadges = badges.filter((label) => label !== "Official");
   const visibleBadges = ownerHandle
     ? nonOfficialBadges
     : isOfficial
-      ? ["Verified", ...nonOfficialBadges]
+      ? ["Official", ...nonOfficialBadges]
       : badges;
   const primaryCategory = getSkillCategoryForSkill(skill);
   const hasSecondaryTags =
@@ -88,7 +88,7 @@ export function SkillCard({
             <span className="skill-card-tag-separator" aria-hidden="true" />
           ) : null}
           {visibleBadges.map((label) =>
-            label === "Verified" ? (
+            label === "Official" ? (
               <OfficialBadge key={label} />
             ) : (
               <Badge key={label}>{label}</Badge>

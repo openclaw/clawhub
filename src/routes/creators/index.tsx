@@ -50,7 +50,7 @@ const PUBLISHER_KIND_OPTIONS = [
   { value: undefined, label: "All" },
   {
     value: "official",
-    label: "Verified",
+    label: "Official",
     icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
   },
   { value: "orgs", label: "Organizations", mobileLabel: "Orgs" },
@@ -344,7 +344,7 @@ function PublishersIndex() {
           {highlightedPublishers.length > 0 ? (
             <section className="publisher-highlights" aria-labelledby="publisher-highlights-title">
               <div className="publisher-section-heading">
-                <h2 id="publisher-highlights-title">Popular publishers</h2>
+                <h2 id="publisher-highlights-title">Popular creators</h2>
               </div>
               <div className="publisher-highlight-grid">
                 {highlightedPublishers.map((publisher) => (

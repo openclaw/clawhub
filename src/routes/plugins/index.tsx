@@ -63,7 +63,7 @@ const PLUGIN_BROWSE_TABS = [
   { value: "trending", label: "Trending" },
   {
     value: "official",
-    label: "Verified",
+    label: "Official",
     icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
   },
   { value: "updated", label: "Updated" },

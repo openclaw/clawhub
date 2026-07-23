@@ -27,8 +27,8 @@ describe("SkillListItem", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
@@ -37,7 +37,7 @@ describe("SkillListItem", () => {
       <SkillListItem skill={makeSkill()} owner={makePublisher({ official: true })} />,
     );
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
