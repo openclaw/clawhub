@@ -128,6 +128,27 @@ describe("skills.sh permanent Test mirror route", () => {
     vi.unstubAllGlobals();
   });
 
+  it("authenticates the operator before measuring the live source", async () => {
+    readBodyMock.mockResolvedValue({ operation: "start", reason: "CLAW-563 proof" });
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      expect(body).toEqual({ operation: "mirror-status" });
+      return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 });
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({
+      message: expect.stringContaining("HTTP 401"),
+    });
+    expect(convexFetch).toHaveBeenCalledTimes(1);
+    expect(getVercelOidcTokenMock).not.toHaveBeenCalled();
+    expect(measureProofSourceMock).not.toHaveBeenCalled();
+  });
+
   it("starts from a freshly measured authenticated source total", async () => {
     readBodyMock.mockResolvedValue({ operation: "start", reason: "CLAW-563 proof" });
     measureProofSourceMock.mockResolvedValue({
@@ -147,6 +168,9 @@ describe("skills.sh permanent Test mirror route", () => {
     });
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-status") {
+        return new Response(JSON.stringify({ control: { enabled: true } }));
+      }
       if (body.operation === "mirror-source-page-store") {
         return new Response(JSON.stringify({ stored: true, page: body.page, rows: 500 }));
       }
@@ -234,6 +258,9 @@ describe("skills.sh permanent Test mirror route", () => {
     });
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
+      if (body.operation === "mirror-status") {
+        return new Response(JSON.stringify({ control: { enabled: true } }));
+      }
       if (body.operation === "mirror-source-page-store") {
         return new Response(JSON.stringify({ stored: false, page: body.page, rows: 500 }));
       }

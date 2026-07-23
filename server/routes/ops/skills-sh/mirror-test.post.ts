@@ -224,6 +224,7 @@ export default defineEventHandler(async (event) => {
       );
     }
     if (operation === "start") {
+      await callConvexOperator(authorization, { operation: "mirror-status" });
       const oidcToken = await getVercelOidcToken();
       const sourceMeasuredAt = new Date().toISOString();
       const source = await measureSkillsShMirrorProofSource({ oidcToken });
