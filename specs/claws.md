@@ -7,11 +7,16 @@ owns publication, ownership, discovery, package detail APIs, and hosted feed
 export. OpenClaw remains authoritative for local planning, consent, mutation,
 provenance, update, and removal.
 
-Portable agent policy follows the RFC's agent-settings addendum. ClawHub
-validates the portable shape of profile selection, tool modifiers, filesystem
-restriction, and memory-search settings. The applying OpenClaw version remains
-responsible for resolving a profile name through its current built-in registry;
-ClawHub does not freeze that evolving registry into its package schema.
+The portable agent object carries only identity and purpose. Harness-specific
+settings live in package-local profiles addressed through opaque string
+metadata. OpenClaw recognizes `metadata.openclaw.config`; export conventionally
+uses `profiles/openclaw.yml`, but the pointer is normative and authors may use
+another safe package-relative YAML path.
+
+That profile exists only inside the Claw package. It is validated during
+publication and application, participates in package integrity, and is never
+copied into ordinary OpenClaw configuration. Other harnesses may ignore
+OpenClaw's namespaced key or define their own profile-pointer contract.
 
 ## Experimental contract
 

@@ -51,57 +51,8 @@ export const ClawManifestSchema = type({
             emoji: "string?",
             avatar: "string?",
         }).optional(),
-        groupChat: type({
-            "+": "reject",
-            mentionPatterns: StringArraySchema.optional(),
-        }).optional(),
-        sandbox: type({
-            "+": "reject",
-            mode: '"off"|"non-main"|"all"?',
-            scope: '"session"|"agent"|"shared"?',
-            workspaceAccess: '"none"|"ro"|"rw"?',
-        }).optional(),
-        tools: type({
-            "+": "reject",
-            profile: "string?",
-            allow: StringArraySchema.optional(),
-            alsoAllow: StringArraySchema.optional(),
-            deny: StringArraySchema.optional(),
-            fs: type({
-                "+": "reject",
-                workspaceOnly: "boolean?",
-            }).optional(),
-        }).optional(),
-        memory: type({
-            "+": "reject",
-            search: type({
-                "+": "reject",
-                enabled: "boolean?",
-                rememberAcrossConversations: "boolean?",
-                sources: type("('memory' | 'sessions')[]").optional(),
-            }).optional(),
-        }).optional(),
-        heartbeat: type({
-            "+": "reject",
-            every: "string?",
-            activeHours: type({
-                "+": "reject",
-                start: "string?",
-                end: "string?",
-                timezone: "string?",
-            }).optional(),
-            lightContext: "boolean?",
-            isolatedSession: "boolean?",
-            skipWhenBusy: "boolean?",
-            timeoutSeconds: "number?",
-        }).optional(),
-        humanDelay: type({
-            "+": "reject",
-            mode: '"off"|"natural"|"custom"?',
-            minMs: "number?",
-            maxMs: "number?",
-        }).optional(),
     },
+    metadata: type({ "[string]": "string" }).optional(),
     workspace: type({
         "+": "reject",
         bootstrapFiles: type({
@@ -353,35 +304,6 @@ function conflictsWithWorkspaceTarget(targets, candidate) {
     }
     return false;
 }
-function isValidDuration(value) {
-    const trimmed = value.trim().toLowerCase();
-    if (!trimmed)
-        return false;
-    const multipliers = {
-        ms: 1,
-        s: 1_000,
-        m: 60_000,
-        h: 3_600_000,
-        d: 86_400_000,
-    };
-    const single = /^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/.exec(trimmed);
-    if (single) {
-        const durationMs = Math.round(Number(single[1]) * multipliers[single[2] ?? "m"]);
-        return durationMs >= 0 && Number.isSafeInteger(durationMs);
-    }
-    let totalMs = 0;
-    let consumed = 0;
-    for (const match of trimmed.matchAll(/(\d+(?:\.\d+)?)(ms|s|m|h|d)/g)) {
-        if (match.index !== consumed)
-            return false;
-        totalMs += Number(match[1]) * multipliers[match[2]];
-        consumed += match[0].length;
-    }
-    return (consumed === trimmed.length &&
-        consumed > 0 &&
-        Math.round(totalMs) >= 0 &&
-        Number.isSafeInteger(Math.round(totalMs)));
-}
 function packageManagerArtifacts(command, args) {
     const executable = command
         .split(/[\\/]/)
@@ -450,23 +372,6 @@ function isPackageManagerArtifactPinned(command, args) {
             EXACT_VERSION_PATTERN.test(artifact.slice(separator + 1)));
     });
 }
-function isValidHeartbeatTime(value, allow24) {
-    const match = /^([01]\d|2[0-4]):([0-5]\d)$/.exec(value);
-    if (!match)
-        return false;
-    const hour = Number(match[1]);
-    const minute = Number(match[2]);
-    return hour !== 24 || (allow24 && minute === 0);
-}
-function isValidTimezone(value) {
-    try {
-        new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
 function arkIssues(errors) {
     return Array.from(errors, (error) => ({
         path: error.path.length > 0 ? `$.${error.path.join(".")}` : "$",
@@ -499,79 +404,13 @@ export function validateClawManifest(value) {
     for (const field of ["name", "theme", "emoji", "avatar"]) {
         pushNonEmpty(issues, `$.agent.identity.${field}`, parsed.agent.identity?.[field]);
     }
-    pushNonEmptyArray(issues, "$.agent.groupChat.mentionPatterns", parsed.agent.groupChat?.mentionPatterns, true);
-    pushNonEmpty(issues, "$.agent.tools.profile", parsed.agent.tools?.profile);
-    pushNonEmptyArray(issues, "$.agent.tools.allow", parsed.agent.tools?.allow, true);
-    pushNonEmptyArray(issues, "$.agent.tools.alsoAllow", parsed.agent.tools?.alsoAllow, true);
-    pushNonEmptyArray(issues, "$.agent.tools.deny", parsed.agent.tools?.deny, true);
-    if (parsed.agent.tools?.allow && parsed.agent.tools.alsoAllow) {
+    const openClawProfilePath = parsed.metadata?.["openclaw.config"];
+    if (openClawProfilePath !== undefined &&
+        (!isSafePackagePath(openClawProfilePath) || !/\.ya?ml$/i.test(openClawProfilePath))) {
         issues.push({
-            path: "$.agent.tools.alsoAllow",
-            message: "Must not be combined with tools.allow.",
+            path: "$.metadata.openclaw.config",
+            message: "Must reference a safe package-relative .yml or .yaml file.",
         });
-    }
-    if (parsed.agent.memory?.search?.sources?.length === 0) {
-        issues.push({
-            path: "$.agent.memory.search.sources",
-            message: "Must contain at least one source.",
-        });
-    }
-    if (parsed.agent.memory?.search?.sources?.includes("sessions") &&
-        parsed.agent.memory.search.rememberAcrossConversations !== true) {
-        issues.push({
-            path: "$.agent.memory.search.rememberAcrossConversations",
-            message: "Must be true when memory.search.sources includes sessions.",
-        });
-    }
-    const heartbeat = parsed.agent.heartbeat;
-    pushNonEmpty(issues, "$.agent.heartbeat.every", heartbeat?.every);
-    pushNonEmpty(issues, "$.agent.heartbeat.activeHours.start", heartbeat?.activeHours?.start);
-    pushNonEmpty(issues, "$.agent.heartbeat.activeHours.end", heartbeat?.activeHours?.end);
-    pushNonEmpty(issues, "$.agent.heartbeat.activeHours.timezone", heartbeat?.activeHours?.timezone);
-    if (heartbeat?.every) {
-        if (!isValidDuration(heartbeat.every)) {
-            issues.push({
-                path: "$.agent.heartbeat.every",
-                message: "Must be a valid duration.",
-            });
-        }
-    }
-    if (heartbeat?.activeHours?.start !== undefined &&
-        !isValidHeartbeatTime(heartbeat.activeHours.start, false)) {
-        issues.push({
-            path: "$.agent.heartbeat.activeHours.start",
-            message: "Must be a valid 24-hour start time.",
-        });
-    }
-    if (heartbeat?.activeHours?.end !== undefined &&
-        !isValidHeartbeatTime(heartbeat.activeHours.end, true)) {
-        issues.push({
-            path: "$.agent.heartbeat.activeHours.end",
-            message: "Must be a valid 24-hour end time.",
-        });
-    }
-    if (heartbeat?.activeHours?.timezone !== undefined &&
-        !isValidTimezone(heartbeat.activeHours.timezone)) {
-        issues.push({
-            path: "$.agent.heartbeat.activeHours.timezone",
-            message: "Must be a valid IANA timezone.",
-        });
-    }
-    if (heartbeat?.timeoutSeconds !== undefined &&
-        (!Number.isInteger(heartbeat.timeoutSeconds) || heartbeat.timeoutSeconds <= 0)) {
-        issues.push({
-            path: "$.agent.heartbeat.timeoutSeconds",
-            message: "Must be a positive integer.",
-        });
-    }
-    for (const field of ["minMs", "maxMs"]) {
-        const delayValue = parsed.agent.humanDelay?.[field];
-        if (delayValue !== undefined && (!Number.isInteger(delayValue) || delayValue < 0)) {
-            issues.push({
-                path: `$.agent.humanDelay.${field}`,
-                message: "Must be a nonnegative integer.",
-            });
-        }
     }
     const workspaceTargets = new Set();
     for (const name of CLAW_BOOTSTRAP_FILE_NAMES) {

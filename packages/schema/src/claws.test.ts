@@ -70,58 +70,63 @@ describe("Claw manifest contract", () => {
     });
   });
 
-  it("accepts portable agent policy while deferring profile resolution to the applying harness", () => {
+  it("accepts opaque string metadata for namespaced harness profile pointers", () => {
+    const result = validateClawManifest({
+      ...fixture,
+      metadata: {
+        "openclaw.config": "profiles/openclaw.yml",
+        "example.hint": "opaque-value",
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.metadata).toEqual({
+      "openclaw.config": "profiles/openclaw.yml",
+      "example.hint": "opaque-value",
+    });
+  });
+
+  it("rejects non-string metadata values and harness policy embedded in the portable agent", () => {
+    expect(
+      validateClawManifest({
+        ...fixture,
+        metadata: { "openclaw.config": { path: "profiles/openclaw.yml" } },
+      }).ok,
+    ).toBe(false);
+
     expect(
       validateClawManifest({
         ...fixture,
         agent: {
           ...fixture.agent,
-          tools: {
-            profile: "future-built-in",
-            alsoAllow: ["cron"],
-            deny: ["exec"],
-            fs: { workspaceOnly: true },
-          },
-          memory: {
-            search: {
-              enabled: true,
-              rememberAcrossConversations: true,
-              sources: ["memory", "sessions"],
-            },
-          },
+          tools: { profile: "coding" },
         },
       }).ok,
-    ).toBe(true);
+    ).toBe(false);
+
+    expect(
+      validateClawManifest({
+        ...fixture,
+        agent: {
+          ...fixture.agent,
+          memory: { search: { enabled: true } },
+        },
+      }).ok,
+    ).toBe(false);
   });
 
-  it("rejects conflicting or unsafe portable agent policy", () => {
-    const conflictingTools = validateClawManifest({
-      ...fixture,
-      agent: {
-        ...fixture.agent,
-        tools: { profile: "coding", allow: ["read"], alsoAllow: ["cron"] },
-      },
-    });
-    expect(conflictingTools.ok).toBe(false);
+  it.each(["../openclaw.yml", "/profiles/openclaw.yml", "profiles/openclaw.json"])(
+    "rejects unsafe or non-YAML OpenClaw profile pointer %s",
+    (profilePath) => {
+      const result = validateClawManifest({
+        ...fixture,
+        metadata: { "openclaw.config": profilePath },
+      });
 
-    const implicitSessionMemory = validateClawManifest({
-      ...fixture,
-      agent: {
-        ...fixture.agent,
-        memory: { search: { sources: ["sessions"] } },
-      },
-    });
-    expect(implicitSessionMemory.ok).toBe(false);
-
-    const emptySources = validateClawManifest({
-      ...fixture,
-      agent: {
-        ...fixture.agent,
-        memory: { search: { sources: [] } },
-      },
-    });
-    expect(emptySources.ok).toBe(false);
-  });
+      expect(result.ok).toBe(false);
+    },
+  );
 
   it("fails closed on unknown fields", () => {
     expect(validateClawManifest({ ...fixture, model: "gpt-5" }).ok).toBe(false);
@@ -234,64 +239,9 @@ describe("Claw manifest contract", () => {
     expect(result.issues.map((issue) => issue.path)).toContain("$.mcpServers.unsafe");
   });
 
-  it("rejects invalid portable agent timing settings", () => {
+  it("rejects infinite MCP timeouts", () => {
     const result = validateClawManifest({
       ...fixture,
-      agent: {
-        ...fixture.agent,
-        heartbeat: {
-          every: "tomorrow",
-          activeHours: { start: "24:00", end: "24:01" },
-          timeoutSeconds: -1.5,
-        },
-        humanDelay: { mode: "custom", minMs: -1, maxMs: 1.5 },
-      },
-    });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.issues.map((issue) => issue.path)).toEqual(
-      expect.arrayContaining([
-        "$.agent.heartbeat.every",
-        "$.agent.heartbeat.activeHours.start",
-        "$.agent.heartbeat.activeHours.end",
-        "$.agent.heartbeat.timeoutSeconds",
-        "$.agent.humanDelay.minMs",
-        "$.agent.humanDelay.maxMs",
-      ]),
-    );
-  });
-
-  it("validates active hours without imposing an unused custom-delay ordering", () => {
-    const result = validateClawManifest({
-      ...fixture,
-      agent: {
-        ...fixture.agent,
-        heartbeat: { activeHours: { start: "24:99" } },
-        humanDelay: { mode: "custom", minMs: 2000, maxMs: 1000 },
-      },
-    });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        {
-          path: "$.agent.heartbeat.activeHours.start",
-          message: "Must be a valid 24-hour start time.",
-        },
-      ]),
-    );
-  });
-
-  it("accepts zero heartbeat intervals but rejects invalid timezones and infinite MCP timeouts", () => {
-    const result = validateClawManifest({
-      ...fixture,
-      agent: {
-        ...fixture.agent,
-        heartbeat: {
-          every: "0m",
-          activeHours: { timezone: "Not/AZone" },
-        },
-      },
       mcpServers: {
         local: { command: "server", timeout: Number.POSITIVE_INFINITY },
         remote: {
@@ -304,22 +254,16 @@ describe("Claw manifest contract", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues.map((issue) => issue.path)).toEqual(
-      expect.arrayContaining([
-        "$.agent.heartbeat.activeHours.timezone",
-        "$.mcpServers.local.timeout",
-        "$.mcpServers.remote.connectTimeout",
-      ]),
+      expect.arrayContaining(["$.mcpServers.local.timeout", "$.mcpServers.remote.connectTimeout"]),
     );
   });
 
-  it("rejects empty portable names and required selector lists", () => {
+  it("rejects empty portable names and MCP selector lists", () => {
     const result = validateClawManifest({
       ...fixture,
       agent: {
         ...fixture.agent,
         identity: { name: " " },
-        groupChat: { mentionPatterns: [] },
-        tools: { allow: ["read", " "] },
       },
       mcpServers: {
         local: {
