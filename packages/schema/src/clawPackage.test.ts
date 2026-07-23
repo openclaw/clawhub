@@ -33,7 +33,6 @@ const openClawProfile = [
   "    activeHours: { start: '09:00', end: '24:00', timezone: America/Los_Angeles }",
   "    lightContext: true",
   "    isolatedSession: false",
-  "    skipWhenBusy: true",
   "    timeoutSeconds: 30",
   "  humanDelay: { mode: custom, minMs: 0, maxMs: 2000 }",
 ].join("\n");
@@ -208,6 +207,10 @@ describe("validateClawPackageContents", () => {
   it.each([
     ["unknown version", "schemaVersion: 2\nagent: {}"],
     ["unknown field", "schemaVersion: 1\nagent:\n  model: gpt-5"],
+    [
+      "unsupported heartbeat field",
+      "schemaVersion: 1\nagent:\n  heartbeat:\n    skipWhenBusy: true",
+    ],
     [
       "workspaceOnly false",
       "schemaVersion: 1\nagent:\n  tools:\n    fs:\n      workspaceOnly: false",
