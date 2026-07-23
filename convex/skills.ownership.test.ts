@@ -899,6 +899,206 @@ describe("skills ownership", () => {
     );
   });
 
+  it("promotes an automatically detected duplicate target when merging its source into it", async () => {
+    const patch = vi.fn(async (_id: string, _value: unknown) => {});
+    const insert = vi.fn(async () => "auditLogs:1");
+    const skills = [
+      {
+        _id: "skills:source",
+        slug: "archive-demo",
+        displayName: "Archive Demo",
+        ownerUserId: "users:creator",
+        ownerPublisherId: "publishers:org",
+        moderationStatus: "active",
+        softDeletedAt: undefined,
+        statsDownloads: 0,
+        statsStars: 0,
+        statsInstallsCurrent: 0,
+        statsInstallsAllTime: 0,
+      },
+      {
+        _id: "skills:target",
+        slug: "demo",
+        displayName: "Demo",
+        ownerUserId: "users:creator",
+        ownerPublisherId: "publishers:org",
+        latestVersionId: "skillVersions:target",
+        canonicalSkillId: "skills:source",
+        forkOf: {
+          skillId: "skills:source",
+          kind: "duplicate",
+          at: 100,
+        },
+        moderationStatus: "active",
+        softDeletedAt: undefined,
+      },
+    ];
+
+    const result = await mergeOwnedSkillIntoCanonicalInternalHandler(
+      {
+        db: {
+          normalizeId: vi.fn(() => null),
+          system: {},
+          get: vi.fn(async (id: string) => {
+            if (id === "users:actor") return { _id: "users:actor", role: "user" };
+            if (id === "users:creator") {
+              return {
+                _id: "users:creator",
+                publishedSkills: 2,
+                totalDownloads: 0,
+                totalStars: 0,
+              };
+            }
+            if (id === "publishers:org") {
+              return {
+                _id: "publishers:org",
+                kind: "org",
+                handle: "team",
+                linkedUserId: undefined,
+              };
+            }
+            if (id === "skillVersions:target") return { _id: id, version: "1.0.0" };
+            return skills.find((skill) => skill._id === id) ?? null;
+          }),
+          query: vi.fn((table: string) => {
+            if (table === "skills") {
+              return {
+                withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                  const constraints: Record<string, unknown> = {};
+                  build(chainEq(constraints));
+                  if (name === "by_slug") {
+                    return {
+                      take: async () =>
+                        skills.filter((skill) => skill.slug === constraints.slug).slice(0, 2),
+                      unique: async () =>
+                        skills.find((skill) => skill.slug === constraints.slug) ?? null,
+                    };
+                  }
+                  if (name === "by_owner_publisher_slug") {
+                    return {
+                      unique: async () =>
+                        skills.find(
+                          (skill) =>
+                            skill.ownerPublisherId === constraints.ownerPublisherId &&
+                            skill.slug === constraints.slug,
+                        ) ?? null,
+                    };
+                  }
+                  if (name === "by_canonical") {
+                    return {
+                      collect: async () =>
+                        skills.filter(
+                          (skill) => skill.canonicalSkillId === constraints.canonicalSkillId,
+                        ),
+                    };
+                  }
+                  if (name === "by_fork_of") {
+                    return {
+                      collect: async () =>
+                        skills.filter(
+                          (skill) => skill.forkOf?.skillId === constraints["forkOf.skillId"],
+                        ),
+                    };
+                  }
+                  throw new Error(`unexpected skills index ${name}`);
+                },
+              };
+            }
+            if (table === "publisherMembers") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_publisher_user") {
+                    throw new Error(`unexpected publisherMembers index ${name}`);
+                  }
+                  return {
+                    unique: async () => ({
+                      _id: "publisherMembers:1",
+                      publisherId: "publishers:org",
+                      userId: "users:actor",
+                      role: "admin",
+                    }),
+                  };
+                },
+              };
+            }
+            if (table === "skillSlugAliases") {
+              return {
+                withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                  const constraints: Record<string, unknown> = {};
+                  build(chainEq(constraints));
+                  if (name === "by_skill" || name === "by_owner_publisher") {
+                    return { take: async () => [] };
+                  }
+                  if (
+                    name === "by_slug" ||
+                    name === "by_owner_publisher_slug" ||
+                    name === "by_owner_slug"
+                  ) {
+                    return {
+                      take: async () => [],
+                      unique: async () => null,
+                    };
+                  }
+                  throw new Error(`unexpected skillSlugAliases index ${name}`);
+                },
+              };
+            }
+            if (table === "skillEmbeddings") {
+              return {
+                withIndex: (name: string) => {
+                  if (name !== "by_skill") {
+                    throw new Error(`unexpected skillEmbeddings index ${name}`);
+                  }
+                  return { collect: async () => [] };
+                },
+              };
+            }
+            throw new Error(`unexpected table ${table}`);
+          }),
+          patch,
+          insert,
+        },
+      } as never,
+      {
+        actorUserId: "users:actor",
+        sourceSlug: "archive-demo",
+        targetSlug: "demo",
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      sourceSlug: "archive-demo",
+      targetSlug: "demo",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "skills:target",
+      expect.objectContaining({
+        canonicalSkillId: undefined,
+        forkOf: undefined,
+      }),
+    );
+    const targetPatches = patch.mock.calls
+      .filter(([id]) => id === "skills:target")
+      .map(([, value]) => value as { canonicalSkillId?: string; forkOf?: { skillId?: string } });
+    expect(
+      targetPatches.some(
+        (value) =>
+          value.canonicalSkillId === "skills:target" || value.forkOf?.skillId === "skills:target",
+      ),
+    ).toBe(false);
+    expect(patch).toHaveBeenCalledWith(
+      "skills:source",
+      expect.objectContaining({
+        canonicalSkillId: "skills:target",
+        forkOf: expect.objectContaining({
+          skillId: "skills:target",
+          kind: "duplicate",
+        }),
+      }),
+    );
+  });
+
   it("preserves source-owner redirects when merging across owner namespaces", async () => {
     const patch = vi.fn(async () => {});
     const insert = vi.fn(async () => "auditLogs:1");

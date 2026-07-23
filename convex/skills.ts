@@ -1438,6 +1438,7 @@ async function repointSkillRelationships(
     fromSkillId: Id<"skills">;
     toSkillId: Id<"skills">;
     toCanonicalSkillId: Id<"skills">;
+    skipSkillId?: Id<"skills">;
     targetVersion: Doc<"skillVersions"> | null;
     now: number;
   },
@@ -1447,6 +1448,7 @@ async function repointSkillRelationships(
     .withIndex("by_canonical", (q) => q.eq("canonicalSkillId", params.fromSkillId))
     .collect();
   for (const related of canonicalRefs) {
+    if (related._id === params.skipSkillId) continue;
     await ctx.db.patch(related._id, {
       canonicalSkillId: params.toCanonicalSkillId,
       updatedAt: params.now,
@@ -1458,6 +1460,7 @@ async function repointSkillRelationships(
     .withIndex("by_fork_of", (q) => q.eq("forkOf.skillId", params.fromSkillId))
     .collect();
   for (const related of forkRefs) {
+    if (related._id === params.skipSkillId) continue;
     await ctx.db.patch(related._id, {
       canonicalSkillId: params.toCanonicalSkillId,
       forkOf: related.forkOf
@@ -11201,7 +11204,17 @@ async function mergeOwnedSkillIntoCanonicalByActor(
   const targetLatestVersion = target.latestVersionId
     ? await ctx.db.get(target.latestVersionId)
     : null;
-  const targetCanonicalSkillId = target.canonicalSkillId ?? target._id;
+  const targetLineageIds = [target.canonicalSkillId, target.forkOf?.skillId].filter(
+    (skillId): skillId is Id<"skills"> => Boolean(skillId),
+  );
+  const targetReferencesSource = targetLineageIds.some((skillId) => skillId === source._id);
+  const targetReferencesAnotherSkill = targetLineageIds.some((skillId) => skillId !== source._id);
+  if (targetReferencesAnotherSkill) {
+    throw new ConvexError(
+      "Target skill must be canonical before merging. Merge into its canonical skill instead.",
+    );
+  }
+  const targetCanonicalSkillId = target._id;
 
   const targetAliases = await listSkillSlugAliasesForMerge(ctx, target._id);
   const targetAliasSlugs = new Set(targetAliases.map((alias) => alias.slug));
@@ -11301,10 +11314,19 @@ async function mergeOwnedSkillIntoCanonicalByActor(
     });
   }
 
+  if (targetReferencesSource) {
+    await ctx.db.patch(target._id, {
+      canonicalSkillId: undefined,
+      forkOf: undefined,
+      updatedAt: now,
+    });
+  }
+
   await repointSkillRelationships(ctx, {
     fromSkillId: source._id,
     toSkillId: target._id,
     toCanonicalSkillId: targetCanonicalSkillId,
+    skipSkillId: target._id,
     targetVersion: targetLatestVersion,
     now,
   });
