@@ -567,6 +567,10 @@ describe("skills.sh Vercel source boundary", () => {
     expect(measured.sourcePages[0]!.contentHash).toBe(
       createHash("sha256").update(JSON.stringify(capturedRows)).digest("hex"),
     );
+    expect(measured.evidence.pagination.requestedPages[0]).toMatchObject({
+      sourceBytes: expect.any(Number),
+      serializedBytes: expect.any(Number),
+    });
   });
 
   it("round-trips immutable proof source metadata through the run snapshot", () => {
@@ -582,6 +586,8 @@ describe("skills.sh Vercel source boundary", () => {
             hasMore: true,
             identityHash: "page-0",
             contentHash: "content-page-0",
+            sourceBytes: 1_000,
+            serializedBytes: 750,
           },
         ],
         finalNonemptyPage: {
@@ -654,6 +660,27 @@ describe("skills.sh Vercel source boundary", () => {
     });
     expect(snapshotId.split(".").slice(0, 2).join(".")).not.toBe(
       changedSnapshotId.split(".").slice(0, 2).join("."),
+    );
+    const changedTransportSnapshotId = buildSkillsShMirrorProofSnapshotId({
+      catalogTotal: 9_571,
+      controlledExternalIds: ["patrick-erichsen/skills/html", "steipete/clawdis/discrawl"],
+      controlledOverlayExternalIds: ["patrick-erichsen/skills/html"],
+      controlledSupplementExternalIds: ["steipete/clawdis/discrawl"],
+      evidence: {
+        ...evidence,
+        pagination: {
+          ...evidence.pagination,
+          requestedPages: [
+            {
+              ...evidence.pagination.requestedPages[0]!,
+              sourceBytes: 1_024,
+            },
+          ],
+        },
+      },
+    });
+    expect(snapshotId.split(".").slice(0, 2).join(".")).not.toBe(
+      changedTransportSnapshotId.split(".").slice(0, 2).join("."),
     );
     const changedPartitionSnapshotId = buildSkillsShMirrorProofSnapshotId({
       catalogTotal: 9_571,

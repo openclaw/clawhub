@@ -297,6 +297,8 @@ export type SkillsShMirrorProofEvidence = {
       hasMore: boolean;
       identityHash: string;
       contentHash: string;
+      sourceBytes?: number;
+      serializedBytes?: number;
     }>;
     finalNonemptyPage: {
       page: number;
@@ -1678,36 +1680,43 @@ export async function measureSkillsShMirrorProofSource(
     const identityHash = skillsShPageIdentityHash(response.data);
     const contentHash = skillsShPageContentHash(response.data);
     const capturedRows = capturedSkillsShCatalogRows(response.data);
+    const captured =
+      response.data.length > 0
+        ? {
+            page,
+            sourceTotal: catalogTotal,
+            pageLength: response.data.length,
+            hasMore: response.pagination.hasMore,
+            identityHash,
+            contentHash,
+            sourceBytes: pageResponse.sourceBytes,
+            rows: capturedRows,
+          }
+        : null;
+    const serializedBytes = captured
+      ? Buffer.byteLength(JSON.stringify(captured), "utf8")
+      : undefined;
     requestedPages.push({
       page,
       count: response.data.length,
       hasMore: response.pagination.hasMore,
       identityHash,
       contentHash,
+      ...(captured ? { sourceBytes: pageResponse.sourceBytes, serializedBytes } : {}),
     });
     observedRows += response.data.length;
     if (observedRows > catalogTotal || observedRows > MAX_PROOF_SOURCE_ROWS) {
       throw new Error("skills.sh proof source exceeded its reported total");
     }
-    if (response.data.length > 0) {
+    if (captured && serializedBytes !== undefined) {
       finalNonemptyPage = {
         page,
         count: response.data.length,
         pagination: response.pagination,
       };
-      const captured = {
-        page,
-        sourceTotal: catalogTotal,
-        pageLength: response.data.length,
-        hasMore: response.pagination.hasMore,
-        identityHash,
-        contentHash,
-        sourceBytes: pageResponse.sourceBytes,
-        rows: capturedRows,
-      };
       sourcePages.push({
         ...captured,
-        serializedBytes: Buffer.byteLength(JSON.stringify(captured), "utf8"),
+        serializedBytes,
       });
     }
     for (const row of response.data) {
