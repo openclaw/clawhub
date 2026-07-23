@@ -205,6 +205,10 @@ export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/
     rootId?: string | undefined;
     rootLabel?: string | undefined;
 } | {
+    event: "plugin_install";
+    packageName: string;
+    version?: string | undefined;
+} | {
     roots: {
         rootId: string;
         label: string;

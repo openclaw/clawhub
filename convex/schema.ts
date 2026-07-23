@@ -1982,7 +1982,7 @@ const skillCardGenerationJobs = defineTable({
 
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
-  kind: v.union(v.literal("download"), v.literal("install")),
+  kind: v.union(v.literal("download"), v.literal("install"), v.literal("install_clear")),
   occurredAt: v.number(),
   processedAt: v.optional(v.number()),
 })
@@ -3557,6 +3557,19 @@ const userSkillInstalls = defineTable({
   .index("by_user_skill", ["userId", "skillId"])
   .index("by_skill", ["skillId"]);
 
+const userPackageInstalls = defineTable({
+  userId: v.id("users"),
+  packageId: v.id("packages"),
+  firstSeenAt: v.number(),
+  lastSeenAt: v.number(),
+  lastVersion: v.optional(v.string()),
+  metricRecordedAt: v.optional(v.number()),
+})
+  .index("by_user", ["userId"])
+  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
+  .index("by_user_package", ["userId", "packageId"])
+  .index("by_package", ["packageId"]);
+
 const skillOwnershipTransfers = defineTable({
   skillId: v.id("skills"),
   fromUserId: v.id("users"),
@@ -3669,5 +3682,6 @@ export default defineSchema({
   registryArtifactBackupSyncState,
   registryArtifactBackupJobs,
   userSkillInstalls,
+  userPackageInstalls,
   skillOwnershipTransfers,
 });

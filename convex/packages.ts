@@ -88,6 +88,7 @@ import {
   normalizePackageScanStatus,
   resolvePackageReleaseScanStatus,
 } from "./lib/packageSecurity";
+import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import { toPublicPublisher } from "./lib/public";
 import {
   assertCanManageOwnedResource,
@@ -4538,11 +4539,9 @@ export const recordPackageInstallInternal = internalMutation({
       });
     }
 
-    await ctx.db.insert("packageStatEvents", {
+    await insertPackageInstallStatEvent(ctx, {
       packageId: args.packageId,
-      kind: "install",
-      occurredAt: args.occurredAt ?? Date.now(),
-      processedAt: undefined,
+      occurredAt: args.occurredAt,
     });
   },
 });
@@ -4630,6 +4629,9 @@ export const processPackageStatEventsInternal = internalMutation({
       if (event.kind === "install") {
         stats.installs += 1;
         dailyStats.installs += 1;
+      } else if (event.kind === "install_clear") {
+        stats.installs -= 1;
+        dailyStats.installs -= 1;
       } else {
         stats.downloads += 1;
         dailyStats.downloads += 1;
@@ -4646,7 +4648,7 @@ export const processPackageStatEventsInternal = internalMutation({
       }
       const nextStats = {
         downloads: (pkg.stats?.downloads ?? 0) + stats.downloads,
-        installs: (pkg.stats?.installs ?? 0) + stats.installs,
+        installs: Math.max(0, (pkg.stats?.installs ?? 0) + stats.installs),
         stars: pkg.stats?.stars ?? 0,
         versions: pkg.stats?.versions ?? 0,
       };
