@@ -13,10 +13,12 @@ metadata. OpenClaw recognizes `metadata.openclaw.config`; export conventionally
 uses `profiles/openclaw.yml`, but the pointer is normative and authors may use
 another safe package-relative YAML path.
 
-That profile exists only inside the Claw package. It is validated during
-publication and application, participates in package integrity, and is never
-copied into ordinary OpenClaw configuration. Other harnesses may ignore
-OpenClaw's namespaced key or define their own profile-pointer contract.
+That profile exists only inside the Claw package. ClawHub requires the pointer
+to resolve to an exact, bounded UTF-8 YAML package file and validates the
+profile's strict v1 OpenClaw policy during publication. OpenClaw validates it
+again during application, includes it in package integrity, and never copies it
+into ordinary OpenClaw configuration. Other harnesses may ignore OpenClaw's
+namespaced key or define their own profile-pointer contract.
 
 ## Experimental contract
 
@@ -49,9 +51,10 @@ not accept a declaration that the applying OpenClaw client rejects.
 Claws use the existing package publication pipeline. `package.json` declares
 the package identity, version, and package-relative `openclaw.claw` manifest
 path. Publication parses `CLAW.md` YAML frontmatter or the JSON compatibility
-form and validates the grouped manifest plus referenced workspace files. The
-release retains the exact artifact and a bounded derived summary rather than
-duplicating the full manifest into Convex storage. The server rejects
+form and validates the grouped manifest, referenced workspace files, and any
+declared package-local OpenClaw profile. The release retains the exact artifact
+and a bounded derived summary rather than duplicating the full manifest or
+OpenClaw profile into Convex storage. The server rejects
 `family: claw` before mutation when the experimental gate is disabled; the gate
 does not bypass ownership, moderation, scanning, or release invariants when
 enabled.
