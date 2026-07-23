@@ -312,4 +312,42 @@ describe("skills.sh mirror classification enrichment", () => {
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
   });
+
+  it("does not synthesize a full-content hash from truncated legacy detail", () => {
+    const [replayed] = buildSkillsShMirrorReplayRows([
+      {
+        digest: {
+          externalId: row.externalId,
+          sourceType: "github",
+          upstreamSourceType: "github",
+          owner: "patrick-erichsen",
+          repo: "skills",
+          slug: row.slug,
+          displayName: row.displayName,
+          sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+          canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
+          upstreamInstalls: 42,
+          upstreamScanners: {
+            genAgentTrustHub: { status: "unavailable" },
+            socket: { status: "unavailable" },
+            snyk: { status: "unavailable" },
+          },
+        },
+        detail: {
+          contentKind: "skill-md",
+          path: "SKILL.md",
+          content: "bounded prefix",
+          contentBytes: 14,
+          sourceBytes: 128_000,
+          sourceFileCount: 1,
+          truncated: true,
+        },
+      },
+    ]);
+
+    if ("quarantined" in replayed) {
+      throw new Error("legacy detail replay was quarantined");
+    }
+    expect(replayed.sourceContentHash).toBeUndefined();
+  });
 });

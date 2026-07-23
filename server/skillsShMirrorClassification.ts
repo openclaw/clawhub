@@ -227,7 +227,8 @@ export function buildSkillsShMirrorReplayRows(
     if ("quarantined" in input) return input;
     const { digest, detail } = input;
     const sourceContentHash =
-      digest.sourceContentHash ?? (detail ? boundedContentHash(detail.content) : undefined);
+      digest.sourceContentHash ??
+      (detail && !detail.truncated ? boundedContentHash(detail.content) : undefined);
     return {
       externalId: digest.externalId,
       sourceType: digest.sourceType,
