@@ -352,6 +352,88 @@ describe("skills.sh Vercel source boundary", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(7);
   });
 
+  it("hashes captured leaderboard rows independently of upstream object key order", async () => {
+    const row = {
+      url: "https://www.skills.sh/owner/repo/skill",
+      sourceType: "github",
+      source: "owner/repo",
+      slug: "skill",
+      name: "Skill",
+      installs: 42,
+      installUrl: "https://github.com/owner/repo",
+      id: "owner/repo/skill",
+    };
+    const pages = [
+      {
+        data: [row],
+        pagination: { page: 0, perPage: 500, total: 1, hasMore: false },
+      },
+      {
+        data: [],
+        pagination: { page: 1, perPage: 500, total: 1, hasMore: false },
+      },
+    ];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/api/v1/skills?page=")) {
+        return new Response(JSON.stringify(pages.shift()));
+      }
+      if (url.includes("/api/v1/skills/search?")) {
+        return new Response(
+          JSON.stringify({
+            count: 0,
+            data: [],
+            durationMs: 1,
+            query: "skill",
+            searchType: "full-text",
+          }),
+        );
+      }
+      if (url.endsWith("/api/v1/skills/owner/repo/skill")) {
+        return new Response(
+          JSON.stringify({
+            files: [],
+            hash: "a".repeat(64),
+            id: row.id,
+            installs: row.installs,
+            slug: row.slug,
+            source: row.source,
+          }),
+        );
+      }
+      if (url.includes("?_rsc=")) {
+        return new Response("0:{}", { headers: { "Content-Type": "text/x-component" } });
+      }
+      if (url === row.url) {
+        return new Response("<!doctype html>", {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      }
+      throw new Error(`unexpected URL ${url}`);
+    });
+
+    const measured = await measureSkillsShMirrorProofSource({
+      oidcToken: "oidc-token",
+      fetchImpl: fetchImpl as typeof fetch,
+      minimumApiRequestIntervalMs: 0,
+    });
+
+    const capturedRows = measured.sourcePages[0]!.rows;
+    expect(Object.keys(capturedRows[0]!)).toEqual([
+      "id",
+      "installUrl",
+      "installs",
+      "name",
+      "slug",
+      "source",
+      "sourceType",
+      "url",
+    ]);
+    expect(measured.sourcePages[0]!.contentHash).toBe(
+      createHash("sha256").update(JSON.stringify(capturedRows)).digest("hex"),
+    );
+  });
+
   it("round-trips immutable proof source metadata through the run snapshot", () => {
     const evidence = {
       pagination: {

@@ -1417,8 +1417,21 @@ function skillsShPageIdentityHash(rows: SkillsShCatalogListRow[]) {
   return sha256Hex(rows.map((row) => `${row.id.trim().toLowerCase()}\n`).join(""));
 }
 
+function capturedSkillsShCatalogRows(rows: SkillsShCatalogListRow[]) {
+  return rows.map((row) => ({
+    id: row.id,
+    installUrl: row.installUrl,
+    installs: row.installs,
+    name: row.name,
+    slug: row.slug,
+    source: row.source,
+    sourceType: row.sourceType,
+    url: row.url,
+  }));
+}
+
 function skillsShPageContentHash(rows: SkillsShCatalogListRow[]) {
-  return sha256Hex(JSON.stringify(rows));
+  return sha256Hex(JSON.stringify(capturedSkillsShCatalogRows(rows)));
 }
 
 function parseSkillsShPageFieldEvidence(html: string) {
@@ -1607,6 +1620,7 @@ export async function measureSkillsShMirrorProofSource(
     firstPage ??= response;
     const identityHash = skillsShPageIdentityHash(response.data);
     const contentHash = skillsShPageContentHash(response.data);
+    const capturedRows = capturedSkillsShCatalogRows(response.data);
     requestedPages.push({
       page,
       count: response.data.length,
@@ -1632,7 +1646,7 @@ export async function measureSkillsShMirrorProofSource(
         identityHash,
         contentHash,
         sourceBytes: Buffer.byteLength(JSON.stringify(response), "utf8"),
-        rows: response.data,
+        rows: capturedRows,
       };
       sourcePages.push({
         ...captured,
