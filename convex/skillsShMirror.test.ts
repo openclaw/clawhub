@@ -12,6 +12,7 @@ const TEST_ENV = {
   CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
   CLAWHUB_DISABLE_CRONS: "1",
   CLAWHUB_ENV: "test",
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
   CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
 };
 
