@@ -8,8 +8,10 @@ export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: 
     suggestedName: string;
     message: string;
 } | null;
-export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "code-plugin" | "skill", {}>;
+export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "claw" | "code-plugin" | "skill", {}>;
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
+export declare const PackagePublishFamilySchema: import("arktype/internal/variants/string.ts").StringType<"bundle-plugin" | "claw" | "code-plugin" | "skill", {}>;
+export type PackagePublishFamily = (typeof PackagePublishFamilySchema)[inferred];
 export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"community" | "official" | "private", {}>;
 export type PackageChannel = (typeof PackageChannelSchema)[inferred];
 export declare const PackageVerificationTierSchema: import("arktype/internal/variants/string.ts").StringType<"provenance-verified" | "rebuild-verified" | "source-linked" | "structural", {}>;
@@ -263,7 +265,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     name: string;
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
-    family: "bundle-plugin" | "code-plugin" | "skill";
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     version: string;
     changelog: string;
     manualOverrideReason?: string | undefined;
@@ -291,7 +293,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     name: string;
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
-    family: "bundle-plugin" | "code-plugin" | "skill";
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     version: string;
     changelog: string;
     manualOverrideReason?: string | undefined;
@@ -337,7 +339,7 @@ export type ServerPackagePublishRequest = (typeof ServerPackagePublishRequestSch
 export declare const PackageListItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
     displayName: string;
-    family: "bundle-plugin" | "code-plugin" | "skill";
+    family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     runtimeId?: string | null | undefined;
     channel: "community" | "official" | "private";
     isOfficial: boolean;
@@ -363,7 +365,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
     items: {
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         runtimeId?: string | null | undefined;
         channel: "community" | "official" | "private";
         isOfficial: boolean;
@@ -393,7 +395,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
         package: {
             name: string;
             displayName: string;
-            family: "bundle-plugin" | "code-plugin" | "skill";
+            family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
             runtimeId?: string | null | undefined;
             channel: "community" | "official" | "private";
             isOfficial: boolean;
@@ -421,7 +423,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
     package: {
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         runtimeId?: string | null | undefined;
         channel: "community" | "official" | "private";
         isOfficial: boolean;
@@ -472,6 +474,24 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
                 sha256: string;
                 size: number;
             }[];
+        } | null | undefined;
+        clawManifestSummary?: {
+            schemaVersion: 1;
+            agent: {
+                id: string;
+                name?: string | undefined;
+                description?: string | undefined;
+            };
+            workspace: {
+                bootstrapFiles: string[];
+                fileCount: number;
+            };
+            packages: {
+                skillCount: number;
+                pluginCount: number;
+            };
+            mcpServerCount: number;
+            cronJobCount: number;
         } | null | undefined;
         verification?: {
             tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
@@ -530,7 +550,7 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
     package: {
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     } | null;
     version: {
         version: string;
@@ -576,6 +596,24 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
                 sha256: string;
                 size: number;
             }[];
+        } | null | undefined;
+        clawManifestSummary?: {
+            schemaVersion: 1;
+            agent: {
+                id: string;
+                name?: string | undefined;
+                description?: string | undefined;
+            };
+            workspace: {
+                bootstrapFiles: string[];
+                fileCount: number;
+            };
+            packages: {
+                skillCount: number;
+                pluginCount: number;
+            };
+            mcpServerCount: number;
+            cronJobCount: number;
         } | null | undefined;
         verification?: {
             tier: "provenance-verified" | "rebuild-verified" | "source-linked" | "structural";
@@ -678,7 +716,7 @@ export declare const ApiV1PackageArtifactResponseSchema: import("arktype/interna
     package: {
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     };
     version: string;
     artifact: {
@@ -706,7 +744,7 @@ export declare const ApiV1PackageSecurityResponseSchema: import("arktype/interna
     package: {
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
     };
     release: {
         releaseId: string;
@@ -781,7 +819,7 @@ export declare const ApiV1PackageAppealListResponseSchema: import("arktype/inter
         releaseId: string;
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         version: string;
         message: string;
         status: "accepted" | "open" | "rejected";
@@ -816,7 +854,7 @@ export declare const ApiV1PackageReportListResponseSchema: import("arktype/inter
         releaseId?: string | null | undefined;
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         version?: string | null | undefined;
         reason?: string | null | undefined;
         status: "confirmed" | "dismissed" | "open";
@@ -849,7 +887,7 @@ export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype
         packageId: string;
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         channel: "community" | "official" | "private";
         isOfficial: boolean;
         reportCount: number;
@@ -880,7 +918,7 @@ export declare const ApiV1PackageReadinessResponseSchema: import("arktype/intern
     package: {
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         isOfficial: boolean;
         latestVersion?: string | null | undefined;
     };
@@ -1090,7 +1128,7 @@ export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/
         releaseId: string;
         name: string;
         displayName: string;
-        family: "bundle-plugin" | "code-plugin" | "skill";
+        family: "bundle-plugin" | "claw" | "code-plugin" | "skill";
         channel: "community" | "official" | "private";
         isOfficial: boolean;
         version: string;

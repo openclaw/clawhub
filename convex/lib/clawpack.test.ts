@@ -13,8 +13,8 @@ function writeString(target: Uint8Array, offset: number, width: number, value: s
   target.set(encoded.subarray(0, width), offset);
 }
 
-function tarFile(path: string, content: string) {
-  const bytes = new TextEncoder().encode(content);
+function tarFile(path: string, content: string | Uint8Array) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
   const header = new Uint8Array(BLOCK_SIZE);
   writeString(header, 0, 100, path);
   writeString(header, 100, 8, octal(0o644, 8));
@@ -37,7 +37,7 @@ function tarFile(path: string, content: string) {
   return [header, body];
 }
 
-function npmPackFixtureEntries(files: Array<[string, string]>) {
+function npmPackFixtureEntries(files: Array<[string, string | Uint8Array]>) {
   const parts: Uint8Array[] = [];
   for (const [path, content] of files) {
     parts.push(...tarFile(path, content));
@@ -53,7 +53,7 @@ function npmPackFixtureEntries(files: Array<[string, string]>) {
   return gzipSync(tar);
 }
 
-function npmPackFixture(files: Record<string, string>) {
+function npmPackFixture(files: Record<string, string | Uint8Array>) {
   return npmPackFixtureEntries(Object.entries(files));
 }
 
@@ -81,14 +81,53 @@ describe("clawpack", () => {
     ]);
   });
 
-  it("rejects plugin tarballs without openclaw.plugin.json", async () => {
+  it("accepts Claw tarballs without a plugin manifest", async () => {
     const pack = npmPackFixture({
-      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      "package/package.json": JSON.stringify({
+        name: "demo",
+        version: "1.0.0",
+        openclaw: { claw: "CLAW.md" },
+      }),
+      "package/CLAW.md": "---\nschemaVersion: 1\nagent: { id: demo }\n---\n",
     });
 
-    await expect(parseClawPack(pack)).rejects.toThrow(
-      "ClawPack must contain package/openclaw.plugin.json",
-    );
+    const parsed = await parseClawPack(pack);
+    expect(parsed.pluginManifest).toBeUndefined();
+    expect(parsed.entries.map((entry) => entry.path)).toContain("CLAW.md");
+  });
+
+  it("preserves and rejects padded tar path identity", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      "package/CLAW.md ": "padded",
+    });
+
+    await expect(parseClawPack(pack)).rejects.toThrow("unsafe tar path");
+  });
+
+  it("rejects empty tar path segments", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      "package/workspace//SOUL.md": "unsafe",
+    });
+
+    await expect(parseClawPack(pack)).rejects.toThrow("unsafe tar path");
+  });
+
+  it("rejects oversized package metadata before JSON parsing", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": new Uint8Array(256 * 1024 + 1).fill(0x20),
+    });
+
+    await expect(parseClawPack(pack)).rejects.toThrow("package.json exceeds 256KB limit");
+  });
+
+  it("rejects invalid UTF-8 package metadata", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": new Uint8Array([0xc3, 0x28]),
+    });
+
+    await expect(parseClawPack(pack)).rejects.toThrow("package.json is invalid JSON");
   });
 
   it("rejects archives that are not rooted under package/", async () => {

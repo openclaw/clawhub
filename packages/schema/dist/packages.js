@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { ClawManifestSummarySchema } from "./claws.js";
 import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
@@ -22,7 +23,8 @@ export function getPackageScopeOwnerMismatch(name, ownerHandle) {
         message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
     };
 }
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export const PackageVerificationTierSchema = type('"structural"|"source-linked"|"provenance-verified"|"rebuild-verified"');
 export const PackageVerificationScopeSchema = type('"artifact-only"|"dependency-graph-aware"');
@@ -255,7 +257,7 @@ const PackagePublishMetadataFields = {
     name: "string",
     displayName: "string?",
     ownerHandle: "string?",
-    family: PackageFamilySchema,
+    family: PackagePublishFamilySchema,
     version: "string",
     changelog: "string",
     manualOverrideReason: "string?",
@@ -324,6 +326,7 @@ export const ApiV1PackageResponseSchema = type({
         tags: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+        clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -358,6 +361,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         files: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+        clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.

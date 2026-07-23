@@ -408,6 +408,7 @@ function makePackageManifestStorage() {
     get: vi.fn(async (id: string) =>
       id === "storage:manifest" ? new Blob([JSON.stringify({ id: "demo.plugin" })]) : null,
     ),
+    store: vi.fn(async () => "storage:legacy-zip"),
   };
 }
 
@@ -8863,6 +8864,168 @@ describe("packages public queries", () => {
     ).rejects.toThrow("Skill packages must use the skills publish flow");
   });
 
+  it("rejects Claw publication before mutation when the experimental gate is disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    try {
+      await expect(
+        publishPackageForUserInternalHandler({} as never, {
+          actorUserId: "users:owner",
+          payload: {
+            name: "demo-claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "init",
+            files: [],
+          },
+        }),
+      ).rejects.toThrow("Experimental Claw publication is disabled");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("rechecks the Claw gate at release insertion for staged publications", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const dbGet = vi.fn();
+    try {
+      await expect(
+        insertReleaseInternalHandler(
+          {
+            db: {
+              system: {},
+              get: dbGet,
+              insert: vi.fn(),
+              patch: vi.fn(),
+              replace: vi.fn(),
+              delete: vi.fn(),
+              query: vi.fn(),
+              normalizeId: vi.fn(),
+            },
+          } as never,
+          {
+            family: "claw",
+          } as never,
+        ),
+      ).rejects.toThrow("Experimental Claw publication is disabled");
+      expect(dbGet).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("publishes a validated Claw through the existing release pipeline when enabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const storedFiles = new Map<string, string>([
+      [
+        "storage:package",
+        JSON.stringify({
+          name: "demo-claw",
+          version: "1.0.0",
+          openclaw: { claw: "manifests/CLAW.md" },
+        }),
+      ],
+      [
+        "storage:claw",
+        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: Runs the demo workflow.\nworkspace:\n  bootstrapFiles:\n    SOUL.md:\n      source: workspace/SOUL.md\n---\n# Demo Claw\n",
+      ],
+      ["storage:soul", "Be precise.\n"],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.minimumRole === "publisher") {
+        return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+      }
+      if (args.family === "claw") {
+        return { ok: true, packageId: "packages:claw", releaseId: "releases:claw-1" };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+        store: vi.fn(async () => "storage:legacy-zip"),
+      },
+    };
+
+    try {
+      await expect(
+        publishPackageForUserInternalHandler(ctx as never, {
+          actorUserId: "users:owner",
+          payload: {
+            name: "demo-claw",
+            displayName: "Demo Claw",
+            family: "claw",
+            version: "1.0.0",
+            changelog: "init",
+            files: [
+              { path: "package.json", size: 1, storageId: "storage:package", sha256: "package" },
+              {
+                path: "manifests/CLAW.md",
+                size: 1,
+                storageId: "storage:claw",
+                sha256: "claw",
+              },
+              { path: "workspace/SOUL.md", size: 1, storageId: "storage:soul", sha256: "soul" },
+            ],
+          },
+        }),
+      ).resolves.toEqual({
+        ok: true,
+        packageId: "packages:claw",
+        releaseId: "releases:claw-1",
+        publicationStatus: "published",
+      });
+
+      expect(runMutation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          family: "claw",
+          summary: "Runs the demo workflow.",
+          artifactKind: "legacy-zip",
+          clawpackStorageId: "storage:legacy-zip",
+          clawpackSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+          clawpackSize: expect.any(Number),
+          clawManifestSummary: expect.objectContaining({
+            agent: expect.objectContaining({ id: "demo-claw" }),
+          }),
+          pluginManifestSummary: undefined,
+        }),
+      );
+      expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("extractedClawManifest");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
   it("keeps raw package publishes behind the per-file size limit", async () => {
     const ctx = {
       runQuery: vi
@@ -8958,6 +9121,7 @@ describe("packages public queries", () => {
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
         }),
+        store: vi.fn(async () => "storage:legacy-zip"),
       },
     };
 
@@ -9971,6 +10135,7 @@ describe("packages public queries", () => {
           const content = storedFiles.get(storageId);
           return content ? new Blob([content]) : null;
         }),
+        store: vi.fn(async () => "storage:legacy-zip"),
       },
     };
 
@@ -10090,6 +10255,7 @@ describe("packages public queries", () => {
             const content = storedFiles.get(storageId);
             return content ? new Blob([content]) : null;
           }),
+          store: vi.fn(async () => "storage:legacy-zip"),
         },
       };
 
@@ -10228,6 +10394,7 @@ describe("packages public queries", () => {
           const content = storedFiles.get(storageId);
           return content ? new Blob([content]) : null;
         }),
+        store: vi.fn(async () => "storage:legacy-zip"),
       },
       runAction: vi.fn(async () => ({
         status: "pass",
@@ -10380,6 +10547,7 @@ describe("packages public queries", () => {
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
         }),
+        store: vi.fn(async () => "storage:legacy-zip"),
       },
     };
 
@@ -10504,6 +10672,7 @@ describe("packages public queries", () => {
           const content = files.get(storageId);
           return content ? new Blob([content]) : null;
         }),
+        store: vi.fn(async () => "storage:legacy-zip"),
       },
     };
 
@@ -16360,5 +16529,82 @@ describe("restorePackageInternal", () => {
       }),
     ).rejects.toThrow("Forbidden");
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
+  });
+
+  it("gates Claw named reads and exposes only the safe manifest summary when enabled", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const clawManifestSummary = {
+      schemaVersion: 1,
+      agent: { id: "demo-claw", name: "Demo Claw", description: "Triage agent" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
+      packages: { skillCount: 1, pluginCount: 1 },
+      mcpServerCount: 1,
+      cronJobCount: 1,
+    };
+    const { ctx } = makePackageCtx({
+      pkg: makePackageDoc({ family: "claw" }),
+      latestRelease: makeReleaseDoc({
+        clawManifestSummary,
+        extractedClawManifest: {
+          schemaVersion: 1,
+          agent: { id: "demo-claw" },
+          workspace: { bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } } },
+        },
+      }),
+    });
+
+    try {
+      delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      await expect(getByNameHandler(ctx, { name: "demo-plugin" })).resolves.toBeNull();
+      await expect(
+        getVersionByNameHandler(ctx, { name: "demo-plugin", version: "1.0.0" }),
+      ).resolves.toBeNull();
+
+      process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+      const detail = await getByNameHandler(ctx, { name: "demo-plugin" });
+      expect(detail).toMatchObject({
+        package: { family: "claw", clawManifestSummary },
+        latestRelease: { clawManifestSummary },
+      });
+      expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
+
+      const version = await getVersionByNameHandler(ctx, {
+        name: "demo-plugin",
+        version: "1.0.0",
+      });
+      expect(version).toMatchObject({
+        package: { family: "claw", clawManifestSummary },
+        version: { clawManifestSummary },
+      });
+      expect(version?.version).not.toHaveProperty("extractedClawManifest");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("omits stored Claws from unfiltered public lists while disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("demo-claw", { family: "claw" }), makeDigest("demo-plugin")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    try {
+      const result = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: null, numItems: 25 },
+      });
+      expect(result.page.map((entry) => entry.name)).toEqual(["demo-plugin"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
   });
 });
