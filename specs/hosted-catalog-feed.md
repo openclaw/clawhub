@@ -177,50 +177,65 @@ bootstrap endpoint from the same origin as the feed.
 
 ### Initial provisioning
 
-1. On an approved operator machine with production Convex access, generate and
-   provision a dedicated Ed25519 key pair without writing or printing the
-   private key:
+1. Choose a stable, non-secret key id such as `clawhub-feed-2026-q3`. Record the
+   owner, creation time, intended deployment, and rotation contact in the
+   operator secret inventory.
+2. On an approved operator machine with production Convex access, prepare a
+   dedicated Ed25519 key pair without writing or printing the private key:
 
    ```powershell
-   bun scripts/provision-catalog-feed-signing-key.ts `
+   bun run provision:catalog-feed-key -- prepare `
      --key-id clawhub-feed-2026-q3 `
      --public-key-out .\clawhub-feed-public.pem `
      --prod
    ```
 
-2. Choose a stable, non-secret key id such as `clawhub-feed-2026-q3`. Record the
-   owner, creation time, intended deployment, and rotation contact in the
-   operator secret inventory.
-3. The helper stores the key id and private PEM as one atomic JSON value. Do not
-   create separate mutable variables for the pair: a partially rotated pair can
-   publish an unverifiable cacheable envelope. For a non-production deployment,
-   use `--deployment <name>` instead of `--prod`.
+   Preparation stores the key id and private PEM together in the non-active
+   `CLAWHUB_FEED_SIGNING_PENDING_CONFIG` secret and emits only the public key
+   and fingerprint. For a non-production deployment, use `--deployment <name>`
+   instead of `--prod`.
 
-4. Confirm only the variable names, not their values:
+3. Confirm only the variable names, not their values:
 
    ```bash
    bunx convex env list --names-only --prod
    ```
 
-5. Provide `clawhub-feed-public.pem` and the key id to the OpenClaw maintainer
+4. Provide `clawhub-feed-public.pem`, its reported fingerprint, and the key id
+   to the OpenClaw maintainer
    bundling the `clawhub-public` trust profile. The private PEM never leaves
    ClawHub's operator-controlled secret path.
-6. Deploy ClawHub, publish a fresh `clawhub-official` snapshot, and verify that
+5. After the matching OpenClaw trust anchor is released, activate the reviewed
+   public key:
+
+   ```powershell
+   bun run provision:catalog-feed-key -- activate `
+     --key-id clawhub-feed-2026-q3 `
+     --public-key .\clawhub-feed-public.pem `
+     --prod `
+     --verify-url https://clawhub.ai/api/v1/feeds/plugins
+   ```
+
+   Activation reads the pending secret into process memory, derives its public
+   key, and requires it to match the reviewed file before atomically replacing
+   `CLAWHUB_FEED_SIGNING_CONFIG`. It removes the pending secret only after the
+   active write succeeds.
+
+6. Publish a fresh `clawhub-official` snapshot and verify that
    an `Accept: application/vnd.dsse+json` request to `/api/v1/feeds/plugins`
    returns an envelope whose decoded payload bytes equal the stored publication
-   and whose signature verifies with the handed-off public key. The provisioning
-   helper can perform this check with `--verify-url` after the endpoint is
-   deployed.
-7. Land and release the matching OpenClaw bundled public key. Older unsigned
+   and whose signature verifies with the handed-off public key. Older unsigned
    clients continue receiving the unsigned representation during migration.
 
 ### Normal rotation
 
-1. Generate a new dedicated key and key id.
-2. Bundle the new public key in OpenClaw while the old key remains trusted.
-3. After that trust update is available, replace
-   `CLAWHUB_FEED_SIGNING_CONFIG` once with JSON containing the new matched pair,
-   then deploy. Never stage key id and private key separately.
+1. Run the `prepare` command with a new key id and public-key output path. This
+   changes only `CLAWHUB_FEED_SIGNING_PENDING_CONFIG`; the active signer remains
+   unchanged.
+2. Bundle the new public key and recorded fingerprint in OpenClaw while the old
+   key remains trusted.
+3. After that trust update is released, run `activate` with the same key id and
+   reviewed public-key file. Never activate before the trust overlap is live.
 4. Verify a higher-sequence publication under the new key before retiring the
    old private key.
 5. Remove the old public key in a later OpenClaw release after the supported
@@ -235,6 +250,6 @@ multi-key signer support before beginning that rotation.
 Remove `CLAWHUB_FEED_SIGNING_CONFIG` or replace it with a new matched pair in
 Convex immediately. An absent signing configuration makes opted-in signed
 requests return `503 no-store` while the unsigned compatibility representation
-remains available. Notify OpenClaw maintainers to remove the compromised public key
-through the authenticated release channel. Do not recover by advertising a new
-public key from a feed-adjacent endpoint.
+remains available. Notify OpenClaw maintainers to remove the compromised public
+key through the authenticated release channel. Do not recover by advertising a
+new public key from a feed-adjacent endpoint.
