@@ -25,6 +25,7 @@ type MirrorRequest = {
     | "configure"
     | "start"
     | "start-replay"
+    | "run"
     | "step"
     | "step-replay"
     | "pause"
@@ -136,6 +137,14 @@ export default defineEventHandler(async (event) => {
     const operation = body.operation;
     if (operation === "status") {
       return jsonResponse(await callConvexOperator(authorization, { operation: "mirror-status" }));
+    }
+    if (operation === "run") {
+      return jsonResponse(
+        await callConvexOperator(authorization, {
+          operation: "mirror-run",
+          runId: requireString(body.runId, "runId"),
+        }),
+      );
     }
     if (operation === "isolation") {
       return jsonResponse(
