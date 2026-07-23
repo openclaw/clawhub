@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "Official terminology and creator browse copy",
+  "provider": "Codex app browser",
+  "candidate": "Vercel preview for efbe08870928c9977a5e4e704c5abb835f0ae668",
+  "lanes": [
+    {
+      "name": "desktop",
+      "steps": [
+        {
+          "name": "Creators page uses creator terminology and omits Org chips",
+          "slug": "creators",
+          "status": "passed",
+          "screenshot": "creators.png"
+        },
+        {
+          "name": "Plugin search uses Official terminology",
+          "slug": "plugins",
+          "status": "passed",
+          "screenshot": "plugins.png"
+        }
+      ]
+    },
+    {
+      "name": "mobile",
+      "steps": [
+        {
+          "name": "Creators page on mobile",
+          "slug": "creators",
+          "status": "passed",
+          "screenshot": "creators.png"
+        },
+        {
+          "name": "Plugin search on mobile",
+          "slug": "plugins",
+          "status": "passed",
+          "screenshot": "plugins.png"
+        }
+      ]
+    }
+  ]
+}
