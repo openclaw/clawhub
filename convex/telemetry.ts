@@ -4,6 +4,8 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
+import { normalizePackageName } from "./lib/packageRegistry";
+import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import {
   getSkillBySlugForPublisher,
@@ -57,6 +59,68 @@ export const reportCliLegacyInstallBatchInternal = internalMutation({
         version: entry.version,
       });
     }
+  },
+});
+
+export const reportCliPluginInstallInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    packageName: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const packageName = normalizePackageName(args.packageName);
+    if (!packageName) return;
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", packageName))
+      .unique();
+    if (!pkg || pkg.softDeletedAt) return;
+
+    const now = Date.now();
+    const version = args.version?.trim() || undefined;
+    const existing = await ctx.db
+      .query("userPackageInstalls")
+      .withIndex("by_user_package", (q) => q.eq("userId", args.userId).eq("packageId", pkg._id))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        lastSeenAt: now,
+        lastVersion: version ?? existing.lastVersion,
+      });
+      if (existing.metricRecordedAt === undefined) {
+        try {
+          await insertPackageInstallStatEvent(ctx, {
+            packageId: pkg._id,
+            occurredAt: now,
+          });
+        } catch {
+          // A later successful report retries the aggregate metric.
+          return;
+        }
+        await ctx.db.patch(existing._id, { metricRecordedAt: now });
+      }
+      return;
+    }
+
+    const installId = await ctx.db.insert("userPackageInstalls", {
+      userId: args.userId,
+      packageId: pkg._id,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      lastVersion: version,
+    });
+    try {
+      await insertPackageInstallStatEvent(ctx, {
+        packageId: pkg._id,
+        occurredAt: now,
+      });
+    } catch {
+      // The durable install relationship is authoritative; aggregate metric
+      // processing is best-effort and will retry on a later successful report.
+      return;
+    }
+    await ctx.db.patch(installId, { metricRecordedAt: now });
   },
 });
 
@@ -199,6 +263,27 @@ async function clearTelemetryForUser(
     await ctx.db.delete(entry._id);
   }
   if (installs.length === CLEAR_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+    return;
+  }
+
+  const packageInstalls = await ctx.db
+    .query("userPackageInstalls")
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_INSTALLS_BATCH_SIZE);
+  for (const entry of packageInstalls) {
+    if (entry.metricRecordedAt !== undefined) {
+      await insertPackageInstallStatEvent(ctx, {
+        packageId: entry.packageId,
+        kind: "install_clear",
+        occurredAt: entry.metricRecordedAt,
+      });
+    }
+    await ctx.db.delete(entry._id);
+  }
+  if (packageInstalls.length === CLEAR_INSTALLS_BATCH_SIZE) {
     await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
     return;
   }

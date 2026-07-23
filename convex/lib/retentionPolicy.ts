@@ -299,6 +299,7 @@ export const RETENTION_POLICIES = {
   registryArtifactBackupSyncState: permanent("Legacy registry artifact backup cursor state."),
   registryArtifactBackupJobs: permanent("Legacy registry artifact backup job history."),
   userSkillInstalls: permanent("Current user install records."),
+  userPackageInstalls: permanent("Current user package install records."),
   skillOwnershipTransfers: ephemeral("Ownership transfer invitations expire.", {
     expirationField: "expiresAt",
     prune: "usage-time validation plus pending retention cleanup",

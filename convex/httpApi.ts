@@ -327,6 +327,12 @@ async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
           });
         }
       }
+    } else if (args.event === "plugin_install") {
+      await ctx.runMutation(internal.telemetry.reportCliPluginInstallInternal, {
+        userId,
+        packageName: args.packageName,
+        version: args.version,
+      });
     } else {
       await ctx.runMutation(internal.telemetry.reportCliInstallInternal, {
         userId,

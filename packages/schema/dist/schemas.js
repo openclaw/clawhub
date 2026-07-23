@@ -182,7 +182,13 @@ export const CliTelemetryInstallRequestSchema = type({
     // Deprecated compatibility fields accepted and ignored by the backend.
     rootId: "string?",
     rootLabel: "string?",
-}).or({
+})
+    .or({
+    event: '"plugin_install"',
+    packageName: "string",
+    version: "string?",
+})
+    .or({
     // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
     roots: type({
         rootId: "string",

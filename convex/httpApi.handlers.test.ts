@@ -345,6 +345,66 @@ describe("httpApi handlers", () => {
     });
   });
 
+  it("cliTelemetryInstallHttp forwards a successful plugin install", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "plugin_install",
+          packageName: "@openclaw/voice-call",
+          version: "2026.7.23",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      userId: "users:1",
+      packageName: "@openclaw/voice-call",
+      version: "2026.7.23",
+    });
+  });
+
+  it("cliTelemetryInstallHttp rejects malformed plugin install reports", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn();
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "plugin_install", version: "2026.7.23" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("cliTelemetryInstallHttp accepts unknown plugin packages as telemetry no-ops", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "plugin_install",
+          packageName: "@missing/plugin",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
   it("cliTelemetryInstallHttp accepts legacy roots snapshots", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const runMutation = vi.fn().mockResolvedValue(null);

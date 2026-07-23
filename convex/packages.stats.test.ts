@@ -242,6 +242,12 @@ describe("package stat events", () => {
         kind: "download",
         occurredAt: dayStart * 2,
       },
+      {
+        _id: "packageStatEvents:5",
+        packageId: "packages:one",
+        kind: "install_clear",
+        occurredAt: dayStart,
+      },
     ];
     const insert = vi.fn();
     const patch = vi.fn();
@@ -282,14 +288,14 @@ describe("package stat events", () => {
 
     const result = await processStatsHandler(ctx, { batchSize: 10 });
 
-    expect(result).toEqual({ processed: 4, packagesUpdated: 2 });
+    expect(result).toEqual({ processed: 5, packagesUpdated: 2 });
     expect(insert).toHaveBeenCalledWith(
       "packageDailyStats",
       expect.objectContaining({
         packageId: "packages:one",
         day: 1,
         downloads: 1,
-        installs: 1,
+        installs: 0,
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -316,7 +322,7 @@ describe("package stat events", () => {
         stats: expect.objectContaining({ downloads: 12 }),
         recommendedScore: computeRecommendationScore({
           downloads: 12,
-          installs: 2,
+          installs: 1,
           stars: 2,
         }),
         recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
@@ -325,7 +331,7 @@ describe("package stat events", () => {
     expect(patch).toHaveBeenCalledWith(
       "packages:one",
       expect.objectContaining({
-        stats: expect.objectContaining({ installs: 2 }),
+        stats: expect.objectContaining({ installs: 1 }),
       }),
     );
     expect(patch).toHaveBeenCalledWith(

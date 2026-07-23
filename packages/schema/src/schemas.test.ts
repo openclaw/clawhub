@@ -228,7 +228,7 @@ describe("clawhub-schema", () => {
     expect(blocked.ok).toBe(false);
   });
 
-  it("accepts current and legacy install telemetry payloads", () => {
+  it("accepts skill, plugin, and legacy install telemetry payloads", () => {
     const current = parseArk(
       CliTelemetryInstallRequestSchema,
       {
@@ -237,6 +237,15 @@ describe("clawhub-schema", () => {
         ownerHandle: "alice",
         sourceRef: "skills-sh/alice/skills/demo",
         version: "1.0.0",
+      },
+      "Install telemetry",
+    );
+    const plugin = parseArk(
+      CliTelemetryInstallRequestSchema,
+      {
+        event: "plugin_install",
+        packageName: "@openclaw/voice-call",
+        version: "2026.7.23",
       },
       "Install telemetry",
     );
@@ -259,6 +268,11 @@ describe("clawhub-schema", () => {
       slug: "demo",
       ownerHandle: "alice",
       sourceRef: "skills-sh/alice/skills/demo",
+    });
+    expect(plugin).toEqual({
+      event: "plugin_install",
+      packageName: "@openclaw/voice-call",
+      version: "2026.7.23",
     });
     expect(legacy).toMatchObject({ roots: [{ rootId: "root" }] });
   });

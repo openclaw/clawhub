@@ -210,17 +210,23 @@ export const CliTelemetryInstallRequestSchema = type({
   // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",
   rootLabel: "string?",
-}).or({
-  // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
-  roots: type({
-    rootId: "string",
-    label: "string",
-    skills: type({
-      slug: "string",
-      version: "string|null?",
+})
+  .or({
+    event: '"plugin_install"',
+    packageName: "string",
+    version: "string?",
+  })
+  .or({
+    // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
+    roots: type({
+      rootId: "string",
+      label: "string",
+      skills: type({
+        slug: "string",
+        version: "string|null?",
+      }).array(),
     }).array(),
-  }).array(),
-});
+  });
 export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 
 export const ApiCliTelemetryInstallResponseSchema = type({
