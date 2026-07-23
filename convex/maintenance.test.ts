@@ -44,6 +44,10 @@ vi.mock("./_generated/api", () => ({
       repairLegacyPluginSkillSpectorBatchInternal: Symbol(
         "repairLegacyPluginSkillSpectorBatchInternal",
       ),
+      getSkillLineageCycleRepairPageInternal: Symbol("getSkillLineageCycleRepairPageInternal"),
+      inspectSkillLineageCycleInternal: Symbol("inspectSkillLineageCycleInternal"),
+      applySkillLineageCycleRepairInternal: Symbol("applySkillLineageCycleRepairInternal"),
+      repairSkillLineageCyclesInternal: Symbol("repairSkillLineageCyclesInternal"),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -76,9 +80,12 @@ const {
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
+  applySkillLineageCycleRepairInternalHandler,
+  inspectSkillLineageCycleInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   repairLegacyPluginSkillSpectorBatchInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
+  repairSkillLineageCyclesInternalHandler,
   resyncPluginCatalogMetadataDigestsBatchInternal,
   resyncPluginCatalogMetadataDigestsInternal,
   upsertSkillBadgeRecordInternal,
@@ -1550,6 +1557,204 @@ describe("maintenance fingerprint backfill", () => {
     expect(result.stats.fingerprintsInserted).toBe(0);
     expect(result.stats.fingerprintMismatches).toBe(0);
     expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+function makeSkillLineageCycleDb(options?: { includeMergeAudit?: boolean }) {
+  const finalSkill = {
+    _id: "skills:final",
+    slug: "graincrawl",
+    canonicalSkillId: "skills:source",
+    forkOf: {
+      skillId: "skills:final",
+      kind: "duplicate",
+      at: 200,
+    },
+  };
+  const sourceSkill = {
+    _id: "skills:source",
+    slug: "archive-graincrawl",
+    canonicalSkillId: "skills:final",
+    forkOf: {
+      skillId: "skills:final",
+      kind: "duplicate",
+      at: 300,
+    },
+    softDeletedAt: 300,
+    moderationStatus: "hidden",
+    moderationReason: "owner.merged",
+  };
+  const patch = vi.fn();
+  const insert = vi.fn();
+  const get = vi.fn(async (id: string) => {
+    if (id === finalSkill._id) return finalSkill;
+    if (id === sourceSkill._id) return sourceSkill;
+    return null;
+  });
+  const query = vi.fn((table: string) => {
+    if (table !== "auditLogs") throw new Error(`Unexpected table: ${table}`);
+    return {
+      withIndex: (index: string) => {
+        if (index !== "by_target_action") throw new Error(`Unexpected index: ${index}`);
+        return {
+          order: () => ({
+            take: async () =>
+              options?.includeMergeAudit === false
+                ? []
+                : [
+                    {
+                      action: "skill.merge",
+                      targetType: "skill",
+                      targetId: sourceSkill._id,
+                      metadata: { targetSkillId: finalSkill._id },
+                      createdAt: sourceSkill.forkOf.at,
+                    },
+                  ],
+          }),
+        };
+      },
+    };
+  });
+
+  return {
+    db: { get, query, patch, insert },
+    finalSkill,
+    sourceSkill,
+    patch,
+    insert,
+  };
+}
+
+describe("maintenance skill lineage cycle repair", () => {
+  it("recognizes the exact malformed merge pair from its audit history", async () => {
+    const fixture = makeSkillLineageCycleDb();
+
+    const result = await inspectSkillLineageCycleInternalHandler(
+      fixture as never,
+      fixture.finalSkill._id as never,
+    );
+
+    expect(result).toEqual({
+      status: "repairable",
+      skillId: "skills:final",
+      slug: "graincrawl",
+      sourceSkillId: "skills:source",
+      sourceSlug: "archive-graincrawl",
+    });
+  });
+
+  it("leaves a self-reference untouched without matching merge history", async () => {
+    const fixture = makeSkillLineageCycleDb({ includeMergeAudit: false });
+
+    const result = await inspectSkillLineageCycleInternalHandler(
+      fixture as never,
+      fixture.finalSkill._id as never,
+    );
+
+    expect(result).toEqual({
+      status: "ambiguous",
+      skillId: "skills:final",
+      slug: "graincrawl",
+      reason: "missing_matching_merge_audit",
+      sourceSkillId: "skills:source",
+      sourceSlug: "archive-graincrawl",
+    });
+  });
+
+  it("clears only the final skill lineage and writes an audit record", async () => {
+    const fixture = makeSkillLineageCycleDb();
+
+    const result = await applySkillLineageCycleRepairInternalHandler(fixture as never, {
+      skillId: fixture.finalSkill._id as never,
+      sourceSkillId: fixture.sourceSkill._id as never,
+    });
+
+    expect(result).toEqual({ repaired: true });
+    expect(fixture.patch).toHaveBeenCalledTimes(1);
+    expect(fixture.patch).toHaveBeenCalledWith(
+      "skills:final",
+      expect.objectContaining({
+        canonicalSkillId: undefined,
+        forkOf: undefined,
+      }),
+    );
+    expect(fixture.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "skill.lineage_cycle.repair",
+        targetType: "skill",
+        targetId: "skills:final",
+        metadata: expect.objectContaining({
+          sourceSkillId: "skills:source",
+          previousCanonicalSkillId: "skills:source",
+          previousForkOf: fixture.finalSkill.forkOf,
+        }),
+      }),
+    );
+  });
+
+  it("defaults to preview and reports resumable progress", async () => {
+    const runQuery = vi.fn(async (endpoint: unknown) => {
+      if (endpoint === internal.maintenance.getSkillLineageCycleRepairPageInternal) {
+        return {
+          items: [{ skillId: "skills:final", slug: "graincrawl" }],
+          scanned: 200,
+          cursor: "next-page",
+          isDone: false,
+        };
+      }
+      if (endpoint === internal.maintenance.inspectSkillLineageCycleInternal) {
+        return {
+          status: "repairable",
+          skillId: "skills:final",
+          slug: "graincrawl",
+          sourceSkillId: "skills:source",
+          sourceSlug: "archive-graincrawl",
+        };
+      }
+      throw new Error(`Unexpected query endpoint: ${String(endpoint)}`);
+    });
+    const runMutation = vi.fn();
+
+    const result = await repairSkillLineageCyclesInternalHandler(
+      { runQuery, runMutation } as never,
+      { batchSize: 200, maxBatches: 1 },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "repair-skill-lineage-cycles-2026-07-23",
+      cursor: "next-page",
+      isDone: false,
+      stats: {
+        skillsScanned: 200,
+        selfReferencesFound: 1,
+        repairable: 1,
+        ambiguous: 0,
+        repaired: 0,
+        changedBeforeApply: 0,
+      },
+      samples: [
+        {
+          status: "repairable",
+          skillId: "skills:final",
+          slug: "graincrawl",
+          sourceSkillId: "skills:source",
+          sourceSlug: "archive-graincrawl",
+        },
+      ],
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation phrase before applying", async () => {
+    await expect(
+      repairSkillLineageCyclesInternalHandler(
+        { runQuery: vi.fn(), runMutation: vi.fn() } as never,
+        { dryRun: false },
+      ),
+    ).rejects.toThrow('Pass confirm="repair-skill-lineage-cycles-2026-07-23" to apply.');
   });
 });
 
