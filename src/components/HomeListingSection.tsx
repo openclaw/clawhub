@@ -377,7 +377,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
   const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "plugins");
   const [tab, setTab] = useState<ListingTab>(initialListing?.tab ?? "featured");
-  const [view, setView] = useState<ListingView>("grid");
+  const [view, setView] = useState<ListingView>("list");
   const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);

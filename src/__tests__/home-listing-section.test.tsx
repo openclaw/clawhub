@@ -135,7 +135,7 @@ describe("HomeListingSection", () => {
     });
   });
 
-  it("renders Featured plugins as cards by default", async () => {
+  it("renders Featured plugins as a list by default", async () => {
     render(<HomeListingSection initialListing={initialPluginListing()} />);
 
     const contentTypeButtons = screen
@@ -151,7 +151,7 @@ describe("HomeListingSection", () => {
     expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByRole("button", { name: "Grid view" }).getAttribute("aria-pressed")).toBe(
+    expect(screen.getByRole("button", { name: "List view" }).getAttribute("aria-pressed")).toBe(
       "true",
     );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
@@ -162,7 +162,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByRole("tab", { name: "New" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Official" })).toBeNull();
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
-    expect(document.querySelector(".home-v2-listing-grid")).toBeTruthy();
+    expect(document.querySelector(".home-v2-listing-list")).toBeTruthy();
     expect(document.querySelector(".marketplace-icon-image")?.getAttribute("src")).toBe(
       featuredPlugin.icon,
     );
