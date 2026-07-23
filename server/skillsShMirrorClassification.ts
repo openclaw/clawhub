@@ -84,6 +84,13 @@ type MirrorReplayPair = {
   } | null;
 };
 
+type MirrorReplayQuarantine = {
+  quarantined: true;
+  externalId: string;
+  upstreamSourceType: string;
+  reason: string;
+};
+
 type ClassifierOutput = {
   categories: string[];
   topics: string[];
@@ -207,12 +214,18 @@ function replayClassificationState(
   };
 }
 
-export function buildSkillsShMirrorReplayRows(pairs: MirrorReplayPair[], inferredAt = Date.now()) {
+export function buildSkillsShMirrorReplayRows(
+  inputs: Array<MirrorReplayPair | MirrorReplayQuarantine>,
+  inferredAt = Date.now(),
+) {
+  const pairs = inputs.filter((input): input is MirrorReplayPair => !("quarantined" in input));
   const states = pairs.flatMap((pair) => {
     const state = replayClassificationState(pair.digest);
     return state ? [state] : [];
   });
-  const rows = pairs.map(({ digest, detail }) => {
+  const rows = inputs.map((input) => {
+    if ("quarantined" in input) return input;
+    const { digest, detail } = input;
     const sourceContentHash =
       digest.sourceContentHash ?? (detail ? boundedContentHash(detail.content) : undefined);
     return {

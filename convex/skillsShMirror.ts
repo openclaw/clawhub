@@ -1036,6 +1036,7 @@ export const processBatchInternal = internalMutation({
               upstreamSourceType: row.upstreamSourceType,
               lastObservedRunId: run._id,
               sourceFreshnessStatus: "stale",
+              staleQuarantineReason: row.reason,
               updatedAt: now,
             });
             writes += 1;
@@ -1132,6 +1133,7 @@ export const processBatchInternal = internalMutation({
           inferredTopicInputHash: row.inferredTopicInputHash,
           inferredAt: row.inferredAt,
           sourceFreshnessStatus: "observed-only",
+          staleQuarantineReason: undefined,
           detailStatus: row.detail ? "available" : "missing",
           observationFingerprint: fingerprint,
           sourceSnapshotId,
@@ -1184,6 +1186,7 @@ export const processBatchInternal = internalMutation({
           inferredTopicInputHash: row.inferredTopicInputHash,
           inferredAt: row.inferredAt,
           sourceFreshnessStatus: "observed-only",
+          staleQuarantineReason: undefined,
           detailStatus: row.detail ? "available" : "missing",
           observationFingerprint: fingerprint,
           sourceSnapshotId,
@@ -1642,21 +1645,27 @@ export const getReplayRowsInternal = internalQuery({
     );
     return await Promise.all(
       externalIds.map(async (externalId) => {
-        const [digest, detail] = await Promise.all([
-          ctx.db
-            .query("skillsShMirrorDigests")
-            .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
-            .unique(),
-          ctx.db
-            .query("skillsShMirrorDetails")
-            .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
-            .unique(),
-        ]);
+        const digest = await ctx.db
+          .query("skillsShMirrorDigests")
+          .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+          .unique();
         if (!digest?.active) {
           throw new ConvexError(
             `skills.sh mirror replay row is missing or inactive: ${externalId}`,
           );
         }
+        if (digest.sourceFreshnessStatus === "stale") {
+          return {
+            quarantined: true as const,
+            externalId: digest.externalId,
+            upstreamSourceType: digest.upstreamSourceType ?? digest.sourceType,
+            reason: digest.staleQuarantineReason ?? "identity-page-fetch-failed",
+          };
+        }
+        const detail = await ctx.db
+          .query("skillsShMirrorDetails")
+          .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+          .unique();
         const currentDetail =
           digest.detailStatus === "available" &&
           detail?.lastObservedRunId === digest.lastObservedRunId

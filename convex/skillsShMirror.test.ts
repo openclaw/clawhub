@@ -1012,6 +1012,7 @@ describe("skills.sh external mirror", () => {
       active: true,
       lastObservedRunId: secondRun.runId,
       sourceFreshnessStatus: "stale",
+      staleQuarantineReason: "identity-page-fetch-failed",
       upstreamSourceType: "well-known",
     });
     expect(
@@ -1066,6 +1067,106 @@ describe("skills.sh external mirror", () => {
     ).toMatchObject({
       active: false,
       lastObservedRunId: secondRun.runId,
+    });
+  });
+
+  it("replays a preserved stale digest as the same quarantine observation", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const firstRun = await startRun(t, "snapshot:before-stale-replay", 1);
+    await processBatch(t, {
+      runId: firstRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [githubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: firstRun.runId,
+      limit: 10,
+    });
+
+    const quarantineRun = await startRun(t, "snapshot:stale-replay-source", 1);
+    await processBatch(t, {
+      runId: quarantineRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 2,
+      sourceBytes: 1_024,
+      rows: [
+        {
+          quarantined: true,
+          externalId: githubRow.externalId,
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+      ],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: quarantineRun.runId,
+      limit: 10,
+    });
+    const [replayRow] = await t.query(internal.skillsShMirror.getReplayRowsInternal, {
+      externalIds: [githubRow.externalId],
+    });
+
+    expect(replayRow).toEqual({
+      quarantined: true,
+      externalId: githubRow.externalId,
+      upstreamSourceType: "well-known",
+      reason: "identity-page-fetch-failed",
+    });
+    if (!replayRow || replayRow.quarantined !== true) {
+      throw new Error("stale replay row was not quarantined");
+    }
+
+    const replayRun = await startRun(t, "snapshot:stale-replay", 1);
+    const replayResult = await processBatch(t, {
+      runId: replayRun.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 0,
+      sourceBytes: 0,
+      rows: [replayRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: replayRun.runId,
+      limit: 10,
+    });
+
+    expect(replayResult.counts).toMatchObject({
+      rejected: 1,
+      quarantined: 1,
+      quarantinedPreserved: 1,
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      active: true,
+      lastObservedRunId: replayRun.runId,
+      sourceFreshnessStatus: "stale",
+      staleQuarantineReason: "identity-page-fetch-failed",
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getDetailByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      lastObservedRunId: firstRun.runId,
+      content: githubRow.detail.content,
     });
   });
 

@@ -3115,6 +3115,7 @@ const skillsShMirrorDigests = defineTable({
   inferredTopicInputHash: v.optional(v.string()),
   inferredAt: v.optional(v.number()),
   sourceFreshnessStatus: v.union(v.literal("observed-only"), v.literal("stale")),
+  staleQuarantineReason: v.optional(v.string()),
   detailStatus: v.union(v.literal("available"), v.literal("missing")),
   observationFingerprint: v.string(),
   sourceSnapshotId: v.string(),

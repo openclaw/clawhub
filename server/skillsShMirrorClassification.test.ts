@@ -250,6 +250,26 @@ describe("skills.sh mirror classification enrichment", () => {
     });
   });
 
+  it("preserves stale replay rows as quarantine observations", () => {
+    expect(
+      buildSkillsShMirrorReplayRows([
+        {
+          quarantined: true,
+          externalId: "larksuite/cli/lark-doc",
+          upstreamSourceType: "well-known",
+          reason: "identity-page-fetch-failed",
+        },
+      ] as never),
+    ).toEqual([
+      {
+        quarantined: true,
+        externalId: "larksuite/cli/lark-doc",
+        upstreamSourceType: "well-known",
+        reason: "identity-page-fetch-failed",
+      },
+    ]);
+  });
+
   it("synthesizes the same bounded content hash while replaying legacy detail", () => {
     const [replayed] = buildSkillsShMirrorReplayRows(
       [
@@ -285,6 +305,9 @@ describe("skills.sh mirror classification enrichment", () => {
       456,
     );
 
+    if ("quarantined" in replayed) {
+      throw new Error("legacy detail replay was quarantined");
+    }
     expect(replayed.sourceContentHash).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
     );
