@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import {
   OPENCLAW_CATALOG_FEED_PAYLOAD_TYPE,
+  negotiatedCatalogFeedV1Handler,
   resolveFeedSigningConfig,
   signCatalogFeedPayload,
   signedCatalogFeedV1Handler,
@@ -55,6 +56,51 @@ describe("signed catalog feed", () => {
 
   beforeEach(() => {
     ctx = { runQuery: vi.fn().mockResolvedValue(publication) };
+  });
+
+  it("preserves the unsigned representation unless a client opts into DSSE", async () => {
+    const unsigned = await negotiatedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins"),
+      {},
+    );
+
+    expect(unsigned.status).toBe(200);
+    expect(unsigned.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(unsigned.headers.get("vary")).toContain("Accept");
+    expect(await unsigned.text()).toBe(publication.payload);
+
+    const { env } = await signingFixture();
+    const signed = await negotiatedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins", {
+        headers: { Accept: "application/vnd.dsse+json" },
+      }),
+      env,
+    );
+
+    expect(signed.status).toBe(200);
+    expect(signed.headers.get("content-type")).toBe("application/vnd.dsse+json; charset=utf-8");
+    expect(signed.headers.get("vary")).toContain("Accept");
+  });
+
+  it("contains signing failures to clients that request the signed representation", async () => {
+    const unsigned = await negotiatedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins"),
+      {},
+    );
+    const signed = await negotiatedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins", {
+        headers: { Accept: "application/vnd.dsse+json" },
+      }),
+      {},
+    );
+
+    expect(unsigned.status).toBe(200);
+    expect(signed.status).toBe(503);
+    expect(signed.headers.get("cache-control")).toBe("no-store");
   });
 
   it("signs the exact stored publication bytes with DSSE Ed25519", async () => {

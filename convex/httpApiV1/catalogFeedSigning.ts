@@ -3,6 +3,7 @@ import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { httpAction } from "../functions";
 import {
+  catalogFeedV1Handler,
   catalogFeedResponseHeaders,
   catalogFeedUnavailableResponse,
   matchesEtag,
@@ -189,4 +190,41 @@ export async function signedCatalogFeedV1Handler(
   return new Response(signed.body, { status: 200, headers });
 }
 
-export const signedCatalogFeedV1Http = httpAction(signedCatalogFeedV1Handler);
+function acceptsSignedCatalogFeed(request: Request) {
+  return (request.headers.get("Accept") ?? "").split(",").some((value) => {
+    const [mediaType, ...parameters] = value.split(";").map((part) => part.trim());
+    const disabled = parameters.some((parameter) => /^q=0(?:\.0*)?$/u.test(parameter));
+    return mediaType?.toLowerCase() === "application/vnd.dsse+json" && !disabled;
+  });
+}
+
+function addAcceptVary(response: Response) {
+  const headers = new Headers(response.headers);
+  const vary = headers.get("Vary");
+  const values = new Set(
+    (vary ?? "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  values.add("Accept");
+  headers.set("Vary", [...values].join(", "));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+export async function negotiatedCatalogFeedV1Handler(
+  ctx: ActionCtx,
+  request: Request,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const response = acceptsSignedCatalogFeed(request)
+    ? await signedCatalogFeedV1Handler(ctx, request, env)
+    : await catalogFeedV1Handler(ctx, request);
+  return addAcceptVary(response);
+}
+
+export const signedCatalogFeedV1Http = httpAction(negotiatedCatalogFeedV1Handler);
