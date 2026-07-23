@@ -32,10 +32,12 @@ export declare const ClawManifestSchema: import("arktype/internal/variants/objec
                 workspaceOnly?: boolean | undefined;
             } | undefined;
         } | undefined;
-        memorySearch?: {
-            enabled?: boolean | undefined;
-            rememberAcrossConversations?: boolean | undefined;
-            sources?: ("memory" | "sessions")[] | undefined;
+        memory?: {
+            search?: {
+                enabled?: boolean | undefined;
+                rememberAcrossConversations?: boolean | undefined;
+                sources?: ("memory" | "sessions")[] | undefined;
+            } | undefined;
         } | undefined;
         heartbeat?: {
             every?: string | undefined;

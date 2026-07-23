@@ -82,10 +82,12 @@ describe("Claw manifest contract", () => {
             deny: ["exec"],
             fs: { workspaceOnly: true },
           },
-          memorySearch: {
-            enabled: true,
-            rememberAcrossConversations: true,
-            sources: ["memory", "sessions"],
+          memory: {
+            search: {
+              enabled: true,
+              rememberAcrossConversations: true,
+              sources: ["memory", "sessions"],
+            },
           },
         },
       }).ok,
@@ -106,7 +108,7 @@ describe("Claw manifest contract", () => {
       ...fixture,
       agent: {
         ...fixture.agent,
-        memorySearch: { sources: ["sessions"] },
+        memory: { search: { sources: ["sessions"] } },
       },
     });
     expect(implicitSessionMemory.ok).toBe(false);
@@ -115,7 +117,7 @@ describe("Claw manifest contract", () => {
       ...fixture,
       agent: {
         ...fixture.agent,
-        memorySearch: { sources: [] },
+        memory: { search: { sources: [] } },
       },
     });
     expect(emptySources.ok).toBe(false);

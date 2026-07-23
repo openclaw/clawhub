@@ -75,11 +75,14 @@ export const ClawManifestSchema = type({
         workspaceOnly: "boolean?",
       }).optional(),
     }).optional(),
-    memorySearch: type({
+    memory: type({
       "+": "reject",
-      enabled: "boolean?",
-      rememberAcrossConversations: "boolean?",
-      sources: type("('memory' | 'sessions')[]").optional(),
+      search: type({
+        "+": "reject",
+        enabled: "boolean?",
+        rememberAcrossConversations: "boolean?",
+        sources: type("('memory' | 'sessions')[]").optional(),
+      }).optional(),
     }).optional(),
     heartbeat: type({
       "+": "reject",
@@ -550,19 +553,19 @@ export function validateClawManifest(
       message: "Must not be combined with tools.allow.",
     });
   }
-  if (parsed.agent.memorySearch?.sources?.length === 0) {
+  if (parsed.agent.memory?.search?.sources?.length === 0) {
     issues.push({
-      path: "$.agent.memorySearch.sources",
+      path: "$.agent.memory.search.sources",
       message: "Must contain at least one source.",
     });
   }
   if (
-    parsed.agent.memorySearch?.sources?.includes("sessions") &&
-    parsed.agent.memorySearch.rememberAcrossConversations !== true
+    parsed.agent.memory?.search?.sources?.includes("sessions") &&
+    parsed.agent.memory.search.rememberAcrossConversations !== true
   ) {
     issues.push({
-      path: "$.agent.memorySearch.rememberAcrossConversations",
-      message: "Must be true when memorySearch.sources includes sessions.",
+      path: "$.agent.memory.search.rememberAcrossConversations",
+      message: "Must be true when memory.search.sources includes sessions.",
     });
   }
   const heartbeat = parsed.agent.heartbeat;
