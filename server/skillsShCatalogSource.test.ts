@@ -1016,6 +1016,81 @@ describe("skills.sh Vercel source boundary", () => {
     ]);
   });
 
+  it("quarantines a slash-bearing detail slug and continues the source batch", async () => {
+    const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
+      const url = String(urlInput);
+      if (url.includes("?page=0&per_page=500")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "owner/repo/nested/skill",
+                installUrl: "https://github.com/owner/repo",
+                installs: 1,
+                name: "Nested Skill",
+                slug: "nested/skill",
+                source: "owner/repo",
+                sourceType: "github",
+                url: "https://skills.sh/owner/repo/nested/skill",
+              },
+              {
+                id: "vercel-labs/skills/find-skills",
+                installUrl: "https://github.com/vercel-labs/skills",
+                installs: 42,
+                name: "Find Skills",
+                slug: "find-skills",
+                source: "vercel-labs/skills",
+                sourceType: "github",
+                url: "https://skills.sh/vercel-labs/skills/find-skills",
+              },
+            ],
+            pagination: { page: 0, perPage: 500, total: 2, hasMore: false },
+          }),
+        );
+      }
+      if (url.includes("/api/v1/skills/audit/")) {
+        return new Response(JSON.stringify({ error: "not_found" }), { status: 404 });
+      }
+      if (url.includes("/api/v1/skills/vercel-labs/skills/find-skills")) {
+        return new Response(
+          JSON.stringify({
+            id: "vercel-labs/skills/find-skills",
+            source: "vercel-labs/skills",
+            slug: "find-skills",
+            installs: 42,
+            hash: "a".repeat(64),
+            files: [{ path: "SKILL.md", contents: "# Find Skills" }],
+          }),
+        );
+      }
+      return new Response("unexpected request", { status: 500 });
+    });
+
+    const batch = await fetchSkillsShMirrorBatch(
+      { page: 0, offset: 0, limit: 2, maxDetailBytes: 64 },
+      { oidcToken: "request-bound-oidc", fetchImpl: fetchImpl as typeof fetch },
+    );
+
+    expect(batch.rows).toEqual([
+      {
+        quarantined: true,
+        externalId: "owner/repo/nested/skill",
+        upstreamSourceType: "github",
+        reason: "unsupported-identity",
+      },
+      expect.objectContaining({
+        externalId: "vercel-labs/skills/find-skills",
+        sourceType: "github",
+        sourceContentHash: "a".repeat(64),
+      }),
+    ]);
+    expect(batch.sourceRequests).toBe(3);
+    expect(fetchImpl).not.toHaveBeenCalledWith(
+      "https://skills.sh/api/v1/skills/owner/repo/nested/skill",
+      expect.anything(),
+    );
+  });
+
   it("quarantines a malformed upstream source type instead of aborting the batch", async () => {
     const fetchImpl = vi.fn(async (urlInput: string | URL | Request) => {
       const url = String(urlInput);

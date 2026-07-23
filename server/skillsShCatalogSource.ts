@@ -240,6 +240,10 @@ function normalizeSkillsShId(id: string) {
   return parts.map((part) => encodeURIComponent(part)).join("/");
 }
 
+function isSkillsShIdentitySegment(value: string) {
+  return Boolean(value) && !value.includes("/");
+}
+
 function normalizeUpstreamSourceType(value: unknown) {
   const normalized = (typeof value === "string" ? value : "")
     .trim()
@@ -443,7 +447,11 @@ export function buildSkillsShMirrorObservation(
     upstreamSourceType,
   };
   const githubIdentity = parseExactGitHubInstallIdentity(source, installUrl);
-  if (githubIdentity && externalId === `${githubIdentity.owner}/${githubIdentity.repo}/${slug}`) {
+  if (
+    githubIdentity &&
+    isSkillsShIdentitySegment(slug) &&
+    externalId === `${githubIdentity.owner}/${githubIdentity.repo}/${slug}`
+  ) {
     return {
       ...base,
       sourceType: "github" as const,
@@ -456,6 +464,7 @@ export function buildSkillsShMirrorObservation(
     upstreamSourceType === "well-known" &&
     Boolean(owner && repo) &&
     sourceRest.length === 0 &&
+    isSkillsShIdentitySegment(slug) &&
     externalId === `${owner}/${repo}/${slug}` &&
     hasExactSkillsShPagePath(base.sourceUrl, [owner!, repo!, slug]);
   if (structurallyAmbiguousGithub) {
@@ -479,6 +488,7 @@ export function buildSkillsShMirrorObservation(
     !installUrl &&
     source &&
     !source.includes("/") &&
+    isSkillsShIdentitySegment(slug) &&
     externalId === `${source}/${slug}` &&
     hasExactSkillsShPagePath(base.sourceUrl, ["site", source, slug])
   ) {
@@ -984,9 +994,15 @@ export async function fetchSkillsShMirrorBatch(
           rows[index] = identity.row;
           continue;
         }
+        try {
+          normalizeSkillsShId(identity.row.externalId);
+        } catch (error) {
+          rows[index] = safeMirrorIdentityError(listRow, error);
+          continue;
+        }
         const [detailPayload, auditPayload] = await Promise.all([
-          fetchSkillsShMirrorDetail(listRow.id, fetchOptions),
-          fetchSkillsShMirrorAudit(listRow.id, fetchOptions),
+          fetchSkillsShMirrorDetail(identity.row.externalId, fetchOptions),
+          fetchSkillsShMirrorAudit(identity.row.externalId, fetchOptions),
         ]);
         rowSourceBytes +=
           Buffer.byteLength(JSON.stringify(detailPayload), "utf8") +
