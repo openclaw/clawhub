@@ -445,6 +445,52 @@ describe("cmdVerifySkill", () => {
     );
   });
 
+  it("prints scanned Repo Sync alias provenance and canonical verification", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const payload = {
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: "html",
+      displayName: "HTML",
+      pageUrl: "https://clawhub.ai/openclaw/html",
+      publisherHandle: "openclaw",
+      publisherDisplayName: "OpenClaw",
+      publisherProfileUrl: "https://clawhub.ai/openclaw",
+      version: "a".repeat(40),
+      resolvedFrom: "skills-sh-alias",
+      tag: null,
+      createdAt: 123,
+      card: {},
+      artifact: {
+        sourceFingerprint: "b".repeat(64),
+        bundleFingerprints: ["c".repeat(64)],
+        files: [{ path: "SKILL.md", size: 42, sha256: "d".repeat(64) }],
+      },
+      provenance: {
+        source: "skills.sh",
+        reference: sourceRef,
+        repository: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit: "a".repeat(40),
+        contentHash: "b".repeat(64),
+      },
+      security: {
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
+      signature: {},
+    };
+    httpMocks.apiRequest.mockResolvedValueOnce(payload);
+
+    await cmdVerifySkill(makeGlobalOpts(), sourceRef);
+
+    expect(JSON.parse(String(mockLog.mock.calls[0]?.[0]))).toEqual(payload);
+    expect(process.exitCode).not.toBe(1);
+  });
+
   it("fetches and prints JSON verification by default", async () => {
     const payload = {
       schema: "clawhub.skill.verify.v1",

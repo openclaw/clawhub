@@ -613,6 +613,138 @@ describe("cmdUpdate", () => {
     );
   });
 
+  it("updates an external install through a scanned Repo Sync alias", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const previousCommit = "a".repeat(40);
+    const nextCommit = "b".repeat(40);
+    const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
+    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "html",
+        installKind: "github",
+        github: {
+          repo: "patrick-erichsen/skills",
+          path: "skills/html",
+          commit: nextCommit,
+          contentHash,
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+        },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+          repository: "patrick-erichsen/skills",
+          path: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+        },
+        trust: {
+          clawhubScan: "scanned",
+          label: "Scanned by ClawHub",
+        },
+        canonicalRef: "@openclaw/html",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: previousCommit,
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${previousCommit}/skills/html`,
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+        },
+      },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${previousCommit}/skills/html`,
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
+      installedVersion: previousCommit,
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    vi.mocked(listSkillFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: installedFiles });
+
+    await cmdUpdate(makeOpts(), sourceRef, {}, false);
+
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/patrick-erichsen/skills/zip/${nextCommit}`,
+    });
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+      canonicalRef: "@openclaw/html",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      installedVersion: nextCommit,
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: nextCommit,
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+        },
+      },
+    });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        body: {
+          event: "install",
+          slug: "html",
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+          version: nextCommit,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
   it("fails when directly updating a pinned skill", async () => {
     vi.mocked(readLockfile).mockResolvedValue({
       version: 1,
@@ -1651,7 +1783,7 @@ describe("cmdInstall", () => {
     );
   });
 
-  it("resolves an adopted skills.sh alias through its canonical native skill", async () => {
+  it("resolves a scanned Hosted Mode alias through its canonical native archive", async () => {
     const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
     mockApiRequest
@@ -1745,36 +1877,103 @@ describe("cmdInstall", () => {
     expect(writeLockfile).not.toHaveBeenCalled();
   });
 
-  it("rejects a direct GitHub resolver response labeled as ClawHub-scanned", async () => {
+  it("installs a scanned Repo Sync alias from its canonical pinned GitHub descriptor", async () => {
     const sourceRef = "skills-sh:patrick-erichsen/skills/html";
-    mockApiRequest.mockResolvedValueOnce({
-      ok: true,
-      slug: sourceRef,
-      installKind: "github",
-      github: {
-        repo: "patrick-erichsen/skills",
-        path: "skills/html",
-        commit: "a".repeat(40),
-        contentHash: "b".repeat(64),
-        sourceUrl: "https://github.com/patrick-erichsen/skills/tree/main/skills/html",
-      },
-      provenance: {
-        source: "skills.sh",
-        reference: sourceRef,
-      },
-      trust: {
-        clawhubScan: "scanned",
-        label: "Scanned by ClawHub",
-      },
-      canonicalRef: "@openclaw/html",
-    });
+    const commit = "a".repeat(40);
+    const installedFiles = [{ path: "SKILL.md", sha256: "b".repeat(64), size: 1 }];
+    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "html",
+        installKind: "github",
+        github: {
+          repo: "patrick-erichsen/skills",
+          path: "skills/html",
+          commit,
+          contentHash,
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+        },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+          repository: "patrick-erichsen/skills",
+          path: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+        },
+        trust: {
+          clawhubScan: "scanned",
+          label: "Scanned by ClawHub",
+        },
+        canonicalRef: "@openclaw/html",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(listSkillFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: installedFiles });
 
-    await expect(cmdInstall(makeOpts(), sourceRef)).rejects.toThrow(
-      "scanned skills.sh aliases must resolve through their canonical native archive",
+    await cmdInstall(makeOpts(), sourceRef);
+
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/patrick-erichsen/skills/zip/${commit}`,
+    });
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      canonicalRef: "@openclaw/html",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      installedVersion: commit,
+      installedAt: expect.any(Number),
+      fingerprint: "hash",
+    });
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: commit,
+          installedAt: expect.any(Number),
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+        },
+      },
+    });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        body: {
+          event: "install",
+          slug: "html",
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+          version: commit,
+        },
+      }),
+      expect.anything(),
     );
-    expect(mockFetchBinary).not.toHaveBeenCalled();
-    expect(writeSkillOrigin).not.toHaveBeenCalled();
-    expect(writeLockfile).not.toHaveBeenCalled();
   });
 
   it("rejects the legacy slash-form skills.sh reference before auth or network access", async () => {
@@ -1845,6 +2044,47 @@ describe("cmdInstall", () => {
         label: "Not scanned by ClawHub",
       },
       canonicalRef: null,
+    });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    listTextFilesMock.mockResolvedValue([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);
+    hashSkillFilesMock.mockReturnValue({
+      fingerprint: "local-fingerprint",
+      files: [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }],
+    });
+
+    await expect(cmdInstall(makeOpts(), sourceRef)).rejects.toThrow(
+      "Downloaded skills.sh folder hash does not match the approved ClawHub resolver",
+    );
+    expect(writeSkillOrigin).not.toHaveBeenCalled();
+    expect(writeLockfile).not.toHaveBeenCalled();
+  });
+
+  it("rejects a scanned Repo Sync alias whose pinned GitHub bytes differ from the resolver", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const commit = "a".repeat(40);
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "html",
+      installKind: "github",
+      github: {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit,
+        contentHash: "b".repeat(64),
+        sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      },
+      provenance: {
+        source: "skills.sh",
+        reference: sourceRef,
+        repository: "patrick-erichsen/skills",
+        path: "skills/html",
+        sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      },
+      trust: {
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
     });
     mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
     listTextFilesMock.mockResolvedValue([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);

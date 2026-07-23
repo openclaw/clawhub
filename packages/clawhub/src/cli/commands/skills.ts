@@ -1547,12 +1547,10 @@ async function resolveSkillsShCatalogInstall(registry: string, ref: SkillRef, to
       fail("unscanned skills.sh catalog entries must resolve to an exact GitHub install");
     }
   } else {
-    if (resolution.installKind !== "archive") {
-      fail("scanned skills.sh aliases must resolve through their canonical native archive");
-    }
     if (!metadata.canonicalRef) {
       fail("adopted skills.sh aliases must return their canonical native reference");
     }
+    validateCanonicalSkillsShAliasRef(metadata.canonicalRef);
   }
   return {
     resolution,
@@ -1641,6 +1639,14 @@ function sameSkillsShSource(left: string | undefined, right: string | undefined)
   }
 }
 
+function validateCanonicalSkillsShAliasRef(canonicalRef: string) {
+  const canonical = parseSkillRefOrFail(canonicalRef);
+  if (!canonical.ownerHandle || canonical.sourceRef) {
+    fail("adopted skills.sh alias returned an invalid canonical native reference");
+  }
+  return canonical;
+}
+
 function getInstallResolutionVersion(resolution: SuccessfulInstallResolution) {
   return resolution.installKind === "github"
     ? resolution.github.commit
@@ -1667,10 +1673,7 @@ async function installSkillsShResolution(
     return;
   }
   if (!canonicalRef) fail("adopted skills.sh alias did not return a canonical native reference");
-  const canonical = parseSkillRefOrFail(canonicalRef);
-  if (!canonical.ownerHandle || canonical.sourceRef) {
-    fail("adopted skills.sh alias returned an invalid canonical native reference");
-  }
+  const canonical = validateCanonicalSkillsShAliasRef(canonicalRef);
   const zip = await downloadZip(registry, {
     slug: canonical.slug,
     ownerHandle: canonical.ownerHandle,
