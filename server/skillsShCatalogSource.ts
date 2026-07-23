@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { getVercelOidcToken, verifyVercelOidcToken, type VercelOidcPayload } from "@vercel/oidc";
+import { getClawHubRolloutCapabilities } from "clawhub-schema";
 
 const SKILLS_SH_API_BASE = "https://skills.sh/api/v1";
 const MAX_SOURCE_PAGE_SIZE = 500;
@@ -10,6 +11,7 @@ const CLAWHUB_VERCEL_PROJECT_ID = "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc";
 const CLAWHUB_TEST_CONVEX_URL = "https://academic-chihuahua-392.convex.cloud";
 
 export type SkillsShCatalogSourceEnv = {
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE?: string;
   CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED?: string;
   VERCEL_ENV?: string;
   VERCEL_OIDC_TOKEN?: string;
@@ -157,6 +159,14 @@ export async function fetchSkillsShCatalogDetail(
 }
 
 export function getSkillsShCatalogTestSourcePolicy(env: SkillsShCatalogSourceEnv = process.env) {
+  const rollout = getClawHubRolloutCapabilities(env);
+  if (!rollout.skillsSh.runtimeEnabled) {
+    return {
+      allowed: false as const,
+      environment: rollout.environment,
+      reason: "skills.sh catalog rollout is disabled",
+    };
+  }
   if (env.VITE_CLAWHUB_DEPLOY_ENV !== "test") {
     return {
       allowed: false as const,

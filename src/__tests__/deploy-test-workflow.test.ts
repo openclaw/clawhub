@@ -71,10 +71,12 @@ describe("Test deploy workflow", () => {
     });
     expect(steps.filter((step) => step.env?.CONVEX_DEPLOY_KEY).map((step) => step.name)).toEqual([
       "Check Test configuration",
+      "Enable Test rollout modes",
       "Stamp Convex build SHA",
       "Stamp Convex deploy time",
       "Deploy Convex Test",
       "Verify Convex contract",
+      "Verify Test rollout capabilities",
       "Apply additive Test fixtures",
     ]);
     expect(steps.filter((step) => step.env?.VERCEL_TOKEN).map((step) => step.name)).toEqual([
@@ -112,9 +114,27 @@ describe("Test deploy workflow", () => {
     expect(deployStep?.run).toContain("--target=preview");
     expect(deployStep?.run).toContain('--scope "$VERCEL_SCOPE"');
     expect(deployStep?.run).toContain("--build-env CONVEX_DEPLOY_KEY=");
+    expect(deployStep?.run).toContain("--build-env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test");
+    expect(deployStep?.run).toContain("--build-env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test");
+    expect(deployStep?.run).toContain("--env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test");
+    expect(deployStep?.run).toContain("--env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test");
     expect(aliasStep?.run).toContain("vercel@50.44.0 alias set");
     expect(aliasStep?.run).toContain('"$DEPLOYMENT_URL"');
     expect(aliasStep?.run).not.toContain("${{ steps.vercel.outputs.deployment_url }}");
     expect(aliasStep?.run).toContain('--scope "$VERCEL_SCOPE"');
+  });
+
+  it("activates and reads back both rollout modes only in permanent Test", async () => {
+    const workflow = await readWorkflow();
+    const steps = workflow.jobs?.["deploy-test"]?.steps ?? [];
+    const enable = steps.find((step) => step.name === "Enable Test rollout modes");
+    const verify = steps.find((step) => step.name === "Verify Test rollout capabilities");
+
+    expect(enable?.run).toContain("CLAWHUB_SKILLS_SH_ROLLOUT_MODE test");
+    expect(enable?.run).toContain("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE test");
+    expect(verify?.run).toContain("rolloutCapabilities:getPublicCapabilities");
+    expect(verify?.run).toContain('.environment == "test"');
+    expect(verify?.run).toContain(".skillsSh.runtimeEnabled == true");
+    expect(verify?.run).toContain(".githubSkillSync.selfServiceEnabled == true");
   });
 });

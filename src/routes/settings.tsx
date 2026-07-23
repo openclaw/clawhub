@@ -289,6 +289,7 @@ export function Settings() {
     api.githubOrgMemberships.listMine,
     shouldLoadAccountScopedQueries ? {} : "skip",
   ) as GitHubOrgMembershipsResult | undefined;
+  const rolloutCapabilities = useQuery(api.rolloutCapabilities.getPublicCapabilities, {});
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
@@ -342,7 +343,9 @@ export function Settings() {
     (entry) => entry.publisher.official === true,
   );
   const publisherMembershipsLoaded = publisherMemberships !== undefined;
-  const canConfigureGitHubSources = officialGitHubSourcePublishers.length > 0;
+  const canConfigureGitHubSources =
+    rolloutCapabilities?.githubSkillSync.selfServiceEnabled === true &&
+    officialGitHubSourcePublishers.length > 0;
   const effectiveActiveView =
     activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
       ? "account"

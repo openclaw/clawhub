@@ -1,10 +1,22 @@
 #!/usr/bin/env bun
 
 import { spawnSync } from "node:child_process";
+import { parseRolloutMode } from "clawhub-schema";
 import { resolveConvexSiteUrl } from "../src/lib/convexDeploymentUrl";
 
 export function resolveFrontendBuildEnv(env: NodeJS.ProcessEnv) {
   const targetEnvironment = env.VERCEL_TARGET_ENV?.trim() || env.VERCEL_ENV?.trim();
+  if (targetEnvironment === "production") {
+    const activeMode = [
+      env.CLAWHUB_SKILLS_SH_ROLLOUT_MODE,
+      env.CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE,
+    ].find((value) => parseRolloutMode(value) !== "off");
+    if (activeMode) {
+      throw new Error(
+        "Production skills rollout requires a separately authorized explicit rollout activation",
+      );
+    }
+  }
   const convexSiteUrl = resolveConvexSiteUrl({
     CONVEX_URL: env.CONVEX_URL,
     VITE_CONVEX_SITE_URL: targetEnvironment === "preview" ? undefined : env.VITE_CONVEX_SITE_URL,

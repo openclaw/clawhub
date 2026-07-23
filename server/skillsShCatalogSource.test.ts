@@ -105,12 +105,28 @@ describe("skills.sh Vercel source boundary", () => {
     expect(
       getSkillsShCatalogTestSourcePolicy({
         VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "test",
+        VITE_CLAWHUB_DEPLOY_ENV: "test",
+        VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
+        CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      environment: "test",
+      reason: "skills.sh catalog rollout is disabled",
+    });
+
+    expect(
+      getSkillsShCatalogTestSourcePolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
+        VERCEL_ENV: "preview",
         CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",
       }),
     ).toMatchObject({ allowed: false });
 
     expect(
       getSkillsShCatalogTestSourcePolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         VERCEL_ENV: "preview",
         VERCEL_TARGET_ENV: "test",
         VITE_CLAWHUB_DEPLOY_ENV: "test",
@@ -288,7 +304,9 @@ describe("skills.sh Vercel source boundary", () => {
     });
     const options = {
       env: {
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         VERCEL_ENV: "preview",
+        VERCEL_TARGET_ENV: "test",
         VITE_CLAWHUB_DEPLOY_ENV: "test",
         VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
         CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",
@@ -385,6 +403,7 @@ describe("skills.sh Vercel source boundary", () => {
     await expect(
       fetchSkillsShCatalogTestPage({
         env: {
+          CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
           VERCEL_ENV: "preview",
           VERCEL_TARGET_ENV: "test",
           VITE_CLAWHUB_DEPLOY_ENV: "test",
@@ -411,6 +430,7 @@ describe("skills.sh Vercel source boundary", () => {
     await expect(
       fetchSkillsShCatalogTestPage({
         env: {
+          CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
           VERCEL_ENV: "preview",
           VERCEL_TARGET_ENV: "test",
           VITE_CLAWHUB_DEPLOY_ENV: "test",
@@ -465,7 +485,9 @@ describe("skills.sh Vercel source boundary", () => {
       );
     });
     const env = {
+      CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
       VERCEL_ENV: "preview",
+      VERCEL_TARGET_ENV: "test",
       VITE_CLAWHUB_DEPLOY_ENV: "test",
       VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
       CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED: "1",

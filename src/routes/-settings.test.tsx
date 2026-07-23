@@ -138,6 +138,7 @@ function mockSignedInSettings({
   memberships = [orgMembership],
   members = orgMembers,
   githubSources = [],
+  githubSkillSyncEnabled = true,
   pendingInvites = [],
   myInvites = [],
   githubOrgMemberships = {
@@ -205,6 +206,7 @@ function mockSignedInSettings({
     }>;
     updatedAt: number;
   }>;
+  githubSkillSyncEnabled?: boolean;
 } = {}) {
   useAuthStatusMock.mockReturnValue({
     isAuthenticated: true,
@@ -219,6 +221,24 @@ function mockSignedInSettings({
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
     if (queryName === "githubOrgMemberships:listMine") return githubOrgMemberships;
+    if (queryName === "rolloutCapabilities:getPublicCapabilities") {
+      return {
+        environment: "test",
+        skillsSh: {
+          mode: "test",
+          runtimeEnabled: true,
+          discoveryEnabled: false,
+          writesEnabled: false,
+          publicCatalogEnabled: false,
+          scanPlanningEnabled: false,
+          scanAdmissionEnabled: false,
+        },
+        githubSkillSync: {
+          mode: githubSkillSyncEnabled ? "test" : "off",
+          selfServiceEnabled: githubSkillSyncEnabled,
+        },
+      };
+    }
     if (queryName === "publishers:getDeletionInventory") {
       return deletionInventoryLoading ? undefined : [];
     }
@@ -794,6 +814,22 @@ describe("Settings", () => {
     ).toBe("true");
     expect(screen.queryByRole("heading", { name: "GitHub Skill Sync" })).toBeNull();
     expect(screen.queryByPlaceholderText("Enter a public repo")).toBeNull();
+  });
+
+  it("does not expose GitHub Skill Sync when the backend capability is disabled", () => {
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [orgMembership],
+      githubSkillSyncEnabled: false,
+    });
+
+    render(<Settings />);
+
+    expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Account & Preferences" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(screen.queryByRole("heading", { name: "GitHub Skill Sync" })).toBeNull();
   });
 
   it("shows create organization mutation errors to the user", async () => {

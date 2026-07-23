@@ -1,5 +1,5 @@
 import { ConvexError } from "convex/values";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./lib/access", () => ({
   requireUser: vi.fn(),
@@ -21,6 +21,15 @@ const {
   listForManageableOfficialPublishers,
 } = await import("./githubSkillSources");
 const { buildSkillInstallResolution } = await import("./lib/installResolver");
+
+beforeEach(() => {
+  vi.stubEnv("CONVEX_DEPLOYMENT", "local:clawhub");
+  vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 type Row = Record<string, unknown> & { _id: string };
 type WrappedHandler<TArgs, TResult = unknown> = {
@@ -102,6 +111,32 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
   beforeEach(() => {
     vi.mocked(requireUser).mockResolvedValue({ userId: "users:owner" } as never);
     vi.mocked(requirePublisherRole).mockResolvedValue(undefined as never);
+  });
+
+  it("rejects generic source removal without writes when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:generic",
+          repo: "openclaw/agent-skills",
+          ownerPublisherId: "publishers:openclaw",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await expect(
+      deleteForPublisherHandler({ db, scheduler } as never, {
+        ownerPublisherId: "publishers:openclaw" as never,
+        sourceId: "githubSkillSources:generic" as never,
+      }),
+    ).rejects.toThrow(/rollout is disabled/i);
+
+    expect(tables.githubSkillSources).toHaveLength(1);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("deletes a source and removes only GitHub-backed skills from that source", async () => {

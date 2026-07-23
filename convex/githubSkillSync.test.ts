@@ -1,7 +1,7 @@
 import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __test,
   applyGitHubSkillSourceSyncHandler,
@@ -18,6 +18,15 @@ import { stripGitHubZipRoot } from "./lib/githubImport";
 import { buildGitHubSkillSourceSnapshot } from "./lib/githubSkillSync";
 import { buildSkillInstallResolution } from "./lib/installResolver";
 import { Events } from "./lib/observabilityEvents";
+
+beforeEach(() => {
+  vi.stubEnv("CONVEX_DEPLOYMENT", "local:clawhub");
+  vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 type Row = Record<string, unknown> & { _id: string };
 
@@ -308,6 +317,28 @@ describe("buildGitHubSkillSourceFetch", () => {
 });
 
 describe("configurePublicGitHubSkillSourceHandler", () => {
+  it("fails closed before authentication, database, or GitHub work when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const runQuery = vi.fn();
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn();
+
+    await expect(
+      configurePublicGitHubSkillSourceHandler(
+        { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+        {
+          ownerPublisherId: "publishers:local" as never,
+          repo: "someoneelse/public-skills",
+        },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/rollout is disabled/i);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("configures any public GitHub repo for an official publisher the user can manage", async () => {
     const zip = zipSync({
       "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
@@ -581,6 +612,62 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
 });
 
 describe("syncGitHubSkillSourcesHandler", () => {
+  it("does not enumerate or fetch generic sources while rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const runQuery = vi.fn(async (_ref, args: Record<string, unknown>) => {
+      expect(args).toMatchObject({ legacyOnly: true });
+      return { sources: [], continueCursor: null, isDone: true };
+    });
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn();
+
+    await expect(
+      syncGitHubSkillSourcesHandler({ runQuery, runMutation } as never, {}, fetchMock as never),
+    ).resolves.toMatchObject({
+      ok: true,
+      synced: 0,
+      skipped: 0,
+      errors: 0,
+      isDone: true,
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("lists only the legacy NVIDIA source when generic rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const { db } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:generic",
+          repo: "openclaw/agent-skills",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      listSourcesForSyncHandler({ db } as never, { batchSize: 20, legacyOnly: true }),
+    ).resolves.toEqual({
+      sources: [
+        expect.objectContaining({
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+        }),
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+  });
+
   it("pages configured sources for scheduled sync", async () => {
     const { db } = createDb({
       githubSkillSources: Array.from({ length: 30 }, (_, index) => ({
@@ -705,6 +792,42 @@ describe("syncGitHubSkillSourcesHandler", () => {
       expect.anything(),
       expect.objectContaining({ snapshot: expect.anything() }),
     );
+  });
+});
+
+describe("verifyGitHubSkillHandler rollout", () => {
+  it("does not fetch or enqueue a generic GitHub skill while rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const runQuery = vi.fn(async () => ({
+      skill: {
+        _id: "skills:generic",
+        slug: "generic",
+        displayName: "Generic",
+        summary: "Generic skill",
+        githubPath: "skills/generic",
+        githubCurrentCommit: "a".repeat(40),
+        githubCurrentContentHash: "hash",
+        githubCurrentStatus: "present",
+      },
+      source: {
+        _id: "githubSkillSources:generic",
+        repo: "openclaw/agent-skills",
+        defaultBranch: "main",
+      },
+    }));
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn();
+
+    await expect(
+      verifyGitHubSkillHandler(
+        { runQuery, runMutation } as never,
+        { skillId: "skills:generic" as never, contentHash: "hash" },
+        fetchMock as never,
+      ),
+    ).resolves.toEqual({ ok: true, skipped: "rollout-disabled" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
   });
 });
 

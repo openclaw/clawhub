@@ -6,6 +6,7 @@ describe("skills.sh fixture environment policy", () => {
   it("allows only local development or the exact cron-disabled Test deployment", () => {
     expect(
       getSkillsShFixtureEnvironmentPolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
       }),
     ).toEqual({ allowed: true, environment: "local" });
@@ -15,9 +16,25 @@ describe("skills.sh fixture environment policy", () => {
         CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
         CLAWHUB_DISABLE_CRONS: "1",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
       }),
     ).toEqual({ allowed: true, environment: "test" });
+  });
+
+  it("requires the top-level rollout mode in addition to Test environment markers", () => {
+    expect(
+      getSkillsShFixtureEnvironmentPolicy({
+        CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
+        CLAWHUB_DISABLE_CRONS: "1",
+        CLAWHUB_ENV: "test",
+        CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
+      }),
+    ).toMatchObject({
+      allowed: false,
+      environment: "test",
+      reason: "skills.sh catalog rollout is disabled",
+    });
   });
 
   it("rejects previews, production, and incomplete Test markers", () => {
@@ -32,6 +49,7 @@ describe("skills.sh fixture environment policy", () => {
       getSkillsShFixtureEnvironmentPolicy({
         CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
       }),
     ).toMatchObject({ allowed: false, environment: "test" });
 
@@ -40,12 +58,14 @@ describe("skills.sh fixture environment policy", () => {
         CLAWHUB_DEPLOYMENT_NAME: "wry-manatee-359",
         CLAWHUB_DISABLE_CRONS: "1",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
       }),
-    ).toMatchObject({ allowed: false, environment: "test" });
+    ).toMatchObject({ allowed: false, environment: "production" });
 
     expect(
       getSkillsShFixtureEnvironmentPolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
         CONVEX_DEPLOYMENT: "prod:wry-manatee-359",
       }),
     ).toMatchObject({ allowed: false, environment: "production" });
@@ -53,6 +73,7 @@ describe("skills.sh fixture environment policy", () => {
     expect(
       getSkillsShFixtureEnvironmentPolicy({
         CLAWHUB_DEPLOYMENT_NAME: "wry-manatee-359",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
         CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
       }),
     ).toMatchObject({ allowed: false, environment: "production" });
@@ -62,6 +83,7 @@ describe("skills.sh fixture environment policy", () => {
         CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
         CLAWHUB_DISABLE_CRONS: "1",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_DEPLOYMENT: "prod:wry-manatee-359",
         CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
       }),
@@ -72,6 +94,7 @@ describe("skills.sh fixture environment policy", () => {
         CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
         CLAWHUB_DISABLE_CRONS: "1",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_CLOUD_URL: "https://preview-project.convex.cloud",
       }),
     ).toMatchObject({ allowed: false, environment: "test" });
@@ -81,6 +104,7 @@ describe("skills.sh fixture environment policy", () => {
         CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
         CLAWHUB_DISABLE_CRONS: "1",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CLAWHUB_PREVIEW: "1",
         CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
       }),
@@ -90,6 +114,7 @@ describe("skills.sh fixture environment policy", () => {
   it("does not treat CLI-only local deployment markers as runtime proof", () => {
     expect(
       getSkillsShFixtureEnvironmentPolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_DEPLOYMENT: "local:clawhub",
       }),
     ).toMatchObject({ allowed: false, environment: "unknown" });
@@ -101,6 +126,7 @@ describe("skills.sh fixture environment policy", () => {
         CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
         CLAWHUB_DISABLE_CRONS: "1",
         CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
         CONVEX_SITE_URL: "https://preview-project.convex.site",
       }),
@@ -108,6 +134,7 @@ describe("skills.sh fixture environment policy", () => {
 
     expect(
       getSkillsShFixtureEnvironmentPolicy({
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
         CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
         CONVEX_SITE_URL: "https://academic-chihuahua-392.convex.site",
       }),

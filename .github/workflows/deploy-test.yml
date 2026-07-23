@@ -95,6 +95,14 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Enable Test rollout modes
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE test --prod
+          bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE test --prod
+
       - name: Stamp Convex build SHA
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -114,6 +122,20 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bun run verify:convex-contract -- --prod
+
+      - name: Verify Test rollout capabilities
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e '
+            .environment == "test" and
+            .skillsSh.mode == "test" and
+            .skillsSh.runtimeEnabled == true and
+            .githubSkillSync.mode == "test" and
+            .githubSkillSync.selfServiceEnabled == true
+          ' <<< "$capabilities"
 
       - name: Apply additive Test fixtures
         env:
@@ -145,6 +167,8 @@ jobs:
               --build-env VERCEL_ENV=test \
               --build-env VERCEL_TARGET_ENV=test \
               --build-env CLAWHUB_ENV=test \
+              --build-env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
+              --build-env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
               --build-env SITE_URL="$TEST_SITE_URL" \
               --build-env VITE_CLAWHUB_DEPLOY_ENV=test \
               --build-env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
@@ -152,6 +176,8 @@ jobs:
               --build-env VITE_SITE_URL="$TEST_SITE_URL" \
               --env CONVEX_DEPLOY_KEY= \
               --env CLAWHUB_ENV=test \
+              --env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
+              --env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
               --env SITE_URL="$TEST_SITE_URL" \
               --env VITE_CLAWHUB_DEPLOY_ENV=test \
               --env VITE_CONVEX_URL="$VITE_CONVEX_URL" \

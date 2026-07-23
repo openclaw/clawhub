@@ -28,6 +28,11 @@ import { runStaticModerationScan } from "./lib/moderationEngine";
 import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { requirePublisherRole } from "./lib/publishers";
+import {
+  assertGenericGitHubSkillSyncEnabled,
+  assertGitHubSkillSyncRuntimeEnabled,
+  getRuntimeRolloutCapabilities,
+} from "./lib/rolloutCapabilities";
 import { isMacJunkPath, parseFrontmatter } from "./lib/skills";
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
@@ -247,14 +252,26 @@ export const listSourcesForSyncInternal = internalQuery({
   args: {
     cursor: v.optional(v.union(v.string(), v.null())),
     batchSize: v.optional(v.number()),
+    legacyOnly: v.optional(v.boolean()),
   },
   handler: listSourcesForSyncHandler,
 });
 
 export async function listSourcesForSyncHandler(
   ctx: QueryCtx,
-  args: { cursor?: string | null; batchSize?: number },
+  args: { cursor?: string | null; batchSize?: number; legacyOnly?: boolean },
 ): Promise<SourceForSyncPage> {
+  if (args.legacyOnly) {
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", "NVIDIA/skills"))
+      .unique();
+    return {
+      sources: source ? [source] : [],
+      continueCursor: null,
+      isDone: true,
+    };
+  }
   const batchSize = clampInt(
     args.batchSize ?? DEFAULT_SOURCE_SYNC_BATCH_SIZE,
     1,
@@ -926,6 +943,12 @@ export async function verifyGitHubSkillHandler(
     { skillId: args.skillId, contentHash: args.contentHash },
   )) as GitHubSkillVerificationTarget | null;
   if (!target) return { ok: true as const, skipped: "stale-or-missing" as const };
+  if (
+    !getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled &&
+    target.source.repo.trim().toLowerCase() !== "nvidia/skills"
+  ) {
+    return { ok: true as const, skipped: "rollout-disabled" as const };
+  }
 
   const { snapshot, entries } = await fetchGitHubSkillSourceSnapshotWithEntries(
     {
@@ -997,6 +1020,7 @@ export async function configurePublicGitHubSkillSourceHandler(
   fetcher: typeof fetch = fetch,
   authOverride?: { userId: Id<"users"> },
 ): Promise<SyncOneResult> {
+  assertGitHubSkillSyncRuntimeEnabled();
   const actor = authOverride ?? (await requireUserFromAction(ctx));
   const metadata = await fetchPublicGitHubRepoMetadata(args.repo, fetcher);
   const setup = (await ctx.runQuery(
@@ -1108,6 +1132,7 @@ export const syncGitHubSkillSource: ReturnType<typeof action> = action({
     assertAdmin(user);
 
     const repo = normalizeRepo(args.repo);
+    assertGenericGitHubSkillSyncEnabled(repo);
     const source = (await ctx.runQuery(internal.githubSkillSync.getSourceByRepoInternal, {
       repo,
     })) as SourceForSync | null;
@@ -1156,10 +1181,12 @@ export async function syncGitHubSkillSourcesHandler(
     1,
     MAX_SOURCE_SYNC_BATCH_SIZE,
   );
+  const genericEnabled = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled;
   logEvent(Events.GitHubSkillSourceSyncStarted, { startedAt, cursor: args.cursor ?? null });
   const page = (await ctx.runQuery(internal.githubSkillSync.listSourcesForSyncInternal, {
     cursor: args.cursor ?? null,
     batchSize,
+    legacyOnly: !genericEnabled,
   })) as SourceForSyncPage;
   const sources = page.sources;
   const results: SyncOneResult[] = [];

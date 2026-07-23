@@ -1,5 +1,5 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendGitHubSkillScanRequestFilesInternal,
   cancelQueuedVtUpdateJobsInternal,
@@ -1176,11 +1176,51 @@ function makeClaimCtx(
                 }
                 return a.createdAt - b.createdAt;
               });
+          let rowFilter = (_job: ScanJob) => true;
           const take = vi.fn(async (limit: number) => select().slice(0, limit));
-          return {
+          const filteredRows = () => select().filter(rowFilter);
+          const builder = {
+            filter: vi.fn(
+              (
+                predicate: (q: {
+                  field: (field: string) => { field: string };
+                  neq: (
+                    left: { field: string },
+                    right: unknown,
+                  ) => {
+                    field: string;
+                    right: unknown;
+                  };
+                }) => { field: string; right: unknown },
+              ) => {
+                const expression = predicate({
+                  field: (field) => ({ field }),
+                  neq: (left, right) => ({ field: left.field, right }),
+                });
+                rowFilter = (job) =>
+                  (job as unknown as Record<string, unknown>)[expression.field] !==
+                  expression.right;
+                return builder;
+              },
+            ),
             take,
-            order: vi.fn(() => ({ take })),
+            order: vi.fn(() => ({
+              paginate: vi.fn(
+                async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+                  const offset = cursor ? Number.parseInt(cursor, 10) : 0;
+                  const rows = filteredRows();
+                  const nextOffset = Math.min(offset + numItems, rows.length);
+                  return {
+                    page: rows.slice(offset, nextOffset),
+                    isDone: nextOffset >= rows.length,
+                    continueCursor: String(nextOffset),
+                  };
+                },
+              ),
+              take: vi.fn(async (limit: number) => filteredRows().slice(0, limit)),
+            })),
           };
+          return builder;
         },
       ),
     };
@@ -1354,6 +1394,13 @@ function makeStoredScanReportCtx(options: {
 }
 
 describe("securityScan", () => {
+  beforeEach(() => {
+    vi.stubEnv("CLAWHUB_ENV", "local");
+    vi.stubEnv("CONVEX_DEPLOYMENT", "local:clawhub-test");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
@@ -1708,6 +1755,40 @@ describe("securityScan", () => {
         }),
       }),
     );
+  });
+
+  it("rejects generic GitHub-backed rescans before scheduling or writing when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const { ctx, inserts, scheduler } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:github": {
+          _id: "skills:github",
+          slug: "github-demo",
+          ownerUserId: "users:owner",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+        },
+        "githubSkillSources:github": {
+          _id: "githubSkillSources:github",
+          repo: "acme/skills",
+        },
+      },
+    });
+
+    await expect(
+      requestSkillRescanHandler(ctx, {
+        skillId: "skills:github",
+      }),
+    ).rejects.toThrow("GitHub Skill Sync rollout is disabled");
+
+    expect(inserts).toEqual([]);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("does not schedule another GitHub verification action while the content scan is active", async () => {
@@ -3775,6 +3856,75 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:publish"]);
   });
 
+  it("skips queued generic GitHub scans while still claiming NVIDIA scans when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const genericJobs = Array.from({ length: 513 }, (_, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:generic-${index}`,
+        source: "publish",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:generic",
+        createdAt: index + 1,
+        nextRunAt: index + 1,
+      }),
+    );
+    const { ctx, patches } = makeClaimCtx(
+      [
+        ...genericJobs,
+        makeScanJob({
+          _id: "securityScanJobs:nvidia",
+          source: "publish",
+          targetKind: "skillScanRequest",
+          skillVersionId: undefined,
+          skillScanRequestId: "skillScanRequests:nvidia",
+          createdAt: 514,
+          nextRunAt: 514,
+        }),
+      ],
+      {
+        "skillScanRequests:generic": {
+          _id: "skillScanRequests:generic",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:generic",
+        },
+        "githubSkillScans:generic": {
+          _id: "githubSkillScans:generic",
+          githubSourceId: "githubSkillSources:generic",
+        },
+        "githubSkillSources:generic": {
+          _id: "githubSkillSources:generic",
+          repo: "acme/skills",
+        },
+        "skillScanRequests:nvidia": {
+          _id: "skillScanRequests:nvidia",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:nvidia",
+        },
+        "githubSkillScans:nvidia": {
+          _id: "githubSkillScans:nvidia",
+          githubSourceId: "githubSkillSources:nvidia",
+        },
+        "githubSkillSources:nvidia": {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+        },
+      },
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 1,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:nvidia"]);
+    expect(patches.map((entry) => entry.id)).toEqual([
+      "securityScanJobs:nvidia",
+      "skillScanRequests:nvidia",
+    ]);
+  });
+
   it("lets the catalog lane claim only the lowest-priority catalog source", async () => {
     vi.stubEnv("CLAWHUB_ENV", "test");
     vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
@@ -5251,6 +5401,129 @@ describe("securityScan", () => {
       });
     },
   );
+
+  it("does not prepare generic GitHub scan state when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "skills:1") {
+            return {
+              _id: "skills:1",
+              installKind: "github",
+              githubSourceId: "githubSkillSources:generic",
+              githubPath: "skills/demo",
+              githubCurrentStatus: "present",
+              githubCurrentCommit: "a".repeat(40),
+              githubCurrentContentHash: "content-hash",
+              ownerUserId: "users:1",
+              slug: "demo",
+              displayName: "Demo",
+            };
+          }
+          if (id === "githubSkillSources:generic") {
+            return { _id: id, repo: "acme/skills" };
+          }
+          return null;
+        }),
+        query: vi.fn(),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    await expect(
+      prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
+        skillId: "skills:1",
+        contentHash: "content-hash",
+        commit: "a".repeat(40),
+        parsed: { frontmatter: {} },
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "No static findings.",
+          engineVersion: "test",
+          checkedAt: 2,
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      skipped: "rollout-disabled",
+    });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects appending and finalizing stale generic GitHub requests when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skillScanRequests:github",
+        {
+          _id: "skillScanRequests:github",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:github",
+          status: "queued",
+          files: [],
+        },
+      ],
+      [
+        "githubSkillScans:github",
+        {
+          _id: "githubSkillScans:github",
+          githubSourceId: "githubSkillSources:generic",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:github",
+        },
+      ],
+      [
+        "githubSkillSources:generic",
+        {
+          _id: "githubSkillSources:generic",
+          repo: "acme/skills",
+        },
+      ],
+    ]);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    await expect(
+      appendGitHubSkillScanRequestFilesInternalHandler(ctx as never, {
+        requestId: "skillScanRequests:github",
+        chunkIndex: 0,
+        files: [
+          {
+            path: "SKILL.md",
+            size: 10,
+            storageId: "storage:1",
+            sha256: "sha256",
+          },
+        ],
+      }),
+    ).rejects.toThrow("GitHub Skill Sync rollout is disabled");
+    await expect(
+      finalizeGitHubSkillScanRequestInternalHandler(ctx as never, {
+        requestId: "skillScanRequests:github",
+      }),
+    ).rejects.toThrow("GitHub Skill Sync rollout is disabled");
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
 
   it("lets forced GitHub-backed rescans recover incomplete pending requests without jobs", async () => {
     const now = 1_781_570_600_000;

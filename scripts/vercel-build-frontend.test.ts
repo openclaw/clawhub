@@ -24,10 +24,35 @@ describe("Vercel frontend build environment", () => {
     expect(env.VITE_CLAWHUB_DEPLOY_ENV).toBe("production");
   });
 
+  it.each(["test", "production"])(
+    "rejects %s rollout modes in an ordinary production build",
+    (mode) => {
+      expect(() =>
+        resolveFrontendBuildEnv({
+          VERCEL_ENV: "production",
+          VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
+          CLAWHUB_SKILLS_SH_ROLLOUT_MODE: mode,
+        }),
+      ).toThrow(/explicit rollout activation/i);
+    },
+  );
+
+  it("treats malformed production rollout modes as off", () => {
+    expect(
+      resolveFrontendBuildEnv({
+        VERCEL_ENV: "production",
+        VITE_CONVEX_URL: "https://wry-manatee-359.convex.cloud",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "enabled",
+      }).VITE_CLAWHUB_DEPLOY_ENV,
+    ).toBe("production");
+  });
+
   it("preserves the permanent backend URLs for the custom test environment", () => {
     const env = resolveFrontendBuildEnv({
       VERCEL_ENV: "preview",
       VERCEL_TARGET_ENV: "test",
+      CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE: "test",
+      CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
       VITE_CONVEX_URL: "https://academic-chihuahua-392.convex.cloud",
       VITE_CONVEX_SITE_URL: "https://academic-chihuahua-392.convex.site",
     });

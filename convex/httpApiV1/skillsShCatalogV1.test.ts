@@ -30,11 +30,21 @@ vi.mock("./shared", async (importOriginal) => {
 const { requireAdminOrResponse, requireApiTokenUserOrResponse } = await import("./shared");
 const { buildGitHubApiHeaders } = await import("../lib/githubAuth");
 const { computeGitHubSkillFolderContentHash } = await import("../lib/githubSkillSync");
+const { applyRateLimit } = await import("../lib/httpRateLimit");
 const {
   skillsShCatalogPublicV1Handler,
   skillsShCatalogTestV1Handler,
   verifyControlledCanaryGitHubSource,
 } = await import("./skillsShCatalogV1");
+
+beforeEach(() => {
+  vi.stubEnv("CLAWHUB_ENV", "test");
+  vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -57,7 +67,22 @@ function artifact(externalId: string, content: string) {
 }
 
 describe("skills.sh catalog Test HTTP API", () => {
+  it("returns 404 before rate limiting or authentication while rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
+
+    const response = await skillsShCatalogTestV1Handler(
+      {} as never,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops"),
+    );
+
+    expect(response.status).toBe(404);
+    expect(applyRateLimit).not.toHaveBeenCalled();
+    expect(requireApiTokenUserOrResponse).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
+    vi.mocked(applyRateLimit).mockClear();
+    vi.mocked(requireApiTokenUserOrResponse).mockClear();
     vi.mocked(requireApiTokenUserOrResponse).mockResolvedValue({
       ok: true,
       user: { handle: "catalog-operator" },
@@ -685,6 +710,21 @@ describe("skills.sh catalog Test HTTP API", () => {
 });
 
 describe("skills.sh public HTTP API", () => {
+  it("returns 404 before rate limiting while rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
+    vi.mocked(applyRateLimit).mockClear();
+
+    const response = await skillsShCatalogPublicV1Handler(
+      {} as never,
+      new Request(
+        "https://academic-chihuahua-392.convex.site/api/v1/skills-sh/patrick-erichsen/skills/html",
+      ),
+    );
+
+    expect(response.status).toBe(404);
+    expect(applyRateLimit).not.toHaveBeenCalled();
+  });
+
   const publicEntry = {
     ref: "skills-sh/patrick-erichsen/skills/html",
     route: "/skills-sh/patrick-erichsen/skills/html",

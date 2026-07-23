@@ -1863,6 +1863,7 @@ const securityScanJobs = defineTable({
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  rolloutGate: v.optional(v.literal("github-skill-sync")),
   status: securityScanJobStatusValidator,
   source: securityScanJobSourceValidator,
   priority: v.number(),

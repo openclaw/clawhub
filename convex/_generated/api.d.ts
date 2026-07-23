@@ -111,6 +111,7 @@ import type * as lib_reporting from "../lib/reporting.js";
 import type * as lib_reservedHandles from "../lib/reservedHandles.js";
 import type * as lib_reservedSlugs from "../lib/reservedSlugs.js";
 import type * as lib_retentionPolicy from "../lib/retentionPolicy.js";
+import type * as lib_rolloutCapabilities from "../lib/rolloutCapabilities.js";
 import type * as lib_searchRanking from "../lib/searchRanking.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
@@ -160,6 +161,7 @@ import type * as publisherAbuseTemporalScan from "../publisherAbuseTemporalScan.
 import type * as publishers from "../publishers.js";
 import type * as rateLimits from "../rateLimits.js";
 import type * as retention from "../retention.js";
+import type * as rolloutCapabilities from "../rolloutCapabilities.js";
 import type * as search from "../search.js";
 import type * as securityDataset from "../securityDataset.js";
 import type * as securityDatasetNode from "../securityDatasetNode.js";
@@ -289,6 +291,7 @@ declare const fullApi: ApiFromModules<{
   "lib/reservedHandles": typeof lib_reservedHandles;
   "lib/reservedSlugs": typeof lib_reservedSlugs;
   "lib/retentionPolicy": typeof lib_retentionPolicy;
+  "lib/rolloutCapabilities": typeof lib_rolloutCapabilities;
   "lib/searchRanking": typeof lib_searchRanking;
   "lib/searchText": typeof lib_searchText;
   "lib/securityPrompt": typeof lib_securityPrompt;
@@ -338,6 +341,7 @@ declare const fullApi: ApiFromModules<{
   publishers: typeof publishers;
   rateLimits: typeof rateLimits;
   retention: typeof retention;
+  rolloutCapabilities: typeof rolloutCapabilities;
   search: typeof search;
   securityDataset: typeof securityDataset;
   securityDatasetNode: typeof securityDatasetNode;

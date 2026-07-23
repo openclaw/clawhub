@@ -1,7 +1,10 @@
+import { getClawHubRolloutCapabilities } from "clawhub-schema";
+
 type SkillsShCatalogEnvironment = {
   CLAWHUB_DEPLOYMENT_NAME?: string;
   CLAWHUB_DISABLE_CRONS?: string;
   CLAWHUB_ENV?: string;
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE?: string;
   CLAWHUB_PREVIEW?: string;
   CONVEX_CLOUD_URL?: string;
   CONVEX_DEPLOYMENT?: string;
@@ -54,6 +57,14 @@ export function getSkillsShFixtureEnvironmentPolicy(
       allowed: false,
       environment: "preview",
       reason: "skills.sh catalog fixture work is disabled in Preview",
+    };
+  }
+  const rollout = getClawHubRolloutCapabilities(env);
+  if (!rollout.skillsSh.runtimeEnabled) {
+    return {
+      allowed: false,
+      environment: rollout.environment === "local" ? "unknown" : rollout.environment,
+      reason: "skills.sh catalog rollout is disabled",
     };
   }
 

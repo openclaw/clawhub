@@ -10,6 +10,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 
 const LOCAL_ENV = {
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
   CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
 };
 
@@ -17,6 +18,7 @@ const TEST_ENV = {
   CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
   CLAWHUB_DISABLE_CRONS: "1",
   CLAWHUB_ENV: "test",
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
   CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
 };
 
@@ -58,6 +60,23 @@ const SOURCE_VERIFICATION = {
 type CatalogTest = ReturnType<typeof convexTest>;
 
 function useEnvironment(env: Record<string, string>) {
+  for (const name of [
+    "CLAWHUB_DEPLOYMENT_NAME",
+    "CLAWHUB_DISABLE_CRONS",
+    "CLAWHUB_ENV",
+    "CLAWHUB_PREVIEW",
+    "CLAWHUB_SKILLS_SH_ROLLOUT_MODE",
+    "CONVEX_CLOUD_URL",
+    "CONVEX_DEPLOYMENT",
+    "CONVEX_SITE_URL",
+    "DEV_AUTH_CONVEX_DEPLOYMENT",
+    "VERCEL_ENV",
+    "VERCEL_TARGET_ENV",
+    "VITE_CLAWHUB_DEPLOY_ENV",
+    "VITE_CONVEX_URL",
+  ]) {
+    vi.stubEnv(name, "");
+  }
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
 }
 
@@ -465,6 +484,29 @@ describe("skills.sh controlled hidden metadata canary", () => {
       });
     },
   );
+
+  it("hides a published entry when database discovery is disabled", async () => {
+    useEnvironment(TEST_ENV);
+    const t = convexTest(schema, modules);
+    const attempt = await prepareScannedCanary(t);
+    await completeScannedCanary(t, attempt, "clean");
+    await t.run(async (ctx) => {
+      const control = await ctx.db
+        .query("skillsShCatalogControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique();
+      if (!control) throw new Error("Missing skills.sh catalog control");
+      await ctx.db.patch(control._id, { discoveryEnabled: false });
+    });
+
+    await expect(
+      t.query(api.skillsShCatalog.getPublicEntry, {
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+      }),
+    ).resolves.toBeNull();
+  });
 
   it("omits verification artifacts when the scan request no longer matches the approved attempt", async () => {
     useEnvironment(TEST_ENV);

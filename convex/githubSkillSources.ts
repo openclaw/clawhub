@@ -13,6 +13,11 @@ import {
   isPublisherRoleAllowed,
   requirePublisherRole,
 } from "./lib/publishers";
+import {
+  assertGenericGitHubSkillSyncEnabled,
+  getRuntimeRolloutCapabilities,
+  isLegacyNvidiaSkillSource,
+} from "./lib/rolloutCapabilities";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 const GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE = 25;
@@ -102,7 +107,10 @@ export const listForPublisher = query({
       .query("githubSkillSources")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId))
       .collect();
-    const sortedSources = sources.sort((a, b) => b.updatedAt - a.updatedAt);
+    const visibleSources = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled
+      ? sources
+      : sources.filter((source) => isLegacyNvidiaSkillSource(source.repo));
+    const sortedSources = visibleSources.sort((a, b) => b.updatedAt - a.updatedAt);
     return await Promise.all(sortedSources.map((source) => toPublicGitHubSkillSource(ctx, source)));
   },
 });
@@ -144,7 +152,11 @@ export const listForManageableOfficialPublishers = query({
           .collect(),
       ),
     );
-    const sortedSources = sourceGroups.flat().sort((a, b) => b.updatedAt - a.updatedAt);
+    const sources = sourceGroups.flat();
+    const visibleSources = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled
+      ? sources
+      : sources.filter((source) => isLegacyNvidiaSkillSource(source.repo));
+    const sortedSources = visibleSources.sort((a, b) => b.updatedAt - a.updatedAt);
     return await Promise.all(sortedSources.map((source) => toPublicGitHubSkillSource(ctx, source)));
   },
 });
@@ -168,6 +180,7 @@ export async function deleteForPublisherHandler(
   if (!source || source.ownerPublisherId !== args.ownerPublisherId) {
     throw new ConvexError("GitHub source not found.");
   }
+  assertGenericGitHubSkillSyncEnabled(source.repo);
 
   const now = args.now ?? Date.now();
   const contents = await ctx.db

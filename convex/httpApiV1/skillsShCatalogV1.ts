@@ -4,6 +4,7 @@ import type { ActionCtx } from "../_generated/server";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
 import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
 import {
   getSkillsShCatalogFixture,
   type SkillsShCatalogFixtureRow,
@@ -402,6 +403,9 @@ async function storeArtifactFiles(
 }
 
 export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Request) {
+  if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+    return text("Not found", 404);
+  }
   const rate = await applyRateLimit(ctx, request, request.method === "GET" ? "read" : "write");
   if (!rate.ok) return rate.response;
   const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
@@ -597,6 +601,9 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
 }
 
 export async function skillsShCatalogPublicV1Handler(ctx: ActionCtx, request: Request) {
+  if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+    return text("Not found", 404);
+  }
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
   if (request.method !== "GET") return text("Not found", 404, rate.headers);

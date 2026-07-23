@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery, query } from "./functions";
+import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import {
   assertSkillsShCatalogControlMutationAllowed,
   assertSkillsShFixtureEnvironmentAllowed,
@@ -2535,8 +2536,7 @@ export const getPublicEntry = query({
     slug: v.string(),
   },
   handler: async (ctx, args) => {
-    const environment = getSkillsShFixtureEnvironmentPolicy();
-    if (!environment.allowed) return null;
+    if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) return null;
     const externalId = `${args.owner.trim().toLowerCase()}/${args.repo
       .trim()
       .toLowerCase()}/${args.slug.trim().toLowerCase()}`;
@@ -2551,6 +2551,7 @@ export const getPublicEntry = query({
       !control ||
       control.mode !== "staging-live" ||
       control.paused ||
+      !control.discoveryEnabled ||
       !control.publicVisibilityEnabled ||
       !entry?.publicVisible ||
       (entry.scanStatus !== "clean" && entry.scanStatus !== "suspicious")

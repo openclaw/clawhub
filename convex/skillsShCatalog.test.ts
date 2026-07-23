@@ -10,6 +10,7 @@ import schema from "./schema";
 const modules = import.meta.glob("./**/*.ts");
 
 const LOCAL_ENV = {
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
   CONVEX_CLOUD_URL: "http://127.0.0.1:3210",
 };
 
@@ -17,6 +18,7 @@ const TEST_ENV = {
   CLAWHUB_DEPLOYMENT_NAME: "academic-chihuahua-392",
   CLAWHUB_DISABLE_CRONS: "1",
   CLAWHUB_ENV: "test",
+  CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
   CONVEX_CLOUD_URL: "https://academic-chihuahua-392.convex.cloud",
 };
 
@@ -55,6 +57,23 @@ type RunSummary = Pick<
 };
 
 function useEnvironment(env: Record<string, string>) {
+  for (const name of [
+    "CLAWHUB_DEPLOYMENT_NAME",
+    "CLAWHUB_DISABLE_CRONS",
+    "CLAWHUB_ENV",
+    "CLAWHUB_PREVIEW",
+    "CLAWHUB_SKILLS_SH_ROLLOUT_MODE",
+    "CONVEX_CLOUD_URL",
+    "CONVEX_DEPLOYMENT",
+    "CONVEX_SITE_URL",
+    "DEV_AUTH_CONVEX_DEPLOYMENT",
+    "VERCEL_ENV",
+    "VERCEL_TARGET_ENV",
+    "VITE_CLAWHUB_DEPLOY_ENV",
+    "VITE_CONVEX_URL",
+  ]) {
+    vi.stubEnv(name, "");
+  }
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
 }
 

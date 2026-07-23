@@ -113,6 +113,26 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
+      - name: Require dark rollout modes
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          for name in \
+            CLAWHUB_SKILLS_SH_ROLLOUT_MODE \
+            CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE
+          do
+            value="$(bunx convex env get "$name" --prod 2>/dev/null || true)"
+            case "$value" in
+              ""|off) ;;
+              *)
+                echo "::error::$name must be missing or off before an ordinary production deploy"
+                exit 1
+                ;;
+            esac
+          done
+
       - name: Stamp Convex build SHA
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
@@ -148,6 +168,24 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bun run verify:convex-contract -- --prod
+
+      - name: Verify dark rollout capabilities
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e '
+            .environment == "production" and
+            .skillsSh.mode == "off" and
+            .skillsSh.runtimeEnabled == false and
+            .skillsSh.publicCatalogEnabled == false and
+            .skillsSh.scanPlanningEnabled == false and
+            .skillsSh.scanAdmissionEnabled == false and
+            .githubSkillSync.mode == "off" and
+            .githubSkillSync.selfServiceEnabled == false
+          ' <<< "$capabilities"
 
       - name: Wait for Vercel production deployment
         id: vercel
