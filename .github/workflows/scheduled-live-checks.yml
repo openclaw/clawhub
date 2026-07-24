@@ -36,6 +36,8 @@ jobs:
 
       - name: Run GitHub-backed skills live canary
         env:
+          CLAWHUB_ENV: test
+          CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE: test
           CLAWHUB_LIVE_GITHUB_CANARY: "1"
           CLAWHUB_LIVE_GITHUB_REPO: ${{ inputs.github-repo || 'openclaw/agent-skills' }}
           CLAWHUB_LIVE_GITHUB_SKILL: ${{ inputs.github-skill || 'handoff' }}

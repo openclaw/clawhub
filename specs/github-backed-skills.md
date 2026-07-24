@@ -104,6 +104,12 @@ The legacy `NVIDIA/skills` source keeps its existing production behavior.
 Generic GitHub Skill Sync remains dark unless the GitHub Skill Sync rollout
 capability is enabled.
 
+Automation must identify its runtime explicitly. The scheduled live canary runs
+the generic sync path against an in-memory database with `CLAWHUB_ENV=test` and
+the GitHub Skill Sync rollout in `test` mode. Production deploys stamp
+`CLAWHUB_ENV=production` before deploying Convex, while ordinary production
+deploys still require both external-skill rollout modes to remain `off`.
+
 When enabled, repository enrollment requires:
 
 - publisher-admin access

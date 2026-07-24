@@ -123,7 +123,18 @@ describe("GitHub-backed skills live canary", () => {
     async () => {
       const repo = process.env.CLAWHUB_LIVE_GITHUB_REPO?.trim() || "openclaw/agent-skills";
       const skillSlug = process.env.CLAWHUB_LIVE_GITHUB_SKILL?.trim() || "handoff";
+      const publisherHandle = repo.split("/", 1)[0]?.trim().toLowerCase() || "live";
       const { db, tables } = createDb({
+        publishers: [
+          {
+            _id: "publishers:live",
+            kind: "org",
+            handle: publisherHandle,
+            displayName: publisherHandle,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
         globalStats: [
           {
             _id: "globalStats:default",

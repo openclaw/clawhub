@@ -52,6 +52,7 @@ describe("production deploy workflow", () => {
     expect(convexSecretSteps).toEqual([
       "Check deploy configuration",
       "Require dark rollout modes",
+      "Stamp Convex runtime environment",
       "Stamp Convex build SHA",
       "Stamp Convex deploy time",
       "Deploy Convex",
@@ -79,6 +80,20 @@ describe("production deploy workflow", () => {
     expect(verifyDark?.run).toContain('.environment == "production"');
     expect(verifyDark?.run).toContain(".skillsSh.runtimeEnabled == false");
     expect(verifyDark?.run).toContain(".githubSkillSync.selfServiceEnabled == false");
+  });
+
+  it("stamps the production runtime identity before deploying Convex", async () => {
+    const workflow = parseYaml(await readFile(".github/workflows/deploy.yml", "utf8")) as {
+      jobs?: Record<string, WorkflowJob>;
+    };
+    const steps = workflow.jobs?.["deploy-production"]?.steps ?? [];
+    const stampIndex = steps.findIndex((step) => step.name === "Stamp Convex runtime environment");
+    const deployIndex = steps.findIndex((step) => step.name === "Deploy Convex");
+    const stamp = steps[stampIndex];
+
+    expect(stampIndex).toBeGreaterThanOrEqual(0);
+    expect(stampIndex).toBeLessThan(deployIndex);
+    expect(stamp?.run).toBe("bunx convex env set CLAWHUB_ENV production --prod");
   });
 
   it("publishes the initial promotions snapshot after backend deploy", async () => {
