@@ -70,9 +70,10 @@ incomplete GitHub-backed skills are not emitted.
 The skills feed has no legacy 1000-entry publication cap. Complete snapshots are
 published as immutable digest-addressed shards behind a signed root. While a
 snapshot still fits the legacy atomic representation, both forms are published
-at the same sequence; once it exceeds the atomic limit, `/v1/feeds/skills`
-redirects to `/v1/feeds/skills/root` instead of returning a silently truncated
-catalog.
+at the same sequence. Once it exceeds the atomic limit, ordinary unsigned
+requests retain the last complete compatibility representation; they are never
+redirected into the signed protocol implicitly. Explicit signed clients use the
+current shard root after activation.
 
 The promotions feed uses id `clawhub-promotions`, schema version `1`, and the
 `/v1/feeds/promotions` route. Entries are declarative promotion records, not
@@ -178,6 +179,14 @@ containing Convex document remains below its storage limit. Ready roots and
 their immutable shards are retained for 30 days. Lightweight descriptor rows
 are stored separately from shard payloads, so serving a root does not read the
 catalog's full payload bytes into one Convex transaction.
+
+Shard-only publications also build the current bounded query index before the
+root becomes visible. Because an atomic previous payload is not sufficient to
+derive an exact large-snapshot delta, the revision boundary is marked as a
+required reset: change clients receive the signed `resetRequired` response and
+then consume the current signed shard root. This avoids serving stale query or
+change state while keeping unsigned compatibility clients on their last
+complete atomic snapshot until activation.
 
 ### Activation boundary
 

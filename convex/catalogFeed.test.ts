@@ -389,7 +389,7 @@ describe("catalog feed projection", () => {
         return {
           withIndex: vi.fn((_index: string, apply?: (q: typeof builder) => unknown) => {
             apply?.(builder);
-            return {
+            const ordered = {
               order: vi.fn((direction: "asc" | "desc") => ({
                 first: vi.fn(async () =>
                   direction === "asc"
@@ -397,6 +397,9 @@ describe("catalog feed projection", () => {
                     : { sequence: 5, changeCount: 1, cumulativeChangeCount: 3 },
                 ),
               })),
+            };
+            return {
+              filter: vi.fn(() => ordered),
               unique: vi.fn(async () => ({
                 sequence: 4,
                 changeCount: 2,
@@ -839,7 +842,13 @@ describe("catalog feed projection", () => {
         .mocked(runMutation)
         .mock.calls.filter(([, args]) => "startOrdinal" in args)
         .map(([, args]) => [args.startOrdinal, (args.entries as unknown[]).length]),
-    ).toEqual([]);
+    ).toEqual([
+      [0, 250],
+      [250, 250],
+      [500, 250],
+      [750, 250],
+      [1000, 1],
+    ]);
     const skillShardPayloads = vi
       .mocked(runMutation)
       .mock.calls.filter(
@@ -910,6 +919,18 @@ describe("catalog feed projection", () => {
             args.feedId === CATALOG_FEED_ID && "description" in args && "entries" in args,
         ),
     ).toBe(false);
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.filter(([, args]) => "startOrdinal" in args)
+        .map(([, args]) => [args.startOrdinal, (args.entries as unknown[]).length]),
+    ).toEqual([
+      [0, 250],
+      [250, 250],
+      [500, 250],
+      [750, 250],
+      [1000, 1],
+    ]);
     const pluginShardPayloads = vi
       .mocked(runMutation)
       .mock.calls.filter(

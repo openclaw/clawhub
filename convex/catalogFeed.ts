@@ -503,6 +503,7 @@ export const storePublication = internalMutation({
       indexedEntryCount: 0,
       changeCount: changes.length,
       cumulativeChangeCount: (latestRevision?.cumulativeChangeCount ?? 0) + changes.length,
+      ...(latestRevision?.resetRequired ? { resetRequired: true } : {}),
       generatedAt: args.generatedAt,
       expiresAt: args.expiresAt,
       description: args.description,
@@ -695,11 +696,13 @@ async function readCatalogFeedChangeState(
     ctx.db
       .query("catalogFeedRevisions")
       .withIndex("by_feed_and_sequence", (q) => q.eq("feedId", feedId))
+      .filter((q) => q.neq(q.field("entryCount"), undefined))
       .order("asc")
       .first(),
     ctx.db
       .query("catalogFeedRevisions")
       .withIndex("by_feed_and_sequence", (q) => q.eq("feedId", feedId))
+      .filter((q) => q.neq(q.field("entryCount"), undefined))
       .order("desc")
       .first(),
   ]);
@@ -761,6 +764,7 @@ async function countCatalogFeedChanges(
           )
           .unique();
   if (!baseRevision || !targetRevision) return null;
+  if (targetRevision.resetRequired) return null;
 
   const baseCount =
     range.fromSequence === state.retainedFromSequence
@@ -1348,6 +1352,7 @@ export const publish = internalAction({
             expiresAt: args.expiresAt,
             description: shardInput.description,
             entryCount: shardInput.entries.length,
+            requiresProjection: shardInput.requestedSequence === undefined,
           },
         );
         const shards = await buildCatalogFeedShards({
@@ -1364,6 +1369,23 @@ export const publish = internalAction({
             publicationId: begun.publicationId,
             ...shard,
           });
+        }
+        if (shardInput.requestedSequence === undefined) {
+          for (
+            let startOrdinal = 0;
+            startOrdinal < shardInput.entries.length;
+            startOrdinal += CATALOG_FEED_QUERY_SCAN_PAGE_SIZE
+          ) {
+            await ctx.runMutation(internal.catalogFeed.appendCatalogFeedIndexBatch, {
+              feedId: shardInput.feedId,
+              sequence: begun.sequence,
+              startOrdinal,
+              entries: shardInput.entries.slice(
+                startOrdinal,
+                startOrdinal + CATALOG_FEED_QUERY_SCAN_PAGE_SIZE,
+              ),
+            });
+          }
         }
         const completed = await ctx.runMutation(
           internal.catalogFeedShards.finalizeCatalogFeedShardPublication,

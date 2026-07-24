@@ -94,18 +94,20 @@ describe("catalogFeedV1Handler", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
-  it("redirects oversized skills snapshots to the complete signed shard root", async () => {
-    ctx.runQuery
-      .mockResolvedValueOnce({ ...publication, feedId: "clawhub-official-skills", sequence: 4 })
-      .mockResolvedValueOnce({ feedId: "clawhub-official-skills", sequence: 5 });
+  it("keeps unsigned skills clients on the compatibility representation", async () => {
+    ctx.runQuery.mockResolvedValue({
+      ...publication,
+      feedId: "clawhub-official-skills",
+      sequence: 4,
+    });
 
     const response = await catalogSkillsFeedV1Handler(
       ctx as never,
       new Request("https://clawhub.ai/api/v1/feeds/skills"),
     );
 
-    expect(response.status).toBe(308);
-    expect(response.headers.get("location")).toBe("/v1/feeds/skills/root");
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+    expect(ctx.runQuery).toHaveBeenCalledTimes(1);
   });
 });
