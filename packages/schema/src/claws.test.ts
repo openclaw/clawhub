@@ -561,6 +561,18 @@ describe("Claw manifest contract", () => {
   });
 
   it.each([
+    ["npx", ["--cache", "safe@1.0.0", "unsafe@latest"]],
+    ["npm", ["exec", "--cache", "safe@1.0.0", "unsafe@latest"]],
+  ] as const)("fails closed on unrecognized %s options before the package", (command, args) => {
+    expect(
+      validateClawManifest({
+        ...fixture,
+        mcpServers: { unsafe: { command, args: [...args] } },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it.each([
     ["npm", ["run", "serve"]],
     ["bun", ["run", "serve"]],
     ["pnpm", ["run", "serve"]],

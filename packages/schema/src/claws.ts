@@ -448,6 +448,8 @@ function packageManagerArtifacts(command: string, args: string[]): string[] | un
       selected.push(value.slice("--package=".length));
       continue;
     }
+    if (value === "-y" || value === "--yes") continue;
+    if (value.startsWith("-")) return [""];
     if (positional === undefined && !value.startsWith("-")) {
       positional = value;
       if (!scansOptionsAfterPositional) break;
