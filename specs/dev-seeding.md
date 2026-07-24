@@ -55,11 +55,14 @@ ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five
 - `bun run seed:test:ranking-import -- --dataset <dataset.json> --backup-dir <empty-dir>
 --lane-run-id <run-id>` targets only `academic-chihuahua-392`. It verifies that the reservation,
   local checkout, and current `main` are the same revision, then atomically replaces the three
-  ranking tables from one ZIP. It preserves deterministic feature and skills.sh fixture rows as
-  overlays, replaces provenance only for the matching dataset version, and retains older import
-  metadata. It records version/checksum/count/time-range metadata and leaves an exact three-table
-  backup. Immediately before replacement it re-exports and hashes all three target tables and
-  revalidates the reservation, aborting without mutation if the lane or tables changed. Use
+  ranking tables from one ZIP. Before the baseline export it sets an expiring Test-only write lock;
+  skill and package daily-stat write funnels fail closed while that lock is active, and the command
+  verifies the lock again immediately before replacement. It preserves deterministic feature and
+  skills.sh fixture rows as overlays, replaces provenance only for the matching dataset version,
+  and retains older import metadata. It records version/checksum/count/time-range metadata and
+  leaves an exact three-table backup. Immediately before replacement it re-exports and hashes all
+  three target tables and revalidates the reservation, aborting without mutation if the lane, lock,
+  or tables changed. Use
   `--readback --dataset-version <version>` for
   24-hour/60-day proof, `--cleanup` with the original dataset to remove that version, or
   `--rollback --backup-dir <dir> --lane-run-id <run-id>` to restore the pre-import tables. Rollback

@@ -6,6 +6,8 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { RANKING_METRICS_IMPORT_LOCK_ENV } from "../../convex/lib/rankingMetricsImportLock";
 import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import { readSnapshotTable } from "../staging-seed/snapshotIo";
 import {
@@ -54,23 +56,43 @@ async function main() {
   }
 
   const dataset = parseRankingDataset(await readFile(options.dataset, "utf8"));
-  assertExclusiveTestLane(options.laneRunId, dataset.datasetVersion);
-  await assertEmptyDirectory(options.backupDir);
-  await mkdir(options.backupDir, { recursive: true });
-  const snapshot = `${options.backupDir}/test-before.zip`;
-  exportDeploymentSnapshot(options.deployment, snapshot);
-  const current = await readCurrentTestMetadata(snapshot);
-  await writeBackupManifest(
-    options.backupDir,
-    current.rankingMetricImports.length,
+  await withRankingMetricsWriteLock(
+    options.deployment,
+    options.laneRunId,
     dataset.datasetVersion,
-  );
+    async (lockValue) => {
+      await assertEmptyDirectory(options.backupDir);
+      await mkdir(options.backupDir, { recursive: true });
+      const snapshot = `${options.backupDir}/test-before.zip`;
+      exportDeploymentSnapshot(options.deployment, snapshot);
+      const current = await readCurrentTestMetadata(snapshot);
+      await writeBackupManifest(
+        options.backupDir,
+        current.rankingMetricImports.length,
+        dataset.datasetVersion,
+      );
 
-  if (options.mode === "cleanup") {
-    await applyCleanup(current, dataset, options.deployment, options.backupDir, options.laneRunId);
-  } else {
-    await applyImport(current, dataset, options.deployment, options.backupDir, options.laneRunId);
-  }
+      if (options.mode === "cleanup") {
+        await applyCleanup(
+          current,
+          dataset,
+          options.deployment,
+          options.backupDir,
+          options.laneRunId,
+          lockValue,
+        );
+      } else {
+        await applyImport(
+          current,
+          dataset,
+          options.deployment,
+          options.backupDir,
+          options.laneRunId,
+          lockValue,
+        );
+      }
+    },
+  );
 }
 
 async function applyImport(
@@ -79,6 +101,7 @@ async function applyImport(
   deployment: string,
   workDir: string,
   laneRunId: number,
+  lockValue: string,
 ) {
   const resolved = resolveTargets(dataset.targets, current);
   const importedAt = Date.now();
@@ -132,6 +155,7 @@ async function applyImport(
     deployment,
     laneRunId,
     dataset.datasetVersion,
+    lockValue,
   );
   const proof = await readbackSnapshot(
     deployment,
@@ -147,6 +171,7 @@ async function applyCleanup(
   deployment: string,
   workDir: string,
   laneRunId: number,
+  lockValue: string,
 ) {
   const snapshot = `${workDir}/test-before.zip`;
   const planned = await createPlannedTablePaths(workDir);
@@ -169,6 +194,7 @@ async function applyCleanup(
     deployment,
     laneRunId,
     dataset.datasetVersion,
+    lockValue,
   );
   await rm(cleanedSnapshot, { force: true });
   console.log(
@@ -544,7 +570,9 @@ async function importPlannedTables(
   deployment: string,
   laneRunId: number,
   datasetVersion: string,
+  lockValue: string,
 ) {
+  assertTestRankingWriteLock(deployment, lockValue);
   const baseline = `${workDir}/test-before.zip`;
   const preflight = `${workDir}/test-preflight.zip`;
   exportDeploymentSnapshot(deployment, preflight);
@@ -552,6 +580,7 @@ async function importPlannedTables(
   const archive = join(workDir, "ranking-tables.next.zip");
   createTableArchive(plannedRoot, archive);
   assertExclusiveTestLane(laneRunId, datasetVersion);
+  assertTestRankingWriteLock(deployment, lockValue);
   const expectedLogicalDigests = await rankingTableLogicalDigests(archive);
   await recordRollbackSourceState(workDir, expectedLogicalDigests);
   importArchive(deployment, archive);
@@ -682,30 +711,32 @@ async function restoreBackup(backupDir: string, deployment: string, laneRunId: n
   ) {
     throw new Error("Backup manifest is not for the permanent Test deployment");
   }
-  assertExclusiveTestLane(laneRunId, manifest.datasetVersion);
-  const snapshot = `${backupDir}/test-before.zip`;
-  const workDir = await mkdtemp(`${tmpdir()}/clawhub-ranking-rollback-`);
-  try {
-    const planned = await createPlannedTablePaths(workDir);
-    await Promise.all([
-      copySnapshotTable(snapshot, "skillDailyStats", planned.skillDailyStats),
-      copySnapshotTable(snapshot, "packageDailyStats", planned.packageDailyStats),
-      copySnapshotTable(snapshot, "rankingMetricImports", planned.rankingMetricImports),
-    ]);
-    const currentSnapshot = join(workDir, "test-current.zip");
-    exportDeploymentSnapshot(deployment, currentSnapshot);
-    await assertRankingTablesMatchLogicalDigests(
-      currentSnapshot,
-      manifest.expectedCurrentLogicalDigests,
-    );
-    const archive = join(workDir, "ranking-tables.rollback.zip");
-    createTableArchive(planned.root, archive);
-    assertExclusiveTestLane(laneRunId, manifest.datasetVersion);
-    importArchive(deployment, archive);
-    console.log(JSON.stringify({ ok: true, mode: "rollback", deployment, backupDir }, null, 2));
-  } finally {
-    await rm(workDir, { recursive: true, force: true });
-  }
+  const datasetVersion = manifest.datasetVersion;
+  const expectedCurrentLogicalDigests = manifest.expectedCurrentLogicalDigests;
+  await withRankingMetricsWriteLock(deployment, laneRunId, datasetVersion, async (lockValue) => {
+    const snapshot = `${backupDir}/test-before.zip`;
+    const workDir = await mkdtemp(`${tmpdir()}/clawhub-ranking-rollback-`);
+    try {
+      const planned = await createPlannedTablePaths(workDir);
+      await Promise.all([
+        copySnapshotTable(snapshot, "skillDailyStats", planned.skillDailyStats),
+        copySnapshotTable(snapshot, "packageDailyStats", planned.packageDailyStats),
+        copySnapshotTable(snapshot, "rankingMetricImports", planned.rankingMetricImports),
+      ]);
+      assertTestRankingWriteLock(deployment, lockValue);
+      const currentSnapshot = join(workDir, "test-current.zip");
+      exportDeploymentSnapshot(deployment, currentSnapshot);
+      await assertRankingTablesMatchLogicalDigests(currentSnapshot, expectedCurrentLogicalDigests);
+      const archive = join(workDir, "ranking-tables.rollback.zip");
+      createTableArchive(planned.root, archive);
+      assertExclusiveTestLane(laneRunId, datasetVersion);
+      assertTestRankingWriteLock(deployment, lockValue);
+      importArchive(deployment, archive);
+      console.log(JSON.stringify({ ok: true, mode: "rollback", deployment, backupDir }, null, 2));
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
 }
 
 function createTableArchive(root: string, archive: string) {
@@ -744,6 +775,79 @@ function assertExclusiveTestLane(runId: number, datasetVersion: string) {
     mainSha,
     now: Date.now(),
   });
+}
+
+async function withRankingMetricsWriteLock<Result>(
+  deployment: string,
+  laneRunId: number,
+  datasetVersion: string,
+  operation: (lockValue: string) => Promise<Result>,
+) {
+  assertTestDeployment(deployment);
+  assertExclusiveTestLane(laneRunId, datasetVersion);
+  const existing = readTestRankingWriteLock(deployment);
+  if (existing && !isExpiredRankingWriteLock(existing)) {
+    throw new Error("The permanent Test ranking metric write lock is already active");
+  }
+  const lockValue = `${datasetVersion}:${laneRunId}:${Date.now() + 6 * 60 * 60 * 1_000}`;
+  runConvexEnvCommand(deployment, ["set", RANKING_METRICS_IMPORT_LOCK_ENV, lockValue]);
+  try {
+    await delay(5_000);
+    assertExclusiveTestLane(laneRunId, datasetVersion);
+    assertTestRankingWriteLock(deployment, lockValue);
+    return await operation(lockValue);
+  } finally {
+    const current = readTestRankingWriteLock(deployment);
+    if (current !== lockValue) {
+      throw new Error("Refusing to clear a Test ranking metric write lock owned by another run");
+    }
+    runConvexEnvCommand(deployment, ["remove", RANKING_METRICS_IMPORT_LOCK_ENV]);
+  }
+}
+
+function assertTestRankingWriteLock(deployment: string, expected: string) {
+  const current = readTestRankingWriteLock(deployment);
+  const expiresAt = Number(expected.split(":").at(-1));
+  if (
+    current !== expected ||
+    !Number.isSafeInteger(expiresAt) ||
+    expiresAt - Date.now() < 30 * 60_000
+  ) {
+    throw new Error("The permanent Test ranking metric write lock is not safely active");
+  }
+}
+
+function isExpiredRankingWriteLock(value: string) {
+  const expiresAt = Number(value.split(":").at(-1));
+  return Number.isSafeInteger(expiresAt) && expiresAt <= Date.now();
+}
+
+function readTestRankingWriteLock(deployment: string) {
+  const result = spawnSync(
+    "bunx",
+    ["convex", "env", "get", RANKING_METRICS_IMPORT_LOCK_ENV, "--deployment", deployment],
+    { cwd: process.cwd(), encoding: "utf8", env: process.env },
+  );
+  const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
+  if (output.includes(`Environment variable "${RANKING_METRICS_IMPORT_LOCK_ENV}" not found`)) {
+    return "";
+  }
+  if (result.status !== 0 || !result.stdout.trim()) {
+    throw new Error("Failed to read the permanent Test ranking metric write lock");
+  }
+  return result.stdout.trim();
+}
+
+function runConvexEnvCommand(deployment: string, args: string[]) {
+  assertTestDeployment(deployment);
+  const result = spawnSync("bunx", ["convex", "env", ...args, "--deployment", deployment], {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: "ignore",
+  });
+  if (result.status !== 0) {
+    throw new Error("Failed to update the permanent Test ranking metric write lock");
+  }
 }
 
 export function validateExclusiveTestLane(input: {

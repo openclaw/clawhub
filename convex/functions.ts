@@ -24,6 +24,7 @@ import {
   adjustPublisherStatsForPackageChange,
   adjustPublisherStatsForSkillChange,
 } from "./lib/publisherStats";
+import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
 import {
   deleteSkillSearchDigests,
   extractValidatedDigestFields,
@@ -483,6 +484,14 @@ triggers.register("publishers", async (ctx, change) => {
   if (!shouldScheduleOwnerPublisherDigestSyncForPublisherChange(change)) return;
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
   await scheduleOwnerPublisherDigestSync(ctx, ownerPublisherId);
+});
+
+triggers.register("skillDailyStats", async () => {
+  assertRankingMetricWritesAllowed();
+});
+
+triggers.register("packageDailyStats", async () => {
+  assertRankingMetricWritesAllowed();
 });
 
 export const mutation = customMutation(rawMutation, customCtx(triggers.wrapDB));

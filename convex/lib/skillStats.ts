@@ -1,6 +1,7 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { toDayKey } from "./leaderboards";
+import { assertRankingMetricWritesAllowed } from "./rankingMetricsImportLock";
 
 type SkillStatDeltas = {
   downloads?: number;
@@ -118,6 +119,7 @@ export async function bumpDailySkillStats(
   const downloads = params.downloads ?? 0;
   const installs = params.installs ?? 0;
   if (downloads === 0 && installs === 0) return;
+  assertRankingMetricWritesAllowed();
 
   const day = toDayKey(params.now);
   const existing = await ctx.db
