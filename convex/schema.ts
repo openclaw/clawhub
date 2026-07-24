@@ -1,6 +1,7 @@
 import { authTables } from "@convex-dev/auth/server";
+import { createClawManifestSummarySchema } from "clawhub-schema";
 import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { type GenericValidator, v } from "convex/values";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -670,23 +671,15 @@ const pluginManifestSummaryValidator = v.object({
   ),
 });
 
-const clawManifestSummaryValidator = v.object({
-  schemaVersion: v.literal(1),
-  agent: v.object({
-    id: v.string(),
-    name: v.optional(v.string()),
-    description: v.optional(v.string()),
-  }),
-  workspace: v.object({
-    bootstrapFiles: v.array(v.string()),
-    fileCount: v.number(),
-  }),
-  packages: v.object({
-    skillCount: v.number(),
-    pluginCount: v.number(),
-  }),
-  mcpServerCount: v.number(),
-  cronJobCount: v.number(),
+const clawManifestSummaryValidator = createClawManifestSummarySchema<GenericValidator>({
+  literalOne: v.literal(1),
+  string: v.string(),
+  number: v.number(),
+  stringArray: v.array(v.string()),
+  // Convex validators cannot express string lengths; publication must validate with the shared schema.
+  boundedString: () => v.string(),
+  optional: (validator) => v.optional(validator),
+  object: (fields) => v.object(fields),
 });
 
 const packageVerificationValidator = v.optional(
@@ -1749,7 +1742,6 @@ const packageReleases = defineTable({
   normalizedBundleManifest: v.optional(v.any()),
   manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
-  extractedClawManifest: v.optional(v.any()),
   clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),

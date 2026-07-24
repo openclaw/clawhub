@@ -1,11 +1,16 @@
 # Experimental Claw packages
 
 ClawHub's Claw support implements the registry side of
-[OpenClaw RFC #27](https://github.com/openclaw/rfcs/pull/27). A Claw package
-describes one complete new agent using the grouped `CLAW.md` schema. ClawHub
-owns publication, ownership, discovery, package detail APIs, and hosted feed
-export. OpenClaw remains authoritative for local planning, consent, mutation,
-provenance, update, and removal.
+[OpenClaw RFC #27](https://github.com/openclaw/rfcs/pull/27) plus the experimental
+portable-core addendum in [RFC #48](https://github.com/openclaw/rfcs/pull/48). A
+Claw package describes one complete new agent using the grouped `CLAW.md`
+schema. ClawHub owns publication, ownership, discovery, package detail APIs,
+and hosted feed export. OpenClaw remains authoritative for local planning,
+consent, mutation, provenance, update, and removal.
+
+The YAML frontmatter is the portable manifest. The `CLAW.md` body remains
+documentation-only in the current contract and may be empty; it does not imply
+or replace any managed workspace file.
 
 The portable agent object carries only identity and purpose. Harness-specific
 settings live in package-local profiles addressed through opaque string
@@ -46,3 +51,20 @@ trimmed into validity, MCP package selectors must resolve exact versions,
 process environment keys follow OpenClaw's host-wide safety policy, and tool
 filters accept only exact names plus `*` wildcards. Registry validation must
 not accept a declaration that the applying OpenClaw client rejects.
+
+`OPENCLAW_CLAW_HOST_ENV_POLICY_V1` is the versioned cross-repository
+compatibility artifact for that environment policy. It records the exact
+OpenClaw source path, consumer commit, and source-file SHA-256; ClawHub derives
+its blocked-key lookups from the artifact and runs every key/prefix as a
+conformance vector. A policy change requires a new reviewed artifact version or
+an intentional update of the existing experimental v1 contract.
+
+Manifest rejections expose stable `claw_v1_*` diagnostic codes with phase
+`schema`, plus the field path and human-readable message. Consumers may branch
+on the code and phase; messages are explanatory text rather than identifiers.
+
+The durable version document stores only the bounded manifest summary. Its
+field structure is built from `createClawManifestSummarySchema` in both the
+public ArkType contract and the Convex storage validator. Convex cannot express
+the summary text-length caps, so publication must validate or derive summaries
+through the shared schema before storage.

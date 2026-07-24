@@ -1,8 +1,14 @@
 /* @vitest-environment node */
 
 import { ArkErrors } from "arktype";
-import { describe, expect, it } from "vitest";
-import { ClawManifestSummarySchema, summarizeClawManifest, validateClawManifest } from "./claws";
+import { describe, expect, it, vi } from "vitest";
+import {
+  CLAW_MANIFEST_VALIDATION_CODES,
+  ClawManifestSummarySchema,
+  OPENCLAW_CLAW_HOST_ENV_POLICY_V1,
+  summarizeClawManifest,
+  validateClawManifest,
+} from "./claws";
 import { PackageFamilySchema, PackagePublishMetadataSchema } from "./packages";
 
 const fixture = {
@@ -70,6 +76,16 @@ describe("Claw manifest contract", () => {
     });
   });
 
+  it("does not schedule timers while validating cron syntax", () => {
+    vi.useFakeTimers();
+    try {
+      expect(validateClawManifest(fixture).ok).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("accepts opaque string metadata for namespaced harness profile pointers", () => {
     const result = validateClawManifest({
       ...fixture,
@@ -85,6 +101,17 @@ describe("Claw manifest contract", () => {
       "openclaw.config": "profiles/openclaw.yml",
       "example.hint": "opaque-value",
     });
+  });
+
+  it.each(["", " openclaw.config "])("rejects non-canonical metadata key %j", (metadataKey) => {
+    const result = validateClawManifest({
+      ...fixture,
+      metadata: { [metadataKey]: "opaque-value" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain(`$.metadata.${metadataKey}`);
   });
 
   it("rejects non-string metadata values and harness policy embedded in the portable agent", () => {
@@ -132,6 +159,34 @@ describe("Claw manifest contract", () => {
 
   it("fails closed on unknown fields", () => {
     expect(validateClawManifest({ ...fixture, model: "gpt-5" }).ok).toBe(false);
+  });
+
+  it("returns stable v1 codes and schema phases for every rejection", () => {
+    const structural = validateClawManifest({ ...fixture, model: "gpt-5" });
+    expect(structural.ok).toBe(false);
+    if (structural.ok) return;
+    expect(structural.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "claw_v1_invalid_manifest_shape",
+          phase: "schema",
+          path: "$.model",
+        }),
+      ]),
+    );
+
+    const semantic = validateClawManifest({
+      ...fixture,
+      packages: [{ kind: "skill", source: "clawhub", ref: "demo", version: "latest" }],
+    });
+    expect(semantic.ok).toBe(false);
+    if (semantic.ok) return;
+    expect(semantic.issues).toContainEqual({
+      code: "claw_v1_invalid_package_version",
+      phase: "schema",
+      path: "$.packages.0.version",
+      message: "Must be an exact semantic version.",
+    });
   });
 
   it("rejects traversal, floating versions, and inline MCP values", () => {
@@ -211,6 +266,36 @@ describe("Claw manifest contract", () => {
     expect(hierarchy.ok).toBe(false);
   });
 
+  it.each(["\u007f", "\u0085"])(
+    "rejects Unicode control character U+%s in package paths",
+    (controlCharacter) => {
+      expect(
+        validateClawManifest({
+          ...fixture,
+          workspace: {
+            files: [{ source: `workspace/a${controlCharacter}.md`, path: "reference/a.md" }],
+          },
+        }).ok,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects workspace destinations that collide after Unicode case folding", () => {
+    const result = validateClawManifest({
+      ...fixture,
+      workspace: {
+        files: [
+          { source: "workspace/a.md", path: "Straße.md" },
+          { source: "workspace/b.md", path: "STRASSE.md" },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain("$.workspace.files.1.path");
+  });
+
   it("rejects credentials embedded in remote MCP URLs", () => {
     const result = validateClawManifest({
       ...fixture,
@@ -224,6 +309,8 @@ describe("Claw manifest contract", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.issues).toContainEqual({
+      code: CLAW_MANIFEST_VALIDATION_CODES.mcpUrlCredentials,
+      phase: "schema",
       path: "$.mcpServers.filings.url",
       message: "Must not contain embedded credentials or fragments.",
     });
@@ -385,6 +472,32 @@ describe("Claw manifest contract", () => {
     );
   });
 
+  it("enforces the versioned OpenClaw spawned-process environment policy", () => {
+    expect(OPENCLAW_CLAW_HOST_ENV_POLICY_V1.blockedKeys).toContain("CPP");
+    const blockedKeys = [
+      ...OPENCLAW_CLAW_HOST_ENV_POLICY_V1.blockedKeys,
+      ...OPENCLAW_CLAW_HOST_ENV_POLICY_V1.blockedPrefixes.map(
+        (prefix) => `${prefix}CLAW_CONFORMANCE_TEST`,
+      ),
+    ];
+    const result = validateClawManifest({
+      ...fixture,
+      mcpServers: {
+        local: {
+          command: "server",
+          env: Object.fromEntries(blockedKeys.map((key) => [key, `\${${key}}`] as const)),
+        },
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const rejectedKeys = result.issues
+      .filter((issue) => issue.code === CLAW_MANIFEST_VALIDATION_CODES.blockedEnvironmentKey)
+      .map((issue) => issue.path.replace("$.mcpServers.local.env.", ""));
+    expect(new Set(rejectedKeys)).toEqual(new Set(blockedKeys));
+  });
+
   it("rejects any floating package selected by an MCP runner", () => {
     expect(
       validateClawManifest({
@@ -417,14 +530,52 @@ describe("Claw manifest contract", () => {
         mcpServers: { safe: { command: "npm", args: ["exec", "safe@1.0.0"] } },
       }).ok,
     ).toBe(true);
+  });
+
+  it("checks npm exec package selectors that follow the inferred command", () => {
+    const result = validateClawManifest({
+      ...fixture,
+      mcpServers: {
+        unsafe: {
+          command: "npm",
+          args: ["exec", "safe@1.0.0", "--package=unsafe@latest"],
+        },
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((issue) => issue.path)).toContain("$.mcpServers.unsafe.args");
 
     expect(
       validateClawManifest({
         ...fixture,
-        mcpServers: { unsafe: { command: "bun", args: ["run", "server"] } },
+        mcpServers: {
+          safe: {
+            command: "npm",
+            args: ["exec", "safe@1.0.0", "--", "--package=child-argument"],
+          },
+        },
       }).ok,
-    ).toBe(false);
+    ).toBe(true);
   });
+
+  it.each([
+    ["npm", ["run", "serve"]],
+    ["bun", ["run", "serve"]],
+    ["pnpm", ["run", "serve"]],
+    ["yarn", ["run", "serve"]],
+  ] as const)(
+    "does not classify non-download %s commands as package selectors",
+    (command, args) => {
+      expect(
+        validateClawManifest({
+          ...fixture,
+          mcpServers: { local: { command, args: [...args] } },
+        }).ok,
+      ).toBe(true);
+    },
+  );
 
   it("keeps public manifest summaries bounded", () => {
     const result = validateClawManifest({
