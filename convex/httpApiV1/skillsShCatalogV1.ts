@@ -28,6 +28,29 @@ const internalRefs = internal as unknown as {
     startFixtureRunInternal: unknown;
     startStagingLiveRunInternal: unknown;
   };
+  skillsShMirror: {
+    cancelRunInternal: unknown;
+    claimBatchLeaseInternal: unknown;
+    configureInternal: unknown;
+    getByExternalIdInternal: unknown;
+    getClassificationStatesInternal: unknown;
+    getDetailByExternalIdInternal: unknown;
+    getIsolationInternal: unknown;
+    getReplayRowsInternal: unknown;
+    getRunInternal: unknown;
+    getSourceCaptureSummaryInternal: unknown;
+    getStatusInternal: unknown;
+    listDetailsPageInternal: unknown;
+    listDigestsPageInternal: unknown;
+    listConflictsByRunInternal: unknown;
+    listFacetsPageInternal: unknown;
+    processBatchInternal: unknown;
+    reconcileBatchInternal: unknown;
+    releaseBatchLeaseInternal: unknown;
+    setPausedInternal: unknown;
+    startRunInternal: unknown;
+    storeSourcePageInternal: unknown;
+  };
 };
 const MAX_GITHUB_OWNER_RESOLUTIONS = 500;
 const GITHUB_OWNER_RESOLUTION_CONCURRENCY = 8;
@@ -89,6 +112,19 @@ function requireBoolean(record: Record<string, unknown>, key: string) {
   const value = record[key];
   if (typeof value !== "boolean") throw new Error(`${key} is required`);
   return value;
+}
+
+function requireStringArray(record: Record<string, unknown>, key: string, maxItems: number) {
+  const value = record[key];
+  if (
+    !Array.isArray(value) ||
+    value.length < 1 ||
+    value.length > maxItems ||
+    value.some((item) => typeof item !== "string" || !item.trim())
+  ) {
+    throw new Error(`${key} must contain between 1 and ${maxItems} strings`);
+  }
+  return value as string[];
 }
 
 async function sha256Hex(bytes: Uint8Array) {
@@ -426,6 +462,250 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
     const body = asRecord(await request.json());
     if (!body) return text("Invalid JSON", 400, rate.headers);
     const operation = requireString(body, "operation");
+    if (operation === "mirror-status") {
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.getStatusInternal, {}),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-isolation") {
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.getIsolationInternal, {}),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-run") {
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.getRunInternal, {
+          runId: requireString(body, "runId"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-conflicts") {
+      const conflicts = await runQueryRef(
+        ctx,
+        internalRefs.skillsShMirror.listConflictsByRunInternal,
+        {
+          runId: requireString(body, "runId"),
+          limit: requireNumber(body, "limit"),
+        },
+      );
+      return json({ conflicts }, 200, rate.headers);
+    }
+    if (operation === "mirror-read") {
+      const externalId = requireString(body, "externalId");
+      const [digest, detail] = await Promise.all([
+        runQueryRef(ctx, internalRefs.skillsShMirror.getByExternalIdInternal, { externalId }),
+        runQueryRef(ctx, internalRefs.skillsShMirror.getDetailByExternalIdInternal, {
+          externalId,
+        }),
+      ]);
+      return json({ digest, detail }, 200, rate.headers);
+    }
+    if (operation === "mirror-classification-states") {
+      const states = await runQueryRef(
+        ctx,
+        internalRefs.skillsShMirror.getClassificationStatesInternal,
+        {
+          externalIds: requireStringArray(body, "externalIds", 50),
+        },
+      );
+      return json({ states }, 200, rate.headers);
+    }
+    if (operation === "mirror-replay-rows") {
+      const rows = await runQueryRef(ctx, internalRefs.skillsShMirror.getReplayRowsInternal, {
+        externalIds: requireStringArray(body, "externalIds", 50),
+      });
+      return json({ rows }, 200, rate.headers);
+    }
+    if (operation === "mirror-source-summary") {
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.getSourceCaptureSummaryInternal, {
+          snapshotHash: requireString(body, "snapshotHash"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-page") {
+      const cursor =
+        body.cursor === null || typeof body.cursor === "string"
+          ? body.cursor
+          : (() => {
+              throw new Error("cursor is required");
+            })();
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.listDigestsPageInternal, {
+          cursor,
+          limit: requireNumber(body, "limit"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-detail-page") {
+      const cursor =
+        body.cursor === null || typeof body.cursor === "string"
+          ? body.cursor
+          : (() => {
+              throw new Error("cursor is required");
+            })();
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.listDetailsPageInternal, {
+          cursor,
+          limit: requireNumber(body, "limit"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-facet-page") {
+      const cursor =
+        body.cursor === null || typeof body.cursor === "string"
+          ? body.cursor
+          : (() => {
+              throw new Error("cursor is required");
+            })();
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.listFacetsPageInternal, {
+          cursor,
+          limit: requireNumber(body, "limit"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-configure") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.configureInternal, {
+          actor: auth.user.handle,
+          reason: requireString(body, "reason"),
+          confirm: requireString(body, "confirm"),
+          enabled: requireBoolean(body, "enabled"),
+          maxRowsPerRun: requireNumber(body, "maxRowsPerRun"),
+          maxRowsPerBatch: requireNumber(body, "maxRowsPerBatch"),
+          maxDetailBytes: requireNumber(body, "maxDetailBytes"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-start") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.startRunInternal, {
+          actor: auth.user.handle,
+          reason: requireString(body, "reason"),
+          snapshotId: requireString(body, "snapshotId"),
+          ...(typeof body.sourceSnapshotHash === "string"
+            ? { sourceSnapshotHash: requireString(body, "sourceSnapshotHash") }
+            : {}),
+          ...(typeof body.sourceCaptureWrites === "number"
+            ? { sourceCaptureWrites: requireNumber(body, "sourceCaptureWrites") }
+            : {}),
+          sourceTotal: requireNumber(body, "sourceTotal"),
+          sourcePageSize: requireNumber(body, "sourcePageSize"),
+          sourceMeasuredAt: requireString(body, "sourceMeasuredAt"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-source-page-store") {
+      if (!Array.isArray(body.rows)) throw new Error("rows is required");
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.storeSourcePageInternal, {
+          snapshotHash: requireString(body, "snapshotHash"),
+          page: requireNumber(body, "page"),
+          sourceTotal: requireNumber(body, "sourceTotal"),
+          pageLength: requireNumber(body, "pageLength"),
+          hasMore: requireBoolean(body, "hasMore"),
+          identityHash: requireString(body, "identityHash"),
+          contentHash: requireString(body, "contentHash"),
+          sourceBytes: requireNumber(body, "sourceBytes"),
+          serializedBytes: requireNumber(body, "serializedBytes"),
+          rows: body.rows,
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-batch") {
+      if (!Array.isArray(body.rows)) throw new Error("rows is required");
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.processBatchInternal, {
+          runId: requireString(body, "runId"),
+          leaseToken: requireString(body, "leaseToken"),
+          page: requireNumber(body, "page"),
+          offset: requireNumber(body, "offset"),
+          pageLength: requireNumber(body, "pageLength"),
+          hasMore: requireBoolean(body, "hasMore"),
+          sourceTotal: requireNumber(body, "sourceTotal"),
+          sourceRequests: requireNumber(body, "sourceRequests"),
+          sourceBytes: requireNumber(body, "sourceBytes"),
+          rows: body.rows,
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-batch-claim" || operation === "mirror-batch-release") {
+      const args = {
+        runId: requireString(body, "runId"),
+        page: requireNumber(body, "page"),
+        offset: requireNumber(body, "offset"),
+        leaseToken: requireString(body, "leaseToken"),
+      };
+      return json(
+        await runMutationRef(
+          ctx,
+          operation === "mirror-batch-claim"
+            ? internalRefs.skillsShMirror.claimBatchLeaseInternal
+            : internalRefs.skillsShMirror.releaseBatchLeaseInternal,
+          args,
+        ),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-pause") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.setPausedInternal, {
+          runId: requireString(body, "runId"),
+          paused: requireBoolean(body, "paused"),
+          actor: auth.user.handle,
+          reason: requireString(body, "reason"),
+          confirm: requireString(body, "confirm"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-cancel") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.cancelRunInternal, {
+          runId: requireString(body, "runId"),
+          actor: auth.user.handle,
+          reason: requireString(body, "reason"),
+          confirm: requireString(body, "confirm"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-reconcile") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.reconcileBatchInternal, {
+          runId: requireString(body, "runId"),
+          limit: requireNumber(body, "limit"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
     if (operation === "verify-canary") {
       return json(await verifyControlledCanaryGitHubSource({}), 200, rate.headers);
     }

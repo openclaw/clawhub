@@ -1574,7 +1574,7 @@ function makeSkillLineageCycleDb(options?: { includeMergeAudit?: boolean }) {
   const sourceSkill = {
     _id: "skills:source",
     slug: "archive-graincrawl",
-    canonicalSkillId: "skills:final",
+    canonicalSkillId: "skills:source",
     forkOf: {
       skillId: "skills:final",
       kind: "duplicate",
@@ -1629,17 +1629,28 @@ describe("maintenance skill lineage cycle repair", () => {
   it("recognizes the exact malformed merge pair from its audit history", async () => {
     const fixture = makeSkillLineageCycleDb();
 
-    const result = await inspectSkillLineageCycleInternalHandler(
+    const finalResult = await inspectSkillLineageCycleInternalHandler(
       fixture as never,
       fixture.finalSkill._id as never,
     );
+    const sourceResult = await inspectSkillLineageCycleInternalHandler(
+      fixture as never,
+      fixture.sourceSkill._id as never,
+    );
 
-    expect(result).toEqual({
+    expect(finalResult).toEqual({
       status: "repairable",
       skillId: "skills:final",
       slug: "graincrawl",
       sourceSkillId: "skills:source",
       sourceSlug: "archive-graincrawl",
+    });
+    expect(sourceResult).toEqual({
+      status: "paired_source",
+      skillId: "skills:source",
+      slug: "archive-graincrawl",
+      finalSkillId: "skills:final",
+      finalSlug: "graincrawl",
     });
   });
 
@@ -1652,16 +1663,16 @@ describe("maintenance skill lineage cycle repair", () => {
     );
 
     expect(result).toEqual({
-      status: "ambiguous",
+      status: "uncertain",
       skillId: "skills:final",
       slug: "graincrawl",
       reason: "missing_matching_merge_audit",
-      sourceSkillId: "skills:source",
-      sourceSlug: "archive-graincrawl",
+      linkedSkillId: "skills:source",
+      linkedSlug: "archive-graincrawl",
     });
   });
 
-  it("clears only the final skill lineage and writes an audit record", async () => {
+  it("repairs both sides of the pair and writes their prior state to the audit", async () => {
     const fixture = makeSkillLineageCycleDb();
 
     const result = await applySkillLineageCycleRepairInternalHandler(fixture as never, {
@@ -1670,12 +1681,19 @@ describe("maintenance skill lineage cycle repair", () => {
     });
 
     expect(result).toEqual({ repaired: true });
-    expect(fixture.patch).toHaveBeenCalledTimes(1);
+    expect(fixture.patch).toHaveBeenCalledTimes(2);
     expect(fixture.patch).toHaveBeenCalledWith(
       "skills:final",
       expect.objectContaining({
         canonicalSkillId: undefined,
         forkOf: undefined,
+      }),
+    );
+    expect(fixture.patch).toHaveBeenCalledWith(
+      "skills:source",
+      expect.objectContaining({
+        canonicalSkillId: "skills:final",
+        forkOf: fixture.sourceSkill.forkOf,
       }),
     );
     expect(fixture.insert).toHaveBeenCalledWith(
@@ -1686,24 +1704,38 @@ describe("maintenance skill lineage cycle repair", () => {
         targetId: "skills:final",
         metadata: expect.objectContaining({
           sourceSkillId: "skills:source",
-          previousCanonicalSkillId: "skills:source",
-          previousForkOf: fixture.finalSkill.forkOf,
+          previousFinalCanonicalSkillId: "skills:source",
+          previousFinalForkOf: fixture.finalSkill.forkOf,
+          previousSourceCanonicalSkillId: "skills:source",
+          previousSourceForkOf: fixture.sourceSkill.forkOf,
         }),
       }),
     );
   });
 
   it("defaults to preview and reports resumable progress", async () => {
-    const runQuery = vi.fn(async (endpoint: unknown) => {
+    const runQuery = vi.fn(async (endpoint: unknown, args?: { skillId?: string }) => {
       if (endpoint === internal.maintenance.getSkillLineageCycleRepairPageInternal) {
         return {
-          items: [{ skillId: "skills:final", slug: "graincrawl" }],
+          items: [
+            { skillId: "skills:final", slug: "graincrawl" },
+            { skillId: "skills:source", slug: "archive-graincrawl" },
+          ],
           scanned: 200,
           cursor: "next-page",
           isDone: false,
         };
       }
       if (endpoint === internal.maintenance.inspectSkillLineageCycleInternal) {
+        if (args?.skillId === "skills:source") {
+          return {
+            status: "paired_source",
+            skillId: "skills:source",
+            slug: "archive-graincrawl",
+            finalSkillId: "skills:final",
+            finalSlug: "graincrawl",
+          };
+        }
         return {
           status: "repairable",
           skillId: "skills:final",
@@ -1729,9 +1761,10 @@ describe("maintenance skill lineage cycle repair", () => {
       isDone: false,
       stats: {
         skillsScanned: 200,
-        selfReferencesFound: 1,
+        selfReferencesFound: 2,
         repairable: 1,
-        ambiguous: 0,
+        pairedSources: 1,
+        uncertain: 0,
         repaired: 0,
         changedBeforeApply: 0,
       },
@@ -1742,6 +1775,13 @@ describe("maintenance skill lineage cycle repair", () => {
           slug: "graincrawl",
           sourceSkillId: "skills:source",
           sourceSlug: "archive-graincrawl",
+        },
+        {
+          status: "paired_source",
+          skillId: "skills:source",
+          slug: "archive-graincrawl",
+          finalSkillId: "skills:final",
+          finalSlug: "graincrawl",
         },
       ],
     });

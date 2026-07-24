@@ -35,6 +35,7 @@ import {
   normalizeSkillSearchText,
 } from "./lib/skillSearchDigest";
 import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
+import { readCanonicalStat } from "./lib/skillStats";
 
 type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
@@ -75,6 +76,7 @@ async function withOfficialOwnerInfo(ctx: Pick<QueryCtx, "db">, ownerInfo: Owner
 
 type SkillSearchEntry = {
   embeddingId?: Id<"skillEmbeddings">;
+  nativeDownloads: number;
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   version: Doc<"skillVersions"> | null;
   ownerHandle: string | null;
@@ -89,7 +91,7 @@ type SearchResult = SkillSearchEntry &
   SearchMatch & {
     score: number;
   };
-type PublicSearchResult = SkillSearchEntry & {
+type PublicSearchResult = Omit<SkillSearchEntry, "nativeDownloads"> & {
   score: number;
 };
 
@@ -239,7 +241,7 @@ function compareSkillTrustAndUsage(a: SkillSearchEntry, b: SkillSearchEntry) {
       { stars: a.skill.stats.stars, installsAllTime: a.skill.stats.installs },
       { stars: b.skill.stats.stars, installsAllTime: b.skill.stats.installs },
     ) ||
-    (b.skill.stats.downloads ?? 0) - (a.skill.stats.downloads ?? 0)
+    b.nativeDownloads - a.nativeDownloads
   );
 }
 
@@ -508,7 +510,9 @@ export const searchSkills: ReturnType<typeof action> = action({
           b.skill.updatedAt - a.skill.updatedAt,
       )
       .slice(0, limit);
-    return rankedMatches.map(({ rankTier: _rankTier, ...entry }) => entry);
+    return rankedMatches.map(
+      ({ nativeDownloads: _nativeDownloads, rankTier: _rankTier, ...entry }) => entry,
+    );
   },
 });
 
@@ -541,6 +545,7 @@ export const getExactSkillSlugMatch = internalQuery({
         if (!publicSkill || !resolved.owner) return null;
 
         const entry: SkillSearchEntry = {
+          nativeDownloads: readCanonicalStat(skill, "downloads"),
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
           ownerHandle: resolved.ownerHandle,
@@ -851,6 +856,7 @@ export const directPrefixSkillMatches = internalQuery({
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
         return {
+          nativeDownloads: readCanonicalStat(skill, "downloads"),
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
           ownerHandle: resolved.ownerHandle,
@@ -920,6 +926,7 @@ export const hydrateResults = internalQuery({
         if (!publicSkill) return null;
         return {
           embeddingId,
+          nativeDownloads: readCanonicalStat(skill, "downloads"),
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
           ownerHandle: resolved.ownerHandle,
@@ -1093,6 +1100,7 @@ export const lexicalFallbackSkills = internalQuery({
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill) return null;
         return {
+          nativeDownloads: readCanonicalStat(skill, "downloads"),
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
           ownerHandle: resolved.ownerHandle,

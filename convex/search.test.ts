@@ -2014,6 +2014,54 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
   });
 
+  it("keeps skills.sh installs out of the native download ranking tie-breaker", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const indexed = {
+      nativeDownloads: 10,
+      skill: makePublicSkill({
+        id: "skills:indexed",
+        slug: "tool-indexed",
+        displayName: "Tool",
+        downloads: 10_010,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const native = {
+      nativeDownloads: 20,
+      skill: makePublicSkill({
+        id: "skills:native",
+        slug: "tool-native",
+        displayName: "Tool",
+        downloads: 20,
+        installs: 0,
+        stars: 0,
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([indexed, native]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([]),
+        runQuery,
+      },
+      { query: "tool", limit: 2 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-native", "tool-indexed"]);
+    expect(result[0]).not.toHaveProperty("nativeDownloads");
+  });
+
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
     // Derive digest from makeSkillDoc so it stays in sync with schema changes.
     const skillDoc = makeSkillDoc({

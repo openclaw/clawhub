@@ -172,9 +172,7 @@ async function main() {
   const output = outputIndex >= 0 ? process.argv[outputIndex + 1] : undefined;
   const base = baseIndex >= 0 ? process.argv[baseIndex + 1] : undefined;
   const designSystemStyles =
-    stylesIndex >= 0
-      ? process.argv[stylesIndex + 1]
-      : "node_modules/@openclaw/design-system/styles";
+    stylesIndex >= 0 ? process.argv[stylesIndex + 1] : "node_modules/@openclaw/carapace/styles";
   if (!output || (!base && !workingTree) || !designSystemStyles) {
     throw new Error(
       "usage: source-check.ts (--base <sha> | --working-tree) --output <path> [--design-system-styles <dir>] [--fail-on-findings]",

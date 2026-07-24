@@ -58,6 +58,8 @@ function makeSkillDoc(overrides: Record<string, unknown> = {}) {
     statsStars: 5,
     statsInstallsCurrent: 10,
     statsInstallsAllTime: 100,
+    statsSkillsShInstalls: 8,
+    statsGithubStars: 250,
     stats: {
       downloads: 42,
       installsCurrent: 10,
@@ -88,6 +90,8 @@ describe("extractDigestFields", () => {
     expect(digest.statsStars).toBe(5);
     expect(digest.statsInstallsCurrent).toBe(10);
     expect(digest.statsInstallsAllTime).toBe(100);
+    expect(digest.statsSkillsShInstalls).toBe(8);
+    expect(digest.statsGithubStars).toBe(250);
     expect(digest.recommendedScore).toBe(
       computeRecommendationScore({ downloads: 42, installs: 100, stars: 5 }),
     );

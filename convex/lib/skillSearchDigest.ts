@@ -47,6 +47,8 @@ const SHARED_KEYS = [
   "statsStars",
   "statsInstallsCurrent",
   "statsInstallsAllTime",
+  "statsSkillsShInstalls",
+  "statsGithubStars",
   "softDeletedAt",
   "moderationStatus",
   "moderationFlags",

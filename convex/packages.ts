@@ -108,6 +108,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
+import { assertRankingMetricWritesAllowed } from "./lib/rankingMetricsImportLock";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
@@ -4557,6 +4558,7 @@ async function bumpDailyPackageStats(
   },
 ) {
   if (params.downloads === 0 && params.installs === 0) return;
+  assertRankingMetricWritesAllowed();
 
   const existing = await ctx.db
     .query("packageDailyStats")

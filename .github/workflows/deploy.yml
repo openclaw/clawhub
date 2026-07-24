@@ -133,6 +133,12 @@ jobs:
             esac
           done
 
+      - name: Stamp Convex runtime environment
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex env set CLAWHUB_ENV production --prod
+
       - name: Stamp Convex build SHA
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:

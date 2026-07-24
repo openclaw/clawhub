@@ -156,7 +156,7 @@ const DEFAULT_PUBLISHER_BIO = "Publisher on Clawhub.";
 const PROFILE_CATALOG_SORT_OPTIONS = [
   { value: "downloads", label: "Most downloaded" },
   { value: "recent", label: "Recent" },
-  { value: "stars", label: "Stars" },
+  { value: "stars", label: "Bookmarks" },
 ] as const;
 
 const DEFAULT_PROFILE_CATALOG_SORT: ProfileCatalogSort = "downloads";
@@ -193,7 +193,7 @@ function buildCatalogTabOptions(publisher: PublicPublisherProfileItem) {
   if (publisher.kind === "user") {
     options.push({
       value: "stars",
-      label: "Starred",
+      label: "Bookmarks",
       count:
         publisher.starredCount === undefined
           ? undefined
@@ -285,7 +285,7 @@ export function buildPublisherStatCards(
     {
       key: "stars",
       value: formatCompactStat(publisher.stats.stars),
-      label: "stars",
+      label: "bookmarks",
       icon: Star,
     },
   ];
@@ -954,7 +954,7 @@ export function PublisherProfilePage({
                       : catalogSearch.trim().length > 0
                         ? "No matching items"
                         : catalogTab === "stars"
-                          ? "No starred items yet"
+                          ? "No bookmarks yet"
                           : catalogTab === "plugins"
                             ? "No published plugins yet"
                             : "No published skills yet"

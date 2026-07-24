@@ -1,0 +1,776 @@
+#!/usr/bin/env bun
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import {
+  SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS,
+  parseSkillsShMirrorProofSnapshotId,
+} from "../../server/skillsShCatalogSource";
+import {
+  buildMirrorStepRequest,
+  buildMirrorProofHeaders,
+  capturedMirrorSourceRunId,
+  findRecoverableMirrorRun,
+  mirrorRateLimitRetryDelayMs,
+  reconcileMirrorRunToCompletion,
+  resolveCompletedLiveMirrorRun,
+  mirrorRunFromPayload,
+  mirrorRunAccounting,
+  type CompletedLiveMirrorRun,
+  type RecoverableMirrorRun,
+} from "./prove-mirror-request";
+
+const OUTPUT_PATH = resolve("proof/claw-563/skills-sh-mirror-test-proof.json");
+const PROJECTED_SCALE = 700_000;
+const MAX_RATE_LIMIT_RETRIES_PER_RUN = 30;
+const MAX_RATE_LIMIT_WAIT_MS_PER_RUN = 30 * 60 * 1_000;
+const MAX_DETAIL_PAGE_ROWS = 50;
+
+function requireEnv(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+const targetUrl = requireEnv("CLAWHUB_TEST_MIRROR_GATE_URL");
+const operatorAuthorization = requireEnv("CLAWHUB_TEST_OPERATOR_TOKEN");
+const vercelAutomationBypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
+
+async function callRaw(body: Record<string, unknown>) {
+  const startedAt = performance.now();
+  const response = await fetch(targetUrl, {
+    method: "POST",
+    headers: buildMirrorProofHeaders(operatorAuthorization, vercelAutomationBypassSecret),
+    body: JSON.stringify(body),
+  });
+  const text = await response.text();
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    payload = { text };
+  }
+  return {
+    ok: response.ok,
+    status: response.status,
+    elapsedMs: performance.now() - startedAt,
+    payload,
+    retryAfter: response.headers.get("retry-after"),
+  };
+}
+
+function callFailure(body: Record<string, unknown>, result: Awaited<ReturnType<typeof callRaw>>) {
+  return new Error(
+    `${String(body.operation)} returned HTTP ${result.status}: ${JSON.stringify(result.payload)}`,
+  );
+}
+
+async function call(body: Record<string, unknown>) {
+  const result = await callRaw(body);
+  if (!result.ok) throw callFailure(body, result);
+  return result;
+}
+
+function requireRunId(payload: Record<string, unknown>) {
+  if (typeof payload.runId !== "string") throw new Error("mirror start did not return runId");
+  return payload.runId;
+}
+
+async function runMirror(
+  reason: string,
+  provePauseResume: boolean,
+  recoverableRun: RecoverableMirrorRun | null = null,
+  capturedSource: CapturedMirrorSource | null = null,
+) {
+  const attemptStartedAt = Date.now();
+  const start = recoverableRun
+    ? { payload: recoverableRun }
+    : capturedSource
+      ? await call({
+          operation: "start-replay",
+          reason,
+          capturedRunId: capturedSource.capturedRunId,
+          sourceTotal: capturedSource.externalIds.length,
+          sourcePageSize: capturedSource.sourcePageSize,
+          sourceMeasuredAt: capturedSource.sourceMeasuredAt,
+        })
+      : await call({ operation: "start", reason });
+  const startRun = mirrorRunFromPayload(
+    start.payload,
+    recoverableRun ? "recover" : capturedSource ? "start-replay" : "start",
+  );
+  const startPayload = start.payload as Record<string, unknown>;
+  const runId = requireRunId(startRun);
+  const proofSource =
+    capturedSource === null
+      ? parseSkillsShMirrorProofSnapshotId(String(startRun.snapshotId))
+      : null;
+  let page = recoverableRun?.page ?? 0;
+  let offset = recoverableRun?.offset ?? 0;
+  let steps = 0;
+  let pauseProof: Record<string, unknown> | null = null;
+  let run = startRun;
+  let recovery: Record<string, unknown> | null = null;
+  let rateLimitRetries = 0;
+  let rateLimitWaitMs = 0;
+  if (recoverableRun) {
+    recovery = {
+      runId,
+      status: recoverableRun.status,
+      cursor: { page, offset },
+      interruptedAtLeastOnce: true,
+    };
+    if (recoverableRun.status === "paused") {
+      run = (
+        await call({
+          operation: "resume",
+          runId,
+          reason: "CLAW-563 interrupted run recovery",
+        })
+      ).payload;
+    }
+  }
+  while (run.status === "running") {
+    const stepRequest = buildMirrorStepRequest({
+      runId,
+      page,
+      offset,
+      capturedSource,
+    });
+    const step = await callRaw(stepRequest);
+    if (!step.ok) {
+      const delayMs = mirrorRateLimitRetryDelayMs(step.status, step.retryAfter, rateLimitRetries);
+      if (
+        delayMs === null ||
+        rateLimitRetries >= MAX_RATE_LIMIT_RETRIES_PER_RUN ||
+        rateLimitWaitMs + delayMs > MAX_RATE_LIMIT_WAIT_MS_PER_RUN
+      ) {
+        throw callFailure(stepRequest, step);
+      }
+      rateLimitRetries += 1;
+      rateLimitWaitMs += delayMs;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      continue;
+    }
+    run = mirrorRunFromPayload(step.payload, String(stepRequest.operation));
+    steps += 1;
+    if (typeof run.page !== "number" || typeof run.offset !== "number") {
+      throw new Error("mirror step did not return a durable cursor");
+    }
+    page = run.page;
+    offset = run.offset;
+    if (provePauseResume && steps === 1) {
+      const pause = await call({
+        operation: "pause",
+        runId,
+        reason: "CLAW-563 deliberate pause proof",
+      });
+      const blocked = await callRaw(
+        buildMirrorStepRequest({
+          runId,
+          page,
+          offset,
+          capturedSource,
+        }),
+      );
+      if (blocked.ok || !JSON.stringify(blocked.payload).includes("paused")) {
+        throw new Error("paused mirror step did not fail closed");
+      }
+      const resume = await call({
+        operation: "resume",
+        runId,
+        reason: "CLAW-563 exact cursor resume proof",
+      });
+      pauseProof = {
+        pause: pause.payload,
+        blockedStatus: blocked.status,
+        blockedPayload: blocked.payload,
+        resume: resume.payload,
+        resumeCursor: { page, offset },
+      };
+    }
+  }
+  const reconciliation = await reconcileMirrorRunToCompletion(run, async () => {
+    const result = await call({ operation: "reconcile", runId, limit: 250 });
+    return result.payload;
+  });
+  run = reconciliation.run;
+  const reconciliationBatches = reconciliation.reconciliationBatches;
+  if (run.status !== "completed") {
+    throw new Error(`mirror run ended in unexpected status ${String(run.status)}`);
+  }
+  return {
+    runId,
+    run,
+    source: {
+      total: startPayload.sourceTotal,
+      catalogTotal: proofSource?.catalogTotal ?? startPayload.sourceTotal,
+      controlledExternalIds: proofSource?.controlledExternalIds ?? [],
+      controlledOverlayExternalIds: proofSource?.controlledOverlayExternalIds ?? [],
+      controlledSupplementExternalIds: proofSource?.controlledSupplementExternalIds ?? [],
+      evidence: proofSource?.evidence ?? null,
+      capture:
+        startPayload.sourceCapture &&
+        typeof startPayload.sourceCapture === "object" &&
+        !Array.isArray(startPayload.sourceCapture)
+          ? startPayload.sourceCapture
+          : null,
+      measuredAt: startPayload.sourceMeasuredAt,
+      pageSize: startPayload.sourcePageSize,
+    },
+    recovery,
+    steps,
+    reconciliationBatches,
+    pauseProof,
+    rateLimitRecovery: {
+      retries: rateLimitRetries,
+      waitedMs: rateLimitWaitMs,
+      retryBudget: MAX_RATE_LIMIT_RETRIES_PER_RUN,
+      waitBudgetMs: MAX_RATE_LIMIT_WAIT_MS_PER_RUN,
+    },
+    elapsedMs: Date.now() - (recoverableRun?.startedAt ?? attemptStartedAt),
+    attemptElapsedMs: Date.now() - attemptStartedAt,
+  };
+}
+
+async function collectPages(
+  operation: "page" | "detail-page" | "facet-page",
+  validate: (document: Record<string, unknown>) => void,
+) {
+  const documents: Record<string, unknown>[] = [];
+  let cursor: string | null = null;
+  let calls = 0;
+  let count = 0;
+  let serializedBytes = 0;
+  do {
+    const result = await call({
+      operation,
+      cursor,
+      limit: operation === "detail-page" ? MAX_DETAIL_PAGE_ROWS : 500,
+    });
+    const page = result.payload.page;
+    if (!Array.isArray(page)) throw new Error(`${operation} did not return a page`);
+    for (const document of page as Record<string, unknown>[]) {
+      validate(document);
+      count += 1;
+      serializedBytes += Buffer.byteLength(JSON.stringify(document), "utf8");
+      if (operation === "page") documents.push(document);
+    }
+    calls += 1;
+    cursor =
+      result.payload.isDone === true
+        ? null
+        : typeof result.payload.continueCursor === "string"
+          ? result.payload.continueCursor
+          : null;
+    if (result.payload.isDone !== true && cursor === null) {
+      throw new Error(`${operation} did not return a continuation cursor`);
+    }
+  } while (cursor);
+  return {
+    count,
+    calls,
+    serializedBytes,
+    documents,
+  };
+}
+
+type MirrorRunProof = Awaited<ReturnType<typeof runMirror>>;
+type CapturedMirrorSource = {
+  capturedRunId: string;
+  externalIds: string[];
+  sourceMeasuredAt: string;
+  sourcePageSize: number;
+};
+
+function completedLiveRunProof(run: CompletedLiveMirrorRun): MirrorRunProof {
+  const proofSource = parseSkillsShMirrorProofSnapshotId(run.snapshotId);
+  return {
+    runId: run.runId,
+    run,
+    source: {
+      total: run.sourceTotal,
+      catalogTotal: proofSource.catalogTotal,
+      controlledExternalIds: proofSource.controlledExternalIds,
+      controlledOverlayExternalIds: proofSource.controlledOverlayExternalIds,
+      controlledSupplementExternalIds: proofSource.controlledSupplementExternalIds,
+      evidence: proofSource.evidence ?? null,
+      capture: null,
+      measuredAt: run.sourceMeasuredAt,
+      pageSize: run.sourcePageSize,
+    },
+    recovery: {
+      runId: run.runId,
+      status: run.status,
+      cursor: { page: run.page, offset: run.offset },
+      completedBeforeProofContinuation: true,
+    },
+    steps: 0,
+    reconciliationBatches: 0,
+    pauseProof: null,
+    rateLimitRecovery: {
+      retries: 0,
+      waitedMs: 0,
+      retryBudget: MAX_RATE_LIMIT_RETRIES_PER_RUN,
+      waitBudgetMs: MAX_RATE_LIMIT_WAIT_MS_PER_RUN,
+    },
+    elapsedMs: run.completedAt - run.startedAt,
+    attemptElapsedMs: 0,
+  };
+}
+
+function runCounts(runResult: MirrorRunProof) {
+  const counts = runResult.run.counts;
+  if (!counts || typeof counts !== "object") throw new Error("mirror run lacks counts");
+  return counts as Record<string, number>;
+}
+
+function assertZeroCounts(counts: Record<string, number>, names: string[]) {
+  for (const name of names) {
+    if (counts[name] !== 0) throw new Error(`expected ${name}=0, received ${String(counts[name])}`);
+  }
+}
+
+function assertRunProof(runResult: MirrorRunProof, mode: "first" | "identical") {
+  const counts = runCounts(runResult);
+  const total = Number(runResult.source.total);
+  const { accepted } = mirrorRunAccounting(total, counts);
+  if (counts.observed !== total) {
+    throw new Error(`mirror observed ${String(counts.observed)} of ${total} source rows`);
+  }
+  assertZeroCounts(counts, ["scansPlanned", "scansAdmitted"]);
+  if ((counts.inserted ?? 0) + (counts.updated ?? 0) + (counts.unchanged ?? 0) !== accepted) {
+    throw new Error(`${mode} run digest accounting does not equal the source total`);
+  }
+  if (
+    (counts.detailsInserted ?? 0) +
+      (counts.detailsUpdated ?? 0) +
+      (counts.detailsUnchanged ?? 0) +
+      (counts.detailsMissing ?? 0) !==
+    accepted
+  ) {
+    throw new Error(`${mode} run detail accounting does not equal the source total`);
+  }
+  if (mode === "identical") {
+    assertZeroCounts(counts, [
+      "inserted",
+      "updated",
+      "detailsInserted",
+      "detailsUpdated",
+      "tombstoned",
+      "reactivated",
+    ]);
+    if (counts.unchanged !== accepted) throw new Error("identical rerun changed a digest");
+  }
+}
+
+function validateDigestIsolation(document: Record<string, unknown>) {
+  if (
+    document.active !== true ||
+    document.publicVisible !== false ||
+    document.installable !== false
+  ) {
+    throw new Error(`mirror digest isolation failed: ${String(document.externalId)}`);
+  }
+}
+
+function validateDigest(document: Record<string, unknown>) {
+  validateDigestIsolation(document);
+  for (const field of [
+    "normalizedSlug",
+    "normalizedSlugFirstToken",
+    "normalizedDisplayName",
+    "normalizedDisplayNameFirstToken",
+    "searchText",
+    "upstreamSourceType",
+    "inferredClassifierVersion",
+    "inferredTopicClassifierVersion",
+    "inferredInputHash",
+    "inferredTopicInputHash",
+  ]) {
+    if (typeof document[field] !== "string" || !document[field]) {
+      throw new Error(`mirror digest lacks ${field}: ${String(document.externalId)}`);
+    }
+  }
+  if (
+    !Array.isArray(document.inferredCategories) ||
+    document.inferredCategories.length < 1 ||
+    document.inferredCategories.length > 3 ||
+    !Array.isArray(document.inferredTopics) ||
+    document.inferredTopics.length > 5 ||
+    !["high", "medium", "low"].includes(String(document.inferredCategoryConfidence)) ||
+    !["high", "medium", "low"].includes(String(document.inferredTopicConfidence)) ||
+    typeof document.inferredAt !== "number"
+  ) {
+    throw new Error(`mirror digest lacks bounded inference: ${String(document.externalId)}`);
+  }
+  const scanners = document.upstreamScanners;
+  if (!scanners || typeof scanners !== "object" || Array.isArray(scanners)) {
+    throw new Error(`mirror digest lacks upstream scanners: ${String(document.externalId)}`);
+  }
+  for (const provider of ["genAgentTrustHub", "socket", "snyk"]) {
+    const scanner = (scanners as Record<string, unknown>)[provider];
+    if (
+      !scanner ||
+      typeof scanner !== "object" ||
+      Array.isArray(scanner) ||
+      typeof (scanner as Record<string, unknown>).status !== "string"
+    ) {
+      throw new Error(`mirror digest lacks ${provider} status: ${String(document.externalId)}`);
+    }
+  }
+}
+
+function validateFacet(document: Record<string, unknown>) {
+  if (
+    document.active !== true ||
+    !["category", "topic"].includes(String(document.kind)) ||
+    typeof document.term !== "string" ||
+    !document.term ||
+    typeof document.externalId !== "string" ||
+    typeof document.installs !== "number"
+  ) {
+    throw new Error(`mirror facet is invalid: ${String(document.externalId)}`);
+  }
+}
+
+function validateDetail(document: Record<string, unknown>) {
+  const content = document.content;
+  const contentBytes = document.contentBytes;
+  if (
+    typeof content !== "string" ||
+    typeof contentBytes !== "number" ||
+    contentBytes > 64 * 1024 ||
+    Buffer.byteLength(content, "utf8") !== contentBytes
+  ) {
+    throw new Error(`mirror detail exceeds its boundary: ${String(document.externalId)}`);
+  }
+}
+
+function percentile(values: number[], percentileValue: number) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * percentileValue))] ?? 0;
+}
+
+async function measureReads(externalIds: string[]) {
+  const results = [];
+  for (const externalId of externalIds) {
+    const samples = [];
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const read = await call({ operation: "read", externalId });
+      if (!read.payload.digest) throw new Error(`indexed read missed ${externalId}`);
+      samples.push(read.elapsedMs);
+    }
+    results.push({
+      externalId,
+      samplesMs: samples,
+      medianMs: percentile(samples, 0.5),
+      p95Ms: percentile(samples, 0.95),
+    });
+  }
+  return results;
+}
+
+const cronSource = await readFile(resolve("convex/crons.ts"), "utf8");
+if (cronSource.includes("skillsShMirror") || cronSource.includes("skills-sh/mirror")) {
+  throw new Error("skills.sh mirror scheduler reference exists");
+}
+
+const proofStartedAt = Date.now();
+let proof: Record<string, unknown>;
+await call({
+  operation: "configure",
+  enabled: true,
+  reason: "CLAW-563 authenticated leaderboard foundation proof",
+});
+try {
+  const isolationBefore = (await call({ operation: "isolation" })).payload;
+  const statusBefore = (await call({ operation: "status" })).payload;
+  let recoverableRun = findRecoverableMirrorRun(statusBefore);
+  const recoveredLiveRunId = recoverableRun
+    ? capturedMirrorSourceRunId(recoverableRun.snapshotId)
+    : null;
+  let recoveredNormalizationRun = recoveredLiveRunId ? recoverableRun : null;
+  const completedLiveRun = recoveredLiveRunId
+    ? await resolveCompletedLiveMirrorRun({
+        payload: statusBefore,
+        runId: recoveredLiveRunId,
+        readRun: async (runId) => (await call({ operation: "run", runId })).payload,
+      })
+    : null;
+  let discardedStaleRecovery: Record<string, unknown> | null = null;
+  if (recoveredNormalizationRun && !completedLiveRun) {
+    const discarded = (
+      await call({
+        operation: "discard",
+        runId: recoveredNormalizationRun.runId,
+        reason: `discard stale captured recovery without live source ${recoveredLiveRunId}`,
+      })
+    ).payload;
+    if (discarded.status !== "canceled" || discarded.runId !== recoveredNormalizationRun.runId) {
+      throw new Error(
+        `discard stale captured recovery returned unexpected payload: ${JSON.stringify(discarded)}`,
+      );
+    }
+    discardedStaleRecovery = {
+      runId: recoveredNormalizationRun.runId,
+      missingLiveRunId: recoveredLiveRunId,
+      status: discarded.status,
+    };
+    recoverableRun = null;
+    recoveredNormalizationRun = null;
+  }
+  const firstRun = completedLiveRun
+    ? completedLiveRunProof(completedLiveRun)
+    : await runMirror(
+        "CLAW-563 complete authenticated leaderboard enumeration",
+        true,
+        recoveredNormalizationRun ? null : recoverableRun,
+      );
+  const conflictsAfterFirstRun = (
+    await call({ operation: "conflicts", runId: firstRun.runId, limit: 50 })
+  ).payload;
+  const liveRunConflicts = Array.isArray(conflictsAfterFirstRun.conflicts)
+    ? (conflictsAfterFirstRun.conflicts as Record<string, unknown>[])
+    : [];
+  const capturedAfterLive = await collectPages("page", validateDigestIsolation);
+  const liveCapturedSource: CapturedMirrorSource = {
+    capturedRunId: firstRun.runId,
+    externalIds: capturedAfterLive.documents.map((document) => {
+      if (typeof document.externalId !== "string") {
+        throw new Error("captured mirror digest lacks externalId");
+      }
+      return document.externalId;
+    }),
+    sourceMeasuredAt: String(firstRun.source.measuredAt),
+    sourcePageSize: Number(firstRun.source.pageSize),
+  };
+  const normalizationRun = await runMirror(
+    "CLAW-563 authenticated captured snapshot normalization",
+    false,
+    recoveredNormalizationRun,
+    liveCapturedSource,
+  );
+  const capturedAfterNormalization = await collectPages("page", validateDigest);
+  const normalizedCapturedSource: CapturedMirrorSource = {
+    ...liveCapturedSource,
+    capturedRunId: normalizationRun.runId,
+    externalIds: capturedAfterNormalization.documents.map((document) => {
+      if (typeof document.externalId !== "string") {
+        throw new Error("normalized mirror digest lacks externalId");
+      }
+      return document.externalId;
+    }),
+  };
+  const identicalRerun = await runMirror(
+    "CLAW-563 authenticated captured snapshot identical rerun",
+    false,
+    null,
+    normalizedCapturedSource,
+  );
+  assertRunProof(firstRun, "first");
+  assertRunProof(normalizationRun, "first");
+  assertRunProof(identicalRerun, "identical");
+  const [digests, details, facets] = await Promise.all([
+    collectPages("page", validateDigest),
+    collectPages("detail-page", validateDetail),
+    collectPages("facet-page", validateFacet),
+  ]);
+  const firstCounts = runCounts(firstRun);
+  const sourceEvidence = firstRun.source.evidence;
+  if (!sourceEvidence) {
+    throw new Error("live mirror run lacks durable source pagination and field evidence");
+  }
+  if (sourceEvidence.fields.normalizedUpstreamTaxonomyFields.length > 0) {
+    throw new Error(
+      "skills.sh now exposes normalized taxonomy fields; mirror ingestion must prefer them",
+    );
+  }
+  const sourceSnapshotHash = parseSkillsShMirrorProofSnapshotId(
+    String(firstRun.run.snapshotId),
+  ).sourceSnapshotHash;
+  if (!sourceSnapshotHash) {
+    throw new Error("live mirror run lacks a durable source snapshot hash");
+  }
+  const sourceCaptureSummary = (firstRun.source.capture ??
+    (await call({ operation: "source-summary", snapshotHash: sourceSnapshotHash }))
+      .payload) as Record<string, unknown>;
+  const sourceCapture = {
+    ...sourceCaptureSummary,
+    actualDbWrites: Number(
+      sourceCaptureSummary.requestDbWrites ?? firstRun.run.sourceCaptureWrites ?? 0,
+    ),
+  };
+  const firstAccounting = mirrorRunAccounting(Number(firstRun.source.total), firstCounts);
+  const quarantinedCount = firstAccounting.quarantined;
+  const quarantinedPreservedCount = firstCounts.quarantinedPreserved ?? 0;
+  const acceptedCount = firstAccounting.accepted;
+  const expectedDigestCount = acceptedCount + quarantinedPreservedCount;
+  if (digests.count !== expectedDigestCount) {
+    throw new Error(
+      `mirror digest count ${digests.count} does not match accepted or preserved total ${expectedDigestCount}`,
+    );
+  }
+  if (facets.count < digests.count) {
+    throw new Error("mirror facets do not cover every digest category fallback");
+  }
+  const digestExternalIds = new Set(digests.documents.map((document) => document.externalId));
+  for (const externalId of SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS) {
+    if (!digestExternalIds.has(externalId)) {
+      throw new Error(`mirror proof lacks controlled supplement ${externalId}`);
+    }
+  }
+  const quarantineSamples = liveRunConflicts
+    .filter(
+      (conflict) => conflict.runId === firstRun.runId && conflict.kind === "source-quarantine",
+    )
+    .slice(0, 50);
+  if (quarantineSamples.length !== Math.min(quarantinedCount, 50)) {
+    throw new Error("mirror status did not expose the latest run quarantine samples");
+  }
+  const sampleIndexes = [0, Math.floor(digests.count / 2), digests.count - 1];
+  const sampleExternalIds = sampleIndexes.map((index) => {
+    const externalId = digests.documents[index]?.externalId;
+    if (typeof externalId !== "string") throw new Error("mirror digest lacks externalId");
+    return externalId;
+  });
+  const indexedReads = await measureReads(sampleExternalIds);
+  const isolationAfter = (await call({ operation: "isolation" })).payload;
+  if (JSON.stringify(isolationBefore) !== JSON.stringify(isolationAfter)) {
+    throw new Error("mirror proof changed scan isolation state");
+  }
+  const firstOperations = firstRun.run.operations as Record<string, number>;
+  const serializedStorageBytes =
+    digests.serializedBytes +
+    details.serializedBytes +
+    facets.serializedBytes +
+    Number(sourceCaptureSummary.serializedBytes ?? 0);
+  const rows = digests.count;
+  const sourceRows = Number(firstRun.source.total);
+  const sourceMeasurementRequests = sourceEvidence.pagination.requestedPages.length + 4;
+  const perRow = {
+    serializedStorageBytes: serializedStorageBytes / rows,
+    dbWrites: (firstOperations.dbWrites + sourceCapture.actualDbWrites) / sourceRows,
+    dbReads:
+      (firstOperations.dbReads + Number(sourceCaptureSummary.pageDocuments ?? 0)) / sourceRows,
+    sourceRequests: (firstOperations.sourceRequests + sourceMeasurementRequests) / sourceRows,
+    sourceBytes:
+      (firstOperations.sourceBytes + Number(sourceCaptureSummary.sourceBytes ?? 0)) / sourceRows,
+  };
+  proof = {
+    generatedAt: new Date().toISOString(),
+    target: {
+      environment: "permanent Test",
+      gateUrl: targetUrl,
+      productionWrites: 0,
+      schedules: 0,
+      publicVisibility: false,
+      installability: false,
+      publisherAttachment: false,
+      scanPlanning: false,
+      scanAdmission: false,
+    },
+    sourceContract: {
+      authenticated: "Vercel OIDC",
+      scope: "paginated skills.sh leaderboard",
+      databaseEnumeration: "out of v1 scope; exhaustive feed not required",
+      endpointExhausted: true,
+      databaseCoverageProven: false,
+      measuredLeaderboardTotal: firstRun.source.catalogTotal,
+      proofSourceTotal: firstRun.source.total,
+      measurementRequests: sourceMeasurementRequests,
+      endpointExhaustion: sourceEvidence.pagination,
+      rawFieldSets: sourceEvidence.fields,
+      taxonomyEnrichment: {
+        upstreamNormalizedFields: sourceEvidence.fields.normalizedUpstreamTaxonomyFields,
+        fallbackApplied: true,
+        fallbackGenerator: "ClawHub local deterministic catalog classifier",
+        llmGenerated: false,
+      },
+      controlledSupplement: {
+        authority: "immutable GitHub content",
+        environment: "permanent Test only",
+        productionFullSyncStrategy: false,
+        requiredCount: firstRun.source.controlledExternalIds.length,
+        observedRequiredExternalIds: firstRun.source.controlledExternalIds,
+        overlayExternalIds: firstRun.source.controlledOverlayExternalIds,
+        supplementExternalIds: firstRun.source.controlledSupplementExternalIds,
+        contractRequiredExternalIds: SKILLS_SH_MIRROR_CONTROLLED_EXTERNAL_IDS,
+      },
+      durableSourceCapture: sourceCapture,
+      pageSize: firstRun.source.pageSize,
+      measuredAt: firstRun.source.measuredAt,
+      documentedRateLimitRequestsPerMinute: 600,
+      fetchPolicy: {
+        mirrorBatchRows: 50,
+        sourcePageRows: 500,
+        detailAndPageConcurrency: 8,
+        minimumApiRequestIntervalMs: 125,
+        identityPage:
+          "512 KiB structural HTML fallback only for exact no-install well-known owner/repo rows",
+        recovery: "durable cursor retry with bounded Retry-After recovery",
+      },
+    },
+    discardedStaleRecovery,
+    firstRun,
+    normalizationRun,
+    identicalRerun,
+    quarantine: {
+      rejected: firstCounts.rejected,
+      quarantined: quarantinedCount,
+      preserved: quarantinedPreservedCount,
+      samples: quarantineSamples,
+    },
+    storage: {
+      digests: {
+        count: digests.count,
+        serializedBytes: digests.serializedBytes,
+        pageReads: digests.calls,
+      },
+      details: {
+        count: details.count,
+        serializedBytes: details.serializedBytes,
+        pageReads: details.calls,
+      },
+      facets: {
+        count: facets.count,
+        serializedBytes: facets.serializedBytes,
+        pageReads: facets.calls,
+      },
+      totalSerializedBytes: serializedStorageBytes,
+      bytesPerSourceRow: perRow.serializedStorageBytes,
+    },
+    isolation: {
+      before: isolationBefore,
+      after: isolationAfter,
+      unchanged: true,
+    },
+    indexedReads,
+    projectedHypotheticalDatabaseScale: {
+      assumedRows: PROJECTED_SCALE,
+      enumerationAvailable: false,
+      proofStatus: "cost projection only, not a completed database sync",
+      serializedStorageBytes: Math.ceil(perRow.serializedStorageBytes * PROJECTED_SCALE),
+      dbWrites: Math.ceil(perRow.dbWrites * PROJECTED_SCALE),
+      dbReads: Math.ceil(perRow.dbReads * PROJECTED_SCALE),
+      sourceRequests: Math.ceil(perRow.sourceRequests * PROJECTED_SCALE),
+      sourceBytes: Math.ceil(perRow.sourceBytes * PROJECTED_SCALE),
+    },
+    runtime: {
+      elapsedMs: Date.now() - proofStartedAt,
+    },
+  };
+} finally {
+  const disabled = await callRaw({
+    operation: "configure",
+    enabled: false,
+    reason: "CLAW-563 proof cleanup: retain mirror hidden and paused",
+  });
+  if (!disabled.ok) {
+    throw new Error(`mirror cleanup failed: ${JSON.stringify(disabled.payload)}`);
+  }
+}
+
+await mkdir(dirname(OUTPUT_PATH), { recursive: true });
+await writeFile(OUTPUT_PATH, `${JSON.stringify(proof, null, 2)}\n`);
+console.log(JSON.stringify({ outputPath: OUTPUT_PATH, ...proof }));

@@ -4,7 +4,7 @@ import { Skeleton } from "../ui/skeleton";
 
 export function StarsSkeleton() {
   return (
-    <main className="browse-page" aria-busy="true" aria-label="Loading starred skills">
+    <main className="browse-page" aria-busy="true" aria-label="Loading bookmarked skills">
       <header className="stars-header">
         <Skeleton className="h-9 w-48" />
       </header>

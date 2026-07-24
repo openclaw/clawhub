@@ -1,12 +1,19 @@
 ---
 name: openclaw-design-system
-description: Build or modify OpenClaw application UI using canonical semantic tokens, themes, shared CSS foundations, consumer adapters, and established local primitives. Use for product interfaces, component styling, theme work, or design-token integration.
+description: Compatibility alias for existing OpenClaw installations that now applies Carapace semantic tokens, themes, shared CSS foundations, consumer adapters, and established local primitives.
 ---
 
-# OpenClaw Design System
+# Carapace Compatibility Alias
+
+This skill identifier remains available for existing `skills-lock.json`
+entries during the `v0.1.x` migration. New installations should use
+`openclaw-carapace`.
 
 Use the shared package for foundations and framework-neutral visual primitives.
 Keep consumer-specific behavior, data, routes, and layout composition local.
+Before changing imports, inspect the consumer manifest: use
+`@openclaw/carapace` when it is installed, otherwise preserve the legacy
+`@openclaw/design-system` specifier until the dependency is migrated.
 
 ## Workflow
 

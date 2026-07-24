@@ -50,15 +50,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          release="v$(node -p "require('./node_modules/@openclaw/design-system/package.json').version")"
+          release="v$(node -p "require('./node_modules/@openclaw/carapace/package.json').version")"
           [[ "$release" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          gh api "repos/openclaw/design-system/releases/tags/${release}" >/dev/null
+          gh api "repos/openclaw/carapace/releases/tags/${release}" >/dev/null
           echo "tag=$release" >> "$GITHUB_OUTPUT"
           mkdir -p "$ARTIFACT_DIRECTORY"
           git clone \
             --branch "$release" \
             --depth 1 \
-            https://github.com/openclaw/design-system.git \
+            https://github.com/openclaw/carapace.git \
             "$ARTIFACT_DIRECTORY/design-system"
 
       - name: Record audit commits

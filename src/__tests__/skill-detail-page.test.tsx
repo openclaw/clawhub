@@ -1789,20 +1789,20 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
 
-    const starButton = await screen.findByRole("button", { name: "Star skill" });
+    const starButton = await screen.findByRole("button", { name: "Bookmark skill" });
     expect(starButton.textContent).toContain("8");
 
     fireEvent.click(starButton);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Unstar skill" }).textContent).toContain("9");
+      expect(screen.getByRole("button", { name: "Remove bookmark" }).textContent).toContain("9");
     });
     expect(toggleStarMock).toHaveBeenCalledWith({ skillId });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unstar skill" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove bookmark" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Star skill" }).textContent).toContain("8");
+      expect(screen.getByRole("button", { name: "Bookmark skill" }).textContent).toContain("8");
     });
     expect(toggleStarMock).toHaveBeenCalledTimes(2);
     expect(routerInvalidateMock).toHaveBeenCalledTimes(2);
@@ -1869,7 +1869,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
 
-    expect((await screen.findByRole("button", { name: "Unstar skill" })).textContent).toContain(
+    expect((await screen.findByRole("button", { name: "Remove bookmark" })).textContent).toContain(
       "1",
     );
   });

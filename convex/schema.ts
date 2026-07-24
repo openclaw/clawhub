@@ -379,6 +379,11 @@ const githubSkillSourceIssueValidator = v.object({
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
+  githubRepositoryId: v.optional(v.string()),
+  githubOwnerId: v.optional(v.string()),
+  authorizationStatus: v.optional(v.union(v.literal("active"), v.literal("revoked"))),
+  authorizationCheckedAt: v.optional(v.number()),
+  authorizationError: v.optional(v.string()),
   defaultBranch: v.optional(v.string()),
   lastSyncStatus: v.optional(v.union(v.literal("ok"), v.literal("failed"), v.literal("skipped"))),
   lastSyncError: v.optional(v.string()),
@@ -396,6 +401,7 @@ const githubSkillSources = defineTable({
   updatedAt: v.number(),
 })
   .index("by_repo", ["repo"])
+  .index("by_github_repository_id", ["githubRepositoryId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
   .index("by_created", ["createdAt"])
@@ -488,6 +494,28 @@ const githubSkillCurrentStatusValidator = v.union(
   v.literal("missing"),
   v.literal("unknown"),
 );
+
+const githubSkillCandidates = defineTable({
+  skillId: v.id("skills"),
+  githubSourceId: v.id("githubSkillSources"),
+  githubPath: v.string(),
+  githubHasSkillCard: v.boolean(),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  upstreamVersion: v.optional(v.string()),
+  skillMarkdownPath: v.optional(v.string()),
+  skillMarkdown: v.optional(v.string()),
+  skillCardMarkdownPath: v.optional(v.string()),
+  skillCardMarkdown: v.optional(v.string()),
+  scanStatus: githubSkillScanStatusValidator,
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_skill_and_content_hash", ["skillId", "githubContentHash"])
+  .index("by_github_source", ["githubSourceId"]);
 
 const githubSkillScans = defineTable({
   skillId: v.id("skills"),
@@ -824,6 +852,7 @@ const skills = defineTable({
   githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
   githubRemovedAt: v.optional(v.number()),
+  githubPendingCandidateId: v.optional(v.id("githubSkillCandidates")),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
     v.object({
@@ -912,6 +941,8 @@ const skills = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
   installBackfill: v.optional(
     v.object({
       modelVersion: v.string(),
@@ -1338,6 +1369,8 @@ const skillSearchDigest = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
   recommendedScore: v.optional(v.number()),
   recommendedScoreVersion: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
@@ -2016,6 +2049,9 @@ const packageDailyStats = defineTable({
   day: v.number(),
   downloads: v.number(),
   installs: v.number(),
+  bookmarks: v.optional(v.number()),
+  rankingDatasetVersion: v.optional(v.string()),
+  rankingImportedAt: v.optional(v.number()),
   updatedAt: v.number(),
 })
   .index("by_package_day", ["packageId", "day"])
@@ -2471,6 +2507,9 @@ const skillDailyStats = defineTable({
   day: v.number(),
   downloads: v.number(),
   installs: v.number(),
+  bookmarks: v.optional(v.number()),
+  rankingDatasetVersion: v.optional(v.string()),
+  rankingImportedAt: v.optional(v.number()),
   updatedAt: v.number(),
 })
   .index("by_skill_day", ["skillId", "day"])
@@ -2504,6 +2543,25 @@ const globalStats = defineTable({
   activePluginsCount: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
+
+const rankingMetricImports = defineTable({
+  datasetVersion: v.string(),
+  checksum: v.string(),
+  generatedAt: v.string(),
+  importedAt: v.number(),
+  startDay: v.number(),
+  endDay: v.number(),
+  targetCount: v.number(),
+  skillTargetCount: v.number(),
+  packageTargetCount: v.number(),
+  dailyRowCount: v.number(),
+  importedSkillRows: v.number(),
+  importedPackageRows: v.number(),
+  unresolvedTargets: v.number(),
+  skippedOverlayRows: v.number(),
+})
+  .index("by_dataset_version", ["datasetVersion"])
+  .index("by_imported_at", ["importedAt"]);
 
 const skillStatEvents = defineTable({
   skillId: v.id("skills"),
@@ -2909,6 +2967,7 @@ const skillsShCatalogEntries = defineTable({
   githubContentHash: v.optional(v.string()),
   sourceContentHash: v.string(),
   installs: v.number(),
+  githubStars: v.optional(v.number()),
   sourceSnapshotId: v.string(),
   reconciliation: v.optional(
     v.object({
@@ -2988,6 +3047,254 @@ const skillsShCatalogScanAttempts = defineTable({
   .index("by_created_at", ["createdAt"])
   .index("by_status_and_created_at", ["status", "createdAt"])
   .index("by_dispatch_kind_and_status_and_created_at", ["dispatchKind", "status", "createdAt"]);
+
+const skillsShMirrorControls = defineTable({
+  key: v.literal("global"),
+  enabled: v.boolean(),
+  paused: v.boolean(),
+  maxRowsPerRun: v.number(),
+  maxRowsPerBatch: v.number(),
+  maxDetailBytes: v.number(),
+  updatedBy: v.string(),
+  reason: v.string(),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
+const skillsShMirrorRunCountsValidator = v.object({
+  observed: v.number(),
+  inserted: v.number(),
+  updated: v.number(),
+  unchanged: v.number(),
+  rejected: v.number(),
+  quarantined: v.optional(v.number()),
+  quarantinedPreserved: v.optional(v.number()),
+  conflicts: v.number(),
+  detailsInserted: v.number(),
+  detailsUpdated: v.number(),
+  detailsUnchanged: v.number(),
+  detailsMissing: v.number(),
+  detailsTruncated: v.number(),
+  tombstoned: v.number(),
+  reactivated: v.number(),
+  scansPlanned: v.literal(0),
+  scansAdmitted: v.literal(0),
+});
+
+const skillsShMirrorRuns = defineTable({
+  snapshotId: v.string(),
+  sourceSnapshotHash: v.optional(v.string()),
+  sourceCaptureWrites: v.optional(v.number()),
+  status: v.union(
+    v.literal("running"),
+    v.literal("paused"),
+    v.literal("reconciling"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  sourceTotal: v.number(),
+  sourcePageSize: v.number(),
+  sourceMeasuredAt: v.string(),
+  page: v.number(),
+  offset: v.number(),
+  batchLeaseToken: v.optional(v.string()),
+  batchLeaseExpiresAt: v.optional(v.number()),
+  reconcileCursor: v.optional(v.string()),
+  counts: skillsShMirrorRunCountsValidator,
+  operations: v.object({
+    functionCalls: v.number(),
+    dbReads: v.number(),
+    dbWrites: v.number(),
+    sourceRequests: v.number(),
+    sourceBytes: v.number(),
+  }),
+  actor: v.string(),
+  reason: v.string(),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+})
+  .index("by_started_at", ["startedAt"])
+  .index("by_status_and_updated_at", {
+    fields: ["status", "updatedAt"],
+  });
+
+const skillsShMirrorSourcePages = defineTable({
+  snapshotHash: v.string(),
+  page: v.number(),
+  sourceTotal: v.number(),
+  pageLength: v.number(),
+  hasMore: v.boolean(),
+  identityHash: v.string(),
+  contentHash: v.string(),
+  sourceBytes: v.number(),
+  serializedBytes: v.number(),
+  rows: v.array(
+    v.object({
+      id: v.string(),
+      installUrl: v.union(v.string(), v.null()),
+      installs: v.number(),
+      name: v.string(),
+      slug: v.string(),
+      source: v.string(),
+      sourceType: v.string(),
+      url: v.string(),
+    }),
+  ),
+  createdAt: v.number(),
+}).index("by_snapshot_hash_and_page", ["snapshotHash", "page"]);
+
+const skillsShMirrorUpstreamScannerValidator = v.object({
+  status: v.string(),
+  sourceCheckedAt: v.optional(v.string()),
+  sourceUrl: v.optional(v.string()),
+});
+
+const skillsShMirrorClassificationConfidenceValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
+const skillsShMirrorDigests = defineTable({
+  externalId: v.string(),
+  sourceType: v.union(v.literal("github"), v.literal("well-known")),
+  upstreamSourceType: v.optional(v.string()),
+  owner: v.optional(v.string()),
+  repo: v.optional(v.string()),
+  sourceHost: v.optional(v.string()),
+  slug: v.string(),
+  normalizedSlug: v.string(),
+  normalizedSlugFirstToken: v.string(),
+  displayName: v.string(),
+  normalizedDisplayName: v.string(),
+  normalizedDisplayNameFirstToken: v.string(),
+  searchText: v.string(),
+  sourceUrl: v.string(),
+  canonicalRepoUrl: v.optional(v.string()),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  sourceContentHash: v.optional(v.string()),
+  upstreamInstalls: v.number(),
+  upstreamScanners: v.object({
+    genAgentTrustHub: skillsShMirrorUpstreamScannerValidator,
+    socket: skillsShMirrorUpstreamScannerValidator,
+    snyk: skillsShMirrorUpstreamScannerValidator,
+  }),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredCategoryConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
+  sourceFreshnessStatus: v.union(v.literal("observed-only"), v.literal("stale")),
+  staleQuarantineReason: v.optional(v.string()),
+  detailStatus: v.union(v.literal("available"), v.literal("missing")),
+  observationFingerprint: v.string(),
+  sourceSnapshotId: v.string(),
+  lastObservedRunId: v.id("skillsShMirrorRuns"),
+  active: v.boolean(),
+  publicVisible: v.literal(false),
+  installable: v.literal(false),
+  tombstonedAt: v.optional(v.number()),
+  firstObservedAt: v.number(),
+  lastObservedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_active_and_normalized_slug", {
+    fields: ["active", "normalizedSlug"],
+  })
+  .index("by_active_and_normalized_display_name", {
+    fields: ["active", "normalizedDisplayName"],
+  })
+  .index("by_active_and_normalized_slug_first_token", {
+    fields: ["active", "normalizedSlugFirstToken"],
+  })
+  .index("by_active_and_normalized_display_name_first_token", {
+    fields: ["active", "normalizedDisplayNameFirstToken"],
+  })
+  .index("by_active_and_source_type_and_owner_and_repo_and_external_id", {
+    fields: ["active", "sourceType", "owner", "repo", "externalId"],
+  })
+  .index("by_active_and_upstream_installs", {
+    fields: ["active", "upstreamInstalls"],
+  })
+  .index("by_source_type_and_external_id", {
+    fields: ["sourceType", "externalId"],
+  })
+  .index("by_last_observed_at", {
+    fields: ["lastObservedAt"],
+  })
+  .searchIndex("search_by_search_text", {
+    searchField: "searchText",
+    filterFields: ["active"],
+  });
+
+const skillsShMirrorDetails = defineTable({
+  externalId: v.string(),
+  digestId: v.id("skillsShMirrorDigests"),
+  contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
+  path: v.string(),
+  content: v.string(),
+  contentBytes: v.number(),
+  sourceBytes: v.number(),
+  sourceFileCount: v.number(),
+  truncated: v.boolean(),
+  sourceContentHash: v.optional(v.string()),
+  sourceSnapshotId: v.string(),
+  lastObservedRunId: v.id("skillsShMirrorRuns"),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_digest_id", {
+    fields: ["digestId"],
+  });
+
+const skillsShMirrorFacets = defineTable({
+  digestId: v.id("skillsShMirrorDigests"),
+  externalId: v.string(),
+  kind: v.union(v.literal("category"), v.literal("topic")),
+  term: v.string(),
+  active: v.boolean(),
+  installs: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_digest_id_and_kind_and_term", ["digestId", "kind", "term"])
+  .index("by_active_and_kind_and_term_and_installs_and_external_id", [
+    "active",
+    "kind",
+    "term",
+    "installs",
+    "externalId",
+  ]);
+
+const skillsShMirrorConflicts = defineTable({
+  runId: v.id("skillsShMirrorRuns"),
+  externalId: v.string(),
+  kind: v.union(
+    v.literal("same-run-drift"),
+    v.literal("identity-mismatch"),
+    v.literal("source-quarantine"),
+  ),
+  reason: v.optional(v.string()),
+  upstreamSourceType: v.optional(v.string()),
+  previousFingerprint: v.optional(v.string()),
+  observedFingerprint: v.string(),
+  page: v.number(),
+  offset: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_run_id", ["runId"])
+  .index("by_external_id_and_created_at", {
+    fields: ["externalId", "createdAt"],
+  });
 
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),
@@ -3628,6 +3935,7 @@ export default defineSchema({
   officialPublishers,
   githubSkillSources,
   githubSkillContents,
+  githubSkillCandidates,
   githubSkillScans,
   skills,
   skillSlugAliases,
@@ -3665,6 +3973,7 @@ export default defineSchema({
   skillLeaderboards,
   skillStatBackfillState,
   globalStats,
+  rankingMetricImports,
   skillStatEvents,
   skillStatUpdateCursors,
   skillStatDocSyncLeases,
@@ -3684,6 +3993,13 @@ export default defineSchema({
   skillsShCatalogRuns,
   skillsShCatalogEntries,
   skillsShCatalogScanAttempts,
+  skillsShMirrorControls,
+  skillsShMirrorRuns,
+  skillsShMirrorSourcePages,
+  skillsShMirrorDigests,
+  skillsShMirrorDetails,
+  skillsShMirrorFacets,
+  skillsShMirrorConflicts,
   publisherAbuseScoreRuns,
   publisherAbuseTemporalScanSamples,
   publisherAbuseTemporalScanCandidates,

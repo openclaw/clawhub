@@ -201,21 +201,21 @@ export function SkillHeader({
   const renderStarAction = () => (
     <SignedInActionTooltip
       isAuthenticated={isAuthenticated}
-      message="You must be signed in to star a skill"
+      message="You must be signed in to bookmark a skill"
     >
       <button
         type="button"
         className="skill-sidebar-action-link skill-sidebar-star-action"
         onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
         aria-pressed={Boolean(isAuthenticated && isStarred)}
-        aria-label={isStarred ? "Unstar skill" : "Star skill"}
+        aria-label={isStarred ? "Remove bookmark" : "Bookmark skill"}
       >
         <Star
           size={14}
           aria-hidden="true"
           fill={isAuthenticated && isStarred ? "currentColor" : "none"}
         />
-        {isAuthenticated && isStarred ? "Unstar" : "Star"}
+        {isAuthenticated && isStarred ? "Bookmarked" : "Bookmark"}
         <span className="skill-action-count">{formattedStats.stars}</span>
       </button>
     </SignedInActionTooltip>

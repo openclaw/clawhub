@@ -15,6 +15,7 @@ export type SkillsShCatalogFixtureRow = {
   claimPublisherHandle?: string;
   sourceContentHash: string;
   installs: number;
+  githubStars?: number;
 };
 
 type SkillsShCatalogFixture = {
@@ -61,7 +62,8 @@ const PATRICK_HTML_CANARY: SkillsShCatalogFixtureRow = {
   githubContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
   claimPublisherHandle: "patrick-erichsen",
   sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-  installs: 0,
+  installs: 17,
+  githubStars: 321,
 };
 
 const FROZEN_ROWS = frozenSnapshot.rows satisfies SkillsShCatalogFixtureRow[];

@@ -33,6 +33,7 @@ const listPackageCatalogPageHandler = (
         family: "skill";
         channel: "official" | "community";
         isOfficial: boolean;
+        stats: { downloads: number };
       }>;
       isDone: boolean;
       continueCursor: string;
@@ -342,6 +343,34 @@ describe("skills package catalog queries", () => {
         isOfficial: true,
       }),
     ]);
+  });
+
+  it("presents combined downloads without changing the native download index", async () => {
+    const indexNames: string[] = [];
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [
+              makeDigest("indexed-skill", {
+                statsDownloads: 12,
+                statsSkillsShInstalls: 8,
+              }),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        indexNames,
+      ),
+      {
+        sort: "downloads",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(indexNames).toContain("by_active_stats_downloads");
+    expect(result.page[0]?.stats.downloads).toBe(20);
   });
 
   it("normalizes and filters skill package catalog topics", async () => {

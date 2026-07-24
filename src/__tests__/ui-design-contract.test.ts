@@ -75,11 +75,11 @@ describe("restored UI design contract", () => {
     const rootSource = rootRoute();
     const sharedCss = designSystemStyles();
 
-    expect(sharedCss).toContain('@import "@openclaw/design-system/tokens.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/typography.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/themes/product.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/components.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/compat/clawhub.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/tokens.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/typography.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/themes/product.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/components.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/compat/clawhub.css";');
     expect(sharedCss).toContain(".home-v2-main.oc-app-surface");
     expect(sharedCss).toContain("--hv2-bg: var(--oc-bg-page)");
     expect(sharedCss).toContain("--hv2-text: var(--oc-text-primary)");
@@ -445,7 +445,7 @@ describe("restored UI design contract", () => {
 
   it("keeps runtime requirement text high contrast in both themes", () => {
     const css = styles();
-    const designTokens = read("node_modules/@openclaw/design-system/styles/tokens.css");
+    const designTokens = read("node_modules/@openclaw/carapace/styles/tokens.css");
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
     expect(installCardSource).toContain("requirements-env-row");

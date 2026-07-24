@@ -10,7 +10,7 @@ deterministic, and covered by an existing rule.
 - use an established local primitive instead of a duplicate raw control
 - add a missing accessible label when intent is unambiguous
 - repair clipping or overflow without changing information architecture
-- update the pinned design-system tag in a dedicated dependency change
+- update the pinned Carapace tag in a dedicated dependency change
 
 ## Requires Human Review
 

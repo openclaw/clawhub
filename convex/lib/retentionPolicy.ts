@@ -108,6 +108,7 @@ export const RETENTION_POLICIES = {
   officialPublishers: permanent("Manual official publisher assignments."),
   githubSkillSources: permanent("Tracked GitHub source configuration."),
   githubSkillContents: derived("Cached GitHub source content snapshots.", "githubSkillSources"),
+  githubSkillCandidates: derived("Pending exact GitHub source candidates.", "githubSkillSources"),
   githubSkillScans: derived("Cached GitHub source scan state.", "githubSkillSources"),
   skills: permanent("Canonical skill records."),
   skillSlugAliases: permanent("Historical slug routing aliases."),
@@ -189,6 +190,9 @@ export const RETENTION_POLICIES = {
   skillLeaderboards: derived("Leaderboard snapshots can be rebuilt from stats.", "skillDailyStats"),
   skillStatBackfillState: permanent("Backfill cursor state."),
   globalStats: derived("Global stats aggregate can be recalculated.", "skills/packages"),
+  rankingMetricImports: permanent(
+    "Versioned Test ranking import provenance is retained until explicit cleanup.",
+  ),
   skillStatEvents: ephemeral(
     "Skill stat event log is retained only after both consumers pass it.",
     {
@@ -221,6 +225,15 @@ export const RETENTION_POLICIES = {
   skillsShCatalogScanAttempts: permanent(
     "Exact-hash skills.sh scan attempts are durable audit and deduplication history.",
   ),
+  skillsShMirrorControls: permanent("Durable skills.sh external mirror operator controls."),
+  skillsShMirrorRuns: permanent("Skills.sh external mirror cursor and reconciliation history."),
+  skillsShMirrorSourcePages: permanent(
+    "Immutable authenticated leaderboard source pages retained for mirror provenance.",
+  ),
+  skillsShMirrorDigests: permanent("Normalized skills.sh external search digests."),
+  skillsShMirrorDetails: permanent("Bounded skills.sh external detail content."),
+  skillsShMirrorFacets: permanent("Indexed skills.sh external category and topic metadata."),
+  skillsShMirrorConflicts: permanent("Skills.sh external observation conflict audit history."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
   publisherAbuseTemporalScanSamples: ephemeral(
     "Exact temporal percentile samples are temporary scan working state.",

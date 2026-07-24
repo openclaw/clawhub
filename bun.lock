@@ -14,7 +14,7 @@
         "@fontsource/manrope": "5.3.0",
         "@fontsource/noto-sans-sc": "5.3.0",
         "@monaco-editor/react": "4.7.0",
-        "@openclaw/design-system": "git+https://github.com/openclaw/design-system.git#7b097d79eef6e9a0a4632f72727ac7450f07a1f2",
+        "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.2.0",
         "@openclaw/plugin-inspector": "0.3.17",
         "@radix-ui/react-avatar": "1.2.3",
         "@radix-ui/react-dialog": "1.1.20",
@@ -46,6 +46,7 @@
         "mermaid": "^11.16.0",
         "mime": "4.1.0",
         "monaco-editor": "0.56.0",
+        "parse5": "8.0.1",
         "pino": "10.3.1",
         "react": "19.2.7",
         "react-dom": "19.2.7",
@@ -171,7 +172,7 @@
     "fast-uri": "3.1.4",
     "js-yaml": "4.3.0",
     "next": "16.2.11",
-    "postcss": "8.5.12",
+    "postcss": "8.5.18",
     "sharp": "0.35.3",
     "shell-quote": "1.10.0",
     "undici": "7.28.0",
@@ -442,9 +443,9 @@
 
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
-    "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
+    "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#a0b3c80", {}, "openclaw-carapace-a0b3c80", "sha512-d8EpkOKFJYfM+Ypw8RWV0tr1fUA44iYVkVx4v/D7C/q96CqE26k2FytvoiWYOmZEGwsrSP3Bz3adqeLzeae2eQ=="],
 
-    "@openclaw/design-system": ["@openclaw/design-system@github:openclaw/design-system#7b097d7", {}, "openclaw-carapace-7b097d7", "sha512-R3S+LL+jblNEvUwpWSjM87dssj4GuJppwhG2Vq4aJHYL/MvY+ohcc2fjSpzBKGm6SV2Ky7lz9AWRYE7xvP6Mlg=="],
+    "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
     "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.17", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-JPPHPhiXMsIvrV8UR8RQjhflMjRZX/uIhy9meE81dup7MMSnRJcsTGOXYACohv6e4z2P95z2QuE7nZkWT6Ysuw=="],
 
@@ -1702,7 +1703,7 @@
 
     "postal-mime": ["postal-mime@2.7.4", "", {}, "sha512-0WdnFQYUrPGGTFu1uOqD2s7omwua8xaeYGdO6rb88oD5yJ/4pPHDA4sdWqfD8wQVfCny563n/HQS7zTFft+f/g=="],
 
-    "postcss": ["postcss@8.5.12", "", { "dependencies": { "nanoid": "^3.3.11", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-W62t/Se6rA0Az3DfCL0AqJwXuKwBeYg6nOaIgzP+xZ7N5BFCI7DYi1qs6ygUYT6rvfi6t9k65UMLJC+PHZpDAA=="],
+    "postcss": ["postcss@8.5.18", "", { "dependencies": { "nanoid": "^3.3.12", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-xdB1oSLHbz1vRWgCDalrCqEFTWzFlhqFC5tIHLMOSUIjhm3XXQ1qrFy8S/ESr1JYRRXqM3c1QFiMZUJdUTqyMQ=="],
 
     "preact": ["preact@10.24.3", "", {}, "sha512-Z2dPnBnMUfyQfSQ+GBdsGa16hz35YmLmtTLhM169uW944hYL6xzTYkJjC07j+Wosz733pMWx0fgON3JNw1jJQA=="],
 

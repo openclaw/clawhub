@@ -40,6 +40,34 @@ Local fixture seeding is command-driven by default:
   baseline restore. It validates the archive, refuses every deployment except
   `academic-chihuahua-392`, and uses Convex `--replace-all` so cross-project table IDs restore
   correctly.
+- After creating a read-only production snapshot with `bunx convex export --prod`, run
+  `bun run seed:test:ranking-export -- --snapshot <snapshot.zip> --dataset-version
+ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five fixed tables:
+  public skills, public plugins, their daily aggregate rows, and active bookmarks used only to aggregate
+  bookmark creation counts by skill/day. The emitted JSON contains no Convex ids or user, device,
+  session, IP, auth, moderation, or private telemetry fields and is rejected unless it covers an
+  exact 60-day window.
+- Before any mutating ranking import command, dispatch `Reserve Test` from exact current `main` with
+  the dataset version and expected SHA. Wait for it to enter `in_progress`, pass its run ID as
+  `--lane-run-id`, and cancel the reservation only after import, proof, and any cleanup or rollback
+  are complete. The reservation is read-only and shares the `deploy-test` concurrency group, so a
+  Test deploy cannot overlap the operation.
+- `bun run seed:test:ranking-import -- --dataset <dataset.json> --backup-dir <empty-dir>
+--lane-run-id <run-id>` targets only `academic-chihuahua-392`. It verifies that the reservation,
+  local checkout, and current `main` are the same revision, then atomically replaces the three
+  ranking tables from one ZIP. Before the baseline export it sets an expiring Test-only write lock;
+  skill/package daily-stat writes and the user, publisher, skill, and package identity writes used
+  for re-keying fail closed while that lock is active. It preserves deterministic feature and
+  skills.sh fixture rows as overlays, replaces provenance only for the matching dataset version,
+  and retains older import metadata. It records version/checksum/count/time-range metadata and
+  leaves an exact three-table backup. Immediately before replacement it re-exports and hashes all
+  seven source and target tables and revalidates the reservation, aborting without mutation if the
+  lane, lock, or tables changed. Use
+  `--readback --dataset-version <version>` for
+  24-hour/60-day proof, `--cleanup` with the original dataset to remove that version, or
+  `--rollback --backup-dir <dir> --lane-run-id <run-id>` to restore the pre-import tables. Rollback
+  also requires the current three-table state to match the exact post-operation digests recorded in
+  that backup, so an older backup cannot overwrite a subsequent import or fixture change.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
 

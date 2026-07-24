@@ -1167,8 +1167,8 @@ export function Upload() {
                     <span>
                       Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
                       <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
-                      Versions, tags, stats and stars are preserved; the old URL redirects to the
-                      new one.
+                      Versions, tags, stats and bookmarks are preserved; the old URL redirects to
+                      the new one.
                     </span>
                   </label>
                 ) : null}
