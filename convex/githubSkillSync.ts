@@ -2097,7 +2097,7 @@ export async function syncGitHubSkillSourcesHandler(
   };
 }
 
-async function fetchGitHubSkillSourceSnapshot(
+export async function fetchGitHubSkillSourceSnapshot(
   {
     repo,
     defaultBranch,

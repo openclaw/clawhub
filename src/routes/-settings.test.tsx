@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { FunctionReturnType } from "convex/server";
 import type { ReactNode } from "react";
@@ -246,7 +246,10 @@ function mockSignedInSettings({
     if (queryName === "publishers:listMembers") return members;
     if (queryName === "publishers:listInvitesForPublisher") return pendingInvites;
     if (queryName === "publishers:listMyInvites") return myInvites;
-    if (queryName === "githubSkillSources:listForManageableOfficialPublishers")
+    if (
+      queryName === "githubSkillSources:listForManageableOfficialPublishers" ||
+      queryName === "githubSkillSources:listForPublisher"
+    )
       return githubSources;
     if (args && typeof args === "object" && "publisherHandle" in args) return members;
     if (args && typeof args === "object") return [];
@@ -275,7 +278,14 @@ describe("Settings", () => {
     searchMock.mockReset();
     searchMock.mockReturnValue({});
     useMutationMock.mockReturnValue(vi.fn());
-    useActionMock.mockReturnValue(vi.fn());
+    const defaultListRepositories = vi.fn().mockResolvedValue({ repositories: [] });
+    const defaultAction = vi.fn();
+    useActionMock.mockImplementation((action) => {
+      if (getFunctionName(action) === "githubSkillSyncSettings:listRepositories") {
+        return defaultListRepositories;
+      }
+      return defaultAction;
+    });
     vi.mocked(toast.error).mockReset();
     vi.mocked(toast.success).mockReset();
     useAuthActionsMock.mockReturnValue({
@@ -653,12 +663,101 @@ describe("Settings", () => {
     expect(navigateMock).toHaveBeenCalledWith({ to: "/", replace: true });
   });
 
-  it("lets official publisher owners configure a public GitHub sync source", async () => {
-    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
-    useActionMock.mockReturnValue(configureSource);
+  it("lets verified publishers select a repository and preview direct repository skills", async () => {
+    const listRepositories = vi.fn().mockResolvedValue({
+      publisher: { _id: "publisher_patrick", handle: "patrick", kind: "user" },
+      page: 1,
+      perPage: 100,
+      hasMore: false,
+      repositories: [
+        {
+          repositoryId: "1",
+          repo: "patrick-erichsen/skills",
+          ownerId: "123",
+          ownerLogin: "patrick-erichsen",
+          defaultBranch: "main",
+          archived: false,
+          disabled: false,
+          fork: false,
+          pushedAt: "2026-07-23T12:00:00Z",
+          selectable: true,
+          unavailableReason: null,
+        },
+      ],
+    });
+    const previewRepository = vi.fn().mockResolvedValue({
+      publisher: { _id: "publisher_patrick", handle: "patrick", kind: "user" },
+      repository: {
+        requestedRepo: "patrick-erichsen/skills",
+        repositoryId: "1",
+        repo: "patrick-erichsen/skills",
+        redirected: false,
+        defaultBranch: "main",
+        commit: "a".repeat(40),
+      },
+      summary: {
+        total: 4,
+        newDestinations: 1,
+        replacements: 1,
+        unavailable: 1,
+        conflicts: 1,
+      },
+      items: [
+        {
+          slug: "new-skill",
+          displayName: "New Skill",
+          path: "skills/new-skill",
+          contentHash: "hash-new",
+          classification: "new-destination",
+          eligible: true,
+          destination: null,
+        },
+        {
+          slug: "html",
+          displayName: "HTML",
+          path: "skills/html",
+          contentHash: "hash-html",
+          classification: "replacement",
+          eligible: true,
+          destination: {
+            skillId: "skills:html",
+            ownerPublisherId: "publisher_patrick",
+            ownerHandle: "patrick",
+            slug: "html",
+            displayName: "HTML",
+          },
+        },
+        {
+          slug: "old-skill",
+          displayName: "Old Skill",
+          path: "skills/old-skill",
+          contentHash: "hash-old",
+          classification: "unavailable",
+          eligible: false,
+          reason: "destination-soft-deleted",
+          destination: null,
+        },
+        {
+          slug: "claimed-skill",
+          displayName: "Claimed Skill",
+          path: "skills/claimed-skill",
+          contentHash: "hash-claimed",
+          classification: "ownership-conflict",
+          eligible: false,
+          reason: "repository-owned-by-another-publisher",
+          destination: null,
+        },
+      ],
+    });
+    useActionMock.mockImplementation((action) => {
+      const actionName = getFunctionName(action);
+      if (actionName === "githubSkillSyncSettings:listRepositories") return listRepositories;
+      if (actionName === "githubSkillSyncSettings:previewRepository") return previewRepository;
+      return vi.fn();
+    });
     mockSignedInSettings({
       search: { view: "githubSources" },
-      memberships: [personalMembership, orgMembership],
+      memberships: [personalMembership],
     });
 
     render(<Settings />);
@@ -666,26 +765,127 @@ describe("Settings", () => {
     expect(
       screen.getByRole("button", { name: "GitHub Skill Sync" }).getAttribute("aria-current"),
     ).toBe("true");
-    expect(screen.getByRole("heading", { name: "Sync GitHub skills repo" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Configure GitHub Skill Sync" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Synced repositories" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "No synced repositories" })).toBeTruthy();
     expect(screen.getByLabelText("Publisher")).toBeTruthy();
-    expect(screen.getByPlaceholderText("https://github.com/owner/repo")).toBeTruthy();
-    expect(screen.queryByText(/Publishing as/i)).toBeNull();
-    expect(screen.queryByText(/skills\.sh\.json/i)).toBeNull();
+    await waitFor(() => expect(listRepositories).toHaveBeenCalled());
+    expect(await screen.findByText("patrick-erichsen/skills")).toBeTruthy();
 
-    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
-      target: { value: "https://github.com/NVIDIA/skills" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Select patrick-erichsen/skills" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview repository" }));
 
     await waitFor(() => {
-      expect(configureSource).toHaveBeenCalledWith({
-        ownerPublisherId: "publisher_openclaw",
-        repo: "NVIDIA/skills",
+      expect(previewRepository).toHaveBeenCalledWith({
+        publisherId: "publisher_patrick",
+        repo: "patrick-erichsen/skills",
       });
     });
-    expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
+
+    expect(await screen.findByRole("heading", { name: "Repository preview" })).toBeTruthy();
+    expect(screen.getByText("New destination")).toBeTruthy();
+    expect(screen.getByText("Hosted Skill replacement")).toBeTruthy();
+    expect(screen.getAllByText("Unavailable").length).toBeGreaterThan(0);
+    expect(screen.getByText("Ownership conflict")).toBeTruthy();
+    expect(screen.getByText("A deleted destination already uses this slug.")).toBeTruthy();
+    expect(
+      screen.getByText("This repository is already connected to another publisher."),
+    ).toBeTruthy();
+    expect(
+      screen.getAllByText(
+        /matching Hosted Skills switch to GitHub Skill Sync only after their exact candidates pass ClawHub scanning/i,
+      ),
+    ).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "Enable GitHub Skill Sync" }).hasAttribute("disabled"),
+    ).toBe(true);
+  });
+
+  it("ignores a preview response after the selected repository changes", async () => {
+    const listRepositories = vi.fn().mockResolvedValue({
+      publisher: { _id: "publisher_patrick", handle: "patrick", kind: "user" },
+      page: 1,
+      perPage: 100,
+      hasMore: false,
+      repositories: [
+        {
+          repositoryId: "1",
+          repo: "patrick-erichsen/skills",
+          ownerId: "123",
+          ownerLogin: "patrick-erichsen",
+          defaultBranch: "main",
+          archived: false,
+          disabled: false,
+          fork: false,
+          pushedAt: "2026-07-23T12:00:00Z",
+          selectable: true,
+          unavailableReason: null,
+        },
+      ],
+    });
+    let resolvePreview: ((value: unknown) => void) | undefined;
+    const previewRepository = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+    useActionMock.mockImplementation((action) => {
+      const actionName = getFunctionName(action);
+      if (actionName === "githubSkillSyncSettings:listRepositories") return listRepositories;
+      if (actionName === "githubSkillSyncSettings:previewRepository") return previewRepository;
+      return vi.fn();
+    });
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership],
+    });
+
+    render(<Settings />);
+
+    await waitFor(() => expect(listRepositories).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Preview repository" }));
+    await waitFor(() => expect(previewRepository).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText("Repository URL"), {
+      target: { value: "patrick-erichsen/other-skills" },
+    });
+    await act(async () => {
+      resolvePreview?.({
+        publisher: { _id: "publisher_patrick", handle: "patrick", kind: "user" },
+        repository: {
+          requestedRepo: "patrick-erichsen/skills",
+          repositoryId: "1",
+          repo: "patrick-erichsen/skills",
+          redirected: false,
+          defaultBranch: "main",
+          commit: "a".repeat(40),
+        },
+        summary: {
+          total: 1,
+          newDestinations: 1,
+          replacements: 0,
+          unavailable: 0,
+          conflicts: 0,
+        },
+        items: [
+          {
+            slug: "html",
+            displayName: "HTML",
+            path: "skills/html",
+            contentHash: "hash-html",
+            classification: "new-destination",
+            eligible: true,
+            destination: null,
+          },
+        ],
+      });
+    });
+
+    expect(screen.getByLabelText<HTMLInputElement>("Repository URL").value).toBe(
+      "patrick-erichsen/other-skills",
+    );
+    expect(screen.queryByRole("heading", { name: "Repository preview" })).toBeNull();
   });
 
   it("shows synced repos as separate cards and lets owners delete a source", async () => {
@@ -751,7 +951,7 @@ describe("Settings", () => {
     expect(screen.getByRole("heading", { name: "mattpocock/skills" })).toBeTruthy();
     expect(
       screen.getByText(
-        "Add a public repo URL. ClawHub syncs metadata and scan results every 15 minutes. Users install your skills directly from your GitHub repo.",
+        "Select a verified public repository, inspect its destinations, then enable synchronization when the engine is available.",
       ),
     ).toBeTruthy();
     const repoLink = screen.getByRole("link", { name: "https://github.com/mattpocock/skills" });
@@ -800,10 +1000,11 @@ describe("Settings", () => {
     expect(toast.success).toHaveBeenCalledWith("GitHub sync deleted (0 skills deleted)");
   });
 
-  it("does not let non-official publishers access GitHub sync sources", () => {
+  it("keeps GitHub Skill Sync hidden when the backend capability is off", () => {
     mockSignedInSettings({
       search: { view: "githubSources" },
       memberships: [personalMembership],
+      githubSkillSyncEnabled: false,
     });
 
     render(<Settings />);
