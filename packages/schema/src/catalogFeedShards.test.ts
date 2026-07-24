@@ -94,6 +94,34 @@ describe("catalog feed shard schema", () => {
     );
   });
 
+  it("rejects the same invalid featuredAt combinations as atomic feeds", () => {
+    const shard = {
+      schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
+      feedId: CATALOG_FEED_ID,
+      sequence: 7,
+      index: 0,
+    };
+
+    expect(() =>
+      serializeCatalogFeedShard({
+        ...shard,
+        entries: [{ ...entry("alpha"), featuredAt: 1 }],
+      }),
+    ).toThrow("featuredAt requires a featured entry");
+    expect(() =>
+      serializeCatalogFeedShard({
+        ...shard,
+        entries: [{ ...entry("alpha"), featured: true, featuredAt: -1 }],
+      }),
+    ).toThrow("featuredAt requires a featured entry");
+    expect(() =>
+      serializeCatalogFeedShard({
+        ...shard,
+        entries: [{ ...entry("alpha"), featured: true, featuredAt: 1.5 }],
+      }),
+    ).toThrow("featuredAt requires a featured entry");
+  });
+
   it("rejects non-RFC3339 windows and noncontiguous descriptors", () => {
     expect(() =>
       parseCatalogFeedShardRoot({

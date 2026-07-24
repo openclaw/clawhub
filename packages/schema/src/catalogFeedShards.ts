@@ -199,6 +199,12 @@ export function parseCatalogFeedShard(value: unknown): CatalogFeedShard {
   let previousId: string | undefined;
   for (const entry of shard.entries) {
     if (entry.type !== expectedType) throw new Error("Catalog feed shard entry type is invalid");
+    if (
+      entry.featuredAt !== undefined &&
+      (entry.featured !== true || !Number.isSafeInteger(entry.featuredAt) || entry.featuredAt < 0)
+    ) {
+      throw new Error("Catalog feed featuredAt requires a featured entry and epoch milliseconds");
+    }
     const identity = `${entry.type}\0${entry.id}`;
     if (identities.has(identity))
       throw new Error("Catalog feed shard entry identity is duplicated");
