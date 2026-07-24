@@ -16867,21 +16867,44 @@ describe("restorePackageInternal", () => {
   it("gates Claw named reads and exposes only the safe manifest summary when enabled", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    const clawManifestSummary = {
+    const latestClawManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "demo-claw", name: "Demo Claw", description: "Triage agent" },
+      agent: { id: "demo-claw-latest", name: "Demo Claw Latest", description: "Latest" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
       packages: { skillCount: 1, pluginCount: 1 },
       mcpServerCount: 1,
       cronJobCount: 1,
     };
+    const exactClawManifestSummary = {
+      schemaVersion: 1,
+      agent: { id: "demo-claw-v1", name: "Demo Claw v1", description: "Exact" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 2 },
+      packages: { skillCount: 2, pluginCount: 1 },
+      mcpServerCount: 2,
+      cronJobCount: 2,
+    };
+    const latestRelease = makeReleaseDoc({
+      _id: "packageReleases:demo-latest",
+      version: "2.0.0",
+      clawManifestSummary: latestClawManifestSummary,
+      extractedClawManifest: {
+        schemaVersion: 1,
+        agent: { id: "demo-claw-latest" },
+      },
+    });
     const { ctx } = makePackageCtx({
-      pkg: makePackageDoc({ family: "claw" }),
-      latestRelease: makeReleaseDoc({
-        clawManifestSummary,
+      pkg: makePackageDoc({
+        family: "claw",
+        latestReleaseId: "packageReleases:demo-latest",
+        latestVersionSummary: { version: "2.0.0" },
+      }),
+      latestRelease,
+      versionRelease: makeReleaseDoc({
+        _id: "packageReleases:demo-v1",
+        clawManifestSummary: exactClawManifestSummary,
         extractedClawManifest: {
           schemaVersion: 1,
-          agent: { id: "demo-claw" },
+          agent: { id: "demo-claw-v1" },
           workspace: { bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } } },
         },
       }),
@@ -16897,8 +16920,8 @@ describe("restorePackageInternal", () => {
       process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
       const detail = await getByNameHandler(ctx, { name: "demo-plugin" });
       expect(detail).toMatchObject({
-        package: { family: "claw", clawManifestSummary },
-        latestRelease: { clawManifestSummary },
+        package: { family: "claw", clawManifestSummary: latestClawManifestSummary },
+        latestRelease: { clawManifestSummary: latestClawManifestSummary },
       });
       expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
 
@@ -16907,8 +16930,8 @@ describe("restorePackageInternal", () => {
         version: "1.0.0",
       });
       expect(version).toMatchObject({
-        package: { family: "claw", clawManifestSummary },
-        version: { clawManifestSummary },
+        package: { family: "claw", clawManifestSummary: latestClawManifestSummary },
+        version: { clawManifestSummary: exactClawManifestSummary },
       });
       expect(version?.version).not.toHaveProperty("extractedClawManifest");
     } finally {

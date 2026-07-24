@@ -16716,13 +16716,21 @@ describe("httpApiV1 handlers", () => {
   it("lists and returns safe Claw details while the gate is enabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
-    const clawManifestSummary = {
+    const latestClawManifestSummary = {
       schemaVersion: 1,
-      agent: { id: "triage", name: "Triage", description: "Triage agent" },
+      agent: { id: "triage-latest", name: "Triage Latest", description: "Latest release" },
       workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
       packages: { skillCount: 1, pluginCount: 0 },
       mcpServerCount: 1,
       cronJobCount: 1,
+    };
+    const exactClawManifestSummary = {
+      schemaVersion: 1,
+      agent: { id: "triage-v1", name: "Triage v1", description: "Exact release" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 2 },
+      packages: { skillCount: 2, pluginCount: 1 },
+      mcpServerCount: 2,
+      cronJobCount: 2,
     };
     const packageItem = {
       _id: "packages:triage",
@@ -16746,7 +16754,7 @@ describe("httpApiV1 handlers", () => {
       compatibility: null,
       verification: null,
       artifact: null,
-      clawManifestSummary,
+      clawManifestSummary: latestClawManifestSummary,
     };
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("paginationOpts" in args) {
@@ -16763,7 +16771,9 @@ describe("httpApiV1 handlers", () => {
               createdAt: 1,
               changelog: "Initial release",
               files: [],
-              clawManifestSummary,
+              clawManifestSummary: exactClawManifestSummary,
+              extractedClawManifest: { secret: "must-not-project" },
+              extractedPackageJson: { privatePolicy: "must-not-project" },
             },
           };
         }
@@ -16794,7 +16804,11 @@ describe("httpApiV1 handlers", () => {
       );
       if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
       await expect(detailResponse.json()).resolves.toMatchObject({
-        package: { name: "triage-claw", family: "claw", clawManifestSummary },
+        package: {
+          name: "triage-claw",
+          family: "claw",
+          clawManifestSummary: latestClawManifestSummary,
+        },
       });
 
       const versionResponse = await __handlers.packagesGetRouterV1Handler(
@@ -16802,10 +16816,12 @@ describe("httpApiV1 handlers", () => {
         new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
       );
       if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
-      await expect(versionResponse.json()).resolves.toMatchObject({
+      const versionBody = await versionResponse.json();
+      expect(versionBody).toMatchObject({
         package: { name: "triage-claw", family: "claw" },
-        version: { version: "1.0.0", clawManifestSummary },
+        version: { version: "1.0.0", clawManifestSummary: exactClawManifestSummary },
       });
+      expect(JSON.stringify(versionBody)).not.toContain("must-not-project");
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
