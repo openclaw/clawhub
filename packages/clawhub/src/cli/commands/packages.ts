@@ -46,6 +46,7 @@ import {
   type PackageFamily,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
+  decodeUtf8Text,
   validateOpenClawExternalCodePluginPackageContents,
   validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
@@ -2384,7 +2385,7 @@ async function preparePackagePublishPlan(
       packageJson,
       files: filesOnDisk.map((file) => ({
         path: file.relPath,
-        text: new TextDecoder().decode(file.bytes),
+        text: decodeUtf8Text(file.bytes) ?? undefined,
       })),
     });
     if (!validation.ok) {

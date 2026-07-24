@@ -2641,6 +2641,39 @@ describe("package commands", () => {
     }
   });
 
+  it("rejects Claw manifests with malformed UTF-8 before upload", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "invalid-utf8-claw");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        JSON.stringify({
+          name: "invalid-utf8-claw",
+          displayName: "Invalid UTF-8 Claw",
+          version: "1.0.0",
+          openclaw: { claw: "CLAW.md" },
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "CLAW.md"),
+        Uint8Array.from([
+          ...new TextEncoder().encode(
+            "---\nschemaVersion: 1\nagent:\n  id: invalid-utf8-claw\n---\n# Invalid UTF-8 Claw\n",
+          ),
+          0xff,
+        ]),
+      );
+      await expect(cmdPublishPackage(makeOpts(workdir), "invalid-utf8-claw")).rejects.toThrow(
+        "CLAW.md: The declared Claw manifest is missing or is not UTF-8 text.",
+      );
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects Claws with missing workspace sources before upload", async () => {
     const workdir = await makeTmpWorkdir();
     try {
