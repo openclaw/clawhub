@@ -1,9 +1,11 @@
 import { ArkErrors, type } from "arktype";
+import { caseFold } from "unicode-case-folding";
 import { isScalar, parseDocument, visit } from "yaml";
 import { summarizeClawManifest, validateClawManifest, } from "./claws.js";
 const EXACT_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const WINDOWS_INVALID_PATH_CHARS = /[<>:"|?*]/;
 const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+const UNICODE_CONTROL_CHARACTER = /\p{Cc}/u;
 const MAX_CLAW_MANIFEST_BYTES = 1024 * 1024;
 const MAX_OPENCLAW_PROFILE_BYTES = 256 * 1024;
 const OPENCLAW_TOOL_PROFILE_IDS = new Set(["minimal", "coding", "messaging", "full"]);
@@ -82,13 +84,13 @@ export function isSafeClawPackagePath(value) {
         segment !== "." &&
         segment !== ".." &&
         !WINDOWS_INVALID_PATH_CHARS.test(segment) &&
-        !Array.from(segment).some((character) => character.charCodeAt(0) <= 0x1f) &&
+        !UNICODE_CONTROL_CHARACTER.test(segment) &&
         !segment.endsWith(".") &&
         !segment.endsWith(" ") &&
         !WINDOWS_RESERVED_PATH_SEGMENT.test(segment));
 }
 function portablePathKey(value) {
-    return value.replaceAll("\\", "/").normalize("NFC").toLowerCase();
+    return caseFold(value.replaceAll("\\", "/").normalize("NFC"));
 }
 export function findClawPackagePathHierarchyCollision(paths) {
     const pathByKey = new Map(paths.map((path) => [portablePathKey(path), path]));

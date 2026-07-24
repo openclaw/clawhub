@@ -50,7 +50,7 @@ function normalizeTarPath(path: string) {
     path !== path.trim() ||
     path.includes("\\") ||
     path.startsWith("/") ||
-    path.includes("\0")
+    /\p{Cc}/u.test(path)
   ) {
     return null;
   }

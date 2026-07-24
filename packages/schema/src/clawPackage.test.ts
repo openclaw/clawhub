@@ -65,6 +65,13 @@ describe("validateClawPackageContents", () => {
     });
   });
 
+  it("finds hierarchy collisions after full Unicode case folding", () => {
+    expect(findClawPackagePathHierarchyCollision(["Straße", "STRASSE/child"])).toEqual({
+      ancestor: "Straße",
+      descendant: "STRASSE/child",
+    });
+  });
+
   it("validates CLAW.md and derives its safe summary", () => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
@@ -242,6 +249,32 @@ describe("validateClawPackageContents", () => {
         expect.objectContaining({
           code: "missing_openclaw_profile",
           path: "profiles/openclaw.yml",
+        }),
+      ],
+    });
+  });
+
+  it("enforces the shared OpenClaw host environment policy through package validation", () => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(
+        `---\n${JSON.stringify({
+          ...manifest,
+          mcpServers: {
+            unsafe: { command: "server", env: { CPP: "\${CPP}" } },
+          },
+        })}\n---\n# Prompt\n`,
+      ),
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [
+        expect.objectContaining({
+          code: "invalid_claw_manifest",
+          path: "$.mcpServers.unsafe.env.CPP",
         }),
       ],
     });
@@ -534,6 +567,23 @@ describe("validateClawPackageContents", () => {
       });
     },
   );
+
+  it.each([
+    ["DEL", "\u007f"],
+    ["C1", "\u0085"],
+  ])("rejects %s control characters in package paths", (_label, controlCharacter) => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: [...files(), { path: `workspace/a${controlCharacter}.md`, text: "unused" }],
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      issues: expect.arrayContaining([expect.objectContaining({ code: "invalid_package_path" })]),
+    });
+  });
 
   it("requires exact path spelling for manifests and workspace sources", () => {
     const result = validateClawPackageContents({

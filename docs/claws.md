@@ -29,8 +29,9 @@ points to its manifest:
 }
 ```
 
-`CLAW.md` starts with the grouped Claw manifest as YAML frontmatter. Markdown
-after the closing delimiter is author-facing documentation.
+`CLAW.md` starts with the grouped Claw manifest as YAML frontmatter. Its
+non-empty Markdown body becomes the managed `SOUL.md` for the new agent, so do
+not also declare an explicit `SOUL.md` bootstrap or supporting-file destination.
 
 ```markdown
 ---
@@ -40,9 +41,6 @@ agent:
   name: GitHub Triage
   description: Reviews incoming issues.
 workspace:
-  bootstrapFiles:
-    SOUL.md:
-      source: workspace/SOUL.md
   files:
     - source: workspace/reference.md
       path: reference.md
@@ -61,7 +59,8 @@ Reviews and classifies incoming GitHub issues.
 ```
 
 JSON manifests remain compatible. Set `openclaw.claw` to a package-relative
-JSON file such as `openclaw.claw.json`.
+JSON file such as `openclaw.claw.json`. JSON has no implicit body file and may
+declare an explicit `SOUL.md` source.
 
 Every `workspace.*.source` must name a file in the same package. Package names
 and versions must match `package.json`, dependency versions must be exact, and
@@ -90,6 +89,7 @@ Publication rejects:
 - a missing, invalid, or escaping `openclaw.claw` path;
 - package identity or version mismatches;
 - malformed `CLAW.md` frontmatter or manifest fields;
+- an empty `CLAW.md` body or simultaneous explicit `SOUL.md` destination;
 - missing workspace source files or portable path collisions;
 - floating skill/plugin versions and resolved MCP credentials.
 

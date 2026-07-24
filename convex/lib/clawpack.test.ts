@@ -114,6 +114,15 @@ describe("clawpack", () => {
     await expect(parseClawPack(pack)).rejects.toThrow("unsafe tar path");
   });
 
+  it.each(["\u007f", "\u0085"])("rejects control character U+%s in tar paths", async (control) => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      [`package/workspace/a${control}.md`]: "unsafe",
+    });
+
+    await expect(parseClawPack(pack)).rejects.toThrow("unsafe tar path");
+  });
+
   it("rejects oversized package metadata before JSON parsing", async () => {
     const pack = npmPackFixture({
       "package/package.json": new Uint8Array(256 * 1024 + 1).fill(0x20),

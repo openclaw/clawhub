@@ -1997,7 +1997,7 @@ describe("package commands", () => {
             version: "1.0.0",
             openclaw: { claw: "CLAW.md" },
           }),
-          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n",
+          "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n# Demo Claw\n",
         }),
       );
       httpMocks.apiRequestForm.mockResolvedValueOnce({
@@ -2579,7 +2579,6 @@ describe("package commands", () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "github-triage");
-      await mkdir(join(folder, "workspace"), { recursive: true });
       await mkdir(join(folder, "profiles"), { recursive: true });
       await writeFile(
         join(folder, "package.json"),
@@ -2601,10 +2600,6 @@ describe("package commands", () => {
           "  name: GitHub Triage",
           "metadata:",
           "  openclaw.config: profiles/openclaw.yml",
-          "workspace:",
-          "  bootstrapFiles:",
-          "    SOUL.md:",
-          "      source: workspace/SOUL.md",
           "---",
           "# GitHub Triage",
         ].join("\n"),
@@ -2628,7 +2623,6 @@ describe("package commands", () => {
         ].join("\n"),
         "utf8",
       );
-      await writeFile(join(folder, "workspace", "SOUL.md"), "Be precise.\n", "utf8");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         packageId: "pkg_claw",
@@ -2663,7 +2657,7 @@ describe("package commands", () => {
       );
       await writeFile(
         join(folder, "CLAW.md"),
-        "---\nschemaVersion: 1\nagent:\n  id: broken-claw\nworkspace:\n  files:\n    - source: missing.md\n      path: missing.md\n---\n",
+        "---\nschemaVersion: 1\nagent:\n  id: broken-claw\nworkspace:\n  files:\n    - source: missing.md\n      path: missing.md\n---\n# Broken Claw\n",
         "utf8",
       );
 

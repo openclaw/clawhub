@@ -8,9 +8,12 @@ schema. ClawHub owns publication, ownership, discovery, package detail APIs,
 and hosted feed export. OpenClaw remains authoritative for local planning,
 consent, mutation, provenance, update, and removal.
 
-The YAML frontmatter is the portable manifest. The `CLAW.md` body remains
-documentation-only in the current contract and may be empty; it does not imply
-or replace any managed workspace file.
+The YAML frontmatter is the portable manifest. A `CLAW.md` package envelope
+must have a non-empty body; its exact body text is the implicit managed
+`SOUL.md` workspace file. The manifest must not also declare an explicit
+`SOUL.md` destination. The exact `CLAW.md` bytes, including the body, remain in
+the immutable artifact digest and provenance input. Grouped JSON has no body,
+creates no implicit file, and may declare `SOUL.md` explicitly.
 
 The portable agent object carries only identity and purpose. Harness-specific
 settings live in package-local profiles addressed through opaque string
