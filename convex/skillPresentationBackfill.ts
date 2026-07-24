@@ -196,6 +196,7 @@ export const applyBackfillPatchInternal = internalMutation({
     };
     await ctx.db.patch(version._id, {
       parsed: { ...version.parsed, presentation },
+      // Legacy publisher icons are independent of agents/openai.yaml metadata.
       ...(args.icon ? { icon: args.icon } : {}),
     });
     await ctx.db.patch(skill._id, {
@@ -293,6 +294,7 @@ export const runInternal = internalAction({
           samePresentation(candidate.parsed.presentation, nextPresentation) &&
           candidate.displayName === presentation.displayName &&
           (candidate.summary ?? undefined) === (presentation.summary ?? undefined) &&
+          // An absent presentation icon must not clear an unrelated publisher icon.
           (!iconPath || (candidate.versionIcon === iconPath && candidate.skillIcon === iconPath));
         if (alreadyCurrent) {
           stats.alreadyCurrent += 1;
