@@ -8,6 +8,7 @@ import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import {
   assertRankingTablesUnchanged,
   assertRankingTablesMatchDigests,
+  assertRankingTablesMatchLogicalDigests,
   assertTestDeployment,
   buildConvexImportArchiveCommand,
   copySnapshotTable,
@@ -16,6 +17,7 @@ import {
   parseArgs,
   readCurrentTestMetadata,
   rankingTableDigests,
+  rankingTableLogicalDigests,
   resolveTargets,
   type ResolvedRankingMetricTarget,
   validateExclusiveTestLane,
@@ -360,6 +362,7 @@ describe("Test ranking metric command guard", () => {
     await mkdir(workDir);
     const baseline = join(workDir, "baseline.zip");
     const unchanged = join(workDir, "unchanged.zip");
+    const rekeyed = join(workDir, "rekeyed.zip");
     const changed = join(workDir, "changed.zip");
     const tables = {
       "skillDailyStats/documents.jsonl": encodeRows([
@@ -370,6 +373,15 @@ describe("Test ranking metric command guard", () => {
     };
     await writeFile(baseline, zipSync(tables));
     await writeFile(unchanged, zipSync(tables));
+    await writeFile(
+      rekeyed,
+      zipSync({
+        ...tables,
+        "skillDailyStats/documents.jsonl": encodeRows([
+          dailyRow("replacement-system-id", "snapshot-skill", 20_655, 10),
+        ]),
+      }),
+    );
     await writeFile(
       changed,
       zipSync({
@@ -390,6 +402,14 @@ describe("Test ranking metric command guard", () => {
       assertRankingTablesMatchDigests(unchanged, rollbackDigests),
     ).resolves.toBeUndefined();
     await expect(assertRankingTablesMatchDigests(changed, rollbackDigests)).rejects.toThrow(
+      "skillDailyStats no longer matches the rollback source state",
+    );
+
+    const logicalDigests = await rankingTableLogicalDigests(baseline);
+    await expect(
+      assertRankingTablesMatchLogicalDigests(rekeyed, logicalDigests),
+    ).resolves.toBeUndefined();
+    await expect(assertRankingTablesMatchLogicalDigests(changed, logicalDigests)).rejects.toThrow(
       "skillDailyStats no longer matches the rollback source state",
     );
   });

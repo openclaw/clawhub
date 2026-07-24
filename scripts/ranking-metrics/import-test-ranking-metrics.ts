@@ -552,10 +552,12 @@ async function importPlannedTables(
   const archive = join(workDir, "ranking-tables.next.zip");
   createTableArchive(plannedRoot, archive);
   assertExclusiveTestLane(laneRunId, datasetVersion);
+  const expectedLogicalDigests = await rankingTableLogicalDigests(archive);
+  await recordRollbackSourceState(workDir, expectedLogicalDigests);
   importArchive(deployment, archive);
   const importedSnapshot = join(workDir, "test-after.zip");
   exportDeploymentSnapshot(deployment, importedSnapshot);
-  await recordRollbackSourceState(workDir, importedSnapshot);
+  await assertRankingTablesMatchLogicalDigests(importedSnapshot, expectedLogicalDigests);
   return importedSnapshot;
 }
 
@@ -594,10 +596,65 @@ export async function assertRankingTablesMatchDigests(
   }
 }
 
-async function recordRollbackSourceState(backupDir: string, snapshot: string) {
+export async function rankingTableLogicalDigests(snapshot: string) {
+  const entries = await Promise.all(
+    RANKING_TABLES.map(
+      async (table) => [table, await logicalDigestSnapshotTable(snapshot, table)] as const,
+    ),
+  );
+  return Object.fromEntries(entries) as Record<RankingTable, string>;
+}
+
+export async function assertRankingTablesMatchLogicalDigests(
+  snapshot: string,
+  expected: Partial<Record<RankingTable, unknown>>,
+) {
+  for (const table of RANKING_TABLES) {
+    if (typeof expected[table] !== "string") {
+      throw new Error(`Backup manifest is missing the ${table} rollback source digest`);
+    }
+    if ((await logicalDigestSnapshotTable(snapshot, table)) !== expected[table]) {
+      throw new Error(`${table} no longer matches the rollback source state`);
+    }
+  }
+}
+
+async function logicalDigestSnapshotTable(snapshot: string, table: RankingTable) {
+  // Convex assigns system IDs on import, so bind rollback to an order-independent logical multiset.
+  const mask = (1n << 256n) - 1n;
+  let count = 0;
+  let xor = 0n;
+  let sum = 0n;
+  for await (const row of readSnapshotTable(snapshot, table)) {
+    const { _id: _id, _creationTime: _creationTime, ...logicalRow } = row;
+    const rowHash = BigInt(
+      `0x${createHash("sha256").update(stableStringify(logicalRow)).digest("hex")}`,
+    );
+    count += 1;
+    xor ^= rowHash;
+    sum = (sum + rowHash) & mask;
+  }
+  return `${count}:${xor.toString(16).padStart(64, "0")}:${sum.toString(16).padStart(64, "0")}`;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function recordRollbackSourceState(
+  backupDir: string,
+  expectedCurrentLogicalDigests: Record<RankingTable, string>,
+) {
   const manifestPath = join(backupDir, "backup-manifest.json");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
-  manifest.expectedCurrentDigests = await rankingTableDigests(snapshot);
+  manifest.expectedCurrentLogicalDigests = expectedCurrentLogicalDigests;
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
@@ -614,13 +671,13 @@ async function restoreBackup(backupDir: string, deployment: string, laneRunId: n
   const manifest = JSON.parse(await readFile(`${backupDir}/backup-manifest.json`, "utf8")) as {
     deployment?: unknown;
     datasetVersion?: unknown;
-    expectedCurrentDigests?: Partial<Record<RankingTable, unknown>>;
+    expectedCurrentLogicalDigests?: Partial<Record<RankingTable, unknown>>;
     snapshot?: unknown;
   };
   if (
     manifest.deployment !== CLAWHUB_TEST_DEPLOYMENT ||
     typeof manifest.datasetVersion !== "string" ||
-    !manifest.expectedCurrentDigests ||
+    !manifest.expectedCurrentLogicalDigests ||
     manifest.snapshot !== "test-before.zip"
   ) {
     throw new Error("Backup manifest is not for the permanent Test deployment");
@@ -637,7 +694,10 @@ async function restoreBackup(backupDir: string, deployment: string, laneRunId: n
     ]);
     const currentSnapshot = join(workDir, "test-current.zip");
     exportDeploymentSnapshot(deployment, currentSnapshot);
-    await assertRankingTablesMatchDigests(currentSnapshot, manifest.expectedCurrentDigests);
+    await assertRankingTablesMatchLogicalDigests(
+      currentSnapshot,
+      manifest.expectedCurrentLogicalDigests,
+    );
     const archive = join(workDir, "ranking-tables.rollback.zip");
     createTableArchive(planned.root, archive);
     assertExclusiveTestLane(laneRunId, manifest.datasetVersion);
