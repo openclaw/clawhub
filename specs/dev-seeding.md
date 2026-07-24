@@ -47,14 +47,20 @@ ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five
   bookmark creation counts by skill/day. The emitted JSON contains no Convex ids or user, device,
   session, IP, auth, moderation, or private telemetry fields and is rejected unless it covers an
   exact 60-day window.
-- `bun run seed:test:ranking-import -- --dataset <dataset.json> --backup-dir <empty-dir>` targets
-  only `academic-chihuahua-392`. It atomically replaces the three ranking tables from one ZIP,
-  preserves deterministic feature and skills.sh fixture rows as overlays, replaces provenance only
-  for the matching dataset version, and retains older import metadata. It records
-  version/checksum/count/time-range metadata and leaves an exact three-table backup. Immediately
-  before replacement it re-exports and hashes all three target tables, aborting without mutation if
-  the reserved Test lane changed after the backup snapshot. Use `--readback --dataset-version
-<version>` for
+- Before any mutating ranking import command, dispatch `Reserve Test` from exact current `main` with
+  the dataset version and expected SHA. Wait for it to enter `in_progress`, pass its run ID as
+  `--lane-run-id`, and cancel the reservation only after import, proof, and any cleanup or rollback
+  are complete. The reservation is read-only and shares the `deploy-test` concurrency group, so a
+  Test deploy cannot overlap the operation.
+- `bun run seed:test:ranking-import -- --dataset <dataset.json> --backup-dir <empty-dir>
+--lane-run-id <run-id>` targets only `academic-chihuahua-392`. It verifies that the reservation,
+  local checkout, and current `main` are the same revision, then atomically replaces the three
+  ranking tables from one ZIP. It preserves deterministic feature and skills.sh fixture rows as
+  overlays, replaces provenance only for the matching dataset version, and retains older import
+  metadata. It records version/checksum/count/time-range metadata and leaves an exact three-table
+  backup. Immediately before replacement it re-exports and hashes all three target tables and
+  revalidates the reservation, aborting without mutation if the lane or tables changed. Use
+  `--readback --dataset-version <version>` for
   24-hour/60-day proof, `--cleanup` with the original dataset to remove that version, or
   `--rollback --backup-dir <dir>` to restore the pre-import tables.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local

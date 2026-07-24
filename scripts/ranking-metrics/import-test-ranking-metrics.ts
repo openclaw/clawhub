@@ -19,6 +19,8 @@ import {
 type Mode = "import" | "readback" | "cleanup" | "rollback";
 type DailyTable = "skillDailyStats" | "packageDailyStats";
 type DailyIdField = "skillId" | "packageId";
+const TEST_LANE_WORKFLOW_PATH = ".github/workflows/reserve-test.yml";
+const TEST_LANE_MAX_AGE_MS = 5 * 60 * 60 * 1_000;
 export type ResolvedRankingMetricTarget = {
   kind: "skill" | "package";
   targetId: string;
@@ -38,7 +40,7 @@ async function main() {
   assertTestDeployment(options.deployment);
 
   if (options.mode === "rollback") {
-    await restoreBackup(options.backupDir, options.deployment);
+    await restoreBackup(options.backupDir, options.deployment, options.laneRunId);
     return;
   }
   if (options.mode === "readback") {
@@ -50,17 +52,22 @@ async function main() {
   }
 
   const dataset = parseRankingDataset(await readFile(options.dataset, "utf8"));
+  assertExclusiveTestLane(options.laneRunId, dataset.datasetVersion);
   await assertEmptyDirectory(options.backupDir);
   await mkdir(options.backupDir, { recursive: true });
   const snapshot = `${options.backupDir}/test-before.zip`;
   exportDeploymentSnapshot(options.deployment, snapshot);
   const current = await readCurrentTestMetadata(snapshot);
-  await writeBackupManifest(options.backupDir, current.rankingMetricImports.length);
+  await writeBackupManifest(
+    options.backupDir,
+    current.rankingMetricImports.length,
+    dataset.datasetVersion,
+  );
 
   if (options.mode === "cleanup") {
-    await applyCleanup(current, dataset, options.deployment, options.backupDir);
+    await applyCleanup(current, dataset, options.deployment, options.backupDir, options.laneRunId);
   } else {
-    await applyImport(current, dataset, options.deployment, options.backupDir);
+    await applyImport(current, dataset, options.deployment, options.backupDir, options.laneRunId);
   }
 }
 
@@ -69,6 +76,7 @@ async function applyImport(
   dataset: RankingDataset,
   deployment: string,
   workDir: string,
+  laneRunId: number,
 ) {
   const resolved = resolveTargets(dataset.targets, current);
   const importedAt = Date.now();
@@ -116,7 +124,7 @@ async function applyImport(
   });
   await writeJsonLines(planned.rankingMetricImports, metadata);
 
-  await importPlannedTables(workDir, planned.root, deployment);
+  await importPlannedTables(workDir, planned.root, deployment, laneRunId, dataset.datasetVersion);
   const proof = await readback(deployment, dataset.datasetVersion);
   console.log(JSON.stringify({ ok: true, mode: "import", ...proof }, null, 2));
 }
@@ -126,6 +134,7 @@ async function applyCleanup(
   dataset: RankingDataset,
   deployment: string,
   workDir: string,
+  laneRunId: number,
 ) {
   const snapshot = `${workDir}/test-before.zip`;
   const planned = await createPlannedTablePaths(workDir);
@@ -142,7 +151,7 @@ async function applyCleanup(
     planned.rankingMetricImports,
     current.rankingMetricImports.filter((row) => row.datasetVersion !== dataset.datasetVersion),
   );
-  await importPlannedTables(workDir, planned.root, deployment);
+  await importPlannedTables(workDir, planned.root, deployment, laneRunId, dataset.datasetVersion);
   console.log(
     JSON.stringify(
       {
@@ -465,12 +474,17 @@ async function summarizeSnapshotTable(
   };
 }
 
-async function writeBackupManifest(backupDir: string, metadataRows: number) {
+async function writeBackupManifest(
+  backupDir: string,
+  metadataRows: number,
+  datasetVersion: string,
+) {
   await writeFile(
     `${backupDir}/backup-manifest.json`,
     `${JSON.stringify(
       {
         deployment: CLAWHUB_TEST_DEPLOYMENT,
+        datasetVersion,
         createdAt: new Date().toISOString(),
         snapshot: "test-before.zip",
         tables: {
@@ -501,13 +515,20 @@ async function createPlannedTablePaths(workDir: string): Promise<PlannedTablePat
   return paths;
 }
 
-async function importPlannedTables(workDir: string, plannedRoot: string, deployment: string) {
+async function importPlannedTables(
+  workDir: string,
+  plannedRoot: string,
+  deployment: string,
+  laneRunId: number,
+  datasetVersion: string,
+) {
   const baseline = `${workDir}/test-before.zip`;
   const preflight = `${workDir}/test-preflight.zip`;
   exportDeploymentSnapshot(deployment, preflight);
   await assertRankingTablesUnchanged(baseline, preflight);
   const archive = join(workDir, "ranking-tables.next.zip");
   createTableArchive(plannedRoot, archive);
+  assertExclusiveTestLane(laneRunId, datasetVersion);
   importArchive(deployment, archive);
 }
 
@@ -532,14 +553,20 @@ async function digestSnapshotTable(snapshot: string, table: string) {
   return digest.digest("hex");
 }
 
-async function restoreBackup(backupDir: string, deployment: string) {
+async function restoreBackup(backupDir: string, deployment: string, laneRunId: number) {
   const manifest = JSON.parse(await readFile(`${backupDir}/backup-manifest.json`, "utf8")) as {
     deployment?: unknown;
+    datasetVersion?: unknown;
     snapshot?: unknown;
   };
-  if (manifest.deployment !== CLAWHUB_TEST_DEPLOYMENT || manifest.snapshot !== "test-before.zip") {
+  if (
+    manifest.deployment !== CLAWHUB_TEST_DEPLOYMENT ||
+    typeof manifest.datasetVersion !== "string" ||
+    manifest.snapshot !== "test-before.zip"
+  ) {
     throw new Error("Backup manifest is not for the permanent Test deployment");
   }
+  assertExclusiveTestLane(laneRunId, manifest.datasetVersion);
   const snapshot = `${backupDir}/test-before.zip`;
   const workDir = await mkdtemp(`${tmpdir()}/clawhub-ranking-rollback-`);
   try {
@@ -551,6 +578,7 @@ async function restoreBackup(backupDir: string, deployment: string) {
     ]);
     const archive = join(workDir, "ranking-tables.rollback.zip");
     createTableArchive(planned.root, archive);
+    assertExclusiveTestLane(laneRunId, manifest.datasetVersion);
     importArchive(deployment, archive);
     console.log(JSON.stringify({ ok: true, mode: "rollback", deployment, backupDir }, null, 2));
   } finally {
@@ -573,6 +601,71 @@ export function buildConvexImportArchiveCommand(archive: string, deployment: str
     command: "bunx",
     args: ["convex", "import", "--deployment", deployment, "--replace", "--yes", archive],
   };
+}
+
+function assertExclusiveTestLane(runId: number, datasetVersion: string) {
+  const reservation = JSON.parse(
+    commandOutput("gh", ["api", `repos/openclaw/clawhub/actions/runs/${runId}`]),
+  ) as unknown;
+  const localSha = commandOutput("git", ["rev-parse", "HEAD"]);
+  const mainSha = commandOutput("gh", [
+    "api",
+    "repos/openclaw/clawhub/commits/main",
+    "--jq",
+    ".sha",
+  ]);
+  validateExclusiveTestLane({
+    reservation,
+    runId,
+    datasetVersion,
+    localSha,
+    mainSha,
+    now: Date.now(),
+  });
+}
+
+export function validateExclusiveTestLane(input: {
+  reservation: unknown;
+  runId: number;
+  datasetVersion: string;
+  localSha: string;
+  mainSha: string;
+  now: number;
+}) {
+  if (!isRecord(input.reservation)) {
+    throw new Error("Test lane reservation response is invalid");
+  }
+  const run = input.reservation;
+  if (
+    run.id !== input.runId ||
+    run.status !== "in_progress" ||
+    run.event !== "workflow_dispatch" ||
+    run.head_branch !== "main" ||
+    run.path !== TEST_LANE_WORKFLOW_PATH ||
+    run.display_title !== `Reserve Test for ${input.datasetVersion}`
+  ) {
+    throw new Error(`GitHub Actions run ${input.runId} is not actively holding the Test lane`);
+  }
+  if (run.head_sha !== input.localSha || run.head_sha !== input.mainSha) {
+    throw new Error("Test lane reservation, local checkout, and exact current main must match");
+  }
+  const startedAt = typeof run.run_started_at === "string" ? Date.parse(run.run_started_at) : NaN;
+  const ageMs = input.now - startedAt;
+  if (!Number.isFinite(startedAt) || ageMs < 0 || ageMs >= TEST_LANE_MAX_AGE_MS) {
+    throw new Error(`GitHub Actions run ${input.runId} is not actively holding a fresh Test lane`);
+  }
+}
+
+function commandOutput(command: string, args: string[]) {
+  const result = spawnSync(command, args, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (result.status !== 0 || !result.stdout.trim()) {
+    throw new Error(`Failed to verify Test lane with ${command} ${args[0] ?? ""}`);
+  }
+  return result.stdout.trim();
 }
 
 function importArchive(deployment: string, archive: string) {
@@ -692,12 +785,17 @@ export function assertTestDeployment(deployment: string) {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function parseArgs(args: string[]) {
   let mode: Mode = "import";
   let deployment = CLAWHUB_TEST_DEPLOYMENT;
   let dataset = "";
   let datasetVersion = "";
   let backupDir = "";
+  let laneRunId = 0;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--readback") mode = "readback";
@@ -712,10 +810,16 @@ export function parseArgs(args: string[]) {
       datasetVersion = arg.slice("--dataset-version=".length);
     } else if (arg === "--backup-dir") backupDir = args[++index] ?? "";
     else if (arg.startsWith("--backup-dir=")) backupDir = arg.slice("--backup-dir=".length);
-    else throw new Error(`Unknown argument: ${arg}`);
+    else if (arg === "--lane-run-id") laneRunId = Number(args[++index]);
+    else if (arg.startsWith("--lane-run-id=")) {
+      laneRunId = Number(arg.slice("--lane-run-id=".length));
+    } else throw new Error(`Unknown argument: ${arg}`);
   }
   assertTestDeployment(deployment);
   if (mode !== "readback" && !backupDir) throw new Error("--backup-dir is required");
+  if (mode !== "readback" && (!Number.isSafeInteger(laneRunId) || laneRunId <= 0)) {
+    throw new Error("--lane-run-id is required for mutating operations");
+  }
   if ((mode === "import" || mode === "cleanup") && !dataset)
     throw new Error("--dataset is required");
   if (mode === "rollback" && dataset) throw new Error("--dataset is not valid with --rollback");
@@ -725,6 +829,7 @@ export function parseArgs(args: string[]) {
     dataset: dataset ? resolve(dataset) : "",
     datasetVersion,
     backupDir: backupDir ? resolve(backupDir) : "",
+    laneRunId,
   };
 }
 

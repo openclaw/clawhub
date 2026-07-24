@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import {
   assertRankingTablesUnchanged,
@@ -15,6 +16,7 @@ import {
   readCurrentTestMetadata,
   resolveTargets,
   type ResolvedRankingMetricTarget,
+  validateExclusiveTestLane,
 } from "./import-test-ranking-metrics";
 
 const cleanupPaths: string[] = [];
@@ -34,12 +36,80 @@ describe("Test ranking metric command guard", () => {
 
   it("requires an explicit backup path for every mutating operation", () => {
     expect(() => parseArgs(["--dataset", "dataset.json"])).toThrow("--backup-dir");
-    expect(parseArgs(["--dataset", "dataset.json", "--backup-dir", "proof/backup"])).toEqual(
+    expect(() => parseArgs(["--dataset", "dataset.json", "--backup-dir", "proof/backup"])).toThrow(
+      "--lane-run-id",
+    );
+    expect(
+      parseArgs([
+        "--dataset",
+        "dataset.json",
+        "--backup-dir",
+        "proof/backup",
+        "--lane-run-id",
+        "12345",
+      ]),
+    ).toEqual(
       expect.objectContaining({
         mode: "import",
         deployment: CLAWHUB_TEST_DEPLOYMENT,
+        laneRunId: 12345,
       }),
     );
+  });
+
+  it("accepts only an active exact-main Test lane reservation", () => {
+    const reservation = {
+      id: 12_345,
+      status: "in_progress",
+      event: "workflow_dispatch",
+      head_branch: "main",
+      head_sha: "abc123",
+      path: ".github/workflows/reserve-test.yml",
+      display_title: "Reserve Test for ranking-metrics-2026-07-23-v1",
+      run_started_at: "2026-07-24T19:00:00.000Z",
+    };
+    expect(() =>
+      validateExclusiveTestLane({
+        reservation,
+        runId: 12_345,
+        datasetVersion: "ranking-metrics-2026-07-23-v1",
+        localSha: "abc123",
+        mainSha: "abc123",
+        now: Date.parse("2026-07-24T20:00:00.000Z"),
+      }),
+    ).not.toThrow();
+    expect(() =>
+      validateExclusiveTestLane({
+        reservation: { ...reservation, status: "completed" },
+        runId: 12_345,
+        datasetVersion: "ranking-metrics-2026-07-23-v1",
+        localSha: "abc123",
+        mainSha: "abc123",
+        now: Date.parse("2026-07-24T20:00:00.000Z"),
+      }),
+    ).toThrow("not actively holding");
+    expect(() =>
+      validateExclusiveTestLane({
+        reservation,
+        runId: 12_345,
+        datasetVersion: "ranking-metrics-2026-07-23-v1",
+        localSha: "different",
+        mainSha: "abc123",
+        now: Date.parse("2026-07-24T20:00:00.000Z"),
+      }),
+    ).toThrow("exact current main");
+  });
+
+  it("reserves the same non-canceling concurrency lane as Test deploys", async () => {
+    const workflow = parseYaml(await readFile(".github/workflows/reserve-test.yml", "utf8")) as {
+      concurrency?: { group?: string; "cancel-in-progress"?: boolean };
+      jobs?: Record<string, { environment?: { name?: string }; "timeout-minutes"?: number }>;
+    };
+    expect(workflow.concurrency).toEqual({ group: "deploy-test", "cancel-in-progress": false });
+    expect(workflow.jobs?.["reserve-test"]).toMatchObject({
+      environment: { name: "Test" },
+      "timeout-minutes": 360,
+    });
   });
 
   it("replaces all three ranking tables in one atomic ZIP import", () => {
