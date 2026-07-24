@@ -335,6 +335,11 @@ returns the same commit-pinned GitHub descriptor used by native GitHub-backed
 skills. Catalog pause, kill, publication disable, and exact-attempt rollback
 must fail closed without disabling or mutating native scan work.
 
+Permanent-Test proof workers may claim explicit security job IDs only when the
+runtime is the permanent Test environment, GitHub Skill Sync is in `test` mode,
+and every selected job carries the `github-skill-sync` rollout gate. Production
+and broad queue claims must not accept this proof-only targeting path.
+
 Pending verification keeps the skill visible in ClawHub search and detail UI,
 but normal install/update returns a structured block:
 

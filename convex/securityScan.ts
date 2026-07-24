@@ -35,6 +35,7 @@ import { requestSecurityScanDispatch } from "./securityScanDispatch";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+const MAX_TARGETED_TEST_GITHUB_SYNC_JOBS = 32;
 const MAX_ATTEMPTS = 3;
 const DEFAULT_CODEX_SCAN_CLAIM_LIMIT = 64;
 const MAX_CODEX_SCAN_CLAIM_LIMIT = 512;
@@ -2842,6 +2843,7 @@ export const claimQueuedJobsInternal = internalMutation({
     lane: v.optional(codexScanWorkerLaneValidator),
     limit: v.number(),
     leaseMs: v.optional(v.number()),
+    targetedJobIds: v.optional(v.array(v.id("securityScanJobs"))),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -2943,7 +2945,32 @@ export const claimQueuedJobsInternal = internalMutation({
       return eligible;
     };
 
-    if (args.lane === "catalog") {
+    const targetedJobIds = args.targetedJobIds;
+    if (targetedJobIds !== undefined) {
+      const rollout = getRuntimeRolloutCapabilities();
+      if (
+        rollout.environment !== "test" ||
+        rollout.githubSkillSync.mode !== "test" ||
+        !rollout.githubSkillSync.runtimeEnabled
+      ) {
+        throw new ConvexError("Exact GitHub Skill Sync job claims are Test-only");
+      }
+      if (targetedJobIds.length > MAX_TARGETED_TEST_GITHUB_SYNC_JOBS) {
+        throw new ConvexError("Too many exact GitHub Skill Sync jobs requested");
+      }
+      const targetedJobs: Doc<"securityScanJobs">[] = [];
+      for (const jobId of new Set(targetedJobIds)) {
+        const job = await ctx.db.get(jobId);
+        if (
+          job?.status === "queued" &&
+          job.rolloutGate === "github-skill-sync" &&
+          job.nextRunAt <= now
+        ) {
+          targetedJobs.push(job);
+        }
+      }
+      addReadyJobs(targetedJobs);
+    } else if (args.lane === "catalog") {
       addReadyJobs(await takeReadySourceJobs("skills-sh-catalog-test"), false);
     } else {
       addReadyJobs(await takeReadySourceJobs("manual"));
@@ -3697,6 +3724,7 @@ export const claimCodexScanJobLeases = action({
     lane: v.optional(codexScanWorkerLaneValidator),
     limit: v.optional(v.number()),
     leaseMs: v.optional(v.number()),
+    targetedJobIds: v.optional(v.array(v.id("securityScanJobs"))),
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
@@ -3708,6 +3736,7 @@ export const claimCodexScanJobLeases = action({
         lane: args.lane ?? "shared",
         limit: normalizeLimit(args.limit),
         leaseMs: args.leaseMs,
+        targetedJobIds: args.targetedJobIds,
       },
     );
   },

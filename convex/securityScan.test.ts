@@ -61,6 +61,7 @@ const claimCodexScanJobLeasesHandler = (
       lane?: "priority" | "shared" | "catalog";
       limit?: number;
       leaseMs?: number;
+      targetedJobIds?: string[];
     },
     Array<ScanJob & { leaseToken: string; workerId: string }>
   >
@@ -77,7 +78,13 @@ const hydrateCodexScanJobHandler = (
 
 const claimQueuedJobsInternalHandler = (
   claimQueuedJobsInternal as unknown as WrappedHandler<
-    { workerId: string; lane?: "priority" | "shared" | "catalog"; limit: number; leaseMs?: number },
+    {
+      workerId: string;
+      lane?: "priority" | "shared" | "catalog";
+      limit: number;
+      leaseMs?: number;
+      targetedJobIds?: string[];
+    },
     Array<ScanJob & { leaseToken: string; workerId: string }>
   >
 )._handler;
@@ -376,6 +383,7 @@ type ScanJob = {
   skillVersionId?: string;
   packageReleaseId?: string;
   skillScanRequestId?: string;
+  rolloutGate?: "github-skill-sync";
   source: string;
   priority: number;
   hasMaliciousSignal: boolean;
@@ -3223,6 +3231,36 @@ describe("securityScan", () => {
     expect(getUrl).not.toHaveBeenCalled();
   });
 
+  it("forwards exact Test GitHub Skill Sync job IDs to the lease mutation", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const leases = [
+      {
+        ...claimedJob,
+        _id: "securityScanJobs:github-sync",
+        leaseToken: "lease-github-sync",
+      },
+    ];
+    const runMutation = vi.fn(async () => leases);
+
+    const result = await claimCodexScanJobLeasesHandler(
+      { runMutation, runQuery: vi.fn(), storage: { getUrl: vi.fn() } },
+      {
+        token: "worker-secret",
+        workerId: "worker-1",
+        limit: 1,
+        targetedJobIds: ["securityScanJobs:github-sync"],
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        targetedJobIds: ["securityScanJobs:github-sync"],
+      }),
+    );
+    expect(result).toEqual(leases);
+  });
+
   it("refuses to hydrate a lease owned by a different worker", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
@@ -3749,6 +3787,84 @@ describe("securityScan", () => {
       "securityScanJobs:backfill",
     ]);
     expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
+  });
+
+  it("claims only requested GitHub Skill Sync jobs in the permanent Test environment", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:unrelated",
+        source: "publish",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:github-sync",
+        source: "publish",
+        rolloutGate: "github-skill-sync",
+        createdAt: 2,
+        nextRunAt: 2,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "targeted-test-worker",
+      limit: 1,
+      targetedJobIds: ["securityScanJobs:github-sync"],
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:github-sync"]);
+    expect(patches.map((entry) => entry.id)).toEqual(["securityScanJobs:github-sync"]);
+  });
+
+  it("does not turn an empty exact claim into a broad queue claim", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:unrelated",
+        source: "publish",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "targeted-test-worker",
+      limit: 1,
+      targetedJobIds: [],
+    });
+
+    expect(claimed).toEqual([]);
+    expect(patches).toEqual([]);
+  });
+
+  it("rejects exact GitHub Skill Sync job claims outside the permanent Test rollout", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://wry-manatee-359.convex.cloud");
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:github-sync",
+        source: "publish",
+        rolloutGate: "github-skill-sync",
+        nextRunAt: 1,
+      }),
+    ]);
+
+    await expect(
+      claimQueuedJobsInternalHandler(ctx, {
+        workerId: "targeted-test-worker",
+        limit: 1,
+        targetedJobIds: ["securityScanJobs:github-sync"],
+      }),
+    ).rejects.toThrow("Exact GitHub Skill Sync job claims are Test-only");
   });
 
   it("claims bulk rescans after every supported source", async () => {
