@@ -5,5 +5,5 @@ export function assertRankingMetricWritesAllowed(now = Date.now()) {
   if (!lock) return;
   const expiresAt = Number(lock.split(":").at(-1));
   if (Number.isSafeInteger(expiresAt) && expiresAt <= now) return;
-  throw new Error("Ranking metric writes are temporarily paused for a Test dataset import");
+  throw new Error("Ranking import source writes are temporarily paused for a Test dataset import");
 }

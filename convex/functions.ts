@@ -414,6 +414,7 @@ export async function repointPackageLatestRelease(
 }
 
 triggers.register("skills", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
   await adjustPublisherStatsForSkillChange(
     ctx,
     change.operation === "insert" ? null : change.oldDoc,
@@ -443,6 +444,7 @@ triggers.register("skillVersions", async (ctx, change) => {
 });
 
 triggers.register("packages", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
   await adjustPublisherStatsForPackageChange(
     ctx,
     change.operation === "insert" ? null : change.oldDoc,
@@ -475,12 +477,14 @@ triggers.register("packageReleases", async (ctx, change) => {
 });
 
 triggers.register("users", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
   if (!shouldScheduleOwnerUserPackageDigestSyncForUserChange(change)) return;
   const ownerUserId = change.operation === "delete" ? change.id : change.newDoc._id;
   await scheduleOwnerUserPackageDigestSync(ctx, ownerUserId);
 });
 
 triggers.register("publishers", async (ctx, change) => {
+  assertRankingMetricWritesAllowed();
   if (!shouldScheduleOwnerPublisherDigestSyncForPublisherChange(change)) return;
   const ownerPublisherId = change.operation === "delete" ? change.id : change.newDoc._id;
   await scheduleOwnerPublisherDigestSync(ctx, ownerPublisherId);
