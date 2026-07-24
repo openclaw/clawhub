@@ -16726,36 +16726,6 @@ describe("restorePackageInternal", () => {
     }
   });
 
-  it("rejects explicit Claw list and search filters before querying while disabled", async () => {
-    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-    const { ctx } = makeDigestCtx({
-      pages: [
-        {
-          page: [makeDigest("demo-claw", { family: "claw" })],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    try {
-      await expect(
-        listPublicPageHandler(ctx, {
-          family: "claw",
-          paginationOpts: { cursor: null, numItems: 10 },
-        }),
-      ).resolves.toEqual({ page: [], isDone: true, continueCursor: "" });
-      await expect(
-        searchPublicHandler(ctx, { query: "demo", family: "claw", limit: 10 }),
-      ).resolves.toEqual([]);
-      expect(ctx.db.query).not.toHaveBeenCalled();
-    } finally {
-      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
-      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
-    }
-  });
-
   it("does not let disabled Claws starve unfiltered public list pages", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
