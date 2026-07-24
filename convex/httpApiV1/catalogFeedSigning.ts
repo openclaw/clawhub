@@ -227,4 +227,7 @@ export async function negotiatedCatalogFeedV1Handler(
   return addAcceptVary(response);
 }
 
-export const signedCatalogFeedV1Http = httpAction(negotiatedCatalogFeedV1Handler);
+// Installing this handler does not activate signing. The unsigned representation
+// remains the default, and signing is reached only through explicit Accept
+// negotiation plus an active signing configuration.
+export const catalogFeedWithOptionalSigningV1Http = httpAction(negotiatedCatalogFeedV1Handler);

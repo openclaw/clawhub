@@ -151,6 +151,16 @@ Accept`. The signed representation's ETag and
 Skills and promotions remain on their existing unsigned representations until
 their payload types and matching OpenClaw consumers are specified.
 
+### Activation boundary
+
+Deploying this code does not enable signing and does not require a production
+key. The existing unsigned response remains the default before and after this
+change, including when the signing configuration is absent or invalid. Signing
+is active only for clients that explicitly request `application/vnd.dsse+json`
+and only after `CLAWHUB_FEED_SIGNING_CONFIG` is installed. This lets the signing
+foundation and dependent feed transport changes merge and receive review before
+operators provision a key and OpenClaw ships the matching trust anchor.
+
 Nitro exposes `/v1/feeds/plugins`, `/v1/feeds/skills`, and
 `/v1/feeds/promotions` through the same environment-aware Convex proxy used for
 `/api/*`. The unversioned `/feeds/*` paths permanently redirect to their

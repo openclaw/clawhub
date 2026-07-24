@@ -103,6 +103,21 @@ describe("signed catalog feed", () => {
     expect(signed.headers.get("cache-control")).toBe("no-store");
   });
 
+  it.each([{}, { CLAWHUB_FEED_SIGNING_CONFIG: "not-json" }])(
+    "keeps the existing unsigned route available while signing is dormant or invalid",
+    async (env) => {
+      const response = await negotiatedCatalogFeedV1Handler(
+        ctx as never,
+        new Request("https://clawhub.ai/api/v1/feeds/plugins"),
+        env,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toBe("application/json; charset=utf-8");
+      expect(await response.text()).toBe(publication.payload);
+    },
+  );
+
   it("signs the exact stored publication bytes with DSSE Ed25519", async () => {
     const { config, publicKey } = await signingFixture();
     const signed = await signCatalogFeedPayload(publication.payload, config);
