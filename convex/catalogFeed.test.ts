@@ -368,6 +368,11 @@ describe("catalog feed projection", () => {
 
     expect(builder.gt).toHaveBeenCalledWith("sequence", 3);
     expect(builder.lte).toHaveBeenCalledWith("sequence", 4);
+    expect(paginate).toHaveBeenCalledWith({
+      cursor: null,
+      numItems: 100,
+      maximumRowsRead: 100,
+    });
     expect(result).toMatchObject({
       resetRequired: false,
       retainedFromSequence: 3,

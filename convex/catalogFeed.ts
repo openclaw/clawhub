@@ -566,7 +566,13 @@ export const listChanges = internalQuery({
           .gt("sequence", args.fromSequence)
           .lte("sequence", args.toSequence),
       )
-      .paginate(args.paginationOpts);
+      .paginate({
+        ...args.paginationOpts,
+        // Convex treats numItems as an initial reactive-page target. This query
+        // has no post-index filters, so bounding rows read also makes the wire
+        // page-size limit a hard maximum.
+        maximumRowsRead: args.paginationOpts.numItems,
+      });
     return {
       resetRequired: false as const,
       ...window,
