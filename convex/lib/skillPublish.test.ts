@@ -96,6 +96,91 @@ describe("skillPublish", () => {
     );
   });
 
+  it("lets changed OpenAI metadata replace unchanged derived publish values", async () => {
+    const skillMarkdown = "---\nname: Demo Skill\ndescription: SKILL summary.\n---\n# Demo Skill\n";
+    const openAiYaml =
+      "interface:\n  display_name: OpenAI Demo v2\n  short_description: OpenAI summary v2.\n";
+    const stored = new Map<string, Blob>([
+      ["_storage:skill", new Blob([skillMarkdown], { type: "text/markdown" })],
+      ["_storage:openai", new Blob([openAiYaml], { type: "application/yaml" })],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+      "version" in args && "embedding" in args
+        ? { skillId: "skills:demo", versionId: "skillVersions:v2" }
+        : null,
+    );
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "demo-skill",
+          displayName: "OpenAI Demo v1",
+          summary: "OpenAI summary v1.",
+          latestVersionId: "skillVersions:v1",
+        })
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 })
+        .mockResolvedValueOnce({
+          _id: "skillVersions:v1",
+          parsed: {
+            frontmatter: {},
+            presentation: {
+              displayName: "OpenAI Demo v1",
+              displayNameSource: "openai",
+              summary: "OpenAI summary v1.",
+              summarySource: "openai",
+            },
+          },
+        }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => stored.get(storageId) ?? null),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "demo-skill",
+        displayName: "OpenAI Demo v1",
+        summary: "OpenAI summary v1.",
+        version: "2.0.0",
+        changelog: "Presentation refresh",
+        files: [
+          file("_storage:skill", "SKILL.md", skillMarkdown.length, "text/markdown"),
+          file("_storage:openai", "agents/openai.yaml", openAiYaml.length, "application/yaml"),
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        displayName: "OpenAI Demo v2",
+        summary: "OpenAI summary v2.",
+        parsed: {
+          frontmatter: expect.anything(),
+          metadata: undefined,
+          clawdis: undefined,
+          license: expect.anything(),
+          presentation: {
+            displayName: "OpenAI Demo v2",
+            displayNameSource: "openai",
+            summary: "OpenAI summary v2.",
+            summarySource: "openai",
+          },
+        },
+      }),
+    );
+  });
+
   it("rejects icon digest changes and propagates asset persistence failures", async () => {
     const iconBytes = validPng();
     const iconFile = file("_storage:icon", "assets/icon.png", iconBytes.byteLength, "image/png");

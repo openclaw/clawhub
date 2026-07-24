@@ -87,7 +87,9 @@ describe("resolveSkillPresentation", () => {
       }),
     ).toEqual({
       displayName: "Publisher Name",
+      displayNameSource: "publisher",
       summary: "Publisher summary.",
+      summarySource: "publisher",
       iconPaths: ["assets/icon.png"],
     });
   });
@@ -100,9 +102,15 @@ describe("resolveSkillPresentation", () => {
         skillDescription: "Skill summary.",
         slug: "skill-name",
       }),
-    ).toEqual({ displayName: "OpenAI Name", summary: "OpenAI summary." });
+    ).toEqual({
+      displayName: "OpenAI Name",
+      displayNameSource: "openai",
+      summary: "OpenAI summary.",
+      summarySource: "openai",
+    });
     expect(resolveSkillPresentation({ slug: "skill-name" })).toEqual({
       displayName: "Skill Name",
+      displayNameSource: "slug",
     });
   });
 });

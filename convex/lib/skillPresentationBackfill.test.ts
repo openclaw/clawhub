@@ -20,7 +20,9 @@ describe("resolveHistoricalSkillPresentation", () => {
       }),
     ).toEqual({
       displayName: "OpenAI Demo",
+      displayNameSource: "openai",
       summary: "OpenAI summary",
+      summarySource: "openai",
       iconPaths: ["assets/icon.png"],
     });
   });
@@ -40,7 +42,9 @@ describe("resolveHistoricalSkillPresentation", () => {
       }),
     ).toEqual({
       displayName: "Publisher Title",
+      displayNameSource: "publisher",
       summary: "Publisher summary",
+      summarySource: "publisher",
       iconPaths: ["assets/icon.png"],
     });
   });

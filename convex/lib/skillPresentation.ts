@@ -24,7 +24,9 @@ export type OpenAiSkillPresentation = {
 
 export type ResolvedSkillPresentation = {
   displayName: string;
+  displayNameSource: "publisher" | "openai" | "skill" | "slug";
   summary?: string;
+  summarySource?: "publisher" | "openai" | "skill" | "generated";
   iconPaths?: string[];
 };
 
@@ -75,23 +77,40 @@ export function resolveSkillPresentation(args: {
   skillDescription?: string | null;
   slug: string;
 }): ResolvedSkillPresentation {
+  const publisherDisplayName = cleanText(args.publisherDisplayName);
+  const openAiDisplayName = cleanText(args.openAi?.displayName);
+  const skillDisplayName = cleanText(args.skillDisplayName);
   const displayName = stripPresentationEmoji(
-    cleanText(args.publisherDisplayName) ??
-      cleanText(args.openAi?.displayName) ??
-      cleanText(args.skillDisplayName) ??
-      titleizeSlug(args.slug),
+    publisherDisplayName ?? openAiDisplayName ?? skillDisplayName ?? titleizeSlug(args.slug),
   );
-  const summary =
-    cleanText(args.publisherSummary) ??
-    cleanText(args.openAi?.shortDescription) ??
-    cleanText(args.skillDescription);
+  const displayNameSource = displayName
+    ? publisherDisplayName
+      ? "publisher"
+      : openAiDisplayName
+        ? "openai"
+        : skillDisplayName
+          ? "skill"
+          : "slug"
+    : "slug";
+  const publisherSummary = cleanText(args.publisherSummary);
+  const openAiSummary = cleanText(args.openAi?.shortDescription);
+  const skillSummary = cleanText(args.skillDescription);
+  const summary = publisherSummary ?? openAiSummary ?? skillSummary;
+  const summarySource = publisherSummary
+    ? "publisher"
+    : openAiSummary
+      ? "openai"
+      : skillSummary
+        ? "skill"
+        : undefined;
   const iconPaths = (args.openAi?.iconPaths ?? [])
     .map(normalizeSkillPresentationPath)
     .filter((path, index, paths): path is string => Boolean(path) && paths.indexOf(path) === index);
 
   return {
     displayName: displayName || titleizeSlug(args.slug),
-    ...(summary ? { summary } : {}),
+    displayNameSource,
+    ...(summary && summarySource ? { summary, summarySource } : {}),
     ...(iconPaths.length > 0 ? { iconPaths } : {}),
   };
 }

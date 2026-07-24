@@ -166,7 +166,21 @@ export const applyBackfillPatchInternal = internalMutation({
     skillId: v.id("skills"),
     versionId: v.id("skillVersions"),
     displayName: v.string(),
+    displayNameSource: v.union(
+      v.literal("publisher"),
+      v.literal("openai"),
+      v.literal("skill"),
+      v.literal("slug"),
+    ),
     summary: v.optional(v.string()),
+    summarySource: v.optional(
+      v.union(
+        v.literal("publisher"),
+        v.literal("openai"),
+        v.literal("skill"),
+        v.literal("generated"),
+      ),
+    ),
     icon: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -191,7 +205,10 @@ export const applyBackfillPatchInternal = internalMutation({
 
     const presentation = {
       displayName: args.displayName,
-      ...(args.summary ? { summary: args.summary } : {}),
+      displayNameSource: args.displayNameSource,
+      ...(args.summary && args.summarySource
+        ? { summary: args.summary, summarySource: args.summarySource }
+        : {}),
       ...(args.icon ? { icon: args.icon } : {}),
     };
     await ctx.db.patch(version._id, {
@@ -287,7 +304,10 @@ export const runInternal = internalAction({
         if (preparedIcon) stats.eligibleSkillsWithIcon += 1;
         const nextPresentation = {
           displayName: presentation.displayName,
-          ...(presentation.summary ? { summary: presentation.summary } : {}),
+          displayNameSource: presentation.displayNameSource,
+          ...(presentation.summary && presentation.summarySource
+            ? { summary: presentation.summary, summarySource: presentation.summarySource }
+            : {}),
           ...(iconPath ? { icon: iconPath } : {}),
         };
         const alreadyCurrent =
@@ -323,7 +343,9 @@ export const runInternal = internalAction({
             skillId: candidate.skillId,
             versionId: candidate.versionId,
             displayName: presentation.displayName,
+            displayNameSource: presentation.displayNameSource,
             summary: presentation.summary,
+            summarySource: presentation.summarySource,
             icon: storedIcon,
           },
         )) as { patched: boolean; reason?: "changed_before_apply" };
@@ -427,7 +449,9 @@ function samePresentation(
 ) {
   return (
     current?.displayName === next.displayName &&
+    current.displayNameSource === next.displayNameSource &&
     (current.summary ?? undefined) === (next.summary ?? undefined) &&
+    (current.summarySource ?? undefined) === (next.summarySource ?? undefined) &&
     (current.icon ?? undefined) === (next.icon ?? undefined)
   );
 }

@@ -321,15 +321,36 @@ async function publishVersionForUserInternal(
           .then(parseOpenAiSkillPresentation)
           .catch(() => null)
       : null;
+  const existingLatestVersion = existingSkill?.latestVersionId
+    ? ((await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+        versionId: existingSkill.latestVersionId,
+      })) as Doc<"skillVersions"> | null)
+    : null;
+  const existingPresentation = existingLatestVersion?.parsed.presentation;
   const skillDisplayName = getFrontmatterValue(frontmatter, "name")?.trim();
   const defaultDisplayName = resolveSkillPresentation({ slug }).displayName;
-  const publisherDisplayName = [skillDisplayName, defaultDisplayName].some(
-    (candidate) => candidate && stripPresentationEmoji(candidate) === displayName,
-  )
-    ? undefined
-    : displayName;
+  const reusesDerivedDisplayName =
+    existingPresentation?.displayNameSource !== undefined &&
+    existingPresentation.displayNameSource !== "publisher" &&
+    existingPresentation.displayName === displayName &&
+    existingSkill?.displayName === displayName;
+  const publisherDisplayName =
+    reusesDerivedDisplayName ||
+    [skillDisplayName, defaultDisplayName].some(
+      (candidate) => candidate && stripPresentationEmoji(candidate) === displayName,
+    )
+      ? undefined
+      : displayName;
+  const reusesDerivedSummary =
+    explicitSummary !== undefined &&
+    existingPresentation?.summarySource !== undefined &&
+    existingPresentation.summarySource !== "publisher" &&
+    existingPresentation.summary === explicitSummary &&
+    existingSkill?.summary === explicitSummary;
   const publisherSummary =
-    explicitSummary && explicitSummary !== summaryFromFrontmatter ? explicitSummary : undefined;
+    explicitSummary && explicitSummary !== summaryFromFrontmatter && !reusesDerivedSummary
+      ? explicitSummary
+      : undefined;
   const presentation = resolveSkillPresentation({
     publisherDisplayName,
     publisherSummary,
@@ -500,7 +521,9 @@ async function publishVersionForUserInternal(
       license: PLATFORM_SKILL_LICENSE,
       presentation: {
         displayName,
+        displayNameSource: presentation.displayNameSource,
         ...(summary ? { summary } : {}),
+        ...(summary ? { summarySource: presentation.summarySource ?? ("generated" as const) } : {}),
         ...(icon ? { icon } : {}),
       },
     },
