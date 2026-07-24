@@ -25,7 +25,13 @@ export declare const ApiRoutes: {
     readonly bundlePlugins: "/api/v1/bundle-plugins";
     readonly promotions: "/api/v1/promotions";
     readonly catalogFeed: "/api/v1/feeds/plugins";
+    readonly catalogFeedShardRoot: "/api/v1/feeds/plugins/root";
+    readonly catalogFeedShards: "/api/v1/feeds/plugins/shards";
+    readonly catalogFeedQuery: "/api/v1/feeds/plugins/query";
+    readonly catalogFeedChanges: "/api/v1/feeds/plugins/changes";
     readonly catalogSkillsFeed: "/api/v1/feeds/skills";
+    readonly catalogSkillsFeedShardRoot: "/api/v1/feeds/skills/root";
+    readonly catalogSkillsFeedShards: "/api/v1/feeds/skills/shards";
     readonly promotionsFeed: "/api/v1/feeds/promotions";
     readonly stars: "/api/v1/stars";
     readonly transfers: "/api/v1/transfers";
