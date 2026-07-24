@@ -69,6 +69,7 @@ import type * as lib_emailRendering from "../lib/emailRendering.js";
 import type * as lib_emails from "../lib/emails.js";
 import type * as lib_embeddingVisibility from "../lib/embeddingVisibility.js";
 import type * as lib_embeddings from "../lib/embeddings.js";
+import type * as lib_experimentalClaws from "../lib/experimentalClaws.js";
 import type * as lib_githubAccount from "../lib/githubAccount.js";
 import type * as lib_githubActionsOidc from "../lib/githubActionsOidc.js";
 import type * as lib_githubAuth from "../lib/githubAuth.js";
@@ -107,6 +108,7 @@ import type * as lib_publisherAbuseScoring from "../lib/publisherAbuseScoring.js
 import type * as lib_publisherCatalogDisplay from "../lib/publisherCatalogDisplay.js";
 import type * as lib_publisherStats from "../lib/publisherStats.js";
 import type * as lib_publishers from "../lib/publishers.js";
+import type * as lib_rankingMetricsImportLock from "../lib/rankingMetricsImportLock.js";
 import type * as lib_recommendationScore from "../lib/recommendationScore.js";
 import type * as lib_reporting from "../lib/reporting.js";
 import type * as lib_reservedHandles from "../lib/reservedHandles.js";
@@ -251,6 +253,7 @@ declare const fullApi: ApiFromModules<{
   "lib/emails": typeof lib_emails;
   "lib/embeddingVisibility": typeof lib_embeddingVisibility;
   "lib/embeddings": typeof lib_embeddings;
+  "lib/experimentalClaws": typeof lib_experimentalClaws;
   "lib/githubAccount": typeof lib_githubAccount;
   "lib/githubActionsOidc": typeof lib_githubActionsOidc;
   "lib/githubAuth": typeof lib_githubAuth;
@@ -289,6 +292,7 @@ declare const fullApi: ApiFromModules<{
   "lib/publisherCatalogDisplay": typeof lib_publisherCatalogDisplay;
   "lib/publisherStats": typeof lib_publisherStats;
   "lib/publishers": typeof lib_publishers;
+  "lib/rankingMetricsImportLock": typeof lib_rankingMetricsImportLock;
   "lib/recommendationScore": typeof lib_recommendationScore;
   "lib/reporting": typeof lib_reporting;
   "lib/reservedHandles": typeof lib_reservedHandles;
