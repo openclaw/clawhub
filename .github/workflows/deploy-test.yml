@@ -14,7 +14,7 @@ on:
         required: false
         type: string
       branch_test_confirm:
-        description: Confirmation phrase for the CLAW-563 branch-only Test deploy
+        description: Confirmation phrase for an explicitly guarded branch-only Test deploy
         required: false
         type: string
 
@@ -30,15 +30,20 @@ jobs:
     if: >-
       (github.event_name == 'workflow_dispatch' &&
       (github.ref == 'refs/heads/main' ||
-      (github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
+      ((github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
+      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay' &&
+      inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test')) &&
       github.actor == 'Patrick-Erichsen' &&
-      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test' &&
-      inputs.expected_sha != ''))) ||
+      inputs.expected_sha != '')) ||
       (github.event_name == 'pull_request' &&
-      github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      ((github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')) ||
+      (github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
+      contains(github.event.pull_request.labels.*.name, 'test-trending-load'))) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor == 'Patrick-Erichsen' &&
-      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')) ||
+      github.event.pull_request.head.sha != '') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -79,6 +84,14 @@ jobs:
             then
               branch_test_allowed=true
             fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-589-trending-rank-overlay ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-589-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
             if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
               [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
@@ -87,8 +100,16 @@ jobs:
             then
               branch_test_allowed=true
             fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-589-trending-rank-overlay ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
             if [[ "$branch_test_allowed" != true ]]; then
-              echo "::error::Refusing non-main Test deploy without the exact CLAW-563 branch guard"
+              echo "::error::Refusing non-main Test deploy without an exact approved branch guard"
               exit 1
             fi
             echo "branch_test=true" >> "$GITHUB_OUTPUT"
@@ -477,3 +498,185 @@ jobs:
             claw563-control-disabled.json
             claw563-cleanup.json
             claw563-deployment.json
+
+  claw589-trending-load:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
+      contains(github.event.pull_request.labels.*.name, 'test-trending-load')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Observe and prove the authenticated skills.sh Trending overlay
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          operator_token=""
+          export CLAWHUB_TEST_MIRROR_GATE_URL="$TEST_SITE_URL/ops/skills-sh/mirror-test"
+          cleanup() {
+            set +e
+            owned_run="$(jq -r '.runId // empty' proof/claw-589/active-run.json 2>/dev/null)"
+            active_run=""
+            discard_exit=0
+            if [[ -n "$operator_token" && -n "$owned_run" ]]; then
+              active_run="$(
+                curl \
+                  --fail-with-body \
+                  --silent \
+                  --show-error \
+                  --request POST \
+                  --header "Authorization: Bearer $operator_token" \
+                  --header "Content-Type: application/json" \
+                  --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                  --data '{"operation":"status"}' \
+                  "$CLAWHUB_TEST_MIRROR_GATE_URL" 2>/dev/null |
+                  jq -r --arg ownedRun "$owned_run" '.runs[]? | select(.runId == $ownedRun and (.status == "running" or .status == "paused" or .status == "reconciling")) | .runId' |
+                  head -n 1
+              )"
+              if [[ -n "$active_run" ]]; then
+                jq -n \
+                  --arg runId "$active_run" \
+                  '{operation:"discard",runId:$runId,reason:"CLAW-589 fail-closed cleanup"}' |
+                  curl \
+                    --fail-with-body \
+                    --silent \
+                    --show-error \
+                    --request POST \
+                    --header "Authorization: Bearer $operator_token" \
+                    --header "Content-Type: application/json" \
+                    --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                    --data-binary @- \
+                    "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw589-discarded-run.json 2>&1
+                discard_exit=$?
+              fi
+            fi
+            bunx convex run --no-push skillsShMirror:configureInternal \
+              '{
+                "actor":"CLAW-589 Test workflow",
+                "reason":"CLAW-589 proof cleanup",
+                "confirm":"enable-skills-sh-mirror-test",
+                "enabled":false,
+                "maxRowsPerRun":50000,
+                "maxRowsPerBatch":50,
+                "maxDetailBytes":65536
+              }' > claw589-control-disabled.json 2>&1
+            disable_exit=$?
+            bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}' >/dev/null
+            token_rotation_exit=$?
+            if [[ -n "$operator_token" ]]; then
+              revoked_status="$(
+                curl \
+                  --silent \
+                  --output /dev/null \
+                  --write-out '%{http_code}' \
+                  --header "Authorization: Bearer $operator_token" \
+                  https://academic-chihuahua-392.convex.site/api/v1/operator/skills-sh/catalog-test
+              )"
+            else
+              revoked_status="not-created"
+            fi
+            jq -n \
+              --arg activeRun "$active_run" \
+              --arg ownedRun "$owned_run" \
+              --argjson discardExit "$discard_exit" \
+              --argjson disableExit "$disable_exit" \
+              --argjson tokenRotationExit "$token_rotation_exit" \
+              --arg revokedStatus "$revoked_status" \
+              '{
+                activeRun:$activeRun,
+                ownedRun:$ownedRun,
+                discardExit:$discardExit,
+                disableExit:$disableExit,
+                tokenRotationExit:$tokenRotationExit,
+                revokedStatus:$revokedStatus
+              }' > claw589-cleanup.json
+            set -e
+            [[
+              "$discard_exit" -eq 0 &&
+              "$disable_exit" -eq 0 &&
+              "$token_rotation_exit" -eq 0 &&
+              "$revoked_status" == "401"
+            ]]
+          }
+          trap cleanup EXIT
+
+          deployment_json="$(bunx convex run --no-push appMeta:getDeploymentInfo)"
+          build_sha="$(jq -r '.appBuildSha // empty' <<<"$deployment_json")"
+          if [[ "$build_sha" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Unexpected Convex Test build SHA: $build_sha"
+            exit 1
+          fi
+
+          token_seed="$(bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}')"
+          operator_token="$(jq -r '.admin.token // empty' <<<"$token_seed")"
+          token_seed=""
+          if [[ -z "$operator_token" ]]; then
+            echo "::error::Test admin fixture token is missing"
+            exit 1
+          fi
+          echo "::add-mask::$operator_token"
+          export CLAWHUB_TEST_OPERATOR_TOKEN="$operator_token"
+          bun run skills-sh:prove-trending > claw589-proof-output.json
+
+          jq -e '
+            .target.environment == "permanent Test" and
+            .target.productionWrites == 0 and
+            .source.view == "trending" and
+            .source.total > 0 and
+            .source.requestCount > 0 and
+            .source.durationMs >= 0 and
+            .source.countContract.trending24hInstalls == null and
+            .live.run.counts.observed == .source.total and
+            .replay.run.counts.trendingUpdated == 0 and
+            .stale.run.counts.trendingUpdated == 0 and
+            .hydration.maximumRowsPerRun == 10 and
+            .hydration.withinBound == true and
+            .isolation.unchanged == true
+          ' proof/claw-589/skills-sh-trending-test-proof.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw589-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .discardExit == 0 and
+            .disableExit == 0 and
+            .tokenRotationExit == 0 and
+            .revokedStatus == "401"
+          ' claw589-cleanup.json >/dev/null
+
+      - name: Upload permanent Test Trending proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw589-trending-proof
+          if-no-files-found: warn
+          path: |
+            proof/claw-589/skills-sh-trending-test-proof.json
+            proof/claw-589/active-run.json
+            claw589-proof-output.json
+            claw589-control-disabled.json
+            claw589-cleanup.json
+            claw589-deployment.json
+            claw589-discarded-run.json

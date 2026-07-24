@@ -39,7 +39,7 @@ async function readWorkflow() {
 }
 
 describe("Test deploy workflow", () => {
-  it("admits main CI and exact guarded CLAW-563 branch deploys", async () => {
+  it("admits main CI and exact guarded mirror proof branches", async () => {
     const workflow = await readWorkflow();
     const job = workflow.jobs?.["deploy-test"];
     const steps = job?.steps ?? [];
@@ -62,6 +62,8 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain("github.ref == 'refs/heads/main'");
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k'");
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'");
+    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay'");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test'");
     expect(job?.if).toContain("inputs.expected_sha != ''");
     expect(job?.if).toContain("github.event_name == 'pull_request'");
     expect(job?.if).toContain(
@@ -72,12 +74,20 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain(
       "contains(github.event.pull_request.labels.*.name, 'test-mirror-load')",
     );
+    expect(job?.if).toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay'",
+    );
+    expect(job?.if).toContain(
+      "contains(github.event.pull_request.labels.*.name, 'test-trending-load')",
+    );
     expect(job?.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(job?.if).toContain("github.event.workflow_run.event == 'push'");
     expect(revision).toContain('deploy_sha" != "$main_sha');
     expect(revision).toContain("refs/heads/pe/claw-563-skills-sh-mirror-10k");
     expect(revision).toContain("Patrick-Erichsen");
     expect(revision).toContain("deploy-claw-563-to-permanent-test");
+    expect(revision).toContain("refs/heads/pe/claw-589-trending-rank-overlay");
+    expect(revision).toContain("deploy-claw-589-to-permanent-test");
     expect(revision).toContain("${{ inputs.expected_sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.repo.full_name }}");
@@ -179,5 +189,28 @@ describe("Test deploy workflow", () => {
     expect(run).toContain("050daba89f6b6636470add5cb300aac46a412cf8");
     expect(run).toContain("690ed564419291ca6e832dc69b53061300075b62");
     expect(run).toContain("claw563-discrawl-entry.json");
+  });
+
+  it("runs the CLAW-589 proof only for its exact branch and label", async () => {
+    const workflow = await readWorkflow();
+    const job = workflow.jobs?.["claw589-trending-load"];
+    const step = job?.steps?.find(
+      (candidate) =>
+        candidate.name === "Observe and prove the authenticated skills.sh Trending overlay",
+    );
+    const run = step?.run ?? "";
+
+    expect(job?.if).toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay'",
+    );
+    expect(job?.if).toContain("test-trending-load");
+    expect(job?.environment?.name).toBe("Test");
+    expect(run).toContain("bun run skills-sh:prove-trending");
+    expect(run).toContain("appMeta:getDeploymentInfo");
+    expect(run).toContain("CLAW-589 fail-closed cleanup");
+    expect(run).toContain("proof/claw-589/active-run.json");
+    expect(run).toContain(".runId == $ownedRun");
+    expect(run).toContain("trending24hInstalls == null");
+    expect(run).toContain("revokedStatus");
   });
 });

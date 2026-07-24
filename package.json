@@ -76,6 +76,7 @@
     "skills-sh:prove-500": "bun scripts/skills-sh-catalog/prove-500.ts",
     "skills-sh:prove-canary": "CLAWHUB_TEST_CATALOG_MODE=controlled-canary bun scripts/skills-sh-catalog/run-test-gate.ts",
     "skills-sh:prove-mirror": "bun scripts/skills-sh-catalog/prove-mirror-test.ts",
+    "skills-sh:prove-trending": "bun scripts/skills-sh-catalog/prove-trending-test.ts",
     "skills:install": "npx --yes skills@1.5.16 add openclaw/carapace --skill openclaw-design openclaw-brand openclaw-carapace openclaw-design-system openclaw-marketing-pages openclaw-design-audit --agent codex --copy --yes",
     "test": "vitest run",
     "test:e2e": "vitest run -c vitest.e2e.config.ts",
