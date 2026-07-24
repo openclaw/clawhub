@@ -263,7 +263,7 @@ describe("validateClawPackageContents", () => {
         `---\n${JSON.stringify({
           ...manifest,
           mcpServers: {
-            unsafe: { command: "server", env: { CPP: "\${CPP}" } },
+            unsafe: { command: "server", env: { CPP: "${CPP}" } },
           },
         })}\n---\n# Prompt\n`,
       ),
