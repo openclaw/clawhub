@@ -1136,6 +1136,7 @@ function isPublishedPackageRelease(
   return Boolean(
     release &&
     !release.softDeletedAt &&
+    release.ownerDeletedAt === undefined &&
     (release.publicationStatus === undefined || release.publicationStatus === "published"),
   );
 }
@@ -1215,7 +1216,7 @@ function toPublicPackage(
           ? packageArtifactSummary(latestRelease)
           : undefined,
     clawManifestSummary:
-      pkg.family === "claw" && latestRelease && !latestRelease.softDeletedAt
+      pkg.family === "claw" && isPublishedPackageRelease(latestRelease)
         ? latestRelease.clawManifestSummary
         : undefined,
     scanStatus,

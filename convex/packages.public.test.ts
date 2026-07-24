@@ -17005,6 +17005,21 @@ describe("restorePackageInternal", () => {
       expect(claw?.latestRelease).not.toHaveProperty("extractedPackageJson");
       expect(JSON.stringify(claw)).not.toContain("must-not-project");
 
+      const ownerDeletedRelease = makeReleaseDoc({
+        files: [],
+        ownerDeletedAt: 123,
+        clawManifestSummary: staleSummary,
+        extractedPackageJson: { privateWorkspace: "must-not-project-owner-deleted" },
+      });
+      const { ctx: ownerDeletedCtx } = makePackageCtx({
+        pkg: makePackageDoc({ family: "claw" }),
+        latestRelease: ownerDeletedRelease,
+      });
+      const ownerDeleted = await getByNameHandler(ownerDeletedCtx, { name: "demo-plugin" });
+      expect(ownerDeleted).toMatchObject({ package: { latestVersion: null }, latestRelease: null });
+      expect(JSON.stringify(ownerDeleted)).not.toContain("stale-non-claw-summary");
+      expect(JSON.stringify(ownerDeleted)).not.toContain("must-not-project-owner-deleted");
+
       const pluginPackageJson = { name: "demo-plugin", openclaw: { extensions: ["index.js"] } };
       const pluginRelease = makeReleaseDoc({
         clawManifestSummary: staleSummary,
