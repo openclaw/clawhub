@@ -53,6 +53,7 @@ import {
   promotionsPostRouterV1Http,
   catalogFeedV1Http,
   catalogSkillsFeedV1Http,
+  catalogClawsFeedV1Http,
   promotionsFeedV1Http,
   usersGetRouterV1Http,
   usersListV1Http,
@@ -182,6 +183,12 @@ http.route({
   path: ApiRoutes.catalogSkillsFeed,
   method: "GET",
   handler: catalogSkillsFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.catalogClawsFeed,
+  method: "GET",
+  handler: catalogClawsFeedV1Http,
 });
 
 http.route({

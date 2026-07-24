@@ -146,6 +146,28 @@ describe("catalog feed schema", () => {
     expect(parseCatalogFeed(feed).entries[0]?.type).toBe("skill");
   });
 
+  it("rejects Claw entries from the stable v1 catalog contract", () => {
+    expect(() =>
+      parseCatalogFeed({
+        ...makeFeed(),
+        entries: [
+          {
+            ...makeFeed().entries[0],
+            type: "claw",
+            clawManifestSummary: {
+              schemaVersion: 1,
+              agent: { id: "demo" },
+              workspace: { bootstrapFiles: [], fileCount: 0 },
+              packages: { skillCount: 0, pluginCount: 0 },
+              mcpServerCount: 0,
+              cronJobCount: 0,
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("round-trips optional featured state without changing schema version 1", () => {
     const feed = makeFeed({
       entries: makeFeed().entries.map((entry, index) => ({

@@ -12192,6 +12192,7 @@ describe("httpApiV1 handlers", () => {
             artifactKind: "legacy-zip",
             integritySha256: "a".repeat(64),
             sha256hash: "b".repeat(64),
+            clawpackSize: 321,
           },
         };
       }
@@ -12215,6 +12216,7 @@ describe("httpApiV1 handlers", () => {
         source: "clawhub",
         artifactKind: "legacy-zip",
         artifactSha256: "b".repeat(64),
+        size: 321,
         packageName: "demo-plugin",
         version: "1.0.0",
         downloadUrl: "https://example.com/api/v1/packages/demo-plugin/download?version=1.0.0",
@@ -14445,6 +14447,126 @@ describe("httpApiV1 handlers", () => {
     expect(storageGet).toHaveBeenCalledWith("storage:1");
   });
 
+  it("serves the immutable stored legacy archive without reconstructing it", async () => {
+    const archive = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xaa, 0xbb]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          artifactKind: "legacy-zip",
+          clawpackStorageId: "storage:archive",
+          files: [
+            {
+              path: "package.json",
+              size: 2,
+              sha256: "a".repeat(64),
+              storageId: "storage:file-that-must-not-be-read",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (id: string) =>
+      id === "storage:archive" ? new Blob([archive], { type: "application/zip" }) : null,
+    );
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(archive);
+    expect(storageGet).toHaveBeenCalledTimes(1);
+    expect(storageGet).toHaveBeenCalledWith("storage:archive");
+  });
+
+  it("reconstructs compatibility ZIP downloads instead of serving stored npm tarballs", async () => {
+    const storedTarball = gzipSync(new TextEncoder().encode("not a zip"));
+    const packageJson = new TextEncoder().encode('{"name":"demo-plugin"}');
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return {
+          package: {
+            _id: "packages:1",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            family: "code-plugin",
+            tags: {},
+            latestReleaseId: "packageReleases:1",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+          latestRelease: null,
+          owner: null,
+        };
+      }
+      if ("releaseId" in args) {
+        return {
+          _id: "packageReleases:1",
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "init",
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:tarball",
+          files: [
+            {
+              path: "package.json",
+              size: packageJson.byteLength,
+              sha256: "a".repeat(64),
+              storageId: "storage:package-json",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async (id: string) => {
+      if (id === "storage:tarball") return new Blob([storedTarball], { type: "application/gzip" });
+      if (id === "storage:package-json") return new Blob([packageJson]);
+      return null;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/packages/demo-plugin/download"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/zip");
+    expect(
+      strFromU8(unzipSync(new Uint8Array(await response.arrayBuffer()))["package/package.json"]!),
+    ).toBe('{"name":"demo-plugin"}');
+    expect(storageGet).not.toHaveBeenCalledWith("storage:tarball");
+    expect(storageGet).toHaveBeenCalledWith("storage:package-json");
+  });
+
   it("allows package downloads when verification is clean even without cached vtAnalysis", async () => {
     const runMutation = vi.fn().mockResolvedValue(okRate());
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -14920,6 +15042,69 @@ describe("httpApiV1 handlers", () => {
     expect(actionCall).toBeTruthy();
     const payload = (actionCall[1] as { payload?: { files?: Array<{ path: string }> } }).payload;
     expect(payload?.files?.map((file) => file.path)).toContain("dist/index.js");
+  });
+
+  it("multipart Claw publish accepts an npm pack without a plugin manifest", async () => {
+    vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+    vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+      kind: "user",
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runAction = vi
+      .fn()
+      .mockResolvedValue({ ok: true, packageId: "pkg:claw", releaseId: "rel:claw" });
+    const storageStore = vi.fn(async () => `storage:${storageStore.mock.calls.length}`);
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({
+        name: "demo-claw",
+        version: "1.0.0",
+        openclaw: { claw: "CLAW.md" },
+      }),
+      "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n",
+    });
+    const form = new FormData();
+    form.set(
+      "payload",
+      JSON.stringify({
+        name: "demo-claw",
+        family: "claw",
+        version: "1.0.0",
+        changelog: "init",
+      }),
+    );
+    form.append(
+      "clawpack",
+      new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
+        type: "application/octet-stream",
+      }),
+    );
+
+    const response = await __handlers.publishPackageV1Handler(
+      makeCtx({ runAction, runMutation, storage: { store: storageStore } }),
+      new Request("https://example.com/api/v1/packages", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: form,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(storageStore).toHaveBeenCalledTimes(3);
+    expect(runAction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          family: "claw",
+          artifact: expect.objectContaining({ kind: "npm-pack", npmFileCount: 2 }),
+          files: [
+            expect.objectContaining({ path: "package.json" }),
+            expect.objectContaining({ path: "CLAW.md" }),
+          ],
+        }),
+      }),
+    );
   });
 
   it("staged ClawPack publish derives artifact metadata from stored bytes", async () => {
@@ -16442,5 +16627,128 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(403);
     expect(await response.text()).toBe(moderationMessage);
+  });
+
+  it("keeps Claw list and search filters unavailable while the gate is disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    try {
+      const ctx = makeCtx({});
+      const listResponse = await __handlers.listPackagesV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages?family=claw"),
+      );
+      const searchResponse = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages/search?q=triage&family=claw"),
+      );
+
+      expect(listResponse.status).toBe(400);
+      await expect(listResponse.text()).resolves.toBe("Invalid family query parameter");
+      expect(searchResponse.status).toBe(400);
+      await expect(searchResponse.text()).resolves.toBe("Invalid family query parameter");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("lists and returns safe Claw details while the gate is enabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const clawManifestSummary = {
+      schemaVersion: 1,
+      agent: { id: "triage", name: "Triage", description: "Triage agent" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
+      packages: { skillCount: 1, pluginCount: 0 },
+      mcpServerCount: 1,
+      cronJobCount: 1,
+    };
+    const packageItem = {
+      _id: "packages:triage",
+      name: "triage-claw",
+      displayName: "Triage Claw",
+      family: "claw",
+      runtimeId: null,
+      channel: "community",
+      isOfficial: false,
+      summary: "Triage agent",
+      icon: null,
+      ownerHandle: "owner",
+      createdAt: 1,
+      updatedAt: 2,
+      latestVersion: "1.0.0",
+      categories: [],
+      topics: [],
+      verificationTier: null,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      tags: {},
+      compatibility: null,
+      verification: null,
+      artifact: null,
+      clawManifestSummary,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("paginationOpts" in args) {
+        return { page: [packageItem], isDone: true, continueCursor: "" };
+      }
+      if ("name" in args) {
+        if ("version" in args) {
+          return {
+            package: packageItem,
+            version: {
+              _id: "packageReleases:triage-1",
+              packageId: "packages:triage",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Initial release",
+              files: [],
+              clawManifestSummary,
+            },
+          };
+        }
+        return {
+          package: packageItem,
+          latestRelease: null,
+          owner: { _id: "users:owner", handle: "owner", displayName: "Owner" },
+        };
+      }
+      if ("releaseIds" in args) return [];
+      return null;
+    });
+
+    try {
+      const ctx = makeCtx({ runQuery });
+      const listResponse = await __handlers.listPackagesV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages?family=claw"),
+      );
+      if (listResponse.status !== 200) throw new Error(await listResponse.text());
+      await expect(listResponse.json()).resolves.toMatchObject({
+        items: [{ name: "triage-claw", family: "claw" }],
+      });
+
+      const detailResponse = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages/triage-claw"),
+      );
+      if (detailResponse.status !== 200) throw new Error(await detailResponse.text());
+      await expect(detailResponse.json()).resolves.toMatchObject({
+        package: { name: "triage-claw", family: "claw", clawManifestSummary },
+      });
+
+      const versionResponse = await __handlers.packagesGetRouterV1Handler(
+        ctx,
+        new Request("https://example.com/api/v1/packages/triage-claw/versions/1.0.0"),
+      );
+      if (versionResponse.status !== 200) throw new Error(await versionResponse.text());
+      await expect(versionResponse.json()).resolves.toMatchObject({
+        package: { name: "triage-claw", family: "claw" },
+        version: { version: "1.0.0", clawManifestSummary },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
   });
 });

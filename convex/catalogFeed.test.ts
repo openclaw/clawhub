@@ -1,6 +1,11 @@
-import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID } from "clawhub-schema";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listOfficialEntries, listOfficialSkillEntries, publish } from "./catalogFeed";
+import { CATALOG_FEED_ID, CATALOG_SKILLS_FEED_ID, EXPERIMENTAL_CLAW_FEED_ID } from "clawhub-schema";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  listOfficialClawEntries,
+  listOfficialEntries,
+  listOfficialSkillEntries,
+  publish,
+} from "./catalogFeed";
 
 vi.mock("./lib/publishers", () => ({
   getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
@@ -18,6 +23,9 @@ const listOfficialEntriesHandler = (
     { family: "code-plugin" | "bundle-plugin" },
     unknown[]
   >
+)._handler;
+const listOfficialClawEntriesHandler = (
+  listOfficialClawEntries as unknown as WrappedHandler<Record<string, never>, unknown[]>
 )._handler;
 const listOfficialSkillEntriesHandler = (
   listOfficialSkillEntries as unknown as WrappedHandler<
@@ -189,6 +197,10 @@ describe("catalog feed projection", () => {
     vi.clearAllMocks();
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("projects official releases into ClawHub install candidates", async () => {
     const result = await listOfficialEntriesHandler(
       makeCtx(
@@ -257,6 +269,55 @@ describe("catalog feed projection", () => {
         },
       }),
     ]);
+  });
+
+  it("projects validated Claw releases with only their safe summary", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const clawManifestSummary = {
+      schemaVersion: 1,
+      agent: { id: "triage", name: "Triage" },
+      workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
+      packages: { skillCount: 1, pluginCount: 0 },
+      mcpServerCount: 0,
+      cronJobCount: 1,
+    };
+    const result = await listOfficialClawEntriesHandler(
+      makeCtx([makePackage({ family: "claw" })], {
+        "packageReleases:1": makeRelease({
+          clawManifestSummary,
+        }),
+      }),
+      {},
+    );
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        type: "claw",
+        id: "@openclaw/demo",
+        clawManifestSummary,
+        install: {
+          candidates: [
+            expect.objectContaining({
+              package: "@openclaw/demo",
+              version: "1.2.3",
+              integrity: "sha256:artifact-hash",
+            }),
+          ],
+        },
+      }),
+    ]);
+  });
+
+  it("excludes Claw releases without a validated manifest summary", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const result = await listOfficialClawEntriesHandler(
+      makeCtx([makePackage({ family: "claw" })], {
+        "packageReleases:1": makeRelease(),
+      }),
+      {},
+    );
+
+    expect(result).toEqual([]);
   });
 
   it("excludes non-official, blocked, deleted, and undigested releases", async () => {
@@ -484,6 +545,58 @@ describe("catalog feed projection", () => {
       { feedId: CATALOG_FEED_ID, entryCount: 0 },
       { feedId: CATALOG_SKILLS_FEED_ID, entryCount: 1000 },
     ]);
+  });
+
+  it("publishes Claws through the separate experimental mutation", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
+    const clawEntry = {
+      type: "claw",
+      id: "@openclaw/triage",
+      title: "Triage",
+      version: "1.0.0",
+      state: "available",
+      publisher: { id: "openclaw", trust: "official" },
+      clawManifestSummary: {
+        schemaVersion: 1,
+        agent: { id: "triage" },
+        workspace: { bootstrapFiles: [], fileCount: 0 },
+        packages: { skillCount: 0, pluginCount: 0 },
+        mcpServerCount: 0,
+        cronJobCount: 0,
+      },
+      install: {
+        candidates: [
+          {
+            sourceRef: "public-clawhub",
+            package: "@openclaw/triage",
+            version: "1.0.0",
+            integrity: "sha256:abc",
+          },
+        ],
+      },
+    };
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("family" in args) return [];
+      if ("cursor" in args) return { publishers: [], isDone: true, continueCursor: "" };
+      return [clawEntry];
+    });
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => ({
+      feedId: typeof args.feedId === "string" ? args.feedId : EXPERIMENTAL_CLAW_FEED_ID,
+      entryCount: Array.isArray(args.entries) ? args.entries.length : 0,
+    }));
+
+    const result = await publishHandler(
+      { runQuery, runMutation },
+      { expiresAt: "2026-07-20T00:00:00.000Z" },
+    );
+
+    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(runMutation).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ entries: [clawEntry] }),
+    );
+    expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("feedId");
+    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 });
   });
 
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {
