@@ -212,6 +212,18 @@ export const RETENTION_POLICIES = {
   packageModerationEventLogs: permanent("Package moderation event audit log."),
   officialPluginMigrations: permanent("Official plugin migration state."),
   catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
+  catalogFeedRevisions: ephemeral("Revision boundaries for bounded catalog feed deltas.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expiration_time",
+    prune: "catalogFeed.pruneCatalogFeedHistoryInternal",
+    retention: "Thirty days after publication.",
+  }),
+  catalogFeedChanges: ephemeral("Bounded catalog feed change journal.", {
+    expirationField: "expirationTime",
+    expirationIndex: "by_expiration_time",
+    prune: "catalogFeed.pruneCatalogFeedHistoryInternal",
+    retention: "Thirty days after publication.",
+  }),
   stars: permanent("User star records."),
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
