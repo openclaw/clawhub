@@ -24811,7 +24811,7 @@ a.search-empty-action {
   color: var(--hv2-accent);
 }
 .home-v2-static-headline {
-  color: var(--oc-palette-coral-light-deep);
+  color: var(--oc-accent-primary);
 }
 .home-v2-sep {
   display: inline-block;

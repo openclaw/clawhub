@@ -350,9 +350,7 @@ describe("restored UI design contract", () => {
 
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
-    expect(cssRule(css, ".home-v2-static-headline")).toContain(
-      "color: var(--oc-palette-coral-light-deep)",
-    );
+    expect(cssRule(css, ".home-v2-static-headline")).toContain("color: var(--oc-accent-primary)");
     expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
       css.lastIndexOf(".home-v2-action-word"),
     );
