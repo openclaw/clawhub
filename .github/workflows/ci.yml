@@ -44,6 +44,41 @@ jobs:
       - name: HTTP e2e
         run: bun run ci:e2e-http
 
+  claws-openclaw-contract:
+    name: claws-openclaw-contract
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 25
+    env:
+      OPENCLAW_CONTRACT_SHA: 59fc573fb9e938a93b93522be6bf4d7bec0dbc6f
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Check out the pinned OpenClaw contract source
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: openclaw/openclaw
+          ref: ${{ env.OPENCLAW_CONTRACT_SHA }}
+          path: .artifacts/openclaw-contract
+
+      - name: Set up OpenClaw Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.15.0
+
+      - name: Install pinned OpenClaw dependencies
+        working-directory: .artifacts/openclaw-contract
+        run: |
+          corepack enable
+          corepack pnpm install --frozen-lockfile
+
+      - name: Run ClawHub to OpenClaw contract proof
+        env:
+          OPENCLAW_CLAWS_CHECKOUT: ${{ github.workspace }}/.artifacts/openclaw-contract
+        run: bunx vitest run scripts/claws-feed-openclaw-e2e.test.ts --maxWorkers=1
+
   static:
     name: static
     runs-on: ubuntu-latest

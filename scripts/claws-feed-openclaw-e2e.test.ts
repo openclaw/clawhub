@@ -1,12 +1,12 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { EXPERIMENTAL_CLAW_FEED_ID, serializeExperimentalClawFeed } from "clawhub-schema";
-import { strToU8, zipSync } from "fflate";
+import { gzipSync, strToU8, zipSync } from "fflate";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   assertSafeClawArchive,
@@ -25,6 +25,80 @@ let archiveBytes = new Uint8Array();
 let integrity = "";
 let server: Server | undefined;
 let serverPort = 0;
+const TAR_BLOCK_SIZE = 512;
+
+function writeTarString(target: Uint8Array, offset: number, width: number, value: string) {
+  target.set(new TextEncoder().encode(value).subarray(0, width), offset);
+}
+
+function writeTarOctal(target: Uint8Array, offset: number, width: number, value: number) {
+  writeTarString(target, offset, width, `${value.toString(8).padStart(width - 1, "0")}\0`);
+}
+
+function tarEntry(path: string, type: "0" | "2", content = new Uint8Array()) {
+  const header = new Uint8Array(TAR_BLOCK_SIZE);
+  writeTarString(header, 0, 100, path);
+  writeTarOctal(header, 100, 8, type === "0" ? 0o644 : 0o777);
+  writeTarOctal(header, 108, 8, 0);
+  writeTarOctal(header, 116, 8, 0);
+  writeTarOctal(header, 124, 12, content.byteLength);
+  writeTarOctal(header, 136, 12, 0);
+  header.fill(0x20, 148, 156);
+  header[156] = type.charCodeAt(0);
+  if (type === "2") writeTarString(header, 157, 100, "../../outside");
+  writeTarString(header, 257, 6, "ustar");
+  writeTarString(header, 263, 2, "00");
+  writeTarOctal(
+    header,
+    148,
+    8,
+    header.reduce((sum, byte) => sum + byte, 0),
+  );
+  const body = new Uint8Array(Math.ceil(content.byteLength / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE);
+  body.set(content);
+  return [header, body];
+}
+
+function deterministicLinkArchive() {
+  const parts = [
+    ...tarEntry(
+      "package/package.json",
+      "0",
+      new TextEncoder().encode('{"name":"@openclaw/hosted-e2e","version":"1.0.0"}\n'),
+    ),
+    ...tarEntry("package/workspace", "2"),
+    new Uint8Array(TAR_BLOCK_SIZE * 2),
+  ];
+  const tar = new Uint8Array(parts.reduce((size, part) => size + part.byteLength, 0));
+  let offset = 0;
+  for (const part of parts) {
+    tar.set(part, offset);
+    offset += part.byteLength;
+  }
+  return gzipSync(tar);
+}
+
+async function npmPackFixture(destination: string) {
+  const { stdout } = await execFileAsync(
+    "npm",
+    [
+      "pack",
+      join(fixtureRoot, "package"),
+      "--json",
+      "--ignore-scripts",
+      "--pack-destination",
+      destination,
+    ],
+    { cwd: destination },
+  );
+  const output = JSON.parse(stdout) as unknown;
+  const filename =
+    Array.isArray(output) && typeof output[0]?.filename === "string"
+      ? output[0].filename
+      : undefined;
+  if (!filename) throw new Error("npm pack did not return a fixture filename");
+  return join(destination, filename);
+}
 
 function feedValue() {
   const now = Date.now();
@@ -70,8 +144,7 @@ function feedValue() {
 describe("published Claw to OpenClaw dry-run proof", () => {
   beforeAll(async () => {
     tempRoot = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-fixture-"));
-    const archivePath = join(tempRoot, "claw.tgz");
-    await execFileAsync("tar", ["-czf", archivePath, "package"], { cwd: fixtureRoot });
+    const archivePath = await npmPackFixture(tempRoot);
     archiveBytes = new Uint8Array(await readFile(archivePath));
     integrity = `sha256:${createHash("sha256").update(archiveBytes).digest("hex")}`;
     server = createServer((request, response) => {
@@ -119,26 +192,19 @@ describe("published Claw to OpenClaw dry-run proof", () => {
     expect(() => selectPublishedClaw(feedValue(), "@openclaw/missing")).toThrow("was not present");
   });
 
-  it.skipIf(process.platform === "win32")(
-    "rejects link entries before extracting a published artifact",
-    async () => {
-      const root = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-link-"));
-      try {
-        const packageRoot = join(root, "package");
-        const archivePath = join(root, "linked.tgz");
-        await mkdir(packageRoot);
-        await writeFile(join(packageRoot, "package.json"), "{}\n");
-        await symlink("../../outside", join(packageRoot, "workspace"));
-        await execFileAsync("tar", ["-czf", archivePath, "package"], { cwd: root });
+  it("builds a portable production-equivalent ClawPack fixture", async () => {
+    const archivePath = join(tempRoot, "portable-claw.tgz");
+    await writeFile(archivePath, archiveBytes);
+    await expect(assertSafeClawArchive(archivePath)).resolves.toBeUndefined();
+  });
 
-        await expect(assertSafeClawArchive(archivePath)).rejects.toThrow(
-          "only contain regular files and directories",
-        );
-      } finally {
-        await rm(root, { recursive: true, force: true });
-      }
-    },
-  );
+  it("rejects link entries before extracting a published artifact", async () => {
+    const archivePath = join(tempRoot, "linked.tgz");
+    await writeFile(archivePath, deterministicLinkArchive());
+    await expect(assertSafeClawArchive(archivePath)).rejects.toThrow(
+      "only contain regular files and directories",
+    );
+  });
 
   it("extracts legacy ZIP artifacts without permitting traversal", async () => {
     const root = await mkdtemp(join(tmpdir(), "clawhub-hosted-e2e-zip-"));
