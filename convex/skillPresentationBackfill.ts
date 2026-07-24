@@ -313,7 +313,7 @@ export const runInternal = internalAction({
         if (dryRun) continue;
         const storedIcon = preparedIcon
           ? await storeSkillPresentationAsset(ctx, preparedIcon)
-          : undefined;
+          : iconPath;
         const result = (await ctx.runMutation(
           internal.skillPresentationBackfill.applyBackfillPatchInternal,
           {
