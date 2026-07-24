@@ -4634,28 +4634,26 @@ async function searchPackagesImpl(
     !args.family && !experimentalClawsEnabled()
       ? ([...STABLE_PACKAGE_FAMILIES] as PackageFamily[])
       : [args.family];
-  const buildSearchDigestQueries = () =>
-    searchFamilies.map((family) =>
-      topic
-        ? buildPackageTopicDigestQuery(ctx, {
-            topic,
+  const buildSearchDigestQuery = (family: PackageFamily | undefined) =>
+    topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic,
+          family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+        })
+      : category
+        ? buildPackagePluginCategoryDigestQuery(ctx, {
+            category,
             family,
             channel: args.channel,
             isOfficial: args.isOfficial,
           })
-        : category
-          ? buildPackagePluginCategoryDigestQuery(ctx, {
-              category,
-              family,
-              channel: args.channel,
-              isOfficial: args.isOfficial,
-            })
-          : buildPackageDigestQuery(ctx, {
-              family,
-              channel: args.channel,
-              isOfficial: args.isOfficial,
-            }),
-    );
+        : buildPackageDigestQuery(ctx, {
+            family,
+            channel: args.channel,
+            isOfficial: args.isOfficial,
+          });
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests =
@@ -4704,37 +4702,52 @@ async function searchPackagesImpl(
       }
     };
 
-    const searchDigestQueries = buildSearchDigestQueries();
-    if (topic && category && searchDigestQueries.length === 1) {
-      let cursor: string | null = null;
-      let isDone = false;
+    if (topic && category) {
+      const scanStates = searchFamilies.map((family) => ({
+        family,
+        cursor: null as string | null,
+        isDone: false,
+      }));
       let scanPages = 0;
       let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
       while (
         authoritativeMatchCount() < targetCount &&
-        !isDone &&
+        scanStates.some((state) => !state.isDone) &&
         scanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
         remainingScanBudget > 0
       ) {
-        const pageSize = Math.min(scanLimit, remainingScanBudget);
-        const page: {
-          page: PackageDigestLike[];
-          isDone: boolean;
-          continueCursor: string;
-        } = await buildSearchDigestQueries()[0]
-          .order("desc")
-          .paginate({ cursor, numItems: pageSize });
-        scanPages += 1;
-        remainingScanBudget -= pageSize;
-        await collectDigestMatches(page.page);
-        cursor = page.continueCursor;
-        isDone = page.isDone;
+        for (const state of scanStates) {
+          if (
+            state.isDone ||
+            authoritativeMatchCount() >= targetCount ||
+            scanPages >= MAX_PUBLIC_LIST_FILTER_SCAN_PAGES ||
+            remainingScanBudget <= 0
+          ) {
+            continue;
+          }
+          const pageSize = Math.min(scanLimit, remainingScanBudget);
+          const page: {
+            page: PackageDigestLike[];
+            isDone: boolean;
+            continueCursor: string;
+          } = await buildSearchDigestQuery(state.family)
+            .order("desc")
+            .paginate({ cursor: state.cursor, numItems: pageSize });
+          scanPages += 1;
+          remainingScanBudget -= pageSize;
+          await collectDigestMatches(page.page);
+          state.cursor = page.continueCursor;
+          state.isDone = page.isDone;
+        }
       }
     } else {
       const digests = (
         await Promise.all(
-          searchDigestQueries.map(
-            async (query) => (await query.order("desc").take(scanLimit)) as PackageDigestLike[],
+          searchFamilies.map(
+            async (family) =>
+              (await buildSearchDigestQuery(family)
+                .order("desc")
+                .take(scanLimit)) as PackageDigestLike[],
           ),
         )
       ).flat();

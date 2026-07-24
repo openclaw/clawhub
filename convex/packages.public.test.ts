@@ -5494,6 +5494,54 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
+  it("scans each stable family past the first combined-filter window while Claws are disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const { ctx, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: Array.from({ length: 50 }, (_, index) =>
+            makeDigest(`calendar-skill-noise-${index}`, {
+              family: "skill",
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["channels"],
+            }),
+          ),
+          isDone: false,
+          continueCursor: "later",
+        },
+        {
+          page: [
+            makeDigest("calendar-skill-api", {
+              family: "skill",
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    try {
+      const result = await searchPublicHandler(ctx, {
+        query: "calendar",
+        topic: "calendar",
+        category: "tools",
+        limit: 1,
+      });
+
+      expect(result.map((entry) => entry.package.name)).toEqual(["calendar-skill-api"]);
+      expect(paginate).toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
   it("bounds sparse combined-filter search scans", async () => {
     const topicPages = Array.from({ length: 7 }, (_page, pageIndex) => ({
       page: Array.from({ length: 50 }, (_digest, digestIndex) =>
