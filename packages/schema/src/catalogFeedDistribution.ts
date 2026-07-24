@@ -255,6 +255,15 @@ function requireProjectionHeader(value: {
   requireValidWindow(value.generatedAt, value.expiresAt);
 }
 
+function requireCanonicalEntryMetadata(entry: CatalogFeedQueryPage["entries"][number]) {
+  if (
+    entry.featuredAt !== undefined &&
+    (entry.featured !== true || !Number.isSafeInteger(entry.featuredAt) || entry.featuredAt < 0)
+  ) {
+    throw new Error("Catalog feed featuredAt requires a featured entry and epoch milliseconds");
+  }
+}
+
 function requirePageBounds(value: {
   requestCursor: string | null;
   pageIndex: number;
@@ -310,6 +319,7 @@ export function parseCatalogFeedQueryPage(value: unknown): CatalogFeedQueryPage 
   }
   const entryKeys = new Set<string>();
   for (const entry of page.entries) {
+    requireCanonicalEntryMetadata(entry);
     requireBoundedString(entry.id, "Catalog feed query entry id", 256);
     const entryKey = `${entry.type}\0${entry.id}`;
     if (entryKeys.has(entryKey)) {
@@ -354,6 +364,7 @@ export function parseCatalogFeedQueryPages(values: readonly unknown[]): CatalogF
     if (
       page.feedId !== first.feedId ||
       page.sequence !== first.sequence ||
+      page.generatedAt !== first.generatedAt ||
       page.expiresAt !== first.expiresAt ||
       page.resultCount !== first.resultCount ||
       !queriesEqual(page.query, first.query)
@@ -419,6 +430,7 @@ export function parseCatalogFeedChangePage(value: unknown): CatalogFeedChangePag
     if (change.operation === "remove") {
       requireBoundedString(change.entryId, "Catalog feed removed entry id", 256);
     } else if (change.operation === "upsert") {
+      requireCanonicalEntryMetadata(change.entry);
       requireBoundedString(change.entry.id, "Catalog feed upsert entry id", 256);
     } else if (change.metadata.description !== null) {
       requireBoundedString(
@@ -463,6 +475,7 @@ export function parseCatalogFeedChangePages(values: readonly unknown[]): Catalog
       page.feedId !== first.feedId ||
       page.fromSequence !== first.fromSequence ||
       page.toSequence !== first.toSequence ||
+      page.generatedAt !== first.generatedAt ||
       page.expiresAt !== first.expiresAt ||
       page.changeCount !== first.changeCount
     ) {
