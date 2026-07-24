@@ -1378,6 +1378,7 @@ export async function fetchSkillsShCatalogPage(
   args: {
     page: number;
     perPage: number;
+    view?: "all-time" | "trending" | "hot";
   },
   options: {
     env?: SkillsShCatalogSourceEnv;
@@ -1392,6 +1393,7 @@ async function fetchSkillsShCatalogPageWithBytes(
   args: {
     page: number;
     perPage: number;
+    view?: "all-time" | "trending" | "hot";
   },
   options: {
     env?: SkillsShCatalogSourceEnv;
@@ -1401,10 +1403,184 @@ async function fetchSkillsShCatalogPageWithBytes(
 ) {
   assertIntegerInRange("page", args.page, 0, 100_000);
   assertIntegerInRange("perPage", args.perPage, 1, MAX_SOURCE_PAGE_SIZE);
+  const view = args.view ? `view=${encodeURIComponent(args.view)}&` : "";
   return await fetchSkillsShJsonWithBytes<SkillsShCatalogPage>(
-    `/skills?page=${args.page}&per_page=${args.perPage}`,
+    `/skills?${view}page=${args.page}&per_page=${args.perPage}`,
     options,
   );
+}
+
+export type SkillsShTrendingSourceMeasurement = {
+  catalogTotal: number;
+  observedAt: string;
+  pageSize: number;
+  sourceRequests: number;
+  sourceDurationMs: number;
+  snapshotHash: string;
+  sourcePages: SkillsShMirrorCapturedSourcePage[];
+  evidence: {
+    endpointExhausted: true;
+    requestedPages: Array<{
+      page: number;
+      count: number;
+      hasMore: boolean;
+      identityHash: string;
+      contentHash: string;
+    }>;
+    uniqueIds: number;
+    duplicateIds: number;
+  };
+};
+
+export async function measureSkillsShTrendingSource(
+  options: {
+    env?: SkillsShCatalogSourceEnv;
+    fetchImpl?: typeof fetch;
+    oidcToken?: string;
+    minimumApiRequestIntervalMs?: number;
+    observedAt?: string;
+  } = {},
+): Promise<SkillsShTrendingSourceMeasurement> {
+  const observedAt = options.observedAt ?? new Date().toISOString();
+  if (Number.isNaN(Date.parse(observedAt))) {
+    throw new Error("skills.sh trending observedAt must be an ISO timestamp");
+  }
+  const minimumApiRequestIntervalMs =
+    options.minimumApiRequestIntervalMs ??
+    (options.fetchImpl ? 0 : MINIMUM_API_REQUEST_INTERVAL_MS);
+  assertIntegerInRange("minimumApiRequestIntervalMs", minimumApiRequestIntervalMs, 0, 1_000);
+  const pace = createRequestPacer(minimumApiRequestIntervalMs);
+  const startedAt = performance.now();
+  const present = new Set<string>();
+  const sourcePages: SkillsShMirrorCapturedSourcePage[] = [];
+  const requestedPages: SkillsShTrendingSourceMeasurement["evidence"]["requestedPages"] = [];
+  let page = 0;
+  let sourceRequests = 0;
+  let observedRows = 0;
+  let catalogTotal: number | null = null;
+  while (true) {
+    await pace();
+    const pageResponse = await fetchSkillsShCatalogPageWithBytes(
+      { page, perPage: MAX_SOURCE_PAGE_SIZE, view: "trending" },
+      options,
+    );
+    const response = pageResponse.value;
+    sourceRequests += 1;
+    if (
+      response.pagination.page !== page ||
+      response.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
+      response.data.length > MAX_SOURCE_PAGE_SIZE
+    ) {
+      throw new Error("skills.sh trending source returned an invalid page contract");
+    }
+    if (catalogTotal === null) catalogTotal = response.pagination.total;
+    if (catalogTotal < 1 || catalogTotal > MAX_PROOF_SOURCE_ROWS) {
+      throw new Error(
+        `skills.sh trending source total ${catalogTotal} exceeds the bounded source capacity`,
+      );
+    }
+    if (response.pagination.total !== catalogTotal) {
+      throw new Error("skills.sh trending source total changed during measurement");
+    }
+    const identityHash = skillsShPageIdentityHash(response.data);
+    const contentHash = skillsShPageContentHash(response.data);
+    requestedPages.push({
+      page,
+      count: response.data.length,
+      hasMore: response.pagination.hasMore,
+      identityHash,
+      contentHash,
+    });
+    const capturedRows = capturedSkillsShCatalogRows(response.data);
+    if (capturedRows.length > 0) {
+      const captured = {
+        page,
+        sourceTotal: catalogTotal,
+        pageLength: capturedRows.length,
+        hasMore: response.pagination.hasMore,
+        identityHash,
+        contentHash,
+        sourceBytes: pageResponse.sourceBytes,
+        rows: capturedRows,
+      };
+      sourcePages.push({
+        ...captured,
+        serializedBytes: Buffer.byteLength(JSON.stringify(captured), "utf8"),
+      });
+    }
+    observedRows += response.data.length;
+    if (observedRows > catalogTotal) {
+      throw new Error("skills.sh trending source exceeded its reported total");
+    }
+    for (const row of response.data) present.add(row.id.trim().toLowerCase());
+    if (!response.pagination.hasMore) break;
+    if (
+      observedRows >= catalogTotal ||
+      page + 1 >= Math.ceil(MAX_PROOF_SOURCE_ROWS / MAX_SOURCE_PAGE_SIZE)
+    ) {
+      throw new Error("skills.sh trending pagination exceeds its bounded total");
+    }
+    page += 1;
+  }
+  if (catalogTotal === null || observedRows !== catalogTotal) {
+    throw new Error(
+      `skills.sh trending source observed ${observedRows} of ${catalogTotal ?? 0} rows`,
+    );
+  }
+  const duplicateIds = observedRows - present.size;
+  if (duplicateIds !== 0) {
+    throw new Error(`skills.sh trending source contains ${duplicateIds} duplicate identities`);
+  }
+  const beyondEndPage = page + 1;
+  await pace();
+  const beyondEnd = await fetchSkillsShCatalogPage(
+    { page: beyondEndPage, perPage: MAX_SOURCE_PAGE_SIZE, view: "trending" },
+    options,
+  );
+  sourceRequests += 1;
+  requestedPages.push({
+    page: beyondEndPage,
+    count: beyondEnd.data.length,
+    hasMore: beyondEnd.pagination.hasMore,
+    identityHash: skillsShPageIdentityHash(beyondEnd.data),
+    contentHash: skillsShPageContentHash(beyondEnd.data),
+  });
+  if (
+    beyondEnd.pagination.page !== beyondEndPage ||
+    beyondEnd.pagination.perPage !== MAX_SOURCE_PAGE_SIZE ||
+    beyondEnd.pagination.total !== catalogTotal ||
+    beyondEnd.pagination.hasMore ||
+    beyondEnd.data.length !== 0
+  ) {
+    throw new Error("skills.sh trending source did not return an empty beyond-end page");
+  }
+  const snapshotHash = sha256Hex(
+    JSON.stringify({
+      view: "trending",
+      observedAt,
+      catalogTotal,
+      pages: sourcePages.map(({ page: pageNumber, identityHash, contentHash }) => ({
+        page: pageNumber,
+        identityHash,
+        contentHash,
+      })),
+    }),
+  );
+  return {
+    catalogTotal,
+    observedAt,
+    pageSize: MAX_SOURCE_PAGE_SIZE,
+    sourceRequests,
+    sourceDurationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    snapshotHash,
+    sourcePages,
+    evidence: {
+      endpointExhausted: true,
+      requestedPages,
+      uniqueIds: present.size,
+      duplicateIds,
+    },
+  };
 }
 
 function validateSkillsShMirrorProofEvidence(value: unknown): SkillsShMirrorProofEvidence {

@@ -123,21 +123,29 @@ async function startRun(
   snapshotId: string,
   sourceTotal = 2,
   sourceSnapshotHash?: string,
+  sourceView?: "leaderboard" | "trending",
+  sourceMeasuredAt = "2026-07-22T20:14:10.881Z",
 ) {
   return (await t.mutation(internal.skillsShMirror.startRunInternal, {
     actor: "codex-test",
     reason: "CLAW-563 mirror test",
     snapshotId,
     ...(sourceSnapshotHash ? { sourceSnapshotHash } : {}),
+    ...(sourceView ? { sourceView } : {}),
     sourceTotal,
     sourcePageSize: 500,
-    sourceMeasuredAt: "2026-07-22T20:14:10.881Z",
+    sourceMeasuredAt,
   })) as { runId: Id<"skillsShMirrorRuns"> };
 }
 
 const mirrorLeaseRefs = internal.skillsShMirror as unknown as {
   claimBatchLeaseInternal: Parameters<ReturnType<typeof convexTest>["mutation"]>[0];
   releaseBatchLeaseInternal: Parameters<ReturnType<typeof convexTest>["mutation"]>[0];
+};
+
+const trendingRefs = internal.skillsShMirror as unknown as {
+  hydrateTrendingBatchInternal: Parameters<ReturnType<typeof convexTest>["mutation"]>[0];
+  processTrendingBatchInternal: Parameters<ReturnType<typeof convexTest>["mutation"]>[0];
 };
 
 let leaseSequence = 0;
@@ -159,10 +167,217 @@ async function processBatch(
   });
 }
 
+async function claimLease(
+  t: ReturnType<typeof convexTest>,
+  runId: Id<"skillsShMirrorRuns">,
+  page: number,
+  offset: number,
+) {
+  const leaseToken = `test-trending-lease:${(leaseSequence += 1)}`;
+  await t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+    runId,
+    page,
+    offset,
+    leaseToken,
+  });
+  return leaseToken;
+}
+
 describe("skills.sh external mirror", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllEnvs();
+  });
+
+  it("joins trending rank onto one mirror identity without scan work", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const foundation = await startRun(t, "snapshot:foundation", 1);
+    await processBatch(t, {
+      runId: foundation.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 0,
+      sourceBytes: 0,
+      rows: [githubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: foundation.runId,
+      limit: 250,
+    });
+
+    const trending = await startRun(t, "skills-sh:trending:snapshot-1", 1, undefined, "trending");
+    const leaseToken = await claimLease(t, trending.runId, 0, 0);
+    const result = await t.mutation(trendingRefs.processTrendingBatchInternal, {
+      runId: trending.runId,
+      page: 0,
+      offset: 0,
+      leaseToken,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      rows: [{ externalId: githubRow.externalId, lifetimeInstalls: 17, rank: 1 }],
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      counts: {
+        observed: 1,
+        trendingJoined: 1,
+        trendingUpdated: 1,
+        trendingMissing: 0,
+        scansPlanned: 0,
+        scansAdmitted: 0,
+      },
+    });
+    expect(
+      await t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).toMatchObject({
+      externalId: githubRow.externalId,
+      trendingRank: 1,
+      trendingLifetimeInstalls: 17,
+      trendingObservedAt: Date.parse("2026-07-22T20:14:10.881Z"),
+    });
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("skillsShMirrorDigests").collect()),
+    ).toHaveLength(1);
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("skillsShCatalogScanAttempts").collect()),
+    ).toEqual([]);
+    expect(await t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect())).toEqual(
+      [],
+    );
+  });
+
+  it("keeps trending replays idempotent and rejects stale observations", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const foundation = await startRun(t, "snapshot:foundation", 1);
+    await processBatch(t, {
+      runId: foundation.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 0,
+      sourceBytes: 0,
+      rows: [githubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: foundation.runId,
+      limit: 250,
+    });
+
+    const apply = async (snapshotId: string, observedAt: string, rank: number) => {
+      const { runId } = await startRun(t, snapshotId, 1, undefined, "trending", observedAt);
+      const leaseToken = await claimLease(t, runId, 0, 0);
+      return await t.mutation(trendingRefs.processTrendingBatchInternal, {
+        runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+        pageLength: 1,
+        hasMore: false,
+        sourceTotal: 1,
+        rows: [{ externalId: githubRow.externalId, lifetimeInstalls: 17, rank }],
+      });
+    };
+
+    await expect(
+      apply("skills-sh:trending:new", "2026-07-22T20:14:10.881Z", 1),
+    ).resolves.toMatchObject({ counts: { trendingUpdated: 1 } });
+    await expect(
+      apply("skills-sh:trending:replay", "2026-07-22T20:14:10.881Z", 1),
+    ).resolves.toMatchObject({ counts: { trendingUnchanged: 1, trendingUpdated: 0 } });
+    await expect(
+      apply("skills-sh:trending:stale", "2026-07-21T20:14:10.881Z", 1),
+    ).resolves.toMatchObject({ counts: { trendingStaleRejected: 1, trendingUpdated: 0 } });
+    await expect(
+      t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).resolves.toMatchObject({
+      trendingRank: 1,
+      trendingLifetimeInstalls: 17,
+      trendingObservedAt: Date.parse("2026-07-22T20:14:10.881Z"),
+    });
+  });
+
+  it("hydrates bounded trending drift through the mirror upsert path", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const trending = await startRun(t, "skills-sh:trending:drift", 1, undefined, "trending");
+    const leaseToken = await claimLease(t, trending.runId, 0, 0);
+
+    await expect(
+      t.mutation(trendingRefs.hydrateTrendingBatchInternal, {
+        runId: trending.runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+        rows: [githubRow],
+      }),
+    ).resolves.toMatchObject({
+      counts: { trendingHydrationAttempts: 1, trendingHydrated: 1 },
+    });
+    await expect(
+      t.mutation(trendingRefs.processTrendingBatchInternal, {
+        runId: trending.runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+        pageLength: 1,
+        hasMore: false,
+        sourceTotal: 1,
+        rows: [{ externalId: githubRow.externalId, lifetimeInstalls: 17, rank: 1 }],
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      counts: { trendingJoined: 1, trendingMissing: 0 },
+    });
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("skillsShMirrorDigests").collect()),
+    ).toHaveLength(1);
+  });
+
+  it("fails closed when exceptional trending hydration exceeds the run bound", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const trending = await startRun(
+      t,
+      "skills-sh:trending:bounded-drift",
+      11,
+      undefined,
+      "trending",
+    );
+    const leaseToken = await claimLease(t, trending.runId, 0, 0);
+    const rows = Array.from({ length: 11 }, (_, index) => ({
+      ...githubRow,
+      externalId: `owner/repo/skill-${index}`,
+    }));
+
+    await expect(
+      t.mutation(trendingRefs.hydrateTrendingBatchInternal, {
+        runId: trending.runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+        rows,
+      }),
+    ).rejects.toThrow("exceptional hydration exceeds 10 rows");
+    expect(
+      await t.run(async (ctx) => await ctx.db.query("skillsShMirrorDigests").collect()),
+    ).toEqual([]);
   });
 
   it("returns the durable cursor summary when starting a run", async () => {
@@ -290,6 +505,7 @@ describe("skills.sh external mirror", () => {
       t.query(internal.skillsShMirror.getSourceCaptureSummaryInternal, { snapshotHash }),
     ).resolves.toEqual({
       snapshotHash,
+      sourceView: "leaderboard",
       pageDocuments: 1,
       rows: 1,
       sourceBytes: 512,

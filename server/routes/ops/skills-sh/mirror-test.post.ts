@@ -6,6 +6,7 @@ import {
   fetchSkillsShMirrorControlledBatch,
   getSkillsShCatalogTestSourcePolicy,
   measureSkillsShMirrorProofSource,
+  measureSkillsShTrendingSource,
   parseSkillsShMirrorProofSnapshotId,
   skillsShSourceRetryAfterSeconds,
 } from "../../../skillsShCatalogSource";
@@ -22,15 +23,19 @@ const MIRROR_BATCH_SIZE = 50;
 const MAX_TEST_SOURCE_ROWS = 50_000;
 const MAX_DETAIL_BYTES = 64 * 1024;
 const MAX_DETAIL_PAGE_ROWS = 50;
+const MAX_TRENDING_HYDRATIONS_PER_RUN = 10;
 const BATCH_LEASE_HEARTBEAT_INTERVAL_MS = 60_000;
 
 type MirrorRequest = {
   operation?:
     | "configure"
     | "start"
+    | "start-trending"
+    | "start-trending-replay"
     | "start-replay"
     | "run"
     | "step"
+    | "step-trending"
     | "step-replay"
     | "pause"
     | "resume"
@@ -327,6 +332,94 @@ export default defineEventHandler(async (event) => {
         captured: true,
       });
     }
+    if (operation === "start-trending") {
+      assertNoActiveMirrorRun(
+        await callConvexOperator(authorization, { operation: "mirror-status" }),
+      );
+      const oidcToken = await getVercelOidcToken();
+      const source = await measureSkillsShTrendingSource({ oidcToken });
+      if (source.catalogTotal < 1 || source.catalogTotal > MAX_TEST_SOURCE_ROWS) {
+        throw new Error(
+          `skills.sh trending source total ${source.catalogTotal} exceeds the Test capacity`,
+        );
+      }
+      let sourceCaptureWrites = 0;
+      for (const page of source.sourcePages) {
+        const stored = await callConvexOperator(authorization, {
+          operation: "mirror-source-page-store",
+          sourceView: "trending",
+          snapshotHash: source.snapshotHash,
+          ...page,
+        });
+        if (stored.stored === true) sourceCaptureWrites += 1;
+      }
+      const sourceCapture = await callConvexOperator(authorization, {
+        operation: "mirror-source-summary",
+        snapshotHash: source.snapshotHash,
+      });
+      const result = await callConvexOperator(authorization, {
+        operation: "mirror-start",
+        sourceView: "trending",
+        reason: requireString(body.reason, "reason"),
+        snapshotId: `skills-sh:trending:${source.snapshotHash}`,
+        sourceSnapshotHash: source.snapshotHash,
+        sourceCaptureWrites,
+        sourceTotal: source.catalogTotal,
+        sourcePageSize: source.pageSize,
+        sourceMeasuredAt: source.observedAt,
+        sourceRequests: source.sourceRequests,
+        sourceDurationMs: source.sourceDurationMs,
+      });
+      return jsonResponse({
+        ...result,
+        sourceTotal: source.catalogTotal,
+        sourceMeasuredAt: source.observedAt,
+        sourcePageSize: source.pageSize,
+        sourceMeasurementRequests: source.sourceRequests,
+        sourceMeasurementDurationMs: source.sourceDurationMs,
+        sourceCapture: {
+          ...sourceCapture,
+          requestDbWrites: sourceCaptureWrites,
+        },
+        sourceEvidence: source.evidence,
+        sampleExternalIds: source.sourcePages[0]?.rows.slice(0, 3).map((row) => row.id) ?? [],
+      });
+    }
+    if (operation === "start-trending-replay") {
+      assertNoActiveMirrorRun(
+        await callConvexOperator(authorization, { operation: "mirror-status" }),
+      );
+      const capturedRunId = requireString(body.capturedRunId, "capturedRunId");
+      const captured = await callConvexOperator(authorization, {
+        operation: "mirror-run",
+        runId: capturedRunId,
+      });
+      if (
+        captured.sourceView !== "trending" ||
+        typeof captured.sourceSnapshotHash !== "string" ||
+        typeof captured.sourceTotal !== "number" ||
+        typeof captured.sourcePageSize !== "number"
+      ) {
+        throw new Error("captured skills.sh trending run is invalid");
+      }
+      const sourceMeasuredAt = requireString(body.sourceMeasuredAt, "sourceMeasuredAt");
+      if (Number.isNaN(Date.parse(sourceMeasuredAt))) {
+        throw new Error("sourceMeasuredAt must be an ISO timestamp");
+      }
+      const result = await callConvexOperator(authorization, {
+        operation: "mirror-start",
+        sourceView: "trending",
+        reason: requireString(body.reason, "reason"),
+        snapshotId: `skills-sh:trending-replay:${capturedRunId}:${sourceMeasuredAt}`,
+        sourceSnapshotHash: captured.sourceSnapshotHash,
+        sourceTotal: captured.sourceTotal,
+        sourcePageSize: captured.sourcePageSize,
+        sourceMeasuredAt,
+        sourceRequests: 0,
+        sourceDurationMs: 0,
+      });
+      return jsonResponse({ ...result, capturedRunId, captured: true });
+    }
     if (operation === "step") {
       const runId = requireString(body.runId, "runId");
       const page = requireInteger(body.page, "page", 0, 100_000);
@@ -566,6 +659,165 @@ export default defineEventHandler(async (event) => {
             sourceRequests: 0,
             sourceBytes: 0,
             rows,
+          }),
+        );
+      } catch (error) {
+        try {
+          await callConvexOperator(authorization, {
+            operation: "mirror-batch-release",
+            runId,
+            page,
+            offset,
+            leaseToken,
+          });
+        } catch {
+          // The five-minute durable lease remains the crash/outage recovery path.
+        }
+        throw error;
+      }
+    }
+    if (operation === "step-trending") {
+      const runId = requireString(body.runId, "runId");
+      const page = requireInteger(body.page, "page", 0, 100_000);
+      const offset = requireInteger(body.offset, "offset", 0, SOURCE_PAGE_SIZE - 1);
+      const leaseToken = crypto.randomUUID();
+      const lease = await callConvexOperator(authorization, {
+        operation: "mirror-batch-claim",
+        runId,
+        page,
+        offset,
+        leaseToken,
+      });
+      try {
+        if (lease.sourceView !== "trending") {
+          throw new Error("skills.sh mirror run is not a trending observation");
+        }
+        const sourceTotal = requireInteger(
+          typeof lease.sourceTotal === "number" ? lease.sourceTotal : undefined,
+          "lease.sourceTotal",
+          1,
+          MAX_TEST_SOURCE_ROWS,
+        );
+        const sourcePage =
+          lease.sourcePage &&
+          typeof lease.sourcePage === "object" &&
+          !Array.isArray(lease.sourcePage)
+            ? (lease.sourcePage as Record<string, unknown>)
+            : null;
+        if (
+          !sourcePage ||
+          sourcePage.sourceView !== "trending" ||
+          sourcePage.page !== page ||
+          sourcePage.sourceTotal !== sourceTotal ||
+          !Array.isArray(sourcePage.rows) ||
+          typeof sourcePage.pageLength !== "number" ||
+          typeof sourcePage.hasMore !== "boolean"
+        ) {
+          throw new Error(`captured skills.sh trending page is invalid: ${page}`);
+        }
+        const pageLength = requireInteger(
+          sourcePage.pageLength,
+          "sourcePage.pageLength",
+          1,
+          SOURCE_PAGE_SIZE,
+        );
+        const listRows = (sourcePage.rows as Array<Record<string, unknown>>).slice(
+          offset,
+          offset + MIRROR_BATCH_SIZE,
+        );
+        if (listRows.length < 1) {
+          throw new Error("skills.sh trending cursor is outside the captured source page");
+        }
+        const externalIds = listRows.map((row) => requireString(row.id as string, "externalId"));
+        const joinState = await callConvexOperator(authorization, {
+          operation: "mirror-trending-join-state",
+          externalIds,
+        });
+        if (!Array.isArray(joinState.missingExternalIds)) {
+          throw new Error("skills.sh trending join state is invalid");
+        }
+        const missing = new Set(
+          joinState.missingExternalIds.map((value) => requireString(value as string, "externalId")),
+        );
+        if (missing.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
+          throw new Error(
+            `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
+          );
+        }
+        if (missing.size > 0) {
+          const missingRows = listRows.filter((row) => missing.has(String(row.id).toLowerCase()));
+          const beforeRequest = createBatchLeaseHeartbeat({
+            authorization,
+            runId,
+            page,
+            offset,
+            leaseToken,
+          });
+          const oidcToken = await getVercelOidcToken();
+          const hydrated = await fetchSkillsShMirrorBatch(
+            { page: 0, offset: 0, limit: missingRows.length, maxDetailBytes: MAX_DETAIL_BYTES },
+            {
+              oidcToken,
+              beforeRequest,
+              sourcePage: {
+                data: missingRows as never,
+                pagination: {
+                  page: 0,
+                  perPage: SOURCE_PAGE_SIZE,
+                  total: missingRows.length,
+                  hasMore: false,
+                },
+              },
+            },
+          );
+          const hydratedExternalIds = hydrated.rows.flatMap((row) =>
+            "quarantined" in row ? [] : [row.externalId],
+          );
+          const classificationState =
+            hydratedExternalIds.length === 0
+              ? { states: [] }
+              : await callConvexOperator(authorization, {
+                  operation: "mirror-classification-states",
+                  externalIds: hydratedExternalIds,
+                });
+          if (!Array.isArray(classificationState.states)) {
+            throw new Error("Convex Test mirror classification state is invalid");
+          }
+          const rows = enrichSkillsShMirrorClassifications(
+            hydrated.rows as Parameters<typeof enrichSkillsShMirrorClassifications>[0],
+            classificationState.states as SkillsShMirrorClassificationState[],
+          );
+          await callConvexOperator(authorization, {
+            operation: "mirror-trending-hydrate",
+            runId,
+            page,
+            offset,
+            leaseToken,
+            sourceRequests: hydrated.sourceRequests,
+            sourceBytes: hydrated.sourceBytes,
+            rows,
+          });
+        }
+        return jsonResponse(
+          await callConvexOperator(authorization, {
+            operation: "mirror-trending-batch",
+            runId,
+            page,
+            offset,
+            leaseToken,
+            pageLength,
+            hasMore: sourcePage.hasMore,
+            sourceTotal,
+            rows: listRows.map((row, index) => ({
+              externalId: requireString(row.id as string, "externalId"),
+              lifetimeInstalls: requireInteger(
+                typeof row.installs === "number" ? row.installs : undefined,
+                "lifetimeInstalls",
+                0,
+                Number.MAX_SAFE_INTEGER,
+              ),
+              rank: page * SOURCE_PAGE_SIZE + offset + index + 1,
+            })),
           }),
         );
       } catch (error) {

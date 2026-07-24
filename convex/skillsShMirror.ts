@@ -36,6 +36,7 @@ const MAX_INFERRED_TOPICS = 5;
 const MAX_INFERENCE_METADATA_LENGTH = 128;
 const BATCH_LEASE_DURATION_MS = 5 * 60 * 1_000;
 const MAX_BATCH_LEASE_TOKEN_LENGTH = 128;
+const MAX_TRENDING_HYDRATIONS_PER_RUN = 10;
 const SKILLS_SH_PROOF_SNAPSHOT_PREFIX = "skills-sh:proof:";
 const PRESERVE_EXISTING_QUARANTINE_REASONS = new Set(["identity-page-fetch-failed"]);
 
@@ -76,6 +77,14 @@ const sourceListRowValidator = v.object({
   source: v.string(),
   sourceType: v.string(),
   url: v.string(),
+});
+
+const sourceViewValidator = v.union(v.literal("leaderboard"), v.literal("trending"));
+
+const trendingRowValidator = v.object({
+  externalId: v.string(),
+  lifetimeInstalls: v.number(),
+  rank: v.number(),
 });
 
 const rowValidator = v.object({
@@ -167,6 +176,14 @@ function emptyCounts(): Doc<"skillsShMirrorRuns">["counts"] {
     detailsTruncated: 0,
     tombstoned: 0,
     reactivated: 0,
+    trendingJoined: 0,
+    trendingUpdated: 0,
+    trendingUnchanged: 0,
+    trendingMissing: 0,
+    trendingStaleRejected: 0,
+    trendingHydrationAttempts: 0,
+    trendingHydrated: 0,
+    trendingHydrationFailed: 0,
     scansPlanned: 0,
     scansAdmitted: 0,
   };
@@ -212,6 +229,31 @@ function requireExactRunCursor(run: Doc<"skillsShMirrorRuns">, page: number, off
   if (page !== run.page || offset !== run.offset) {
     throw new ConvexError(`skills.sh mirror cursor mismatch: expected ${run.page}:${run.offset}`);
   }
+}
+
+function runSourceView(run: Doc<"skillsShMirrorRuns">) {
+  return run.sourceView ?? "leaderboard";
+}
+
+function requireTrendingRun(run: Doc<"skillsShMirrorRuns">) {
+  if (runSourceView(run) !== "trending") {
+    throw new ConvexError("skills.sh mirror run is not a trending observation");
+  }
+}
+
+function requireActiveLease(
+  run: Doc<"skillsShMirrorRuns">,
+  args: { page: number; offset: number; leaseToken: string },
+) {
+  requireExactRunCursor(run, args.page, args.offset);
+  const leaseToken = normalizedLeaseToken(args.leaseToken);
+  if (run.batchLeaseToken !== leaseToken) {
+    throw new ConvexError("skills.sh mirror lease token mismatch");
+  }
+  if (run.batchLeaseExpiresAt === undefined || run.batchLeaseExpiresAt <= Date.now()) {
+    throw new ConvexError("skills.sh mirror batch lease expired");
+  }
+  return leaseToken;
 }
 
 function normalizeRow(row: MirrorRow): MirrorRow {
@@ -335,6 +377,120 @@ function searchFields(row: MirrorRow) {
   };
 }
 
+function newMirrorDigest(
+  row: MirrorRow,
+  runId: Id<"skillsShMirrorRuns">,
+  sourceSnapshotId: string,
+  fingerprint: string,
+  now: number,
+) {
+  return {
+    externalId: row.externalId,
+    sourceType: row.sourceType,
+    upstreamSourceType: row.upstreamSourceType,
+    ...(row.owner ? { owner: row.owner } : {}),
+    ...(row.repo ? { repo: row.repo } : {}),
+    ...(row.sourceHost ? { sourceHost: row.sourceHost } : {}),
+    slug: row.slug,
+    ...searchFields(row),
+    displayName: row.displayName,
+    sourceUrl: row.sourceUrl,
+    ...(row.canonicalRepoUrl ? { canonicalRepoUrl: row.canonicalRepoUrl } : {}),
+    ...(row.githubPath ? { githubPath: row.githubPath } : {}),
+    ...(row.githubCommit ? { githubCommit: row.githubCommit } : {}),
+    ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),
+    upstreamInstalls: row.upstreamInstalls,
+    upstreamScanners: row.upstreamScanners,
+    inferredCategories: row.inferredCategories,
+    inferredTopics: row.inferredTopics,
+    inferredCategoryConfidence: row.inferredCategoryConfidence,
+    inferredTopicConfidence: row.inferredTopicConfidence,
+    inferredClassifierVersion: row.inferredClassifierVersion,
+    inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
+    inferredInputHash: row.inferredInputHash,
+    inferredTopicInputHash: row.inferredTopicInputHash,
+    inferredAt: row.inferredAt,
+    sourceFreshnessStatus: "observed-only" as const,
+    detailStatus: row.detail ? ("available" as const) : ("missing" as const),
+    observationFingerprint: fingerprint,
+    sourceSnapshotId,
+    lastObservedRunId: runId,
+    active: true,
+    publicVisible: false as const,
+    installable: false as const,
+    firstObservedAt: now,
+    lastObservedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function mirrorDigestPatch(
+  row: MirrorRow,
+  runId: Id<"skillsShMirrorRuns">,
+  sourceSnapshotId: string,
+  fingerprint: string,
+  now: number,
+) {
+  return {
+    sourceType: row.sourceType,
+    upstreamSourceType: row.upstreamSourceType,
+    owner: row.owner,
+    repo: row.repo,
+    sourceHost: row.sourceHost,
+    slug: row.slug,
+    ...searchFields(row),
+    displayName: row.displayName,
+    sourceUrl: row.sourceUrl,
+    canonicalRepoUrl: row.canonicalRepoUrl,
+    githubPath: row.githubPath,
+    githubCommit: row.githubCommit,
+    sourceContentHash: row.sourceContentHash,
+    upstreamInstalls: row.upstreamInstalls,
+    upstreamScanners: row.upstreamScanners,
+    inferredCategories: row.inferredCategories,
+    inferredTopics: row.inferredTopics,
+    inferredCategoryConfidence: row.inferredCategoryConfidence,
+    inferredTopicConfidence: row.inferredTopicConfidence,
+    inferredClassifierVersion: row.inferredClassifierVersion,
+    inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
+    inferredInputHash: row.inferredInputHash,
+    inferredTopicInputHash: row.inferredTopicInputHash,
+    inferredAt: row.inferredAt,
+    sourceFreshnessStatus: "observed-only" as const,
+    staleQuarantineReason: undefined,
+    detailStatus: row.detail ? ("available" as const) : ("missing" as const),
+    observationFingerprint: fingerprint,
+    sourceSnapshotId,
+    lastObservedRunId: runId,
+    active: true,
+    publicVisible: false as const,
+    installable: false as const,
+    tombstonedAt: undefined,
+    lastObservedAt: now,
+    updatedAt: now,
+  };
+}
+
+function newMirrorDetail(
+  row: MirrorRow & { detail: NonNullable<MirrorRow["detail"]> },
+  digestId: Id<"skillsShMirrorDigests">,
+  runId: Id<"skillsShMirrorRuns">,
+  sourceSnapshotId: string,
+  now: number,
+) {
+  return {
+    externalId: row.externalId,
+    digestId,
+    ...row.detail,
+    ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),
+    sourceSnapshotId,
+    lastObservedRunId: runId,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function validCategoryInferenceTerms(values: string[], min: number, max: number) {
   return (
     values.length >= min &&
@@ -430,6 +586,22 @@ function observationFingerprint(row: MirrorRow) {
   });
 }
 
+function validMirrorRow(row: MirrorRow, maxDetailBytes: number) {
+  return (
+    validIdentity(row) &&
+    validInference(row) &&
+    Number.isSafeInteger(row.upstreamInstalls) &&
+    row.upstreamInstalls >= 0 &&
+    (row.sourceContentHash === undefined || /^[a-f0-9]{64}$/.test(row.sourceContentHash)) &&
+    validScanner(row.upstreamScanners.genAgentTrustHub) &&
+    validScanner(row.upstreamScanners.socket) &&
+    validScanner(row.upstreamScanners.snyk) &&
+    (row.detail === undefined ||
+      (row.detail.contentBytes <= maxDetailBytes &&
+        new TextEncoder().encode(row.detail.content).byteLength === row.detail.contentBytes))
+  );
+}
+
 function sameDetail(detail: Doc<"skillsShMirrorDetails">, row: MirrorRow) {
   const next = row.detail;
   return (
@@ -513,19 +685,166 @@ function runCounts(counts: Doc<"skillsShMirrorRuns">["counts"]) {
     ...counts,
     quarantined: counts.quarantined ?? 0,
     quarantinedPreserved: counts.quarantinedPreserved ?? 0,
+    trendingJoined: counts.trendingJoined ?? 0,
+    trendingUpdated: counts.trendingUpdated ?? 0,
+    trendingUnchanged: counts.trendingUnchanged ?? 0,
+    trendingMissing: counts.trendingMissing ?? 0,
+    trendingStaleRejected: counts.trendingStaleRejected ?? 0,
+    trendingHydrationAttempts: counts.trendingHydrationAttempts ?? 0,
+    trendingHydrated: counts.trendingHydrated ?? 0,
+    trendingHydrationFailed: counts.trendingHydrationFailed ?? 0,
   };
+}
+
+async function syncMirrorDetail(
+  ctx: MutationCtx,
+  args: {
+    row: MirrorRow;
+    digestId: Id<"skillsShMirrorDigests">;
+    runId: Id<"skillsShMirrorRuns">;
+    sourceSnapshotId: string;
+    now: number;
+    counts: ReturnType<typeof runCounts>;
+  },
+) {
+  const existingDetail = await ctx.db
+    .query("skillsShMirrorDetails")
+    .withIndex("by_external_id", (q) => q.eq("externalId", args.row.externalId))
+    .unique();
+  let writes = 0;
+  if (!args.row.detail) {
+    args.counts.detailsMissing += 1;
+    if (existingDetail) {
+      await ctx.db.delete(existingDetail._id);
+      writes += 1;
+    }
+  } else if (!existingDetail) {
+    await ctx.db.insert(
+      "skillsShMirrorDetails",
+      newMirrorDetail(
+        args.row as MirrorRow & { detail: NonNullable<MirrorRow["detail"]> },
+        args.digestId,
+        args.runId,
+        args.sourceSnapshotId,
+        args.now,
+      ),
+    );
+    args.counts.detailsInserted += 1;
+    if (args.row.detail.truncated) args.counts.detailsTruncated += 1;
+    writes += 1;
+  } else if (sameDetail(existingDetail, args.row)) {
+    args.counts.detailsUnchanged += 1;
+    if (args.row.detail.truncated) args.counts.detailsTruncated += 1;
+    if (existingDetail.lastObservedRunId !== args.runId) {
+      await ctx.db.patch(existingDetail._id, {
+        sourceSnapshotId: args.sourceSnapshotId,
+        lastObservedRunId: args.runId,
+        updatedAt: args.now,
+      });
+      writes += 1;
+    }
+  } else {
+    await ctx.db.patch(existingDetail._id, {
+      digestId: args.digestId,
+      ...args.row.detail,
+      sourceContentHash: args.row.sourceContentHash,
+      sourceSnapshotId: args.sourceSnapshotId,
+      lastObservedRunId: args.runId,
+      updatedAt: args.now,
+    });
+    args.counts.detailsUpdated += 1;
+    if (args.row.detail.truncated) args.counts.detailsTruncated += 1;
+    writes += 1;
+  }
+  return { reads: 1, writes };
+}
+
+async function upsertHydratedMirrorRow(
+  ctx: MutationCtx,
+  args: {
+    row: MirrorRow;
+    run: Doc<"skillsShMirrorRuns">;
+    page: number;
+    offset: number;
+    now: number;
+    counts: ReturnType<typeof runCounts>;
+  },
+) {
+  const sourceSnapshotId = compactSourceSnapshotId(args.run.snapshotId);
+  const fingerprint = observationFingerprint(args.row);
+  const existing = await ctx.db
+    .query("skillsShMirrorDigests")
+    .withIndex("by_external_id", (q) => q.eq("externalId", args.row.externalId))
+    .unique();
+  let reads = 1;
+  let writes = 0;
+  if (
+    existing?.lastObservedRunId === args.run._id &&
+    existing.sourceFreshnessStatus !== "stale" &&
+    existing.observationFingerprint !== fingerprint
+  ) {
+    await ctx.db.insert("skillsShMirrorConflicts", {
+      runId: args.run._id,
+      externalId: args.row.externalId,
+      kind: "same-run-drift",
+      previousFingerprint: existing.observationFingerprint,
+      observedFingerprint: fingerprint,
+      page: args.page,
+      offset: args.offset,
+      createdAt: args.now,
+    });
+    args.counts.rejected += 1;
+    args.counts.conflicts += 1;
+    return { hydrated: false, reads, writes: writes + 1 };
+  }
+
+  let digestId: Id<"skillsShMirrorDigests">;
+  if (!existing) {
+    digestId = await ctx.db.insert(
+      "skillsShMirrorDigests",
+      newMirrorDigest(args.row, args.run._id, sourceSnapshotId, fingerprint, args.now),
+    );
+    args.counts.inserted += 1;
+    writes += 1;
+  } else {
+    digestId = existing._id;
+    if (existing.observationFingerprint === fingerprint) args.counts.unchanged += 1;
+    else args.counts.updated += 1;
+    if (!existing.active) args.counts.reactivated += 1;
+    await ctx.db.patch(
+      existing._id,
+      mirrorDigestPatch(args.row, args.run._id, sourceSnapshotId, fingerprint, args.now),
+    );
+    writes += 1;
+  }
+  const facetOperations = await syncFacets(ctx, digestId, args.row, args.now);
+  reads += facetOperations.reads;
+  writes += facetOperations.writes;
+  const detailOperations = await syncMirrorDetail(ctx, {
+    row: args.row,
+    digestId,
+    runId: args.run._id,
+    sourceSnapshotId,
+    now: args.now,
+    counts: args.counts,
+  });
+  reads += detailOperations.reads;
+  writes += detailOperations.writes;
+  return { hydrated: true, reads, writes };
 }
 
 type SummarizableMirrorRun = Pick<
   Doc<"skillsShMirrorRuns">,
   | "_id"
   | "snapshotId"
+  | "sourceView"
   | "sourceSnapshotHash"
   | "sourceCaptureWrites"
   | "status"
   | "sourceTotal"
   | "sourcePageSize"
   | "sourceMeasuredAt"
+  | "sourceDurationMs"
   | "page"
   | "offset"
   | "counts"
@@ -539,12 +858,14 @@ function summarizeRun(run: SummarizableMirrorRun) {
   return {
     runId: run._id,
     snapshotId: run.snapshotId,
+    sourceView: run.sourceView ?? "leaderboard",
     sourceSnapshotHash: run.sourceSnapshotHash ?? null,
     sourceCaptureWrites: run.sourceCaptureWrites ?? 0,
     status: run.status,
     sourceTotal: run.sourceTotal,
     sourcePageSize: run.sourcePageSize,
     sourceMeasuredAt: run.sourceMeasuredAt,
+    sourceDurationMs: run.sourceDurationMs ?? 0,
     page: run.page,
     offset: run.offset,
     counts: runCounts(run.counts),
@@ -603,11 +924,14 @@ export const startRunInternal = internalMutation({
     actor: v.string(),
     reason: v.string(),
     snapshotId: v.string(),
+    sourceView: v.optional(sourceViewValidator),
     sourceSnapshotHash: v.optional(v.string()),
     sourceCaptureWrites: v.optional(v.number()),
     sourceTotal: v.number(),
     sourcePageSize: v.number(),
     sourceMeasuredAt: v.string(),
+    sourceRequests: v.optional(v.number()),
+    sourceDurationMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     assertSkillsShFixtureEnvironmentAllowed();
@@ -618,6 +942,8 @@ export const startRunInternal = internalMutation({
       throw new ConvexError("sourceMeasuredAt must be an ISO timestamp");
     }
     assertIntegerInRange("sourceCaptureWrites", args.sourceCaptureWrites ?? 0, 0, 100);
+    assertIntegerInRange("sourceRequests", args.sourceRequests ?? 0, 0, 1_000);
+    assertIntegerInRange("sourceDurationMs", args.sourceDurationMs ?? 0, 0, 24 * 60 * 60 * 1_000);
     const activeRuns = await ctx.db
       .query("skillsShMirrorRuns")
       .withIndex("by_started_at")
@@ -634,6 +960,7 @@ export const startRunInternal = internalMutation({
     const now = Date.now();
     const run = {
       snapshotId: args.snapshotId.trim(),
+      sourceView: args.sourceView ?? ("leaderboard" as const),
       ...(args.sourceSnapshotHash
         ? { sourceSnapshotHash: normalizedSourceSnapshotHash(args.sourceSnapshotHash) }
         : {}),
@@ -642,6 +969,7 @@ export const startRunInternal = internalMutation({
       sourceTotal: args.sourceTotal,
       sourcePageSize: args.sourcePageSize,
       sourceMeasuredAt: args.sourceMeasuredAt,
+      sourceDurationMs: args.sourceDurationMs ?? 0,
       page: 0,
       offset: 0,
       counts: emptyCounts(),
@@ -649,7 +977,7 @@ export const startRunInternal = internalMutation({
         functionCalls: 1,
         dbReads: 2,
         dbWrites: 1,
-        sourceRequests: 0,
+        sourceRequests: args.sourceRequests ?? 0,
         sourceBytes: 0,
       },
       actor: args.actor.trim(),
@@ -665,6 +993,7 @@ export const startRunInternal = internalMutation({
 export const storeSourcePageInternal = internalMutation({
   args: {
     snapshotHash: v.string(),
+    sourceView: v.optional(sourceViewValidator),
     page: v.number(),
     sourceTotal: v.number(),
     pageLength: v.number(),
@@ -708,6 +1037,7 @@ export const storeSourcePageInternal = internalMutation({
       .unique();
     const value = {
       snapshotHash,
+      sourceView: args.sourceView ?? ("leaderboard" as const),
       page: args.page,
       sourceTotal: args.sourceTotal,
       pageLength: args.pageLength,
@@ -721,6 +1051,7 @@ export const storeSourcePageInternal = internalMutation({
     if (existing) {
       const comparable = {
         snapshotHash: existing.snapshotHash,
+        sourceView: existing.sourceView ?? "leaderboard",
         page: existing.page,
         sourceTotal: existing.sourceTotal,
         pageLength: existing.pageLength,
@@ -756,8 +1087,13 @@ export const getSourceCaptureSummaryInternal = internalQuery({
     if (pages.length > Math.ceil(MAX_ROWS_PER_RUN / 500)) {
       throw new ConvexError("captured skills.sh source exceeds the page limit");
     }
+    const sourceViews = new Set(pages.map((page) => page.sourceView ?? "leaderboard"));
+    if (sourceViews.size > 1) {
+      throw new ConvexError("captured skills.sh source mixes leaderboard and trending pages");
+    }
     return {
       snapshotHash,
+      sourceView: sourceViews.values().next().value ?? "leaderboard",
       pageDocuments: pages.length,
       rows: pages.reduce((sum, page) => sum + page.pageLength, 0),
       sourceBytes: pages.reduce((sum, page) => sum + page.sourceBytes, 0),
@@ -898,8 +1234,11 @@ export const claimBatchLeaseInternal = internalMutation({
     return {
       runId: run._id,
       snapshotId: run.snapshotId,
+      sourceView: runSourceView(run),
       sourceTotal: run.sourceTotal,
       sourcePageSize: run.sourcePageSize,
+      sourceMeasuredAt: run.sourceMeasuredAt,
+      sourceDurationMs: run.sourceDurationMs ?? 0,
       sourcePage,
       page: run.page,
       offset: run.offset,
@@ -961,14 +1300,10 @@ export const processBatchInternal = internalMutation({
     if (!run) throw new ConvexError("skills.sh mirror run not found");
     if (run.status === "paused") throw new ConvexError("skills.sh mirror run is paused");
     if (run.status !== "running") return summarizeRun(run);
-    requireExactRunCursor(run, args.page, args.offset);
-    const leaseToken = normalizedLeaseToken(args.leaseToken);
-    if (run.batchLeaseToken !== leaseToken) {
-      throw new ConvexError("skills.sh mirror lease token mismatch");
+    if (runSourceView(run) !== "leaderboard") {
+      throw new ConvexError("trending observations require the trending batch mutation");
     }
-    if (run.batchLeaseExpiresAt === undefined || run.batchLeaseExpiresAt <= Date.now()) {
-      throw new ConvexError("skills.sh mirror batch lease expired");
-    }
+    requireActiveLease(run, args);
     if (args.sourceTotal !== run.sourceTotal) {
       throw new ConvexError("skills.sh mirror source total changed during the run");
     }
@@ -1046,19 +1381,7 @@ export const processBatchInternal = internalMutation({
       }
       const row = normalizeRow(batchRow);
       const fingerprint = observationFingerprint(row);
-      if (
-        !validIdentity(row) ||
-        !validInference(row) ||
-        !Number.isSafeInteger(row.upstreamInstalls) ||
-        row.upstreamInstalls < 0 ||
-        (row.sourceContentHash !== undefined && !/^[a-f0-9]{64}$/.test(row.sourceContentHash)) ||
-        !validScanner(row.upstreamScanners.genAgentTrustHub) ||
-        !validScanner(row.upstreamScanners.socket) ||
-        !validScanner(row.upstreamScanners.snyk) ||
-        (row.detail !== undefined &&
-          (row.detail.contentBytes > control.maxDetailBytes ||
-            new TextEncoder().encode(row.detail.content).byteLength !== row.detail.contentBytes))
-      ) {
+      if (!validMirrorRow(row, control.maxDetailBytes)) {
         await ctx.db.insert("skillsShMirrorConflicts", {
           runId: run._id,
           externalId: row.externalId,
@@ -1104,48 +1427,11 @@ export const processBatchInternal = internalMutation({
       }
 
       let digestId: Id<"skillsShMirrorDigests">;
-      const normalizedSearchFields = searchFields(row);
       if (!existing) {
-        digestId = await ctx.db.insert("skillsShMirrorDigests", {
-          externalId: row.externalId,
-          sourceType: row.sourceType,
-          upstreamSourceType: row.upstreamSourceType,
-          ...(row.owner ? { owner: row.owner } : {}),
-          ...(row.repo ? { repo: row.repo } : {}),
-          ...(row.sourceHost ? { sourceHost: row.sourceHost } : {}),
-          slug: row.slug,
-          ...normalizedSearchFields,
-          displayName: row.displayName,
-          sourceUrl: row.sourceUrl,
-          ...(row.canonicalRepoUrl ? { canonicalRepoUrl: row.canonicalRepoUrl } : {}),
-          ...(row.githubPath ? { githubPath: row.githubPath } : {}),
-          ...(row.githubCommit ? { githubCommit: row.githubCommit } : {}),
-          ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),
-          upstreamInstalls: row.upstreamInstalls,
-          upstreamScanners: row.upstreamScanners,
-          inferredCategories: row.inferredCategories,
-          inferredTopics: row.inferredTopics,
-          inferredCategoryConfidence: row.inferredCategoryConfidence,
-          inferredTopicConfidence: row.inferredTopicConfidence,
-          inferredClassifierVersion: row.inferredClassifierVersion,
-          inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
-          inferredInputHash: row.inferredInputHash,
-          inferredTopicInputHash: row.inferredTopicInputHash,
-          inferredAt: row.inferredAt,
-          sourceFreshnessStatus: "observed-only",
-          staleQuarantineReason: undefined,
-          detailStatus: row.detail ? "available" : "missing",
-          observationFingerprint: fingerprint,
-          sourceSnapshotId,
-          lastObservedRunId: run._id,
-          active: true,
-          publicVisible: false,
-          installable: false,
-          firstObservedAt: now,
-          lastObservedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        });
+        digestId = await ctx.db.insert(
+          "skillsShMirrorDigests",
+          newMirrorDigest(row, run._id, sourceSnapshotId, fingerprint, now),
+        );
         counts.inserted += 1;
         writes += 1;
       } else if (
@@ -1160,44 +1446,10 @@ export const processBatchInternal = internalMutation({
         if (existing.observationFingerprint === fingerprint) counts.unchanged += 1;
         else counts.updated += 1;
         if (!existing.active) counts.reactivated += 1;
-        await ctx.db.patch(existing._id, {
-          sourceType: row.sourceType,
-          upstreamSourceType: row.upstreamSourceType,
-          owner: row.owner,
-          repo: row.repo,
-          sourceHost: row.sourceHost,
-          slug: row.slug,
-          ...normalizedSearchFields,
-          displayName: row.displayName,
-          sourceUrl: row.sourceUrl,
-          canonicalRepoUrl: row.canonicalRepoUrl,
-          githubPath: row.githubPath,
-          githubCommit: row.githubCommit,
-          sourceContentHash: row.sourceContentHash,
-          upstreamInstalls: row.upstreamInstalls,
-          upstreamScanners: row.upstreamScanners,
-          inferredCategories: row.inferredCategories,
-          inferredTopics: row.inferredTopics,
-          inferredCategoryConfidence: row.inferredCategoryConfidence,
-          inferredTopicConfidence: row.inferredTopicConfidence,
-          inferredClassifierVersion: row.inferredClassifierVersion,
-          inferredTopicClassifierVersion: row.inferredTopicClassifierVersion,
-          inferredInputHash: row.inferredInputHash,
-          inferredTopicInputHash: row.inferredTopicInputHash,
-          inferredAt: row.inferredAt,
-          sourceFreshnessStatus: "observed-only",
-          staleQuarantineReason: undefined,
-          detailStatus: row.detail ? "available" : "missing",
-          observationFingerprint: fingerprint,
-          sourceSnapshotId,
-          lastObservedRunId: run._id,
-          active: true,
-          publicVisible: false,
-          installable: false,
-          tombstonedAt: undefined,
-          lastObservedAt: now,
-          updatedAt: now,
-        });
+        await ctx.db.patch(
+          existing._id,
+          mirrorDigestPatch(row, run._id, sourceSnapshotId, fingerprint, now),
+        );
         writes += 1;
       }
 
@@ -1205,55 +1457,16 @@ export const processBatchInternal = internalMutation({
       reads += facetOperations.reads;
       writes += facetOperations.writes;
 
-      const existingDetail = await ctx.db
-        .query("skillsShMirrorDetails")
-        .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
-        .unique();
-      reads += 1;
-      if (!row.detail) {
-        counts.detailsMissing += 1;
-        if (existingDetail) {
-          await ctx.db.delete(existingDetail._id);
-          writes += 1;
-        }
-      } else if (!existingDetail) {
-        await ctx.db.insert("skillsShMirrorDetails", {
-          externalId: row.externalId,
-          digestId,
-          ...row.detail,
-          ...(row.sourceContentHash ? { sourceContentHash: row.sourceContentHash } : {}),
-          sourceSnapshotId,
-          lastObservedRunId: run._id,
-          createdAt: now,
-          updatedAt: now,
-        });
-        counts.detailsInserted += 1;
-        if (row.detail.truncated) counts.detailsTruncated += 1;
-        writes += 1;
-      } else if (sameDetail(existingDetail, row)) {
-        counts.detailsUnchanged += 1;
-        if (row.detail.truncated) counts.detailsTruncated += 1;
-        if (existingDetail.lastObservedRunId !== run._id) {
-          await ctx.db.patch(existingDetail._id, {
-            sourceSnapshotId,
-            lastObservedRunId: run._id,
-            updatedAt: now,
-          });
-          writes += 1;
-        }
-      } else {
-        await ctx.db.patch(existingDetail._id, {
-          digestId,
-          ...row.detail,
-          sourceContentHash: row.sourceContentHash,
-          sourceSnapshotId,
-          lastObservedRunId: run._id,
-          updatedAt: now,
-        });
-        counts.detailsUpdated += 1;
-        if (row.detail.truncated) counts.detailsTruncated += 1;
-        writes += 1;
-      }
+      const detailOperations = await syncMirrorDetail(ctx, {
+        row,
+        digestId,
+        runId: run._id,
+        sourceSnapshotId,
+        now,
+        counts,
+      });
+      reads += detailOperations.reads;
+      writes += detailOperations.writes;
     }
 
     const nextOffset = args.offset + args.rows.length;
@@ -1284,6 +1497,289 @@ export const processBatchInternal = internalMutation({
     };
     await ctx.db.patch(run._id, patch);
     return summarizeRun({ ...run, ...patch });
+  },
+});
+
+export const getTrendingJoinStateInternal = internalQuery({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, args) => {
+    assertIntegerInRange("externalIds.length", args.externalIds.length, 1, MAX_ROWS_PER_BATCH);
+    const externalIds = args.externalIds.map((value) => value.trim().toLowerCase());
+    if (externalIds.some((value) => !value) || new Set(externalIds).size !== externalIds.length) {
+      throw new ConvexError("trending externalIds must be unique non-empty strings");
+    }
+    const rows = await Promise.all(
+      externalIds.map(async (externalId) =>
+        ctx.db
+          .query("skillsShMirrorDigests")
+          .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+          .unique(),
+      ),
+    );
+    return {
+      joinedExternalIds: rows.flatMap((row) => (row?.active ? [row.externalId] : [])),
+      missingExternalIds: externalIds.filter((_, index) => !rows[index]?.active),
+    };
+  },
+});
+
+export const hydrateTrendingBatchInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShMirrorRuns"),
+    page: v.number(),
+    offset: v.number(),
+    leaseToken: v.string(),
+    sourceRequests: v.optional(v.number()),
+    sourceBytes: v.optional(v.number()),
+    rows: v.array(v.union(rowValidator, quarantinedRowValidator)),
+  },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    const [controlDoc, run] = await Promise.all([getControl(ctx), ctx.db.get(args.runId)]);
+    const control = requireActiveControl(controlDoc);
+    if (!run) throw new ConvexError("skills.sh mirror run not found");
+    if (run.status !== "running") return summarizeRun(run);
+    requireTrendingRun(run);
+    requireActiveLease(run, args);
+    assertIntegerInRange("rows.length", args.rows.length, 1, control.maxRowsPerBatch);
+    assertIntegerInRange(
+      "sourceRequests",
+      args.sourceRequests ?? 0,
+      0,
+      MAX_SOURCE_ATTEMPTS * (1 + 5 * args.rows.length),
+    );
+    assertIntegerInRange(
+      "sourceBytes",
+      args.sourceBytes ?? 0,
+      0,
+      MAX_ACCOUNTED_SOURCE_BYTES_PER_BATCH,
+    );
+    const counts = runCounts(run.counts);
+    if (counts.trendingHydrationAttempts + args.rows.length > MAX_TRENDING_HYDRATIONS_PER_RUN) {
+      throw new ConvexError(
+        `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
+      );
+    }
+    const normalizedIds = args.rows.map((row) => row.externalId.trim().toLowerCase());
+    if (new Set(normalizedIds).size !== normalizedIds.length) {
+      throw new ConvexError("trending hydration rows must have unique external IDs");
+    }
+
+    const now = Date.now();
+    let reads = 2;
+    let writes = 0;
+    counts.trendingHydrationAttempts += args.rows.length;
+    for (let index = 0; index < args.rows.length; index += 1) {
+      const batchRow: BatchRow = args.rows[index]!;
+      if ("quarantined" in batchRow) {
+        const row = normalizeQuarantinedRow(batchRow);
+        await ctx.db.insert("skillsShMirrorConflicts", {
+          runId: run._id,
+          externalId: row.externalId,
+          kind: "source-quarantine",
+          reason: row.reason,
+          upstreamSourceType: row.upstreamSourceType,
+          observedFingerprint: JSON.stringify(row),
+          page: args.page,
+          offset: args.offset + index,
+          createdAt: now,
+        });
+        counts.rejected += 1;
+        counts.quarantined += 1;
+        counts.conflicts += 1;
+        counts.trendingHydrationFailed += 1;
+        writes += 1;
+        continue;
+      }
+      const row = normalizeRow(batchRow);
+      const fingerprint = observationFingerprint(row);
+      if (!validMirrorRow(row, control.maxDetailBytes)) {
+        await ctx.db.insert("skillsShMirrorConflicts", {
+          runId: run._id,
+          externalId: row.externalId,
+          kind: "identity-mismatch",
+          observedFingerprint: fingerprint,
+          page: args.page,
+          offset: args.offset + index,
+          createdAt: now,
+        });
+        counts.rejected += 1;
+        counts.conflicts += 1;
+        counts.trendingHydrationFailed += 1;
+        writes += 1;
+        continue;
+      }
+      const operations = await upsertHydratedMirrorRow(ctx, {
+        row,
+        run,
+        page: args.page,
+        offset: args.offset + index,
+        now,
+        counts,
+      });
+      reads += operations.reads;
+      writes += operations.writes;
+      if (operations.hydrated) counts.trendingHydrated += 1;
+      else counts.trendingHydrationFailed += 1;
+    }
+    const patch = {
+      counts,
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: reads,
+        dbWrites: writes + 1,
+        sourceRequests: args.sourceRequests ?? 0,
+        sourceBytes: args.sourceBytes ?? 0,
+      }),
+      updatedAt: now,
+    };
+    await ctx.db.patch(run._id, patch);
+    return summarizeRun({ ...run, ...patch });
+  },
+});
+
+export const processTrendingBatchInternal = internalMutation({
+  args: {
+    runId: v.id("skillsShMirrorRuns"),
+    page: v.number(),
+    offset: v.number(),
+    leaseToken: v.string(),
+    pageLength: v.number(),
+    hasMore: v.boolean(),
+    sourceTotal: v.number(),
+    rows: v.array(trendingRowValidator),
+  },
+  handler: async (ctx, args) => {
+    assertSkillsShFixtureEnvironmentAllowed();
+    const [controlDoc, run] = await Promise.all([getControl(ctx), ctx.db.get(args.runId)]);
+    const control = requireActiveControl(controlDoc);
+    if (!run) throw new ConvexError("skills.sh mirror run not found");
+    if (run.status === "paused") throw new ConvexError("skills.sh mirror run is paused");
+    if (run.status !== "running") return summarizeRun(run);
+    requireTrendingRun(run);
+    requireActiveLease(run, args);
+    if (args.sourceTotal !== run.sourceTotal) {
+      throw new ConvexError("skills.sh trending source total changed during the run");
+    }
+    assertIntegerInRange("page", args.page, 0, 100_000);
+    assertIntegerInRange("offset", args.offset, 0, run.sourcePageSize);
+    assertIntegerInRange("pageLength", args.pageLength, 1, run.sourcePageSize);
+    assertIntegerInRange("rows.length", args.rows.length, 1, control.maxRowsPerBatch);
+    if (args.offset + args.rows.length > args.pageLength) {
+      throw new ConvexError("skills.sh trending batch exceeds the source page");
+    }
+    const normalizedIds = args.rows.map((row) => row.externalId.trim().toLowerCase());
+    if (normalizedIds.some((value) => !value) || new Set(normalizedIds).size !== args.rows.length) {
+      throw new ConvexError("trending rows must have unique non-empty external IDs");
+    }
+    const observedAt = Date.parse(run.sourceMeasuredAt);
+    if (!Number.isSafeInteger(observedAt)) {
+      throw new ConvexError("skills.sh trending observation time is invalid");
+    }
+
+    const counts = runCounts(run.counts);
+    const now = Date.now();
+    let reads = 2;
+    let writes = 0;
+    const missingExternalIds: string[] = [];
+    for (let index = 0; index < args.rows.length; index += 1) {
+      const row = args.rows[index]!;
+      const externalId = normalizedIds[index]!;
+      const expectedRank = args.page * run.sourcePageSize + args.offset + index + 1;
+      if (
+        !Number.isSafeInteger(row.rank) ||
+        row.rank !== expectedRank ||
+        !Number.isSafeInteger(row.lifetimeInstalls) ||
+        row.lifetimeInstalls < 0
+      ) {
+        throw new ConvexError("skills.sh trending row rank or lifetime installs is invalid");
+      }
+      counts.observed += 1;
+      const existing = await ctx.db
+        .query("skillsShMirrorDigests")
+        .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+        .unique();
+      reads += 1;
+      if (!existing?.active) {
+        counts.trendingMissing += 1;
+        missingExternalIds.push(externalId);
+        continue;
+      }
+      counts.trendingJoined += 1;
+      if (existing.trendingObservedAt !== undefined && existing.trendingObservedAt > observedAt) {
+        counts.trendingStaleRejected += 1;
+        continue;
+      }
+      if (existing.trendingObservedAt === observedAt) {
+        if (
+          existing.trendingRank === row.rank &&
+          existing.trendingLifetimeInstalls === row.lifetimeInstalls
+        ) {
+          counts.trendingUnchanged += 1;
+          continue;
+        }
+        await ctx.db.insert("skillsShMirrorConflicts", {
+          runId: run._id,
+          externalId,
+          kind: "trending-same-observation-drift",
+          previousFingerprint: JSON.stringify({
+            rank: existing.trendingRank,
+            lifetimeInstalls: existing.trendingLifetimeInstalls,
+            observedAt: existing.trendingObservedAt,
+          }),
+          observedFingerprint: JSON.stringify({
+            rank: row.rank,
+            lifetimeInstalls: row.lifetimeInstalls,
+            observedAt,
+          }),
+          page: args.page,
+          offset: args.offset + index,
+          createdAt: now,
+        });
+        counts.rejected += 1;
+        counts.conflicts += 1;
+        writes += 1;
+        continue;
+      }
+      await ctx.db.patch(existing._id, {
+        trendingRank: row.rank,
+        trendingLifetimeInstalls: row.lifetimeInstalls,
+        trendingObservedAt: observedAt,
+        trendingSnapshotId: compactSourceSnapshotId(run.snapshotId),
+        trendingObservedRunId: run._id,
+        updatedAt: now,
+      });
+      counts.trendingUpdated += 1;
+      writes += 1;
+    }
+
+    const nextOffset = args.offset + args.rows.length;
+    const pageComplete = nextOffset === args.pageLength;
+    const sourceComplete = pageComplete && !args.hasMore;
+    if (sourceComplete && counts.observed !== run.sourceTotal) {
+      throw new ConvexError(
+        `skills.sh trending observed ${counts.observed} rows but source declared ${run.sourceTotal}`,
+      );
+    }
+    const nextPage = pageComplete ? args.page + 1 : args.page;
+    const storedOffset = pageComplete ? 0 : nextOffset;
+    const patch = {
+      status: sourceComplete ? ("completed" as const) : ("running" as const),
+      page: nextPage,
+      offset: storedOffset,
+      batchLeaseToken: undefined,
+      batchLeaseExpiresAt: undefined,
+      counts,
+      operations: addOperations(run.operations, {
+        functionCalls: 1,
+        dbReads: reads,
+        dbWrites: writes + 1,
+      }),
+      ...(sourceComplete ? { completedAt: now } : {}),
+      updatedAt: now,
+    };
+    await ctx.db.patch(run._id, patch);
+    return { ...summarizeRun({ ...run, ...patch }), missingExternalIds };
   },
 });
 

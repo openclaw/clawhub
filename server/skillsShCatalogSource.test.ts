@@ -16,6 +16,7 @@ import {
   fetchSkillsShCatalogTestPage,
   getSkillsShCatalogTestSourcePolicy,
   measureSkillsShMirrorProofSource,
+  measureSkillsShTrendingSource,
   parseSkillsShMirrorProofSnapshotId,
   resolveSkillsShMirrorGitHubLocators,
   skillsShSourceRetryAfterSeconds,
@@ -26,6 +27,65 @@ import {
 describe("skills.sh Vercel source boundary", () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it("exhausts authenticated trending pagination and captures immutable rank pages", async () => {
+    const rows = Array.from({ length: 501 }, (_, index) => ({
+      id: `owner/repo/skill-${index}`,
+      installUrl: "https://github.com/owner/repo",
+      installs: 10_000 - index,
+      name: `Skill ${index}`,
+      slug: `skill-${index}`,
+      source: "owner/repo",
+      sourceType: "github",
+      url: `https://www.skills.sh/owner/repo/skill-${index}`,
+    }));
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
+      expect(url.searchParams.get("view")).toBe("trending");
+      expect(url.searchParams.get("per_page")).toBe("500");
+      const page = Number(url.searchParams.get("page"));
+      const data = page === 0 ? rows.slice(0, 500) : page === 1 ? rows.slice(500) : [];
+      return new Response(
+        JSON.stringify({
+          data,
+          pagination: { page, perPage: 500, total: 501, hasMore: page === 0 },
+        }),
+      );
+    });
+
+    const measured = await measureSkillsShTrendingSource({
+      fetchImpl: fetchImpl as typeof fetch,
+      oidcToken: "oidc-token",
+      minimumApiRequestIntervalMs: 0,
+      observedAt: "2026-07-24T19:44:11.437Z",
+    });
+
+    expect(measured).toMatchObject({
+      catalogTotal: 501,
+      observedAt: "2026-07-24T19:44:11.437Z",
+      pageSize: 500,
+      sourceRequests: 3,
+      sourceDurationMs: expect.any(Number),
+      snapshotHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      sourcePages: [
+        { page: 0, sourceTotal: 501, pageLength: 500, hasMore: true },
+        { page: 1, sourceTotal: 501, pageLength: 1, hasMore: false },
+      ],
+      evidence: {
+        endpointExhausted: true,
+        uniqueIds: 501,
+        duplicateIds: 0,
+        requestedPages: [
+          { page: 0, count: 500, hasMore: true },
+          { page: 1, count: 1, hasMore: false },
+          { page: 2, count: 0, hasMore: false },
+        ],
+      },
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("retains each upstream scanner status and source link independently", () => {

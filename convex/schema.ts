@@ -3136,12 +3136,21 @@ const skillsShMirrorRunCountsValidator = v.object({
   detailsTruncated: v.number(),
   tombstoned: v.number(),
   reactivated: v.number(),
+  trendingJoined: v.optional(v.number()),
+  trendingUpdated: v.optional(v.number()),
+  trendingUnchanged: v.optional(v.number()),
+  trendingMissing: v.optional(v.number()),
+  trendingStaleRejected: v.optional(v.number()),
+  trendingHydrationAttempts: v.optional(v.number()),
+  trendingHydrated: v.optional(v.number()),
+  trendingHydrationFailed: v.optional(v.number()),
   scansPlanned: v.literal(0),
   scansAdmitted: v.literal(0),
 });
 
 const skillsShMirrorRuns = defineTable({
   snapshotId: v.string(),
+  sourceView: v.optional(v.union(v.literal("leaderboard"), v.literal("trending"))),
   sourceSnapshotHash: v.optional(v.string()),
   sourceCaptureWrites: v.optional(v.number()),
   status: v.union(
@@ -3155,6 +3164,7 @@ const skillsShMirrorRuns = defineTable({
   sourceTotal: v.number(),
   sourcePageSize: v.number(),
   sourceMeasuredAt: v.string(),
+  sourceDurationMs: v.optional(v.number()),
   page: v.number(),
   offset: v.number(),
   batchLeaseToken: v.optional(v.string()),
@@ -3181,6 +3191,7 @@ const skillsShMirrorRuns = defineTable({
 
 const skillsShMirrorSourcePages = defineTable({
   snapshotHash: v.string(),
+  sourceView: v.optional(v.union(v.literal("leaderboard"), v.literal("trending"))),
   page: v.number(),
   sourceTotal: v.number(),
   pageLength: v.number(),
@@ -3236,6 +3247,11 @@ const skillsShMirrorDigests = defineTable({
   githubCommit: v.optional(v.string()),
   sourceContentHash: v.optional(v.string()),
   upstreamInstalls: v.number(),
+  trendingRank: v.optional(v.number()),
+  trendingLifetimeInstalls: v.optional(v.number()),
+  trendingObservedAt: v.optional(v.number()),
+  trendingSnapshotId: v.optional(v.string()),
+  trendingObservedRunId: v.optional(v.id("skillsShMirrorRuns")),
   upstreamScanners: v.object({
     genAgentTrustHub: skillsShMirrorUpstreamScannerValidator,
     socket: skillsShMirrorUpstreamScannerValidator,
@@ -3340,6 +3356,7 @@ const skillsShMirrorConflicts = defineTable({
   externalId: v.string(),
   kind: v.union(
     v.literal("same-run-drift"),
+    v.literal("trending-same-observation-drift"),
     v.literal("identity-mismatch"),
     v.literal("source-quarantine"),
   ),

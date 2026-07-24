@@ -282,6 +282,127 @@ describe("skills.sh catalog Test HTTP API", () => {
     );
   });
 
+  it("routes trending observations through the existing mirror operator boundary", async () => {
+    const staging = {
+      environment: "test",
+      deploymentName: "academic-chihuahua-392",
+      buildSha: "test-sha",
+      control: {},
+    };
+    const startMutation = vi.fn(async () => ({
+      runId: "skillsShMirrorRuns:trending",
+      status: "running",
+    }));
+    const startResponse = await skillsShCatalogTestV1Handler(
+      { runQuery: vi.fn(async () => staging), runMutation: startMutation } as never,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-start",
+          sourceView: "trending",
+          reason: "CLAW-589 proof",
+          snapshotId: "skills-sh:trending:snapshot",
+          sourceSnapshotHash: "a".repeat(64),
+          sourceCaptureWrites: 2,
+          sourceTotal: 501,
+          sourcePageSize: 500,
+          sourceMeasuredAt: "2026-07-24T19:44:11.437Z",
+          sourceRequests: 3,
+          sourceDurationMs: 321,
+        }),
+      }),
+    );
+
+    expect(startResponse.status).toBe(200);
+    expect(startMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        sourceView: "trending",
+        sourceRequests: 3,
+        sourceDurationMs: 321,
+      }),
+    );
+
+    const joinQuery = vi
+      .fn()
+      .mockResolvedValueOnce(staging)
+      .mockResolvedValueOnce({
+        joinedExternalIds: ["vercel-labs/skills/find-skills"],
+        missingExternalIds: [],
+      });
+    const joinResponse = await skillsShCatalogTestV1Handler(
+      { runQuery: joinQuery } as never,
+      new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+        method: "POST",
+        body: JSON.stringify({
+          operation: "mirror-trending-join-state",
+          externalIds: ["vercel-labs/skills/find-skills"],
+        }),
+      }),
+    );
+
+    expect(joinResponse.status).toBe(200);
+    expect(joinQuery).toHaveBeenLastCalledWith(expect.anything(), {
+      externalIds: ["vercel-labs/skills/find-skills"],
+    });
+
+    const runMutation = vi.fn(async () => ({ status: "completed" }));
+    for (const operation of ["mirror-trending-hydrate", "mirror-trending-batch"] as const) {
+      const response = await skillsShCatalogTestV1Handler(
+        { runQuery: vi.fn(async () => staging), runMutation } as never,
+        new Request("https://academic-chihuahua-392.convex.site/api/v1/ops", {
+          method: "POST",
+          body: JSON.stringify({
+            operation,
+            runId: "skillsShMirrorRuns:trending",
+            leaseToken: "lease:trending",
+            page: 0,
+            offset: 0,
+            ...(operation === "mirror-trending-hydrate"
+              ? {
+                  sourceRequests: 2,
+                  sourceBytes: 1_024,
+                  rows: [{ externalId: "vercel-labs/skills/find-skills" }],
+                }
+              : {
+                  pageLength: 1,
+                  hasMore: false,
+                  sourceTotal: 1,
+                  rows: [
+                    {
+                      externalId: "vercel-labs/skills/find-skills",
+                      lifetimeInstalls: 42,
+                      rank: 1,
+                    },
+                  ],
+                }),
+          }),
+        }),
+      );
+      expect(response.status).toBe(200);
+    }
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ sourceRequests: 2, sourceBytes: 1_024 }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        sourceTotal: 1,
+        rows: [
+          {
+            externalId: "vercel-labs/skills/find-skills",
+            lifetimeInstalls: 42,
+            rank: 1,
+          },
+        ],
+      }),
+    );
+  });
+
   it("stores and summarizes immutable mirror source pages", async () => {
     const staging = {
       environment: "test",

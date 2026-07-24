@@ -123,6 +123,19 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
   another source batch is fetched; resume continues at the exact stored cursor.
   Reconciliation tombstones disappeared rows and reactivates later
   observations without deleting or changing native skills.
+- The authenticated `view=trending` feed is an ordering overlay on these same
+  digest identities. It records `trendingRank`, the separately labeled lifetime
+  install count observed in that response, and `trendingObservedAt`; it never
+  creates a second mirror row or tombstones identities absent from one Trending
+  batch.
+- skills.sh does not expose an exact rolling-24-hour count in this response.
+  `trending24hInstalls` therefore remains unavailable; lifetime totals,
+  snapshot deltas, and weekly sparklines must not be relabeled as that metric.
+- Trending pages are exhausted and captured immutably before application.
+  Older observations cannot overwrite newer fields, identical replays are
+  idempotent, and a same-timestamp payload drift is rejected. At most ten IDs
+  missing because of pagination drift may hydrate through the existing mirror
+  normalizer in one run; exceeding that bound fails closed.
 - The mirror has no scheduler in this stage. Production activation, public
   search/detail/install behavior, claims, and publisher attachment require
   separately accepted work.

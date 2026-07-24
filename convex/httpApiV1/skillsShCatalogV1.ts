@@ -40,11 +40,14 @@ const internalRefs = internal as unknown as {
     getRunInternal: unknown;
     getSourceCaptureSummaryInternal: unknown;
     getStatusInternal: unknown;
+    getTrendingJoinStateInternal: unknown;
+    hydrateTrendingBatchInternal: unknown;
     listDetailsPageInternal: unknown;
     listDigestsPageInternal: unknown;
     listConflictsByRunInternal: unknown;
     listFacetsPageInternal: unknown;
     processBatchInternal: unknown;
+    processTrendingBatchInternal: unknown;
     reconcileBatchInternal: unknown;
     releaseBatchLeaseInternal: unknown;
     setPausedInternal: unknown;
@@ -112,6 +115,13 @@ function requireBoolean(record: Record<string, unknown>, key: string) {
   const value = record[key];
   if (typeof value !== "boolean") throw new Error(`${key} is required`);
   return value;
+}
+
+function optionalMirrorSourceView(record: Record<string, unknown>) {
+  const value = record.sourceView;
+  if (value === undefined) return undefined;
+  if (value === "leaderboard" || value === "trending") return value;
+  throw new Error("sourceView must be leaderboard or trending");
 }
 
 function requireStringArray(record: Record<string, unknown>, key: string, maxItems: number) {
@@ -516,6 +526,15 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       );
       return json({ states }, 200, rate.headers);
     }
+    if (operation === "mirror-trending-join-state") {
+      return json(
+        await runQueryRef(ctx, internalRefs.skillsShMirror.getTrendingJoinStateInternal, {
+          externalIds: requireStringArray(body, "externalIds", 50),
+        }),
+        200,
+        rate.headers,
+      );
+    }
     if (operation === "mirror-replay-rows") {
       const rows = await runQueryRef(ctx, internalRefs.skillsShMirror.getReplayRowsInternal, {
         externalIds: requireStringArray(body, "externalIds", 50),
@@ -595,11 +614,13 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       );
     }
     if (operation === "mirror-start") {
+      const sourceView = optionalMirrorSourceView(body);
       return json(
         await runMutationRef(ctx, internalRefs.skillsShMirror.startRunInternal, {
           actor: auth.user.handle,
           reason: requireString(body, "reason"),
           snapshotId: requireString(body, "snapshotId"),
+          ...(sourceView ? { sourceView } : {}),
           ...(typeof body.sourceSnapshotHash === "string"
             ? { sourceSnapshotHash: requireString(body, "sourceSnapshotHash") }
             : {}),
@@ -609,6 +630,12 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
           sourceTotal: requireNumber(body, "sourceTotal"),
           sourcePageSize: requireNumber(body, "sourcePageSize"),
           sourceMeasuredAt: requireString(body, "sourceMeasuredAt"),
+          ...(typeof body.sourceRequests === "number"
+            ? { sourceRequests: requireNumber(body, "sourceRequests") }
+            : {}),
+          ...(typeof body.sourceDurationMs === "number"
+            ? { sourceDurationMs: requireNumber(body, "sourceDurationMs") }
+            : {}),
         }),
         200,
         rate.headers,
@@ -616,9 +643,11 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
     }
     if (operation === "mirror-source-page-store") {
       if (!Array.isArray(body.rows)) throw new Error("rows is required");
+      const sourceView = optionalMirrorSourceView(body);
       return json(
         await runMutationRef(ctx, internalRefs.skillsShMirror.storeSourcePageInternal, {
           snapshotHash: requireString(body, "snapshotHash"),
+          ...(sourceView ? { sourceView } : {}),
           page: requireNumber(body, "page"),
           sourceTotal: requireNumber(body, "sourceTotal"),
           pageLength: requireNumber(body, "pageLength"),
@@ -646,6 +675,43 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
           sourceTotal: requireNumber(body, "sourceTotal"),
           sourceRequests: requireNumber(body, "sourceRequests"),
           sourceBytes: requireNumber(body, "sourceBytes"),
+          rows: body.rows,
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-trending-hydrate") {
+      if (!Array.isArray(body.rows)) throw new Error("rows is required");
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.hydrateTrendingBatchInternal, {
+          runId: requireString(body, "runId"),
+          leaseToken: requireString(body, "leaseToken"),
+          page: requireNumber(body, "page"),
+          offset: requireNumber(body, "offset"),
+          ...(typeof body.sourceRequests === "number"
+            ? { sourceRequests: requireNumber(body, "sourceRequests") }
+            : {}),
+          ...(typeof body.sourceBytes === "number"
+            ? { sourceBytes: requireNumber(body, "sourceBytes") }
+            : {}),
+          rows: body.rows,
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-trending-batch") {
+      if (!Array.isArray(body.rows)) throw new Error("rows is required");
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirror.processTrendingBatchInternal, {
+          runId: requireString(body, "runId"),
+          leaseToken: requireString(body, "leaseToken"),
+          page: requireNumber(body, "page"),
+          offset: requireNumber(body, "offset"),
+          pageLength: requireNumber(body, "pageLength"),
+          hasMore: requireBoolean(body, "hasMore"),
+          sourceTotal: requireNumber(body, "sourceTotal"),
           rows: body.rows,
         }),
         200,
