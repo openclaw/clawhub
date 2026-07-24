@@ -18,7 +18,7 @@ type WrappedHandler<TArgs, TResult> = {
 
 const getLatestHandler = (
   getLatestCatalogFeedShardPublication as unknown as WrappedHandler<
-    { feedId: typeof CATALOG_SKILLS_FEED_ID },
+    { feedId: typeof CATALOG_SKILLS_FEED_ID; now: string },
     unknown
   >
 )._handler;
@@ -112,13 +112,19 @@ describe("catalog feed shard publication builder", () => {
         {
           feedId: CATALOG_SKILLS_FEED_ID,
           generatedAt: "2026-07-17T00:00:00.000Z",
-          expiresAt: "2026-07-18T00:00:00.000Z",
+          expiresAt: "2026-09-18T00:00:00.000Z",
           description: "Official skills",
           entryCount: 1001,
           requiresProjection: true,
         },
       ),
     ).resolves.toMatchObject({ publicationId: "publication:1", sequence: 5 });
+    expect(insert).toHaveBeenCalledWith(
+      "catalogFeedShardPublications",
+      expect.objectContaining({
+        expirationTime: Date.parse("2026-09-18T00:00:00.000Z"),
+      }),
+    );
     expect(insert).toHaveBeenCalledWith(
       "catalogFeedRevisions",
       expect.objectContaining({
@@ -173,8 +179,8 @@ describe("catalog feed shard publication builder", () => {
       entries: Array.from({ length: 501 }, (_, index) => entry(index)),
     });
 
-    expect(shards).toHaveLength(3);
-    expect(shards.map((shard) => shard.entryCount)).toEqual([250, 250, 1]);
+    expect(shards).toHaveLength(1);
+    expect(shards.map((shard) => shard.entryCount)).toEqual([501]);
     for (const [index, built] of shards.entries()) {
       expect(built.index).toBe(index);
       expect(built.byteLength).toBe(Buffer.byteLength(built.payload));
@@ -220,7 +226,10 @@ describe("catalog feed shard publication builder", () => {
     }));
 
     await expect(
-      getLatestHandler({ db: { query } }, { feedId: CATALOG_SKILLS_FEED_ID }),
+      getLatestHandler(
+        { db: { query } },
+        { feedId: CATALOG_SKILLS_FEED_ID, now: "2026-07-17T00:00:00.000Z" },
+      ),
     ).resolves.toMatchObject({
       sequence: 3,
       shards: [{ index: 0, byteLength: 123, entryCount: 1 }],

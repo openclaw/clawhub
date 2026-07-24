@@ -321,7 +321,16 @@ describe("catalog feed projection", () => {
           withIndex: vi.fn((_index: string, apply: (q: { eq: typeof eq }) => unknown) => {
             apply({ eq });
             if (table === "catalogFeedRevisions") {
-              return { order: vi.fn(() => ({ first: vi.fn(async () => null) })) };
+              return {
+                order: vi.fn(() => ({
+                  first: vi.fn(async () => ({
+                    sequence: 4,
+                    changeCount: 0,
+                    cumulativeChangeCount: 7,
+                    resetRequired: true,
+                  })),
+                })),
+              };
             }
             if (table === "catalogFeedShardPublications") {
               return { order: vi.fn(() => ({ first: vi.fn(async () => ({ sequence: 4 })) })) };
@@ -354,7 +363,8 @@ describe("catalog feed projection", () => {
         sequence: 5,
         indexedEntryCount: 0,
         changeCount: 2,
-        cumulativeChangeCount: 2,
+        cumulativeChangeCount: 9,
+        resetRequired: true,
       }),
     );
     const journalRows = insert.mock.calls.filter(([table]) => table === "catalogFeedChanges");
@@ -399,7 +409,7 @@ describe("catalog feed projection", () => {
               })),
             };
             return {
-              filter: vi.fn(() => ordered),
+              filter: vi.fn(() => ({ ...ordered, first: vi.fn(async () => null) })),
               unique: vi.fn(async () => ({
                 sequence: 4,
                 changeCount: 2,
@@ -801,7 +811,7 @@ describe("catalog feed projection", () => {
       return {};
     });
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("family" in args) return [];
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("publisherId" in args) {
         return { entries: skillEntries, isDone: true, continueCursor: "" };
       }
@@ -901,8 +911,12 @@ describe("catalog feed projection", () => {
       return {};
     });
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if (args.family === "code-plugin") return pluginEntries;
-      if ("family" in args) return [];
+      if (args.family === "code-plugin") {
+        return args.cursor === null
+          ? { entries: pluginEntries.slice(0, 600), isDone: false, continueCursor: "plugins-2" }
+          : { entries: pluginEntries.slice(600), isDone: true, continueCursor: "" };
+      }
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       return { publishers: [], isDone: true, continueCursor: "" };
     });
 
@@ -938,6 +952,10 @@ describe("catalog feed projection", () => {
       )
       .map(([, args]) => JSON.parse(args.payload as string) as { entries: unknown[] });
     expect(pluginShardPayloads.flatMap((shard) => shard.entries)).toHaveLength(1001);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "code-plugin",
+      cursor: "plugins-2",
+    });
     expect(result[0]).toMatchObject({
       feedId: CATALOG_FEED_ID,
       sequence: 1,

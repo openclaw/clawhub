@@ -224,21 +224,35 @@ async function listFamilyEntries(
   let cursor: string | null = null;
 
   while (true) {
-    const page = await ctx.db
-      .query("packages")
-      .withIndex("by_active_family_official_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", true),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: CATALOG_FEED_PAGE_SIZE });
-
-    for (const pkg of page.page) {
-      const entry = await buildEntry(ctx, pkg);
-      if (entry) entries.push(entry);
-    }
+    const page = await listFamilyEntryPage(ctx, family, cursor);
+    entries.push(...page.entries);
     if (page.isDone) return entries;
     cursor = page.continueCursor;
   }
+}
+
+async function listFamilyEntryPage(
+  ctx: CatalogQueryCtx,
+  family: (typeof CATALOG_FEED_FAMILIES)[number],
+  cursor: string | null,
+) {
+  const page = await ctx.db
+    .query("packages")
+    .withIndex("by_active_family_official_downloads", (q) =>
+      q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", true),
+    )
+    .order("desc")
+    .paginate({ cursor, numItems: CATALOG_FEED_PAGE_SIZE });
+  const entries: CatalogFeedEntry[] = [];
+  for (const pkg of page.page) {
+    const entry = await buildEntry(ctx, pkg);
+    if (entry) entries.push(entry);
+  }
+  return {
+    entries,
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  };
 }
 
 async function buildSkillEntry(
@@ -401,6 +415,14 @@ export const listOfficialEntries = internalQuery({
   handler: async (ctx, args) => await listFamilyEntries(ctx, args.family),
 });
 
+export const listOfficialEntryPage = internalQuery({
+  args: {
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    cursor: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, args) => await listFamilyEntryPage(ctx, args.family, args.cursor),
+});
+
 export const listOfficialSkillEntries = internalQuery({
   args: {
     publisherId: v.id("publishers"),
@@ -503,7 +525,9 @@ export const storePublication = internalMutation({
       indexedEntryCount: 0,
       changeCount: changes.length,
       cumulativeChangeCount: (latestRevision?.cumulativeChangeCount ?? 0) + changes.length,
-      ...(latestRevision?.resetRequired ? { resetRequired: true } : {}),
+      ...(latestRevision?.resetRequired && latestRevision.changeCount === 0
+        ? { resetRequired: true }
+        : {}),
       generatedAt: args.generatedAt,
       expiresAt: args.expiresAt,
       description: args.description,
@@ -764,7 +788,14 @@ async function countCatalogFeedChanges(
           )
           .unique();
   if (!baseRevision || !targetRevision) return null;
-  if (targetRevision.resetRequired) return null;
+  const resetRevision = await ctx.db
+    .query("catalogFeedRevisions")
+    .withIndex("by_feed_and_sequence", (q) =>
+      q.eq("feedId", feedId).gt("sequence", range.fromSequence).lte("sequence", range.toSequence),
+    )
+    .filter((q) => q.eq(q.field("resetRequired"), true))
+    .first();
+  if (resetRevision) return null;
 
   const baseCount =
     range.fromSequence === state.retainedFromSequence
@@ -1231,16 +1262,24 @@ export const publish = internalAction({
     await ctx.runMutation(internal.catalogFeed.acquireCatalogFeedPublicationLease, { leaseToken });
     try {
       const generatedAt = new Date().toISOString();
-      const familyEntries: CatalogFeedEntry[][] = await Promise.all(
-        CATALOG_FEED_FAMILIES.map(async (family) => {
-          const entries: CatalogFeedEntry[] = await ctx.runQuery(
-            internal.catalogFeed.listOfficialEntries,
-            { family },
-          );
-          return entries;
-        }),
-      );
-      const entries = familyEntries.flat();
+      const entries: CatalogFeedEntry[] = [];
+      for (const family of CATALOG_FEED_FAMILIES) {
+        let familyCursor: string | null = null;
+        while (true) {
+          const page: {
+            entries: CatalogFeedEntry[];
+            isDone: boolean;
+            continueCursor: string;
+          } = await ctx.runQuery(internal.catalogFeed.listOfficialEntryPage, {
+            family,
+            cursor: familyCursor,
+          });
+          entries.push(...page.entries);
+          if (page.isDone) break;
+          if (!page.continueCursor) throw new Error("Catalog feed plugin page did not advance");
+          familyCursor = page.continueCursor;
+        }
+      }
       const skillEntries: CatalogFeedSkillEntry[] = [];
       const seenPublisherIds = new Set<string>();
       let publisherCursor: string | null = null;

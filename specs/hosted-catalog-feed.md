@@ -176,7 +176,8 @@ a root is at most 1 MiB, 1,024 shards, and 1,000,000 entries; the aggregate
 described shard bytes are at most 256 MiB. Empty snapshots have an empty shard
 list. ClawHub currently targets at most 900 KiB of payload per shard so the
 containing Convex document remains below its storage limit. Ready roots and
-their immutable shards are retained for 30 days. Lightweight descriptor rows
+their immutable shards are retained for at least 30 days and never expire from
+storage before the root's advertised `expiresAt`. Lightweight descriptor rows
 are stored separately from shard payloads, so serving a root does not read the
 catalog's full payload bytes into one Convex transaction.
 

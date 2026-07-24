@@ -173,6 +173,7 @@ export async function signedCatalogFeedV1Handler(
     }),
     ctx.runQuery(internal.catalogFeedShards.getLatestCatalogFeedShardPublication, {
       feedId: CATALOG_FEED_ID,
+      now: new Date().toISOString(),
     }),
   ]);
   if (shardPublication && (!publication || shardPublication.sequence > publication.sequence)) {

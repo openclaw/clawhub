@@ -54,7 +54,7 @@ export async function signedCatalogFeedShardRootHandler(
   }
   const publication = await ctx.runQuery(
     internal.catalogFeedShards.getLatestCatalogFeedShardPublication,
-    { feedId },
+    { feedId, now: new Date().toISOString() },
   );
   if (!publication) return catalogFeedUnavailableResponse("Catalog shard root is not published");
   const requestOrigin = publicApiOrigin(request);

@@ -63,7 +63,10 @@ describe("catalog feed shard HTTP delivery", () => {
     );
     expect(ctx.runQuery).toHaveBeenCalledWith(
       internal.catalogFeedShards.getLatestCatalogFeedShardPublication,
-      { feedId: "clawhub-official" },
+      {
+        feedId: "clawhub-official",
+        now: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/u),
+      },
     );
   });
 
