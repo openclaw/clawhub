@@ -1225,8 +1225,9 @@ function toPublicPackage(
   };
 }
 
-function toPublicPackageRelease(release: Doc<"packageReleases">) {
-  if (release.clawManifestSummary) {
+function toPublicPackageRelease(release: Doc<"packageReleases">, family: PackageFamily) {
+  // Package family owns this boundary; optional release metadata must not select a looser projection.
+  if (family === "claw") {
     const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
     return {
       _id: release._id,
@@ -1270,6 +1271,7 @@ function toPublicPackageRelease(release: Doc<"packageReleases">) {
   }
   const {
     capabilities: _capabilities,
+    clawManifestSummary: _clawManifestSummary,
     extractedClawManifest: _extractedClawManifest,
     ...publicRelease
   } = release as Doc<"packageReleases"> & {
@@ -1287,9 +1289,9 @@ function toPublicPackageRelease(release: Doc<"packageReleases">) {
   };
 }
 
-function toManagerPackageRelease(release: Doc<"packageReleases">) {
+function toManagerPackageRelease(release: Doc<"packageReleases">, family: PackageFamily) {
   return {
-    ...toPublicPackageRelease(release),
+    ...toPublicPackageRelease(release, family),
     softDeletedAt: release.softDeletedAt,
     ownerDeletedAt: release.ownerDeletedAt,
   };
@@ -2858,7 +2860,7 @@ export const getByName = query({
     return {
       package: publicPackage,
       latestRelease: isPublishedPackageRelease(latestRelease)
-        ? toPublicPackageRelease(latestRelease)
+        ? toPublicPackageRelease(latestRelease, pkg.family)
         : null,
       owner,
     };
@@ -3088,7 +3090,7 @@ export const getByNameForStaff = query({
     return {
       package: pkg,
       latestRelease: isPublishedPackageRelease(latestRelease)
-        ? toPublicPackageRelease(latestRelease)
+        ? toPublicPackageRelease(latestRelease, pkg.family)
         : null,
       owner,
       highlighted: highlighted
@@ -3121,7 +3123,7 @@ export const getByNameForViewerInternal = internalQuery({
     return {
       package: publicPackage,
       latestRelease: isPublishedPackageRelease(latestRelease)
-        ? toPublicPackageRelease(latestRelease)
+        ? toPublicPackageRelease(latestRelease, pkg.family)
         : null,
       owner,
     };
@@ -3140,7 +3142,7 @@ export const listVersions = query({
     const result = await paginatePublishedPackageReleases(ctx, pkg._id, args.paginationOpts);
     return {
       ...result,
-      page: result.page.map(toPublicPackageRelease),
+      page: result.page.map((release) => toPublicPackageRelease(release, pkg.family)),
     };
   },
 });
@@ -3157,7 +3159,7 @@ export const listVersionsForViewerInternal = internalQuery({
     const result = await paginatePublishedPackageReleases(ctx, pkg._id, args.paginationOpts);
     return {
       ...result,
-      page: result.page.map(toPublicPackageRelease),
+      page: result.page.map((release) => toPublicPackageRelease(release, pkg.family)),
     };
   },
 });
@@ -3199,7 +3201,7 @@ export const listVersionsForManager = query({
       ...result,
       page: result.page
         .filter((release) => isPackageReleaseRestorableByOwner(release, pkg._id, actor._id))
-        .map(toManagerPackageRelease),
+        .map((release) => toManagerPackageRelease(release, pkg.family)),
     };
   },
 });
@@ -3230,7 +3232,7 @@ export const getVersionByName = query({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: toPublicPackageRelease(release),
+      version: toPublicPackageRelease(release, pkg.family),
     };
   },
 });
@@ -3261,7 +3263,7 @@ export const getVersionByNameForViewerInternal = internalQuery({
     if (!publicPackage) return null;
     return {
       package: publicPackage,
-      version: toPublicPackageRelease(release),
+      version: toPublicPackageRelease(release, pkg.family),
     };
   },
 });
@@ -3298,7 +3300,7 @@ export const getVersionSecurityByNameForViewerInternal = internalQuery({
         ...publicPackage,
         publicDownloadBlocked,
       },
-      version: toPublicPackageRelease(release),
+      version: toPublicPackageRelease(release, pkg.family),
     };
   },
 });

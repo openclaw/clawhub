@@ -16976,6 +16976,50 @@ describe("restorePackageInternal", () => {
     }
   });
 
+  it("selects the bounded release projection from package family, not summary presence", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const staleSummary = {
+      schemaVersion: 1,
+      agent: { id: "stale-non-claw-summary" },
+      workspace: { bootstrapFiles: [], fileCount: 0 },
+      packages: { skillCount: 0, pluginCount: 0 },
+      mcpServerCount: 0,
+      cronJobCount: 0,
+    };
+
+    try {
+      const clawRelease = makeReleaseDoc({
+        files: [],
+        clawManifestSummary: undefined,
+        createdBy: "users:must-not-project",
+        publishActor: { kind: "user", userId: "users:must-not-project" },
+        extractedPackageJson: { privateWorkspace: "must-not-project" },
+      });
+      const { ctx: clawCtx } = makePackageCtx({
+        pkg: makePackageDoc({ family: "claw" }),
+        latestRelease: clawRelease,
+      });
+      const claw = await getByNameHandler(clawCtx, { name: "demo-plugin" });
+      expect(claw?.latestRelease).not.toHaveProperty("extractedPackageJson");
+      expect(JSON.stringify(claw)).not.toContain("must-not-project");
+
+      const pluginPackageJson = { name: "demo-plugin", openclaw: { extensions: ["index.js"] } };
+      const pluginRelease = makeReleaseDoc({
+        clawManifestSummary: staleSummary,
+        extractedPackageJson: pluginPackageJson,
+      });
+      const { ctx: pluginCtx } = makePackageCtx({ latestRelease: pluginRelease });
+      const plugin = await getByNameHandler(pluginCtx, { name: "demo-plugin" });
+      expect(plugin?.latestRelease).toMatchObject({ extractedPackageJson: pluginPackageJson });
+      expect(plugin?.latestRelease).not.toHaveProperty("clawManifestSummary");
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
   it("omits stored Claws from unfiltered public lists while disabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
