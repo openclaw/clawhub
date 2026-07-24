@@ -183,7 +183,7 @@ export function SkillPublishSuccessDialog({
                   <MarketplaceIcon
                     kind="skill"
                     label={displayName}
-                    icon={skill?.icon}
+                    imageUrl={skill?.icon}
                     skill={skill}
                     tone="muted"
                   />

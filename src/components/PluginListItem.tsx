@@ -5,6 +5,7 @@ import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
+import { presentationTitle } from "../lib/presentationTitle";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -50,25 +51,26 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
     .map((category) => category.label)
     .join(", ");
   const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
+  const displayName = presentationTitle(item.displayName, item.name);
 
   if (variant === "card") {
     return (
       <Link
         to={pluginHref}
         className="card skill-card plugin-card"
-        aria-label={`Plugin: ${item.displayName}`}
+        aria-label={`Plugin: ${displayName}`}
       >
         <div className="skill-card-header">
           <MarketplaceIcon
             kind="plugin"
-            label={item.displayName}
+            label={displayName}
             imageUrl={item.icon}
             categorySlug={primaryCategory?.slug}
             size="md"
           />
           <div className="skill-card-identity">
-            <h3 className="skill-card-title" title={item.displayName}>
-              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            <h3 className="skill-card-title" title={displayName}>
+              {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
             </h3>
             <span className="skill-card-owner-row">
               <span className="skill-card-owner">
@@ -111,19 +113,19 @@ export function PluginListItem({ item, variant = "list", href }: PluginListItemP
     <Link
       to={pluginHref}
       className="skill-list-item skill-list-item-with-taxonomy"
-      aria-label={`Plugin: ${item.displayName}`}
+      aria-label={`Plugin: ${displayName}`}
     >
       <MarketplaceIcon
         kind="plugin"
-        label={item.displayName}
+        label={displayName}
         imageUrl={item.icon}
         categorySlug={primaryCategory?.slug}
       />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-identity">
-            <span className="skill-list-item-name" title={item.displayName}>
-              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            <span className="skill-list-item-name" title={displayName}>
+              {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
             </span>
             {item.ownerHandle ? (
               <span className="skill-list-item-owner">@{item.ownerHandle}</span>

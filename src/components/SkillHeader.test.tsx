@@ -556,6 +556,33 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("Demo summary")).toBeNull();
   });
 
+  it("prefers the resolved presentation summary for the latest version", () => {
+    renderHeader({
+      latestVersion: {
+        _id: "skillVersions:demo" as Id<"skillVersions">,
+        _creationTime: 1,
+        skillId: skill._id,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [],
+        parsed: {
+          presentation: {
+            displayName: "OpenAI Presentation Fixture",
+            summary: "Feed-ready OpenAI summary.",
+          },
+          description: "Full uploaded description.",
+          frontmatter: {},
+        },
+        createdBy: "users:owner" as Id<"users">,
+        createdAt: 1,
+      },
+    });
+
+    expect(screen.getByText("Feed-ready OpenAI summary.")).toBeTruthy();
+    expect(screen.queryByText("Full uploaded description.")).toBeNull();
+    expect(screen.queryByText("Demo summary")).toBeNull();
+  });
+
   it("keeps the download action hidden on the detail header", () => {
     const { container } = renderHeader({
       latestVersion: {

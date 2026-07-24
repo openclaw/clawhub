@@ -7,6 +7,7 @@ export type DashboardSkill = Pick<
   | "slug"
   | "displayName"
   | "summary"
+  | "icon"
   | "ownerUserId"
   | "ownerPublisherId"
   | "canonicalSkillId"
@@ -56,6 +57,7 @@ export type DashboardPackage = {
   runtimeId?: string | null;
   sourceRepo?: string | null;
   summary?: string | null;
+  icon?: string | null;
   latestVersion?: string | null;
   inspectorWarningCount?: number;
   topInspectorFinding?: {

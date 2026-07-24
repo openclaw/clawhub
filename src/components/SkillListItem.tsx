@@ -3,6 +3,7 @@ import { Download, Star } from "lucide-react";
 import { getSkillBadges } from "../lib/badges";
 import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
+import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
@@ -31,6 +32,7 @@ export function SkillListItem({
   const badges = getSkillBadges(skill);
   const isOfficial = badges.includes("Official") || owner?.official === true;
   const categories = getSkillCategoriesForSkill(skill);
+  const displayName = presentationTitle(skill.displayName, skill.slug);
   const categoryLabel = categories
     .slice(0, 3)
     .map((category) => category.label)
@@ -38,12 +40,12 @@ export function SkillListItem({
 
   return (
     <Link to={href} className="skill-list-item skill-list-item-skill skill-list-item-with-taxonomy">
-      <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} skill={skill} />
+      <MarketplaceIcon kind="skill" label={displayName} imageUrl={skill.icon} skill={skill} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           <span className="skill-list-item-identity">
-            <span className="skill-list-item-name" title={skill.displayName}>
-              {truncateText(skill.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            <span className="skill-list-item-name" title={displayName}>
+              {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
             </span>
             {handle ? <span className="skill-list-item-owner">@{handle}</span> : null}
           </span>

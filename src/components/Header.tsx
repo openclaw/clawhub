@@ -31,6 +31,7 @@ import { gravatarUrl } from "../lib/gravatar";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { buildPublisherProfileHref, buildSkillDetailHref } from "../lib/ownerRoute";
 import { buildPluginDetailHref, displayPluginPackageName } from "../lib/pluginRoutes";
+import { presentationTitle } from "../lib/presentationTitle";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
@@ -1019,16 +1020,22 @@ function getTypeaheadOptionId(item: TypeaheadItem) {
 
 function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
   if (item.kind === "skill") {
-    const label = item.result.skill.displayName || item.result.skill.slug;
+    const label = presentationTitle(item.result.skill.displayName, item.result.skill.slug);
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
-        <MarketplaceIcon kind="skill" label={label} skill={item.result.skill} size="xs" />
+        <MarketplaceIcon
+          kind="skill"
+          label={label}
+          imageUrl={item.result.skill.icon}
+          skill={item.result.skill}
+          size="xs"
+        />
       </span>
     );
   }
 
   if (item.kind === "plugin") {
-    const label = item.result.plugin.displayName || item.result.plugin.name;
+    const label = presentationTitle(item.result.plugin.displayName, item.result.plugin.name);
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
         <MarketplaceIcon
@@ -1062,7 +1069,7 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
   if (item.kind === "skill") {
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
     return {
-      title: item.result.skill.displayName,
+      title: presentationTitle(item.result.skill.displayName, item.result.skill.slug),
       meta: (
         <TypeaheadPublisherMeta
           owner={owner}
@@ -1076,7 +1083,7 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     const packageName = displayPluginPackageName(item.result.plugin.name);
     const owner = item.result.plugin.ownerHandle ? `@${item.result.plugin.ownerHandle}` : null;
     return {
-      title: item.result.plugin.displayName,
+      title: presentationTitle(item.result.plugin.displayName, item.result.plugin.name),
       meta: owner ? (
         <TypeaheadPublisherMeta
           owner={owner}

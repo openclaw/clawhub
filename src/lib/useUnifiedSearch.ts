@@ -16,6 +16,7 @@ export type UnifiedSkillResult = {
     slug: string;
     displayName: string;
     summary?: string | null;
+    icon?: string;
     categories?: string[] | null;
     inferredCategories?: string[] | null;
     latestVersionId?: string | null;

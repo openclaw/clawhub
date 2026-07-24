@@ -17,6 +17,7 @@ import {
   type MarketplaceIconComponent,
 } from "../lib/marketplaceIcons";
 import { formatCompactStat } from "../lib/numberFormat";
+import { presentationTitle } from "../lib/presentationTitle";
 
 type AuditTarget = "skills" | "plugins";
 type AuditFeedStatus = "loading" | "idle" | "loadingMore" | "done";
@@ -278,7 +279,10 @@ function AuditTableRow({ row }: { row: AuditRow }) {
   const clawScanStatus = getClawScanDisplayStatus(latest?.llmAnalysis ?? null);
   const vtStatus = getVirusTotalDisplayStatus(latest?.vtAnalysis ?? null);
   const ownerHandle = row.kind === "plugin" ? row.package.ownerHandle : row.ownerHandle;
-  const displayName = row.kind === "plugin" ? row.package.displayName : row.skill.displayName;
+  const displayName =
+    row.kind === "plugin"
+      ? presentationTitle(row.package.displayName, row.package.name)
+      : presentationTitle(row.skill.displayName, row.skill.slug);
   const summary = row.kind === "plugin" ? row.package.summary : row.skill.summary;
 
   return (
@@ -287,7 +291,7 @@ function AuditTableRow({ row }: { row: AuditRow }) {
         <MarketplaceIcon
           kind={row.kind}
           label={displayName}
-          icon={row.kind === "skill" ? row.skill.icon : undefined}
+          imageUrl={row.kind === "skill" ? row.skill.icon : undefined}
           skill={row.kind === "skill" ? row.skill : null}
         />
         <div className="audits-item-copy">

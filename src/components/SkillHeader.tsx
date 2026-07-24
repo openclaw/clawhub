@@ -15,6 +15,7 @@ import {
 } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
+import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
@@ -24,6 +25,7 @@ import { DetailHero, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { InlineCodeSummary } from "./InlineCodeSummary";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -72,11 +74,13 @@ type SkillHeaderLatestVersion =
 function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
   const parsed = latestVersion?.parsed;
   const description =
-    typeof parsed?.description === "string"
-      ? parsed.description
-      : typeof parsed?.frontmatter?.description === "string"
-        ? parsed.frontmatter.description
-        : null;
+    typeof parsed?.presentation?.summary === "string"
+      ? parsed.presentation.summary
+      : typeof parsed?.description === "string"
+        ? parsed.description
+        : typeof parsed?.frontmatter?.description === "string"
+          ? parsed.frontmatter.description
+          : null;
   return description?.trim() || null;
 }
 
@@ -314,6 +318,7 @@ export function SkillHeader({
       {renderSidebarActions()}
     </>
   );
+  const displayName = presentationTitle(skill.displayName, skill.slug);
 
   return (
     <>
@@ -418,7 +423,14 @@ export function SkillHeader({
                   </div>
                 ) : null}
                 <div className="skill-hero-title-row">
-                  <h1 className="skill-page-title">{skill.displayName}</h1>
+                  <MarketplaceIcon
+                    kind="skill"
+                    label={displayName}
+                    imageUrl={skill.icon}
+                    skill={skill}
+                    size="md"
+                  />
+                  <h1 className="skill-page-title">{displayName}</h1>
                   {showTitleBadges ? (
                     <div className="skill-title-badges">
                       {titleBadges.map((badge) => (

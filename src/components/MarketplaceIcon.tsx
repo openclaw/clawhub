@@ -8,8 +8,6 @@ type MarketplaceIconProps = {
   label: string;
   imageUrl?: string | null;
   categorySlug?: string | null;
-  /** Legacy skill custom-icon value. Ignored for rendering. */
-  icon?: string | null;
   skill?: {
     categories?: readonly string[] | null;
     inferredCategories?: readonly string[] | null;
@@ -59,7 +57,10 @@ export function MarketplaceIcon({
         ? (getCategoryIconComponent(pluginCategory.icon) ?? MARKETPLACE_KIND_ICONS.plugin)
         : MARKETPLACE_KIND_ICONS[kind];
   const hashedTone = hashTone(label);
-  const visibleImageUrl = imageUrl && failedImageUrl !== imageUrl ? imageUrl : null;
+  const supportedImageUrl =
+    kind !== "skill" || isHostedSkillPresentationIcon(imageUrl) ? imageUrl : null;
+  const visibleImageUrl =
+    supportedImageUrl && failedImageUrl !== supportedImageUrl ? supportedImageUrl : null;
 
   return (
     <span
@@ -89,4 +90,8 @@ export function MarketplaceIcon({
       )}
     </span>
   );
+}
+
+function isHostedSkillPresentationIcon(value: string | null | undefined) {
+  return /^\/api\/v1\/skill-icons\/[a-f\d]{64}$/u.test(value ?? "");
 }

@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { getSkillCategoryForSkill } from "../lib/categories";
+import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
@@ -45,6 +46,7 @@ export function SkillCard({
       ? ["Official", ...nonOfficialBadges]
       : badges;
   const primaryCategory = getSkillCategoryForSkill(skill);
+  const displayName = presentationTitle(skill.displayName, skill.slug);
   const hasSecondaryTags =
     visibleBadges.length || chip || platformLabels?.length || skill.topics?.length;
   const hasTags = primaryCategory || hasSecondaryTags;
@@ -54,14 +56,14 @@ export function SkillCard({
       <div className="skill-card-header">
         <MarketplaceIcon
           kind="skill"
-          label={skill.displayName}
-          icon={skill.icon}
+          label={displayName}
+          imageUrl={skill.icon}
           skill={skill}
           size="md"
         />
         <div className="skill-card-identity">
-          <h3 className="skill-card-title" title={skill.displayName}>
-            {truncateText(skill.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          <h3 className="skill-card-title" title={displayName}>
+            {truncateText(displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
           </h3>
           {ownerHandle ? (
             <span className="skill-card-owner-row">

@@ -44,6 +44,7 @@ import {
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
+import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
 import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
@@ -181,7 +182,7 @@ function skillLink(entry: SkillPageEntry) {
 
 function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
-  const name = entry.skill.displayName || entry.skill.slug;
+  const name = presentationTitle(entry.skill.displayName, entry.skill.slug);
 
   return (
     <Link
@@ -189,7 +190,13 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
       className={`home-v2-listing-row${showStats ? "" : " has-no-stats"}`}
     >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
+        <MarketplaceIcon
+          kind="skill"
+          label={name}
+          imageUrl={entry.skill.icon}
+          skill={entry.skill}
+          size="sm"
+        />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
@@ -219,7 +226,7 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
 }
 
 function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
-  const name = plugin.displayName || plugin.name;
+  const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
@@ -259,7 +266,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
 
 function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
-  const name = entry.skill.displayName || entry.skill.slug;
+  const name = presentationTitle(entry.skill.displayName, entry.skill.slug);
 
   return (
     <Link
@@ -270,7 +277,13 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
     >
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
+          <MarketplaceIcon
+            kind="skill"
+            label={name}
+            imageUrl={entry.skill.icon}
+            skill={entry.skill}
+            size="sm"
+          />
         </span>
         <div className="home-v2-listing-card-id">
           <span className="home-v2-listing-card-name" title={name}>
@@ -299,7 +312,7 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
 }
 
 function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
-  const name = plugin.displayName || plugin.name;
+  const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (

@@ -98,6 +98,7 @@ import {
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { formatValidationFindingMessage } from "../../lib/pluginValidationFormat";
+import { presentationTitle } from "../../lib/presentationTitle";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -1680,7 +1681,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   </div>
                 ) : null}
                 <div className="skill-hero-title-row">
-                  <h1 className="skill-page-title">{pkg.displayName}</h1>
+                  <h1 className="skill-page-title">
+                    {presentationTitle(pkg.displayName, pkg.name)}
+                  </h1>
                   {isDownloadBlocked ? (
                     <div className="skill-title-actions">
                       <Badge variant="destructive">Download blocked</Badge>

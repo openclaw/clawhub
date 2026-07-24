@@ -2,6 +2,7 @@ import { Download, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
+import { presentationTitle } from "../../lib/presentationTitle";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
 import {
@@ -104,7 +105,7 @@ function SkillListRow({
     <CatalogRow
       href={detailHref}
       kindLabel="Skill"
-      title={skill.displayName}
+      title={presentationTitle(skill.displayName, skill.slug)}
       version={skill.latestVersion?.version}
       titleAccessory={visibilityIcon(visibility.label)}
       secondary={packageRowSecondary(skill.updatedAt)}
@@ -131,7 +132,7 @@ function PluginListRow({
     <CatalogRow
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
       kindLabel="Plugin"
-      title={pkg.displayName}
+      title={presentationTitle(pkg.displayName, pkg.name)}
       version={pkg.latestVersion ?? pkg.latestRelease?.version}
       secondary={packageRowSecondary(pkg.updatedAt)}
       status={packageArtifactStatus(pkg)}
@@ -244,10 +245,18 @@ function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHan
   return (
     <DashboardCatalogGridCard
       href={detailHref}
-      title={skill.displayName}
+      title={presentationTitle(skill.displayName, skill.slug)}
       summary={skill.summary}
       summaryFallback="Agent-ready skill pack."
-      icon={<MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />}
+      icon={
+        <MarketplaceIcon
+          kind="skill"
+          label={presentationTitle(skill.displayName, skill.slug)}
+          imageUrl={skill.icon}
+          skill={skill}
+          size="sm"
+        />
+      }
       kindLabel="Skill"
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
@@ -261,10 +270,17 @@ function PluginGridCard({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHand
   return (
     <DashboardCatalogGridCard
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
-      title={pkg.displayName}
+      title={presentationTitle(pkg.displayName, pkg.name)}
       summary={pkg.summary}
       summaryFallback="Gateway plugin for OpenClaw workflows."
-      icon={<MarketplaceIcon kind="plugin" label={pkg.displayName} size="sm" />}
+      icon={
+        <MarketplaceIcon
+          kind="plugin"
+          label={presentationTitle(pkg.displayName, pkg.name)}
+          imageUrl={pkg.icon}
+          size="sm"
+        />
+      }
       kindLabel="Plugin"
       status={packageArtifactStatus(pkg)}
       downloads={pkg.stats.downloads ?? 0}

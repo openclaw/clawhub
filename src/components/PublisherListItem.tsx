@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
+import { presentationTitle } from "../lib/presentationTitle";
 import {
   type PublicPublisherListItem,
   type PublicPublisherPublishedItem,
@@ -23,7 +24,11 @@ function PublishedRail({ items }: { items: PublicPublisherPublishedItem[] }) {
     <span className="publisher-published-rail" aria-label="Published packages">
       {items.slice(0, 3).map((item) => (
         <span className="publisher-published-rail-item" key={`${item.kind}:${item.displayName}`}>
-          <MarketplaceIcon kind={item.kind} label={item.displayName} size="xs" />
+          <MarketplaceIcon
+            kind={item.kind}
+            label={presentationTitle(item.displayName, item.slug ?? "")}
+            size="xs"
+          />
         </span>
       ))}
     </span>
@@ -75,11 +80,13 @@ export function PublisherListItem({
                 <span key={`${item.kind}:${item.displayName}`}>
                   <MarketplaceIcon
                     kind={item.kind}
-                    label={item.displayName}
+                    label={presentationTitle(item.displayName, item.slug ?? "")}
                     skill={item.kind === "skill" ? item : undefined}
                     size="xs"
                   />
-                  <span className="publisher-card-featured-label">{item.displayName}</span>
+                  <span className="publisher-card-featured-label">
+                    {presentationTitle(item.displayName, item.slug ?? "")}
+                  </span>
                   <span className="publisher-card-featured-downloads">
                     <Download size={12} aria-hidden="true" />
                     <span>{formatCompactStat(readPublicDownloadCount(item))}</span>

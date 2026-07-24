@@ -544,6 +544,7 @@ export async function publishSkillVersion(
     ownerHandle: string;
     slug: string;
     displayName: string;
+    expectedDisplayName?: string;
     version: string;
     versionLabel: string;
     changelog: string;
@@ -553,6 +554,7 @@ export async function publishSkillVersion(
     files?: Array<{ path: string; contents: string | Uint8Array }>;
   },
 ) {
+  const expectedDisplayName = args.expectedDisplayName ?? args.displayName;
   const skillDir = testInfo.outputPath(`${args.slug}-${args.version}`);
   await mkdir(skillDir, { recursive: true });
   await writeFile(
@@ -584,7 +586,12 @@ export async function publishSkillVersion(
     // upload. Treat that navigation as success instead of waiting and retrying.
     if (pathname === "/dashboard") return "staged";
     if (detailUrlPattern.test(pathname)) {
-      if (await isPublishedDetailCurrentVersionVisible(page, args)) {
+      if (
+        await isPublishedDetailCurrentVersionVisible(page, {
+          ...args,
+          displayName: expectedDisplayName,
+        })
+      ) {
         return "published";
       }
       if (await versionExists()) return "staged";
@@ -615,7 +622,12 @@ export async function publishSkillVersion(
         await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
           waitUntil: "domcontentloaded",
         });
-        if (!(await isPublishedDetailCurrentVersionVisible(page, args))) {
+        if (
+          !(await isPublishedDetailCurrentVersionVisible(page, {
+            ...args,
+            displayName: expectedDisplayName,
+          }))
+        ) {
           const completion = await completeMockPrePublicationChecks({
             kind: "skill",
             slug: args.slug,
@@ -628,14 +640,20 @@ export async function publishSkillVersion(
       await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
         waitUntil: "domcontentloaded",
       });
-      await expectPublishedDetailCurrentVersion(page, args);
+      await expectPublishedDetailCurrentVersion(page, {
+        ...args,
+        displayName: expectedDisplayName,
+      });
       break;
     } catch (error) {
       await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
         waitUntil: "domcontentloaded",
       });
       try {
-        await expectPublishedDetailCurrentVersion(page, args);
+        await expectPublishedDetailCurrentVersion(page, {
+          ...args,
+          displayName: expectedDisplayName,
+        });
         if (!args.versionExists || (await versionExists())) break;
         await page.goto(publishUrl, { waitUntil: "domcontentloaded" });
         await waitForPublishSkillForm(page);
@@ -656,7 +674,7 @@ export async function publishSkillVersion(
   expect(actualOwnerHandle?.toLowerCase()).toContain(args.ownerHandle.toLowerCase());
   expect(actualSlug).toBe(args.slug);
   expect(new URL(page.url()).pathname).toBe(buildSkillDetailHref(actualOwnerHandle!, args.slug));
-  await expectPublishedDetailPage(page, args.displayName);
+  await expectPublishedDetailPage(page, expectedDisplayName);
   const successDialog = page.getByRole("dialog", { name: /it's alive/i });
   if (await successDialog.isVisible().catch(() => false)) {
     try {
@@ -669,6 +687,9 @@ export async function publishSkillVersion(
       await waitForHydration(page);
     }
   }
-  await expectPublishedDetailCurrentVersion(page, args);
+  await expectPublishedDetailCurrentVersion(page, {
+    ...args,
+    displayName: expectedDisplayName,
+  });
   return actualOwnerHandle!;
 }
