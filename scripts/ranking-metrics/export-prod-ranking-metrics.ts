@@ -10,6 +10,7 @@ import {
 } from "../staging-seed/snapshotPolicy";
 import {
   buildRankingDataset,
+  packageTargetIdentity,
   type RankingMetricDay,
   type RankingMetricPackageTarget,
   type RankingMetricSkillTarget,
@@ -223,11 +224,11 @@ function compareTargets(left: RankingMetricTarget, right: RankingMetricTarget) {
   const leftKey =
     left.kind === "skill"
       ? `skill:${left.ownerHandle}/${left.slug}`
-      : `package:${left.normalizedName}`;
+      : packageTargetIdentity(left.normalizedName, left.family, left.channel);
   const rightKey =
     right.kind === "skill"
       ? `skill:${right.ownerHandle}/${right.slug}`
-      : `package:${right.normalizedName}`;
+      : packageTargetIdentity(right.normalizedName, right.family, right.channel);
   return leftKey.localeCompare(rightKey);
 }
 

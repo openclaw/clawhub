@@ -186,19 +186,17 @@ function validateTargets(
         return `skill:${ownerHandle}/${stringValue(skillTarget.slug, "slug")}`;
       }
       const packageTarget = recordWithKeys(rawTarget, PACKAGE_KEYS, `targets[${targetIndex}]`);
-      return `package:${stringValue(packageTarget.normalizedName, "normalizedName")}`;
+      const normalizedName = stringValue(packageTarget.normalizedName, "normalizedName");
+      if (packageTarget.family !== "code-plugin" && packageTarget.family !== "bundle-plugin") {
+        throw new Error(`package:${normalizedName}.family is invalid`);
+      }
+      const channel = stringValue(packageTarget.channel, `package:${normalizedName}.channel`);
+      return packageTargetIdentity(normalizedName, packageTarget.family, channel);
     })();
     if (identities.has(identity)) throw new Error(`duplicate target identity: ${identity}`);
     identities.add(identity);
 
     nonNegativeInteger(target.createdAt, `${identity}.createdAt`);
-    if (kind === "package") {
-      const packageTarget = recordWithKeys(rawTarget, PACKAGE_KEYS, `targets[${targetIndex}]`);
-      if (packageTarget.family !== "code-plugin" && packageTarget.family !== "bundle-plugin") {
-        throw new Error(`${identity}.family is invalid`);
-      }
-      stringValue(packageTarget.channel, `${identity}.channel`);
-    }
     if (!Array.isArray(target.days)) throw new Error(`${identity}.days must be an array`);
 
     const days = new Set<number>();
@@ -215,6 +213,10 @@ function validateTargets(
       nonNegativeInteger(row.bookmarks, `${identity}.${day}.bookmarks`);
     }
   }
+}
+
+export function packageTargetIdentity(normalizedName: string, family: string, channel: string) {
+  return `package:${JSON.stringify([normalizedName, family, channel])}`;
 }
 
 function countTargets(targets: RankingMetricTarget[]): RankingDataset["counts"] {

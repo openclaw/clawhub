@@ -7,9 +7,13 @@ import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import {
   assertRankingTablesUnchanged,
   assertTestDeployment,
+  buildConvexImportArchiveCommand,
   copySnapshotTable,
   mergeDailyTable,
+  mergeRankingMetricImportRows,
   parseArgs,
+  readCurrentTestMetadata,
+  resolveTargets,
   type ResolvedRankingMetricTarget,
 } from "./import-test-ranking-metrics";
 
@@ -36,6 +40,108 @@ describe("Test ranking metric command guard", () => {
         deployment: CLAWHUB_TEST_DEPLOYMENT,
       }),
     );
+  });
+
+  it("replaces all three ranking tables in one atomic ZIP import", () => {
+    expect(
+      buildConvexImportArchiveCommand("/tmp/ranking-tables.zip", CLAWHUB_TEST_DEPLOYMENT),
+    ).toEqual({
+      command: "bunx",
+      args: [
+        "convex",
+        "import",
+        "--deployment",
+        CLAWHUB_TEST_DEPLOYMENT,
+        "--replace",
+        "--yes",
+        "/tmp/ranking-tables.zip",
+      ],
+    });
+  });
+
+  it("replaces only matching import provenance and preserves system identities", () => {
+    const prior = {
+      _id: "prior",
+      _creationTime: 1,
+      datasetVersion: "ranking-metrics-2026-07-01-v1",
+      checksum: "prior-checksum",
+    };
+    const replaced = {
+      _id: "same-version",
+      _creationTime: 2,
+      datasetVersion: "ranking-metrics-2026-07-23-v1",
+      checksum: "old-checksum",
+    };
+    const next = {
+      datasetVersion: "ranking-metrics-2026-07-23-v1",
+      checksum: "new-checksum",
+    };
+
+    expect(mergeRankingMetricImportRows([prior, replaced], next)).toEqual([
+      prior,
+      { ...next, _id: "same-version", _creationTime: 2 },
+    ]);
+  });
+
+  it("resolves package targets by normalized name, family, and channel", async () => {
+    const workDir = join(tmpdir(), `ranking-packages-${crypto.randomUUID()}`);
+    cleanupPaths.push(workDir);
+    await mkdir(workDir);
+    const snapshot = join(workDir, "packages.zip");
+    await writeFile(
+      snapshot,
+      zipSync({
+        "users/documents.jsonl": encodeRows([
+          {
+            _id: "snapshot-owner",
+            _creationTime: 1,
+            handle: "test-snapshot-user-0123456789ab",
+          },
+        ]),
+        "publishers/documents.jsonl": encodeRows([]),
+        "skills/documents.jsonl": encodeRows([]),
+        "packages/documents.jsonl": encodeRows([
+          {
+            _id: "code-stable",
+            _creationTime: 1,
+            ownerUserId: "snapshot-owner",
+            normalizedName: "@openclaw/calendar",
+            family: "code-plugin",
+            channel: "stable",
+          },
+          {
+            _id: "bundle-stable",
+            _creationTime: 1,
+            ownerUserId: "snapshot-owner",
+            normalizedName: "@openclaw/calendar",
+            family: "bundle-plugin",
+            channel: "stable",
+          },
+        ]),
+        "rankingMetricImports/documents.jsonl": encodeRows([]),
+      }),
+    );
+
+    const current = await readCurrentTestMetadata(snapshot);
+    const target = {
+      kind: "package" as const,
+      normalizedName: "@openclaw/calendar",
+      family: "code-plugin" as const,
+      channel: "stable",
+      createdAt: 1,
+      days: [{ day: 20_656, downloads: 1, installs: 0, bookmarks: 0 }],
+    };
+    expect(resolveTargets([target], current).targets).toEqual([
+      expect.objectContaining({ kind: "package", targetId: "code-stable" }),
+    ]);
+    expect(() => resolveTargets([{ ...target, channel: "beta" }], current)).toThrow(
+      "package identity mismatch",
+    );
+    const exactMatches = [...current.packagesByIdentity.values()].find(
+      (matches) => matches[0]?.targetId === "code-stable",
+    );
+    exactMatches?.push({ targetId: "duplicate-code-stable", legacySnapshotTarget: true });
+    expect(() => resolveTargets([target], current)).toThrow("ambiguous package identity");
   });
 
   it("streams an idempotent replacement while preserving feature-owned rows", async () => {

@@ -5,10 +5,11 @@ import { once } from "node:events";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { CLAWHUB_TEST_DEPLOYMENT } from "../seed-test";
 import { readSnapshotTable } from "../staging-seed/snapshotIo";
 import {
+  packageTargetIdentity,
   parseRankingDataset,
   type RankingDataset,
   type RankingMetricDay,
@@ -23,6 +24,13 @@ export type ResolvedRankingMetricTarget = {
   targetId: string;
   legacySnapshotTarget: boolean;
   days: RankingMetricDay[];
+};
+type TargetMatch = { targetId: string; legacySnapshotTarget: boolean };
+type PlannedTablePaths = {
+  root: string;
+  skillDailyStats: string;
+  packageDailyStats: string;
+  rankingMetricImports: string;
 };
 
 async function main() {
@@ -65,11 +73,12 @@ async function applyImport(
   const resolved = resolveTargets(dataset.targets, current);
   const importedAt = Date.now();
   const snapshot = `${workDir}/test-before.zip`;
+  const planned = await createPlannedTablePaths(workDir);
   const skillPlan = await mergeDailyTable({
     snapshot,
     table: "skillDailyStats",
     idField: "skillId",
-    output: `${workDir}/skillDailyStats.next.jsonl`,
+    output: planned.skillDailyStats,
     datasetVersion: dataset.datasetVersion,
     importedAt,
     startDay: dataset.startDay,
@@ -81,7 +90,7 @@ async function applyImport(
     snapshot,
     table: "packageDailyStats",
     idField: "packageId",
-    output: `${workDir}/packageDailyStats.next.jsonl`,
+    output: planned.packageDailyStats,
     datasetVersion: dataset.datasetVersion,
     importedAt,
     startDay: dataset.startDay,
@@ -89,27 +98,25 @@ async function applyImport(
     legacyTargetIds: current.legacyPackageTargetIds,
     targets: resolved.targets.filter((target) => target.kind === "package"),
   });
-  const metadata = [
-    {
-      datasetVersion: dataset.datasetVersion,
-      checksum: dataset.checksum,
-      generatedAt: dataset.generatedAt,
-      importedAt,
-      startDay: dataset.startDay,
-      endDay: dataset.endDay,
-      targetCount: dataset.counts.targets,
-      skillTargetCount: dataset.counts.skillTargets,
-      packageTargetCount: dataset.counts.packageTargets,
-      dailyRowCount: dataset.counts.dailyRows,
-      importedSkillRows: skillPlan.importedRows,
-      importedPackageRows: packagePlan.importedRows,
-      unresolvedTargets: resolved.unresolvedTargets,
-      skippedOverlayRows: 0,
-    },
-  ];
-  await writeJsonLines(`${workDir}/rankingMetricImports.next.jsonl`, metadata);
+  const metadata = mergeRankingMetricImportRows(current.rankingMetricImports, {
+    datasetVersion: dataset.datasetVersion,
+    checksum: dataset.checksum,
+    generatedAt: dataset.generatedAt,
+    importedAt,
+    startDay: dataset.startDay,
+    endDay: dataset.endDay,
+    targetCount: dataset.counts.targets,
+    skillTargetCount: dataset.counts.skillTargets,
+    packageTargetCount: dataset.counts.packageTargets,
+    dailyRowCount: dataset.counts.dailyRows,
+    importedSkillRows: skillPlan.importedRows,
+    importedPackageRows: packagePlan.importedRows,
+    unresolvedTargets: resolved.unresolvedTargets,
+    skippedOverlayRows: 0,
+  });
+  await writeJsonLines(planned.rankingMetricImports, metadata);
 
-  await importPlannedTables(workDir, deployment);
+  await importPlannedTables(workDir, planned.root, deployment);
   const proof = await readback(deployment, dataset.datasetVersion);
   console.log(JSON.stringify({ ok: true, mode: "import", ...proof }, null, 2));
 }
@@ -121,25 +128,21 @@ async function applyCleanup(
   workDir: string,
 ) {
   const snapshot = `${workDir}/test-before.zip`;
+  const planned = await createPlannedTablePaths(workDir);
   const [skill, packageRows] = await Promise.all([
-    filterDailyTable(
-      snapshot,
-      "skillDailyStats",
-      `${workDir}/skillDailyStats.next.jsonl`,
-      dataset.datasetVersion,
-    ),
+    filterDailyTable(snapshot, "skillDailyStats", planned.skillDailyStats, dataset.datasetVersion),
     filterDailyTable(
       snapshot,
       "packageDailyStats",
-      `${workDir}/packageDailyStats.next.jsonl`,
+      planned.packageDailyStats,
       dataset.datasetVersion,
     ),
   ]);
   await writeJsonLines(
-    `${workDir}/rankingMetricImports.next.jsonl`,
+    planned.rankingMetricImports,
     current.rankingMetricImports.filter((row) => row.datasetVersion !== dataset.datasetVersion),
   );
-  await importPlannedTables(workDir, deployment);
+  await importPlannedTables(workDir, planned.root, deployment);
   console.log(
     JSON.stringify(
       {
@@ -155,7 +158,7 @@ async function applyCleanup(
   );
 }
 
-async function readCurrentTestMetadata(snapshot: string) {
+export async function readCurrentTestMetadata(snapshot: string) {
   const [users, publishers, skills, packages, imports] = await Promise.all([
     collectSnapshotTable(snapshot, "users"),
     collectSnapshotTable(snapshot, "publishers"),
@@ -179,38 +182,73 @@ async function readCurrentTestMetadata(snapshot: string) {
     skillsByIdentity.set(`${ownerHandle}/${row.slug}`, { targetId, legacySnapshotTarget });
     if (legacySnapshotTarget) legacySkillTargetIds.add(targetId);
   }
-  const packagesByIdentity = new Map<string, { targetId: string; legacySnapshotTarget: boolean }>();
+  const packagesByIdentity = new Map<string, TargetMatch[]>();
+  const packageCandidatesByName = new Map<string, TargetMatch[]>();
   const legacyPackageTargetIds = new Set<string>();
   for (const row of packages) {
     const ownerHandle =
       publisherHandles.get(String(row.ownerPublisherId ?? "")) ??
       userHandles.get(String(row.ownerUserId ?? ""));
-    if (!ownerHandle || typeof row.normalizedName !== "string") continue;
+    if (typeof row.normalizedName !== "string") continue;
     const targetId = String(row._id);
-    const legacySnapshotTarget = ownerHandle.startsWith("test-snapshot-");
-    packagesByIdentity.set(row.normalizedName, { targetId, legacySnapshotTarget });
+    const legacySnapshotTarget = ownerHandle?.startsWith("test-snapshot-") ?? false;
+    const match = { targetId, legacySnapshotTarget };
+    appendMapValue(packageCandidatesByName, row.normalizedName, match);
+    if (
+      (row.family === "code-plugin" || row.family === "bundle-plugin") &&
+      typeof row.channel === "string"
+    ) {
+      appendMapValue(
+        packagesByIdentity,
+        packageIdentity(row.normalizedName, row.family, row.channel),
+        match,
+      );
+    }
     if (legacySnapshotTarget) legacyPackageTargetIds.add(targetId);
   }
   return {
     skillsByIdentity,
     packagesByIdentity,
+    packageCandidatesByName,
     legacySkillTargetIds,
     legacyPackageTargetIds,
     rankingMetricImports: imports,
   };
 }
 
-function resolveTargets(
+export function resolveTargets(
   targets: RankingMetricTarget[],
   current: Awaited<ReturnType<typeof readCurrentTestMetadata>>,
 ) {
   const resolved: ResolvedRankingMetricTarget[] = [];
   let unresolvedTargets = 0;
   for (const target of targets) {
-    const match =
-      target.kind === "skill"
-        ? current.skillsByIdentity.get(`${target.ownerHandle}/${target.slug}`)
-        : current.packagesByIdentity.get(target.normalizedName);
+    const match = (() => {
+      if (target.kind === "skill") {
+        return current.skillsByIdentity.get(`${target.ownerHandle}/${target.slug}`);
+      }
+      const matches =
+        current.packagesByIdentity.get(
+          packageIdentity(target.normalizedName, target.family, target.channel),
+        ) ?? [];
+      if (matches.length > 1) {
+        throw new Error(
+          `ambiguous package identity: ${target.normalizedName} (${target.family}/${target.channel})`,
+        );
+      }
+      if (matches.length === 0 && current.packageCandidatesByName.has(target.normalizedName)) {
+        throw new Error(
+          `package identity mismatch: ${target.normalizedName} (${target.family}/${target.channel})`,
+        );
+      }
+      const exact = matches[0];
+      if (exact && !exact.legacySnapshotTarget) {
+        throw new Error(
+          `package identity mismatch: ${target.normalizedName} is not a Test snapshot target`,
+        );
+      }
+      return exact;
+    })();
     if (!match?.legacySnapshotTarget) {
       unresolvedTargets += 1;
       continue;
@@ -223,6 +261,16 @@ function resolveTargets(
     });
   }
   return { targets: resolved, unresolvedTargets };
+}
+
+function packageIdentity(normalizedName: string, family: string, channel: string) {
+  return packageTargetIdentity(normalizedName, family, channel);
+}
+
+function appendMapValue<Key, Value>(map: Map<Key, Value[]>, key: Key, value: Value) {
+  const values = map.get(key);
+  if (values) values.push(value);
+  else map.set(key, [value]);
 }
 
 export async function mergeDailyTable(input: {
@@ -437,19 +485,30 @@ async function writeBackupManifest(backupDir: string, metadataRows: number) {
   );
 }
 
-async function importPlannedTables(workDir: string, deployment: string) {
+async function createPlannedTablePaths(workDir: string): Promise<PlannedTablePaths> {
+  const root = join(workDir, "planned-ranking-tables");
+  const paths = {
+    root,
+    skillDailyStats: join(root, "skillDailyStats", "documents.jsonl"),
+    packageDailyStats: join(root, "packageDailyStats", "documents.jsonl"),
+    rankingMetricImports: join(root, "rankingMetricImports", "documents.jsonl"),
+  };
+  await Promise.all([
+    mkdir(join(root, "skillDailyStats"), { recursive: true }),
+    mkdir(join(root, "packageDailyStats"), { recursive: true }),
+    mkdir(join(root, "rankingMetricImports"), { recursive: true }),
+  ]);
+  return paths;
+}
+
+async function importPlannedTables(workDir: string, plannedRoot: string, deployment: string) {
   const baseline = `${workDir}/test-before.zip`;
   const preflight = `${workDir}/test-preflight.zip`;
   exportDeploymentSnapshot(deployment, preflight);
   await assertRankingTablesUnchanged(baseline, preflight);
-  try {
-    importTable(deployment, "skillDailyStats", `${workDir}/skillDailyStats.next.jsonl`);
-    importTable(deployment, "packageDailyStats", `${workDir}/packageDailyStats.next.jsonl`);
-    importTable(deployment, "rankingMetricImports", `${workDir}/rankingMetricImports.next.jsonl`);
-  } catch (error) {
-    await restoreBackup(workDir, deployment);
-    throw error;
-  }
+  const archive = join(workDir, "ranking-tables.next.zip");
+  createTableArchive(plannedRoot, archive);
+  importArchive(deployment, archive);
 }
 
 export async function assertRankingTablesUnchanged(baseline: string, current: string) {
@@ -482,49 +541,48 @@ async function restoreBackup(backupDir: string, deployment: string) {
     throw new Error("Backup manifest is not for the permanent Test deployment");
   }
   const snapshot = `${backupDir}/test-before.zip`;
-  await Promise.all([
-    copySnapshotTable(snapshot, "skillDailyStats", `${backupDir}/skillDailyStats.restore.jsonl`),
-    copySnapshotTable(
-      snapshot,
-      "packageDailyStats",
-      `${backupDir}/packageDailyStats.restore.jsonl`,
-    ),
-    copySnapshotTable(
-      snapshot,
-      "rankingMetricImports",
-      `${backupDir}/rankingMetricImports.restore.jsonl`,
-    ),
-  ]);
-  importTable(deployment, "skillDailyStats", `${backupDir}/skillDailyStats.restore.jsonl`);
-  importTable(deployment, "packageDailyStats", `${backupDir}/packageDailyStats.restore.jsonl`);
-  importTable(
-    deployment,
-    "rankingMetricImports",
-    `${backupDir}/rankingMetricImports.restore.jsonl`,
-  );
-  console.log(JSON.stringify({ ok: true, mode: "rollback", deployment, backupDir }, null, 2));
+  const workDir = await mkdtemp(`${tmpdir()}/clawhub-ranking-rollback-`);
+  try {
+    const planned = await createPlannedTablePaths(workDir);
+    await Promise.all([
+      copySnapshotTable(snapshot, "skillDailyStats", planned.skillDailyStats),
+      copySnapshotTable(snapshot, "packageDailyStats", planned.packageDailyStats),
+      copySnapshotTable(snapshot, "rankingMetricImports", planned.rankingMetricImports),
+    ]);
+    const archive = join(workDir, "ranking-tables.rollback.zip");
+    createTableArchive(planned.root, archive);
+    importArchive(deployment, archive);
+    console.log(JSON.stringify({ ok: true, mode: "rollback", deployment, backupDir }, null, 2));
+  } finally {
+    await rm(workDir, { recursive: true, force: true });
+  }
 }
 
-function importTable(deployment: string, table: string, file: string) {
+function createTableArchive(root: string, archive: string) {
+  const result = spawnSync("zip", ["-q", "-r", archive, "."], {
+    cwd: root,
+    env: process.env,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) throw new Error("Failed to create ranking table import archive");
+}
+
+export function buildConvexImportArchiveCommand(archive: string, deployment: string) {
   assertTestDeployment(deployment);
-  const result = spawnSync(
-    "bunx",
-    [
-      "convex",
-      "import",
-      "--deployment",
-      deployment,
-      "--table",
-      table,
-      "--replace",
-      "--yes",
-      "--format",
-      "jsonLines",
-      file,
-    ],
-    { cwd: process.cwd(), env: process.env, stdio: "inherit" },
-  );
-  if (result.status !== 0) throw new Error(`Failed to import Test table ${table}`);
+  return {
+    command: "bunx",
+    args: ["convex", "import", "--deployment", deployment, "--replace", "--yes", archive],
+  };
+}
+
+function importArchive(deployment: string, archive: string) {
+  const step = buildConvexImportArchiveCommand(archive, deployment);
+  const result = spawnSync(step.command, step.args, {
+    cwd: process.cwd(),
+    env: process.env,
+    stdio: "inherit",
+  });
+  if (result.status !== 0) throw new Error("Failed to atomically import Test ranking tables");
 }
 
 function exportDeploymentSnapshot(deployment: string, path: string) {
@@ -581,6 +639,24 @@ function systemFields(row: Record<string, unknown>) {
     ...(typeof row._id === "string" ? { _id: row._id } : {}),
     ...(typeof row._creationTime === "number" ? { _creationTime: row._creationTime } : {}),
   };
+}
+
+export function mergeRankingMetricImportRows(
+  current: Record<string, unknown>[],
+  next: Record<string, unknown>,
+) {
+  const datasetVersion = next.datasetVersion;
+  let replaced = false;
+  const rows = current.map((row) => {
+    if (row.datasetVersion !== datasetVersion) return row;
+    if (replaced) {
+      throw new Error(`duplicate ranking import provenance for ${String(datasetVersion)}`);
+    }
+    replaced = true;
+    return { ...next, ...systemFields(row) };
+  });
+  if (!replaced) rows.push(next);
+  return rows;
 }
 
 async function writeJsonLines(path: string, rows: Record<string, unknown>[]) {

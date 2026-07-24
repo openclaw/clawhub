@@ -101,6 +101,24 @@ describe("ranking metric dataset", () => {
     ).toThrow("outside");
   });
 
+  it("treats package family and channel as part of the target identity", () => {
+    const packageTarget = targets[1];
+    if (packageTarget.kind !== "package") throw new Error("expected package fixture");
+    expect(() =>
+      buildRankingDataset({
+        datasetVersion: "ranking-metrics-2026-07-23-v1",
+        generatedAt: "2026-07-23T22:00:00.000Z",
+        startDay: 20_597,
+        endDay: 20_656,
+        targets: [
+          packageTarget,
+          { ...packageTarget, family: "bundle-plugin" },
+          { ...packageTarget, channel: "beta" },
+        ],
+      }),
+    ).not.toThrow();
+  });
+
   it("rejects negative aggregate counts", () => {
     expect(() =>
       buildRankingDataset({
