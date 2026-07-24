@@ -3476,6 +3476,23 @@ function encodeStablePackageDiscoveryCursor(state: StablePackageDiscoveryCursorS
   })}`;
 }
 
+function readStablePackageDiscoveryCursorSort(
+  raw: string | null | undefined,
+): "updated" | "recommended" | null {
+  if (!raw?.startsWith(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX)) return null;
+  try {
+    const parsed = JSON.parse(raw.slice(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX.length)) as {
+      v?: unknown;
+      sort?: unknown;
+    };
+    return parsed.v === 1 && (parsed.sort === "updated" || parsed.sort === "recommended")
+      ? parsed.sort
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function decodeStablePackageDiscoveryCursor(
   raw: string | null | undefined,
   sort: StablePackageDiscoveryCursorState["sort"],
@@ -3930,17 +3947,21 @@ async function listStablePackageDiscoveryPage(
     Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE),
   );
   const requestedSort = args.sort ?? "updated";
-  const sort =
-    requestedSort === "recommended" &&
-    (
+  const cursorSort =
+    requestedSort === "recommended"
+      ? readStablePackageDiscoveryCursorSort(args.paginationOpts.cursor)
+      : null;
+  let sort = cursorSort ?? requestedSort;
+  if (!cursorSort && requestedSort === "recommended") {
+    const recommendationScoresMissing = (
       await Promise.all(
         STABLE_PACKAGE_FAMILIES.map(
           async (family) => await hasMissingPackageRecommendedScore(ctx, family),
         ),
       )
-    ).some(Boolean)
-      ? "updated"
-      : requestedSort;
+    ).some(Boolean);
+    if (recommendationScoresMissing) sort = "updated";
+  }
   const cursor = decodeStablePackageDiscoveryCursor(args.paginationOpts.cursor, sort);
   const scanLimit = Math.min(MAX_PUBLIC_LIST_PAGE_SIZE, Math.max(targetCount * 5, 50));
   const loadFamily = async (family: StablePackageFamily) => {

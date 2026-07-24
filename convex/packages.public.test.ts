@@ -1825,7 +1825,10 @@ function makePluginExportIndexKey(row: Record<string, unknown>) {
   return [row.softDeletedAt, row.family, row.updatedAt, row._creationTime, row._id] as unknown[];
 }
 
-function makePluginExportCtx(digests: Array<Record<string, unknown>>) {
+function makePluginExportCtx(
+  digests: Array<Record<string, unknown>>,
+  options?: { recommendationScoresMissing?: () => boolean },
+) {
   const packagesById = new Map(
     digests.map((digest) => [
       String(digest.packageId),
@@ -1851,6 +1854,15 @@ function makePluginExportCtx(digests: Array<Record<string, unknown>>) {
     db: {
       get: vi.fn(async (id: string) => packagesById.get(id) ?? null),
       query: vi.fn((table: string) => {
+        if (table === "packages") {
+          return {
+            withIndex: vi.fn(() => ({
+              first: vi.fn(async () =>
+                options?.recommendationScoresMissing?.() ? { _id: "packages:missing-score" } : null,
+              ),
+            })),
+          };
+        }
         if (table !== "packageSearchDigest") throw new Error(`Unexpected table ${table}`);
         return {
           withIndex: vi.fn(
@@ -17002,6 +17014,36 @@ describe("restorePackageInternal", () => {
         "alpha-plugin",
       ]);
       expect(second.isDone).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("keeps the cursor's effective sort when recommendation backfill completes between pages", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    let recommendationScoresMissing = true;
+    const ctx = makePluginExportCtx(
+      [
+        makeDigest("newer-plugin", { updatedAt: 2, _creationTime: 2 }),
+        makeDigest("older-plugin", { updatedAt: 1, _creationTime: 1 }),
+      ],
+      { recommendationScoresMissing: () => recommendationScoresMissing },
+    );
+
+    try {
+      const first = await listPublicPageHandler(ctx, {
+        sort: "recommended",
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+      recommendationScoresMissing = false;
+      const second = await listPublicPageHandler(ctx, {
+        sort: "recommended",
+        paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+      });
+      expect(first.page.map((entry) => entry.name)).toEqual(["newer-plugin"]);
+      expect(second.page.map((entry) => entry.name)).toEqual(["older-plugin"]);
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
