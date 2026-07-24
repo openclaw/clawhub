@@ -26,15 +26,8 @@ function sha256(bytes: Uint8Array): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-function encodePackagePath(name: string): string {
-  return name
-    .split("/")
-    .map((segment) =>
-      segment.startsWith("@")
-        ? `@${encodeURIComponent(segment.slice(1))}`
-        : encodeURIComponent(segment),
-    )
-    .join("/");
+function encodePackageName(name: string): string {
+  return encodeURIComponent(name);
 }
 
 export function selectPublishedClaw(feedValue: unknown, packageName: string) {
@@ -172,7 +165,7 @@ export async function runPublishedClawDryRun(options: PublishedClawProofOptions)
       options.packageName,
     );
     const artifactUrl = new URL(
-      `/api/v1/packages/${encodePackagePath(candidate.package)}/versions/${encodeURIComponent(candidate.version)}/artifact`,
+      `/api/v1/packages/${encodePackageName(candidate.package)}/versions/${encodeURIComponent(candidate.version)}/artifact`,
       options.registryUrl,
     );
     const metadataResponse = await fetch(artifactUrl);

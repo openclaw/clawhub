@@ -81,7 +81,7 @@ describe("published Claw to OpenClaw dry-run proof", () => {
         response.end(JSON.stringify(feedValue()));
         return;
       }
-      if (pathname.endsWith("/artifact")) {
+      if (pathname === "/api/v1/packages/%40openclaw%2Fhosted-e2e/versions/1.0.0/artifact") {
         response.setHeader("Content-Type", "application/json");
         response.end(
           JSON.stringify({
