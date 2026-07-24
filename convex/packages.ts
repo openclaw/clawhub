@@ -1226,6 +1226,48 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
+  if (release.clawManifestSummary) {
+    const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
+    return {
+      _id: release._id,
+      packageId: release.packageId,
+      version: release.version,
+      changelog: release.changelog,
+      summary: release.summary,
+      icon: release.icon,
+      distTags: release.distTags,
+      files: release.files.map((file) => ({
+        path: file.path,
+        size: file.size,
+        sha256: file.sha256,
+        contentType: file.contentType,
+      })),
+      integritySha256: release.integritySha256,
+      artifactKind: release.artifactKind,
+      clawpackSha256: release.clawpackSha256,
+      clawpackSize: release.clawpackSize,
+      clawpackFormat: release.clawpackFormat,
+      npmIntegrity: release.npmIntegrity,
+      npmShasum: release.npmShasum,
+      npmTarballName: release.npmTarballName,
+      npmUnpackedSize: release.npmUnpackedSize,
+      npmFileCount: release.npmFileCount,
+      clawManifestSummary: release.clawManifestSummary,
+      compatibility: release.compatibility,
+      runtimeId: release.runtimeId,
+      sourceRepo: release.sourceRepo,
+      verification:
+        release.verification && sourcePath
+          ? { ...release.verification, sourcePath }
+          : release.verification,
+      sha256hash: release.sha256hash,
+      vtAnalysis: release.vtAnalysis,
+      skillSpectorAnalysis: release.skillSpectorAnalysis,
+      llmAnalysis: release.llmAnalysis,
+      staticScan: release.staticScan,
+      createdAt: release.createdAt,
+    };
+  }
   const {
     capabilities: _capabilities,
     extractedClawManifest: _extractedClawManifest,

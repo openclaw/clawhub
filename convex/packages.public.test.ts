@@ -16886,7 +16886,24 @@ describe("restorePackageInternal", () => {
     const latestRelease = makeReleaseDoc({
       _id: "packageReleases:demo-latest",
       version: "2.0.0",
+      changelog: "Latest release",
+      distTags: ["latest"],
+      files: [],
+      integritySha256: "latest-integrity",
       clawManifestSummary: latestClawManifestSummary,
+      createdBy: "users:must-not-project-latest",
+      publishActor: { kind: "user", userId: "users:must-not-project-latest" },
+      extractedPackageJson: {
+        openclaw: {
+          packageCoordinate: "must-not-project-latest",
+          profile: { workspaceRoot: "must-not-project-latest", policy: "must-not-project-latest" },
+          manifest: {
+            workspace: { content: "must-not-project-latest" },
+            mcp: { command: "must-not-project-latest", env: "must-not-project-latest" },
+            cron: { schedule: "must-not-project-latest", message: "must-not-project-latest" },
+          },
+        },
+      },
       extractedClawManifest: {
         schemaVersion: 1,
         agent: { id: "demo-claw-latest" },
@@ -16901,7 +16918,24 @@ describe("restorePackageInternal", () => {
       latestRelease,
       versionRelease: makeReleaseDoc({
         _id: "packageReleases:demo-v1",
+        changelog: "Exact release",
+        distTags: [],
+        files: [],
+        integritySha256: "exact-integrity",
         clawManifestSummary: exactClawManifestSummary,
+        createdBy: "users:must-not-project-exact",
+        publishActor: { kind: "user", userId: "users:must-not-project-exact" },
+        extractedPackageJson: {
+          openclaw: {
+            packageCoordinate: "must-not-project-exact",
+            profile: { workspaceRoot: "must-not-project-exact", policy: "must-not-project-exact" },
+            manifest: {
+              workspace: { content: "must-not-project-exact" },
+              mcp: { command: "must-not-project-exact", env: "must-not-project-exact" },
+              cron: { schedule: "must-not-project-exact", message: "must-not-project-exact" },
+            },
+          },
+        },
         extractedClawManifest: {
           schemaVersion: 1,
           agent: { id: "demo-claw-v1" },
@@ -16924,6 +16958,7 @@ describe("restorePackageInternal", () => {
         latestRelease: { clawManifestSummary: latestClawManifestSummary },
       });
       expect(detail?.latestRelease).not.toHaveProperty("extractedClawManifest");
+      expect(JSON.stringify(detail)).not.toContain("must-not-project");
 
       const version = await getVersionByNameHandler(ctx, {
         name: "demo-plugin",
@@ -16934,6 +16969,7 @@ describe("restorePackageInternal", () => {
         version: { clawManifestSummary: exactClawManifestSummary },
       });
       expect(version?.version).not.toHaveProperty("extractedClawManifest");
+      expect(JSON.stringify(version)).not.toContain("must-not-project");
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
