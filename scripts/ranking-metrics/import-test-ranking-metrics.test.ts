@@ -173,7 +173,14 @@ describe("Test ranking metric command guard", () => {
           },
         ]),
         "publishers/documents.jsonl": encodeRows([]),
-        "skills/documents.jsonl": encodeRows([]),
+        "skills/documents.jsonl": encodeRows([
+          {
+            _id: "snapshot-skill",
+            _creationTime: 1,
+            ownerUserId: "snapshot-owner",
+            slug: "calendar-skill",
+          },
+        ]),
         "packages/documents.jsonl": encodeRows([
           {
             _id: "code-stable",
@@ -208,13 +215,33 @@ describe("Test ranking metric command guard", () => {
     expect(resolveTargets([target], current).targets).toEqual([
       expect.objectContaining({ kind: "package", targetId: "code-stable" }),
     ]);
+    expect(() => resolveTargets([{ ...target, createdAt: 2 }], current)).toThrow(
+      "package creation timestamp mismatch",
+    );
+    const skillTarget = {
+      kind: "skill" as const,
+      ownerHandle: "test-snapshot-user-0123456789ab",
+      slug: "calendar-skill",
+      createdAt: 1,
+      days: target.days,
+    };
+    expect(resolveTargets([skillTarget], current).targets).toEqual([
+      expect.objectContaining({ kind: "skill", targetId: "snapshot-skill" }),
+    ]);
+    expect(() => resolveTargets([{ ...skillTarget, createdAt: 2 }], current)).toThrow(
+      "skill creation timestamp mismatch",
+    );
     expect(() => resolveTargets([{ ...target, channel: "beta" }], current)).toThrow(
       "package identity mismatch",
     );
     const exactMatches = [...current.packagesByIdentity.values()].find(
       (matches) => matches[0]?.targetId === "code-stable",
     );
-    exactMatches?.push({ targetId: "duplicate-code-stable", legacySnapshotTarget: true });
+    exactMatches?.push({
+      targetId: "duplicate-code-stable",
+      legacySnapshotTarget: true,
+      createdAt: 1,
+    });
     expect(() => resolveTargets([target], current)).toThrow("ambiguous package identity");
   });
 
@@ -365,6 +392,10 @@ describe("Test ranking metric command guard", () => {
     const rekeyed = join(workDir, "rekeyed.zip");
     const changed = join(workDir, "changed.zip");
     const tables = {
+      "users/documents.jsonl": encodeRows([]),
+      "publishers/documents.jsonl": encodeRows([]),
+      "skills/documents.jsonl": encodeRows([]),
+      "packages/documents.jsonl": encodeRows([]),
       "skillDailyStats/documents.jsonl": encodeRows([
         dailyRow("skill-row", "snapshot-skill", 20_655, 10),
       ]),
@@ -391,10 +422,23 @@ describe("Test ranking metric command guard", () => {
         ]),
       }),
     );
+    const changedIdentity = join(workDir, "changed-identity.zip");
+    await writeFile(
+      changedIdentity,
+      zipSync({
+        ...tables,
+        "skills/documents.jsonl": encodeRows([
+          { _id: "replacement-skill", _creationTime: 2, slug: "renamed" },
+        ]),
+      }),
+    );
 
     await expect(assertRankingTablesUnchanged(baseline, unchanged)).resolves.toBeUndefined();
     await expect(assertRankingTablesUnchanged(baseline, changed)).rejects.toThrow(
       "skillDailyStats changed after the backup snapshot",
+    );
+    await expect(assertRankingTablesUnchanged(baseline, changedIdentity)).rejects.toThrow(
+      "skills changed after the backup snapshot",
     );
 
     const rollbackDigests = await rankingTableDigests(baseline);

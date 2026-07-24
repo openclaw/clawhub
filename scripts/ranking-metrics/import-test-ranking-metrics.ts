@@ -23,6 +23,13 @@ type DailyTable = "skillDailyStats" | "packageDailyStats";
 type DailyIdField = "skillId" | "packageId";
 const RANKING_TABLES = ["skillDailyStats", "packageDailyStats", "rankingMetricImports"] as const;
 type RankingTable = (typeof RANKING_TABLES)[number];
+const IMPORT_SOURCE_TABLES = [
+  "users",
+  "publishers",
+  "skills",
+  "packages",
+  ...RANKING_TABLES,
+] as const;
 const TEST_LANE_WORKFLOW_PATH = ".github/workflows/reserve-test.yml";
 const TEST_LANE_MAX_AGE_MS = 5 * 60 * 60 * 1_000;
 export type ResolvedRankingMetricTarget = {
@@ -31,7 +38,7 @@ export type ResolvedRankingMetricTarget = {
   legacySnapshotTarget: boolean;
   days: RankingMetricDay[];
 };
-type TargetMatch = { targetId: string; legacySnapshotTarget: boolean };
+type TargetMatch = { targetId: string; legacySnapshotTarget: boolean; createdAt: number | null };
 type PlannedTablePaths = {
   root: string;
   skillDailyStats: string;
@@ -224,7 +231,7 @@ export async function readCurrentTestMetadata(snapshot: string) {
   const publisherHandles = new Map(
     publishers.map((row) => [String(row._id), String(row.handle ?? "")]),
   );
-  const skillsByIdentity = new Map<string, { targetId: string; legacySnapshotTarget: boolean }>();
+  const skillsByIdentity = new Map<string, TargetMatch>();
   const legacySkillTargetIds = new Set<string>();
   for (const row of skills) {
     const ownerHandle =
@@ -233,7 +240,11 @@ export async function readCurrentTestMetadata(snapshot: string) {
     if (!ownerHandle || typeof row.slug !== "string") continue;
     const targetId = String(row._id);
     const legacySnapshotTarget = ownerHandle.startsWith("test-snapshot-");
-    skillsByIdentity.set(`${ownerHandle}/${row.slug}`, { targetId, legacySnapshotTarget });
+    skillsByIdentity.set(`${ownerHandle}/${row.slug}`, {
+      targetId,
+      legacySnapshotTarget,
+      createdAt: snapshotCreatedAt(row),
+    });
     if (legacySnapshotTarget) legacySkillTargetIds.add(targetId);
   }
   const packagesByIdentity = new Map<string, TargetMatch[]>();
@@ -246,7 +257,7 @@ export async function readCurrentTestMetadata(snapshot: string) {
     if (typeof row.normalizedName !== "string") continue;
     const targetId = String(row._id);
     const legacySnapshotTarget = ownerHandle?.startsWith("test-snapshot-") ?? false;
-    const match = { targetId, legacySnapshotTarget };
+    const match = { targetId, legacySnapshotTarget, createdAt: snapshotCreatedAt(row) };
     appendMapValue(packageCandidatesByName, row.normalizedName, match);
     if (
       (row.family === "code-plugin" || row.family === "bundle-plugin") &&
@@ -307,6 +318,13 @@ export function resolveTargets(
       unresolvedTargets += 1;
       continue;
     }
+    if (match.createdAt !== target.createdAt) {
+      const identity =
+        target.kind === "skill"
+          ? `skill creation timestamp mismatch: ${target.ownerHandle}/${target.slug}`
+          : `package creation timestamp mismatch: ${target.normalizedName}`;
+      throw new Error(identity);
+    }
     resolved.push({
       kind: target.kind,
       targetId: match.targetId,
@@ -315,6 +333,17 @@ export function resolveTargets(
     });
   }
   return { targets: resolved, unresolvedTargets };
+}
+
+function snapshotCreatedAt(row: Record<string, unknown>) {
+  const createdAt = row.createdAt;
+  if (typeof createdAt === "number" && Number.isSafeInteger(createdAt) && createdAt >= 0) {
+    return createdAt;
+  }
+  const creationTime = row._creationTime;
+  return typeof creationTime === "number" && Number.isFinite(creationTime) && creationTime >= 0
+    ? Math.floor(creationTime)
+    : null;
 }
 
 function packageIdentity(normalizedName: string, family: string, channel: string) {
@@ -591,7 +620,7 @@ async function importPlannedTables(
 }
 
 export async function assertRankingTablesUnchanged(baseline: string, current: string) {
-  for (const table of RANKING_TABLES) {
+  for (const table of IMPORT_SOURCE_TABLES) {
     const [baselineDigest, currentDigest] = await Promise.all([
       digestSnapshotTable(baseline, table),
       digestSnapshotTable(current, table),
