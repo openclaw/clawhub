@@ -1189,6 +1189,16 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  topicPagesByFamily?: Partial<
+    Record<
+      "skill" | "code-plugin" | "bundle-plugin",
+      Array<{
+        page: Array<Record<string, unknown>>;
+        isDone: boolean;
+        continueCursor: string;
+      }>
+    >
+  >;
   categoryPages?: Array<{
     page: Array<Record<string, unknown>>;
     isDone: boolean;
@@ -1218,6 +1228,20 @@ function makeDigestCtx(options: {
     >
   >();
   const rowsByTable = new Map<string, Array<Record<string, unknown>>>();
+  const familyPagesByTable = new Map<
+    string,
+    Map<
+      string,
+      Map<
+        string | null,
+        {
+          page: Array<Record<string, unknown>>;
+          isDone: boolean;
+          continueCursor: string;
+        }
+      >
+    >
+  >();
   const indexNames: string[] = [];
   const indexFilters: Array<{
     indexName: string;
@@ -1257,6 +1281,36 @@ function makeDigestCtx(options: {
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
   setPages("packageTopicSearchDigest", options.topicPages ?? []);
+  if (options.topicPagesByFamily) {
+    const pagesByFamily = new Map<
+      string,
+      Map<
+        string | null,
+        {
+          page: Array<Record<string, unknown>>;
+          isDone: boolean;
+          continueCursor: string;
+        }
+      >
+    >();
+    for (const [family, pages] of Object.entries(options.topicPagesByFamily)) {
+      const pagesByCursor = new Map<
+        string | null,
+        {
+          page: Array<Record<string, unknown>>;
+          isDone: boolean;
+          continueCursor: string;
+        }
+      >();
+      let cursor: string | null = null;
+      for (const page of pages ?? []) {
+        pagesByCursor.set(cursor, page);
+        cursor = page.continueCursor || null;
+      }
+      pagesByFamily.set(family, pagesByCursor);
+    }
+    familyPagesByTable.set("packageTopicSearchDigest", pagesByFamily);
+  }
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
   if (options.categoryRows) {
     rowsByTable.set("packagePluginCategorySearchDigest", options.categoryRows);
@@ -1265,10 +1319,14 @@ function makeDigestCtx(options: {
 
   const paginate = vi.fn();
   const take = vi.fn();
-  const paginateForTable = (table: string) =>
+  const paginateForTable = (table: string, family?: string) =>
     vi.fn(async (args: { cursor: string | null }) => {
       paginate(args);
       return (
+        familyPagesByTable
+          .get(table)
+          ?.get(family ?? "")
+          ?.get(args.cursor ?? null) ??
         pageByTable.get(table)?.get(args.cursor ?? null) ?? {
           page: [],
           isDone: true,
@@ -1277,11 +1335,12 @@ function makeDigestCtx(options: {
       );
     });
   const paginateByTable = new Map<string, ReturnType<typeof vi.fn>>();
-  const getPaginate = (table: string) => {
-    const existing = paginateByTable.get(table);
+  const getPaginate = (table: string, family?: string) => {
+    const key = `${table}:${family ?? ""}`;
+    const existing = paginateByTable.get(key);
     if (existing) return existing;
-    const next = paginateForTable(table);
-    paginateByTable.set(table, next);
+    const next = paginateForTable(table, family);
+    paginateByTable.set(key, next);
     return next;
   };
   const takeForTable = (table: string) =>
@@ -1556,19 +1615,38 @@ function makeDigestCtx(options: {
                 if (indexName.includes("_family_")) {
                   indexNames.push(indexName);
                   let family = "";
+                  let lowerField = "";
+                  let lowerBound = "";
+                  let upperBound = "";
                   const queryBuilder = {
                     eq: (field: string, value: string | undefined) => {
                       if (field === "family") family = value ?? "";
                       return queryBuilder;
                     },
-                    gte: () => queryBuilder,
-                    lt: () => queryBuilder,
+                    gte: (field: string, value: string) => {
+                      lowerField = field;
+                      lowerBound = value;
+                      return queryBuilder;
+                    },
+                    lt: (_field: string, value: string) => {
+                      upperBound = value;
+                      return queryBuilder;
+                    },
                   };
                   builder?.(queryBuilder);
                   const takeFamilyRows = async (limit: number) => {
                     take(limit);
                     return (rowsByTable.get(table) ?? [])
                       .filter((row) => row.family === family)
+                      .filter((row) => {
+                        if (!lowerField) return true;
+                        const value = readTestField(row, lowerField);
+                        return (
+                          typeof value === "string" &&
+                          value >= lowerBound &&
+                          (!upperBound || value < upperBound)
+                        );
+                      })
                       .slice(0, limit);
                   };
                   return {
@@ -1666,7 +1744,7 @@ function makeDigestCtx(options: {
                 };
                 return {
                   order: vi.fn(() => ({
-                    paginate: getPaginate(table),
+                    paginate: getPaginate(table, family),
                     take: vi.fn(takeFamilyRows),
                   })),
                 };
@@ -5493,6 +5571,111 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-api"]);
     expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("ranks bounded candidates from every stable family before applying the search limit", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("skill-helper", {
+              family: "skill",
+              summary: "Calendar integration",
+            }),
+            makeDigest("official-plugin", {
+              family: "code-plugin",
+              isOfficial: true,
+              summary: "Calendar integration",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    try {
+      const result = await searchPublicHandler(ctx, { query: "calendar", limit: 1 });
+      expect(result.map((entry) => entry.package.name)).toEqual(["official-plugin"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("gives every stable family a fair combined-filter scan budget", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const noisePage = (family: "skill" | "code-plugin" | "bundle-plugin", page: number) =>
+      Array.from({ length: 50 }, (_, index) =>
+        makeDigest(`${family}-noise-${page}-${index}`, {
+          family,
+          topic: "calendar",
+          topics: ["calendar"],
+          pluginCategoryTags: ["channels"],
+        }),
+      );
+    const { ctx } = makeDigestCtx({
+      topicPagesByFamily: {
+        skill: [
+          { page: noisePage("skill", 1), isDone: false, continueCursor: "skill:2" },
+          { page: noisePage("skill", 2), isDone: false, continueCursor: "skill:3" },
+          { page: noisePage("skill", 3), isDone: true, continueCursor: "" },
+        ],
+        "code-plugin": [
+          {
+            page: noisePage("code-plugin", 1),
+            isDone: false,
+            continueCursor: "code:2",
+          },
+          {
+            page: noisePage("code-plugin", 2),
+            isDone: false,
+            continueCursor: "code:3",
+          },
+          { page: noisePage("code-plugin", 3), isDone: true, continueCursor: "" },
+        ],
+        "bundle-plugin": [
+          {
+            page: noisePage("bundle-plugin", 1),
+            isDone: false,
+            continueCursor: "bundle:2",
+          },
+          {
+            page: noisePage("bundle-plugin", 2),
+            isDone: false,
+            continueCursor: "bundle:3",
+          },
+          {
+            page: [
+              makeDigest("calendar-bundle-api", {
+                family: "bundle-plugin",
+                topic: "calendar",
+                topics: ["calendar"],
+                pluginCategoryTags: ["tools"],
+              }),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+      },
+    });
+
+    try {
+      const result = await searchPublicHandler(ctx, {
+        query: "calendar",
+        topic: "calendar",
+        category: "tools",
+        limit: 1,
+      });
+      expect(result.map((entry) => entry.package.name)).toEqual(["calendar-bundle-api"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
   });
 
   it("scans each stable family past the first combined-filter window while Claws are disabled", async () => {

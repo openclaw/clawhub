@@ -4696,7 +4696,6 @@ async function searchPackagesImpl(
           ...match,
           package: await toPublicPackageListItem(ctx, digest),
         });
-        if (authoritativeMatchCount() >= targetCount) break;
       }
     };
 
@@ -4705,20 +4704,22 @@ async function searchPackagesImpl(
         family,
         cursor: null as string | null,
         isDone: false,
+        pagesScanned: 0,
       }));
-      let scanPages = 0;
       let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
       while (
         authoritativeMatchCount() < targetCount &&
-        scanStates.some((state) => !state.isDone) &&
-        scanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
+        scanStates.some(
+          (state) => !state.isDone && state.pagesScanned < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES,
+        ) &&
         remainingScanBudget > 0
       ) {
+        // Finish each round before checking the match quota so the fixed family
+        // order cannot decide global relevance or consume another family's cap.
         for (const state of scanStates) {
           if (
             state.isDone ||
-            authoritativeMatchCount() >= targetCount ||
-            scanPages >= MAX_PUBLIC_LIST_FILTER_SCAN_PAGES ||
+            state.pagesScanned >= MAX_PUBLIC_LIST_FILTER_SCAN_PAGES ||
             remainingScanBudget <= 0
           ) {
             continue;
@@ -4731,7 +4732,7 @@ async function searchPackagesImpl(
           } = await buildSearchDigestQuery(state.family)
             .order("desc")
             .paginate({ cursor: state.cursor, numItems: pageSize });
-          scanPages += 1;
+          state.pagesScanned += 1;
           remainingScanBudget -= pageSize;
           await collectDigestMatches(page.page);
           state.cursor = page.continueCursor;
