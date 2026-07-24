@@ -2716,6 +2716,77 @@ const catalogFeedPublications = defineTable({
   publishedAt: v.number(),
 }).index("by_feed", ["feedId"]);
 
+const catalogFeedRevisions = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  entryCount: v.optional(v.number()),
+  indexedEntryCount: v.optional(v.number()),
+  changeCount: v.number(),
+  cumulativeChangeCount: v.number(),
+  generatedAt: v.string(),
+  expiresAt: v.string(),
+  description: v.string(),
+  publishedAt: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_feed_and_sequence", ["feedId", "sequence"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedChanges = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  ordinal: v.number(),
+  operation: v.union(v.literal("upsert"), v.literal("remove"), v.literal("metadata")),
+  entryType: v.optional(v.union(v.literal("plugin"), v.literal("skill"))),
+  entryId: v.optional(v.string()),
+  payload: v.string(),
+  expirationTime: v.number(),
+})
+  .index("by_feed_and_sequence_and_ordinal", ["feedId", "sequence", "ordinal"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedIndexedEntries = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  ordinal: v.number(),
+  entryType: v.union(v.literal("plugin"), v.literal("skill")),
+  state: v.string(),
+  publisherId: v.string(),
+  searchText: v.string(),
+  payload: v.string(),
+  expirationTime: v.number(),
+})
+  .index("by_feed_sequence_ordinal", ["feedId", "sequence", "ordinal"])
+  .index("by_feed_sequence_type_ordinal", ["feedId", "sequence", "entryType", "ordinal"])
+  .index("by_feed_sequence_state_ordinal", ["feedId", "sequence", "state", "ordinal"])
+  .index("by_feed_sequence_publisher_ordinal", ["feedId", "sequence", "publisherId", "ordinal"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedQueryMaterializations = defineTable({
+  materializationKey: v.string(),
+  feedId: v.string(),
+  sequence: v.number(),
+  query: v.string(),
+  querySha256: v.string(),
+  status: v.union(v.literal("building"), v.literal("ready")),
+  expectedEntryCount: v.number(),
+  scannedEntryCount: v.number(),
+  resultCount: v.number(),
+  createdAt: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_materialization_key", ["materializationKey"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const catalogFeedQueryResults = defineTable({
+  materializationId: v.id("catalogFeedQueryMaterializations"),
+  ordinal: v.number(),
+  payload: v.string(),
+  expirationTime: v.number(),
+})
+  .index("by_materialization_ordinal", ["materializationId", "ordinal"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -3684,6 +3755,11 @@ export default defineSchema({
   packageModerationEventLogs,
   officialPluginMigrations,
   catalogFeedPublications,
+  catalogFeedRevisions,
+  catalogFeedChanges,
+  catalogFeedIndexedEntries,
+  catalogFeedQueryMaterializations,
+  catalogFeedQueryResults,
   stars,
   promotions,
   auditLogs,
