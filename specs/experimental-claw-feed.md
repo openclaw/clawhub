@@ -21,10 +21,13 @@ The Claws feed is a separate experimental wire contract. It does not add
 - Integrity: `sha256:<immutable artifact sha256>`
 - Metadata: bounded `clawManifestSummary`; never the full manifest
 
-The route returns `404` with `Cache-Control: no-store` before reading stored
-publication state when the gate is disabled. It has no unversioned Vercel
-redirect and is not advertised by `/.well-known/openclaw-registry.json` while
-experimental.
+The route uses `Cache-Control: no-store` and no surrogate cache in both enabled
+and disabled states, so changing the gate cannot leave an enabled response at
+the edge. Direct responses retain ETag and Last-Modified validators, but the
+experimental feed must not reuse the stable feeds' CDN policy. When disabled,
+it returns `404` before reading stored publication state. It has no unversioned
+Vercel redirect and is not advertised by
+`/.well-known/openclaw-registry.json` while experimental.
 
 Eligible releases must be public, official, unblocked, and retain an immutable
 artifact digest plus the bounded summary derived during publication. The exact
@@ -32,9 +35,11 @@ package artifact remains authoritative; Convex does not retain a second full
 manifest copy.
 
 The experimental parser rejects generic plugin and skill entries, unknown feed
-ids, unknown fields, invalid timestamps, and unsupported schema versions. The
-serializer provides deterministic entry, bootstrap-file, and install-candidate
-ordering.
+ids, unknown fields, invalid timestamps, unsupported schema versions,
+non-official publishers, and entries without exactly one install candidate.
+That candidate must match the entry package/version and use lowercase
+`sha256:` plus exactly 64 hexadecimal characters. The serializer provides
+deterministic entry and bootstrap-file ordering.
 
 ## Proof Boundary
 
@@ -47,6 +52,12 @@ OpenClaw `claws add --dry-run --json` command in isolated state.
 This proves that a package advertised by ClawHub can produce a non-mutating
 OpenClaw plan. It does not claim that OpenClaw itself resolves ClawHub feed URLs;
 that consumer integration is a separate dependent track.
+
+The valid TGZ fixture is produced through the same `npm pack --ignore-scripts`
+path as package publishing. Invalid link/special-entry fixtures use deterministic
+ustar bytes instead of the host `tar` implementation. ClawHub CI checks out the
+declared OpenClaw contract SHA and runs this bridge with OpenClaw's frozen
+dependencies installed; changing that SHA is an explicit compatibility update.
 
 Downloads are capped at 64 MiB. TGZ parsing shares ClawHub's npm-pack path,
 which enforces canonical `package/` paths, regular files/directories only,
