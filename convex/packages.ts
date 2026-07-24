@@ -8220,8 +8220,8 @@ async function publishPackageImpl(
       : null;
 
   const summary =
-    validatedClaw?.manifest.agent.description?.trim() ||
-    validatedClaw?.manifest.agent.name?.trim() ||
+    validatedClaw?.summary.agent.description ||
+    validatedClaw?.summary.agent.name ||
     summarizePackageForSearch({
       packageName: name,
       packageJson,

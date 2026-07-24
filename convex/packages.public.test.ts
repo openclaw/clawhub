@@ -9227,6 +9227,7 @@ describe("packages public queries", () => {
   it("publishes a profile-bearing Claw through the existing release pipeline when enabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+    const longClawDescription = "x".repeat(1_100);
     const storedFiles = new Map<string, string>([
       [
         "storage:package",
@@ -9238,7 +9239,7 @@ describe("packages public queries", () => {
       ],
       [
         "storage:claw",
-        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: Runs the demo workflow.\nmetadata:\n  openclaw.config: profiles/openclaw.yml\n---\n# Demo Claw\n",
+        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\nmetadata:\n  openclaw.config: profiles/openclaw.yml\n---\n# Demo Claw\n`,
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
     ]);
@@ -9320,19 +9321,26 @@ describe("packages public queries", () => {
         expect.anything(),
         expect.objectContaining({
           family: "claw",
-          summary: "Runs the demo workflow.",
+          summary: expect.any(String),
           artifactKind: "legacy-zip",
           clawpackStorageId: "storage:legacy-zip",
           clawpackSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
           clawpackSize: expect.any(Number),
           clawManifestSummary: expect.objectContaining({
-            agent: expect.objectContaining({ id: "demo-claw" }),
+            agent: expect.objectContaining({
+              id: "demo-claw",
+              description: "x".repeat(1_024),
+            }),
             workspace: expect.objectContaining({ bootstrapFiles: ["SOUL.md"] }),
           }),
           pluginManifestSummary: undefined,
         }),
       );
-      expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("extractedClawManifest");
+      const publishMutationArgs = runMutation.mock.calls.find(
+        ([, args]) => args.family === "claw",
+      )?.[1];
+      expect(publishMutationArgs?.summary).toBe("x".repeat(1_024));
+      expect(publishMutationArgs).not.toHaveProperty("extractedClawManifest");
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
