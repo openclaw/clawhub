@@ -1,5 +1,6 @@
 import {
   CATALOG_FEED_ID,
+  CATALOG_FEED_SHARD_MAX_ENTRIES,
   CATALOG_SKILLS_FEED_ID,
   EXPERIMENTAL_CLAW_FEED_ID,
   type CatalogFeedEntry,
@@ -948,7 +949,10 @@ describe("catalog feed projection", () => {
           args.publicationId === `${CATALOG_SKILLS_FEED_ID}:shards` && "payload" in args,
       )
       .map(([, args]) => JSON.parse(args.payload as string) as { entries: unknown[] });
-    expect(skillShardPayloads).toHaveLength(5);
+    expect(skillShardPayloads).toHaveLength(1);
+    expect(
+      skillShardPayloads.every((shard) => shard.entries.length <= CATALOG_FEED_SHARD_MAX_ENTRIES),
+    ).toBe(true);
     expect(skillShardPayloads.flatMap((shard) => shard.entries)).toHaveLength(1001);
     expect(result).toEqual([
       { feedId: CATALOG_FEED_ID, sequence: 1, entryCount: 0 },
