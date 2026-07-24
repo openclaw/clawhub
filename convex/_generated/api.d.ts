@@ -125,6 +125,7 @@ import type * as lib_skillDownloadBackfill from "../lib/skillDownloadBackfill.js
 import type * as lib_skillFileAccess from "../lib/skillFileAccess.js";
 import type * as lib_skillInstallBackfill from "../lib/skillInstallBackfill.js";
 import type * as lib_skillPresentation from "../lib/skillPresentation.js";
+import type * as lib_skillPresentationBackfill from "../lib/skillPresentationBackfill.js";
 import type * as lib_skillPublish from "../lib/skillPublish.js";
 import type * as lib_skillQuality from "../lib/skillQuality.js";
 import type * as lib_skillSafety from "../lib/skillSafety.js";
@@ -174,6 +175,7 @@ import type * as securityScanDispatch from "../securityScanDispatch.js";
 import type * as skillCards from "../skillCards.js";
 import type * as skillPresentationAssets from "../skillPresentationAssets.js";
 import type * as skillPresentationAssetsHttp from "../skillPresentationAssetsHttp.js";
+import type * as skillPresentationBackfill from "../skillPresentationBackfill.js";
 import type * as skillPresentationImageNode from "../skillPresentationImageNode.js";
 import type * as skillStatEvents from "../skillStatEvents.js";
 import type * as skillTransfers from "../skillTransfers.js";
@@ -313,6 +315,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillFileAccess": typeof lib_skillFileAccess;
   "lib/skillInstallBackfill": typeof lib_skillInstallBackfill;
   "lib/skillPresentation": typeof lib_skillPresentation;
+  "lib/skillPresentationBackfill": typeof lib_skillPresentationBackfill;
   "lib/skillPublish": typeof lib_skillPublish;
   "lib/skillQuality": typeof lib_skillQuality;
   "lib/skillSafety": typeof lib_skillSafety;
@@ -362,6 +365,7 @@ declare const fullApi: ApiFromModules<{
   skillCards: typeof skillCards;
   skillPresentationAssets: typeof skillPresentationAssets;
   skillPresentationAssetsHttp: typeof skillPresentationAssetsHttp;
+  skillPresentationBackfill: typeof skillPresentationBackfill;
   skillPresentationImageNode: typeof skillPresentationImageNode;
   skillStatEvents: typeof skillStatEvents;
   skillTransfers: typeof skillTransfers;
