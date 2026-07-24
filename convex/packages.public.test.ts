@@ -9143,6 +9143,7 @@ describe("packages public queries", () => {
           clawpackSize: expect.any(Number),
           clawManifestSummary: expect.objectContaining({
             agent: expect.objectContaining({ id: "demo-claw" }),
+            workspace: expect.objectContaining({ bootstrapFiles: ["SOUL.md"] }),
           }),
           pluginManifestSummary: undefined,
         }),
@@ -16719,6 +16720,36 @@ describe("restorePackageInternal", () => {
         paginationOpts: { cursor: null, numItems: 25 },
       });
       expect(result.page.map((entry) => entry.name)).toEqual(["demo-plugin"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("rejects explicit Claw list and search filters before querying while disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("demo-claw", { family: "claw" })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    try {
+      await expect(
+        listPublicPageHandler(ctx, {
+          family: "claw",
+          paginationOpts: { cursor: null, numItems: 10 },
+        }),
+      ).resolves.toEqual({ page: [], isDone: true, continueCursor: "" });
+      await expect(
+        searchPublicHandler(ctx, { query: "demo", family: "claw", limit: 10 }),
+      ).resolves.toEqual([]);
+      expect(ctx.db.query).not.toHaveBeenCalled();
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;

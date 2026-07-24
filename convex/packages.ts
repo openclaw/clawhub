@@ -2,7 +2,6 @@ import {
   ServerPackagePublishRequestSchema,
   validateClawPackageContents,
   derivePluginCategoryTags,
-  summarizeClawManifest,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   INTERNAL_UNCATEGORIZED_CATEGORY,
@@ -4050,6 +4049,9 @@ async function listPackagePageImpl(
   if (args.channel === "private" && !args.viewerUserId) {
     return { page: [], isDone: true, continueCursor: "" };
   }
+  if (args.family && !isClawFamilyPubliclyVisible(args.family)) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
   if (args.families?.length && !args.highlightedOnly) {
     throw new Error("families is only supported for highlighted package pages");
   }
@@ -4585,6 +4587,7 @@ async function searchPackagesImpl(
   if (!queryText) return [];
   if (args.category && !isPluginCategorySlug(args.category)) return [];
   if (args.channel === "private" && !args.viewerUserId) return [];
+  if (args.family && !isClawFamilyPubliclyVisible(args.family)) return [];
   const targetCount = Math.max(1, Math.min(args.limit ?? 20, 100));
   const viewerUserId = args.viewerUserId;
   const membershipCache = new Map<string, Promise<boolean>>();
@@ -8356,7 +8359,7 @@ async function publishPackageImpl(
     extractedPluginManifest: storedPluginManifest,
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
     pluginManifestSummary,
-    clawManifestSummary: validatedClaw ? summarizeClawManifest(validatedClaw.manifest) : undefined,
+    clawManifestSummary: validatedClaw?.summary,
     source: effectiveSource,
   };
 
