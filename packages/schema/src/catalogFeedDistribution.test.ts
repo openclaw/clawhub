@@ -112,6 +112,11 @@ describe("catalog feed distribution schema", () => {
       "requested types",
     );
     expect(() =>
+      parseCatalogFeedQueryPage(
+        queryPage({ entries: [{ ...entry, featured: false, featuredAt: 1 }] }),
+      ),
+    ).toThrow("featuredAt");
+    expect(() =>
       parseCatalogFeedQueryPage(queryPage({ entries: [entry, entry], resultCount: 2 })),
     ).toThrow("duplicate entry identities");
     const skillWithPluginId = { ...entry, type: "skill" as const };
@@ -172,6 +177,9 @@ describe("catalog feed distribution schema", () => {
     expect(() =>
       parseCatalogFeedQueryPages([first, { ...second, requestCursor: "wrong-cursor" }]),
     ).toThrow("cursor, page, or offset gap");
+    expect(() =>
+      parseCatalogFeedQueryPages([first, { ...second, generatedAt: "2026-07-16T00:00:01.000Z" }]),
+    ).toThrow("pinned projection");
     expect(() =>
       parseCatalogFeedQueryPages([
         { ...first, resultCount: 4 },
@@ -235,6 +243,13 @@ describe("catalog feed distribution schema", () => {
     expect(() =>
       parseCatalogFeedChangePage(
         changePage({
+          changes: [{ sequence: 4, operation: "upsert", entry: { ...entry, featuredAt: 1.5 } }],
+        }),
+      ),
+    ).toThrow("featuredAt");
+    expect(() =>
+      parseCatalogFeedChangePage(
+        changePage({
           changes: [
             { sequence: 4, operation: "metadata", metadata: { description: "x".repeat(1_025) } },
           ],
@@ -290,6 +305,9 @@ describe("catalog feed distribution schema", () => {
     expect(parseCatalogFeedChangePages([first, second])).toHaveLength(2);
     expect(() =>
       parseCatalogFeedChangePages([first, { ...second, expiresAt: "2026-07-16T00:06:00.000Z" }]),
+    ).toThrow("changed its pinned range");
+    expect(() =>
+      parseCatalogFeedChangePages([first, { ...second, generatedAt: "2026-07-16T00:00:01.000Z" }]),
     ).toThrow("changed its pinned range");
     expect(() => parseCatalogFeedChangePages([first])).toThrow("terminal page");
     expect(() =>

@@ -214,6 +214,12 @@ function requireProjectionHeader(value) {
     requireBoundedString(value.feedId, "Catalog feed id", 256);
     requireValidWindow(value.generatedAt, value.expiresAt);
 }
+function requireCanonicalEntryMetadata(entry) {
+    if (entry.featuredAt !== undefined &&
+        (entry.featured !== true || !Number.isSafeInteger(entry.featuredAt) || entry.featuredAt < 0)) {
+        throw new Error("Catalog feed featuredAt requires a featured entry and epoch milliseconds");
+    }
+}
 function requirePageBounds(value) {
     requireNonNegativeInteger(value.pageIndex, "Catalog feed projection pageIndex");
     requireNonNegativeInteger(value.startIndex, "Catalog feed projection startIndex");
@@ -259,6 +265,7 @@ export function parseCatalogFeedQueryPage(value) {
     }
     const entryKeys = new Set();
     for (const entry of page.entries) {
+        requireCanonicalEntryMetadata(entry);
         requireBoundedString(entry.id, "Catalog feed query entry id", 256);
         const entryKey = `${entry.type}\0${entry.id}`;
         if (entryKeys.has(entryKey)) {
@@ -301,6 +308,7 @@ export function parseCatalogFeedQueryPages(values) {
     for (const [pageIndex, page] of pages.entries()) {
         if (page.feedId !== first.feedId ||
             page.sequence !== first.sequence ||
+            page.generatedAt !== first.generatedAt ||
             page.expiresAt !== first.expiresAt ||
             page.resultCount !== first.resultCount ||
             !queriesEqual(page.query, first.query)) {
@@ -361,6 +369,7 @@ export function parseCatalogFeedChangePage(value) {
             requireBoundedString(change.entryId, "Catalog feed removed entry id", 256);
         }
         else if (change.operation === "upsert") {
+            requireCanonicalEntryMetadata(change.entry);
             requireBoundedString(change.entry.id, "Catalog feed upsert entry id", 256);
         }
         else if (change.metadata.description !== null) {
@@ -400,6 +409,7 @@ export function parseCatalogFeedChangePages(values) {
         if (page.feedId !== first.feedId ||
             page.fromSequence !== first.fromSequence ||
             page.toSequence !== first.toSequence ||
+            page.generatedAt !== first.generatedAt ||
             page.expiresAt !== first.expiresAt ||
             page.changeCount !== first.changeCount) {
             throw new Error("Catalog feed change page chain changed its pinned range");

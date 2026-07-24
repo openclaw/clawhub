@@ -63,7 +63,7 @@ const listChangesHandler = (
       feedId: typeof CATALOG_FEED_ID;
       fromSequence: number;
       toSequence: number;
-      paginationOpts: { cursor: string | null; numItems: number };
+      paginationOpts: { cursor: string | null; numItems: number; maximumRowsRead?: number };
     },
     {
       resetRequired: boolean;
@@ -386,6 +386,21 @@ describe("catalog feed projection", () => {
       numItems: 100,
       maximumRowsRead: 100,
     });
+
+    await listChangesHandler(
+      { db: { query } },
+      {
+        feedId: CATALOG_FEED_ID,
+        fromSequence: 3,
+        toSequence: 4,
+        paginationOpts: { cursor: null, numItems: 100, maximumRowsRead: 25 },
+      },
+    );
+    expect(paginate).toHaveBeenLastCalledWith({
+      cursor: null,
+      numItems: 100,
+      maximumRowsRead: 25,
+    });
     expect(result).toMatchObject({
       resetRequired: false,
       retainedFromSequence: 3,
@@ -419,7 +434,7 @@ describe("catalog feed projection", () => {
       retainedFromSequence: 3,
       currentSequence: 5,
     });
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).toHaveBeenCalledTimes(3);
   });
 
   it("prunes catalog history in bounded continuation batches", async () => {
