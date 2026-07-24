@@ -137,6 +137,7 @@ import {
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
+import { isHostedSkillPresentationIconPath } from "./lib/skillPresentation";
 import {
   fetchText,
   queueHighlightedWebhook,
@@ -575,6 +576,8 @@ function latestVersionSummaryFromSkillVersion(
 function skillSummaryFromSkillVersion(
   version: Pick<Doc<"skillVersions">, "parsed"> | null | undefined,
 ) {
+  const presentationSummary = version?.parsed?.presentation?.summary?.trim();
+  if (presentationSummary) return presentationSummary;
   return version?.parsed?.frontmatter
     ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
     : undefined;
@@ -583,6 +586,8 @@ function skillSummaryFromSkillVersion(
 function skillDisplayNameFromSkillVersion(
   version: Pick<Doc<"skillVersions">, "parsed"> | null | undefined,
 ) {
+  const presentationDisplayName = version?.parsed?.presentation?.displayName?.trim();
+  if (presentationDisplayName) return presentationDisplayName;
   return version?.parsed?.frontmatter
     ? getFrontmatterValue(version.parsed.frontmatter, "name")?.trim() || undefined
     : undefined;
@@ -2171,9 +2176,7 @@ function toPublicSkillVersion(
   version: Doc<"skillVersions"> | null | undefined,
 ): PublicSkillVersion | null {
   if (!version) return null;
-  const description = version.parsed?.frontmatter
-    ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim()
-    : undefined;
+  const description = skillSummaryFromSkillVersion(version);
   return {
     _id: version._id,
     _creationTime: version._creationTime,
@@ -12137,6 +12140,7 @@ type SkillPendingPublishArgs = {
   userId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
   displayName: string;
+  icon?: string;
   version: string;
   changelog: string;
   changelogSource?: "auto" | "user";
@@ -12200,6 +12204,7 @@ export const insertVersion = internalMutation({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
+    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
@@ -12240,6 +12245,13 @@ export const insertVersion = internalMutation({
       metadata: v.optional(v.any()),
       clawdis: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+      presentation: v.optional(
+        v.object({
+          displayName: v.string(),
+          summary: v.optional(v.string()),
+          icon: v.optional(v.string()),
+        }),
+      ),
     }),
     summary: v.optional(v.string()),
     qualityAssessment: v.optional(
@@ -12706,7 +12718,7 @@ export const insertVersion = internalMutation({
         slug,
         displayName: args.displayName,
         summary: summaryValue,
-        icon: undefined,
+        icon: args.icon,
         ownerUserId: userId,
         ownerPublisherId,
         canonicalSkillId,
@@ -12793,7 +12805,7 @@ export const insertVersion = internalMutation({
       sourceProvenance: args.sourceProvenance,
       changelog: args.changelog,
       changelogSource: args.changelogSource,
-      icon: undefined,
+      icon: args.icon,
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
@@ -12893,7 +12905,9 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
-      icon: skill.icon,
+      icon: isNewLatest
+        ? (args.icon ?? (isHostedSkillPresentationIconPath(skill.icon) ? undefined : skill.icon))
+        : skill.icon,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
       latestVersionSummary: isNewLatest
@@ -12902,7 +12916,8 @@ export const insertVersion = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             changelogSource: args.changelogSource,
-            description: getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
+            description:
+              args.summary ?? getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
             clawdis: args.parsed.clawdis,
           }
         : skill.latestVersionSummary,

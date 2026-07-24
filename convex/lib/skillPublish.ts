@@ -10,6 +10,10 @@ import semver from "semver";
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "../_generated/server";
+import {
+  isDecodableSkillPresentationRaster,
+  storeSkillPresentationAsset,
+} from "../skillPresentationAssets";
 import { getSkillBadgeMap, isSkillHighlighted } from "./badges";
 import { generateChangelogForPublish } from "./changelog";
 import { generateEmbedding } from "./embeddings";
@@ -22,6 +26,14 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
 import { isSkillCardPath } from "./skillCards";
+import {
+  MAX_SKILL_PRESENTATION_YAML_BYTES,
+  OPENAI_SKILL_PRESENTATION_PATH,
+  parseOpenAiSkillPresentation,
+  resolveSkillPresentation,
+  stripPresentationEmoji,
+  validateSkillPresentationIcon,
+} from "./skillPresentation";
 import {
   computeQualitySignals,
   evaluateQuality,
@@ -190,7 +202,7 @@ async function publishVersionForUserInternal(
   const normalizedSlug = normalizeSkillSlug(args.slug);
   if (!normalizedSlug) throw new ConvexError("Slug is required.");
 
-  const displayName = args.displayName.trim();
+  let displayName = stripPresentationEmoji(args.displayName.trim());
   if (!displayName) throw new ConvexError("Display name required");
   if (!semver.valid(version)) {
     throw new ConvexError("Version must be valid semver");
@@ -300,16 +312,43 @@ async function publishVersionForUserInternal(
   if (explicitSummary && explicitSummary.length > MAX_PUBLISH_SUMMARY_LENGTH) {
     throw new ConvexError(`Summary must be ${MAX_PUBLISH_SUMMARY_LENGTH} characters or less`);
   }
+  const openAiFile = publishFiles.find(
+    (file) => file.path.toLowerCase() === OPENAI_SKILL_PRESENTATION_PATH,
+  );
+  const openAiPresentation =
+    openAiFile && openAiFile.size <= MAX_SKILL_PRESENTATION_YAML_BYTES
+      ? await fetchText(ctx, openAiFile.storageId)
+          .then(parseOpenAiSkillPresentation)
+          .catch(() => null)
+      : null;
+  const skillDisplayName = getFrontmatterValue(frontmatter, "name")?.trim();
+  const defaultDisplayName = resolveSkillPresentation({ slug }).displayName;
+  const publisherDisplayName = [skillDisplayName, defaultDisplayName].some(
+    (candidate) => candidate && stripPresentationEmoji(candidate) === displayName,
+  )
+    ? undefined
+    : displayName;
+  const publisherSummary =
+    explicitSummary && explicitSummary !== summaryFromFrontmatter ? explicitSummary : undefined;
+  const presentation = resolveSkillPresentation({
+    publisherDisplayName,
+    publisherSummary,
+    openAi: openAiPresentation,
+    skillDisplayName,
+    skillDescription: summaryFromFrontmatter,
+    slug,
+  });
+  displayName = presentation.displayName;
   const shouldDeferAiEnrichment = options.stagePrePublicationChecks === true;
   const summary =
-    explicitSummary ||
+    publisherSummary ||
     (shouldDeferAiEnrichment
-      ? (summaryFromFrontmatter ?? existingSkill?.summary ?? "")
+      ? (presentation.summary ?? existingSkill?.summary ?? "")
       : await generateSkillSummary({
           slug,
           displayName,
           readmeText,
-          currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
+          currentSummary: presentation.summary ?? existingSkill?.summary ?? undefined,
         }));
 
   let qualityAssessment: QualityAssessment | null = null;
@@ -425,6 +464,7 @@ async function publishVersionForUserInternal(
       throw new ConvexError(formatEmbeddingError(error));
     }),
   ]);
+  const icon = await hostDirectSkillPresentationIcon(ctx, publishFiles, presentation.iconPaths);
 
   const skillInsertArgs = {
     userId,
@@ -458,18 +498,25 @@ async function publishVersionForUserInternal(
       metadata,
       clawdis,
       license: PLATFORM_SKILL_LICENSE,
+      presentation: {
+        displayName,
+        ...(summary ? { summary } : {}),
+        ...(icon ? { icon } : {}),
+      },
     },
     summary,
+    icon,
     staticScan,
     embedding,
     deferredAiEnrichment: shouldDeferAiEnrichment
       ? ({
-          summary: explicitSummary
-            ? { mode: "literal", literal: explicitSummary }
-            : {
-                mode: "generate",
-                currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
-              },
+          summary:
+            publisherSummary || presentation.summary
+              ? { mode: "literal", literal: publisherSummary ?? presentation.summary }
+              : {
+                  mode: "generate",
+                  currentSummary: existingSkill?.summary ?? undefined,
+                },
           changelog: {
             source: changelogSource,
             supplied: suppliedChangelog,
@@ -923,6 +970,7 @@ export const __test = {
   toStructuralFingerprint,
   derivePublishFilesFromStorage,
   buildSkillPublishAttemptIdempotencyKey,
+  hostDirectSkillPresentationIcon,
 };
 
 export async function queueHighlightedWebhook(ctx: MutationCtx, skillId: Id<"skills">) {
@@ -957,6 +1005,51 @@ export async function fetchText(
   const text = decodeUtf8Text(new Uint8Array(await blob.arrayBuffer()));
   if (text === null) throw new Error("File is not valid UTF-8 text");
   return text;
+}
+
+async function hostDirectSkillPresentationIcon(
+  ctx: Pick<ActionCtx, "runAction" | "runMutation" | "runQuery" | "storage">,
+  files: SafePublishFile[],
+  iconPaths: string[] | undefined,
+) {
+  for (const iconPath of iconPaths ?? []) {
+    const file = files.find((candidate) => candidate.path === iconPath);
+    if (!file) continue;
+    const blob = await ctx.storage.get(file.storageId);
+    if (!blob) {
+      throw new ConvexError("Skill presentation icon could not be read. Please retry.");
+    }
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let validated: ReturnType<typeof validateSkillPresentationIcon>;
+    try {
+      validated = validateSkillPresentationIcon({
+        path: file.path,
+        bytes,
+        contentType: file.contentType ?? blob.type,
+      });
+    } catch {
+      continue;
+    }
+    if (
+      validated.contentType !== "image/svg+xml" &&
+      !(await isDecodableSkillPresentationRaster(ctx, {
+        bytes,
+        contentType: validated.contentType,
+      }))
+    ) {
+      continue;
+    }
+    const sha256 = await sha256Hex(bytes);
+    if (sha256 !== file.sha256.toLowerCase()) {
+      throw new ConvexError("Skill presentation icon changed during upload. Please retry.");
+    }
+    return await storeSkillPresentationAsset(ctx, {
+      bytes,
+      sha256,
+      contentType: validated.contentType,
+    });
+  }
+  return undefined;
 }
 
 async function fetchPreviewText(

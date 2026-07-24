@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
 import {
@@ -12,6 +13,117 @@ vi.mock("./embeddings", () => ({
 }));
 
 describe("skillPublish", () => {
+  it("normalizes agents/openai.yaml presentation metadata and hosts its icon", async () => {
+    const skillMarkdown =
+      "---\nname: Demo Skill\ndescription: SKILL.md summary.\n---\n# Demo Skill\n";
+    const openAiYaml =
+      "interface:\n  display_name: '✨ OpenAI Demo'\n  short_description: OpenAI summary.\n  icon_small: assets/missing.png\n  icon_large: assets/icon.png\n";
+    const iconBytes = validPng();
+    const stored = new Map<string, Blob>([
+      ["_storage:skill", new Blob([skillMarkdown], { type: "text/markdown" })],
+      ["_storage:openai", new Blob([openAiYaml], { type: "application/yaml" })],
+      ["_storage:icon", new Blob([iconBytes], { type: "image/png" })],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("contentType" in args && "storageId" in args && !("version" in args)) {
+        return { ...args, _id: "skillPresentationAssets:1", createdAt: 1 };
+      }
+      if ("version" in args && "embedding" in args) {
+        return { skillId: "skills:demo", versionId: "skillVersions:demo" };
+      }
+      return null;
+    });
+    const ctx = {
+      runAction: vi.fn(async () => true),
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 })
+        .mockResolvedValueOnce(null),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => stored.get(storageId) ?? null),
+        store: vi.fn(async () => "_storage:hosted-icon"),
+        delete: vi.fn(async () => undefined),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "demo-skill",
+        displayName: "Demo Skill",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          file("_storage:skill", "SKILL.md", skillMarkdown.length, "text/markdown"),
+          file("_storage:openai", "agents/openai.yaml", openAiYaml.length, "application/yaml"),
+          file("_storage:icon", "assets/icon.png", iconBytes.byteLength, "image/png"),
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
+
+    const insertCall = runMutation.mock.calls.find(
+      ([, args]) =>
+        "version" in (args as Record<string, unknown>) &&
+        "embedding" in (args as Record<string, unknown>),
+    );
+    expect(insertCall?.[1]).toMatchObject({
+      displayName: "OpenAI Demo",
+      summary: "OpenAI summary.",
+      icon: expect.stringMatching(/^\/api\/v1\/skill-icons\/[a-f\d]{64}$/),
+      parsed: {
+        presentation: {
+          displayName: "OpenAI Demo",
+          summary: "OpenAI summary.",
+          icon: expect.stringMatching(/^\/api\/v1\/skill-icons\/[a-f\d]{64}$/),
+        },
+      },
+    });
+    expect(ctx.storage.store).toHaveBeenCalledOnce();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        sha256: createHash("sha256").update(iconBytes).digest("hex"),
+      }),
+    );
+  });
+
+  it("rejects icon digest changes and propagates asset persistence failures", async () => {
+    const iconBytes = validPng();
+    const iconFile = file("_storage:icon", "assets/icon.png", iconBytes.byteLength, "image/png");
+    const storage = {
+      get: vi.fn(async () => new Blob([iconBytes], { type: "image/png" })),
+      store: vi.fn(async () => {
+        throw new Error("storage unavailable");
+      }),
+      delete: vi.fn(async () => undefined),
+    };
+    const ctx = {
+      runAction: vi.fn(async () => true),
+      runQuery: vi.fn(async () => null),
+      runMutation: vi.fn(),
+      storage,
+    };
+
+    await expect(
+      __test.hostDirectSkillPresentationIcon(ctx as never, [iconFile], [iconFile.path]),
+    ).rejects.toThrow(/changed during upload/i);
+    expect(storage.store).not.toHaveBeenCalled();
+
+    iconFile.sha256 = createHash("sha256").update(iconBytes).digest("hex");
+    await expect(
+      __test.hostDirectSkillPresentationIcon(ctx as never, [iconFile], [iconFile.path]),
+    ).rejects.toThrow("storage unavailable");
+  });
+
   it("publishes long display names without rewriting the stored label", async () => {
     const displayName = "A".repeat(120);
     const skillMarkdown = `---\ndescription: Long compatibility name.\n---\n# ${displayName}\n`;
@@ -1302,3 +1414,22 @@ description: Expert guidance for sushi-rolls.
     expect(quality.decision).toBe("pass");
   });
 });
+
+function file(storageId: string, path: string, size: number, contentType: string) {
+  return {
+    path,
+    size,
+    storageId: storageId as never,
+    sha256: "a".repeat(64),
+    contentType,
+  };
+}
+
+function validPng() {
+  return Uint8Array.from(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ),
+  );
+}

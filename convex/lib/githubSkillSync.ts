@@ -3,6 +3,13 @@ import {
   shouldPreserveSecurityScanStateForUnchangedContent,
   type SourceBackedSkillScanStatus,
 } from "./securityScanPolicy";
+import {
+  buildSkillPresentationIconPath,
+  OPENAI_SKILL_PRESENTATION_PATH,
+  parseOpenAiSkillPresentation,
+  resolveSkillPresentation,
+  validateSkillPresentationIcon,
+} from "./skillPresentation";
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
 
 export type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
@@ -42,12 +49,19 @@ export type DiscoveredGitHubSkill = {
   skillMarkdown: string;
   skillCardMarkdownPath?: string;
   skillCardMarkdown?: string;
+  iconAsset?: {
+    path: string;
+    sha256: string;
+    contentType: string;
+    size: number;
+  };
+  iconBytes?: Uint8Array;
   contentHash: string;
 };
 
 export type DiscoveredGitHubSkillMetadata = Omit<
   DiscoveredGitHubSkill,
-  "skillMarkdown" | "skillCardMarkdown"
+  "skillMarkdown" | "skillCardMarkdown" | "iconBytes"
 >;
 
 export type ExistingGitHubSkillForSync = {
@@ -55,6 +69,7 @@ export type ExistingGitHubSkillForSync = {
   slug: string;
   displayName: string;
   summary?: string;
+  icon?: string;
   latestVersionSummary?: {
     version: string;
     createdAt: number;
@@ -166,11 +181,16 @@ export async function buildGitHubSkillSourceSnapshot({
   defaultBranch,
   commit,
   entries,
+  validateRasterIcon,
 }: {
   repo: string;
   defaultBranch: string;
   commit: string;
   entries: Record<string, Uint8Array>;
+  validateRasterIcon?: (args: {
+    bytes: Uint8Array;
+    contentType: "image/png" | "image/jpeg" | "image/webp";
+  }) => Promise<boolean>;
 }): Promise<GitHubSkillSourceSnapshot> {
   const normalizedEntries = normalizeEntryMap(entries);
   const manifestBytes = normalizedEntries["skills.sh.json"];
@@ -193,6 +213,57 @@ export async function buildGitHubSkillSourceSnapshot({
     const frontmatterDescription = getFrontmatterValue(frontmatter, "description")?.trim();
     const frontmatterVersion = getFrontmatterValue(frontmatter, "version")?.trim();
     const heading = firstMarkdownHeading(markdown);
+    const skillDisplayName = frontmatterName || heading || titleizeSlug(slug);
+    const openAiPresentationPath = findSkillRelativeFilePath(
+      normalizedEntries,
+      path,
+      OPENAI_SKILL_PRESENTATION_PATH,
+    );
+    const openAiPresentationBytes = openAiPresentationPath
+      ? normalizedEntries[openAiPresentationPath]
+      : undefined;
+    const openAiPresentation = openAiPresentationBytes
+      ? parseOpenAiSkillPresentation(decodeUtf8(openAiPresentationBytes))
+      : null;
+    const presentation = resolveSkillPresentation({
+      openAi: openAiPresentation,
+      skillDisplayName,
+      skillDescription: frontmatterDescription,
+      slug,
+    });
+    let iconBytes: Uint8Array | undefined;
+    let iconAsset: DiscoveredGitHubSkill["iconAsset"];
+    for (const iconPath of presentation.iconPaths ?? []) {
+      const iconAssetPath = findSkillRelativeFilePath(normalizedEntries, path, iconPath);
+      const candidateBytes = iconAssetPath ? normalizedEntries[iconAssetPath] : undefined;
+      if (!candidateBytes) continue;
+      try {
+        const validated = validateSkillPresentationIcon({
+          path: iconPath,
+          bytes: candidateBytes,
+        });
+        if (
+          validated.contentType !== "image/svg+xml" &&
+          validateRasterIcon &&
+          !(await validateRasterIcon({
+            bytes: candidateBytes,
+            contentType: validated.contentType,
+          }))
+        ) {
+          continue;
+        }
+        iconAsset = {
+          path: iconPath,
+          sha256: await sha256Hex(candidateBytes),
+          contentType: validated.contentType,
+          size: validated.size,
+        };
+        iconBytes = candidateBytes;
+        break;
+      } catch {
+        continue;
+      }
+    }
     const skillCardMarkdownPath = findFolderFilePath(
       normalizedEntries,
       path,
@@ -211,14 +282,15 @@ export async function buildGitHubSkillSourceSnapshot({
 
     skills.push({
       slug,
-      displayName: frontmatterName || heading || titleizeSlug(slug),
-      ...(frontmatterDescription ? { summary: frontmatterDescription } : {}),
+      displayName: presentation.displayName,
+      ...(presentation.summary ? { summary: presentation.summary } : {}),
       ...(frontmatterVersion ? { upstreamVersion: frontmatterVersion } : {}),
       path,
       skillMarkdownPath: skillMdPath,
       skillMarkdown: markdown,
       ...(skillCardMarkdownPath ? { skillCardMarkdownPath } : {}),
       ...(skillCardMarkdown !== undefined ? { skillCardMarkdown } : {}),
+      ...(iconAsset && iconBytes ? { iconAsset, iconBytes: new Uint8Array(iconBytes) } : {}),
       contentHash: await computeGitHubSkillFolderContentHash(normalizedEntries, path),
     });
   }
@@ -315,6 +387,9 @@ export function buildGitHubSkillSyncPlan({
           slug: discovered.slug,
           displayName: discovered.displayName,
           summary: discovered.summary,
+          icon: discovered.iconAsset
+            ? buildSkillPresentationIconPath(discovered.iconAsset.sha256)
+            : undefined,
           ownerUserId,
           ownerPublisherId,
           installKind: "github",
@@ -369,11 +444,18 @@ export function buildGitHubSkillSyncPlan({
       !currentContentUnchanged ||
       existing.displayName !== discovered.displayName ||
       (existing.summary ?? undefined) !== (discovered.summary ?? undefined) ||
+      (existing.icon ?? undefined) !==
+        (discovered.iconAsset
+          ? buildSkillPresentationIconPath(discovered.iconAsset.sha256)
+          : undefined) ||
       (existing.githubPath ?? undefined) !== discovered.path ||
       !sameLatestVersionSummary(existing.latestVersionSummary, nextLatestVersionSummary);
     const patch = {
       displayName: discovered.displayName,
       summary: discovered.summary,
+      icon: discovered.iconAsset
+        ? buildSkillPresentationIconPath(discovered.iconAsset.sha256)
+        : undefined,
       ownerUserId,
       ...(ownerPublisherId ? { ownerPublisherId } : {}),
       githubSourceId: sourceId,
@@ -603,6 +685,15 @@ function findFolderFilePath(
     }
     return !entryPath.includes("/") && entryPath.toLowerCase() === basename;
   });
+}
+
+function findSkillRelativeFilePath(
+  entries: Record<string, Uint8Array>,
+  folderPath: string,
+  relativePath: string,
+) {
+  const expected = folderPath ? `${folderPath}/${relativePath}` : relativePath;
+  return Object.hasOwn(entries, expected) ? expected : undefined;
 }
 
 function normalizeRepoPath(path: string) {

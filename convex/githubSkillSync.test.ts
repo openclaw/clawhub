@@ -2937,6 +2937,9 @@ describe("verifyGitHubSkillHandler", () => {
     const commit = "3".repeat(40);
     const zip = zipSync({
       "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+      "skills-main/skills/aiq-deploy/agents/openai.yaml": new TextEncoder().encode(
+        "interface:\n  display_name: AIQ Deploy Console\n  short_description: OpenAI-specific summary.\n",
+      ),
       "skills-main/skills/aiq-deploy/scripts/deploy.sh": new TextEncoder().encode(
         "#!/bin/sh\necho deploy\n",
       ),
@@ -3026,10 +3029,10 @@ describe("verifyGitHubSkillHandler", () => {
     );
 
     expect(result).toMatchObject({ ok: true, queued: true });
-    expect(store).toHaveBeenCalledTimes(2);
+    expect(store).toHaveBeenCalledTimes(3);
     expect((store.mock.calls[0]?.[0] as Blob | undefined)?.type).toBe("application/octet-stream");
     expect(runMutation).toHaveBeenCalledTimes(3);
-    expect(events).toEqual(["prepare", "store", "store", "append", "finalize"]);
+    expect(events).toEqual(["prepare", "store", "store", "store", "append", "finalize"]);
     const [prepareMutation, prepareArgs] = runMutation.mock.calls[0] ?? [];
     expect(getFunctionName(prepareMutation as Parameters<typeof getFunctionName>[0])).toBe(
       "securityScan:prepareGitHubSkillScanRequestInternal",
@@ -3039,6 +3042,13 @@ describe("verifyGitHubSkillHandler", () => {
         skillId: "skills:aiq-deploy",
         contentHash,
         commit,
+        parsed: {
+          frontmatter: {},
+          presentation: {
+            displayName: "AIQ Deploy Console",
+            summary: "OpenAI-specific summary.",
+          },
+        },
         staticScan: expect.objectContaining({ status: "clean" }),
       }),
     );
@@ -3054,6 +3064,7 @@ describe("verifyGitHubSkillHandler", () => {
         chunkIndex: 0,
         files: expect.arrayContaining([
           expect.objectContaining({ path: "SKILL.md" }),
+          expect.objectContaining({ path: "agents/openai.yaml" }),
           expect.objectContaining({ path: "scripts/deploy.sh" }),
         ]),
       }),

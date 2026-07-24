@@ -28,6 +28,7 @@ import {
   getSkillFileModerationInfoFromSkill,
   isPublicSkillVersionAvailableForSkill,
 } from "./lib/skillFileAccess";
+import { isHostedSkillPresentationIconPath, stripPresentationEmoji } from "./lib/skillPresentation";
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
 const CATALOG_FEED_PAGE_SIZE = 100;
@@ -119,7 +120,7 @@ async function buildEntry(
 
   const packageName = pkg.name.trim();
   const id = pkg.normalizedName.trim();
-  const title = pkg.displayName.trim() || packageName;
+  const title = stripPresentationEmoji(pkg.displayName.trim()) || packageName;
   const description = pkg.summary?.trim();
   const icon = pkg.icon?.trim();
   const version = release.version.trim();
@@ -209,9 +210,9 @@ async function buildSkillEntry(
 
   const publisherId = owner.handle?.trim();
   const slug = skill.slug.trim();
-  const title = skill.displayName.trim() || slug;
+  const title = stripPresentationEmoji(skill.displayName.trim()) || slug;
   const description = skill.summary?.trim();
-  const icon = skill.icon?.trim();
+  const icon = catalogFeedIconUrl(skill.icon);
   const highlightedAt = skill.badges?.highlighted?.at;
   const packageName = `@${publisherId}/${slug}`;
   if (!publisherId || !slug || !title) return null;
@@ -310,6 +311,15 @@ async function buildSkillEntry(
       ],
     },
   };
+}
+
+function catalogFeedIconUrl(value: string | undefined) {
+  const icon = value?.trim();
+  if (!icon) return undefined;
+  if (isHostedSkillPresentationIconPath(icon)) {
+    return `https://clawhub.ai${icon}`;
+  }
+  return icon.startsWith("https://") ? icon : undefined;
 }
 
 export const listOfficialPublisherPage = internalQuery({

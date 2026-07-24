@@ -179,6 +179,9 @@ export const RETENTION_POLICIES = {
     "packages",
   ),
   skillVersions: permanent("Canonical skill version records."),
+  skillPresentationAssets: permanent(
+    "Immutable content-addressed icon copies referenced by skill presentation metadata.",
+  ),
   skillVersionFingerprints: derived("Fingerprint projection of skill versions.", "skillVersions"),
   skillBadges: permanent("Curated skill badges."),
   skillEmbeddings: derived("Search embedding projection of skill versions.", "skillVersions"),

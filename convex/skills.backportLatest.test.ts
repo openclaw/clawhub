@@ -526,6 +526,32 @@ describe("skills.insertVersion latest-tag protection", () => {
     });
   });
 
+  it("clears a stale hosted presentation icon when the new latest omits it", async () => {
+    const skill = buildExistingSkill({
+      icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+    });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({ version: "2.1.0", icon: undefined }) as never,
+    );
+
+    expect(captured.skillPatches.at(-1)).toHaveProperty("icon", undefined);
+  });
+
+  it("preserves a legacy publisher icon when the new latest omits presentation metadata", async () => {
+    const skill = buildExistingSkill({ icon: "lucide:Plug" });
+    const { ctx, captured } = buildCtx(skill);
+
+    await insertVersionHandler(
+      ctx as never,
+      buildPublishArgs({ version: "2.1.0", icon: undefined }) as never,
+    );
+
+    expect(captured.skillPatches.at(-1)).toMatchObject({ icon: "lucide:Plug" });
+  });
+
   it("publishes suspicious prepublication results as active and flagged", async () => {
     const skill = buildExistingSkill();
     const { ctx, captured } = buildCtx(skill);

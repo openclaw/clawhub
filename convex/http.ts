@@ -70,10 +70,17 @@ import {
   packageInspectorClaimHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
+import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+
+http.route({
+  pathPrefix: "/api/v1/skill-icons/",
+  method: "GET",
+  handler: skillPresentationAssetHttp,
+});
 
 // Convex routes HEAD through the matching GET action and strips the body.
 http.route({

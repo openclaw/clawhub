@@ -35,6 +35,7 @@ import {
   getRuntimeRolloutCapabilities,
   isLegacyNvidiaSkillSource,
 } from "./lib/rolloutCapabilities";
+import { buildSkillPresentationIconPath } from "./lib/skillPresentation";
 import { isMacJunkPath, parseFrontmatter } from "./lib/skills";
 import {
   getSkillBySlugForPublisher,
@@ -43,6 +44,10 @@ import {
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
+import {
+  isDecodableSkillPresentationRaster,
+  storeSkillPresentationAsset,
+} from "./skillPresentationAssets";
 
 const DEFAULT_BRANCH = "main";
 const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
@@ -197,6 +202,14 @@ const discoveredSkillMetadataValidator = v.object({
   path: v.string(),
   skillMarkdownPath: v.string(),
   skillCardMarkdownPath: v.optional(v.string()),
+  iconAsset: v.optional(
+    v.object({
+      path: v.string(),
+      sha256: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+    }),
+  ),
   contentHash: v.string(),
 });
 
@@ -210,6 +223,14 @@ const discoveredSkillContentValidator = v.object({
   skillMarkdown: v.string(),
   skillCardMarkdownPath: v.optional(v.string()),
   skillCardMarkdown: v.optional(v.string()),
+  iconAsset: v.optional(
+    v.object({
+      path: v.string(),
+      sha256: v.string(),
+      contentType: v.string(),
+      size: v.number(),
+    }),
+  ),
   contentHash: v.string(),
 });
 
@@ -993,6 +1014,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
         slug: discovered.slug,
         displayName: discovered.displayName,
         summary: discovered.summary,
+        icon: iconForDiscoveredGitHubSkill(discovered),
         ownerUserId: args.ownerUserId,
         ownerPublisherId: args.ownerPublisherId,
         installKind: "github",
@@ -1079,6 +1101,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
       const patch = {
         displayName: discovered.displayName,
         summary: discovered.summary,
+        icon: iconForDiscoveredGitHubSkill(discovered),
         ownerUserId: args.ownerUserId,
         ownerPublisherId: args.ownerPublisherId,
         githubPath: discovered.path,
@@ -1117,6 +1140,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
     const patch = {
       displayName: discovered.displayName,
       summary: discovered.summary,
+      icon: iconForDiscoveredGitHubSkill(discovered),
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId,
       installKind: "github" as const,
@@ -1236,6 +1260,7 @@ async function upsertGitHubSkillCandidate(
     githubContentHash: args.discovered.contentHash,
     displayName: args.discovered.displayName,
     summary: args.discovered.summary,
+    icon: iconForDiscoveredGitHubSkill(args.discovered),
     upstreamVersion: args.discovered.upstreamVersion,
     skillMarkdownPath: undefined,
     skillMarkdown: undefined,
@@ -1611,6 +1636,7 @@ export async function applyGitHubSkillVerificationResultHandler(
     const patch = {
       displayName: candidate.displayName,
       summary: candidate.summary,
+      icon: candidate.icon,
       installKind: "github" as const,
       githubSourceId: candidate.githubSourceId,
       githubPath: candidate.githubPath,
@@ -1713,6 +1739,7 @@ export async function verifyGitHubSkillHandler(
   }
 
   const { snapshot, entries } = await fetchGitHubSkillSourceSnapshotWithEntries(
+    ctx,
     {
       repo: target.source.repo,
       ref: target.skill.githubCurrentCommit,
@@ -1744,6 +1771,7 @@ export async function verifyGitHubSkillHandler(
     files: listGitHubSkillFiles(entries, discovered.path),
     fileContents: listGitHubSkillTextContents(entries, discovered.path),
   });
+  const presentationIcon = iconForDiscoveredGitHubSkill(discovered);
 
   const prepared = (await ctx.runMutation(
     internal.securityScan.prepareGitHubSkillScanRequestInternal,
@@ -1752,7 +1780,14 @@ export async function verifyGitHubSkillHandler(
       contentHash: args.contentHash,
       commit: target.skill.githubCurrentCommit,
       ...(args.force ? { force: true } : {}),
-      parsed: { frontmatter: parseFrontmatter(discovered.skillMarkdown) },
+      parsed: {
+        frontmatter: parseFrontmatter(discovered.skillMarkdown),
+        presentation: {
+          displayName: discovered.displayName,
+          ...(discovered.summary ? { summary: discovered.summary } : {}),
+          ...(presentationIcon ? { icon: presentationIcon } : {}),
+        },
+      },
       staticScan,
     },
   )) as GitHubSkillVerificationResult | undefined;
@@ -1806,6 +1841,7 @@ export async function configurePublicGitHubSkillSourceHandler(
     },
   )) as GitHubSkillSourceSetupContext;
   const snapshot = await fetchGitHubSkillSourceSnapshot(
+    ctx,
     {
       repo: metadata.repo,
       defaultBranch: metadata.defaultBranch,
@@ -1848,6 +1884,7 @@ async function applyFetchedGitHubSkillSourceSnapshot(
     snapshot: GitHubSkillSourceSnapshot;
   },
 ) {
+  await persistGitHubSkillPresentationAssets(ctx, args.snapshot);
   const result = (await ctx.runMutation(
     internal.githubSkillSync.applyGitHubSkillSourceSyncInternal,
     {
@@ -1870,9 +1907,40 @@ function toGitHubSkillSourceMetadataSnapshot(
   return {
     ...snapshot,
     skills: snapshot.skills.map(
-      ({ skillMarkdown: _skillMarkdown, skillCardMarkdown: _skillCardMarkdown, ...skill }) => skill,
+      ({
+        skillMarkdown: _skillMarkdown,
+        skillCardMarkdown: _skillCardMarkdown,
+        iconBytes: _iconBytes,
+        ...skill
+      }) => skill,
     ),
   };
+}
+
+async function persistGitHubSkillPresentationAssets(
+  ctx: ActionCtx,
+  snapshot: GitHubSkillSourceSnapshot,
+) {
+  for (const skill of snapshot.skills) {
+    if (!skill.iconAsset || !skill.iconBytes) continue;
+    await storeSkillPresentationAsset(ctx, {
+      bytes: skill.iconBytes,
+      sha256: skill.iconAsset.sha256,
+      contentType: skill.iconAsset.contentType as
+        | "image/png"
+        | "image/jpeg"
+        | "image/webp"
+        | "image/svg+xml",
+    });
+  }
+}
+
+function iconForDiscoveredGitHubSkill(
+  discovered: GitHubSkillSourceMetadataSnapshot["skills"][number],
+) {
+  return discovered.iconAsset
+    ? buildSkillPresentationIconPath(discovered.iconAsset.sha256)
+    : undefined;
 }
 
 async function persistGitHubSkillContentsForSnapshot(
@@ -1929,7 +1997,7 @@ export const syncGitHubSkillSource: ReturnType<typeof action> = action({
       { publisherId: ownerPublisherId },
     )) as Id<"users">;
     const metadata = await fetchPublicGitHubRepoMetadata(repo, fetch);
-    const snapshot = await fetchGitHubSkillSourceSnapshot({
+    const snapshot = await fetchGitHubSkillSourceSnapshot(ctx, {
       repo,
       defaultBranch: args.defaultBranch ?? source?.defaultBranch ?? metadata.defaultBranch,
     });
@@ -2012,6 +2080,7 @@ export async function syncGitHubSkillSourcesHandler(
         throw new ConvexError("GitHub repository authorization no longer matches.");
       }
       const snapshot = await fetchGitHubSkillSourceSnapshot(
+        ctx,
         {
           repo: metadata.repo,
           defaultBranch: source.defaultBranch ?? metadata.defaultBranch,
@@ -2098,6 +2167,7 @@ export async function syncGitHubSkillSourcesHandler(
 }
 
 async function fetchGitHubSkillSourceSnapshot(
+  ctx: Pick<ActionCtx, "runAction">,
   {
     repo,
     defaultBranch,
@@ -2108,6 +2178,7 @@ async function fetchGitHubSkillSourceSnapshot(
   fetcher: typeof fetch = fetch,
 ) {
   const { snapshot } = await fetchGitHubSkillSourceSnapshotWithEntries(
+    ctx,
     {
       repo,
       ref: defaultBranch,
@@ -2119,6 +2190,7 @@ async function fetchGitHubSkillSourceSnapshot(
 }
 
 async function fetchGitHubSkillSourceSnapshotWithEntries(
+  ctx: Pick<ActionCtx, "runAction">,
   {
     repo,
     ref,
@@ -2141,6 +2213,7 @@ async function fetchGitHubSkillSourceSnapshotWithEntries(
     defaultBranch,
     commit: resolved.commit,
     entries,
+    validateRasterIcon: (args) => isDecodableSkillPresentationRaster(ctx, args),
   });
   return { snapshot, entries };
 }

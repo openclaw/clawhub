@@ -307,10 +307,19 @@ describe("catalog feed projection", () => {
 
   it("projects only published skills from verified organization publishers", async () => {
     const result = (await listOfficialSkillEntriesHandler(
-      makeCtx([makeSkill({ summary: "Deploy AIQ services.", icon: "lucide:rocket" })], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
-        "skillVersions:1": makeSkillVersion(),
-      }),
+      makeCtx(
+        [
+          makeSkill({
+            displayName: "🚀 Demo skill",
+            summary: "Deploy AIQ services.",
+            icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
+          }),
+        ],
+        {
+          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "skillVersions:1": makeSkillVersion(),
+        },
+      ),
       { publisherId: "publishers:1", cursor: null },
     )) as { entries: unknown[]; isDone: boolean };
 
@@ -321,7 +330,7 @@ describe("catalog feed projection", () => {
           id: "@openclaw/demo",
           title: "Demo skill",
           description: "Deploy AIQ services.",
-          icon: "lucide:rocket",
+          icon: `https://clawhub.ai/api/v1/skill-icons/${"a".repeat(64)}`,
           version: "1.2.3",
           state: "available",
           featured: false,

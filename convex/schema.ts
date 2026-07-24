@@ -505,6 +505,7 @@ const githubSkillCandidates = defineTable({
   githubContentHash: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   upstreamVersion: v.optional(v.string()),
   skillMarkdownPath: v.optional(v.string()),
   skillMarkdown: v.optional(v.string()),
@@ -1089,6 +1090,13 @@ const skillVersions = defineTable({
     clawdis: v.optional(v.any()),
     moltbot: v.optional(v.any()),
     license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+    presentation: v.optional(
+      v.object({
+        displayName: v.string(),
+        summary: v.optional(v.string()),
+        icon: v.optional(v.string()),
+      }),
+    ),
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
@@ -1175,6 +1183,19 @@ const publishAttemptStatusValidator = v.union(
   v.literal("failed"),
   v.literal("expired"),
 );
+
+const skillPresentationAssets = defineTable({
+  sha256: v.string(),
+  storageId: v.id("_storage"),
+  contentType: v.union(
+    v.literal("image/png"),
+    v.literal("image/jpeg"),
+    v.literal("image/webp"),
+    v.literal("image/svg+xml"),
+  ),
+  size: v.number(),
+  createdAt: v.number(),
+}).index("by_sha256", ["sha256"]);
 
 const publishAttemptCheckStateValidator = v.object({
   status: v.union(
@@ -1978,6 +1999,13 @@ const skillScanRequests = defineTable({
       clawdis: v.optional(v.any()),
       moltbot: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+      presentation: v.optional(
+        v.object({
+          displayName: v.string(),
+          summary: v.optional(v.string()),
+          icon: v.optional(v.string()),
+        }),
+      ),
     }),
   ),
   sha256hash: v.optional(v.string()),
@@ -3961,6 +3989,7 @@ export default defineSchema({
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
+  skillPresentationAssets,
   publishAttempts,
   skillVersionFingerprints,
   skillBadges,

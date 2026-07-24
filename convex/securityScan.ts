@@ -1394,6 +1394,13 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
     force: v.optional(v.boolean()),
     parsed: v.object({
       frontmatter: v.record(v.string(), v.any()),
+      presentation: v.optional(
+        v.object({
+          displayName: v.string(),
+          summary: v.optional(v.string()),
+          icon: v.optional(v.string()),
+        }),
+      ),
     }),
     staticScan: staticScanResultValidator,
   },
