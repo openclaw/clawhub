@@ -14,7 +14,7 @@
         "@fontsource/manrope": "5.3.0",
         "@fontsource/noto-sans-sc": "5.3.0",
         "@monaco-editor/react": "4.7.0",
-        "@openclaw/design-system": "git+https://github.com/openclaw/design-system.git#7b097d79eef6e9a0a4632f72727ac7450f07a1f2",
+        "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.2.0",
         "@openclaw/plugin-inspector": "0.3.17",
         "@radix-ui/react-avatar": "1.2.3",
         "@radix-ui/react-dialog": "1.1.20",
@@ -442,9 +442,9 @@
 
     "@oozcitak/util": ["@oozcitak/util@10.0.0", "", {}, "sha512-hAX0pT/73190NLqBPPWSdBVGtbY6VOhWYK3qqHqtXQ1gK7kS2yz4+ivsN07hpJ6I3aeMtKP6J6npsEKOAzuTLA=="],
 
-    "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
+    "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#a0b3c80", {}, "openclaw-carapace-a0b3c80", "sha512-d8EpkOKFJYfM+Ypw8RWV0tr1fUA44iYVkVx4v/D7C/q96CqE26k2FytvoiWYOmZEGwsrSP3Bz3adqeLzeae2eQ=="],
 
-    "@openclaw/design-system": ["@openclaw/design-system@github:openclaw/design-system#7b097d7", {}, "openclaw-carapace-7b097d7"],
+    "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
     "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.17", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-JPPHPhiXMsIvrV8UR8RQjhflMjRZX/uIhy9meE81dup7MMSnRJcsTGOXYACohv6e4z2P95z2QuE7nZkWT6Ysuw=="],
 

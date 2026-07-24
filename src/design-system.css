@@ -1,9 +1,9 @@
-@import "@openclaw/design-system/tokens.css";
-@import "@openclaw/design-system/themes.css";
-@import "@openclaw/design-system/typography.css";
-@import "@openclaw/design-system/themes/product.css";
-@import "@openclaw/design-system/components.css";
-@import "@openclaw/design-system/compat/clawhub.css";
+@import "@openclaw/carapace/tokens.css";
+@import "@openclaw/carapace/themes.css";
+@import "@openclaw/carapace/typography.css";
+@import "@openclaw/carapace/themes/product.css";
+@import "@openclaw/carapace/components.css";
+@import "@openclaw/carapace/compat/clawhub.css";
 
 /*
  * Temporary aliases for legacy ClawHub styles that have not yet moved to the

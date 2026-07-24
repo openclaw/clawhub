@@ -1,28 +1,22 @@
 ---
-name: openclaw-design-system
-description: Compatibility alias for existing OpenClaw installations that now applies Carapace semantic tokens, themes, shared CSS foundations, consumer adapters, and established local primitives.
+name: openclaw-carapace
+description: Build or modify OpenClaw application UI using canonical semantic tokens, themes, shared CSS foundations, consumer adapters, and established local primitives. Use for product interfaces, component styling, theme work, or design-token integration.
 ---
 
-# Carapace Compatibility Alias
-
-This skill identifier remains available for existing `skills-lock.json`
-entries during the `v0.1.x` migration. New installations should use
-`openclaw-carapace`.
+# Carapace
 
 Use the shared package for foundations and framework-neutral visual primitives.
 Keep consumer-specific behavior, data, routes, and layout composition local.
-Before changing imports, inspect the consumer manifest: use
-`@openclaw/carapace` when it is installed, otherwise preserve the legacy
-`@openclaw/design-system` specifier until the dependency is migrated.
 
 ## Workflow
 
 1. Read [tokens.md](references/tokens.md) before choosing colors, spacing, type, radii, or shadows.
 2. Read [consumer-adapters.md](references/consumer-adapters.md) for the current framework.
-3. Inspect the consumer's existing shared primitives before creating a component.
-4. Use semantic tokens for UI intent; use palette primitives only for documented exceptions.
-5. Keep application behavior, routes, and information architecture unchanged unless the task says otherwise.
-6. Validate the affected routes with existing tests and real browser screenshots.
+3. Read [application-surfaces.md](references/application-surfaces.md) when working on shells, panes, settings, or operational screens.
+4. Inspect the consumer's existing shared primitives before creating a component.
+5. Use semantic tokens for UI intent; use palette primitives only for documented exceptions.
+6. Keep application behavior, routes, and information architecture unchanged unless the task says otherwise.
+7. Validate the affected routes with existing tests and real browser screenshots.
 
 ## Interface Rules
 
@@ -39,6 +33,8 @@ Before changing imports, inspect the consumer manifest: use
 - Keep focus, hover, active, disabled, loading, and invalid states coherent.
 - Keep text within its container at supported viewport sizes.
 - Prefer dense, scan-friendly composition for operational product surfaces.
+- Share application anatomy across consumers without forcing web and native
+  implementations into pixel-identical layouts.
 
 ## Ownership
 

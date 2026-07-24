@@ -1,9 +1,7 @@
 # Token Contract
 
-Import `@openclaw/design-system` for the complete foundation or use focused
-exports when the consumer must control reset and adapter order. This legacy
-specifier is intentional for consumers that have not migrated their dependency
-to `@openclaw/carapace`.
+Import `@openclaw/carapace` for the complete foundation or use focused
+exports when the consumer must control reset and adapter order.
 
 ## Layers
 

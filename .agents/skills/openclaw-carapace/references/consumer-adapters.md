@@ -1,16 +1,11 @@
 # Consumer Adapters
 
-This compatibility reference uses the legacy `@openclaw/design-system`
-specifier so consumers pinned to `v0.0.1` keep building. If the consumer
-manifest already installs `@openclaw/carapace`, use that package name for the
-same exported paths.
-
 ## Plain CSS And Astro
 
 Use the complete contract when the global reset is desired:
 
 ```css
-@import "@openclaw/design-system";
+@import "@openclaw/carapace";
 ```
 
 For a controlled migration, import `tokens.css`, `themes.css`, and
@@ -18,23 +13,43 @@ For a controlled migration, import `tokens.css`, `themes.css`, and
 Theme switching remains application-owned. The canonical public-site selector is
 `html[data-theme="light"|"dark"]`.
 
+Product applications may additionally import the opt-in candidate layers:
+
+```css
+@import "@openclaw/carapace/themes/product.css";
+@import "@openclaw/carapace/candidate/controls.css";
+@import "@openclaw/carapace/candidate/feedback.css";
+@import "@openclaw/carapace/candidate/application.css";
+```
+
+Use the application layer for shell, pane, and settings anatomy. Keep routes,
+data, persistence, and framework behavior local.
+
 ## Tailwind 4
 
 Import in this order:
 
 ```css
-@import "@openclaw/design-system/tokens.css";
-@import "@openclaw/design-system/themes.css";
-@import "@openclaw/design-system/typography.css";
-@import "@openclaw/design-system/components.css";
-@import "@openclaw/design-system/themes/product.css";
-@import "@openclaw/design-system/compat/clawhub.css";
-@import "@openclaw/design-system/tailwind.css";
+@import "@openclaw/carapace/tokens.css";
+@import "@openclaw/carapace/themes.css";
+@import "@openclaw/carapace/typography.css";
+@import "@openclaw/carapace/components.css";
+@import "@openclaw/carapace/themes/product.css";
+@import "@openclaw/carapace/compat/clawhub.css";
+@import "@openclaw/carapace/tailwind.css";
 ```
 
 The Tailwind adapter exposes theme utilities. `components.css` provides
 framework-neutral classes; keep Radix, React, route, and product behavior in the
 consumer.
+
+## Native macOS
+
+Map the shared application anatomy to SwiftUI and AppKit instead of importing
+the CSS. Preserve native title bars, materials, window sizing, sheets, keyboard
+commands, focus behavior, and accessibility semantics. Align hierarchy,
+spacing roles, control intent, and status meaning rather than web-specific
+markup.
 
 The ClawHub compatibility adapter understands:
 
