@@ -69,6 +69,27 @@ export function parseExperimentalClawFeed(value: unknown): ExperimentalClawFeed 
   if (Date.parse(feed.expiresAt) <= Date.parse(feed.generatedAt)) {
     throw new Error("Experimental Claw feed expiresAt must be after generatedAt");
   }
+  for (const entry of feed.entries) {
+    if (entry.publisher.trust !== "official") {
+      throw new Error("Experimental Claw feed publisher trust must be official");
+    }
+    if (entry.install.candidates.length !== 1) {
+      throw new Error("Experimental Claw feed entries must have exactly one install candidate");
+    }
+    for (const candidate of entry.install.candidates) {
+      if (candidate.package !== entry.id) {
+        throw new Error("Experimental Claw feed candidate package must match entry id");
+      }
+      if (candidate.version !== entry.version) {
+        throw new Error("Experimental Claw feed candidate version must match entry version");
+      }
+      if (!/^sha256:[0-9a-f]{64}$/.test(candidate.integrity)) {
+        throw new Error(
+          "Experimental Claw feed candidate integrity must be lowercase sha256 with 64 hex characters",
+        );
+      }
+    }
+  }
   return feed;
 }
 

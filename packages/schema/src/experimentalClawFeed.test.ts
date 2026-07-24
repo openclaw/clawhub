@@ -36,7 +36,7 @@ function makeFeed(): ExperimentalClawFeed {
               sourceRef: "public-clawhub",
               package: "@openclaw/triage",
               version: "1.0.0",
-              integrity: "sha256:abc",
+              integrity: `sha256:${"a".repeat(64)}`,
             },
           ],
         },
@@ -74,4 +74,45 @@ describe("experimental Claw feed schema", () => {
     feed.entries[0]!.install.candidates[0]!.sourceRef = "public-github" as "public-clawhub";
     expect(() => parseExperimentalClawFeed(feed)).toThrow();
   });
+
+  it("rejects install candidates that are not bound to their feed entry", () => {
+    const packageMismatch = makeFeed();
+    packageMismatch.entries[0]!.install.candidates[0]!.package = "@openclaw/other";
+    expect(() => parseExperimentalClawFeed(packageMismatch)).toThrow("package must match entry id");
+
+    const versionMismatch = makeFeed();
+    versionMismatch.entries[0]!.install.candidates[0]!.version = "2.0.0";
+    expect(() => parseExperimentalClawFeed(versionMismatch)).toThrow(
+      "version must match entry version",
+    );
+  });
+
+  it("requires exactly one install candidate per entry", () => {
+    const missing = makeFeed();
+    missing.entries[0]!.install.candidates = [];
+    expect(() => parseExperimentalClawFeed(missing)).toThrow("exactly one install candidate");
+
+    const duplicate = makeFeed();
+    duplicate.entries[0]!.install.candidates.push(
+      structuredClone(duplicate.entries[0]!.install.candidates[0]!),
+    );
+    expect(() => parseExperimentalClawFeed(duplicate)).toThrow("exactly one install candidate");
+  });
+
+  it("rejects entries that are not from official publishers", () => {
+    const feed = makeFeed();
+    feed.entries[0]!.publisher.trust = "community";
+    expect(() => parseExperimentalClawFeed(feed)).toThrow("publisher trust must be official");
+  });
+
+  it.each(["sha256:abc", `sha256:${"A".repeat(64)}`, `sha512:${"a".repeat(64)}`])(
+    "rejects non-canonical candidate integrity %s",
+    (integrity) => {
+      const feed = makeFeed();
+      feed.entries[0]!.install.candidates[0]!.integrity = integrity;
+      expect(() => parseExperimentalClawFeed(feed)).toThrow(
+        "integrity must be lowercase sha256 with 64 hex characters",
+      );
+    },
+  );
 });

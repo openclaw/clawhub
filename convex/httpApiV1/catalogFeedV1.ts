@@ -66,11 +66,17 @@ export async function catalogFeedV1Handler(
   }
 
   const etag = `"sha256:${publication.payloadSha256}"`;
+  const cacheHeaders: Record<string, string> =
+    feedId === EXPERIMENTAL_CLAW_FEED_ID
+      ? { "Cache-Control": "no-store" }
+      : {
+          "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400",
+          "Surrogate-Control": "max-age=300, stale-while-revalidate=86400",
+        };
   const headers = mergeHeaders(
     {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400",
-      "Surrogate-Control": "max-age=300, stale-while-revalidate=86400",
+      ...cacheHeaders,
       ETag: etag,
       "Last-Modified": new Date(publication.publishedAt).toUTCString(),
       "X-Catalog-Feed-Sequence": String(publication.sequence),

@@ -117,6 +117,9 @@ describe("catalogFeedV1Handler", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("surrogate-control")).toBeNull();
+    expect(response.headers.get("etag")).toBe('"sha256:abc123"');
     expect(ctx.runQuery).toHaveBeenCalledWith(internal.catalogFeed.getLatestPublication, {
       feedId: "clawhub-official-claws",
     });
