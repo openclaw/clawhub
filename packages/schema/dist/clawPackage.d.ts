@@ -11,9 +11,17 @@ export type ClawPackageValidationIssue = {
 export type ValidatedClawPackage = {
     manifestPath: string;
     manifest: ClawManifest;
+    implicitWorkspaceFile?: {
+        path: "SOUL.md";
+        text: string;
+    };
     summary: ClawManifestSummary;
 };
 export declare function isSafeClawPackagePath(value: string): boolean;
+export declare function findClawPackagePathHierarchyCollision(paths: readonly string[]): {
+    ancestor: string;
+    descendant: string;
+} | null;
 export declare function validateClawPackageContents(input: {
     packageName: string;
     version: string;

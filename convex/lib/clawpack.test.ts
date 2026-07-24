@@ -150,6 +150,30 @@ describe("clawpack", () => {
     );
   });
 
+  it.each([
+    [
+      "ancestor first",
+      [
+        ["package/a", "file"],
+        ["package/a/b", "child"],
+      ],
+    ],
+    [
+      "descendant first",
+      [
+        ["package/a/b", "child"],
+        ["package/a", "file"],
+      ],
+    ],
+  ] as const)("rejects tar file/ancestor collisions with %s", async (_label, entries) => {
+    const pack = npmPackFixtureEntries([
+      ["package/package.json", JSON.stringify({ name: "demo", version: "1.0.0" })],
+      ...entries.map(([path, content]) => [path, content] as [string, string]),
+    ]);
+
+    await expect(parseClawPack(pack)).rejects.toThrow("file/ancestor path collision");
+  });
+
   it("uses npm-style tarball names", () => {
     expect(npmTarballName("demo", "1.0.0")).toBe("demo-1.0.0.tgz");
     expect(npmTarballName("@scope/demo", "1.0.0")).toBe("scope-demo-1.0.0.tgz");

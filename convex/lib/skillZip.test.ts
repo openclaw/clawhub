@@ -156,5 +156,14 @@ describe("skillZip", () => {
       ]);
       expect(unzipped["_meta.json"]).toBeUndefined();
     });
+
+    it("rejects file/ancestor collisions before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "workspace", bytes: new TextEncoder().encode("file") },
+          { path: "workspace/SOUL.md", bytes: new TextEncoder().encode("child") },
+        ]),
+      ).toThrow("file/ancestor path collision");
+    });
   });
 });

@@ -227,6 +227,16 @@ afterEach(() => {
 });
 
 describe("package commands", () => {
+  it("rejects npm pack file/ancestor collisions before extraction", () => {
+    const bytes = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "demo", version: "1.0.0" }),
+      "package/a": "file",
+      "package/a/b": "child",
+    });
+
+    expect(() => parseClawPack(bytes)).toThrow("file/ancestor path collision");
+  });
+
   it("validates a local plugin package with bundled Plugin Inspector offline", async () => {
     const workdir = await makeTmpWorkdir();
     try {

@@ -4,7 +4,9 @@ import { summarizeClawManifest, validateClawManifest, } from "./claws.js";
 const EXACT_VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const WINDOWS_INVALID_PATH_CHARS = /[<>:"|?*]/;
 const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+const MAX_CLAW_MANIFEST_BYTES = 1024 * 1024;
 const MAX_OPENCLAW_PROFILE_BYTES = 256 * 1024;
+const OPENCLAW_TOOL_PROFILE_IDS = new Set(["minimal", "coding", "messaging", "full"]);
 const StrictStringArraySchema = type("string[]");
 const OpenClawProfileSchema = type({
     "+": "reject",
@@ -87,6 +89,19 @@ export function isSafeClawPackagePath(value) {
 }
 function portablePathKey(value) {
     return value.replaceAll("\\", "/").normalize("NFC").toLowerCase();
+}
+export function findClawPackagePathHierarchyCollision(paths) {
+    const pathByKey = new Map(paths.map((path) => [portablePathKey(path), path]));
+    for (const descendant of paths) {
+        const segments = portablePathKey(descendant).split("/");
+        for (let length = 1; length < segments.length; length += 1) {
+            const ancestor = pathByKey.get(segments.slice(0, length).join("/"));
+            if (ancestor !== undefined) {
+                return { ancestor, descendant };
+            }
+        }
+    }
+    return null;
 }
 function issue(code, path, message) {
     return { code, path, message };
@@ -189,6 +204,10 @@ function validateOpenClawProfile(value, profilePath) {
     if (parsed.agent.tools?.profile !== undefined && !isStrictNonEmpty(parsed.agent.tools.profile)) {
         add("agent.tools.profile", "Must be non-empty without leading or trailing whitespace.");
     }
+    else if (parsed.agent.tools?.profile !== undefined &&
+        !OPENCLAW_TOOL_PROFILE_IDS.has(parsed.agent.tools.profile)) {
+        add("agent.tools.profile", "Must name a registered OpenClaw built-in profile.");
+    }
     requireNonEmpty("agent.tools.allow", parsed.agent.tools?.allow);
     requireNonEmpty("agent.tools.alsoAllow", parsed.agent.tools?.alsoAllow);
     requireNonEmpty("agent.tools.deny", parsed.agent.tools?.deny);
@@ -282,7 +301,10 @@ function parseManifestDocument(raw, manifestPath) {
             };
         }
         try {
-            return { value: document.toJSON() };
+            return {
+                value: document.toJSON(),
+                markdownBody: markdown.slice(match[0].length),
+            };
         }
         catch (error) {
             return {
@@ -344,19 +366,49 @@ export function validateClawPackageContents(input) {
             fileByPath.set(file.path, file);
         }
     }
+    const hierarchyCollision = findClawPackagePathHierarchyCollision([...fileByPath.keys()]);
+    if (hierarchyCollision) {
+        issues.push(issue("portable_path_hierarchy_collision", hierarchyCollision.descendant, `Package file ${hierarchyCollision.ancestor} cannot also be an ancestor of ${hierarchyCollision.descendant}.`));
+    }
     const manifestFile = fileByPath.get(manifestPath);
     if (!manifestFile || manifestFile.text === undefined) {
         issues.push(issue("missing_claw_manifest", manifestPath, "The declared Claw manifest is missing or is not UTF-8 text."));
         return { ok: false, issues };
     }
+    if (new TextEncoder().encode(manifestFile.text).byteLength > MAX_CLAW_MANIFEST_BYTES) {
+        return {
+            ok: false,
+            issues: [
+                issue("claw_manifest_too_large", manifestPath, `The Claw manifest exceeds ${MAX_CLAW_MANIFEST_BYTES} bytes.`),
+            ],
+        };
+    }
     const parsed = parseManifestDocument(manifestFile.text, manifestPath);
     if (parsed.issues)
         return { ok: false, issues: parsed.issues };
+    if (parsed.markdownBody !== undefined && parsed.markdownBody.trim().length === 0) {
+        return {
+            ok: false,
+            issues: [
+                issue("empty_claw_body", manifestPath, "CLAW.md must contain a non-empty Markdown body."),
+            ],
+        };
+    }
     const validated = validateClawManifest(parsed.value);
     if (!validated.ok) {
         return {
             ok: false,
             issues: validated.issues.map((entry) => issue("invalid_claw_manifest", entry.path, entry.message)),
+        };
+    }
+    if (parsed.markdownBody !== undefined &&
+        (validated.manifest.workspace?.bootstrapFiles?.["SOUL.md"] !== undefined ||
+            (validated.manifest.workspace?.files ?? []).some((entry) => portablePathKey(entry.path) === portablePathKey("SOUL.md")))) {
+        return {
+            ok: false,
+            issues: [
+                issue("duplicate_claw_body_destination", "SOUL.md", "The CLAW.md body is the managed SOUL.md source and cannot be combined with an explicit SOUL.md declaration."),
+            ],
         };
     }
     const openClawProfilePath = validated.manifest.metadata?.["openclaw.config"];
@@ -389,12 +441,25 @@ export function validateClawPackageContents(input) {
     }
     if (issues.length > 0)
         return { ok: false, issues };
+    const summary = summarizeClawManifest(validated.manifest);
+    const implicitWorkspaceFile = parsed.markdownBody === undefined
+        ? undefined
+        : { path: "SOUL.md", text: parsed.markdownBody };
     return {
         ok: true,
         value: {
             manifestPath,
             manifest: validated.manifest,
-            summary: summarizeClawManifest(validated.manifest),
+            ...(implicitWorkspaceFile ? { implicitWorkspaceFile } : {}),
+            summary: implicitWorkspaceFile
+                ? {
+                    ...summary,
+                    workspace: {
+                        ...summary.workspace,
+                        bootstrapFiles: [...summary.workspace.bootstrapFiles, "SOUL.md"],
+                    },
+                }
+                : summary,
         },
     };
 }

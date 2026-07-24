@@ -1,4 +1,5 @@
 import { Gunzip } from "fflate";
+import { findClawPackagePathHierarchyCollision } from "./schema/clawPackage.js";
 
 type ClawPackEntry = {
   path: string;
@@ -140,6 +141,14 @@ function parseTarEntries(bytes: Uint8Array): ClawPackEntry[] {
   }
 
   if (entries.length === 0) throw new Error("ClawPack contains no files");
+  const hierarchyCollision = findClawPackagePathHierarchyCollision(
+    entries.map((entry) => entry.path),
+  );
+  if (hierarchyCollision) {
+    throw new Error(
+      `ClawPack contains file/ancestor path collision: ${hierarchyCollision.ancestor} and ${hierarchyCollision.descendant}`,
+    );
+  }
   const unpackedSize = entries.reduce((sum, entry) => sum + entry.bytes.byteLength, 0);
   if (unpackedSize > MAX_UNPACKED_BYTES) throw new Error("ClawPack package exceeds 50MB limit");
   return entries;
