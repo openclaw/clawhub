@@ -444,24 +444,37 @@ describe("skill moderation commands", () => {
 });
 
 describe("cmdUpdate", () => {
-  it("updates a legacy slug-keyed skills.sh install through its stored sourceRef", async () => {
-    const sourceRef = "skills-sh/patrick-erichsen/skills/html";
+  it("updates and canonicalizes a legacy slash-form skills.sh lock entry", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const legacySourceRef = "skills-sh/patrick-erichsen/skills/html";
     const previousCommit = "a".repeat(40);
     const nextCommit = "b".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
     const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
-    mockApiRequest.mockResolvedValueOnce({
-      ok: true,
-      slug: sourceRef,
-      installKind: "github",
-      github: {
-        repo: "patrick-erichsen/skills",
-        path: "skills/html",
-        commit: nextCommit,
-        contentHash,
-        sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
-      },
-    });
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: sourceRef,
+        installKind: "github",
+        github: {
+          repo: "patrick-erichsen/skills",
+          path: "skills/html",
+          commit: nextCommit,
+          contentHash,
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+        },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+        },
+        trust: {
+          clawhubScan: "unscanned",
+          label: "Not scanned by ClawHub",
+        },
+        canonicalRef: null,
+      })
+      .mockResolvedValueOnce({ ok: true });
     mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
     vi.mocked(readLockfile).mockResolvedValue({
       version: 1,
@@ -469,7 +482,7 @@ describe("cmdUpdate", () => {
         html: {
           version: previousCommit,
           installedAt: 123,
-          sourceRef,
+          sourceRef: legacySourceRef,
         },
       },
     });
@@ -477,7 +490,7 @@ describe("cmdUpdate", () => {
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
-      sourceRef,
+      sourceRef: legacySourceRef,
       installedVersion: previousCommit,
       installedAt: 123,
       fingerprint: "hash",
@@ -495,7 +508,7 @@ describe("cmdUpdate", () => {
       {
         method: "GET",
         path: `${ApiRoutes.skillsSh}/patrick-erichsen/skills/html/install`,
-        token: undefined,
+        token: "tkn",
       },
       expect.anything(),
     );
@@ -507,6 +520,12 @@ describe("cmdUpdate", () => {
       registry: "https://clawhub.ai",
       slug: "html",
       sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
       installedVersion: nextCommit,
       installedAt: 123,
       fingerprint: "hash",
@@ -514,13 +533,170 @@ describe("cmdUpdate", () => {
     expect(writeLockfile).toHaveBeenCalledWith("/work", {
       version: 1,
       skills: {
-        html: {
+        [sourceRef]: {
           version: nextCommit,
           installedAt: 123,
           sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
         },
       },
     });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        body: expect.objectContaining({
+          event: "install",
+          slug: "html",
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+          version: nextCommit,
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("updates an external install through a scanned Repo Sync alias", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const previousCommit = "a".repeat(40);
+    const nextCommit = "b".repeat(40);
+    const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
+    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "html",
+        installKind: "github",
+        github: {
+          repo: "patrick-erichsen/skills",
+          path: "skills/html",
+          commit: nextCommit,
+          contentHash,
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+        },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+          repository: "patrick-erichsen/skills",
+          path: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+        },
+        trust: {
+          clawhubScan: "scanned",
+          label: "Scanned by ClawHub",
+        },
+        canonicalRef: "@openclaw/html",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: previousCommit,
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${previousCommit}/skills/html`,
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+        },
+      },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${previousCommit}/skills/html`,
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
+      installedVersion: previousCommit,
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    vi.mocked(listSkillFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: installedFiles });
+
+    await cmdUpdate(makeOpts(), sourceRef, {}, false);
+
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/patrick-erichsen/skills/zip/${nextCommit}`,
+    });
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+      canonicalRef: "@openclaw/html",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      installedVersion: nextCommit,
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: nextCommit,
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+        },
+      },
+    });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        body: {
+          event: "install",
+          slug: "html",
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+          version: nextCommit,
+        },
+      }),
+      expect.anything(),
+    );
   });
 
   it("fails when directly updating a pinned skill", async () => {
@@ -1367,11 +1543,9 @@ describe("pin commands", () => {
     });
     expect(mockLog).toHaveBeenCalledWith("Unpinned demo");
   });
-});
 
-describe("cmdList", () => {
-  it("does not report a tracked skills.sh install as a manual skill", async () => {
-    const sourceRef = "skills-sh/patrick-erichsen/skills/html";
+  it("unpin preserves skills.sh provenance and trust state", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     vi.mocked(readLockfile).mockResolvedValue({
       version: 1,
       skills: {
@@ -1379,13 +1553,59 @@ describe("cmdList", () => {
           version: "a".repeat(40),
           installedAt: 123,
           sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: "https://github.com/patrick-erichsen/skills/tree/abc/skills/html",
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+          pinned: true,
+          pinReason: "hold",
+        },
+      },
+    });
+
+    await cmdUnpin(makeOpts(), sourceRef);
+
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: "a".repeat(40),
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: "https://github.com/patrick-erichsen/skills/tree/abc/skills/html",
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+        },
+      },
+    });
+  });
+});
+
+describe("cmdList", () => {
+  it("does not report a tracked skills.sh install as a manual skill", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: "a".repeat(40),
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
         },
       },
     });
     await cmdList(makeOpts());
 
     expect(skillStore.listManualSkills).toHaveBeenCalledWith("/work/skills", new Set(["html"]));
-    expect(mockLog).toHaveBeenCalledWith(`${sourceRef}  ${"a".repeat(40)}`);
+    expect(mockLog).toHaveBeenCalledWith(`${sourceRef}  ${"a".repeat(40)}  Not scanned by ClawHub`);
   });
 
   it("shows pinned state in list output", async () => {
@@ -1405,8 +1625,8 @@ describe("cmdList", () => {
 });
 
 describe("cmdInstall", () => {
-  it("installs a skills.sh catalog ref from the approved pinned GitHub resolver", async () => {
-    const sourceRef = "skills-sh/patrick-erichsen/skills/html";
+  it("installs a skills.sh catalog ref from the exact synchronized GitHub resolver", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const commit = "a".repeat(40);
     const installedFiles = [{ path: "SKILL.md", sha256: "b".repeat(64), size: 1 }];
     const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
@@ -1423,6 +1643,15 @@ describe("cmdInstall", () => {
           contentHash,
           sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
         },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+        },
+        trust: {
+          clawhubScan: "unscanned",
+          label: "Not scanned by ClawHub",
+        },
+        canonicalRef: null,
       })
       .mockResolvedValueOnce({ ok: true });
     mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -1457,6 +1686,12 @@ describe("cmdInstall", () => {
       registry: "https://clawhub.ai",
       slug: "html",
       sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
       installedVersion: commit,
       installedAt: expect.any(Number),
       fingerprint: "hash",
@@ -1468,6 +1703,12 @@ describe("cmdInstall", () => {
           version: commit,
           installedAt: expect.any(Number),
           sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
         },
       },
     });
@@ -1480,6 +1721,208 @@ describe("cmdInstall", () => {
           event: "install",
           slug: "html",
           sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+          version: commit,
+        },
+      }),
+      expect.anything(),
+    );
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      expect.stringContaining("(Not scanned by ClawHub)"),
+    );
+  });
+
+  it("resolves a scanned Hosted Mode alias through its canonical native archive", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "html",
+        installKind: "archive",
+        archive: {
+          version: "2.0.0",
+          downloadUrl: "https://clawhub.ai/api/v1/download?slug=html&version=2.0.0",
+        },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+          repository: "patrick-erichsen/skills",
+          path: "skills/html",
+          sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+        },
+        trust: {
+          clawhubScan: "scanned",
+          label: "Scanned by ClawHub",
+        },
+        canonicalRef: "@openclaw/html",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    await cmdInstall(makeOpts(), sourceRef);
+
+    expect(mockDownloadZip).toHaveBeenCalledWith("https://clawhub.ai", {
+      slug: "html",
+      ownerHandle: "openclaw",
+      version: "2.0.0",
+      token: "tkn",
+    });
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+      canonicalRef: "@openclaw/html",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      installedVersion: "2.0.0",
+      installedAt: expect.any(Number),
+      fingerprint: undefined,
+    });
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: "2.0.0",
+          installedAt: expect.any(Number),
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+        },
+      },
+    });
+  });
+
+  it("rejects a skills.sh resolver response that omits external trust metadata", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: sourceRef,
+      installKind: "github",
+      github: {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit: "a".repeat(40),
+        contentHash: "b".repeat(64),
+        sourceUrl: "https://github.com/patrick-erichsen/skills/tree/main/skills/html",
+      },
+    });
+
+    await expect(cmdInstall(makeOpts(), sourceRef)).rejects.toThrow(
+      "skills.sh catalog resolver did not preserve the requested external provenance",
+    );
+    expect(mockFetchBinary).not.toHaveBeenCalled();
+    expect(writeSkillOrigin).not.toHaveBeenCalled();
+    expect(writeLockfile).not.toHaveBeenCalled();
+  });
+
+  it("installs a scanned Repo Sync alias from its canonical pinned GitHub descriptor", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const commit = "a".repeat(40);
+    const installedFiles = [{ path: "SKILL.md", sha256: "b".repeat(64), size: 1 }];
+    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "html",
+        installKind: "github",
+        github: {
+          repo: "patrick-erichsen/skills",
+          path: "skills/html",
+          commit,
+          contentHash,
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+        },
+        provenance: {
+          source: "skills.sh",
+          reference: sourceRef,
+          repository: "patrick-erichsen/skills",
+          path: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+        },
+        trust: {
+          clawhubScan: "scanned",
+          label: "Scanned by ClawHub",
+        },
+        canonicalRef: "@openclaw/html",
+      })
+      .mockResolvedValueOnce({ ok: true });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(listSkillFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: installedFiles });
+
+    await cmdInstall(makeOpts(), sourceRef);
+
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/patrick-erichsen/skills/zip/${commit}`,
+    });
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/html", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      canonicalRef: "@openclaw/html",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+      installedVersion: commit,
+      installedAt: expect.any(Number),
+      fingerprint: "hash",
+    });
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: commit,
+          installedAt: expect.any(Number),
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
+        },
+      },
+    });
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        body: {
+          event: "install",
+          slug: "html",
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+          canonicalRef: "@openclaw/html",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
           version: commit,
         },
       }),
@@ -1487,33 +1930,53 @@ describe("cmdInstall", () => {
     );
   });
 
-  it("rejects the unsupported colon-form skills.sh reference", async () => {
-    await expect(cmdInstall(makeOpts(), "skills-sh:patrick-erichsen/skills/html")).rejects.toThrow(
-      "Invalid skills.sh ref: use skills-sh/owner/repo/slug",
+  it("rejects the legacy slash-form skills.sh reference before auth or network access", async () => {
+    await expect(cmdInstall(makeOpts(), "skills-sh/patrick-erichsen/skills/html")).rejects.toThrow(
+      "Invalid skills.sh ref: use skills-sh:owner/repo/slug",
     );
+    expect(mockGetOptionalAuthToken).not.toHaveBeenCalled();
+    expect(registryMocks.getRegistry).not.toHaveBeenCalled();
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "skills-sh:",
+    "skills-sh:owner/repo",
+    "skills-sh:owner/repo/slug/extra",
+    "skills-sh:owner/../slug",
+    "skills-sh:./repo/slug",
+    "skills-sh:owner/./slug",
+    "skills-sh:owner/repo/.",
+    "skills-sh:owner/repo/slug?ref=main",
+  ])("rejects invalid skills.sh reference %s before network access", async (sourceRef) => {
+    await expect(cmdInstall(makeOpts(), sourceRef)).rejects.toThrow(
+      "Invalid skills.sh ref: use skills-sh:owner/repo/slug",
+    );
+    expect(mockGetOptionalAuthToken).not.toHaveBeenCalled();
+    expect(registryMocks.getRegistry).not.toHaveBeenCalled();
     expect(mockApiRequest).not.toHaveBeenCalled();
   });
 
   it("blocks a skills.sh install when the slug target belongs to another source", async () => {
-    const sourceRef = "skills-sh/patrick-erichsen/skills/html";
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     statMock.mockResolvedValue({} as Awaited<ReturnType<typeof stat>>);
     readSkillOriginMock.mockResolvedValue({
       version: 1,
       registry: "https://clawhub.ai",
       slug: "html",
-      sourceRef: "skills-sh/other/repo/html",
+      sourceRef: "skills-sh:other/repo/html",
       installedVersion: "a".repeat(40),
       installedAt: 1,
     });
 
     await expect(cmdInstall(makeOpts(), sourceRef, undefined, true)).rejects.toThrow(
-      `Install target collision: /work/skills/html is owned by skills-sh/other/repo/html`,
+      `Install target collision: /work/skills/html is owned by skills-sh:other/repo/html`,
     );
     expect(mockApiRequest).not.toHaveBeenCalled();
   });
 
   it("rejects a skills.sh install whose extracted folder hash differs from the resolver", async () => {
-    const sourceRef = "skills-sh/patrick-erichsen/skills/html";
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const commit = "a".repeat(40);
     mockApiRequest.mockResolvedValueOnce({
       ok: true,
@@ -1526,6 +1989,56 @@ describe("cmdInstall", () => {
         contentHash: "b".repeat(64),
         sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
       },
+      provenance: {
+        source: "skills.sh",
+        reference: sourceRef,
+      },
+      trust: {
+        clawhubScan: "unscanned",
+        label: "Not scanned by ClawHub",
+      },
+      canonicalRef: null,
+    });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    listTextFilesMock.mockResolvedValue([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);
+    hashSkillFilesMock.mockReturnValue({
+      fingerprint: "local-fingerprint",
+      files: [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }],
+    });
+
+    await expect(cmdInstall(makeOpts(), sourceRef)).rejects.toThrow(
+      "Downloaded skills.sh folder hash does not match the approved ClawHub resolver",
+    );
+    expect(writeSkillOrigin).not.toHaveBeenCalled();
+    expect(writeLockfile).not.toHaveBeenCalled();
+  });
+
+  it("rejects a scanned Repo Sync alias whose pinned GitHub bytes differ from the resolver", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const commit = "a".repeat(40);
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "html",
+      installKind: "github",
+      github: {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+        commit,
+        contentHash: "b".repeat(64),
+        sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      },
+      provenance: {
+        source: "skills.sh",
+        reference: sourceRef,
+        repository: "patrick-erichsen/skills",
+        path: "skills/html",
+        sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
+      },
+      trust: {
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
     });
     mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
     listTextFilesMock.mockResolvedValue([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);

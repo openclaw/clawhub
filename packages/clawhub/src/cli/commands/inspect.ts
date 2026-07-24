@@ -12,6 +12,7 @@ import {
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import { parseSkillsShCliReference, SKILLS_SH_UNSCANNED_LABEL } from "../skillReference.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, styleText } from "../ui.js";
 
@@ -261,9 +262,6 @@ export async function cmdVerifySkill(
   slug: string,
   options: VerifySkillOptions = {},
 ) {
-  if (slug.trim().toLowerCase().startsWith("skills-sh:")) {
-    fail("Invalid skills.sh ref: use skills-sh/owner/repo/slug");
-  }
   const skillsShRef = parseSkillsShCatalogRef(slug);
   if (skillsShRef && (options.version || options.tag || options.card)) {
     fail("skills.sh verification does not support --version, --tag, or --card");
@@ -279,7 +277,7 @@ export async function cmdVerifySkill(
   try {
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
     if (skillsShRef) {
-      url.searchParams.set("reference", slug.trim().toLowerCase());
+      url.searchParams.set("reference", skillsShRef.sourceRef);
     } else if (requested.ownerHandle) {
       url.searchParams.set("ownerHandle", requested.ownerHandle);
     }
@@ -294,6 +292,7 @@ export async function cmdVerifySkill(
       { method: "GET", url: url.toString(), token },
       ApiV1SkillVerifyResponseSchema,
     );
+    if (skillsShRef) validateSkillsShVerification(result, skillsShRef.sourceRef);
 
     if (options.card) {
       const cardUrl = readSkillCardUrl(result);
@@ -318,21 +317,39 @@ export async function cmdVerifySkill(
 }
 
 function parseSkillsShCatalogRef(raw: string) {
-  const value = raw.trim().toLowerCase();
-  if (!value.startsWith("skills-sh/")) return null;
-  const segments = value.split("/");
-  if (
-    segments.length !== 4 ||
-    segments[0] !== "skills-sh" ||
-    segments.slice(1).some((segment) => !segment || segment.includes(":") || segment.includes(".."))
-  ) {
-    fail("Invalid skills.sh ref: use skills-sh/owner/repo/slug");
+  return parseSkillsShCliReference(raw);
+}
+
+function validateSkillsShVerification(result: unknown, requestedRef: string) {
+  const record = asRecord(result);
+  const provenance = asRecord(record.provenance);
+  const security = asRecord(record.security);
+  if (provenance.source !== "skills.sh" || provenance.reference !== requestedRef) {
+    fail("skills.sh verification did not preserve the requested external provenance");
   }
-  return {
-    owner: segments[1]!,
-    repo: segments[2]!,
-    slug: segments[3]!,
-  };
+  const scanState = security.clawhubScan;
+  const label = typeof security.label === "string" ? security.label.trim() : "";
+  if (scanState !== "unscanned" && scanState !== "scanned") {
+    fail("skills.sh verification did not return a ClawHub scan state");
+  }
+  if (!label) fail("skills.sh verification did not return a trust label");
+  if (scanState === "unscanned") {
+    const reasons = Array.isArray(record.reasons) ? record.reasons : [];
+    if (
+      record.ok !== false ||
+      record.decision !== "fail" ||
+      label !== SKILLS_SH_UNSCANNED_LABEL ||
+      !reasons.includes(SKILLS_SH_UNSCANNED_LABEL)
+    ) {
+      fail(`skills.sh verification must report "${SKILLS_SH_UNSCANNED_LABEL}" rather than pass`);
+    }
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function parseSkillRef(raw: string) {
