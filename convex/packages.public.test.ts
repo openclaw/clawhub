@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/clawpack";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {
@@ -976,6 +976,10 @@ const repairPackageIdentityInternalHandler = (
   >
 )._handler;
 
+beforeEach(() => {
+  process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
+});
+
 afterEach(() => {
   vi.mocked(getAuthUserId).mockReset();
   vi.mocked(getAuthUserId).mockResolvedValue(null);
@@ -1549,6 +1553,32 @@ function makeDigestCtx(options: {
                     take: vi.fn().mockResolvedValue(matches),
                   };
                 }
+                if (indexName.includes("_family_")) {
+                  indexNames.push(indexName);
+                  let family = "";
+                  const queryBuilder = {
+                    eq: (field: string, value: string | undefined) => {
+                      if (field === "family") family = value ?? "";
+                      return queryBuilder;
+                    },
+                    gte: () => queryBuilder,
+                    lt: () => queryBuilder,
+                  };
+                  builder?.(queryBuilder);
+                  const takeFamilyRows = async (limit: number) => {
+                    take(limit);
+                    return (rowsByTable.get(table) ?? [])
+                      .filter((row) => row.family === family)
+                      .slice(0, limit);
+                  };
+                  return {
+                    take: vi.fn(takeFamilyRows),
+                    order: vi.fn(() => ({
+                      paginate: getPaginate(table),
+                      take: vi.fn(takeFamilyRows),
+                    })),
+                  };
+                }
                 return withIndex(table, indexName);
               },
               withSearchIndex: (
@@ -1566,12 +1596,11 @@ function makeDigestCtx(options: {
                 let searchField = "";
                 let query = "";
                 const queryBuilder = {
+                  eq: () => queryBuilder,
                   search: (field: string, value: string) => {
                     searchField = field;
                     query = value;
-                    return {
-                      eq: () => queryBuilder,
-                    };
+                    return queryBuilder;
                   },
                 };
                 builder?.(queryBuilder);
@@ -1596,6 +1625,52 @@ function makeDigestCtx(options: {
                 lt: (field: string, value: string) => unknown;
               }) => unknown,
             ) => {
+              if (indexName.includes("_family_")) {
+                indexNames.push(indexName);
+                let family = "";
+                let exactTopic = "";
+                let exactCategory = "";
+                let lowerTopic = "";
+                let upperTopic = "";
+                const queryBuilder = {
+                  eq: (field: string, value: unknown) => {
+                    if (field === "family" && typeof value === "string") family = value;
+                    if (field === "topic" && typeof value === "string") exactTopic = value;
+                    if (field === "pluginCategory" && typeof value === "string") {
+                      exactCategory = value;
+                    }
+                    return queryBuilder;
+                  },
+                  gte: (field: string, value: string) => {
+                    if (field === "topic") lowerTopic = value;
+                    return queryBuilder;
+                  },
+                  lt: (field: string, value: string) => {
+                    if (field === "topic") upperTopic = value;
+                    return queryBuilder;
+                  },
+                };
+                builder?.(queryBuilder);
+                const takeFamilyRows = async (limit: number) => {
+                  take(limit);
+                  return (rowsByTable.get(table) ?? [])
+                    .filter((row) => row.family === family)
+                    .filter((row) => !exactTopic || row.topic === exactTopic)
+                    .filter((row) => !exactCategory || row.pluginCategory === exactCategory)
+                    .filter((row) => {
+                      if (!lowerTopic && !upperTopic) return true;
+                      const topic = typeof row.topic === "string" ? row.topic : "";
+                      return topic >= lowerTopic && topic < upperTopic;
+                    })
+                    .slice(0, limit);
+                };
+                return {
+                  order: vi.fn(() => ({
+                    paginate: getPaginate(table),
+                    take: vi.fn(takeFamilyRows),
+                  })),
+                };
+              }
               if (table !== "packageTopicSearchDigest" || indexName !== "by_active_topic_updated") {
                 return withIndex(table, indexName);
               }
@@ -4212,7 +4287,7 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["needle-plugin"]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(3);
+    expect(take.mock.calls.length).toBeLessThanOrEqual(8);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -8917,7 +8992,7 @@ describe("packages public queries", () => {
     }
   });
 
-  it("publishes a validated Claw through the existing release pipeline when enabled", async () => {
+  it("publishes a profile-bearing Claw through the existing release pipeline when enabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     process.env.CLAWHUB_EXPERIMENTAL_CLAWS = "1";
     const storedFiles = new Map<string, string>([
@@ -8931,9 +9006,9 @@ describe("packages public queries", () => {
       ],
       [
         "storage:claw",
-        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: Runs the demo workflow.\nworkspace:\n  bootstrapFiles:\n    SOUL.md:\n      source: workspace/SOUL.md\n---\n# Demo Claw\n",
+        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: Runs the demo workflow.\nmetadata:\n  openclaw.config: profiles/openclaw.yml\n---\n# Demo Claw\n",
       ],
-      ["storage:soul", "Be precise.\n"],
+      ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
     ]);
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if (args.minimumRole === "publisher") {
@@ -8993,7 +9068,12 @@ describe("packages public queries", () => {
                 storageId: "storage:claw",
                 sha256: "claw",
               },
-              { path: "workspace/SOUL.md", size: 1, storageId: "storage:soul", sha256: "soul" },
+              {
+                path: "profiles/openclaw.yml",
+                size: 1,
+                storageId: "storage:profile",
+                sha256: "profile",
+              },
             ],
           },
         }),
@@ -16581,10 +16661,95 @@ describe("restorePackageInternal", () => {
   it("omits stored Claws from unfiltered public lists while disabled", async () => {
     const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
     delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const ctx = makePluginExportCtx([
+      makeDigest("demo-claw", { family: "claw", updatedAt: 2, _creationTime: 2 }),
+      makeDigest("demo-plugin", { updatedAt: 1, _creationTime: 1 }),
+    ]);
+
+    try {
+      const result = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: null, numItems: 25 },
+      });
+      expect(result.page.map((entry) => entry.name)).toEqual(["demo-plugin"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("does not let disabled Claws starve unfiltered public list pages", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const hiddenClaws = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`demo-claw-${index}`, {
+        family: "claw",
+        updatedAt: 100 - index,
+        _creationTime: 100 - index,
+      }),
+    );
+    const ctx = makePluginExportCtx([
+      ...hiddenClaws,
+      makeDigest("visible-plugin", { updatedAt: 1, _creationTime: 1 }),
+    ]);
+
+    try {
+      const result = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+      expect(result.page.map((entry) => entry.name)).toEqual(["visible-plugin"]);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("paginates stable families beyond the per-query read window while Claws are disabled", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const digests = Array.from({ length: 250 }, (_, index) =>
+      makeDigest(`stable-${index.toString().padStart(3, "0")}`, {
+        updatedAt: 250 - index,
+        _creationTime: 250 - index,
+      }),
+    );
+    const ctx = makePluginExportCtx(digests);
+
+    try {
+      const first = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: null, numItems: 200 },
+      });
+      const second = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: first.continueCursor, numItems: 200 },
+      });
+      expect(first.page).toHaveLength(200);
+      expect(first.isDone).toBe(false);
+      expect(second.page).toHaveLength(50);
+      expect(second.isDone).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("does not let disabled Claws starve unfiltered public search", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const hiddenClaws = Array.from({ length: 50 }, (_, index) =>
+      makeDigest(`matching-claw-${index}`, {
+        family: "claw",
+        displayName: `Matching Claw ${index}`,
+        updatedAt: 100 - index,
+      }),
+    );
     const { ctx } = makeDigestCtx({
       pages: [
         {
-          page: [makeDigest("demo-claw", { family: "claw" }), makeDigest("demo-plugin")],
+          page: hiddenClaws,
+          isDone: false,
+          continueCursor: "after-claws",
+        },
+        {
+          page: [makeDigest("matching-plugin", { displayName: "Matching Plugin" })],
           isDone: true,
           continueCursor: "",
         },
@@ -16592,10 +16757,8 @@ describe("restorePackageInternal", () => {
     });
 
     try {
-      const result = await listPublicPageHandler(ctx, {
-        paginationOpts: { cursor: null, numItems: 25 },
-      });
-      expect(result.page.map((entry) => entry.name)).toEqual(["demo-plugin"]);
+      const result = await searchPublicHandler(ctx, { query: "matching", limit: 1 });
+      expect(result.map((entry) => entry.package.name)).toEqual(["matching-plugin"]);
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
       else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;

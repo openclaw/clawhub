@@ -138,6 +138,7 @@ const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES = 40;
+const STABLE_PACKAGE_FAMILIES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 // Release rows can approach 1 MiB, and trigger-wrapped patches materialize full documents.
@@ -919,6 +920,7 @@ type PackageDigestLike = Pick<
   | "pluginCategoryTags"
   | "verificationTier"
   | "stats"
+  | "recommendedScore"
   | "scanStatus"
   | "softDeletedAt"
 > & { pluginCategory?: string };
@@ -942,6 +944,13 @@ type PublicPackageListPage = {
   page: PublicPackageListItem[];
   isDone: boolean;
   continueCursor: string;
+};
+const STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX = "pkgstable:";
+type StablePackageFamily = (typeof STABLE_PACKAGE_FAMILIES)[number];
+type StablePackageDiscoverySourceState = { key: IndexKey | null; done: boolean };
+type StablePackageDiscoveryCursorState = {
+  sort: "updated" | "downloads" | "recommended" | "installs";
+  sources: Record<StablePackageFamily, StablePackageDiscoverySourceState>;
 };
 const OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX = "pkgofficialfirst:";
 
@@ -1885,6 +1894,7 @@ function maybeNormalizePackageQuery(value: string) {
 async function resolveDirectPackageSearchDigests(
   ctx: DbReaderCtx,
   queryText: string,
+  family?: PackageFamily,
 ): Promise<PackageDigestLike[]> {
   const normalizedQuery = maybeNormalizePackageQuery(queryText);
   const topicQuery = normalizeCatalogTopic(queryText);
@@ -1904,49 +1914,85 @@ async function resolveDirectPackageSearchDigests(
     categoryDigests,
   ] = await Promise.all([
     normalizedQuery
-      ? ctx.db
-          .query("packageSearchDigest")
-          .withIndex("by_active_normalized_name", (q) =>
-            q
-              .eq("softDeletedAt", undefined)
-              .gte("normalizedName", normalizedQuery)
-              .lt("normalizedName", prefixUpperBound(normalizedQuery)),
-          )
-          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+      ? family
+        ? ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_family_normalized_name", (q) =>
+              q
+                .eq("softDeletedAt", undefined)
+                .eq("family", family)
+                .gte("normalizedName", normalizedQuery)
+                .lt("normalizedName", prefixUpperBound(normalizedQuery)),
+            )
+            .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+        : ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_normalized_name", (q) =>
+              q
+                .eq("softDeletedAt", undefined)
+                .gte("normalizedName", normalizedQuery)
+                .lt("normalizedName", prefixUpperBound(normalizedQuery)),
+            )
+            .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
       : Promise.resolve([]),
     runtimePrefix
-      ? ctx.db
-          .query("packageSearchDigest")
-          .withIndex("by_active_runtime_id", (q) =>
-            q
-              .eq("softDeletedAt", undefined)
-              .gte("runtimeId", runtimePrefix)
-              .lt("runtimeId", prefixUpperBound(runtimePrefix)),
-          )
-          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+      ? family
+        ? ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_family_runtime_id", (q) =>
+              q
+                .eq("softDeletedAt", undefined)
+                .eq("family", family)
+                .gte("runtimeId", runtimePrefix)
+                .lt("runtimeId", prefixUpperBound(runtimePrefix)),
+            )
+            .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+        : ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_runtime_id", (q) =>
+              q
+                .eq("softDeletedAt", undefined)
+                .gte("runtimeId", runtimePrefix)
+                .lt("runtimeId", prefixUpperBound(runtimePrefix)),
+            )
+            .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
       : Promise.resolve([]),
     ctx.db
       .query("packageSearchDigest")
-      .withSearchIndex("search_by_display_name", (q) =>
-        q.search("displayName", queryText).eq("softDeletedAt", undefined),
-      )
+      .withSearchIndex("search_by_display_name", (q) => {
+        const search = q.search("displayName", queryText).eq("softDeletedAt", undefined);
+        return family ? search.eq("family", family) : search;
+      })
       .take(MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES),
     ownerHandlePrefix
-      ? ctx.db
-          .query("packageSearchDigest")
-          .withIndex("by_active_owner_handle", (q) =>
-            q
-              .eq("softDeletedAt", undefined)
-              .gte("ownerHandle", ownerHandlePrefix)
-              .lt("ownerHandle", prefixUpperBound(ownerHandlePrefix)),
-          )
-          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+      ? family
+        ? ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_family_owner_handle", (q) =>
+              q
+                .eq("softDeletedAt", undefined)
+                .eq("family", family)
+                .gte("ownerHandle", ownerHandlePrefix)
+                .lt("ownerHandle", prefixUpperBound(ownerHandlePrefix)),
+            )
+            .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+        : ctx.db
+            .query("packageSearchDigest")
+            .withIndex("by_active_owner_handle", (q) =>
+              q
+                .eq("softDeletedAt", undefined)
+                .gte("ownerHandle", ownerHandlePrefix)
+                .lt("ownerHandle", prefixUpperBound(ownerHandlePrefix)),
+            )
+            .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
       : Promise.resolve([]),
     topicQuery
       ? ctx.db
           .query("packageTopicSearchDigest")
-          .withIndex("by_active_topic_updated", (q) =>
-            q.eq("softDeletedAt", undefined).eq("topic", topicQuery),
+          .withIndex(family ? "by_active_family_topic_updated" : "by_active_topic_updated", (q) =>
+            family
+              ? q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", topicQuery)
+              : q.eq("softDeletedAt", undefined).eq("topic", topicQuery),
           )
           .order("desc")
           .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
@@ -1954,8 +2000,15 @@ async function resolveDirectPackageSearchDigests(
     categoryQuery
       ? ctx.db
           .query("packagePluginCategorySearchDigest")
-          .withIndex("by_active_category_updated", (q) =>
-            q.eq("softDeletedAt", undefined).eq("pluginCategory", categoryQuery),
+          .withIndex(
+            family ? "by_active_family_category_updated" : "by_active_category_updated",
+            (q) =>
+              family
+                ? q
+                    .eq("softDeletedAt", undefined)
+                    .eq("family", family)
+                    .eq("pluginCategory", categoryQuery)
+                : q.eq("softDeletedAt", undefined).eq("pluginCategory", categoryQuery),
           )
           .order("desc")
           .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
@@ -1965,11 +2018,17 @@ async function resolveDirectPackageSearchDigests(
     topicQuery && exactTopicDigests.length < MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES
       ? await ctx.db
           .query("packageTopicSearchDigest")
-          .withIndex("by_active_topic_updated", (q) =>
-            q
-              .eq("softDeletedAt", undefined)
-              .gte("topic", topicQuery)
-              .lt("topic", prefixUpperBound(topicQuery)),
+          .withIndex(family ? "by_active_family_topic_updated" : "by_active_topic_updated", (q) =>
+            family
+              ? q
+                  .eq("softDeletedAt", undefined)
+                  .eq("family", family)
+                  .gte("topic", topicQuery)
+                  .lt("topic", prefixUpperBound(topicQuery))
+              : q
+                  .eq("softDeletedAt", undefined)
+                  .gte("topic", topicQuery)
+                  .lt("topic", prefixUpperBound(topicQuery)),
           )
           .order("desc")
           .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES - exactTopicDigests.length)
@@ -3388,6 +3447,74 @@ function decodePackageIndexKeyValue(val: unknown): Value | undefined {
   return val as Value;
 }
 
+function emptyStablePackageDiscoveryCursor(
+  sort: StablePackageDiscoveryCursorState["sort"],
+): StablePackageDiscoveryCursorState {
+  return {
+    sort,
+    sources: {
+      skill: { key: null, done: false },
+      "code-plugin": { key: null, done: false },
+      "bundle-plugin": { key: null, done: false },
+    },
+  };
+}
+
+function encodeStablePackageDiscoveryCursor(state: StablePackageDiscoveryCursorState) {
+  const sources = Object.fromEntries(
+    STABLE_PACKAGE_FAMILIES.map((family) => [
+      family,
+      {
+        key: state.sources[family].key?.map(encodePackageIndexKeyValue) ?? null,
+        done: state.sources[family].done,
+      },
+    ]),
+  );
+  return `${STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX}${JSON.stringify({
+    v: 1,
+    sort: state.sort,
+    sources,
+  })}`;
+}
+
+function decodeStablePackageDiscoveryCursor(
+  raw: string | null | undefined,
+  sort: StablePackageDiscoveryCursorState["sort"],
+): StablePackageDiscoveryCursorState {
+  const fallback = emptyStablePackageDiscoveryCursor(sort);
+  if (!raw?.startsWith(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX)) return fallback;
+  try {
+    const parsed = JSON.parse(raw.slice(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX.length)) as {
+      v?: unknown;
+      sort?: unknown;
+      sources?: unknown;
+    };
+    if (
+      parsed.v !== 1 ||
+      parsed.sort !== sort ||
+      !parsed.sources ||
+      typeof parsed.sources !== "object"
+    ) {
+      return fallback;
+    }
+    const sources = parsed.sources as Record<string, unknown>;
+    const decoded = emptyStablePackageDiscoveryCursor(sort);
+    for (const family of STABLE_PACKAGE_FAMILIES) {
+      const value = sources[family];
+      if (!value || typeof value !== "object") return fallback;
+      const source = value as { key?: unknown; done?: unknown };
+      if (source.key !== null && !Array.isArray(source.key)) return fallback;
+      decoded.sources[family] = {
+        key: Array.isArray(source.key) ? source.key.map(decodePackageIndexKeyValue) : null,
+        done: source.done === true,
+      };
+    }
+    return decoded;
+  } catch {
+    return fallback;
+  }
+}
+
 function encodePackageIndexCursor(indexName: string, key: IndexKey): string {
   return JSON.stringify({
     v: 1,
@@ -3766,6 +3893,143 @@ export const countPublicPlugins = query({
   },
 });
 
+function compareStablePackageDiscoveryCandidates(
+  a: PackageDigestLike,
+  b: PackageDigestLike,
+  sort: "updated" | "downloads" | "recommended" | "installs",
+) {
+  const metric = (candidate: PackageDigestLike) => {
+    if (sort === "downloads") return candidate.stats?.downloads ?? 0;
+    if (sort === "installs") return candidate.stats?.installs ?? 0;
+    if (sort === "recommended") return candidate.recommendedScore ?? 0;
+    return candidate.updatedAt;
+  };
+  const metricDiff = metric(b) - metric(a);
+  if (metricDiff !== 0) return metricDiff;
+  const updatedDiff = b.updatedAt - a.updatedAt;
+  if (updatedDiff !== 0) return updatedDiff;
+  const familyDiff = a.family.localeCompare(b.family);
+  if (familyDiff !== 0) return familyDiff;
+  return a.name.localeCompare(b.name);
+}
+
+async function listStablePackageDiscoveryPage(
+  ctx: DbReaderCtx,
+  args: {
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    category?: PluginCategorySlug;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: Id<"users">;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+): Promise<PublicPackageListPage> {
+  const targetCount = Math.max(
+    1,
+    Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE),
+  );
+  const requestedSort = args.sort ?? "updated";
+  const sort =
+    requestedSort === "recommended" &&
+    (
+      await Promise.all(
+        STABLE_PACKAGE_FAMILIES.map(
+          async (family) => await hasMissingPackageRecommendedScore(ctx, family),
+        ),
+      )
+    ).some(Boolean)
+      ? "updated"
+      : requestedSort;
+  const cursor = decodeStablePackageDiscoveryCursor(args.paginationOpts.cursor, sort);
+  const scanLimit = Math.min(MAX_PUBLIC_LIST_PAGE_SIZE, Math.max(targetCount * 5, 50));
+  const loadFamily = async (family: StablePackageFamily) => {
+    const state = cursor.sources[family];
+    if (state.done) {
+      return { family, rows: [] as PackageDigestLike[], keys: [] as IndexKey[], hasMore: false };
+    }
+    const eqPrefix: IndexKey = [undefined, family];
+    if (sort === "updated") {
+      const result = await getPage(ctx, {
+        table: "packageSearchDigest",
+        index: "by_active_family_updated",
+        startIndexKey: state.key ?? eqPrefix,
+        startInclusive: state.key === null,
+        endIndexKey: eqPrefix,
+        endInclusive: true,
+        order: "desc",
+        absoluteMaxRows: scanLimit,
+        schema,
+      });
+      return {
+        family,
+        rows: result.page as PackageDigestLike[],
+        keys: result.indexKeys,
+        hasMore: result.hasMore,
+      };
+    }
+    const index =
+      sort === "downloads"
+        ? "by_active_family_downloads"
+        : sort === "installs"
+          ? "by_active_family_installs"
+          : "by_active_family_recommended_score";
+    const result = await getPage(ctx, {
+      table: "packages",
+      index,
+      startIndexKey: state.key ?? eqPrefix,
+      startInclusive: state.key === null,
+      endIndexKey: eqPrefix,
+      endInclusive: true,
+      order: "desc",
+      absoluteMaxRows: scanLimit,
+      schema,
+    });
+    return {
+      family,
+      rows: result.page.map(extractPackageDigestFields),
+      keys: result.indexKeys,
+      hasMore: result.hasMore,
+    };
+  };
+  const familyPages = await Promise.all(
+    STABLE_PACKAGE_FAMILIES.map(async (family) => await loadFamily(family)),
+  );
+  const candidates = familyPages
+    .flatMap((source) =>
+      source.rows.map((row, index) => ({
+        family: source.family,
+        row,
+        key: source.keys[index],
+        source,
+      })),
+    )
+    .sort((a, b) => compareStablePackageDiscoveryCandidates(a.row, b.row, sort));
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const page: PublicPackageListItem[] = [];
+  const consumedByFamily = new Map<StablePackageFamily, number>();
+  for (const candidate of candidates) {
+    const digest = candidate.row;
+    consumedByFamily.set(candidate.family, (consumedByFamily.get(candidate.family) ?? 0) + 1);
+    cursor.sources[candidate.family].key = candidate.key;
+    if (!digestMatchesSearchFilters(digest, args)) continue;
+    if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    page.push(await toPublicPackageListItem(ctx, digest));
+    if (page.length >= targetCount) break;
+  }
+  for (const source of familyPages) {
+    const consumed = consumedByFamily.get(source.family) ?? 0;
+    cursor.sources[source.family].done = consumed === source.rows.length && !source.hasMore;
+  }
+  const hasMore = STABLE_PACKAGE_FAMILIES.some((family) => !cursor.sources[family].done);
+  return {
+    page,
+    isDone: !hasMore,
+    continueCursor: hasMore ? encodeStablePackageDiscoveryCursor(cursor) : "",
+  };
+}
+
 async function listPackagePageImpl(
   ctx: DbReaderCtx,
   args: {
@@ -3859,6 +4123,19 @@ async function listPackagePageImpl(
       numItems: targetCount,
     });
     return { page, isDone: true, continueCursor: "" };
+  }
+
+  if (!args.family && !experimentalClawsEnabled()) {
+    return await listStablePackageDiscoveryPage(ctx, {
+      channel: args.channel,
+      isOfficial: args.isOfficial,
+      category,
+      topic,
+      excludedScanStatuses: args.excludedScanStatuses,
+      sort: args.sort,
+      viewerUserId: args.viewerUserId,
+      paginationOpts: args.paginationOpts,
+    });
   }
 
   const collected: PublicPackageListItem[] = [];
@@ -4353,30 +4630,44 @@ async function searchPackagesImpl(
     return results;
   }
 
-  const buildSearchDigestQuery = () =>
-    topic
-      ? buildPackageTopicDigestQuery(ctx, {
-          topic,
-          family: args.family,
-          channel: args.channel,
-          isOfficial: args.isOfficial,
-        })
-      : category
-        ? buildPackagePluginCategoryDigestQuery(ctx, {
-            category,
-            family: args.family,
+  const searchFamilies =
+    !args.family && !experimentalClawsEnabled()
+      ? ([...STABLE_PACKAGE_FAMILIES] as PackageFamily[])
+      : [args.family];
+  const buildSearchDigestQueries = () =>
+    searchFamilies.map((family) =>
+      topic
+        ? buildPackageTopicDigestQuery(ctx, {
+            topic,
+            family,
             channel: args.channel,
             isOfficial: args.isOfficial,
           })
-        : buildPackageDigestQuery(ctx, {
-            family: args.family,
-            channel: args.channel,
-            isOfficial: args.isOfficial,
-          });
+        : category
+          ? buildPackagePluginCategoryDigestQuery(ctx, {
+              category,
+              family,
+              channel: args.channel,
+              isOfficial: args.isOfficial,
+            })
+          : buildPackageDigestQuery(ctx, {
+              family,
+              channel: args.channel,
+              isOfficial: args.isOfficial,
+            }),
+    );
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests =
-    category && !topic ? [] : await resolveDirectPackageSearchDigests(ctx, queryText);
+    category && !topic
+      ? []
+      : (
+          await Promise.all(
+            searchFamilies.map(
+              async (family) => await resolveDirectPackageSearchDigests(ctx, queryText, family),
+            ),
+          )
+        ).flat();
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
@@ -4413,7 +4704,8 @@ async function searchPackagesImpl(
       }
     };
 
-    if (topic && category) {
+    const searchDigestQueries = buildSearchDigestQueries();
+    if (topic && category && searchDigestQueries.length === 1) {
       let cursor: string | null = null;
       let isDone = false;
       let scanPages = 0;
@@ -4429,7 +4721,9 @@ async function searchPackagesImpl(
           page: PackageDigestLike[];
           isDone: boolean;
           continueCursor: string;
-        } = await buildSearchDigestQuery().order("desc").paginate({ cursor, numItems: pageSize });
+        } = await buildSearchDigestQueries()[0]
+          .order("desc")
+          .paginate({ cursor, numItems: pageSize });
         scanPages += 1;
         remainingScanBudget -= pageSize;
         await collectDigestMatches(page.page);
@@ -4437,9 +4731,13 @@ async function searchPackagesImpl(
         isDone = page.isDone;
       }
     } else {
-      const digests: PackageDigestLike[] = await buildSearchDigestQuery()
-        .order("desc")
-        .take(scanLimit);
+      const digests = (
+        await Promise.all(
+          searchDigestQueries.map(
+            async (query) => (await query.order("desc").take(scanLimit)) as PackageDigestLike[],
+          ),
+        )
+      ).flat();
       await collectDigestMatches(digests);
     }
   }
@@ -7806,18 +8104,42 @@ async function publishPackageImpl(
   if (family !== "claw" && !pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
   }
-  const clawPackage =
+  const clawValidationFiles = files.map((file) => ({
+    path: file.path,
+    ...(clawManifestEntry?.file.path === file.path ? { text: clawManifestEntry.text } : {}),
+  }));
+  let clawPackage =
     family === "claw"
       ? validateClawPackageContents({
           packageName: name,
           version,
           packageJson,
-          files: files.map((file) => ({
-            path: file.path,
-            ...(clawManifestEntry?.file.path === file.path ? { text: clawManifestEntry.text } : {}),
-          })),
+          files: clawValidationFiles,
         })
       : null;
+  if (clawPackage && !clawPackage.ok) {
+    const profilePath = clawPackage.issues.find(
+      (entry) => entry.code === "missing_openclaw_profile",
+    )?.path;
+    if (profilePath) {
+      const profileEntry = await readOptionalTextFile(ctx, files, (path) => path === profilePath, {
+        exactPath: true,
+        maxBytes: 256 * 1024,
+        label: "OpenClaw profile",
+        strictUtf8: true,
+      });
+      if (profileEntry) {
+        clawPackage = validateClawPackageContents({
+          packageName: name,
+          version,
+          packageJson,
+          files: clawValidationFiles.map((file) =>
+            file.path === profileEntry.file.path ? { ...file, text: profileEntry.text } : file,
+          ),
+        });
+      }
+    }
+  }
   if (clawPackage && !clawPackage.ok) {
     throw new ConvexError(
       `Invalid Claw package: ${clawPackage.issues

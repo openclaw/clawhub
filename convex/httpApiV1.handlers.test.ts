@@ -14872,6 +14872,65 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
+  it.each(["loose", "direct-tgz", "staged-tgz"] as const)(
+    "disabled Claw publication rejects %s before multipart storage or ticket mutation",
+    async (mode) => {
+      vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
+      vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
+      vi.mocked(requirePackagePublishAuth).mockResolvedValue({
+        kind: "user",
+        userId: "users:1",
+        user: { _id: "users:1", handle: "p" },
+      } as never);
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+      const runAction = vi.fn();
+      const storageGet = vi.fn();
+      const storageStore = vi.fn();
+      const form = packagePublishForm(packagePublishMetadata({ family: "claw" }));
+      if (mode === "loose") {
+        form.append("files", new File(["manifest"], "CLAW.md", { type: "text/markdown" }));
+      } else if (mode === "direct-tgz") {
+        const pack = npmPackFixture({
+          "package/package.json": JSON.stringify({ name: "demo-claw", version: "1.0.0" }),
+          "package/CLAW.md": "manifest",
+        });
+        form.append(
+          "clawpack",
+          new File([bytesToArrayBuffer(pack)], "demo-claw-1.0.0.tgz", {
+            type: "application/octet-stream",
+          }),
+        );
+      } else {
+        form.set("clawpack", "storage:clawpack");
+        form.set("clawpackUploadTicket", "packagePublishUploadTickets:1");
+      }
+
+      const response = await __handlers.publishPackageV1Handler(
+        makeCtx({
+          runAction,
+          runMutation,
+          storage: { get: storageGet, store: storageStore },
+        }),
+        new Request("https://example.com/api/v1/packages", {
+          method: "POST",
+          headers: { Authorization: "Bearer clh_test" },
+          body: form,
+        }),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Experimental Claw publication is disabled");
+      expect(storageGet).not.toHaveBeenCalled();
+      expect(storageStore).not.toHaveBeenCalled();
+      expect(runAction).not.toHaveBeenCalled();
+      expect(
+        runMutation.mock.calls.some(([, args]) =>
+          Boolean(args && typeof args === "object" && "uploadTicket" in args),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it("package publish rejects browser session auth when token auth is not an API token", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:session" as never);
     vi.mocked(requirePackagePublishAuth).mockRejectedValue(new Error("Unauthorized"));
@@ -15044,6 +15103,7 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("multipart Claw publish accepts an npm pack without a plugin manifest", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     vi.mocked(requirePackagePublishAuth).mockResolvedValue({
       kind: "user",
@@ -15061,7 +15121,8 @@ describe("httpApiV1 handlers", () => {
         version: "1.0.0",
         openclaw: { claw: "CLAW.md" },
       }),
-      "package/CLAW.md": "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\n",
+      "package/CLAW.md":
+        "---\nschemaVersion: 1\nagent:\n  id: demo-claw\n---\nYou are a focused demo agent.\n",
     });
     const form = new FormData();
     form.set(
@@ -15089,7 +15150,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status, await response.clone().text()).toBe(200);
     expect(storageStore).toHaveBeenCalledTimes(3);
     expect(runAction).toHaveBeenCalledWith(
       expect.anything(),

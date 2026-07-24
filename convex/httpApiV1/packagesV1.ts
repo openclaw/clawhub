@@ -34,6 +34,7 @@ import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
+import { experimentalClawsEnabled } from "../lib/experimentalClaws";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -1462,6 +1463,9 @@ async function parseMultipartPackagePublish(
     parsedPayload,
     "Package publish payload",
   );
+  if (metadata.family === "claw" && !experimentalClawsEnabled()) {
+    throw new Error("Experimental Claw publication is disabled");
+  }
 
   const tarballPart = getTarballPart(form);
   const fileParts = getFileParts(
