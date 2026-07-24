@@ -1,6 +1,7 @@
 import {
   CATALOG_FEED_ID,
   CATALOG_FEED_SCHEMA_VERSION,
+  CATALOG_FEED_SHARD_MAX_ENTRIES,
   CATALOG_FEED_SHARD_ROOT_MAX_ENTRIES,
   CATALOG_FEED_SHARD_ROOT_MAX_SHARDS,
   CATALOG_FEED_SHARD_SET_MAX_BYTES,
@@ -16,7 +17,6 @@ import { internalQuery } from "./_generated/server";
 import { internalMutation } from "./functions";
 import { sha256Hex } from "./lib/clawpack";
 
-const SHARD_TARGET_ENTRY_COUNT = 250;
 // Convex's 1 MiB document limit also includes this payload's containing row.
 const SHARD_STORED_PAYLOAD_MAX_BYTES = 900 * 1024;
 const SHARD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
@@ -74,11 +74,11 @@ export async function buildCatalogFeedShards(args: {
     }
   }
   const groups: CatalogFeedEntry[][] = [];
-  for (let offset = 0; offset < entries.length; offset += SHARD_TARGET_ENTRY_COUNT) {
+  for (let offset = 0; offset < entries.length; offset += CATALOG_FEED_SHARD_MAX_ENTRIES) {
     groups.push(
       ...splitOversizedShard({
         ...args,
-        entries: entries.slice(offset, offset + SHARD_TARGET_ENTRY_COUNT),
+        entries: entries.slice(offset, offset + CATALOG_FEED_SHARD_MAX_ENTRIES),
       }),
     );
   }
@@ -167,7 +167,7 @@ export const beginCatalogFeedShardPublication = internalMutation({
       throw new Error("Catalog feed shard publication sequence already exists");
     }
     const publishedAt = Date.now();
-    const expirationTime = publishedAt + SHARD_RETENTION_MS;
+    const expirationTime = Math.max(publishedAt + SHARD_RETENTION_MS, expiresAt);
     const publicationId = await ctx.db.insert("catalogFeedShardPublications", {
       feedId: args.feedId,
       sequence,
@@ -337,15 +337,18 @@ export const finalizeCatalogFeedShardPublication = internalMutation({
 });
 
 export const getLatestCatalogFeedShardPublication = internalQuery({
-  args: { feedId: feedIdValidator },
+  args: { feedId: feedIdValidator, now: v.string() },
   handler: async (ctx, args) => {
+    if (!Number.isFinite(Date.parse(args.now))) {
+      throw new Error("Catalog feed shard lookup time is invalid");
+    }
     const publication = await ctx.db
       .query("catalogFeedShardPublications")
       .withIndex("by_feed_status_sequence", (q) =>
         q.eq("feedId", args.feedId).eq("status", "ready"),
       )
       .order("desc")
-      .filter((q) => q.gt(q.field("expiresAt"), new Date().toISOString()))
+      .filter((q) => q.gt(q.field("expiresAt"), args.now))
       .first();
     if (!publication) return null;
     const shards = await ctx.db
