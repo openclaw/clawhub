@@ -30,6 +30,7 @@ jobs:
     steps:
       - name: Verify exact current main
         env:
+          DATASET_VERSION: ${{ inputs.dataset_version }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -39,7 +40,7 @@ jobs:
             echo "::error::Test reservation must match exact current main"
             exit 1
           fi
-          if [[ ! "${{ inputs.dataset_version }}" =~ ^ranking-metrics-[0-9]{4}-[0-9]{2}-[0-9]{2}-v[0-9]+$ ]]; then
+          if [[ ! "$DATASET_VERSION" =~ ^ranking-metrics-[0-9]{4}-[0-9]{2}-[0-9]{2}-v[0-9]+$ ]]; then
             echo "::error::Invalid ranking dataset version"
             exit 1
           fi

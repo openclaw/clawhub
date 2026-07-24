@@ -62,7 +62,9 @@ ranking-metrics-YYYY-MM-DD-vN --output <dataset.json>`. The sanitizer reads five
   revalidates the reservation, aborting without mutation if the lane or tables changed. Use
   `--readback --dataset-version <version>` for
   24-hour/60-day proof, `--cleanup` with the original dataset to remove that version, or
-  `--rollback --backup-dir <dir>` to restore the pre-import tables.
+  `--rollback --backup-dir <dir> --lane-run-id <run-id>` to restore the pre-import tables. Rollback
+  also requires the current three-table state to match the exact post-operation digests recorded in
+  that backup, so an older backup cannot overwrite a subsequent import or fixture change.
 - `internal.devSeed.seedCurrentUserFixtures` remains a dev-only internal action for explicit local
   development tools/tests that need fixtures cloned to a local user.
 

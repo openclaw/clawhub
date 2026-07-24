@@ -19,6 +19,8 @@ import {
 type Mode = "import" | "readback" | "cleanup" | "rollback";
 type DailyTable = "skillDailyStats" | "packageDailyStats";
 type DailyIdField = "skillId" | "packageId";
+const RANKING_TABLES = ["skillDailyStats", "packageDailyStats", "rankingMetricImports"] as const;
+type RankingTable = (typeof RANKING_TABLES)[number];
 const TEST_LANE_WORKFLOW_PATH = ".github/workflows/reserve-test.yml";
 const TEST_LANE_MAX_AGE_MS = 5 * 60 * 60 * 1_000;
 export type ResolvedRankingMetricTarget = {
@@ -124,8 +126,18 @@ async function applyImport(
   });
   await writeJsonLines(planned.rankingMetricImports, metadata);
 
-  await importPlannedTables(workDir, planned.root, deployment, laneRunId, dataset.datasetVersion);
-  const proof = await readback(deployment, dataset.datasetVersion);
+  const importedSnapshot = await importPlannedTables(
+    workDir,
+    planned.root,
+    deployment,
+    laneRunId,
+    dataset.datasetVersion,
+  );
+  const proof = await readbackSnapshot(
+    deployment,
+    importedSnapshot,
+    dataset.datasetVersion,
+  ).finally(() => rm(importedSnapshot, { force: true }));
   console.log(JSON.stringify({ ok: true, mode: "import", ...proof }, null, 2));
 }
 
@@ -151,7 +163,14 @@ async function applyCleanup(
     planned.rankingMetricImports,
     current.rankingMetricImports.filter((row) => row.datasetVersion !== dataset.datasetVersion),
   );
-  await importPlannedTables(workDir, planned.root, deployment, laneRunId, dataset.datasetVersion);
+  const cleanedSnapshot = await importPlannedTables(
+    workDir,
+    planned.root,
+    deployment,
+    laneRunId,
+    dataset.datasetVersion,
+  );
+  await rm(cleanedSnapshot, { force: true });
   console.log(
     JSON.stringify(
       {
@@ -380,53 +399,57 @@ async function readback(deployment: string, datasetVersion: string) {
   const snapshot = `${workDir}/test-readback.zip`;
   try {
     exportDeploymentSnapshot(deployment, snapshot);
-    const imports = await collectSnapshotTable(snapshot, "rankingMetricImports");
-    const metadata = imports.find((row) => row.datasetVersion === datasetVersion);
-    if (!metadata) throw new Error(`No Test import metadata found for ${datasetVersion}`);
-    const startDay = Number(metadata.startDay);
-    const endDay = Number(metadata.endDay);
-    const [skill, packageRows] = await Promise.all([
-      summarizeSnapshotTable(
-        snapshot,
-        "skillDailyStats",
-        "skillId",
-        datasetVersion,
-        startDay,
-        endDay,
-      ),
-      summarizeSnapshotTable(
-        snapshot,
-        "packageDailyStats",
-        "packageId",
-        datasetVersion,
-        startDay,
-        endDay,
-      ),
-    ]);
-    return {
-      deployment,
-      datasetVersion,
-      checksum: metadata.checksum,
-      generatedAt: metadata.generatedAt,
-      importedAt: metadata.importedAt,
-      declared: {
-        targets: metadata.targetCount,
-        skillTargets: metadata.skillTargetCount,
-        packageTargets: metadata.packageTargetCount,
-        dailyRows: metadata.dailyRowCount,
-        startDay,
-        endDay,
-      },
-      imported: {
-        skill,
-        package: packageRows,
-        unresolvedTargets: metadata.unresolvedTargets,
-        skippedOverlayRows: metadata.skippedOverlayRows,
-      },
-    };
+    return await readbackSnapshot(deployment, snapshot, datasetVersion);
   } finally {
     await rm(workDir, { recursive: true, force: true });
   }
+}
+
+async function readbackSnapshot(deployment: string, snapshot: string, datasetVersion: string) {
+  const imports = await collectSnapshotTable(snapshot, "rankingMetricImports");
+  const metadata = imports.find((row) => row.datasetVersion === datasetVersion);
+  if (!metadata) throw new Error(`No Test import metadata found for ${datasetVersion}`);
+  const startDay = Number(metadata.startDay);
+  const endDay = Number(metadata.endDay);
+  const [skill, packageRows] = await Promise.all([
+    summarizeSnapshotTable(
+      snapshot,
+      "skillDailyStats",
+      "skillId",
+      datasetVersion,
+      startDay,
+      endDay,
+    ),
+    summarizeSnapshotTable(
+      snapshot,
+      "packageDailyStats",
+      "packageId",
+      datasetVersion,
+      startDay,
+      endDay,
+    ),
+  ]);
+  return {
+    deployment,
+    datasetVersion,
+    checksum: metadata.checksum,
+    generatedAt: metadata.generatedAt,
+    importedAt: metadata.importedAt,
+    declared: {
+      targets: metadata.targetCount,
+      skillTargets: metadata.skillTargetCount,
+      packageTargets: metadata.packageTargetCount,
+      dailyRows: metadata.dailyRowCount,
+      startDay,
+      endDay,
+    },
+    imported: {
+      skill,
+      package: packageRows,
+      unresolvedTargets: metadata.unresolvedTargets,
+      skippedOverlayRows: metadata.skippedOverlayRows,
+    },
+  };
 }
 
 async function summarizeSnapshotTable(
@@ -530,10 +553,14 @@ async function importPlannedTables(
   createTableArchive(plannedRoot, archive);
   assertExclusiveTestLane(laneRunId, datasetVersion);
   importArchive(deployment, archive);
+  const importedSnapshot = join(workDir, "test-after.zip");
+  exportDeploymentSnapshot(deployment, importedSnapshot);
+  await recordRollbackSourceState(workDir, importedSnapshot);
+  return importedSnapshot;
 }
 
 export async function assertRankingTablesUnchanged(baseline: string, current: string) {
-  for (const table of ["skillDailyStats", "packageDailyStats", "rankingMetricImports"] as const) {
+  for (const table of RANKING_TABLES) {
     const [baselineDigest, currentDigest] = await Promise.all([
       digestSnapshotTable(baseline, table),
       digestSnapshotTable(current, table),
@@ -542,6 +569,36 @@ export async function assertRankingTablesUnchanged(baseline: string, current: st
       throw new Error(`${table} changed after the backup snapshot; aborting before import`);
     }
   }
+}
+
+export async function rankingTableDigests(snapshot: string) {
+  const entries = await Promise.all(
+    RANKING_TABLES.map(
+      async (table) => [table, await digestSnapshotTable(snapshot, table)] as const,
+    ),
+  );
+  return Object.fromEntries(entries) as Record<RankingTable, string>;
+}
+
+export async function assertRankingTablesMatchDigests(
+  snapshot: string,
+  expected: Partial<Record<RankingTable, unknown>>,
+) {
+  for (const table of RANKING_TABLES) {
+    if (typeof expected[table] !== "string") {
+      throw new Error(`Backup manifest is missing the ${table} rollback source digest`);
+    }
+    if ((await digestSnapshotTable(snapshot, table)) !== expected[table]) {
+      throw new Error(`${table} no longer matches the rollback source state`);
+    }
+  }
+}
+
+async function recordRollbackSourceState(backupDir: string, snapshot: string) {
+  const manifestPath = join(backupDir, "backup-manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
+  manifest.expectedCurrentDigests = await rankingTableDigests(snapshot);
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 async function digestSnapshotTable(snapshot: string, table: string) {
@@ -557,11 +614,13 @@ async function restoreBackup(backupDir: string, deployment: string, laneRunId: n
   const manifest = JSON.parse(await readFile(`${backupDir}/backup-manifest.json`, "utf8")) as {
     deployment?: unknown;
     datasetVersion?: unknown;
+    expectedCurrentDigests?: Partial<Record<RankingTable, unknown>>;
     snapshot?: unknown;
   };
   if (
     manifest.deployment !== CLAWHUB_TEST_DEPLOYMENT ||
     typeof manifest.datasetVersion !== "string" ||
+    !manifest.expectedCurrentDigests ||
     manifest.snapshot !== "test-before.zip"
   ) {
     throw new Error("Backup manifest is not for the permanent Test deployment");
@@ -576,6 +635,9 @@ async function restoreBackup(backupDir: string, deployment: string, laneRunId: n
       copySnapshotTable(snapshot, "packageDailyStats", planned.packageDailyStats),
       copySnapshotTable(snapshot, "rankingMetricImports", planned.rankingMetricImports),
     ]);
+    const currentSnapshot = join(workDir, "test-current.zip");
+    exportDeploymentSnapshot(deployment, currentSnapshot);
+    await assertRankingTablesMatchDigests(currentSnapshot, manifest.expectedCurrentDigests);
     const archive = join(workDir, "ranking-tables.rollback.zip");
     createTableArchive(planned.root, archive);
     assertExclusiveTestLane(laneRunId, manifest.datasetVersion);
