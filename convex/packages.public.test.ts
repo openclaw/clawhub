@@ -1833,7 +1833,8 @@ function makePluginExportCtx(digests: Array<Record<string, unknown>>) {
                     .sort((a, b) => {
                       const updatedDiff = Number(a.updatedAt) - Number(b.updatedAt);
                       if (updatedDiff !== 0) return order === "desc" ? -updatedDiff : updatedDiff;
-                      return String(a._id).localeCompare(String(b._id));
+                      const idDiff = String(a._id).localeCompare(String(b._id));
+                      return order === "desc" ? -idDiff : idDiff;
                     });
                   return {
                     async *[Symbol.asyncIterator]() {
@@ -16773,6 +16774,42 @@ describe("restorePackageInternal", () => {
       expect(first.page).toHaveLength(200);
       expect(first.isDone).toBe(false);
       expect(second.page).toHaveLength(50);
+      expect(second.isDone).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+      else process.env.CLAWHUB_EXPERIMENTAL_CLAWS = previous;
+    }
+  });
+
+  it("preserves each stable family's index order across tied public list pages", async () => {
+    const previous = process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;
+    const ctx = makePluginExportCtx([
+      makeDigest("zulu-plugin", {
+        _id: "packageSearchDigest:zulu",
+        packageId: "packages:zulu",
+        updatedAt: 1,
+        _creationTime: 1,
+      }),
+      makeDigest("alpha-plugin", {
+        _id: "packageSearchDigest:alpha",
+        packageId: "packages:alpha",
+        updatedAt: 1,
+        _creationTime: 1,
+      }),
+    ]);
+
+    try {
+      const first = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: null, numItems: 1 },
+      });
+      const second = await listPublicPageHandler(ctx, {
+        paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+      });
+      expect([...first.page, ...second.page].map((entry) => entry.name)).toEqual([
+        "zulu-plugin",
+        "alpha-plugin",
+      ]);
       expect(second.isDone).toBe(true);
     } finally {
       if (previous === undefined) delete process.env.CLAWHUB_EXPERIMENTAL_CLAWS;

@@ -3995,27 +3995,26 @@ async function listStablePackageDiscoveryPage(
   const familyPages = await Promise.all(
     STABLE_PACKAGE_FAMILIES.map(async (family) => await loadFamily(family)),
   );
-  const candidates = familyPages
-    .flatMap((source) =>
-      source.rows.map((row, index) => ({
-        family: source.family,
-        row,
-        key: source.keys[index],
-        source,
-      })),
-    )
-    .sort((a, b) => compareStablePackageDiscoveryCandidates(a.row, b.row, sort));
   const membershipCache = new Map<string, Promise<boolean>>();
   const page: PublicPackageListItem[] = [];
   const consumedByFamily = new Map<StablePackageFamily, number>();
-  for (const candidate of candidates) {
+  while (page.length < targetCount) {
+    // Merge only the current head from each source so every persisted source
+    // cursor advances through a contiguous prefix of that source's index order.
+    const candidate = familyPages
+      .flatMap((source) => {
+        const index = consumedByFamily.get(source.family) ?? 0;
+        const row = source.rows[index];
+        return row ? [{ family: source.family, row, key: source.keys[index] }] : [];
+      })
+      .sort((a, b) => compareStablePackageDiscoveryCandidates(a.row, b.row, sort))[0];
+    if (!candidate) break;
     const digest = candidate.row;
     consumedByFamily.set(candidate.family, (consumedByFamily.get(candidate.family) ?? 0) + 1);
     cursor.sources[candidate.family].key = candidate.key;
     if (!digestMatchesSearchFilters(digest, args)) continue;
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
     page.push(await toPublicPackageListItem(ctx, digest));
-    if (page.length >= targetCount) break;
   }
   for (const source of familyPages) {
     const consumed = consumedByFamily.get(source.family) ?? 0;
