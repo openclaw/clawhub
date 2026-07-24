@@ -5,7 +5,9 @@ import {
 } from "clawhub-schema";
 import { describe, expect, it, vi } from "vitest";
 import {
+  beginCatalogFeedShardPublication,
   buildCatalogFeedShards,
+  finalizeCatalogFeedShardPublication,
   getCatalogFeedShardByDigest,
   getLatestCatalogFeedShardPublication,
 } from "./catalogFeedShards";
@@ -22,6 +24,26 @@ const getLatestHandler = (
 )._handler;
 const getShardByDigestHandler = (
   getCatalogFeedShardByDigest as unknown as WrappedHandler<{ sha256: string }, unknown>
+)._handler;
+const beginPublicationHandler = (
+  beginCatalogFeedShardPublication as unknown as WrappedHandler<
+    {
+      feedId: typeof CATALOG_SKILLS_FEED_ID;
+      requestedSequence?: number;
+      generatedAt: string;
+      expiresAt: string;
+      description: string;
+      entryCount: number;
+      requiresProjection: boolean;
+    },
+    { publicationId: string; sequence: number }
+  >
+)._handler;
+const finalizePublicationHandler = (
+  finalizeCatalogFeedShardPublication as unknown as WrappedHandler<
+    { publicationId: string },
+    unknown
+  >
 )._handler;
 
 function entry(index: number): CatalogFeedEntry {
@@ -46,7 +68,104 @@ function entry(index: number): CatalogFeedEntry {
   };
 }
 
+function mutationDb(overrides: Record<string, unknown>) {
+  return {
+    get: vi.fn(),
+    insert: vi.fn(),
+    query: vi.fn(),
+    patch: vi.fn(),
+    replace: vi.fn(),
+    delete: vi.fn(),
+    normalizeId: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe("catalog feed shard publication builder", () => {
+  it("reserves a reset revision for a shard-only query projection", async () => {
+    const insert = vi
+      .fn()
+      .mockResolvedValueOnce("publication:1")
+      .mockResolvedValueOnce("revision:1");
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => {
+        if (table === "catalogFeedPublications") {
+          return { unique: vi.fn(async () => ({ sequence: 4 })) };
+        }
+        if (table === "catalogFeedRevisions") {
+          return {
+            filter: vi.fn(() => ({
+              order: vi.fn(() => ({
+                first: vi.fn(async () => ({ sequence: 4, cumulativeChangeCount: 10 })),
+              })),
+            })),
+            unique: vi.fn(async () => null),
+          };
+        }
+        return { order: vi.fn(() => ({ first: vi.fn(async () => null) })) };
+      }),
+    }));
+
+    await expect(
+      beginPublicationHandler(
+        { db: mutationDb({ query, insert }) },
+        {
+          feedId: CATALOG_SKILLS_FEED_ID,
+          generatedAt: "2026-07-17T00:00:00.000Z",
+          expiresAt: "2026-07-18T00:00:00.000Z",
+          description: "Official skills",
+          entryCount: 1001,
+          requiresProjection: true,
+        },
+      ),
+    ).resolves.toMatchObject({ publicationId: "publication:1", sequence: 5 });
+    expect(insert).toHaveBeenCalledWith(
+      "catalogFeedRevisions",
+      expect.objectContaining({
+        sequence: 5,
+        indexedEntryCount: 0,
+        resetRequired: true,
+        cumulativeChangeCount: 10,
+      }),
+    );
+  });
+
+  it("makes a shard root and its completed query projection visible atomically", async () => {
+    const patch = vi.fn();
+    const publication = {
+      _id: "publication:1",
+      feedId: CATALOG_SKILLS_FEED_ID,
+      sequence: 5,
+      status: "building",
+      expectedShardCount: 5,
+      storedShardCount: 5,
+      storedEntryCount: 1001,
+      entryCount: 1001,
+      requiresProjection: true,
+      publishedAt: 1,
+    };
+    const query = vi.fn(() => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () => ({
+          _id: "revision:1",
+          indexedEntryCount: 1001,
+          entryCount: undefined,
+        })),
+      })),
+    }));
+
+    await finalizePublicationHandler(
+      { db: mutationDb({ get: vi.fn(async () => publication), query, patch }) },
+      { publicationId: "publication:1" },
+    );
+
+    expect(patch).toHaveBeenNthCalledWith(1, "revision:1", {
+      entryCount: 1001,
+      indexedEntryCount: undefined,
+    });
+    expect(patch).toHaveBeenNthCalledWith(2, "publication:1", { status: "ready" });
+  });
+
   it("builds complete bounded immutable shards", async () => {
     const shards = await buildCatalogFeedShards({
       feedId: CATALOG_SKILLS_FEED_ID,

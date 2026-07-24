@@ -123,6 +123,7 @@ export const beginCatalogFeedShardPublication = internalMutation({
     expiresAt: v.string(),
     description: v.string(),
     entryCount: v.number(),
+    requiresProjection: v.boolean(),
   },
   handler: async (ctx, args) => {
     const generatedAt = Date.parse(args.generatedAt);
@@ -134,6 +135,7 @@ export const beginCatalogFeedShardPublication = internalMutation({
       !Number.isSafeInteger(args.entryCount) ||
       args.entryCount < 0 ||
       args.entryCount > CATALOG_FEED_SHARD_ROOT_MAX_ENTRIES ||
+      args.requiresProjection !== (args.requestedSequence === undefined) ||
       new TextEncoder().encode(args.description).length > 1024
     ) {
       throw new Error("Catalog feed shard publication bounds are invalid");
@@ -147,6 +149,12 @@ export const beginCatalogFeedShardPublication = internalMutation({
       .query("catalogFeedPublications")
       .withIndex("by_feed", (q) => q.eq("feedId", args.feedId))
       .unique();
+    const latestRevision = await ctx.db
+      .query("catalogFeedRevisions")
+      .withIndex("by_feed_and_sequence", (q) => q.eq("feedId", args.feedId))
+      .filter((q) => q.neq(q.field("entryCount"), undefined))
+      .order("desc")
+      .first();
     const latestSequence = Math.max(
       latestShardPublication?.sequence ?? 0,
       latestAtomicPublication?.sequence ?? 0,
@@ -170,10 +178,33 @@ export const beginCatalogFeedShardPublication = internalMutation({
       storedShardCount: 0,
       storedEntryCount: 0,
       storedByteCount: 0,
+      requiresProjection: args.requiresProjection,
       status: "building",
       publishedAt,
       expirationTime,
     });
+    if (args.requiresProjection) {
+      const existingRevision = await ctx.db
+        .query("catalogFeedRevisions")
+        .withIndex("by_feed_and_sequence", (q) =>
+          q.eq("feedId", args.feedId).eq("sequence", sequence),
+        )
+        .unique();
+      if (existingRevision) throw new Error("Catalog feed shard projection already exists");
+      await ctx.db.insert("catalogFeedRevisions", {
+        feedId: args.feedId,
+        sequence,
+        indexedEntryCount: 0,
+        changeCount: 0,
+        cumulativeChangeCount: latestRevision?.cumulativeChangeCount ?? 0,
+        resetRequired: true,
+        generatedAt: args.generatedAt,
+        expiresAt: args.expiresAt,
+        description: args.description,
+        publishedAt,
+        expirationTime,
+      });
+    }
     return { publicationId, sequence, publishedAt, expirationTime };
   },
 });
@@ -274,6 +305,25 @@ export const finalizeCatalogFeedShardPublication = internalMutation({
       publication.storedEntryCount !== publication.entryCount
     ) {
       throw new Error("Catalog feed shard publication is incomplete");
+    }
+    if (publication.requiresProjection) {
+      const revision = await ctx.db
+        .query("catalogFeedRevisions")
+        .withIndex("by_feed_and_sequence", (q) =>
+          q.eq("feedId", publication.feedId).eq("sequence", publication.sequence),
+        )
+        .unique();
+      if (
+        !revision ||
+        revision.entryCount !== undefined ||
+        (revision.indexedEntryCount ?? 0) !== publication.entryCount
+      ) {
+        throw new Error("Catalog feed shard projection is incomplete");
+      }
+      await ctx.db.patch(revision._id, {
+        entryCount: publication.entryCount,
+        indexedEntryCount: undefined,
+      });
     }
     await ctx.db.patch(publication._id, { status: "ready" });
     return {
