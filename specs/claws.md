@@ -53,7 +53,8 @@ namespaced key or define their own profile-pointer contract.
    ([PR #3092](https://github.com/openclaw/clawhub/pull/3092)).
 5. Validate the portable `CLAW.md` prompt body, project it as managed
    `SOUL.md` capability metadata, and prove the feed-to-OpenClaw mapping
-   (follow-up stacked after PR #3092).
+   ([PR #3262](https://github.com/openclaw/clawhub/pull/3262), stacked after
+   PR #3092).
 
 The hosted projection uses the separate
 [experimental Claw feed contract](experimental-claw-feed.md), not an extension
