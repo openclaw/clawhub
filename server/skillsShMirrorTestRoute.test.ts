@@ -222,6 +222,7 @@ describe("skills.sh permanent Test mirror route", () => {
       }
       expect(body).toMatchObject({
         operation: "mirror-start",
+        sourceView: "leaderboard",
         snapshotId: "skills-sh:proof:snapshot",
         sourceSnapshotHash: "a".repeat(64),
         sourceCaptureWrites: 1,
@@ -1385,6 +1386,68 @@ describe("skills.sh permanent Test mirror route", () => {
     expect(joinStateCalls).toBe(2);
     expect(calls.some((body) => body.operation === "mirror-source-page-store")).toBe(false);
     expect(calls.some((body) => body.operation === "mirror-start")).toBe(false);
+  });
+
+  it("does not spend the trending hydration bound on known mirror quarantines", async () => {
+    readBodyMock.mockResolvedValue({ operation: "start-trending", reason: "CLAW-589 proof" });
+    const rows = Array.from({ length: 11 }, (_, index) => ({
+      ...capturedSourcePage().rows[0],
+      id: `owner/repo/quarantined-${index}`,
+    }));
+    measureTrendingSourceMock.mockResolvedValue({
+      catalogTotal: rows.length,
+      observedAt: "2026-07-24T19:44:11.437Z",
+      pageSize: 500,
+      sourceRequests: 1,
+      sourceDurationMs: 100,
+      snapshotHash: "d".repeat(64),
+      sourcePages: [
+        {
+          ...capturedSourcePage(0, rows.length, false, "trending-page-0"),
+          sourceView: "trending",
+          sourceTotal: rows.length,
+          rows,
+        },
+      ],
+      evidence: { endpointExhausted: true, uniqueIds: rows.length, duplicateIds: 0 },
+    });
+    const calls: Array<Record<string, unknown>> = [];
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      calls.push(body);
+      if (body.operation === "mirror-status") {
+        return new Response(JSON.stringify({ control: { enabled: true }, runs: [] }));
+      }
+      if (body.operation === "mirror-trending-join-state") {
+        return new Response(
+          JSON.stringify({
+            joinedExternalIds: [],
+            missingExternalIds: body.externalIds,
+            hydratableExternalIds: [],
+            knownConflictExternalIds: body.externalIds,
+          }),
+        );
+      }
+      if (body.operation === "mirror-source-page-store") {
+        return new Response(JSON.stringify({ stored: true, page: 0, rows: rows.length }));
+      }
+      if (body.operation === "mirror-source-summary") {
+        return new Response(JSON.stringify({ pageDocuments: 1, rows: rows.length }));
+      }
+      return new Response(
+        JSON.stringify({ runId: "skillsShMirrorRuns:trending", status: "running" }),
+      );
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(calls).toContainEqual(
+      expect.objectContaining({ operation: "mirror-source-page-store" }),
+    );
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "mirror-start" }));
   });
 
   it("joins a captured trending batch without hydrating existing identities", async () => {

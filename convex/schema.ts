@@ -3185,6 +3185,12 @@ const skillsShMirrorRuns = defineTable({
   updatedAt: v.number(),
 })
   .index("by_started_at", ["startedAt"])
+  .index("by_source_view_and_status_and_started_at", ["sourceView", "status", "startedAt"])
+  .index("by_source_view_and_status_and_source_snapshot_hash", [
+    "sourceView",
+    "status",
+    "sourceSnapshotHash",
+  ])
   .index("by_status_and_updated_at", {
     fields: ["status", "updatedAt"],
   });
@@ -3371,6 +3377,9 @@ const skillsShMirrorConflicts = defineTable({
   .index("by_run_id", ["runId"])
   .index("by_external_id_and_created_at", {
     fields: ["externalId", "createdAt"],
+  })
+  .index("by_run_id_and_external_id_and_kind", {
+    fields: ["runId", "externalId", "kind"],
   });
 
 const publisherAbuseScoreRuns = defineTable({

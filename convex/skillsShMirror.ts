@@ -960,7 +960,7 @@ export const startRunInternal = internalMutation({
     const now = Date.now();
     const run = {
       snapshotId: args.snapshotId.trim(),
-      sourceView: args.sourceView ?? ("leaderboard" as const),
+      ...(args.sourceView ? { sourceView: args.sourceView } : {}),
       ...(args.sourceSnapshotHash
         ? { sourceSnapshotHash: normalizedSourceSnapshotHash(args.sourceSnapshotHash) }
         : {}),
@@ -1508,17 +1508,58 @@ export const getTrendingJoinStateInternal = internalQuery({
     if (externalIds.some((value) => !value) || new Set(externalIds).size !== externalIds.length) {
       throw new ConvexError("trending externalIds must be unique non-empty strings");
     }
-    const rows = await Promise.all(
-      externalIds.map(async (externalId) =>
-        ctx.db
-          .query("skillsShMirrorDigests")
-          .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
-          .unique(),
+    const [rows, explicitLeaderboardRun, legacyLeaderboardRun] = await Promise.all([
+      Promise.all(
+        externalIds.map(async (externalId) =>
+          ctx.db
+            .query("skillsShMirrorDigests")
+            .withIndex("by_external_id", (q) => q.eq("externalId", externalId))
+            .unique(),
+        ),
       ),
-    );
+      ctx.db
+        .query("skillsShMirrorRuns")
+        .withIndex("by_source_view_and_status_and_started_at", (q) =>
+          q.eq("sourceView", "leaderboard").eq("status", "completed"),
+        )
+        .order("desc")
+        .first(),
+      ctx.db
+        .query("skillsShMirrorRuns")
+        .withIndex("by_source_view_and_status_and_source_snapshot_hash", (q) =>
+          q.eq("sourceView", undefined).eq("status", "completed").gt("sourceSnapshotHash", ""),
+        )
+        .first(),
+    ]);
+    // CLAW-563 created one live Test run before sourceView was persisted. New live runs are
+    // explicit; the hash-bearing legacy fallback disappears as soon as one completes.
+    const currentLeaderboardRun = explicitLeaderboardRun ?? legacyLeaderboardRun;
+    const conflicts = currentLeaderboardRun
+      ? await Promise.all(
+          externalIds.map(async (externalId, index) =>
+            rows[index]?.active
+              ? null
+              : await ctx.db
+                  .query("skillsShMirrorConflicts")
+                  .withIndex("by_run_id_and_external_id_and_kind", (q) =>
+                    q
+                      .eq("runId", currentLeaderboardRun._id)
+                      .eq("externalId", externalId)
+                      .eq("kind", "source-quarantine"),
+                  )
+                  .unique(),
+          ),
+        )
+      : externalIds.map(() => null);
     return {
       joinedExternalIds: rows.flatMap((row) => (row?.active ? [row.externalId] : [])),
       missingExternalIds: externalIds.filter((_, index) => !rows[index]?.active),
+      knownConflictExternalIds: externalIds.filter(
+        (_, index) => !rows[index]?.active && conflicts[index] !== null,
+      ),
+      hydratableExternalIds: externalIds.filter(
+        (_, index) => !rows[index]?.active && conflicts[index] === null,
+      ),
     };
   },
 });

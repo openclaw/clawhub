@@ -281,6 +281,7 @@ export default defineEventHandler(async (event) => {
       });
       const result = await callConvexOperator(authorization, {
         operation: "mirror-start",
+        sourceView: "leaderboard",
         reason: requireString(body.reason, "reason"),
         snapshotId,
         sourceSnapshotHash,
@@ -346,7 +347,7 @@ export default defineEventHandler(async (event) => {
       const sourceExternalIds = source.sourcePages.flatMap((page) =>
         page.rows.map((row) => requireString(row.id as string, "externalId")),
       );
-      const missingExternalIds = new Set<string>();
+      const hydratableExternalIds = new Set<string>();
       for (let offset = 0; offset < sourceExternalIds.length; offset += MIRROR_BATCH_SIZE) {
         const joinState = await callConvexOperator(authorization, {
           operation: "mirror-trending-join-state",
@@ -355,10 +356,13 @@ export default defineEventHandler(async (event) => {
         if (!Array.isArray(joinState.missingExternalIds)) {
           throw new Error("skills.sh trending join state is invalid");
         }
-        for (const value of joinState.missingExternalIds) {
-          missingExternalIds.add(requireString(value as string, "externalId").toLowerCase());
+        const batchHydratableExternalIds = Array.isArray(joinState.hydratableExternalIds)
+          ? joinState.hydratableExternalIds
+          : joinState.missingExternalIds;
+        for (const value of batchHydratableExternalIds) {
+          hydratableExternalIds.add(requireString(value as string, "externalId").toLowerCase());
         }
-        if (missingExternalIds.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
+        if (hydratableExternalIds.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
           throw new Error(
             `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
           );
@@ -757,16 +761,21 @@ export default defineEventHandler(async (event) => {
         if (!Array.isArray(joinState.missingExternalIds)) {
           throw new Error("skills.sh trending join state is invalid");
         }
-        const missing = new Set(
-          joinState.missingExternalIds.map((value) => requireString(value as string, "externalId")),
+        const hydratableExternalIds = Array.isArray(joinState.hydratableExternalIds)
+          ? joinState.hydratableExternalIds
+          : joinState.missingExternalIds;
+        const hydratable = new Set(
+          hydratableExternalIds.map((value) => requireString(value as string, "externalId")),
         );
-        if (missing.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
+        if (hydratable.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
           throw new Error(
             `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
           );
         }
-        if (missing.size > 0) {
-          const missingRows = listRows.filter((row) => missing.has(String(row.id).toLowerCase()));
+        if (hydratable.size > 0) {
+          const missingRows = listRows.filter((row) =>
+            hydratable.has(String(row.id).toLowerCase()),
+          );
           const beforeRequest = createBatchLeaseHeartbeat({
             authorization,
             runId,

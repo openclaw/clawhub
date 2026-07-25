@@ -380,6 +380,144 @@ describe("skills.sh external mirror", () => {
     ).toEqual([]);
   });
 
+  it("separates known normalizer conflicts from hydratable trending drift", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const foundation = await startRun(t, "skills-sh:proof:known-quarantine", 1, "a".repeat(64));
+    const quarantinedExternalId = "owner/repo/known-quarantine";
+    const unseenExternalId = "owner/repo/unseen";
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShMirrorConflicts", {
+        runId: foundation.runId,
+        externalId: quarantinedExternalId,
+        kind: "source-quarantine",
+        reason: "unsupported-source-type",
+        observedFingerprint: "known-quarantine",
+        page: 0,
+        offset: 0,
+        createdAt: Date.now(),
+      });
+      await ctx.db.patch(foundation.runId, {
+        sourceView: undefined,
+        status: "completed",
+        completedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      t.query(internal.skillsShMirror.getTrendingJoinStateInternal, {
+        externalIds: [quarantinedExternalId, unseenExternalId],
+      }),
+    ).resolves.toEqual({
+      joinedExternalIds: [],
+      missingExternalIds: [quarantinedExternalId, unseenExternalId],
+      knownConflictExternalIds: [quarantinedExternalId],
+      hydratableExternalIds: [unseenExternalId],
+    });
+  });
+
+  it("keeps stale normalizer conflicts eligible for bounded trending hydration", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const externalId = "owner/repo/recovered-upstream";
+    const oldFoundation = await startRun(t, "skills-sh:proof:old-quarantine", 1, "a".repeat(64));
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShMirrorConflicts", {
+        runId: oldFoundation.runId,
+        externalId,
+        kind: "source-quarantine",
+        reason: "unsupported-source-type",
+        observedFingerprint: "old-quarantine",
+        page: 0,
+        offset: 0,
+        createdAt: Date.now() - 1,
+      });
+      await ctx.db.patch(oldFoundation.runId, {
+        sourceView: undefined,
+        status: "completed",
+        completedAt: Date.now() - 1,
+      });
+    });
+    const currentFoundation = await startRun(
+      t,
+      "skills-sh:proof:current-source",
+      1,
+      undefined,
+      "leaderboard",
+      "2026-07-22T20:14:11.881Z",
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(currentFoundation.runId, {
+        status: "completed",
+        completedAt: Date.now(),
+      });
+    });
+
+    await expect(
+      t.query(internal.skillsShMirror.getTrendingJoinStateInternal, { externalIds: [externalId] }),
+    ).resolves.toEqual({
+      joinedExternalIds: [],
+      missingExternalIds: [externalId],
+      knownConflictExternalIds: [],
+      hydratableExternalIds: [externalId],
+    });
+  });
+
+  it("does not let a later unrelated conflict mask the current leaderboard quarantine", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const externalId = "owner/repo/current-quarantine";
+    const foundation = await startRun(t, "skills-sh:proof:current-quarantine", 1, "a".repeat(64));
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShMirrorConflicts", {
+        runId: foundation.runId,
+        externalId,
+        kind: "source-quarantine",
+        reason: "unsupported-source-type",
+        observedFingerprint: "current-quarantine",
+        page: 0,
+        offset: 0,
+        createdAt: Date.now() - 1,
+      });
+      await ctx.db.patch(foundation.runId, {
+        sourceView: undefined,
+        status: "completed",
+        completedAt: Date.now() - 1,
+      });
+    });
+    const trending = await startRun(
+      t,
+      "skills-sh:trending:later-conflict",
+      1,
+      undefined,
+      "trending",
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShMirrorConflicts", {
+        runId: trending.runId,
+        externalId,
+        kind: "source-quarantine",
+        reason: "later-unrelated-quarantine",
+        observedFingerprint: "later-unrelated-conflict",
+        page: 0,
+        offset: 0,
+        createdAt: Date.now(),
+      });
+    });
+
+    await expect(
+      t.query(internal.skillsShMirror.getTrendingJoinStateInternal, { externalIds: [externalId] }),
+    ).resolves.toEqual({
+      joinedExternalIds: [],
+      missingExternalIds: [externalId],
+      knownConflictExternalIds: [externalId],
+      hydratableExternalIds: [],
+    });
+  });
+
   it("returns the durable cursor summary when starting a run", async () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);
