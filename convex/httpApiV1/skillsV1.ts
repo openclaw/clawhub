@@ -1517,7 +1517,14 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       : null,
   }));
 
-  return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers);
+  const responseHeaders =
+    sort === "trending" && getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
+      ? mergeHeaders(rate.headers, {
+          Deprecation: "true",
+          Link: `<${ApiRoutes.trending}?kind=skills>; rel="successor-version"`,
+        })
+      : rate.headers;
+  return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
 }
 
 async function describeOwnerVisibleSkillState(

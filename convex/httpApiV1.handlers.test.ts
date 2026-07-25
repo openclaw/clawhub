@@ -2451,6 +2451,46 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("deprecates native-only Trending with the canonical successor link", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("limit" in args) return { items: [], nextCursor: null };
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?sort=trending"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("deprecation")).toBe("true");
+    expect(response.headers.get("link")).toBe(
+      '</api/v1/trending?kind=skills>; rel="successor-version"',
+    );
+  });
+
+  it("does not advertise the dark canonical Trending successor", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("limit" in args) return { items: [], nextCursor: null };
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listSkillsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills?sort=trending"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("deprecation")).toBeNull();
+    expect(response.headers.get("link")).toBeNull();
+  });
+
   it("lists skills rejects invalid sort", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());

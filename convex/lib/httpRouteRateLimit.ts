@@ -50,6 +50,9 @@ function resolveDefaultRouteRateLimit(spec: RouteSpec, request: Request): RouteR
 
   const routedPath = getRoutedPath(spec);
   if (authMetadataPaths.has(routedPath)) return { kind: "none" };
+  // The Trending handler owns its rollout gate before rate limiting so the
+  // dark route remains indistinguishable from an absent endpoint.
+  if (routedPath === ApiRoutes.trending) return { kind: "none" };
 
   if (routedPath === ApiRoutes.publishTokenMint) return { kind: "trustedPublish" };
   if (routedPath === ApiRoutes.skillsExport || routedPath === ApiRoutes.pluginsExport) {

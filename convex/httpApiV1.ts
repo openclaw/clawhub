@@ -49,6 +49,7 @@ import {
 } from "./httpApiV1/skillsV1";
 import { starsDeleteRouterV1Handler, starsPostRouterV1Handler } from "./httpApiV1/starsV1";
 import { transfersGetRouterV1Handler } from "./httpApiV1/transfersV1";
+import { trendingV1Handler } from "./httpApiV1/trendingV1";
 import {
   banAppealContextV1Handler,
   usersGetRouterV1Handler,
@@ -82,6 +83,7 @@ export const promotionsFeedV1Http = httpAction(promotionsFeedV1Handler);
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
 export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler);
 export const listSkillsV1Http = httpAction(listSkillsV1Handler);
+export const trendingV1Http = httpAction(trendingV1Handler);
 export const skillsGetRouterV1Http = httpAction(skillsGetRouterV1Handler);
 export const publishSkillV1Http = httpAction(publishSkillV1Handler);
 export const skillSecurityVerdictsV1Http = httpAction(skillSecurityVerdictsV1Handler);
@@ -132,6 +134,7 @@ export const __handlers = {
   searchSkillsV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,
+  trendingV1Handler,
   skillsGetRouterV1Handler,
   publishSkillV1Handler,
   skillSecurityVerdictsV1Handler,

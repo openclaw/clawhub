@@ -24,6 +24,7 @@ import {
   listPackagesV1Http,
   listPluginsV1Http,
   listSkillsV1Http,
+  trendingV1Http,
   mintPublishTokenV1Http,
   npmMirrorGetHttp,
   packagesDeleteRouterV1Http,
@@ -118,6 +119,12 @@ http.route({
   path: ApiRoutes.skills,
   method: "GET",
   handler: listSkillsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.trending,
+  method: "GET",
+  handler: trendingV1Http,
 });
 
 http.route({
