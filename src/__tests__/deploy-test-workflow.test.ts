@@ -8,11 +8,14 @@ type WorkflowStep = {
   if?: string;
   name?: string;
   run?: string;
+  uses?: string;
+  with?: Record<string, string>;
 };
 
 type WorkflowJob = {
   environment?: { name?: string; url?: string };
   if?: string;
+  needs?: string;
   steps?: WorkflowStep[];
 };
 
@@ -64,6 +67,8 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test'");
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay'");
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test'");
+    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search'");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test'");
     expect(job?.if).toContain("inputs.expected_sha != ''");
     expect(job?.if).toContain("github.event_name == 'pull_request'");
     expect(job?.if).toContain(
@@ -80,6 +85,12 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain(
       "contains(github.event.pull_request.labels.*.name, 'test-trending-load')",
     );
+    expect(job?.if).toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search'",
+    );
+    expect(job?.if).toContain(
+      "contains(github.event.pull_request.labels.*.name, 'test-search-load')",
+    );
     expect(job?.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(job?.if).toContain("github.event.workflow_run.event == 'push'");
     expect(revision).toContain('deploy_sha" != "$main_sha');
@@ -88,6 +99,8 @@ describe("Test deploy workflow", () => {
     expect(revision).toContain("deploy-claw-563-to-permanent-test");
     expect(revision).toContain("refs/heads/pe/claw-589-trending-rank-overlay");
     expect(revision).toContain("deploy-claw-589-to-permanent-test");
+    expect(revision).toContain("refs/heads/pe/claw-577-canonical-mixed-search");
+    expect(revision).toContain("deploy-claw-577-to-permanent-test");
     expect(revision).toContain("${{ inputs.expected_sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.repo.full_name }}");
@@ -212,5 +225,39 @@ describe("Test deploy workflow", () => {
     expect(run).toContain(".runId == $ownedRun");
     expect(run).toContain("trending24hInstalls == null");
     expect(run).toContain("revokedStatus");
+  });
+
+  it("runs the CLAW-577 search proof only for its exact guarded branch", async () => {
+    const workflow = await readWorkflow();
+    const job = workflow.jobs?.["claw577-search-proof"];
+    const proofStep = job?.steps?.find(
+      (candidate) => candidate.name === "Prove canonical search order and cost in permanent Test",
+    );
+    const upload = job?.steps?.find(
+      (candidate) => candidate.name === "Upload permanent Test canonical search proof",
+    );
+    const run = proofStep?.run ?? "";
+
+    expect(job?.needs).toBe("deploy-test");
+    expect(job?.if).toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search'",
+    );
+    expect(job?.if).toContain("test-search-load");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test'");
+    expect(job?.environment?.name).toBe("Test");
+    expect(job?.steps?.[0]?.with?.ref).toContain("github.event.pull_request.head.sha");
+    expect(proofStep?.env?.DEPLOY_SHA).toBe("${{ needs.deploy-test.outputs.deploy_sha }}");
+    expect(run).toContain("appMeta:getDeploymentInfo");
+    expect(run).toContain("searchTestFixtures:seedCanonicalSearchTestFixture");
+    expect(run).toContain("bun run search:prove-test");
+    expect(run).toContain("trap cleanup EXIT");
+    expect(run).toContain("searchTestFixtures:cleanupCanonicalSearchTestFixture");
+    expect(run).toContain("searchTestFixtures:readCanonicalSearchTestFixture");
+    expect(run).toContain("claw577-cleanup-recovery.json");
+    expect(upload?.uses).toBe("actions/upload-artifact@v7");
+    expect(upload?.with?.name).toBe("claw577-search-proof");
+    expect(upload?.with?.["if-no-files-found"]).toBe("error");
+    expect(upload?.with?.path).toContain("proof/claw-577/canonical-search-test-proof.json");
+    expect(upload?.with?.path).toContain("claw577-cleanup.json");
   });
 });

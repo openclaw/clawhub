@@ -17,6 +17,7 @@ import {
   compareCanonicalSkillSearchCandidates,
   type CanonicalSkillSearchCandidate,
 } from "./lib/canonicalSkillSearch";
+import { CANONICAL_SKILL_SEARCH_BOUNDS } from "./lib/canonicalSkillSearchBounds";
 import { generateEmbedding } from "./lib/embeddings";
 import { toDayKey } from "./lib/leaderboards";
 import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
@@ -122,7 +123,7 @@ const MAX_DIRECT_SKILL_TOPIC_CANDIDATES = 100;
 // Keep each source small enough that the aggregate stays below Convex read limits.
 const MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES = 250;
 const MIN_VECTOR_SEARCH_CANDIDATES = 50;
-const MAX_VECTOR_SEARCH_CANDIDATES = 128;
+const MAX_VECTOR_SEARCH_CANDIDATES = CANONICAL_SKILL_SEARCH_BOUNDS.vectorCandidateLimit;
 const MAX_EXACT_SLUG_MATCHES = 25;
 const EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH = 3;
 
@@ -593,12 +594,12 @@ type CanonicalSkillSearchResult = {
   updatedAt: number;
 };
 
-const CANONICAL_NATIVE_CANDIDATE_LIMIT = 100;
-const CANONICAL_RESULT_LIMIT_MAX = 100;
-const ROLLING_ADOPTION_DAYS = 60;
+const CANONICAL_NATIVE_CANDIDATE_LIMIT = CANONICAL_SKILL_SEARCH_BOUNDS.nativeCandidateLimit;
+const CANONICAL_RESULT_LIMIT_MAX = CANONICAL_SKILL_SEARCH_BOUNDS.resultLimit;
+const ROLLING_ADOPTION_DAYS = CANONICAL_SKILL_SEARCH_BOUNDS.rollingAdoptionDays;
 // Forty candidates can read at most 2,400 daily rows, leaving headroom below
 // Convex's per-transaction document/byte limits for imported production-shaped data.
-const ROLLING_USAGE_QUERY_BATCH_SIZE = 40;
+const ROLLING_USAGE_QUERY_BATCH_SIZE = CANONICAL_SKILL_SEARCH_BOUNDS.rollingUsageBatchSize;
 
 function chunkValues<T>(values: T[], size: number) {
   const chunks: T[][] = [];
@@ -970,7 +971,8 @@ function isPublicExternalSearchDigest(digest: Doc<"skillsShMirrorDigests">) {
   );
 }
 
-const MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX = 50;
+const MAX_EXTERNAL_SEARCH_CANDIDATES_PER_INDEX =
+  CANONICAL_SKILL_SEARCH_BOUNDS.externalCandidateLimitPerIndex;
 
 export const getExternalSkillSearchCandidates = internalQuery({
   args: {

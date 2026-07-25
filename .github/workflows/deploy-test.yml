@@ -33,14 +33,18 @@ jobs:
       ((github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
       inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test') ||
       (github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay' &&
-      inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test')) &&
+      inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search' &&
+      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test')) &&
       github.actor == 'Patrick-Erichsen' &&
       inputs.expected_sha != '')) ||
       (github.event_name == 'pull_request' &&
       ((github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
       contains(github.event.pull_request.labels.*.name, 'test-mirror-load')) ||
       (github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
-      contains(github.event.pull_request.labels.*.name, 'test-trending-load'))) &&
+      contains(github.event.pull_request.labels.*.name, 'test-trending-load')) ||
+      (github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search' &&
+      contains(github.event.pull_request.labels.*.name, 'test-search-load'))) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor == 'Patrick-Erichsen' &&
       github.event.pull_request.head.sha != '') ||
@@ -92,6 +96,14 @@ jobs:
             then
               branch_test_allowed=true
             fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-577-canonical-mixed-search ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-577-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
             if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
               [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
@@ -102,6 +114,14 @@ jobs:
             fi
             if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
               [[ "$GITHUB_HEAD_REF" == pe/claw-589-trending-rank-overlay ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-577-canonical-mixed-search ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
               [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
               [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
@@ -680,3 +700,161 @@ jobs:
             claw589-cleanup.json
             claw589-deployment.json
             claw589-discarded-run.json
+
+  claw577-search-proof:
+    needs: deploy-test
+    if: >-
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search' &&
+      contains(github.event.pull_request.labels.*.name, 'test-search-load')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search' &&
+      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test' &&
+      inputs.expected_sha == needs.deploy-test.outputs.deploy_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+              inputs.expected_sha
+            }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Prove canonical search order and cost in permanent Test
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          confirm=manage-claw-577-canonical-search-test-fixture
+          mkdir -p proof/claw-577
+          printf '{}\n' > proof/claw-577/active-fixture.json
+          cleanup() {
+            set +e
+            digest_id="$(jq -r '.digestId // empty' proof/claw-577/active-fixture.json 2>/dev/null)"
+            run_id="$(jq -r '.runId // empty' proof/claw-577/active-fixture.json 2>/dev/null)"
+            recovery_exit=0
+            cleanup_exit=0
+            if [[ -z "$digest_id" || -z "$run_id" ]]; then
+              bunx convex run --no-push \
+                searchTestFixtures:readCanonicalSearchTestFixture \
+                "{\"confirm\":\"$confirm\"}" > claw577-cleanup-recovery.json 2>&1
+              recovery_exit=$?
+              if [[ "$recovery_exit" -eq 0 ]]; then
+                digest_id="$(jq -r '.digestId // empty' claw577-cleanup-recovery.json)"
+                run_id="$(jq -r '.runId // empty' claw577-cleanup-recovery.json)"
+              fi
+            else
+              jq -n '{skipped:true,reason:"active fixture IDs were recorded"}' \
+                > claw577-cleanup-recovery.json
+            fi
+            if [[ -n "$digest_id" && -n "$run_id" ]]; then
+              cleanup_args="$(
+                jq -cn \
+                  --arg confirm "$confirm" \
+                  --arg digestId "$digest_id" \
+                  --arg runId "$run_id" \
+                  '{confirm:$confirm,digestId:$digestId,runId:$runId}'
+              )"
+              bunx convex run --no-push \
+                searchTestFixtures:cleanupCanonicalSearchTestFixture \
+                "$cleanup_args" > claw577-cleanup.json 2>&1
+              cleanup_exit=$?
+            else
+              jq -n '{ok:true,removed:false,skipped:true}' > claw577-cleanup.json
+              if [[ "$recovery_exit" -ne 0 ]]; then
+                cleanup_exit="$recovery_exit"
+              fi
+            fi
+            bunx convex run --no-push \
+              searchTestFixtures:readCanonicalSearchTestFixture \
+              "{\"confirm\":\"$confirm\"}" > claw577-cleanup-readback.json 2>&1
+            readback_exit=$?
+            jq -n \
+              --argjson cleanupExit "$cleanup_exit" \
+              --argjson recoveryExit "$recovery_exit" \
+              --argjson readbackExit "$readback_exit" \
+              '{cleanupExit:$cleanupExit,recoveryExit:$recoveryExit,readbackExit:$readbackExit}' \
+              > claw577-cleanup-status.json
+            set -e
+            [[ "$cleanup_exit" -eq 0 && "$recovery_exit" -eq 0 && "$readback_exit" -eq 0 ]]
+            jq -e '.present == false' claw577-cleanup-readback.json >/dev/null
+          }
+          trap cleanup EXIT
+
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_SHA" ]]
+          bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw577-deployment-readback.json
+          jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw577-deployment-readback.json
+          bunx convex run --no-push \
+            searchTestFixtures:readCanonicalSearchTestFixture \
+            "{\"confirm\":\"$confirm\"}" > claw577-fixture-before.json
+          jq -e '.present == false' claw577-fixture-before.json >/dev/null
+
+          bunx convex run --no-push \
+            searchTestFixtures:seedCanonicalSearchTestFixture \
+            "{\"confirm\":\"$confirm\"}" > proof/claw-577/active-fixture.json
+          jq -e '
+            .ok == true and
+            .created == true and
+            (.digestId | type == "string") and
+            (.runId | type == "string")
+          ' proof/claw-577/active-fixture.json >/dev/null
+
+          bun run search:prove-test > claw577-proof-output.json
+          jq -e --arg sha "$DEPLOY_SHA" '
+            .target.environment == "permanent Test" and
+            .target.deploySha == $sha and
+            .target.productionWrites == 0 and
+            .target.schedulesCreated == 0 and
+            .target.scansPlanned == 0 and
+            .target.scansAdmitted == 0 and
+            .target.claimsCreated == 0 and
+            .fixture.lifetimeInstalls == 9000000 and
+            .fixture.rankingWeight == 0 and
+            .contract.samplesPerSurface >= 3 and
+            (.cases | length) == 4
+          ' proof/claw-577/canonical-search-test-proof.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw577-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .cleanupExit == 0 and
+            .recoveryExit == 0 and
+            .readbackExit == 0
+          ' claw577-cleanup-status.json >/dev/null
+
+      - name: Upload permanent Test canonical search proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw577-search-proof
+          if-no-files-found: error
+          path: |
+            proof/claw-577/canonical-search-test-proof.json
+            proof/claw-577/active-fixture.json
+            claw577-proof-output.json
+            claw577-fixture-before.json
+            claw577-cleanup.json
+            claw577-cleanup-recovery.json
+            claw577-cleanup-readback.json
+            claw577-cleanup-status.json
+            claw577-deployment-readback.json
+            claw577-deployment.json
