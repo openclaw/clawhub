@@ -23,7 +23,7 @@ function assertControlledDigest(digest: Doc<"skillsShMirrorDigests">) {
     digest.githubPath !== PATH ||
     digest.githubCommit !== COMMIT ||
     digest.sourceContentHash !== CONTENT_HASH ||
-    digest.sourceUrl !== `https://skills.sh/${EXTERNAL_ID}` ||
+    digest.sourceUrl !== `https://www.skills.sh/${EXTERNAL_ID}` ||
     !digest.active ||
     digest.tombstonedAt !== undefined ||
     digest.sourceFreshnessStatus !== "observed-only" ||

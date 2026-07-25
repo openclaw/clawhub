@@ -131,7 +131,7 @@ function createDb() {
         owner: "patrick-erichsen",
         repo: "skills",
         slug: "html",
-        sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+        sourceUrl: "https://www.skills.sh/patrick-erichsen/skills/html",
         githubPath: "skills/html",
         githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
         sourceContentHash: "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff",
