@@ -1,17 +1,33 @@
-import { api, internal } from "../_generated/api";
+import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
 import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import {
+  buildSkillInstallResolution,
+  type InstallResolverSkill,
+  type InstallResolverSource,
+} from "../lib/installResolver";
 import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
 import {
   getSkillsShCatalogFixture,
   type SkillsShCatalogFixtureRow,
 } from "../lib/skillsShCatalogFixtures";
+import {
+  buildSkillsShMirrorCatalogDetail,
+  buildUnclaimedSkillsShInstallResolution,
+  buildUnclaimedSkillsShVerifyResponse,
+  SKILLS_SH_SCANNED_LABEL,
+  type SkillsShMirrorDetail,
+  type SkillsShMirrorDigest,
+} from "../lib/skillsShMirrorPublic";
 import { json, requireAdminOrResponse, requireApiTokenUserOrResponse, text } from "./shared";
 
 const internalRefs = internal as unknown as {
+  githubSkillSources: {
+    getSkillsShAliasTargetInternal: unknown;
+  };
   skillsShCatalog: {
     admitRealScansInternal: unknown;
     assertFreshGitHubOwnerAssignmentsInternal: unknown;
@@ -61,16 +77,144 @@ const CONTROLLED_CANARY_FIXTURE_ID = "patrick-html-canary-v1";
 const MAX_CONTROLLED_CANARY_FILES = 100;
 
 export function parseSkillsShCatalogReference(value: string) {
-  const segments = value
-    .trim()
-    .split("/")
-    .map((segment) => segment.trim().toLowerCase());
-  if (segments.length !== 4 || segments[0] !== "skills-sh") return null;
-  const [owner, repo, slug] = segments.slice(1);
+  const trimmed = value.trim();
+  const body = trimmed.startsWith("skills-sh:") ? trimmed.slice("skills-sh:".length) : "";
+  const segments = body.split("/").map((segment) => segment.trim().toLowerCase());
+  if (segments.length !== 3) return null;
+  const [owner, repo, slug] = segments;
   if (!owner || !repo || !slug || [owner, repo, slug].some((part) => part.includes(":"))) {
     return null;
   }
   return { owner, repo, slug };
+}
+
+type SkillsShAliasTarget = {
+  source: InstallResolverSource;
+  skill: InstallResolverSkill & {
+    githubScanStatus?: "clean" | "suspicious" | "malicious" | "pending" | "failed";
+    githubCurrentCommit?: string;
+    githubCurrentContentHash?: string;
+    githubPath?: string;
+    createdAt: number;
+  };
+  publisher: { handle: string; displayName: string };
+  canonicalRef: string;
+  canonicalRoute: string;
+};
+
+async function getSkillsShResolutionState(
+  ctx: ActionCtx,
+  ref: { owner: string; repo: string; slug: string },
+) {
+  const externalId = `${ref.owner}/${ref.repo}/${ref.slug}`;
+  const digest = await runQueryRef<SkillsShMirrorDigest | null>(
+    ctx,
+    internalRefs.skillsShMirror.getByExternalIdInternal,
+    { externalId },
+  );
+  // Promotion deliberately outlives external publication: a public, scan-complete
+  // native repo/path remains the compatibility target for the original skills.sh ref.
+  const alias = digest?.githubPath
+    ? await runQueryRef<SkillsShAliasTarget | null>(
+        ctx,
+        internalRefs.githubSkillSources.getSkillsShAliasTargetInternal,
+        { repo: `${ref.owner}/${ref.repo}`, path: digest.githubPath },
+      )
+    : null;
+  return { externalId, digest, alias };
+}
+
+export async function resolveSkillsShInstall(
+  ctx: ActionCtx,
+  request: Request,
+  ref: { owner: string; repo: string; slug: string },
+) {
+  const { externalId, digest, alias } = await getSkillsShResolutionState(ctx, ref);
+  const reference = `skills-sh:${externalId}`;
+  if (!alias) return digest ? buildUnclaimedSkillsShInstallResolution(digest) : null;
+  const resolution = buildSkillInstallResolution({
+    origin: new URL(request.url).origin,
+    skill: alias.skill,
+    source: alias.source,
+    ownerHandle: alias.publisher.handle,
+  });
+  if (!resolution.ok) return resolution;
+  return {
+    ...resolution,
+    provenance: {
+      source: "skills.sh" as const,
+      reference,
+      repository: `${ref.owner}/${ref.repo}`,
+      path: alias.skill.githubPath!,
+      sourceUrl:
+        resolution.installKind === "github" ? resolution.github.sourceUrl : digest?.sourceUrl,
+    },
+    trust: { clawhubScan: "scanned" as const, label: SKILLS_SH_SCANNED_LABEL },
+    canonicalRef: alias.canonicalRef,
+  };
+}
+
+export async function resolveSkillsShVerify(
+  ctx: ActionCtx,
+  request: Request,
+  ref: { owner: string; repo: string; slug: string },
+) {
+  const { externalId, digest, alias } = await getSkillsShResolutionState(ctx, ref);
+  if (!alias) {
+    return digest
+      ? buildUnclaimedSkillsShVerifyResponse({ digest, origin: new URL(request.url).origin })
+      : null;
+  }
+  const reference = `skills-sh:${externalId}`;
+  const passed = alias.skill.githubScanStatus === "clean";
+  const commit = alias.skill.githubCurrentCommit!;
+  const contentHash = alias.skill.githubCurrentContentHash!;
+  return {
+    schema: "clawhub.skill.verify.v1" as const,
+    ok: passed,
+    decision: passed ? ("pass" as const) : ("fail" as const),
+    reasons: passed ? [] : ["security.status_not_clean"],
+    slug: alias.skill.slug,
+    displayName: alias.skill.displayName,
+    pageUrl: `${new URL(request.url).origin}${alias.canonicalRoute}`,
+    publisherHandle: alias.publisher.handle,
+    publisherDisplayName: alias.publisher.displayName,
+    publisherProfileUrl: `${new URL(request.url).origin}/${alias.publisher.handle}`,
+    version: commit,
+    resolvedFrom: "skills-sh-alias" as const,
+    tag: null,
+    createdAt: alias.skill.createdAt,
+    card: {
+      available: false,
+      path: "skill-card.md",
+      url: null,
+      sha256: null,
+      size: null,
+      contentType: null,
+    },
+    artifact: { sourceFingerprint: contentHash, bundleFingerprints: [contentHash], files: [] },
+    provenance: {
+      source: "skills.sh" as const,
+      reference,
+      repository: `${ref.owner}/${ref.repo}`,
+      path: alias.skill.githubPath!,
+      commit,
+      contentHash,
+      sourceUrl: digest?.sourceUrl ?? null,
+    },
+    security: {
+      status: alias.skill.githubScanStatus,
+      passed,
+      rawStatus: alias.skill.githubScanStatus,
+      verdict: alias.skill.githubScanStatus,
+      source: "clawhub" as const,
+      checkedAt: null,
+      clawhubScan: "scanned" as const,
+      label: SKILLS_SH_SCANNED_LABEL,
+    },
+    canonicalRef: alias.canonicalRef,
+    signature: { status: "unsigned" as const },
+  };
 }
 
 async function runMutationRef<T>(
@@ -974,7 +1118,25 @@ export async function skillsShCatalogPublicV1Handler(ctx: ActionCtx, request: Re
   if (!owner || !repo || !slug || [owner, repo, slug].some((part) => part.includes(":"))) {
     return text("Not found", 404, rate.headers);
   }
-  const entry = await ctx.runQuery(api.skillsShCatalog.getPublicEntry, { owner, repo, slug });
-  if (!entry) return text("Skill not found", 404, rate.headers);
-  return json(install ? entry.install : entry, 200, rate.headers);
+  const ref = { owner, repo, slug };
+  if (install) {
+    const resolution = await resolveSkillsShInstall(ctx, request, ref);
+    if (!resolution) return text("Skill not found", 404, rate.headers);
+    return json(resolution, resolution.ok ? 200 : resolution.status, rate.headers);
+  }
+  const externalId = `${owner}/${repo}/${slug}`;
+  const [digest, detail] = await Promise.all([
+    runQueryRef<SkillsShMirrorDigest | null>(
+      ctx,
+      internalRefs.skillsShMirror.getByExternalIdInternal,
+      { externalId },
+    ),
+    runQueryRef<SkillsShMirrorDetail | null>(
+      ctx,
+      internalRefs.skillsShMirror.getDetailByExternalIdInternal,
+      { externalId },
+    ),
+  ]);
+  const entry = digest ? buildSkillsShMirrorCatalogDetail({ digest, detail }) : null;
+  return entry ? json(entry, 200, rate.headers) : text("Skill not found", 404, rate.headers);
 }

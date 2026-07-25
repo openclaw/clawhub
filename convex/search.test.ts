@@ -1290,7 +1290,7 @@ describe("search helpers", () => {
         canonical: "/skills-sh/acme/skills/calendar",
         source: "https://skills.sh/acme/skills/calendar",
       },
-      install: { reference: "skills-sh/acme/skills/calendar" },
+      install: { reference: "skills-sh:acme/skills/calendar" },
       sourceIdentity: { lifetimeInstalls: 10_000_000 },
     });
   });
@@ -2351,6 +2351,12 @@ describe("search helpers", () => {
       external: "openclaw/calendar",
     });
     expect(__test.parseQualifiedSearchIdentity("skills-sh/Vercel-Labs/Skills/Find-Skills")).toEqual(
+      {
+        native: null,
+        external: "vercel-labs/skills/find-skills",
+      },
+    );
+    expect(__test.parseQualifiedSearchIdentity("skills-sh:Vercel-Labs/Skills/Find-Skills")).toEqual(
       {
         native: null,
         external: "vercel-labs/skills/find-skills",

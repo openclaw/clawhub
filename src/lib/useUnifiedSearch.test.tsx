@@ -2,7 +2,7 @@
 
 import { renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useUnifiedSearch } from "./useUnifiedSearch";
+import { isUnifiedNativeSkillResult, useUnifiedSearch } from "./useUnifiedSearch";
 
 const { searchSkillsMock, fetchPluginCatalogMock, convexQueryMock } = vi.hoisted(() => ({
   searchSkillsMock: vi.fn(),
@@ -37,6 +37,55 @@ function makeSkill(slug: string) {
     },
     ownerHandle: "owner",
     score: 1,
+  };
+}
+
+function makeCanonicalSkill(slug: string) {
+  const native = makeSkill(slug);
+  return {
+    id: `clawhub:skills:${slug}`,
+    source: "clawhub",
+    slug,
+    displayName: slug,
+    summary: null,
+    score: 1,
+    canonicalUrl: `/owner/${slug}`,
+    install: { kind: "clawhub", reference: `owner/${slug}`, sourceUrl: null },
+    sourceIdentity: {
+      id: `skills:${slug}`,
+      owner: "owner",
+      repo: null,
+      host: null,
+      lifetimeInstalls: null,
+    },
+    metrics: { updatedAt: 1 },
+    native,
+  };
+}
+
+function makeCanonicalExternalSkill() {
+  return {
+    id: "skills-sh:patrick-erichsen/skills/html",
+    source: "skills-sh",
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    summary: "Build self-contained HTML artifacts.",
+    score: 5000,
+    canonicalUrl: "/skills-sh/patrick-erichsen/skills/html",
+    install: {
+      kind: "skills-sh",
+      reference: "skills-sh:patrick-erichsen/skills/html",
+      sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+    },
+    sourceIdentity: {
+      id: "patrick-erichsen/skills/html",
+      owner: "patrick-erichsen",
+      repo: "skills",
+      host: null,
+      lifetimeInstalls: 12500,
+    },
+    metrics: { updatedAt: 1 },
+    native: null,
   };
 }
 
@@ -111,9 +160,11 @@ describe("useUnifiedSearch", () => {
       }),
     );
 
-    expect(result.current.skillResults.map((entry) => entry.skill.slug)).toEqual([
-      "japanese-reading-grader",
-    ]);
+    expect(
+      result.current.skillResults
+        .filter(isUnifiedNativeSkillResult)
+        .map((entry) => entry.skill.slug),
+    ).toEqual(["japanese-reading-grader"]);
     expect(result.current.results.map((entry) => entry.type)).toEqual(["skill"]);
     expect(result.current.skillHasMore).toBe(true);
 
@@ -127,7 +178,11 @@ describe("useUnifiedSearch", () => {
   });
 
   it("requests one extra result and exposes hasMore without inflating counts", async () => {
-    searchSkillsMock.mockResolvedValue([makeSkill("one"), makeSkill("two"), makeSkill("three")]);
+    searchSkillsMock.mockResolvedValue([
+      makeCanonicalSkill("one"),
+      makeCanonicalSkill("two"),
+      makeCanonicalSkill("three"),
+    ]);
     fetchPluginCatalogMock.mockResolvedValue({
       items: [makePlugin("one-plugin"), makePlugin("two-plugin"), makePlugin("three-plugin")],
       nextCursor: null,
@@ -162,7 +217,11 @@ describe("useUnifiedSearch", () => {
       query: "ghost",
       paginationOpts: { cursor: null, numItems: 3 },
     });
-    expect(result.current.skillResults.map((entry) => entry.skill.slug)).toEqual(["one", "two"]);
+    expect(
+      result.current.skillResults
+        .filter(isUnifiedNativeSkillResult)
+        .map((entry) => entry.skill.slug),
+    ).toEqual(["one", "two"]);
     expect(result.current.pluginResults.map((entry) => entry.plugin.name)).toEqual([
       "one-plugin",
       "two-plugin",
@@ -182,6 +241,30 @@ describe("useUnifiedSearch", () => {
     expect(result.current.skillHasMore).toBe(true);
     expect(result.current.pluginHasMore).toBe(true);
     expect(result.current.creatorHasMore).toBe(true);
+  });
+
+  it("preserves canonical native and external result order", async () => {
+    searchSkillsMock.mockResolvedValue([
+      makeCanonicalSkill("calendar"),
+      makeCanonicalExternalSkill(),
+    ]);
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    convexQueryMock.mockResolvedValue({ page: [], continueCursor: null, isDone: true });
+
+    const { result } = renderHook(() =>
+      useUnifiedSearch("html", "skills", { debounceMs: 0, limits: { skills: 10 } }),
+    );
+
+    await waitFor(() => expect(result.current.skillCount).toBe(2));
+
+    expect(result.current.skillResults.map((entry) => entry.type)).toEqual(["skill", "skills-sh"]);
+    expect(result.current.skillResults[1]).toMatchObject({
+      type: "skills-sh",
+      result: {
+        externalId: "patrick-erichsen/skills/html",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+      },
+    });
   });
 
   it("caps requested skill and plugin limits at the backend search maximum", async () => {

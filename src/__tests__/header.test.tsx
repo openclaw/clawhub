@@ -171,6 +171,7 @@ vi.mock("../lib/gravatar", () => ({
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
+  isUnifiedNativeSkillResult: (result: { type: string }) => result.type === "skill",
   useUnifiedSearch: (...args: unknown[]) => useUnifiedSearchMock(...args),
 }));
 
@@ -522,6 +523,49 @@ describe("Header", () => {
     expect(navigateMock).toHaveBeenCalledWith({
       to: "/search",
       search: { q: "weather", type: "skills" },
+    });
+  });
+
+  it("opens external skill typeahead results on their stored catalog route", () => {
+    navigateMock.mockReset();
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          type: "skills-sh",
+          score: 5000,
+          result: {
+            source: "skills.sh",
+            externalId: "patrick-erichsen/skills/html",
+            route: "/skills-sh/patrick-erichsen/skills/html",
+            reference: "skills-sh:patrick-erichsen/skills/html",
+            owner: "patrick-erichsen",
+            repo: "skills",
+            slug: "html",
+            displayName: "HTML Artifact Chooser",
+            upstreamInstalls: 100,
+            lastObservedAt: 1,
+          },
+        },
+      ],
+      skillCount: 1,
+      pluginResults: [],
+      pluginCount: 0,
+      creatorResults: [],
+      creatorCount: 0,
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "html" } });
+    const option = screen.getByRole("option", { name: /HTML Artifact Chooser/i });
+    expect(option.textContent).toContain("patrick-erichsen/skills / html");
+    fireEvent.click(option);
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/skills-sh/patrick-erichsen/skills/html",
     });
   });
 

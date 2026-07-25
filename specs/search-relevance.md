@@ -30,7 +30,7 @@ Numeric scores, trust state, popularity, and recency may order results inside th
 - Native public-browse/installability checks and external `active && publicVisible && installable && observed-only && !tombstoned` checks run before ranking. Upstream scanner observations remain source metadata, not a ClawHub verdict.
 - The canonical result includes a ClawHub route, source link, publisher/official metadata, install reference, source identity, trust metadata, rolling metrics, and the native rendering payload when applicable. HTTP, CLI, and web consumers preserve the action order by default.
 
-External install references use `skills-sh/<owner>/<repo>/<slug>` and their canonical ClawHub routes use `/skills-sh/<owner>/<repo>/<slug>`.
+External install references use `skills-sh:<owner>/<repo>/<slug>` and their canonical ClawHub routes use `/skills-sh/<owner>/<repo>/<slug>`.
 
 ## Exact-Match Squat Gate
 

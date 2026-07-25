@@ -81,7 +81,7 @@ describe("packages/clawhub skill metadata schema", () => {
             publisher: null,
             install: {
               kind: "skills-sh",
-              reference: "skills-sh/acme/skills/calendar",
+              reference: "skills-sh:acme/skills/calendar",
               sourceUrl: "https://skills.sh/acme/skills/calendar",
             },
             sourceIdentity: {
@@ -119,7 +119,7 @@ describe("packages/clawhub skill metadata schema", () => {
       "skills-sh:acme/skills/calendar",
       "clawhub:skills:calendar",
     ]);
-    expect(parsed.results[0]?.install?.reference).toBe("skills-sh/acme/skills/calendar");
+    expect(parsed.results[0]?.install?.reference).toBe("skills-sh:acme/skills/calendar");
     expect(parsed.results[0]?.trust?.sourceFreshness).toBe("observed-only");
   });
 

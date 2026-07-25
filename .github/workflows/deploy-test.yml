@@ -35,7 +35,9 @@ jobs:
       (github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay' &&
       inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test') ||
       (github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search' &&
-      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test')) &&
+      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey' &&
+      inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test')) &&
       github.actor == 'Patrick-Erichsen' &&
       inputs.expected_sha != '')) ||
       (github.event_name == 'pull_request' &&
@@ -44,7 +46,9 @@ jobs:
       (github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
       contains(github.event.pull_request.labels.*.name, 'test-trending-load')) ||
       (github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search' &&
-      contains(github.event.pull_request.labels.*.name, 'test-search-load'))) &&
+      contains(github.event.pull_request.labels.*.name, 'test-search-load')) ||
+      (github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey' &&
+      contains(github.event.pull_request.labels.*.name, 'test-external-catalog'))) &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.actor == 'Patrick-Erichsen' &&
       github.event.pull_request.head.sha != '') ||
@@ -104,6 +108,14 @@ jobs:
             then
               branch_test_allowed=true
             fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-583-mirrored-search-journey ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-583-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
             if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
               [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
@@ -122,6 +134,14 @@ jobs:
             fi
             if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
               [[ "$GITHUB_HEAD_REF" == pe/claw-577-canonical-mixed-search ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-583-mirrored-search-journey ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
               [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
               [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
@@ -858,3 +878,225 @@ jobs:
             claw577-cleanup-status.json
             claw577-deployment-readback.json
             claw577-deployment.json
+
+  claw583-external-catalog-proof:
+    needs: deploy-test
+    if: >-
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey' &&
+      contains(github.event.pull_request.labels.*.name, 'test-external-catalog')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey' &&
+      inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test' &&
+      inputs.expected_sha == needs.deploy-test.outputs.deploy_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+              inputs.expected_sha
+            }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Prove external search, detail, install, verify, and cleanup in permanent Test
+        env:
+          CLAWHUB_E2E_SKILLS_SH_EXTERNAL: "1"
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          PLAYWRIGHT_BASE_URL: ${{ vars.SITE_URL }}
+          PLAYWRIGHT_WORKERS: "1"
+          TEST_CONVEX_SITE_URL: ${{ vars.VITE_CONVEX_SITE_URL }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          confirm=manage-claw-583-external-catalog-test-fixture
+          mkdir -p proof/claw-583
+          printf '{}\n' > proof/claw-583/active-fixture.json
+          cleanup() {
+            set +e
+            bunx convex run --no-push \
+              skillsShPublicTestFixtures:readControlledExternalSkill \
+              "{\"confirm\":\"$confirm\"}" > claw583-cleanup-recovery.json 2>&1
+            recovery_exit=$?
+            digest_id="$(jq -r '.digestId // empty' claw583-cleanup-recovery.json 2>/dev/null)"
+            snapshot_id="$(jq -r '.sourceSnapshotId // empty' claw583-cleanup-recovery.json 2>/dev/null)"
+            cleanup_args="$(
+              jq -cn \
+                --arg confirm "$confirm" \
+                --arg digestId "$digest_id" \
+                --arg sourceSnapshotId "$snapshot_id" \
+                '{confirm:$confirm}
+                 + (if $digestId == "" then {} else {digestId:$digestId} end)
+                 + (if $sourceSnapshotId == "" then {} else {sourceSnapshotId:$sourceSnapshotId} end)'
+            )"
+            bunx convex run --no-push \
+              skillsShPublicTestFixtures:deactivateControlledExternalSkill \
+              "$cleanup_args" > claw583-cleanup.json 2>&1
+            cleanup_exit=$?
+            bunx convex run --no-push \
+              skillsShPublicTestFixtures:readControlledExternalSkill \
+              "{\"confirm\":\"$confirm\"}" > claw583-cleanup-readback.json 2>&1
+            readback_exit=$?
+            jq -n \
+              --argjson cleanupExit "$cleanup_exit" \
+              --argjson recoveryExit "$recovery_exit" \
+              --argjson readbackExit "$readback_exit" \
+              '{cleanupExit:$cleanupExit,recoveryExit:$recoveryExit,readbackExit:$readbackExit}' \
+              > claw583-cleanup-status.json
+            set -e
+            [[ "$cleanup_exit" -eq 0 && "$recovery_exit" -eq 0 && "$readback_exit" -eq 0 ]]
+            jq -e '.publicVisible == false and .installable == false' \
+              claw583-cleanup-readback.json >/dev/null
+          }
+          trap cleanup EXIT
+
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_SHA" ]]
+          bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw583-deployment-readback.json
+          jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw583-deployment-readback.json
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:readControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > claw583-fixture-before.json
+          jq -e '
+            .externalId == "patrick-erichsen/skills/html" and
+            .publicVisible == false and
+            .installable == false and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw583-fixture-before.json >/dev/null
+
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:activateControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > proof/claw-583/active-fixture.json
+          jq -e '
+            .ok == true and
+            (.digestId | type == "string") and
+            (.detailId | type == "string") and
+            (.sourceSnapshotId | type == "string") and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' proof/claw-583/active-fixture.json >/dev/null
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:readControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > claw583-fixture-active.json
+          jq -e '
+            .publicVisible == true and
+            .installable == true and
+            .repo == "patrick-erichsen/skills" and
+            .path == "skills/html" and
+            .commit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .contentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw583-fixture-active.json >/dev/null
+
+          bunx convex run --no-push search:searchSkills \
+            '{"query":"skills-sh:patrick-erichsen/skills/html","limit":10}' \
+            > claw583-search.json
+          jq -e '
+            map(select(.id == "skills-sh:patrick-erichsen/skills/html")) as $matches |
+            ($matches | length) == 1 and
+            $matches[0].canonicalUrl == "/skills-sh/patrick-erichsen/skills/html" and
+            $matches[0].install.reference == "skills-sh:patrick-erichsen/skills/html"
+          ' claw583-search.json >/dev/null
+
+          curl --fail-with-body --silent --show-error \
+            "$TEST_CONVEX_SITE_URL/api/v1/skills-sh/patrick-erichsen/skills/html" \
+            > claw583-detail.json
+          jq -e '
+            .reference == "skills-sh:patrick-erichsen/skills/html" and
+            .githubPath == "skills/html" and
+            .githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .sourceContentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            (.content.markdown | length) > 0
+          ' claw583-detail.json >/dev/null
+
+          curl --fail-with-body --silent --show-error \
+            "$TEST_CONVEX_SITE_URL/api/v1/skills-sh/patrick-erichsen/skills/html/install" \
+            > claw583-install.json
+          jq -e '
+            .ok == true and
+            .slug == "skills-sh:patrick-erichsen/skills/html" and
+            .installKind == "github" and
+            .github.repo == "patrick-erichsen/skills" and
+            .github.path == "skills/html" and
+            .github.commit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .github.contentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .provenance.source == "skills.sh" and
+            .provenance.reference == "skills-sh:patrick-erichsen/skills/html" and
+            .trust.clawhubScan == "unscanned" and
+            .trust.label == "Not scanned by ClawHub" and
+            .canonicalRef == null
+          ' claw583-install.json >/dev/null
+
+          curl --fail-with-body --silent --show-error \
+            "$TEST_CONVEX_SITE_URL/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml" \
+            > claw583-verify.json
+          jq -e '
+            .ok == false and
+            .decision == "fail" and
+            (.reasons | index("Not scanned by ClawHub")) != null and
+            .provenance.source == "skills.sh" and
+            .provenance.reference == "skills-sh:patrick-erichsen/skills/html" and
+            .security.clawhubScan == "unscanned" and
+            .security.label == "Not scanned by ClawHub"
+          ' claw583-verify.json >/dev/null
+
+          bunx playwright test --project=chromium e2e/skills-sh-external.pw.test.ts
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            --arg convexSiteUrl "$TEST_CONVEX_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexSiteUrl:$convexSiteUrl,
+              convexDeployment:"academic-chihuahua-392",
+              productionWrites:0,
+              schedulesCreated:0,
+              scansPlanned:0,
+              scansAdmitted:0,
+              claimsCreated:0
+            }' > claw583-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .cleanupExit == 0 and
+            .recoveryExit == 0 and
+            .readbackExit == 0
+          ' claw583-cleanup-status.json >/dev/null
+
+      - name: Upload permanent Test external catalog proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw583-external-catalog-proof
+          if-no-files-found: error
+          path: |
+            proof/claw-583/active-fixture.json
+            proof/claw-583/external-search.png
+            proof/claw-583/external-detail.png
+            claw583-fixture-before.json
+            claw583-fixture-active.json
+            claw583-search.json
+            claw583-detail.json
+            claw583-install.json
+            claw583-verify.json
+            claw583-cleanup.json
+            claw583-cleanup-recovery.json
+            claw583-cleanup-readback.json
+            claw583-cleanup-status.json
+            claw583-deployment-readback.json
+            claw583-deployment.json

@@ -18,6 +18,7 @@ const { requirePublisherRole } = await import("./lib/publishers");
 const {
   cleanupDeletedSourceScansHandler,
   deleteForPublisherHandler,
+  getSkillsShAliasTargetInternal,
   listForManageableOfficialPublishers,
 } = await import("./githubSkillSources");
 const { buildSkillInstallResolution } = await import("./lib/installResolver");
@@ -40,6 +41,13 @@ const listForManageableOfficialPublishersHandler = (
   listForManageableOfficialPublishers as unknown as WrappedHandler<
     Record<string, never>,
     Array<{ _id: string; repo: string; ownerPublisher: { handle: string } | null }>
+  >
+)._handler;
+
+const getSkillsShAliasTargetHandler = (
+  getSkillsShAliasTargetInternal as unknown as WrappedHandler<
+    { repo: string; path: string },
+    { canonicalRef: string; canonicalRoute: string } | null
   >
 )._handler;
 
@@ -105,6 +113,99 @@ function createDb(initial: Record<string, Row[]> = {}) {
   };
 
   return { db, tables };
+}
+
+describe("githubSkillSources.getSkillsShAliasTargetInternal", () => {
+  it("returns one public scan-complete GitHub skill at the exact repository path", async () => {
+    const { db } = createDb(makeSkillsShAliasRows([makeAliasSkill("skills:html")]));
+
+    await expect(
+      getSkillsShAliasTargetHandler(
+        { db },
+        { repo: " Patrick-Erichsen/Skills ", path: "/skills/html/" },
+      ),
+    ).resolves.toMatchObject({
+      canonicalRef: "@openclaw/html",
+      canonicalRoute: "/openclaw/skills/html",
+      source: { repo: "patrick-erichsen/skills" },
+      skill: { slug: "html", installKind: "github", githubPath: "skills/html" },
+      publisher: { handle: "openclaw", displayName: "OpenClaw" },
+    });
+  });
+
+  it("fails closed for ambiguous path matches or an oversized repository", async () => {
+    const ambiguous = createDb(
+      makeSkillsShAliasRows([makeAliasSkill("skills:html-1"), makeAliasSkill("skills:html-2")]),
+    );
+    await expect(
+      getSkillsShAliasTargetHandler(ambiguous, {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+      }),
+    ).resolves.toBeNull();
+
+    const oversized = createDb(
+      makeSkillsShAliasRows(
+        Array.from({ length: 501 }, (_, index) =>
+          makeAliasSkill(`skills:row-${index}`, `skills/row-${index}`),
+        ),
+      ),
+    );
+    await expect(
+      getSkillsShAliasTargetHandler(oversized, {
+        repo: "patrick-erichsen/skills",
+        path: "skills/row-0",
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
+function makeSkillsShAliasRows(skills: Row[]) {
+  return {
+    githubSkillSources: [
+      {
+        _id: "githubSkillSources:patrick",
+        repo: "patrick-erichsen/skills",
+        defaultBranch: "main",
+      },
+    ],
+    skills,
+    publishers: [
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+  };
+}
+
+function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
+  return {
+    _id: id,
+    _creationTime: 1,
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    ownerUserId: "users:owner",
+    ownerPublisherId: "publishers:openclaw",
+    githubSourceId: "githubSkillSources:patrick",
+    installKind: "github",
+    githubPath,
+    githubCurrentCommit: "1".repeat(40),
+    githubCurrentContentHash: "c".repeat(64),
+    githubCurrentStatus: "present",
+    githubScanStatus: "clean",
+    moderationStatus: "active",
+    tags: {},
+    badges: {},
+    stats: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
 }
 
 describe("githubSkillSources.deleteForPublisherHandler", () => {

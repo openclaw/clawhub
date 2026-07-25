@@ -611,11 +611,13 @@ function chunkValues<T>(values: T[], size: number) {
 
 function parseQualifiedSearchIdentity(query: string) {
   const normalized = query.trim().replace(/^@/, "").toLowerCase();
-  const external = normalized.startsWith("skills-sh/")
-    ? normalized.slice("skills-sh/".length)
-    : normalized.includes("/")
-      ? normalized
-      : null;
+  const external = normalized.startsWith("skills-sh:")
+    ? normalized.slice("skills-sh:".length)
+    : normalized.startsWith("skills-sh/")
+      ? normalized.slice("skills-sh/".length)
+      : normalized.includes("/")
+        ? normalized
+        : null;
   const segments = normalized.split("/").filter(Boolean);
   return {
     native: segments.length === 2 ? { owner: segments[0], slug: segments[1] } : null,
@@ -718,7 +720,11 @@ function buildExternalCanonicalResult(
   query: string,
 ): (CanonicalSkillSearchResult & CanonicalSkillSearchCandidate) | null {
   const relevance = classifyCanonicalSkillSearchMatch(query, {
-    identities: [digest.externalId, `skills-sh/${digest.externalId}`],
+    identities: [
+      digest.externalId,
+      `skills-sh:${digest.externalId}`,
+      `skills-sh/${digest.externalId}`,
+    ],
     name: digest.displayName,
     slug: digest.slug,
     taxonomy: [...(digest.inferredCategories ?? []), ...(digest.inferredTopics ?? [])],
@@ -748,7 +754,7 @@ function buildExternalCanonicalResult(
     publisher: null,
     install: {
       kind: "skills-sh",
-      reference: `skills-sh/${digest.externalId}`,
+      reference: `skills-sh:${digest.externalId}`,
       sourceUrl: digest.sourceUrl,
     },
     sourceIdentity: {

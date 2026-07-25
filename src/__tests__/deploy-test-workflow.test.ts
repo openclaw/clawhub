@@ -69,6 +69,8 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test'");
     expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search'");
     expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test'");
+    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey'");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test'");
     expect(job?.if).toContain("inputs.expected_sha != ''");
     expect(job?.if).toContain("github.event_name == 'pull_request'");
     expect(job?.if).toContain(
@@ -91,6 +93,12 @@ describe("Test deploy workflow", () => {
     expect(job?.if).toContain(
       "contains(github.event.pull_request.labels.*.name, 'test-search-load')",
     );
+    expect(job?.if).toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey'",
+    );
+    expect(job?.if).toContain(
+      "contains(github.event.pull_request.labels.*.name, 'test-external-catalog')",
+    );
     expect(job?.if).toContain("github.event.workflow_run.conclusion == 'success'");
     expect(job?.if).toContain("github.event.workflow_run.event == 'push'");
     expect(revision).toContain('deploy_sha" != "$main_sha');
@@ -101,6 +109,8 @@ describe("Test deploy workflow", () => {
     expect(revision).toContain("deploy-claw-589-to-permanent-test");
     expect(revision).toContain("refs/heads/pe/claw-577-canonical-mixed-search");
     expect(revision).toContain("deploy-claw-577-to-permanent-test");
+    expect(revision).toContain("refs/heads/pe/claw-583-mirrored-search-journey");
+    expect(revision).toContain("deploy-claw-583-to-permanent-test");
     expect(revision).toContain("${{ inputs.expected_sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.repo.full_name }}");
@@ -259,5 +269,41 @@ describe("Test deploy workflow", () => {
     expect(upload?.with?.["if-no-files-found"]).toBe("error");
     expect(upload?.with?.path).toContain("proof/claw-577/canonical-search-test-proof.json");
     expect(upload?.with?.path).toContain("claw577-cleanup.json");
+  });
+
+  it("runs the CLAW-583 external catalog proof only for its exact guarded branch", async () => {
+    const workflow = await readWorkflow();
+    const job = workflow.jobs?.["claw583-external-catalog-proof"];
+    const proofStep = job?.steps?.find(
+      (candidate) =>
+        candidate.name ===
+        "Prove external search, detail, install, verify, and cleanup in permanent Test",
+    );
+    const upload = job?.steps?.find(
+      (candidate) => candidate.name === "Upload permanent Test external catalog proof",
+    );
+    const run = proofStep?.run ?? "";
+
+    expect(job?.needs).toBe("deploy-test");
+    expect(job?.if).toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey'",
+    );
+    expect(job?.if).toContain("test-external-catalog");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test'");
+    expect(job?.environment?.name).toBe("Test");
+    expect(job?.steps?.[0]?.with?.ref).toContain("github.event.pull_request.head.sha");
+    expect(proofStep?.env?.DEPLOY_SHA).toBe("${{ needs.deploy-test.outputs.deploy_sha }}");
+    expect(run).toContain("skillsShPublicTestFixtures:activateControlledExternalSkill");
+    expect(run).toContain("skillsShPublicTestFixtures:deactivateControlledExternalSkill");
+    expect(run).toContain("search:searchSkills");
+    expect(run).toContain("skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml");
+    expect(run).toContain("Not scanned by ClawHub");
+    expect(run).toContain("trap cleanup EXIT");
+    expect(run).toContain("e2e/skills-sh-external.pw.test.ts");
+    expect(upload?.uses).toBe("actions/upload-artifact@v7");
+    expect(upload?.with?.name).toBe("claw583-external-catalog-proof");
+    expect(upload?.with?.["if-no-files-found"]).toBe("error");
+    expect(upload?.with?.path).toContain("proof/claw-583/external-detail.png");
+    expect(upload?.with?.path).toContain("claw583-cleanup-readback.json");
   });
 });

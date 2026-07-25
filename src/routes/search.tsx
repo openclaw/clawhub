@@ -6,11 +6,14 @@ import { PluginListItem } from "../components/PluginListItem";
 import { PublisherListItem } from "../components/PublisherListItem";
 import { BrowseResultsSkeleton } from "../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../components/SkillListItem";
+import { SkillsShListItem } from "../components/SkillsShListItem";
 import { Card } from "../components/ui/card";
 import { convexHttp } from "../convex/client";
 import type { PublicSkill } from "../lib/publicUser";
+import type { CanonicalSkillSearchResult } from "../lib/skillsShCatalog";
 import {
   useUnifiedSearch,
+  toUnifiedSkillResult,
   type UnifiedSearchInitialData,
   type UnifiedSearchType,
   type UnifiedCreatorResult,
@@ -46,22 +49,13 @@ async function loadInitialSearchResults(query: string | undefined) {
   if (!trimmed) return null;
 
   try {
-    const skillsRaw = (await convexHttp.action(api.search.searchNativeSkills, {
+    const skillsRaw = (await convexHttp.action(api.search.searchSkills, {
       query: trimmed,
       limit: SEARCH_PAGE_SIZE + 1,
-    })) as Array<{
-      skill: UnifiedSkillResult["skill"];
-      ownerHandle: string | null;
-      owner?: UnifiedSkillResult["owner"];
-      score: number;
-    }>;
-    const skillMatches = skillsRaw.map((entry) => ({
-      type: "skill" as const,
-      skill: entry.skill,
-      ownerHandle: entry.ownerHandle,
-      owner: entry.owner ?? null,
-      score: entry.score,
-    }));
+    })) as CanonicalSkillSearchResult[];
+    const skillMatches = skillsRaw
+      .map(toUnifiedSkillResult)
+      .filter((entry): entry is UnifiedSkillResult => entry !== null);
     return {
       query: trimmed,
       activeType: "all" as const,
@@ -256,7 +250,7 @@ function UnifiedSearchPage() {
               {skillResults.length > 0 ? (
                 <SearchResultSection title="Skills">
                   {skillResults.map((item) => (
-                    <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
+                    <SkillResultRow key={skillResultKey(item)} result={item} />
                   ))}
                 </SearchResultSection>
               ) : null}
@@ -278,8 +272,8 @@ function UnifiedSearchPage() {
           ) : (
             <div className="results-list">
               {results.map((item) =>
-                item.type === "skill" ? (
-                  <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
+                item.type === "skill" || item.type === "skills-sh" ? (
+                  <SkillResultRow key={skillResultKey(item)} result={item} />
                 ) : item.type === "plugin" ? (
                   <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
                 ) : null,
@@ -385,8 +379,15 @@ function CreatorResultsList({ results }: { results: UnifiedCreatorResult[] }) {
 }
 
 function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
+  if (result.type === "skills-sh") return <SkillsShListItem result={result.result} />;
   const skill = result.skill as unknown as PublicSkill;
   return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} owner={result.owner} />;
+}
+
+function skillResultKey(result: UnifiedSkillResult) {
+  return result.type === "skills-sh"
+    ? `skills-sh-${result.result.externalId}`
+    : `skill-${result.skill._id}`;
 }
 
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {

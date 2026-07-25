@@ -1245,55 +1245,43 @@ describe("skills.sh public HTTP API", () => {
     expect(applyRateLimit).not.toHaveBeenCalled();
   });
 
-  const publicEntry = {
-    ref: "skills-sh/patrick-erichsen/skills/html",
-    route: "/skills-sh/patrick-erichsen/skills/html",
-    displayName: "HTML Artifact Chooser",
-    security: {
-      verdict: "clean",
-      source: "clawhub",
-      attemptId: "skillsShCatalogScanAttempts:canary",
-    },
-    install: {
-      ok: true,
-      slug: "skills-sh/patrick-erichsen/skills/html",
-      installKind: "github",
-      github: {
-        repo: "patrick-erichsen/skills",
-        path: "skills/html",
-        commit: "050daba89f6b6636470add5cb300aac46a412cf8",
-        contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
-        sourceUrl:
-          "https://github.com/patrick-erichsen/skills/tree/050daba89f6b6636470add5cb300aac46a412cf8/skills/html",
-      },
-    },
-  };
-
-  it.each([
-    {
-      suffix: "",
-      expected: publicEntry,
-    },
-    {
-      suffix: "/install",
-      expected: publicEntry.install,
-    },
-  ])("serves an approved slash route$suffix", async ({ suffix, expected }) => {
-    const runQuery = vi.fn(async () => publicEntry);
+  it("serves stored mirror detail from an activated row", async () => {
+    const digest = makePublicMirrorDigest();
+    const runQuery = vi.fn().mockResolvedValueOnce(digest).mockResolvedValueOnce(null);
     const ctx = { runQuery } as never;
     const response = await skillsShCatalogPublicV1Handler(
       ctx,
       new Request(
-        `https://academic-chihuahua-392.convex.site/api/v1/skills-sh/patrick-erichsen/skills/html${suffix}`,
+        "https://academic-chihuahua-392.convex.site/api/v1/skills-sh/patrick-erichsen/skills/html",
       ),
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(expected);
-    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
-      owner: "patrick-erichsen",
-      repo: "skills",
-      slug: "html",
+    expect(await response.json()).toMatchObject({
+      reference: "skills-sh:patrick-erichsen/skills/html",
+      content: null,
+    });
+  });
+
+  it("serves the exact unscanned GitHub install descriptor", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(makePublicMirrorDigest())
+      .mockResolvedValueOnce(null);
+    const response = await skillsShCatalogPublicV1Handler(
+      { runQuery } as never,
+      new Request(
+        "https://academic-chihuahua-392.convex.site/api/v1/skills-sh/patrick-erichsen/skills/html/install",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      slug: "skills-sh:patrick-erichsen/skills/html",
+      installKind: "github",
+      trust: { clawhubScan: "unscanned", label: "Not scanned by ClawHub" },
+      canonicalRef: null,
     });
   });
 
@@ -1327,3 +1315,30 @@ describe("skills.sh public HTTP API", () => {
     expect(await response.text()).toBe("Skill not found");
   });
 });
+
+function makePublicMirrorDigest() {
+  return {
+    externalId: "patrick-erichsen/skills/html",
+    sourceType: "github" as const,
+    owner: "patrick-erichsen",
+    repo: "skills",
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+    githubPath: "skills/html",
+    githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+    upstreamInstalls: 100,
+    upstreamScanners: {
+      genAgentTrustHub: { status: "unavailable" },
+      socket: { status: "pass" },
+      snyk: { status: "warning" },
+    },
+    sourceFreshnessStatus: "observed-only" as const,
+    detailStatus: "available" as const,
+    active: true,
+    publicVisible: true,
+    installable: true,
+    lastObservedAt: 123,
+  };
+}

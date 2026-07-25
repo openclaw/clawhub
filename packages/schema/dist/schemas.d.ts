@@ -201,6 +201,13 @@ export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/
     slug: string;
     ownerHandle?: string | undefined;
     sourceRef?: string | undefined;
+    sourceKind?: "skills-sh" | undefined;
+    sourceRepository?: string | undefined;
+    sourcePath?: string | undefined;
+    sourceUrl?: string | undefined;
+    canonicalRef?: string | undefined;
+    clawhubScan?: "scanned" | "unscanned" | undefined;
+    trustLabel?: string | undefined;
     version?: string | undefined;
     rootId?: string | undefined;
     rootLabel?: string | undefined;

@@ -37,6 +37,7 @@ import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
+  isUnifiedNativeSkillResult,
   useUnifiedSearch,
   type UnifiedCreatorResult,
   type UnifiedPluginResult,
@@ -169,7 +170,10 @@ export default function Header() {
     if (!hasNavSearchQuery) return [];
     const items: TypeaheadItem[] = [];
     for (const result of skillResults) {
-      items.push({ kind: "skill", key: `skill-${result.skill._id}`, result });
+      const key = isUnifiedNativeSkillResult(result)
+        ? `skill-${result.skill._id}`
+        : `skills-sh-${result.result.externalId}`;
+      items.push({ kind: "skill", key, result });
     }
     if (skillResults.length > 0) {
       items.push({
@@ -312,6 +316,13 @@ export default function Header() {
 
   const navigateToTypeaheadItem = (item: TypeaheadItem) => {
     if (item.kind === "skill") {
+      if (!isUnifiedNativeSkillResult(item.result)) {
+        void navigate({ to: item.result.result.route });
+        setNavSearchQuery("");
+        setTypeaheadOpen(false);
+        setMobileSearchOpen(false);
+        return;
+      }
       const resultOwnerHandle = item.result.ownerHandle?.trim();
       if (!resultOwnerHandle) {
         void navigate({
@@ -1020,6 +1031,13 @@ function getTypeaheadOptionId(item: TypeaheadItem) {
 
 function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
   if (item.kind === "skill") {
+    if (!isUnifiedNativeSkillResult(item.result)) {
+      return (
+        <span className="navbar-search-typeahead-icon" aria-hidden="true">
+          <MarketplaceIcon kind="skill" label={item.result.result.displayName} size="xs" />
+        </span>
+      );
+    }
     const label = presentationTitle(item.result.skill.displayName, item.result.skill.slug);
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
@@ -1067,6 +1085,15 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
 
 function getTypeaheadRowBody(item: TypeaheadItem) {
   if (item.kind === "skill") {
+    if (!isUnifiedNativeSkillResult(item.result)) {
+      const external = item.result.result;
+      const owner =
+        external.owner && external.repo ? `${external.owner}/${external.repo}` : "skills.sh";
+      return {
+        title: external.displayName,
+        meta: <TypeaheadPublisherMeta owner={owner} official={false} packageName={external.slug} />,
+      };
+    }
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
     return {
       title: presentationTitle(item.result.skill.displayName, item.result.skill.slug),

@@ -42,6 +42,13 @@ const reportCliInstallHandler = (
         slug: string;
         ownerHandle?: string;
         sourceRef?: string;
+        sourceKind?: "skills-sh";
+        sourceRepository?: string;
+        sourcePath?: string;
+        sourceUrl?: string;
+        canonicalRef?: string;
+        clawhubScan?: "unscanned" | "scanned";
+        trustLabel?: string;
         version?: string;
       },
     ) => Promise<void>;
@@ -444,7 +451,13 @@ describe("telemetry install events", () => {
     await reportCliInstallHandler(ctx, {
       userId: "users:one",
       slug: "demo",
-      sourceRef: "skills-sh/alice/skills/demo",
+      sourceRef: "skills-sh:alice/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "alice/skills",
+      sourcePath: "skills/demo",
+      sourceUrl: "https://github.com/alice/skills/tree/abc/skills/demo",
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
       version: "a".repeat(40),
     });
 

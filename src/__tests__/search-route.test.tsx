@@ -58,6 +58,12 @@ vi.mock("../components/SkillListItem", () => ({
   ),
 }));
 
+vi.mock("../components/SkillsShListItem", () => ({
+  SkillsShListItem: ({ result }: { result: { displayName: string } }) => (
+    <div data-testid="skills-sh-result">{result.displayName}</div>
+  ),
+}));
+
 vi.mock("../components/ui/card", () => ({
   Card: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -184,6 +190,48 @@ describe("search route", () => {
       search: { q: undefined, type: undefined },
       replace: true,
     });
+  });
+
+  it("renders canonical external skill results in their backend order", async () => {
+    searchMock = {
+      q: "skills-sh:patrick-erichsen/skills/html",
+      type: "skills",
+    };
+    const external = {
+      type: "skills-sh",
+      result: {
+        source: "skills.sh",
+        externalId: "patrick-erichsen/skills/html",
+        route: "/skills-sh/patrick-erichsen/skills/html",
+        reference: "skills-sh:patrick-erichsen/skills/html",
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+        displayName: "HTML Artifact Chooser",
+        upstreamInstalls: 100,
+        lastObservedAt: 1,
+      },
+      score: 5000,
+    };
+    useUnifiedSearchMock.mockReturnValue({
+      results: [external],
+      skillResults: [external],
+      pluginResults: [],
+      creatorResults: [],
+      skillCount: 1,
+      pluginCount: 0,
+      creatorCount: 0,
+      skillHasMore: false,
+      pluginHasMore: false,
+      creatorHasMore: false,
+      isSearching: false,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByTestId("skills-sh-result").textContent).toBe("HTML Artifact Chooser");
   });
 
   it("can request more results from global search", async () => {

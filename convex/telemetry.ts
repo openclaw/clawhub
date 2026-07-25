@@ -27,12 +27,26 @@ export const reportCliInstallInternal = internalMutation({
     slug: v.string(),
     ownerHandle: v.optional(v.string()),
     sourceRef: v.optional(v.string()),
+    sourceKind: v.optional(v.literal("skills-sh")),
+    sourceRepository: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    canonicalRef: v.optional(v.string()),
+    clawhubScan: v.optional(v.union(v.literal("unscanned"), v.literal("scanned"))),
+    trustLabel: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Unclaimed catalog installs have no native skill row yet. Keep the source
     // identity in the request without guessing from a same-slug native skill.
-    if (args.sourceRef?.trim().toLowerCase().startsWith("skills-sh/")) return;
+    const sourceRef = args.sourceRef?.trim().toLowerCase();
+    if (
+      args.sourceKind === "skills-sh" ||
+      sourceRef?.startsWith("skills-sh:") ||
+      sourceRef?.startsWith("skills-sh/")
+    ) {
+      return;
+    }
     await upsertUserSkillInstall(ctx, args);
   },
 });

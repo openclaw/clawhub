@@ -89,9 +89,13 @@ export const Route = createFileRoute("/settings")({
   ): {
     view?: SettingsView;
     ownerHandle?: string;
+    repo?: string;
+    sourcePath?: string;
   } => ({
     view: isSettingsView(search.view) ? search.view : undefined,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+    repo: typeof search.repo === "string" ? search.repo : undefined,
+    sourcePath: typeof search.sourcePath === "string" ? search.sourcePath : undefined,
   }),
   component: Settings,
 });
@@ -334,7 +338,13 @@ export function Settings() {
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [revokingInviteId, setRevokingInviteId] = useState<Id<"publisherInvites"> | null>(null);
   const [respondingInvite, setRespondingInvite] = useState<InviteResponseState | null>(null);
-  const { activeView, navigateToView, ownerHandle: requestedOwnerHandle } = useActiveSettingsView();
+  const {
+    activeView,
+    navigateToView,
+    ownerHandle: requestedOwnerHandle,
+    repo: requestedRepo,
+    sourcePath: requestedSourcePath,
+  } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
     (entry) => entry.role !== "publisher",
@@ -422,6 +432,10 @@ export function Settings() {
         ? {}
         : "skip",
   ) as PublisherDeletionInventory[] | undefined;
+
+  useEffect(() => {
+    if (requestedRepo) setGithubRepo(requestedRepo);
+  }, [requestedRepo]);
 
   useEffect(() => {
     if (!me) return;
@@ -1659,6 +1673,7 @@ export function Settings() {
                         onGithubRepoChange={setGithubRepo}
                         onConfigure={onConfigureGitHubSource}
                         isSyncing={isSyncingSource}
+                        requestedSourcePath={requestedSourcePath}
                       />
                     ) : (
                       <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
@@ -2679,6 +2694,7 @@ function GitHubSourceForm({
   onGithubRepoChange,
   onConfigure,
   isSyncing,
+  requestedSourcePath,
 }: {
   publisherOptions: PublisherMembership[];
   selectedPublisherId: string;
@@ -2687,6 +2703,7 @@ function GitHubSourceForm({
   onGithubRepoChange: (repo: string) => void;
   onConfigure: (event: FormEvent) => void;
   isSyncing: boolean;
+  requestedSourcePath?: string;
 }) {
   return (
     <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onConfigure}>
@@ -2722,6 +2739,11 @@ function GitHubSourceForm({
           {isSyncing ? "Adding..." : "Add repo"}
         </Button>
       </div>
+      {requestedSourcePath ? (
+        <p className="text-xs text-[color:var(--ink-soft)] sm:basis-full">
+          Requested skill path: <code>{requestedSourcePath}</code>
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -2990,6 +3012,8 @@ function useActiveSettingsView() {
     activeView,
     navigateToView,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+    repo: typeof search.repo === "string" ? search.repo : undefined,
+    sourcePath: typeof search.sourcePath === "string" ? search.sourcePath : undefined,
   };
 }
 

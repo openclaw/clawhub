@@ -206,6 +206,13 @@ export const CliTelemetryInstallRequestSchema = type({
   slug: "string",
   ownerHandle: "string?",
   sourceRef: "string?",
+  sourceKind: '"skills-sh"?',
+  sourceRepository: "string?",
+  sourcePath: "string?",
+  sourceUrl: "string?",
+  canonicalRef: "string?",
+  clawhubScan: '"unscanned"|"scanned"?',
+  trustLabel: "string?",
   version: "string?",
   // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",

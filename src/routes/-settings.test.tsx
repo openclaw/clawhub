@@ -688,6 +688,26 @@ describe("Settings", () => {
     expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
   });
 
+  it("prefills the repository and source path from an external Claim handoff", async () => {
+    mockSignedInSettings({
+      search: {
+        view: "githubSources",
+        repo: "patrick-erichsen/skills",
+        sourcePath: "skills/html",
+      },
+      memberships: [orgMembership],
+    });
+
+    render(<Settings />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("GitHub repo URL") as HTMLInputElement).value).toBe(
+        "patrick-erichsen/skills",
+      );
+    });
+    expect(screen.getByText("skills/html")).toBeTruthy();
+  });
+
   it("shows synced repos as separate cards and lets owners delete a source", async () => {
     const deleteSource = vi.fn().mockResolvedValue({ ok: true, deletedSkills: 0 });
     useMutationMock.mockImplementation((mutation) =>

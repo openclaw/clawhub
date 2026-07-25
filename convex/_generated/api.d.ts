@@ -144,6 +144,7 @@ import type * as lib_skills_slugResolution from "../lib/skills/slugResolution.js
 import type * as lib_skillsShCatalogEnvironment from "../lib/skillsShCatalogEnvironment.js";
 import type * as lib_skillsShCatalogFixtures from "../lib/skillsShCatalogFixtures.js";
 import type * as lib_skillsShCatalogPublication from "../lib/skillsShCatalogPublication.js";
+import type * as lib_skillsShMirrorPublic from "../lib/skillsShMirrorPublic.js";
 import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_testSeed from "../lib/testSeed.js";
 import type * as lib_tokens from "../lib/tokens.js";
@@ -186,6 +187,8 @@ import type * as skillTransfers from "../skillTransfers.js";
 import type * as skills from "../skills.js";
 import type * as skillsShCatalog from "../skillsShCatalog.js";
 import type * as skillsShMirror from "../skillsShMirror.js";
+import type * as skillsShMirrorPublic from "../skillsShMirrorPublic.js";
+import type * as skillsShPublicTestFixtures from "../skillsShPublicTestFixtures.js";
 import type * as stars from "../stars.js";
 import type * as statsMaintenance from "../statsMaintenance.js";
 import type * as telemetry from "../telemetry.js";
@@ -338,6 +341,7 @@ declare const fullApi: ApiFromModules<{
   "lib/skillsShCatalogEnvironment": typeof lib_skillsShCatalogEnvironment;
   "lib/skillsShCatalogFixtures": typeof lib_skillsShCatalogFixtures;
   "lib/skillsShCatalogPublication": typeof lib_skillsShCatalogPublication;
+  "lib/skillsShMirrorPublic": typeof lib_skillsShMirrorPublic;
   "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/testSeed": typeof lib_testSeed;
   "lib/tokens": typeof lib_tokens;
@@ -380,6 +384,8 @@ declare const fullApi: ApiFromModules<{
   skills: typeof skills;
   skillsShCatalog: typeof skillsShCatalog;
   skillsShMirror: typeof skillsShMirror;
+  skillsShMirrorPublic: typeof skillsShMirrorPublic;
+  skillsShPublicTestFixtures: typeof skillsShPublicTestFixtures;
   stars: typeof stars;
   statsMaintenance: typeof statsMaintenance;
   telemetry: typeof telemetry;

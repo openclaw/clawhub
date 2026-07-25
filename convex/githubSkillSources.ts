@@ -7,7 +7,9 @@ import { requireUser } from "./lib/access";
 import { deleteGitHubSkillScansForSource } from "./lib/githubSkillScans";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
+import { toPublicSkill } from "./lib/public";
 import {
+  getOwnerPublisher,
   getPersonalPublisherForUserOrFallback,
   isPublisherActive,
   isPublisherRoleAllowed,
@@ -21,6 +23,7 @@ import {
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 const GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE = 25;
+const SKILLS_SH_ALIAS_SOURCE_SKILL_LIMIT = 500;
 
 type PublicGitHubSkillSource = Pick<
   Doc<"githubSkillSources">,
@@ -47,6 +50,51 @@ type PublicGitHubSkillSource = Pick<
 export const getByIdInternal = internalQuery({
   args: { sourceId: v.id("githubSkillSources") },
   handler: async (ctx, args) => ctx.db.get(args.sourceId),
+});
+
+export const getSkillsShAliasTargetInternal = internalQuery({
+  args: { repo: v.string(), path: v.string() },
+  handler: async (ctx, args) => {
+    const repo = args.repo.trim().toLowerCase();
+    const path = args.path.trim().replace(/^\/+|\/+$/g, "");
+    if (!repo || !path) return null;
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", repo))
+      .unique();
+    if (!source) return null;
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+      .take(SKILLS_SH_ALIAS_SOURCE_SKILL_LIMIT + 1);
+    if (skills.length > SKILLS_SH_ALIAS_SOURCE_SKILL_LIMIT) return null;
+    const matches = skills.filter(
+      (skill) =>
+        skill.githubPath === path &&
+        skill.installKind === "github" &&
+        skill.githubCurrentStatus === "present" &&
+        (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious") &&
+        Boolean(skill.githubCurrentCommit) &&
+        Boolean(skill.githubCurrentContentHash) &&
+        Boolean(toPublicSkill(skill)),
+    );
+    if (matches.length !== 1) return null;
+    const skill = matches[0]!;
+    const publisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (!publisher) return null;
+    const handle = publisher.handle?.trim();
+    if (!handle) return null;
+    return {
+      source,
+      skill,
+      publisher: { handle, displayName: publisher.displayName ?? handle },
+      canonicalRef: `@${handle}/${skill.slug}`,
+      canonicalRoute: `/${encodeURIComponent(handle)}/skills/${encodeURIComponent(skill.slug)}`,
+    };
+  },
 });
 
 async function toPublicGitHubSkillSource(
