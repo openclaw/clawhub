@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { getFunctionName } from "convex/server";
 import { ConvexError } from "convex/values";
 import { zipSync } from "fflate";
@@ -282,7 +283,7 @@ describe("buildGitHubSourceImport", () => {
 });
 
 describe("buildGitHubSkillSourceFetch", () => {
-  it("attaches configured GitHub auth to API and archive requests only", async () => {
+  it("uses the general token for publisher-selected public repositories", async () => {
     const previousEnv = {
       token: process.env.GITHUB_TOKEN,
       appId: process.env.GITHUB_APP_ID,
@@ -290,9 +291,14 @@ describe("buildGitHubSkillSourceFetch", () => {
       privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
     };
     process.env.GITHUB_TOKEN = "github-token";
-    delete process.env.GITHUB_APP_ID;
-    delete process.env.GITHUB_APP_INSTALLATION_ID;
-    delete process.env.GITHUB_APP_PRIVATE_KEY;
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    process.env.GITHUB_APP_ID = "3536245";
+    process.env.GITHUB_APP_INSTALLATION_ID = "987654";
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
     const fetcher = vi.fn(async () => new Response("ok"));
     const wrapped = __test.buildGitHubSkillSourceFetch(fetcher as unknown as typeof fetch);
 
@@ -314,6 +320,7 @@ describe("buildGitHubSkillSourceFetch", () => {
     }
 
     const calls = fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
+    expect(calls).toHaveLength(3);
     const firstHeaders = calls[0]?.[1]?.headers as Headers;
     const secondHeaders = calls[1]?.[1]?.headers as Headers;
     const thirdInit = calls[2]?.[1];

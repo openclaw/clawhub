@@ -2441,6 +2441,9 @@ async function buildGitHubSkillSourceHeaders(fetcher: typeof fetch) {
   return await buildGitHubApiHeaders({
     userAgent: "clawhub/github-skill-source",
     fetchImpl: fetcher,
+    // Installation tokens are repository-scoped and cannot reliably read an
+    // arbitrary public repository selected by a publisher.
+    useGitHubApp: false,
   });
 }
 
