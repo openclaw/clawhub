@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   activateControlledExternalSkill,
   deactivateControlledExternalSkill,
+  prepareControlledExternalSkill,
   readControlledExternalSkill,
 } from "./skillsShPublicTestFixtures";
 
@@ -23,6 +24,9 @@ const deactivateFixture = (
     sourceSnapshotId?: string;
   }>
 )._handler;
+const prepareFixture = (
+  prepareControlledExternalSkill as unknown as WrappedHandler<{ confirm: typeof confirm }>
+)._handler;
 
 beforeEach(() => {
   vi.stubEnv("CLAWHUB_ENV", "test");
@@ -33,6 +37,46 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("CLAW-583 permanent-Test fixture", () => {
+  it("repairs the legacy file hash and resets the controlled row before proof", async () => {
+    const { db, tables } = createDb();
+    const legacyHash = "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff";
+    tables.skillsShMirrorDigests[0]!.sourceContentHash = legacyHash;
+    tables.skillsShMirrorDigests[0]!.publicVisible = true;
+    tables.skillsShMirrorDigests[0]!.installable = true;
+    tables.skillsShMirrorDetails[0]!.sourceContentHash = legacyHash;
+
+    await expect(prepareFixture({ db }, { confirm })).resolves.toMatchObject({
+      ok: true,
+      contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+      hashRepaired: true,
+      deactivated: true,
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(tables.skillsShMirrorDigests[0]).toMatchObject({
+      sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+      publicVisible: false,
+      installable: false,
+    });
+    expect(tables.skillsShMirrorDetails[0]).toMatchObject({
+      sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+    });
+    await expect(readFixture({ db }, { confirm })).resolves.toMatchObject({
+      contentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+      publicVisible: false,
+      installable: false,
+    });
+  });
+
+  it("refuses to prepare an unrelated content hash", async () => {
+    const { db, tables } = createDb();
+    tables.skillsShMirrorDigests[0]!.sourceContentHash = "b".repeat(64);
+
+    await expect(prepareFixture({ db }, { confirm })).rejects.toThrow(
+      "controlled mirror digest mismatch",
+    );
+  });
+
   it("activates and exactly restores only the controlled mirror flags", async () => {
     const { db, tables } = createDb();
     const ctx = { db, scheduler: { runAfter: async () => null } };

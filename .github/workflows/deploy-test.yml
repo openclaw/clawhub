@@ -965,6 +965,15 @@ jobs:
           bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw583-deployment-readback.json
           jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw583-deployment-readback.json
           bunx convex run --no-push \
+            skillsShPublicTestFixtures:prepareControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > claw583-fixture-preparation.json
+          jq -e '
+            .ok == true and
+            .contentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw583-fixture-preparation.json >/dev/null
+          bunx convex run --no-push \
             skillsShPublicTestFixtures:readControlledExternalSkill \
             "{\"confirm\":\"$confirm\"}" > claw583-fixture-before.json
           jq -e '
