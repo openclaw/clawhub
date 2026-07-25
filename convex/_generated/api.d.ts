@@ -12,6 +12,7 @@ import type * as agentSkillsHttp from "../agentSkillsHttp.js";
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
 import type * as canonicalTrending from "../canonicalTrending.js";
+import type * as canonicalTrendingTestFixtures from "../canonicalTrendingTestFixtures.js";
 import type * as catalogClassification from "../catalogClassification.js";
 import type * as catalogClassificationNode from "../catalogClassificationNode.js";
 import type * as catalogFeed from "../catalogFeed.js";
@@ -212,6 +213,7 @@ declare const fullApi: ApiFromModules<{
   appMeta: typeof appMeta;
   auth: typeof auth;
   canonicalTrending: typeof canonicalTrending;
+  canonicalTrendingTestFixtures: typeof canonicalTrendingTestFixtures;
   catalogClassification: typeof catalogClassification;
   catalogClassificationNode: typeof catalogClassificationNode;
   catalogFeed: typeof catalogFeed;

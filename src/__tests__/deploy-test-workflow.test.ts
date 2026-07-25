@@ -111,6 +111,8 @@ describe("Test deploy workflow", () => {
     expect(revision).toContain("deploy-claw-577-to-permanent-test");
     expect(revision).toContain("refs/heads/pe/claw-583-mirrored-search-journey");
     expect(revision).toContain("deploy-claw-583-to-permanent-test");
+    expect(revision).toContain("refs/heads/pe/claw-590-trending-snapshot");
+    expect(revision).toContain("deploy-claw-590-to-permanent-test");
     expect(revision).toContain("${{ inputs.expected_sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.sha }}");
     expect(revision).toContain("${{ github.event.pull_request.head.repo.full_name }}");
@@ -306,5 +308,39 @@ describe("Test deploy workflow", () => {
     expect(upload?.with?.path).toContain("proof/claw-583/external-flow.webm");
     expect(upload?.with?.path).toContain("proof/claw-583/external-detail.png");
     expect(upload?.with?.path).toContain("claw583-cleanup-readback.json");
+  });
+
+  it("runs the CLAW-590 materialization proof only for its exact guarded branch", async () => {
+    const workflow = await readWorkflow();
+    const job = workflow.jobs?.["claw590-canonical-trending-proof"];
+    const proofStep = job?.steps?.find(
+      (candidate) =>
+        candidate.name === "Prove canonical Trending materialization and API in permanent Test",
+    );
+    const upload = job?.steps?.find(
+      (candidate) => candidate.name === "Upload permanent Test canonical Trending proof",
+    );
+    const run = proofStep?.run ?? "";
+
+    expect(job?.needs).toBe("deploy-test");
+    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-590-trending-snapshot'");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test'");
+    expect(job?.if).toContain("inputs.expected_sha == needs.deploy-test.outputs.deploy_sha");
+    expect(job?.environment?.name).toBe("Test");
+    expect(job?.steps?.[0]?.with?.ref).toBe("${{ inputs.expected_sha }}");
+    expect(proofStep?.env?.DEPLOY_SHA).toBe("${{ needs.deploy-test.outputs.deploy_sha }}");
+    expect(run).toContain("appMeta:getDeploymentInfo");
+    expect(run).toContain("bun run trending:prove-test");
+    expect(run).toContain("trap cleanup EXIT");
+    expect(run).toContain("canonicalTrendingTestFixtures:cleanupCanonicalTrendingProof");
+    expect(run).toContain("canonicalTrendingTestFixtures:readCanonicalTrendingProof");
+    expect(run).toContain("claw590-recovery-readback.json");
+    expect(run).toContain("documentsRead > 0");
+    expect(run).toContain('laneCounts["skills-sh-trending"] == 8');
+    expect(upload?.uses).toBe("actions/upload-artifact@v7");
+    expect(upload?.with?.name).toBe("claw590-canonical-trending-proof");
+    expect(upload?.with?.["if-no-files-found"]).toBe("error");
+    expect(upload?.with?.path).toContain("proof/claw-590/canonical-trending-test-proof.json");
+    expect(upload?.with?.path).toContain("claw590-cleanup-readback.json");
   });
 });

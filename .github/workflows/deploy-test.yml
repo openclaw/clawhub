@@ -39,7 +39,9 @@ jobs:
       (github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey' &&
       inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test') ||
       (github.ref == 'refs/heads/pe/claw-560-verified-adoption' &&
-      inputs.branch_test_confirm == 'deploy-claw-560-to-permanent-test')) &&
+      inputs.branch_test_confirm == 'deploy-claw-560-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-590-trending-snapshot' &&
+      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test')) &&
       github.actor == 'Patrick-Erichsen' &&
       inputs.expected_sha != '')) ||
       (github.event_name == 'pull_request' &&
@@ -122,6 +124,14 @@ jobs:
               [[ "$GITHUB_REF" == refs/heads/pe/claw-560-verified-adoption ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
               [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-560-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-590-trending-snapshot ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-590-to-permanent-test ]] &&
               [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
             then
               branch_test_allowed=true
@@ -1120,3 +1130,139 @@ jobs:
             claw583-cleanup-status.json
             claw583-deployment-readback.json
             claw583-deployment.json
+
+  claw590-canonical-trending-proof:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/pe/claw-590-trending-snapshot' &&
+      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test' &&
+      inputs.expected_sha == needs.deploy-test.outputs.deploy_sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.expected_sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Prove canonical Trending materialization and API in permanent Test
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          confirm=manage-claw-590-canonical-trending-test-proof
+          snapshot_id="claw-590-proof-$DEPLOY_SHA"
+          mkdir -p proof/claw-590
+          printf '{"armed":false}\n' > proof/claw-590/active-snapshot.json
+          cleanup() {
+            set +e
+            armed="$(jq -r '.armed // false' proof/claw-590/active-snapshot.json 2>/dev/null)"
+            active_snapshot_id="$(jq -r '.snapshotId // empty' proof/claw-590/active-snapshot.json 2>/dev/null)"
+            cleanup_exit=0
+            if [[ "$armed" == true && -n "$active_snapshot_id" ]]; then
+              cleanup_args="$(
+                jq -cn \
+                  --arg confirm "$confirm" \
+                  --arg snapshotId "$active_snapshot_id" \
+                  '{confirm:$confirm,snapshotId:$snapshotId}'
+              )"
+              bunx convex run --no-push \
+                canonicalTrendingTestFixtures:cleanupCanonicalTrendingProof \
+                "$cleanup_args" > claw590-cleanup.json 2>&1
+              cleanup_exit=$?
+              bunx convex run --no-push \
+                canonicalTrendingTestFixtures:readCanonicalTrendingProof \
+                "$cleanup_args" > claw590-cleanup-readback.json 2>&1
+              readback_exit=$?
+            else
+              jq -n '{ok:true,skipped:true}' > claw590-cleanup.json
+              jq -n '{present:false,skipped:true}' > claw590-cleanup-readback.json
+              readback_exit=0
+            fi
+            jq -n \
+              --argjson cleanupExit "$cleanup_exit" \
+              --argjson readbackExit "$readback_exit" \
+              '{cleanupExit:$cleanupExit,readbackExit:$readbackExit}' \
+              > claw590-cleanup-status.json
+            set -e
+            [[ "$cleanup_exit" -eq 0 && "$readback_exit" -eq 0 ]]
+            jq -e '.present == false' claw590-cleanup-readback.json >/dev/null
+          }
+          trap cleanup EXIT
+
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_SHA" ]]
+          bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw590-deployment-readback.json
+          jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw590-deployment-readback.json
+          proof_args="$(
+            jq -cn \
+              --arg confirm "$confirm" \
+              --arg snapshotId "$snapshot_id" \
+              '{confirm:$confirm,snapshotId:$snapshotId}'
+          )"
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:readCanonicalTrendingProof \
+            "$proof_args" > claw590-before.json
+          if jq -e '.present == true' claw590-before.json >/dev/null; then
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:cleanupCanonicalTrendingProof \
+              "$proof_args" > claw590-recovery.json
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:readCanonicalTrendingProof \
+              "$proof_args" > claw590-recovery-readback.json
+            jq -e '.present == false' claw590-recovery-readback.json >/dev/null
+          else
+            jq -n '{ok:true,skipped:true}' > claw590-recovery.json
+            cp claw590-before.json claw590-recovery-readback.json
+          fi
+          jq -e '.present == false' claw590-recovery-readback.json >/dev/null
+
+          bun run trending:prove-test > claw590-proof-output.json
+          jq -e '
+            .target.environment == "permanent Test" and
+            .target.deploySha == env.DEPLOY_SHA and
+            .materialization.snapshotId == ("claw-590-proof-" + env.DEPLOY_SHA) and
+            .materialization.totalItems >= 20 and
+            .materialization.operations.documentsRead > 0 and
+            .materialization.operations.documentsWritten > 0 and
+            .materialization.operations.functionCalls > 0 and
+            .assertions.laneCounts["clawhub-trending"] == 8 and
+            .assertions.laneCounts["clawhub-rising"] == 4 and
+            .assertions.laneCounts["skills-sh-trending"] == 8 and
+            .assertions.maximumPublisherCount <= 2 and
+            .assertions.stableSnapshot == true and
+            .assertions.stableCursor == true and
+            .assertions.stableOrder == true and
+            .assertions.completePagination == true and
+            .assertions.skillsShTrending24hInstalls == null
+          ' proof/claw-590/canonical-trending-test-proof.json >/dev/null
+
+          cleanup
+          trap - EXIT
+          jq -e '.cleanupExit == 0 and .readbackExit == 0' claw590-cleanup-status.json >/dev/null
+          jq -e '.present == false' claw590-cleanup-readback.json >/dev/null
+
+      - name: Upload permanent Test canonical Trending proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw590-canonical-trending-proof
+          if-no-files-found: error
+          path: |
+            proof/claw-590/canonical-trending-test-proof.json
+            proof/claw-590/active-snapshot.json
+            claw590-proof-output.json
+            claw590-before.json
+            claw590-recovery.json
+            claw590-recovery-readback.json
+            claw590-cleanup.json
+            claw590-cleanup-readback.json
+            claw590-cleanup-status.json
+            claw590-deployment-readback.json

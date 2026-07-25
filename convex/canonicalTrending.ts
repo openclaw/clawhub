@@ -18,6 +18,7 @@ import {
 import { shouldExcludeSkillFromPublicBrowse } from "./lib/publicBrowse";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
+import { assertTestSeedAllowed } from "./lib/testSeed";
 
 const SOURCE_PAGE_SIZE = 250;
 const WRITE_BATCH_SIZE = 100;
@@ -379,14 +380,20 @@ export const pruneExpiredActionInternal = internalAction({
 });
 
 export const materializeInternal = internalAction({
-  args: {},
-  handler: async (ctx) => {
+  args: { proofSnapshotId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    if (args.proofSnapshotId !== undefined) {
+      assertTestSeedAllowed();
+      if (!/^claw-590-proof-[0-9a-f]{40}$/.test(args.proofSnapshotId)) {
+        throw new Error("Invalid CLAW-590 proof snapshot ID");
+      }
+    }
     if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
       return { status: "disabled" as const };
     }
 
     const startedAt = Date.now();
-    const snapshotId = `skills-${startedAt}`;
+    const snapshotId = args.proofSnapshotId ?? `skills-${startedAt}`;
     let snapshotStarted = false;
     let functionCalls = 0;
     let documentsRead = 0;
