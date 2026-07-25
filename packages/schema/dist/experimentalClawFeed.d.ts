@@ -20,24 +20,7 @@ export declare const ExperimentalClawFeedEntrySchema: import("arktype/internal/v
         id: string;
         trust: "community" | "official";
     };
-    clawManifestSummary: {
-        schemaVersion: 1;
-        agent: {
-            id: string;
-            name?: string | undefined;
-            description?: string | undefined;
-        };
-        workspace: {
-            bootstrapFiles: string[];
-            fileCount: number;
-        };
-        packages: {
-            skillCount: number;
-            pluginCount: number;
-        };
-        mcpServerCount: number;
-        cronJobCount: number;
-    };
+    clawManifestSummary: import("./claws.js").ClawManifestSummary;
     install: {
         candidates: {
             sourceRef: "public-clawhub";
@@ -67,24 +50,7 @@ export declare const ExperimentalClawFeedSchema: import("arktype/internal/varian
             id: string;
             trust: "community" | "official";
         };
-        clawManifestSummary: {
-            schemaVersion: 1;
-            agent: {
-                id: string;
-                name?: string | undefined;
-                description?: string | undefined;
-            };
-            workspace: {
-                bootstrapFiles: string[];
-                fileCount: number;
-            };
-            packages: {
-                skillCount: number;
-                pluginCount: number;
-            };
-            mcpServerCount: number;
-            cronJobCount: number;
-        };
+        clawManifestSummary: import("./claws.js").ClawManifestSummary;
         install: {
             candidates: {
                 sourceRef: "public-clawhub";
