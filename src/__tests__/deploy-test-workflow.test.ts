@@ -334,7 +334,11 @@ describe("Test deploy workflow", () => {
     expect(run).toContain("trap cleanup EXIT");
     expect(run).toContain("canonicalTrendingTestFixtures:cleanupCanonicalTrendingProof");
     expect(run).toContain("canonicalTrendingTestFixtures:readCanonicalTrendingProof");
+    expect(run).toContain("canonicalTrendingTestFixtures:seedCanonicalTrendingSourceFixture");
+    expect(run).toContain("canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture");
+    expect(run).toContain("canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture");
     expect(run).toContain("claw590-recovery-readback.json");
+    expect(run).toContain("claw590-source-cleanup-readback.json");
     expect(run).toContain("documentsRead > 0");
     expect(run).toContain('laneCounts["skills-sh-trending"] == 8');
     expect(upload?.uses).toBe("actions/upload-artifact@v7");
@@ -342,5 +346,6 @@ describe("Test deploy workflow", () => {
     expect(upload?.with?.["if-no-files-found"]).toBe("error");
     expect(upload?.with?.path).toContain("proof/claw-590/canonical-trending-test-proof.json");
     expect(upload?.with?.path).toContain("claw590-cleanup-readback.json");
+    expect(upload?.with?.path).toContain("claw590-source-cleanup-readback.json");
   });
 });

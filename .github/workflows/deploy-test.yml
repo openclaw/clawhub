@@ -1187,14 +1187,36 @@ jobs:
               jq -n '{present:false,skipped:true}' > claw590-cleanup-readback.json
               readback_exit=0
             fi
+            source_args="$(jq -cn --arg confirm "$confirm" '{confirm:$confirm}')"
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-cleanup.json 2>&1
+            source_cleanup_exit=$?
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-cleanup-readback.json 2>&1
+            source_readback_exit=$?
             jq -n \
               --argjson cleanupExit "$cleanup_exit" \
               --argjson readbackExit "$readback_exit" \
-              '{cleanupExit:$cleanupExit,readbackExit:$readbackExit}' \
+              --argjson sourceCleanupExit "$source_cleanup_exit" \
+              --argjson sourceReadbackExit "$source_readback_exit" \
+              '{
+                cleanupExit:$cleanupExit,
+                readbackExit:$readbackExit,
+                sourceCleanupExit:$sourceCleanupExit,
+                sourceReadbackExit:$sourceReadbackExit
+              }' \
               > claw590-cleanup-status.json
             set -e
-            [[ "$cleanup_exit" -eq 0 && "$readback_exit" -eq 0 ]]
+            [[ \
+              "$cleanup_exit" -eq 0 && \
+              "$readback_exit" -eq 0 && \
+              "$source_cleanup_exit" -eq 0 && \
+              "$source_readback_exit" -eq 0 \
+            ]]
             jq -e '.present == false' claw590-cleanup-readback.json >/dev/null
+            jq -e '.present == false' claw590-source-cleanup-readback.json >/dev/null
           }
           trap cleanup EXIT
 
@@ -1224,6 +1246,37 @@ jobs:
           fi
           jq -e '.present == false' claw590-recovery-readback.json >/dev/null
 
+          source_args="$(jq -cn --arg confirm "$confirm" '{confirm:$confirm}')"
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+            "$source_args" > claw590-source-before.json
+          if jq -e '.present == true' claw590-source-before.json >/dev/null; then
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-recovery.json
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-recovery-readback.json
+            jq -e '.present == false' claw590-source-recovery-readback.json >/dev/null
+          else
+            jq -n '{ok:true,skipped:true}' > claw590-source-recovery.json
+            cp claw590-source-before.json claw590-source-recovery-readback.json
+          fi
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:seedCanonicalTrendingSourceFixture \
+            "$source_args" > claw590-source-seed.json
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+            "$source_args" > claw590-source-active.json
+          jq -e '
+            .present == true and
+            .nativeCount == 12 and
+            .nativePublisherCount == 6 and
+            .externalCount == 8 and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw590-source-active.json >/dev/null
+
           bun run trending:prove-test > claw590-proof-output.json
           jq -e '
             .target.environment == "permanent Test" and
@@ -1246,8 +1299,14 @@ jobs:
 
           cleanup
           trap - EXIT
-          jq -e '.cleanupExit == 0 and .readbackExit == 0' claw590-cleanup-status.json >/dev/null
+          jq -e '
+            .cleanupExit == 0 and
+            .readbackExit == 0 and
+            .sourceCleanupExit == 0 and
+            .sourceReadbackExit == 0
+          ' claw590-cleanup-status.json >/dev/null
           jq -e '.present == false' claw590-cleanup-readback.json >/dev/null
+          jq -e '.present == false' claw590-source-cleanup-readback.json >/dev/null
 
       - name: Upload permanent Test canonical Trending proof
         if: always()
@@ -1266,3 +1325,10 @@ jobs:
             claw590-cleanup-readback.json
             claw590-cleanup-status.json
             claw590-deployment-readback.json
+            claw590-source-before.json
+            claw590-source-recovery.json
+            claw590-source-recovery-readback.json
+            claw590-source-seed.json
+            claw590-source-active.json
+            claw590-source-cleanup.json
+            claw590-source-cleanup-readback.json

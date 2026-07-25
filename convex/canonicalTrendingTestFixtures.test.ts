@@ -13,6 +13,7 @@ beforeEach(() => {
   vi.stubEnv("CLAWHUB_ENV", "test");
   vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
   vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+  vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
 });
 
 afterEach(() => {
@@ -20,6 +21,107 @@ afterEach(() => {
 });
 
 describe("CLAW-590 permanent Test snapshot ownership", () => {
+  it("seeds and removes an exact owned 20-row source corpus", async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("rankingMetricImports", {
+        datasetVersion: "claw-590-test-dataset",
+        checksum: "claw-590-test-checksum",
+        generatedAt: new Date(1_000).toISOString(),
+        importedAt: 2_000,
+        startDay: 1,
+        endDay: 1,
+        targetCount: 0,
+        skillTargetCount: 0,
+        packageTargetCount: 0,
+        dailyRowCount: 0,
+        importedSkillRows: 0,
+        importedPackageRows: 0,
+        unresolvedTargets: 0,
+        skippedOverlayRows: 0,
+      });
+    });
+
+    await expect(
+      t.mutation(internal.canonicalTrendingTestFixtures.seedCanonicalTrendingSourceFixture, {
+        confirm: CONFIRM,
+      }),
+    ).resolves.toEqual({ ok: true, created: true, nativeCount: 12, externalCount: 8 });
+    await expect(
+      t.query(internal.canonicalTrendingTestFixtures.readCanonicalTrendingSourceFixture, {
+        confirm: CONFIRM,
+      }),
+    ).resolves.toMatchObject({
+      present: true,
+      nativeCount: 12,
+      nativePublisherCount: 6,
+      externalCount: 8,
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    await expect(
+      t.mutation(internal.canonicalTrendingTestFixtures.seedCanonicalTrendingSourceFixture, {
+        confirm: CONFIRM,
+      }),
+    ).resolves.toEqual({ ok: true, created: false, nativeCount: 12, externalCount: 8 });
+
+    const materialized = await t.action(internal.canonicalTrending.materializeInternal, {
+      proofSnapshotId: SNAPSHOT_ID,
+    });
+    if (materialized.status !== "ready") throw new Error("Expected ready fixture materialization");
+    expect(materialized).toMatchObject({
+      status: "ready",
+      snapshotId: SNAPSHOT_ID,
+      totalItems: 20,
+      sourceCounts: { clawhubTrending: 12, clawhubRising: 12, skillsShTrending: 8 },
+    });
+    expect(materialized.sample.map((row) => row.lane)).toEqual([
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-rising",
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-rising",
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-rising",
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-trending",
+      "skills-sh-trending",
+      "clawhub-rising",
+      "clawhub-trending",
+      "skills-sh-trending",
+    ]);
+    await expect(
+      t.action(internal.canonicalTrendingTestFixtures.cleanupCanonicalTrendingProof, {
+        confirm: CONFIRM,
+        snapshotId: SNAPSHOT_ID,
+      }),
+    ).resolves.toMatchObject({ ok: true, itemsDeleted: 20, snapshotDeleted: true });
+
+    await expect(
+      t.mutation(internal.canonicalTrendingTestFixtures.cleanupCanonicalTrendingSourceFixture, {
+        confirm: CONFIRM,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      removed: true,
+      nativeDeleted: 12,
+      externalDeleted: 8,
+      usersDeleted: 6,
+    });
+    await expect(
+      t.query(internal.canonicalTrendingTestFixtures.readCanonicalTrendingSourceFixture, {
+        confirm: CONFIRM,
+      }),
+    ).resolves.toEqual({ present: false });
+  });
+
   it("reports an absent owned snapshot without broad reads", async () => {
     const t = convexTest(schema, modules);
 
