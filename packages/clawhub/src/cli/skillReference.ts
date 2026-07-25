@@ -1,6 +1,7 @@
 const SKILLS_SH_PREFIX = "skills-sh:";
 const SKILLS_SH_LEGACY_PREFIX = "skills-sh/";
 export const SKILLS_SH_UNSCANNED_LABEL = "Not scanned by ClawHub";
+export const SKILLS_SH_SCANNED_LABEL = "Scanned by ClawHub";
 
 export type SkillsShReference = {
   owner: string;

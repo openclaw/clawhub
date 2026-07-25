@@ -36,6 +36,7 @@ import { getRegistry } from "../registry.js";
 import {
   parseSkillsShCliReference,
   parseStoredSkillsShReference,
+  SKILLS_SH_SCANNED_LABEL,
   SKILLS_SH_UNSCANNED_LABEL,
   type SkillsShReference,
 } from "../skillReference.js";
@@ -1618,6 +1619,9 @@ function readSkillsShResolverMetadata(
   }
   if (clawhubScan === "unscanned" && trustLabel !== SKILLS_SH_UNSCANNED_LABEL) {
     fail(`skills.sh catalog resolver must label unscanned sources "${SKILLS_SH_UNSCANNED_LABEL}"`);
+  }
+  if (clawhubScan === "scanned" && trustLabel !== SKILLS_SH_SCANNED_LABEL) {
+    fail(`skills.sh catalog resolver must label scanned sources "${SKILLS_SH_SCANNED_LABEL}"`);
   }
   const canonicalRef =
     record.canonicalRef === null || record.canonicalRef === undefined

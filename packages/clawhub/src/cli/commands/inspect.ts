@@ -12,7 +12,11 @@ import {
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
-import { parseSkillsShCliReference, SKILLS_SH_UNSCANNED_LABEL } from "../skillReference.js";
+import {
+  parseSkillsShCliReference,
+  SKILLS_SH_SCANNED_LABEL,
+  SKILLS_SH_UNSCANNED_LABEL,
+} from "../skillReference.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, styleText } from "../ui.js";
 
@@ -343,7 +347,35 @@ function validateSkillsShVerification(result: unknown, requestedRef: string) {
     ) {
       fail(`skills.sh verification must report "${SKILLS_SH_UNSCANNED_LABEL}" rather than pass`);
     }
+  } else {
+    if (label !== SKILLS_SH_SCANNED_LABEL) {
+      fail(`scanned skills.sh verification must report "${SKILLS_SH_SCANNED_LABEL}"`);
+    }
+    if (!isCanonicalNativeSkillRef(record.canonicalRef)) {
+      fail("scanned skills.sh verification must return a canonical native reference");
+    }
   }
+}
+
+function isCanonicalNativeSkillRef(value: unknown) {
+  if (typeof value !== "string") return false;
+  const canonicalRef = value.trim();
+  if (!canonicalRef.startsWith("@")) return false;
+  try {
+    const parsed = parseSkillRef(canonicalRef);
+    return Boolean(
+      parsed.ownerHandle &&
+      isSafeNativeSkillSegment(parsed.ownerHandle) &&
+      isSafeNativeSkillSegment(parsed.slug) &&
+      canonicalRef === `@${parsed.ownerHandle}/${parsed.slug}`,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isSafeNativeSkillSegment(value: string) {
+  return Boolean(value) && !value.includes("/") && !value.includes("\\") && !value.includes("..");
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

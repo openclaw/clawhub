@@ -445,6 +445,65 @@ describe("cmdVerifySkill", () => {
     );
   });
 
+  it("rejects scanned skills.sh verification without a canonical native alias", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: "html",
+      displayName: "HTML",
+      pageUrl: "https://clawhub.ai/openclaw/html",
+      publisherHandle: "openclaw",
+      publisherDisplayName: "OpenClaw",
+      publisherProfileUrl: "https://clawhub.ai/openclaw",
+      version: "a".repeat(40),
+      resolvedFrom: "skills-sh-alias",
+      tag: null,
+      createdAt: 123,
+      card: {},
+      artifact: {},
+      provenance: { source: "skills.sh", reference: sourceRef },
+      security: { clawhubScan: "scanned", label: "Scanned by ClawHub" },
+      signature: {},
+    });
+
+    await expect(cmdVerifySkill(makeGlobalOpts(), sourceRef)).rejects.toThrow(
+      "scanned skills.sh verification must return a canonical native reference",
+    );
+  });
+
+  it("rejects scanned skills.sh verification with an invalid trust label", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      schema: "clawhub.skill.verify.v1",
+      ok: true,
+      decision: "pass",
+      reasons: [],
+      slug: "html",
+      displayName: "HTML",
+      pageUrl: "https://clawhub.ai/openclaw/html",
+      publisherHandle: "openclaw",
+      publisherDisplayName: "OpenClaw",
+      publisherProfileUrl: "https://clawhub.ai/openclaw",
+      version: "a".repeat(40),
+      resolvedFrom: "skills-sh-alias",
+      tag: null,
+      createdAt: 123,
+      card: {},
+      artifact: {},
+      provenance: { source: "skills.sh", reference: sourceRef },
+      security: { clawhubScan: "scanned", label: "Trusted" },
+      canonicalRef: "@openclaw/html",
+      signature: {},
+    });
+
+    await expect(cmdVerifySkill(makeGlobalOpts(), sourceRef)).rejects.toThrow(
+      'scanned skills.sh verification must report "Scanned by ClawHub"',
+    );
+  });
+
   it("prints scanned Repo Sync alias provenance and canonical verification", async () => {
     const sourceRef = "skills-sh:patrick-erichsen/skills/html";
     const payload = {
