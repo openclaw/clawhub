@@ -1187,11 +1187,23 @@ jobs:
               jq -n '{present:false,skipped:true}' > claw590-cleanup-readback.json
               readback_exit=0
             fi
+            snapshot_removed=false
+            if [[ "$cleanup_exit" -eq 0 && "$readback_exit" -eq 0 ]] && \
+              jq -e '.present == false' claw590-cleanup-readback.json >/dev/null; then
+              snapshot_removed=true
+            fi
             source_args="$(jq -cn --arg confirm "$confirm" '{confirm:$confirm}')"
-            bunx convex run --no-push \
-              canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture \
-              "$source_args" > claw590-source-cleanup.json 2>&1
-            source_cleanup_exit=$?
+            if [[ "$snapshot_removed" == true ]]; then
+              bunx convex run --no-push \
+                canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture \
+                "$source_args" > claw590-source-cleanup.json 2>&1
+              source_cleanup_exit=$?
+            else
+              jq -n \
+                '{ok:false,skipped:true,reason:"snapshot cleanup incomplete; source retained"}' \
+                > claw590-source-cleanup.json
+              source_cleanup_exit=0
+            fi
             bunx convex run --no-push \
               canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
               "$source_args" > claw590-source-cleanup-readback.json 2>&1

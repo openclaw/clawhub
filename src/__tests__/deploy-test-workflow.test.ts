@@ -339,6 +339,7 @@ describe("Test deploy workflow", () => {
     expect(run).toContain("canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture");
     expect(run).toContain("claw590-recovery-readback.json");
     expect(run).toContain("claw590-source-cleanup-readback.json");
+    expect(run).toContain("snapshot cleanup incomplete; source retained");
     expect(run).toContain("documentsRead > 0");
     expect(run).toContain('laneCounts["skills-sh-trending"] == 8');
     expect(upload?.uses).toBe("actions/upload-artifact@v7");
