@@ -343,6 +343,27 @@ export default defineEventHandler(async (event) => {
           `skills.sh trending source total ${source.catalogTotal} exceeds the Test capacity`,
         );
       }
+      const sourceExternalIds = source.sourcePages.flatMap((page) =>
+        page.rows.map((row) => requireString(row.id as string, "externalId")),
+      );
+      const missingExternalIds = new Set<string>();
+      for (let offset = 0; offset < sourceExternalIds.length; offset += MIRROR_BATCH_SIZE) {
+        const joinState = await callConvexOperator(authorization, {
+          operation: "mirror-trending-join-state",
+          externalIds: sourceExternalIds.slice(offset, offset + MIRROR_BATCH_SIZE),
+        });
+        if (!Array.isArray(joinState.missingExternalIds)) {
+          throw new Error("skills.sh trending join state is invalid");
+        }
+        for (const value of joinState.missingExternalIds) {
+          missingExternalIds.add(requireString(value as string, "externalId").toLowerCase());
+        }
+        if (missingExternalIds.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
+          throw new Error(
+            `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
+          );
+        }
+      }
       let sourceCaptureWrites = 0;
       for (const page of source.sourcePages) {
         const stored = await callConvexOperator(authorization, {
