@@ -429,6 +429,10 @@ export async function cmdInstall(
         token,
       );
       const resolvedVersion = getInstallResolutionVersion(resolvedInstall);
+      const artifactIdentity = getInstallResolutionArtifactIdentity(
+        resolvedInstall,
+        state.canonicalRef,
+      );
       spinner.text = `Downloading ${trimmed} ${formatInstallResolutionVersion(resolvedInstall)}`;
       await installSkillWithOptionalStaging(target, targetExists, (installTarget) =>
         installSkillsShResolution(
@@ -448,6 +452,7 @@ export async function cmdInstall(
         registry,
         slug: trimmed,
         ...state,
+        artifactIdentity,
         installedVersion: resolvedVersion,
         installedAt,
         fingerprint: installedFingerprint,
@@ -686,6 +691,10 @@ export async function cmdUpdate(
           token,
         );
         const targetVersion = getInstallResolutionVersion(latestInstall);
+        const targetArtifactIdentity = getInstallResolutionArtifactIdentity(
+          latestInstall,
+          state.canonicalRef,
+        );
         const originFingerprint = sameSkillsShSource(existingOrigin?.sourceRef, entryRef.sourceRef)
           ? existingOrigin?.fingerprint
           : undefined;
@@ -720,7 +729,12 @@ export async function cmdUpdate(
           spinner.start(`Updating ${entry} -> ${formatInstallResolutionVersion(latestInstall)}`);
         }
 
-        if (matched === targetVersion && !options.force && !hasLocalChanges) {
+        if (
+          matched === targetVersion &&
+          existingOrigin?.artifactIdentity === targetArtifactIdentity &&
+          !options.force &&
+          !hasLocalChanges
+        ) {
           const installedAt = existingOrigin?.installedAt ?? lock.skills[entry]?.installedAt;
           if (
             exists &&
@@ -739,6 +753,7 @@ export async function cmdUpdate(
               registry: existingOrigin?.registry ?? registry,
               slug: entryRef.slug,
               ...state,
+              artifactIdentity: targetArtifactIdentity,
               installedVersion: targetVersion,
               installedAt,
               fingerprint: localFingerprint ?? existingOrigin?.fingerprint,
@@ -790,6 +805,7 @@ export async function cmdUpdate(
           registry: existingOrigin?.registry ?? registry,
           slug: entryRef.slug,
           ...state,
+          artifactIdentity: targetArtifactIdentity,
           installedVersion: targetVersion,
           installedAt,
           fingerprint: installedFingerprint,
@@ -1651,6 +1667,25 @@ function getInstallResolutionVersion(resolution: SuccessfulInstallResolution) {
   return resolution.installKind === "github"
     ? resolution.github.commit
     : resolution.archive.version;
+}
+
+function getInstallResolutionArtifactIdentity(
+  resolution: SuccessfulInstallResolution,
+  canonicalRef: string | undefined,
+) {
+  return resolution.installKind === "github"
+    ? JSON.stringify({
+        installKind: resolution.installKind,
+        repo: resolution.github.repo,
+        path: resolution.github.path,
+        commit: resolution.github.commit,
+        contentHash: resolution.github.contentHash,
+      })
+    : JSON.stringify({
+        installKind: resolution.installKind,
+        canonicalRef,
+        version: resolution.archive.version,
+      });
 }
 
 function formatInstallResolutionVersion(resolution: SuccessfulInstallResolution) {

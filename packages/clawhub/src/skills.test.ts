@@ -324,6 +324,8 @@ describe("skills", () => {
       canonicalRef: "@openclaw/demo",
       clawhubScan: "unscanned",
       trustLabel: "Not scanned by ClawHub",
+      artifactIdentity:
+        '{"installKind":"github","repo":"openclaw/skills","path":"skills/demo","commit":"abc","contentHash":"def"}',
       installedVersion: "1.2.3",
       installedAt: 123,
     };

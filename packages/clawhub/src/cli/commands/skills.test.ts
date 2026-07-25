@@ -106,6 +106,14 @@ function makeOpts() {
   return makeGlobalOpts();
 }
 
+function githubArtifactIdentity(repo: string, path: string, commit: string, contentHash: string) {
+  return JSON.stringify({ installKind: "github", repo, path, commit, contentHash });
+}
+
+function archiveArtifactIdentity(canonicalRef: string, version: string) {
+  return JSON.stringify({ installKind: "archive", canonicalRef, version });
+}
+
 beforeEach(() => {
   mkdtempMock.mockImplementation(async (prefix: string) => `${prefix}123`);
   mkdirMock.mockResolvedValue(undefined);
@@ -572,6 +580,12 @@ describe("cmdUpdate", () => {
       sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${nextCommit}/skills/html`,
       clawhubScan: "unscanned",
       trustLabel: "Not scanned by ClawHub",
+      artifactIdentity: githubArtifactIdentity(
+        "patrick-erichsen/skills",
+        "skills/html",
+        nextCommit,
+        contentHash,
+      ),
       installedVersion: nextCommit,
       installedAt: 123,
       fingerprint: "hash",
@@ -701,6 +715,12 @@ describe("cmdUpdate", () => {
       canonicalRef: "@openclaw/html",
       clawhubScan: "scanned",
       trustLabel: "Scanned by ClawHub",
+      artifactIdentity: githubArtifactIdentity(
+        "patrick-erichsen/skills",
+        "skills/html",
+        nextCommit,
+        contentHash,
+      ),
       installedVersion: nextCommit,
       installedAt: 123,
       fingerprint: "hash",
@@ -742,6 +762,99 @@ describe("cmdUpdate", () => {
         },
       }),
       expect.anything(),
+    );
+  });
+
+  it("reinstalls before promoting same-version bytes to a scanned alias", async () => {
+    const sourceRef = "skills-sh:patrick-erichsen/skills/html";
+    const commit = "a".repeat(40);
+    const installedFiles = [{ path: "SKILL.md", sha256: "c".repeat(64), size: 1 }];
+    const contentHash = skillStore.buildGitHubFolderContentHash(installedFiles);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "html",
+      installKind: "github",
+      github: {
+        repo: "openclaw/skills",
+        path: "skills/html",
+        commit,
+        contentHash,
+        sourceUrl: `https://github.com/openclaw/skills/tree/${commit}/skills/html`,
+      },
+      provenance: {
+        source: "skills.sh",
+        reference: sourceRef,
+        repository: "openclaw/skills",
+        path: "skills/html",
+        sourceUrl: `https://github.com/openclaw/skills/tree/${commit}/skills/html`,
+      },
+      trust: {
+        clawhubScan: "scanned",
+        label: "Scanned by ClawHub",
+      },
+      canonicalRef: "@openclaw/html",
+    });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        [sourceRef]: {
+          version: commit,
+          installedAt: 123,
+          sourceRef,
+          sourceKind: "skills-sh",
+          sourceRepository: "patrick-erichsen/skills",
+          sourcePath: "skills/html",
+          clawhubScan: "unscanned",
+          trustLabel: "Not scanned by ClawHub",
+        },
+      },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "html",
+      sourceRef,
+      sourceKind: "skills-sh",
+      sourceRepository: "patrick-erichsen/skills",
+      sourcePath: "skills/html",
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
+      artifactIdentity: githubArtifactIdentity(
+        "patrick-erichsen/skills",
+        "skills/html",
+        commit,
+        contentHash,
+      ),
+      installedVersion: commit,
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    vi.mocked(listSkillFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: installedFiles });
+
+    await cmdUpdate(makeOpts(), sourceRef, {}, false);
+
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/openclaw/skills/zip/${commit}`,
+    });
+    expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
+      new Uint8Array([1, 2, 3]),
+      expect.stringContaining("/.html.tmp-"),
+      "skills/html",
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/html",
+      expect.objectContaining({
+        sourceRepository: "openclaw/skills",
+        canonicalRef: "@openclaw/html",
+        clawhubScan: "scanned",
+        trustLabel: "Scanned by ClawHub",
+      }),
     );
   });
 
@@ -1738,6 +1851,12 @@ describe("cmdInstall", () => {
       sourceUrl: `https://github.com/patrick-erichsen/skills/tree/${commit}/skills/html`,
       clawhubScan: "unscanned",
       trustLabel: "Not scanned by ClawHub",
+      artifactIdentity: githubArtifactIdentity(
+        "patrick-erichsen/skills",
+        "skills/html",
+        commit,
+        contentHash,
+      ),
       installedVersion: commit,
       installedAt: expect.any(Number),
       fingerprint: "hash",
@@ -1831,6 +1950,7 @@ describe("cmdInstall", () => {
       canonicalRef: "@openclaw/html",
       clawhubScan: "scanned",
       trustLabel: "Scanned by ClawHub",
+      artifactIdentity: archiveArtifactIdentity("@openclaw/html", "2.0.0"),
       installedVersion: "2.0.0",
       installedAt: expect.any(Number),
       fingerprint: undefined,
@@ -1932,6 +2052,12 @@ describe("cmdInstall", () => {
       canonicalRef: "@openclaw/html",
       clawhubScan: "scanned",
       trustLabel: "Scanned by ClawHub",
+      artifactIdentity: githubArtifactIdentity(
+        "patrick-erichsen/skills",
+        "skills/html",
+        commit,
+        contentHash,
+      ),
       installedVersion: commit,
       installedAt: expect.any(Number),
       fingerprint: "hash",

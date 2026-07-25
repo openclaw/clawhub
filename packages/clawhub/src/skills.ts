@@ -24,6 +24,7 @@ export type SkillOrigin = {
   canonicalRef?: string;
   clawhubScan?: "unscanned" | "scanned";
   trustLabel?: string;
+  artifactIdentity?: string;
   installedVersion: string;
   installedAt: number;
   fingerprint?: string;
@@ -235,6 +236,8 @@ export async function readSkillOrigin(skillFolder: string): Promise<SkillOrigin 
             ? parsed.clawhubScan
             : undefined,
         trustLabel: typeof parsed.trustLabel === "string" ? parsed.trustLabel : undefined,
+        artifactIdentity:
+          typeof parsed.artifactIdentity === "string" ? parsed.artifactIdentity : undefined,
         installedVersion: parsed.installedVersion,
         installedAt: parsed.installedAt,
         fingerprint: typeof parsed.fingerprint === "string" ? parsed.fingerprint : undefined,
