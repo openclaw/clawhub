@@ -478,7 +478,7 @@ jobs:
             .digest.repo == "skills" and
             .digest.githubPath == "skills/html" and
             .digest.githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
-            .digest.sourceContentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .digest.sourceContentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
             .digest.active == true and
             .digest.publicVisible == false and
             .digest.installable == false
@@ -995,7 +995,7 @@ jobs:
             .repo == "patrick-erichsen/skills" and
             .path == "skills/html" and
             .commit == "050daba89f6b6636470add5cb300aac46a412cf8" and
-            .contentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .contentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
             .scansPlanned == 0 and
             .scansAdmitted == 0
           ' claw583-fixture-active.json >/dev/null
@@ -1017,7 +1017,7 @@ jobs:
             .reference == "skills-sh:patrick-erichsen/skills/html" and
             .githubPath == "skills/html" and
             .githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
-            .sourceContentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .sourceContentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
             (.content.markdown | length) > 0
           ' claw583-detail.json >/dev/null
 
@@ -1031,7 +1031,7 @@ jobs:
             .github.repo == "patrick-erichsen/skills" and
             .github.path == "skills/html" and
             .github.commit == "050daba89f6b6636470add5cb300aac46a412cf8" and
-            .github.contentHash == "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff" and
+            .github.contentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
             .provenance.source == "skills.sh" and
             .provenance.reference == "skills-sh:patrick-erichsen/skills/html" and
             .trust.clawhubScan == "unscanned" and

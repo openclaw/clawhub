@@ -38,7 +38,7 @@ const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS = [
     githubPath: "skills/html",
     detailPath: "skills/html/SKILL.md",
     githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-    sourceContentHash: "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff",
+    sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
   },
   {
     externalId: "steipete/clawdis/discrawl",

@@ -9,7 +9,7 @@ const EXTERNAL_ID = "patrick-erichsen/skills/html";
 const REPO = "patrick-erichsen/skills";
 const PATH = "skills/html";
 const COMMIT = "050daba89f6b6636470add5cb300aac46a412cf8";
-const CONTENT_HASH = "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff";
+const CONTENT_HASH = "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f";
 
 const confirmArgs = { confirm: v.literal(CONFIRM) };
 
