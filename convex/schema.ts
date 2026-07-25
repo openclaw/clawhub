@@ -3115,6 +3115,7 @@ const skillsShMirrorControls = defineTable({
   maxRowsPerRun: v.number(),
   maxRowsPerBatch: v.number(),
   maxDetailBytes: v.number(),
+  latestCompletedLeaderboardRunId: v.optional(v.id("skillsShMirrorRuns")),
   updatedBy: v.string(),
   reason: v.string(),
   updatedAt: v.number(),
@@ -3185,7 +3186,6 @@ const skillsShMirrorRuns = defineTable({
   updatedAt: v.number(),
 })
   .index("by_started_at", ["startedAt"])
-  .index("by_source_view_and_status_and_started_at", ["sourceView", "status", "startedAt"])
   .index("by_source_view_and_status_and_source_snapshot_hash", [
     "sourceView",
     "status",
@@ -3219,7 +3219,9 @@ const skillsShMirrorSourcePages = defineTable({
     }),
   ),
   createdAt: v.number(),
-}).index("by_snapshot_hash_and_page", ["snapshotHash", "page"]);
+})
+  .index("by_snapshot_hash_and_page", ["snapshotHash", "page"])
+  .index("by_source_view_and_page_and_created_at", ["sourceView", "page", "createdAt"]);
 
 const skillsShMirrorUpstreamScannerValidator = v.object({
   status: v.string(),

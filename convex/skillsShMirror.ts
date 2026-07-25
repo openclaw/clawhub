@@ -37,6 +37,7 @@ const MAX_INFERENCE_METADATA_LENGTH = 128;
 const BATCH_LEASE_DURATION_MS = 5 * 60 * 1_000;
 const MAX_BATCH_LEASE_TOKEN_LENGTH = 128;
 const MAX_TRENDING_HYDRATIONS_PER_RUN = 10;
+const MAX_LEGACY_LEADERBOARD_CAPTURES = 100;
 const SKILLS_SH_PROOF_SNAPSHOT_PREFIX = "skills-sh:proof:";
 const PRESERVE_EXISTING_QUARANTINE_REASONS = new Set(["identity-page-fetch-failed"]);
 
@@ -207,6 +208,48 @@ async function getControl(ctx: Pick<QueryCtx | MutationCtx, "db">) {
     .query("skillsShMirrorControls")
     .withIndex("by_key", (q) => q.eq("key", CONTROL_KEY))
     .unique();
+}
+
+async function latestCompletedLeaderboardRunFromCapture(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  failOnOverflow = false,
+) {
+  const captures = await ctx.db
+    .query("skillsShMirrorSourcePages")
+    .withIndex("by_source_view_and_page_and_created_at", (q) =>
+      q.eq("sourceView", "leaderboard").eq("page", 0),
+    )
+    .order("desc")
+    .take(MAX_LEGACY_LEADERBOARD_CAPTURES + 1);
+  for (const capture of captures.slice(0, MAX_LEGACY_LEADERBOARD_CAPTURES)) {
+    const [explicitRun, legacyRun] = await Promise.all([
+      ctx.db
+        .query("skillsShMirrorRuns")
+        .withIndex("by_source_view_and_status_and_source_snapshot_hash", (q) =>
+          q
+            .eq("sourceView", "leaderboard")
+            .eq("status", "completed")
+            .eq("sourceSnapshotHash", capture.snapshotHash),
+        )
+        .order("desc")
+        .first(),
+      ctx.db
+        .query("skillsShMirrorRuns")
+        .withIndex("by_source_view_and_status_and_source_snapshot_hash", (q) =>
+          q
+            .eq("sourceView", undefined)
+            .eq("status", "completed")
+            .eq("sourceSnapshotHash", capture.snapshotHash),
+        )
+        .order("desc")
+        .first(),
+    ]);
+    if (explicitRun ?? legacyRun) return explicitRun ?? legacyRun;
+  }
+  if (failOnOverflow && captures.length > MAX_LEGACY_LEADERBOARD_CAPTURES) {
+    throw new ConvexError("legacy leaderboard capture lookup exceeds the bounded history");
+  }
+  return null;
 }
 
 function requireActiveControl(control: Doc<"skillsShMirrorControls"> | null) {
@@ -896,6 +939,16 @@ export const configureInternal = internalMutation({
     assertIntegerInRange("maxDetailBytes", args.maxDetailBytes, 1, MAX_DETAIL_BYTES);
     const now = Date.now();
     const existing = await getControl(ctx);
+    const existingLeaderboardRun = existing?.latestCompletedLeaderboardRunId
+      ? await ctx.db.get(existing.latestCompletedLeaderboardRunId)
+      : null;
+    const existingPointerValid =
+      existingLeaderboardRun?.status === "completed" &&
+      Boolean(existingLeaderboardRun.sourceSnapshotHash) &&
+      runSourceView(existingLeaderboardRun) === "leaderboard";
+    const latestCompletedLeaderboardRunId =
+      (existingPointerValid ? existingLeaderboardRun._id : null) ??
+      (await latestCompletedLeaderboardRunFromCapture(ctx))?._id;
     const next = {
       enabled: args.enabled,
       paused: !args.enabled,
@@ -905,6 +958,11 @@ export const configureInternal = internalMutation({
       updatedBy: args.actor.trim(),
       reason: args.reason.trim(),
       updatedAt: now,
+      ...(latestCompletedLeaderboardRunId
+        ? { latestCompletedLeaderboardRunId }
+        : existing?.latestCompletedLeaderboardRunId
+          ? { latestCompletedLeaderboardRunId: undefined }
+          : {}),
     };
     if (existing) await ctx.db.patch(existing._id, next);
     else await ctx.db.insert("skillsShMirrorControls", { key: CONTROL_KEY, ...next });
@@ -1508,7 +1566,7 @@ export const getTrendingJoinStateInternal = internalQuery({
     if (externalIds.some((value) => !value) || new Set(externalIds).size !== externalIds.length) {
       throw new ConvexError("trending externalIds must be unique non-empty strings");
     }
-    const [rows, explicitLeaderboardRun, legacyLeaderboardRun] = await Promise.all([
+    const [rows, control] = await Promise.all([
       Promise.all(
         externalIds.map(async (externalId) =>
           ctx.db
@@ -1517,23 +1575,19 @@ export const getTrendingJoinStateInternal = internalQuery({
             .unique(),
         ),
       ),
-      ctx.db
-        .query("skillsShMirrorRuns")
-        .withIndex("by_source_view_and_status_and_started_at", (q) =>
-          q.eq("sourceView", "leaderboard").eq("status", "completed"),
-        )
-        .order("desc")
-        .first(),
-      ctx.db
-        .query("skillsShMirrorRuns")
-        .withIndex("by_source_view_and_status_and_source_snapshot_hash", (q) =>
-          q.eq("sourceView", undefined).eq("status", "completed").gt("sourceSnapshotHash", ""),
-        )
-        .first(),
+      getControl(ctx),
     ]);
-    // CLAW-563 created one live Test run before sourceView was persisted. New live runs are
-    // explicit; the hash-bearing legacy fallback disappears as soon as one completes.
-    const currentLeaderboardRun = explicitLeaderboardRun ?? legacyLeaderboardRun;
+    const currentLeaderboardRun = control?.latestCompletedLeaderboardRunId
+      ? await ctx.db.get(control.latestCompletedLeaderboardRunId)
+      : await latestCompletedLeaderboardRunFromCapture(ctx, true);
+    if (
+      currentLeaderboardRun &&
+      (currentLeaderboardRun.status !== "completed" ||
+        !currentLeaderboardRun.sourceSnapshotHash ||
+        runSourceView(currentLeaderboardRun) !== "leaderboard")
+    ) {
+      throw new ConvexError("authoritative leaderboard run pointer is invalid");
+    }
     const conflicts = currentLeaderboardRun
       ? await Promise.all(
           externalIds.map(async (externalId, index) =>
@@ -1835,10 +1889,13 @@ export const reconcileBatchInternal = internalMutation({
     if (!run) throw new ConvexError("skills.sh mirror run not found");
     if (run.status !== "reconciling") return summarizeRun(run);
     assertIntegerInRange("limit", args.limit, 1, MAX_RECONCILE_ROWS);
+    // Large reconcile pages leave headroom for the authoritative-pointer reads and write that
+    // may be required when the final leaderboard page completes.
+    const pageLimit = Math.max(1, args.limit - 3);
     const page = await ctx.db
       .query("skillsShMirrorDigests")
       .withIndex("by_external_id")
-      .paginate({ cursor: run.reconcileCursor ?? null, numItems: args.limit });
+      .paginate({ cursor: run.reconcileCursor ?? null, numItems: pageLimit });
     const counts = runCounts(run.counts);
     const now = Date.now();
     let reads = page.page.length + 1;
@@ -1869,6 +1926,21 @@ export const reconcileBatchInternal = internalMutation({
       }
     }
     const completed = page.isDone;
+    const completedLeaderboardRun =
+      completed && run.sourceSnapshotHash && run.sourceView === "leaderboard";
+    const control = completedLeaderboardRun ? await getControl(ctx) : null;
+    if (completedLeaderboardRun) reads += 1;
+    const currentLeaderboardRun = control?.latestCompletedLeaderboardRunId
+      ? await ctx.db.get(control.latestCompletedLeaderboardRunId)
+      : null;
+    if (control?.latestCompletedLeaderboardRunId) reads += 1;
+    const advancesLeaderboardPointer =
+      control &&
+      (!currentLeaderboardRun ||
+        run.startedAt > currentLeaderboardRun.startedAt ||
+        (run.startedAt === currentLeaderboardRun.startedAt &&
+          run._creationTime > currentLeaderboardRun._creationTime));
+    if (advancesLeaderboardPointer) writes += 1;
     const patch = {
       status: completed ? ("completed" as const) : ("reconciling" as const),
       reconcileCursor: completed ? undefined : page.continueCursor,
@@ -1882,6 +1954,12 @@ export const reconcileBatchInternal = internalMutation({
       updatedAt: now,
     };
     await ctx.db.patch(run._id, patch);
+    if (advancesLeaderboardPointer) {
+      await ctx.db.patch(control._id, {
+        latestCompletedLeaderboardRunId: run._id,
+        updatedAt: now,
+      });
+    }
     return summarizeRun({ ...run, ...patch });
   },
 });

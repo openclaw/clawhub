@@ -126,7 +126,7 @@ async function startRun(
   sourceView?: "leaderboard" | "trending",
   sourceMeasuredAt = "2026-07-22T20:14:10.881Z",
 ) {
-  return (await t.mutation(internal.skillsShMirror.startRunInternal, {
+  const run = (await t.mutation(internal.skillsShMirror.startRunInternal, {
     actor: "codex-test",
     reason: "CLAW-563 mirror test",
     snapshotId,
@@ -136,6 +136,47 @@ async function startRun(
     sourcePageSize: 500,
     sourceMeasuredAt,
   })) as { runId: Id<"skillsShMirrorRuns"> };
+  if (sourceSnapshotHash) {
+    await t.run(async (ctx) => {
+      const existing = (await ctx.db.query("skillsShMirrorSourcePages").collect()).find(
+        (page) => page.snapshotHash === sourceSnapshotHash && page.page === 0,
+      );
+      if (existing) return;
+      await ctx.db.insert("skillsShMirrorSourcePages", {
+        snapshotHash: sourceSnapshotHash,
+        sourceView: sourceView ?? "leaderboard",
+        page: 0,
+        sourceTotal,
+        pageLength: 1,
+        hasMore: sourceTotal > 1,
+        identityHash: "b".repeat(64),
+        contentHash: "c".repeat(64),
+        sourceBytes: 1,
+        serializedBytes: 1,
+        rows: [],
+        createdAt: Date.parse(sourceMeasuredAt),
+      });
+    });
+  }
+  return run;
+}
+
+async function completeLeaderboardRun(
+  t: ReturnType<typeof convexTest>,
+  runId: Id<"skillsShMirrorRuns">,
+  args: { legacy?: boolean; startedAt?: number; completedAt: number },
+) {
+  await t.run(async (ctx) => {
+    await ctx.db.patch(runId, {
+      status: "completed",
+      ...(args.legacy ? { sourceView: undefined } : {}),
+      ...(args.startedAt === undefined ? {} : { startedAt: args.startedAt }),
+      completedAt: args.completedAt,
+    });
+    const control = (await ctx.db.query("skillsShMirrorControls").collect())[0];
+    if (!control) throw new Error("mirror control missing");
+    await ctx.db.patch(control._id, { latestCompletedLeaderboardRunId: runId });
+  });
 }
 
 const mirrorLeaseRefs = internal.skillsShMirror as unknown as {
@@ -398,11 +439,10 @@ describe("skills.sh external mirror", () => {
         offset: 0,
         createdAt: Date.now(),
       });
-      await ctx.db.patch(foundation.runId, {
-        sourceView: undefined,
-        status: "completed",
-        completedAt: Date.now(),
-      });
+    });
+    await completeLeaderboardRun(t, foundation.runId, {
+      legacy: true,
+      completedAt: Date.now(),
     });
 
     await expect(
@@ -414,6 +454,70 @@ describe("skills.sh external mirror", () => {
       missingExternalIds: [quarantinedExternalId, unseenExternalId],
       knownConflictExternalIds: [quarantinedExternalId],
       hydratableExternalIds: [unseenExternalId],
+    });
+  });
+
+  it("keeps completed leaderboard quarantine authoritative over later replay and capture", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const externalId = "owner/repo/known-quarantine";
+    const foundation = await startRun(
+      t,
+      "skills-sh:proof:authoritative-leaderboard",
+      1,
+      "a".repeat(64),
+      "leaderboard",
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShMirrorConflicts", {
+        runId: foundation.runId,
+        externalId,
+        kind: "source-quarantine",
+        reason: "unsupported-source-type",
+        observedFingerprint: "known-quarantine",
+        page: 0,
+        offset: 0,
+        createdAt: 1,
+      });
+    });
+    await completeLeaderboardRun(t, foundation.runId, { startedAt: 1, completedAt: 2 });
+    const replay = await startRun(
+      t,
+      "skills-sh:proof:captured-replay",
+      1,
+      undefined,
+      "leaderboard",
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(replay.runId, {
+        status: "completed",
+        startedAt: 3,
+        completedAt: 4,
+      });
+    });
+    await startRun(
+      t,
+      "skills-sh:proof:unfinished-capture",
+      1,
+      "b".repeat(64),
+      "leaderboard",
+      "2026-07-22T20:14:11.881Z",
+    );
+    await t.run(async (ctx) => {
+      const control = (await ctx.db.query("skillsShMirrorControls").collect())[0];
+      if (!control) throw new Error("mirror control missing");
+      await ctx.db.patch(control._id, { latestCompletedLeaderboardRunId: replay.runId });
+    });
+    await configure(t);
+
+    await expect(
+      t.query(internal.skillsShMirror.getTrendingJoinStateInternal, { externalIds: [externalId] }),
+    ).resolves.toEqual({
+      joinedExternalIds: [],
+      missingExternalIds: [externalId],
+      knownConflictExternalIds: [externalId],
+      hydratableExternalIds: [],
     });
   });
 
@@ -434,26 +538,20 @@ describe("skills.sh external mirror", () => {
         offset: 0,
         createdAt: Date.now() - 1,
       });
-      await ctx.db.patch(oldFoundation.runId, {
-        sourceView: undefined,
-        status: "completed",
-        completedAt: Date.now() - 1,
-      });
+    });
+    await completeLeaderboardRun(t, oldFoundation.runId, {
+      legacy: true,
+      completedAt: Date.now() - 1,
     });
     const currentFoundation = await startRun(
       t,
       "skills-sh:proof:current-source",
       1,
-      undefined,
+      "b".repeat(64),
       "leaderboard",
       "2026-07-22T20:14:11.881Z",
     );
-    await t.run(async (ctx) => {
-      await ctx.db.patch(currentFoundation.runId, {
-        status: "completed",
-        completedAt: Date.now(),
-      });
-    });
+    await completeLeaderboardRun(t, currentFoundation.runId, { completedAt: Date.now() });
 
     await expect(
       t.query(internal.skillsShMirror.getTrendingJoinStateInternal, { externalIds: [externalId] }),
@@ -482,11 +580,10 @@ describe("skills.sh external mirror", () => {
         offset: 0,
         createdAt: Date.now() - 1,
       });
-      await ctx.db.patch(foundation.runId, {
-        sourceView: undefined,
-        status: "completed",
-        completedAt: Date.now() - 1,
-      });
+    });
+    await completeLeaderboardRun(t, foundation.runId, {
+      legacy: true,
+      completedAt: Date.now() - 1,
     });
     const trending = await startRun(
       t,
