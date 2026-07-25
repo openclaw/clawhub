@@ -16,6 +16,7 @@ describe("skillsShMirrorPublic.getSkillsShMirrorByRoute", () => {
       .fn()
       .mockResolvedValueOnce({
         externalId: "patrick-erichsen/skills/html",
+        canonicalRepoUrl: "https://github.com/openclaw/openclaw",
         githubPath: "skills/html",
         publicVisible: false,
         installable: false,
@@ -30,6 +31,10 @@ describe("skillsShMirrorPublic.getSkillsShMirrorByRoute", () => {
       kind: "redirect",
       canonicalRoute: "/openclaw/skills/html",
       canonicalRef: "@openclaw/html",
+    });
+    expect(runQuery.mock.calls[2]?.[1]).toEqual({
+      repo: "openclaw/openclaw",
+      path: "skills/html",
     });
   });
 

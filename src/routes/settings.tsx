@@ -90,12 +90,22 @@ export const Route = createFileRoute("/settings")({
     view?: SettingsView;
     ownerHandle?: string;
     repo?: string;
+    sourceRepo?: string;
+    sourceExternalId?: string;
     sourcePath?: string;
+    sourceCommit?: string;
+    sourceContentHash?: string;
   } => ({
     view: isSettingsView(search.view) ? search.view : undefined,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
     repo: typeof search.repo === "string" ? search.repo : undefined,
+    sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
+    sourceExternalId:
+      typeof search.sourceExternalId === "string" ? search.sourceExternalId : undefined,
     sourcePath: typeof search.sourcePath === "string" ? search.sourcePath : undefined,
+    sourceCommit: typeof search.sourceCommit === "string" ? search.sourceCommit : undefined,
+    sourceContentHash:
+      typeof search.sourceContentHash === "string" ? search.sourceContentHash : undefined,
   }),
   component: Settings,
 });
@@ -343,7 +353,11 @@ export function Settings() {
     navigateToView,
     ownerHandle: requestedOwnerHandle,
     repo: requestedRepo,
+    sourceRepo: requestedSourceRepo,
+    sourceExternalId: requestedSourceExternalId,
     sourcePath: requestedSourcePath,
+    sourceCommit: requestedSourceCommit,
+    sourceContentHash: requestedSourceContentHash,
   } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
@@ -752,12 +766,44 @@ export function Settings() {
     if (!selectedSourcePublisher) return;
     const repo = parseGitHubRepoInput(githubRepo);
     if (!repo) return;
+    const requestedSourceFields = [
+      requestedSourceRepo,
+      requestedSourceExternalId,
+      requestedSourcePath,
+      requestedSourceCommit,
+      requestedSourceContentHash,
+    ];
+    const hasRequestedSource = requestedSourceFields.some((value) => value !== undefined);
+    const hasCompleteRequestedSource = requestedSourceFields.every(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+    if (hasRequestedSource && !hasCompleteRequestedSource) {
+      toast.error("This Claim link is incomplete. Return to the skill listing and try again.");
+      return;
+    }
+    const expectedSkillsShSource = hasCompleteRequestedSource
+      ? {
+          repo: requestedSourceRepo as string,
+          externalId: requestedSourceExternalId as string,
+          path: requestedSourcePath as string,
+          commit: requestedSourceCommit as string,
+          contentHash: requestedSourceContentHash as string,
+        }
+      : undefined;
     setIsSyncingSource(true);
     try {
       const result = await configureGitHubSource({
         ownerPublisherId: selectedSourcePublisher.publisher._id,
         repo,
+        ...(expectedSkillsShSource ? { expectedSkillsShSource } : {}),
       });
+      if (expectedSkillsShSource) {
+        await navigate({
+          to: "/settings",
+          search: { view: "githubSources" },
+          replace: true,
+        });
+      }
       setGithubRepo("");
       toast.success(formatGitHubSourceSyncToast(result?.stats));
     } catch (error) {
@@ -3013,7 +3059,13 @@ function useActiveSettingsView() {
     navigateToView,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
     repo: typeof search.repo === "string" ? search.repo : undefined,
+    sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
+    sourceExternalId:
+      typeof search.sourceExternalId === "string" ? search.sourceExternalId : undefined,
     sourcePath: typeof search.sourcePath === "string" ? search.sourcePath : undefined,
+    sourceCommit: typeof search.sourceCommit === "string" ? search.sourceCommit : undefined,
+    sourceContentHash:
+      typeof search.sourceContentHash === "string" ? search.sourceContentHash : undefined,
   };
 }
 

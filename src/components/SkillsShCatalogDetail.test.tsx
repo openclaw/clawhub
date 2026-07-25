@@ -44,9 +44,21 @@ describe("SkillsShCatalogDetailPage", () => {
     expect(
       screen.getByText("clawhub install skills-sh:patrick-erichsen/skills/html", { exact: true }),
     ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Claim" }).getAttribute("href")).toBe(
-      "/settings?view=githubSources&repo=patrick-erichsen%2Fskills&sourcePath=skills%2Fhtml",
+    const claimUrl = new URL(
+      screen.getByRole("link", { name: "Claim" }).getAttribute("href") ?? "",
+      "https://clawhub.test",
     );
+    expect(claimUrl.pathname).toBe("/settings");
+    expect(Object.fromEntries(claimUrl.searchParams)).toEqual({
+      view: "githubSources",
+      ownerHandle: "openclaw",
+      repo: "openclaw/openclaw",
+      sourceRepo: "openclaw/openclaw",
+      sourceExternalId: "patrick-erichsen/skills/html",
+      sourcePath: "skills/html",
+      sourceCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
+      sourceContentHash: "a".repeat(64),
+    });
   });
 
   it("renders only stored bounded content and no file explorer", () => {
@@ -83,9 +95,11 @@ function makeEntry(): SkillsShCatalogDetail {
     topics: [],
     sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
     canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
+    canonicalGitHubRepo: "openclaw/openclaw",
     githubPath: "skills/html",
     githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
-    sourceContentHash: "a".repeat(64),
+    githubContentHash: "a".repeat(64),
+    sourceContentHash: "b".repeat(64),
     upstreamInstalls: 100,
     lastObservedAt: Date.now() - 60000,
     upstreamChecks: [

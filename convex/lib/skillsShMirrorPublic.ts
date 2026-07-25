@@ -91,6 +91,32 @@ export function buildSkillsShMirrorIdentity(
   };
 }
 
+export function buildSkillsShCanonicalGitHubRepo(
+  digest: Pick<SkillsShMirrorDigest, "canonicalRepoUrl" | "owner" | "repo">,
+) {
+  if (!digest.canonicalRepoUrl) {
+    const owner = normalizeSegment(digest.owner);
+    const repo = normalizeSegment(digest.repo);
+    return owner && repo ? `${owner}/${repo}` : null;
+  }
+  try {
+    const url = new URL(digest.canonicalRepoUrl);
+    if (url.protocol !== "https:" || !["github.com", "www.github.com"].includes(url.hostname)) {
+      return null;
+    }
+    const segments = url.pathname
+      .replace(/\.git$/i, "")
+      .split("/")
+      .filter(Boolean);
+    if (segments.length !== 2) return null;
+    const owner = normalizeSegment(segments[0]);
+    const repo = normalizeSegment(segments[1]);
+    return owner && repo ? `${owner}/${repo}` : null;
+  } catch {
+    return null;
+  }
+}
+
 export function isPublicSkillsShMirrorDigest(digest: SkillsShMirrorDigest) {
   return (
     digest.active &&
@@ -135,7 +161,8 @@ export function buildSkillsShMirrorCatalogDetail(args: {
   detail: SkillsShMirrorDetail | null;
 }) {
   const identity = buildSkillsShMirrorIdentity(args.digest);
-  if (!identity || !isPublicSkillsShMirrorDigest(args.digest)) return null;
+  const canonicalGitHubRepo = buildSkillsShCanonicalGitHubRepo(args.digest);
+  if (!identity || !canonicalGitHubRepo || !isPublicSkillsShMirrorDigest(args.digest)) return null;
   const digestHash = args.digest.sourceContentHash?.trim().toLowerCase();
   const detailHash = args.detail?.sourceContentHash?.trim().toLowerCase();
   const content =
@@ -161,8 +188,11 @@ export function buildSkillsShMirrorCatalogDetail(args: {
     lastObservedAt: args.digest.lastObservedAt,
     sourceUrl: args.digest.sourceUrl,
     canonicalRepoUrl: args.digest.canonicalRepoUrl,
+    canonicalGitHubRepo,
     githubPath: args.digest.githubPath,
     githubCommit: args.digest.githubCommit,
+    // The permanent mirror stores the exact GitHub folder hash under this source field.
+    githubContentHash: args.digest.sourceContentHash,
     sourceContentHash: args.digest.sourceContentHash,
     upstreamChecks: [
       buildUpstreamCheck(UPSTREAM_SCANNERS[0], args.digest.upstreamScanners.genAgentTrustHub),
@@ -197,11 +227,13 @@ export function buildGitHubTreeUrl(repo: string, commit: string, path: string) {
 
 export function buildUnclaimedSkillsShInstallResolution(digest: SkillsShMirrorDigest) {
   const identity = buildSkillsShMirrorIdentity(digest);
+  const repo = buildSkillsShCanonicalGitHubRepo(digest);
   const path = normalizeGitHubPath(digest.githubPath);
   const commit = digest.githubCommit?.trim().toLowerCase();
   const contentHash = digest.sourceContentHash?.trim().toLowerCase();
   if (
     !identity ||
+    !repo ||
     !isPublicSkillsShMirrorDigest(digest) ||
     !path ||
     !commit ||
@@ -211,7 +243,6 @@ export function buildUnclaimedSkillsShInstallResolution(digest: SkillsShMirrorDi
   ) {
     return null;
   }
-  const repo = `${identity.owner}/${identity.repo}`;
   return {
     ok: true as const,
     slug: identity.reference,

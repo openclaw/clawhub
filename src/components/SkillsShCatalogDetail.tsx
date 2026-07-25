@@ -98,14 +98,19 @@ export function SkillsShCatalogDetailPage({ entry }: { entry: SkillsShCatalogDet
             <h2 className="font-display text-lg font-bold text-[color:var(--oc-text-primary)]">
               Install
             </h2>
-            {entry.owner && entry.repo && entry.githubPath ? (
+            {entry.githubPath && entry.githubCommit && entry.githubContentHash ? (
               <Button asChild variant="outline" size="sm">
                 <Link
                   to="/settings"
                   search={{
                     view: "githubSources",
-                    repo: `${entry.owner}/${entry.repo}`,
+                    ownerHandle: entry.canonicalGitHubRepo.split("/")[0],
+                    repo: entry.canonicalGitHubRepo,
+                    sourceRepo: entry.canonicalGitHubRepo,
+                    sourceExternalId: entry.externalId,
                     sourcePath: entry.githubPath,
+                    sourceCommit: entry.githubCommit,
+                    sourceContentHash: entry.githubContentHash,
                   }}
                 >
                   <GitBranch size={15} aria-hidden="true" /> Claim

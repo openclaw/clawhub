@@ -139,6 +139,14 @@ type GitHubSkillSourceSetupContext = {
   existingSource: SourceForSync | null;
 };
 
+type ExpectedSkillsShSource = {
+  repo: string;
+  externalId: string;
+  path: string;
+  commit: string;
+  contentHash: string;
+};
+
 type GitHubSkillVerificationTarget = {
   skill: Pick<Doc<"skills">, "_id" | "slug" | "displayName" | "summary"> & {
     githubPath: string;
@@ -1820,7 +1828,11 @@ export async function verifyGitHubSkillHandler(
 
 export async function configurePublicGitHubSkillSourceHandler(
   ctx: ActionCtx,
-  args: { ownerPublisherId: Id<"publishers">; repo: string },
+  args: {
+    ownerPublisherId: Id<"publishers">;
+    repo: string;
+    expectedSkillsShSource?: ExpectedSkillsShSource;
+  },
   fetcher: typeof fetch = fetch,
   authOverride?: { userId: Id<"users"> },
 ): Promise<SyncOneResult> {
@@ -1849,6 +1861,9 @@ export async function configurePublicGitHubSkillSourceHandler(
     fetcher,
   );
   const revalidatedMetadata = await revalidateGitHubRepoMetadata(metadata, fetcher);
+  if (args.expectedSkillsShSource) {
+    assertExactSkillsShSourceSelection(snapshot, args.expectedSkillsShSource);
+  }
   if (snapshot.skills.length === 0) {
     throw new ConvexError("No skills were found in that public GitHub repo.");
   }
@@ -1867,6 +1882,15 @@ export const configurePublicGitHubSkillSource: ReturnType<typeof action> = actio
   args: {
     ownerPublisherId: v.id("publishers"),
     repo: v.string(),
+    expectedSkillsShSource: v.optional(
+      v.object({
+        repo: v.string(),
+        externalId: v.string(),
+        path: v.string(),
+        commit: v.string(),
+        contentHash: v.string(),
+      }),
+    ),
   },
   handler: async (ctx, args): Promise<SyncOneResult> =>
     configurePublicGitHubSkillSourceHandler(ctx, args),
@@ -2547,6 +2571,44 @@ function normalizeRepoPath(path: string) {
   return segments.join("/");
 }
 
+function assertExactSkillsShSourceSelection(
+  snapshot: GitHubSkillSourceSnapshot,
+  expected: ExpectedSkillsShSource,
+) {
+  const repo = normalizeRepoOrNull(expected.repo);
+  const externalSegments = expected.externalId.trim().toLowerCase().split("/").filter(Boolean);
+  const path = normalizeRepoPath(expected.path);
+  const commit = expected.commit.trim().toLowerCase();
+  const contentHash = expected.contentHash.trim().toLowerCase();
+  const expectedSlug = externalSegments.length === 3 ? externalSegments[2] : null;
+  const matches = snapshot.skills.filter(
+    (skill) => skill.path === path && skill.slug.toLowerCase() === expectedSlug,
+  );
+  if (
+    !expectedSlug ||
+    !repo ||
+    snapshot.repo.trim().toLowerCase() !== repo ||
+    !path ||
+    !/^[a-f0-9]{40}$/.test(commit) ||
+    !/^[a-f0-9]{64}$/.test(contentHash) ||
+    snapshot.commit.trim().toLowerCase() !== commit ||
+    matches.length !== 1 ||
+    matches[0]?.contentHash.trim().toLowerCase() !== contentHash
+  ) {
+    throw new ConvexError(
+      "The GitHub source changed since this skills.sh listing was observed. Refresh the listing before claiming it.",
+    );
+  }
+}
+
+function normalizeRepoOrNull(value: string) {
+  try {
+    return normalizeRepo(value).toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
 function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(value).filter((entry) => entry[1] !== undefined),
@@ -2554,6 +2616,7 @@ function stripUndefined<T extends Record<string, unknown>>(value: T): Partial<T>
 }
 
 export const __test = {
+  assertExactSkillsShSourceSelection,
   buildGitHubSkillSourceFetch,
   buildGitHubSourceImport,
   normalizeRepo,

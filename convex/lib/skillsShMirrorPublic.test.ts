@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSkillsShMirrorCatalogDetail,
+  buildSkillsShCanonicalGitHubRepo,
   buildSkillsShMirrorIdentity,
   buildUnclaimedSkillsShInstallResolution,
   buildUnclaimedSkillsShVerifyResponse,
@@ -83,6 +84,31 @@ describe("skills.sh mirror public contract", () => {
       },
       canonicalRef: null,
     });
+  });
+
+  it("uses the canonical GitHub repository after an upstream redirect", () => {
+    const redirected = {
+      ...digest,
+      canonicalRepoUrl: "https://github.com/openclaw/openclaw",
+    };
+
+    expect(buildSkillsShCanonicalGitHubRepo(redirected)).toBe("openclaw/openclaw");
+    expect(buildUnclaimedSkillsShInstallResolution(redirected)).toMatchObject({
+      github: { repo: "openclaw/openclaw" },
+    });
+    expect(buildSkillsShMirrorCatalogDetail({ digest: redirected, detail })).toMatchObject({
+      canonicalGitHubRepo: "openclaw/openclaw",
+      githubContentHash: digest.sourceContentHash,
+    });
+  });
+
+  it("rejects non-GitHub canonical repository URLs", () => {
+    expect(
+      buildSkillsShCanonicalGitHubRepo({
+        ...digest,
+        canonicalRepoUrl: "https://example.com/openclaw/openclaw",
+      }),
+    ).toBeNull();
   });
 
   it("renders only content whose stored hash matches the digest", () => {

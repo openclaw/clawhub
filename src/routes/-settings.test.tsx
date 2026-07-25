@@ -688,12 +688,76 @@ describe("Settings", () => {
     expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
   });
 
-  it("prefills the repository and source path from an external Claim handoff", async () => {
+  it("passes the exact external selection from Claim into GitHub Skill Sync", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    useActionMock.mockReturnValue(configureSource);
+    mockSignedInSettings({
+      search: {
+        view: "githubSources",
+        ownerHandle: "openclaw",
+        repo: "patrick-erichsen/skills",
+        sourceRepo: "patrick-erichsen/skills",
+        sourceExternalId: "patrick-erichsen/skills/html",
+        sourcePath: "skills/html",
+        sourceCommit: "1".repeat(40),
+        sourceContentHash: "2".repeat(64),
+      },
+      memberships: [orgMembership],
+    });
+
+    const view = render(<Settings />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("GitHub repo URL") as HTMLInputElement).value).toBe(
+        "patrick-erichsen/skills",
+      );
+    });
+    expect(screen.getByText("skills/html")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        repo: "patrick-erichsen/skills",
+        expectedSkillsShSource: {
+          repo: "patrick-erichsen/skills",
+          externalId: "patrick-erichsen/skills/html",
+          path: "skills/html",
+          commit: "1".repeat(40),
+          contentHash: "2".repeat(64),
+        },
+      });
+    });
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/settings",
+      search: { view: "githubSources" },
+      replace: true,
+    });
+
+    searchMock.mockReturnValue({ view: "githubSources" });
+    view.rerender(<Settings />);
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "NVIDIA/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenNthCalledWith(2, {
+        ownerPublisherId: "publisher_openclaw",
+        repo: "NVIDIA/skills",
+      });
+    });
+  });
+
+  it("rejects a partial external Claim selection before GitHub Skill Sync", async () => {
+    const configureSource = vi.fn();
+    useActionMock.mockReturnValue(configureSource);
     mockSignedInSettings({
       search: {
         view: "githubSources",
         repo: "patrick-erichsen/skills",
-        sourcePath: "skills/html",
+        sourceExternalId: "patrick-erichsen/skills/html",
+        sourcePath: "",
       },
       memberships: [orgMembership],
     });
@@ -705,7 +769,10 @@ describe("Settings", () => {
         "patrick-erichsen/skills",
       );
     });
-    expect(screen.getByText("skills/html")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    expect(configureSource).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Claim link is incomplete/i));
   });
 
   it("shows synced repos as separate cards and lets owners delete a source", async () => {

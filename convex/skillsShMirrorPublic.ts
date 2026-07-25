@@ -4,6 +4,7 @@ import type { QueryCtx } from "./_generated/server";
 import { query } from "./functions";
 import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import {
+  buildSkillsShCanonicalGitHubRepo,
   buildSkillsShMirrorCatalogDetail,
   type SkillsShMirrorDetail,
   type SkillsShMirrorDigest,
@@ -62,12 +63,14 @@ export async function getSkillsShMirrorByRoute(
   ]);
   // A promoted native repo/path remains the canonical compatibility target even
   // after the external listing itself is no longer published.
-  const alias = digest?.githubPath
-    ? ((await ctx.runQuery(
-        internalRefs.githubSkillSources.getSkillsShAliasTargetInternal as never,
-        { repo: `${owner}/${repo}`, path: digest.githubPath } as never,
-      )) as { canonicalRoute: string; canonicalRef: string } | null)
-    : null;
+  const canonicalRepo = digest ? buildSkillsShCanonicalGitHubRepo(digest) : null;
+  const alias =
+    digest?.githubPath && canonicalRepo
+      ? ((await ctx.runQuery(
+          internalRefs.githubSkillSources.getSkillsShAliasTargetInternal as never,
+          { repo: canonicalRepo, path: digest.githubPath } as never,
+        )) as { canonicalRoute: string; canonicalRef: string } | null)
+      : null;
   if (alias) return { kind: "redirect" as const, ...alias };
   if (!digest) return null;
   const entry = buildSkillsShMirrorCatalogDetail({ digest, detail });

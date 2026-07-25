@@ -434,6 +434,108 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     );
   });
 
+  it("rejects a changed skills.sh selection before applying repository writes", async () => {
+    const zip = zipSync({
+      "skills-main/skills/html/SKILL.md": new TextEncoder().encode("# HTML\n"),
+    });
+    const runQuery = vi.fn(async () => ({
+      ownerUserId: "users:publisher-owner",
+      existingSource: null,
+    }));
+    const runMutation = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 101,
+          full_name: "patrick-erichsen/skills",
+          owner: { id: 201 },
+          private: false,
+          visibility: "public",
+          default_branch: "main",
+          disabled: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ sha: "1".repeat(40) }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-length": String(zip.byteLength) }),
+        body: null,
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 101,
+          full_name: "patrick-erichsen/skills",
+          owner: { id: 201 },
+          private: false,
+          visibility: "public",
+          default_branch: "main",
+          disabled: false,
+        }),
+      });
+
+    await expect(
+      configurePublicGitHubSkillSourceHandler(
+        { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+        {
+          ownerPublisherId: "publishers:local" as never,
+          repo: "patrick-erichsen/skills",
+          expectedSkillsShSource: {
+            repo: "patrick-erichsen/skills",
+            externalId: "patrick-erichsen/skills/html",
+            path: "skills/html",
+            commit: "2".repeat(40),
+            contentHash: "3".repeat(64),
+          },
+        },
+        fetchMock as never,
+        { userId: "users:actor" as never },
+      ),
+    ).rejects.toThrow(/changed since this skills\.sh listing was observed/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("matches a skills.sh selection by exact slug, path, commit, and content hash", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "1".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("---\nname: html\n---\n# HTML\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    if (!contentHash) throw new Error("missing fixture hash");
+    const exact = {
+      repo: "patrick-erichsen/skills",
+      externalId: "patrick-erichsen/skills/html",
+      path: "skills/html",
+      commit: snapshot.commit,
+      contentHash,
+    };
+
+    expect(() => __test.assertExactSkillsShSourceSelection(snapshot, exact)).not.toThrow();
+    for (const changed of [
+      { ...exact, repo: "openclaw/openclaw" },
+      { ...exact, externalId: "patrick-erichsen/skills/other" },
+      { ...exact, path: "skills/other" },
+      { ...exact, commit: "2".repeat(40) },
+      { ...exact, contentHash: "3".repeat(64) },
+    ]) {
+      expect(() => __test.assertExactSkillsShSourceSelection(snapshot, changed)).toThrow(
+        /changed since this skills\.sh listing was observed/i,
+      );
+    }
+  });
+
   it("prefers nested catalog skill paths over duplicate plugin package copies", async () => {
     const zip = zipSync({
       "repo-main/plugins/aws-core/skills/amazon-bedrock/SKILL.md": new TextEncoder().encode(

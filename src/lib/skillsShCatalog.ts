@@ -28,8 +28,10 @@ export type SkillsShCatalogDetail = SkillsShSearchResult & {
   topics: string[];
   sourceUrl: string;
   canonicalRepoUrl?: string;
+  canonicalGitHubRepo: string;
   githubPath?: string;
   githubCommit?: string;
+  githubContentHash?: string;
   sourceContentHash?: string;
   upstreamChecks: SkillsShUpstreamCheck[];
   content: {
@@ -104,11 +106,11 @@ export function buildSkillsShInstallCommands(reference: string) {
 }
 
 export function isSkillsShCatalogInstallable(
-  detail: Pick<SkillsShCatalogDetail, "githubCommit" | "githubPath" | "sourceContentHash">,
+  detail: Pick<SkillsShCatalogDetail, "githubCommit" | "githubContentHash" | "githubPath">,
 ) {
   return Boolean(
     detail.githubPath?.trim() &&
     /^[a-f0-9]{40}$/.test(detail.githubCommit?.trim().toLowerCase() ?? "") &&
-    /^[a-f0-9]{64}$/.test(detail.sourceContentHash?.trim().toLowerCase() ?? ""),
+    /^[a-f0-9]{64}$/.test(detail.githubContentHash?.trim().toLowerCase() ?? ""),
   );
 }
