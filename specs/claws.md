@@ -8,12 +8,14 @@ schema. ClawHub owns publication, ownership, discovery, package detail APIs,
 and hosted feed export. OpenClaw remains authoritative for local planning,
 consent, mutation, provenance, update, and removal.
 
-The YAML frontmatter is the portable manifest. A `CLAW.md` package envelope
-must have a non-empty body; its exact body text is the implicit managed
-`SOUL.md` workspace file. The manifest must not also declare an explicit
-`SOUL.md` destination. The exact `CLAW.md` bytes, including the body, remain in
-the immutable artifact digest and provenance input. Grouped JSON has no body,
-creates no implicit file, and may declare `SOUL.md` explicitly.
+The YAML frontmatter is the portable manifest. A `CLAW.md` package envelope may
+be frontmatter-only. When its body contains non-whitespace text, the exact body
+text is the implicit managed `SOUL.md` workspace file; an empty or whitespace-only
+body creates no implicit file. The manifest must not declare a workspace
+destination that equals, contains, or is contained by that implicit `SOUL.md`
+path. The exact `CLAW.md` bytes, including the body, remain in the immutable
+artifact digest and provenance input. Grouped JSON has no body, creates no
+implicit file, and may declare `SOUL.md` explicitly.
 
 The portable agent object carries only identity and purpose. Harness-specific
 settings live in package-local profiles addressed through opaque string
@@ -27,6 +29,11 @@ profile's strict v1 OpenClaw policy during publication. OpenClaw validates it
 again during application, includes it in package integrity, and never copies it
 into ordinary OpenClaw configuration. Other harnesses may ignore OpenClaw's
 namespaced key or define their own profile-pointer contract.
+
+ClawHub validates profile shape but treats `agent.tools.profile` as an opaque,
+non-empty applying-harness identifier. It does not freeze OpenClaw's evolving
+built-in profile registry; OpenClaw resolves the identifier against its current
+registry during preview and application.
 
 ## Experimental contract
 

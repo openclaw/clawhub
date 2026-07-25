@@ -158,6 +158,30 @@ describe("validateClawPackageContents", () => {
     });
   });
 
+  it.each(["SOUL.md/child", "soul.MD/child", "SOUL.md/cafe\u0301"])(
+    "rejects an implicit SOUL.md hierarchy collision at %s",
+    (path) => {
+      const result = validateClawPackageContents({
+        packageName: "@acme/github-triage",
+        version: "1.0.0",
+        packageJson: packageJson(),
+        files: files(
+          `---\n${JSON.stringify({
+            ...manifest,
+            workspace: {
+              files: [...manifest.workspace.files, { source: "workspace/SOUL.md", path }],
+            },
+          })}\n---\nBe precise.\n`,
+        ),
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        issues: [expect.objectContaining({ code: "claw_body_soul_conflict" })],
+      });
+    },
+  );
+
   it("accepts one UTF-8 BOM before CLAW.md frontmatter", () => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
@@ -224,7 +248,7 @@ describe("validateClawPackageContents", () => {
     }
   });
 
-  it("rejects an unregistered OpenClaw tool profile", () => {
+  it("accepts an applying harness profile that ClawHub does not yet know", () => {
     const profiledManifest = {
       ...manifest,
       metadata: { "openclaw.config": "profiles/openclaw.yml" },
@@ -242,15 +266,8 @@ describe("validateClawPackageContents", () => {
       ],
     });
 
-    expect(result).toEqual({
-      ok: false,
-      issues: [
-        expect.objectContaining({
-          code: "invalid_openclaw_profile",
-          path: "profiles/openclaw.yml.agent.tools.profile",
-        }),
-      ],
-    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).not.toHaveProperty("profile");
   });
 
   it("requires the exact UTF-8 profile target", () => {

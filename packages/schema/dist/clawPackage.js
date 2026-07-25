@@ -8,7 +8,6 @@ const WINDOWS_RESERVED_PATH_SEGMENT = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:
 const UNICODE_CONTROL_CHARACTER = /\p{Cc}/u;
 const MAX_CLAW_MANIFEST_BYTES = 1024 * 1024;
 const MAX_OPENCLAW_PROFILE_BYTES = 256 * 1024;
-const OPENCLAW_TOOL_PROFILE_IDS = new Set(["minimal", "coding", "messaging", "full"]);
 const StrictStringArraySchema = type("string[]");
 const OpenClawProfileSchema = type({
     "+": "reject",
@@ -206,10 +205,6 @@ function validateOpenClawProfile(value, profilePath) {
     if (parsed.agent.tools?.profile !== undefined && !isStrictNonEmpty(parsed.agent.tools.profile)) {
         add("agent.tools.profile", "Must be non-empty without leading or trailing whitespace.");
     }
-    else if (parsed.agent.tools?.profile !== undefined &&
-        !OPENCLAW_TOOL_PROFILE_IDS.has(parsed.agent.tools.profile)) {
-        add("agent.tools.profile", "Must name a registered OpenClaw built-in profile.");
-    }
     requireNonEmpty("agent.tools.allow", parsed.agent.tools?.allow);
     requireNonEmpty("agent.tools.alsoAllow", parsed.agent.tools?.alsoAllow);
     requireNonEmpty("agent.tools.deny", parsed.agent.tools?.deny);
@@ -396,9 +391,14 @@ export function validateClawPackageContents(input) {
         };
     }
     const hasClawMarkdownBody = (parsed.clawMarkdownBody?.trim().length ?? 0) > 0;
-    const hasExplicitSoul = validated.manifest.workspace?.bootstrapFiles?.["SOUL.md"] !== undefined ||
-        (validated.manifest.workspace?.files ?? []).some((entry) => portablePathKey(entry.path) === portablePathKey("SOUL.md"));
-    if (hasClawMarkdownBody && hasExplicitSoul) {
+    const implicitSoulPath = "SOUL.md";
+    const workspaceTargets = [
+        ...Object.keys(validated.manifest.workspace?.bootstrapFiles ?? {}),
+        ...(validated.manifest.workspace?.files ?? []).map((entry) => entry.path),
+    ];
+    const hasImplicitSoulConflict = workspaceTargets.some((path) => portablePathKey(path) === portablePathKey(implicitSoulPath)) ||
+        findClawPackagePathHierarchyCollision([implicitSoulPath, ...workspaceTargets]) !== null;
+    if (hasClawMarkdownBody && hasImplicitSoulConflict) {
         issues.push(issue("claw_body_soul_conflict", "$.workspace", "CLAW.md body content and an explicit SOUL.md workspace declaration cannot both be present."));
     }
     const openClawProfilePath = validated.manifest.metadata?.["openclaw.config"];
