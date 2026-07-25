@@ -1,4 +1,5 @@
 export const SKILLS_SH_UNSCANNED_LABEL = "Not scanned by ClawHub";
+export const SKILLS_SH_UNSCANNED_STATE = "not-scanned-by-clawhub";
 export const SKILLS_SH_SCANNED_LABEL = "Scanned by ClawHub";
 
 const GITHUB_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
@@ -227,6 +228,7 @@ export function buildUnclaimedSkillsShInstallResolution(digest: SkillsShMirrorDi
       reference: identity.reference,
     },
     trust: {
+      state: SKILLS_SH_UNSCANNED_STATE,
       clawhubScan: "unscanned" as const,
       label: SKILLS_SH_UNSCANNED_LABEL,
     },

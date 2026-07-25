@@ -1280,7 +1280,11 @@ describe("skills.sh public HTTP API", () => {
       ok: true,
       slug: "skills-sh:patrick-erichsen/skills/html",
       installKind: "github",
-      trust: { clawhubScan: "unscanned", label: "Not scanned by ClawHub" },
+      trust: {
+        state: "not-scanned-by-clawhub",
+        clawhubScan: "unscanned",
+        label: "Not scanned by ClawHub",
+      },
       canonicalRef: null,
     });
   });

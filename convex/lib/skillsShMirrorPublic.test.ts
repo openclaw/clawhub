@@ -5,6 +5,7 @@ import {
   buildUnclaimedSkillsShInstallResolution,
   buildUnclaimedSkillsShVerifyResponse,
   SKILLS_SH_UNSCANNED_LABEL,
+  SKILLS_SH_UNSCANNED_STATE,
   type SkillsShMirrorDetail,
   type SkillsShMirrorDigest,
 } from "./skillsShMirrorPublic";
@@ -75,7 +76,11 @@ describe("skills.sh mirror public contract", () => {
         source: "skills.sh",
         reference: "skills-sh:patrick-erichsen/skills/html",
       },
-      trust: { clawhubScan: "unscanned", label: SKILLS_SH_UNSCANNED_LABEL },
+      trust: {
+        state: SKILLS_SH_UNSCANNED_STATE,
+        clawhubScan: "unscanned",
+        label: SKILLS_SH_UNSCANNED_LABEL,
+      },
       canonicalRef: null,
     });
   });
