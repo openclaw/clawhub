@@ -192,7 +192,7 @@ export async function resolveSkillsShVerify(
       size: null,
       contentType: null,
     },
-    artifact: { sourceFingerprint: contentHash, bundleFingerprints: [contentHash], files: [] },
+    artifact: { sourceFingerprint: contentHash, bundleFingerprints: [], files: [] },
     provenance: {
       source: "skills.sh" as const,
       reference,

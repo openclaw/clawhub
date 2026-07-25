@@ -3143,6 +3143,11 @@ describe("httpApiV1 handlers", () => {
         source: "skills.sh",
         reference: "skills-sh:patrick-erichsen/skills/html",
       },
+      artifact: {
+        sourceFingerprint: "c".repeat(64),
+        bundleFingerprints: [],
+        files: [],
+      },
       security: {
         status: "suspicious",
         passed: false,
