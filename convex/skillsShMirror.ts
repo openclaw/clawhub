@@ -214,13 +214,27 @@ async function latestCompletedLeaderboardRunFromCapture(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   failOnOverflow = false,
 ) {
-  const captures = await ctx.db
-    .query("skillsShMirrorSourcePages")
-    .withIndex("by_source_view_and_page_and_created_at", (q) =>
-      q.eq("sourceView", "leaderboard").eq("page", 0),
+  const [explicitCaptures, legacyCaptures] = await Promise.all([
+    ctx.db
+      .query("skillsShMirrorSourcePages")
+      .withIndex("by_source_view_and_page_and_created_at", (q) =>
+        q.eq("sourceView", "leaderboard").eq("page", 0),
+      )
+      .order("desc")
+      .take(MAX_LEGACY_LEADERBOARD_CAPTURES + 1),
+    ctx.db
+      .query("skillsShMirrorSourcePages")
+      .withIndex("by_source_view_and_page_and_created_at", (q) =>
+        q.eq("sourceView", undefined).eq("page", 0),
+      )
+      .order("desc")
+      .take(MAX_LEGACY_LEADERBOARD_CAPTURES + 1),
+  ]);
+  const captures = [...explicitCaptures, ...legacyCaptures]
+    .sort(
+      (left, right) => right.createdAt - left.createdAt || right._creationTime - left._creationTime,
     )
-    .order("desc")
-    .take(MAX_LEGACY_LEADERBOARD_CAPTURES + 1);
+    .slice(0, MAX_LEGACY_LEADERBOARD_CAPTURES + 1);
   for (const capture of captures.slice(0, MAX_LEGACY_LEADERBOARD_CAPTURES)) {
     const [explicitRun, legacyRun] = await Promise.all([
       ctx.db

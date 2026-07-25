@@ -507,6 +507,11 @@ describe("skills.sh external mirror", () => {
     await t.run(async (ctx) => {
       const control = (await ctx.db.query("skillsShMirrorControls").collect())[0];
       if (!control) throw new Error("mirror control missing");
+      const sourcePage = (await ctx.db.query("skillsShMirrorSourcePages").collect()).find(
+        (page) => page.snapshotHash === "a".repeat(64) && page.page === 0,
+      );
+      if (!sourcePage) throw new Error("leaderboard source page missing");
+      await ctx.db.patch(sourcePage._id, { sourceView: undefined });
       await ctx.db.patch(control._id, { latestCompletedLeaderboardRunId: replay.runId });
     });
     await configure(t);
