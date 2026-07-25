@@ -7,7 +7,7 @@ import { buildMirrorProofHeaders } from "./prove-mirror-request";
 const OUTPUT_PATH = resolve("proof/claw-589/skills-sh-trending-test-proof.json");
 const RUN_STATE_PATH = resolve("proof/claw-589/active-run.json");
 const MAX_STEPS = 2_000;
-const HYDRATION_BOUND = 10;
+const HYDRATION_BOUND = 50;
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();

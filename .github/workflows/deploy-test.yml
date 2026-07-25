@@ -643,7 +643,7 @@ jobs:
             .live.run.counts.observed == .source.total and
             .replay.run.counts.trendingUpdated == 0 and
             .stale.run.counts.trendingUpdated == 0 and
-            .hydration.maximumRowsPerRun == 10 and
+            .hydration.maximumRowsPerRun == 50 and
             .hydration.withinBound == true and
             .isolation.unchanged == true
           ' proof/claw-589/skills-sh-trending-test-proof.json >/dev/null

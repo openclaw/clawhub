@@ -397,12 +397,12 @@ describe("skills.sh external mirror", () => {
     const trending = await startRun(
       t,
       "skills-sh:trending:bounded-drift",
-      11,
+      51,
       undefined,
       "trending",
     );
     const leaseToken = await claimLease(t, trending.runId, 0, 0);
-    const rows = Array.from({ length: 11 }, (_, index) => ({
+    const rows = Array.from({ length: 50 }, (_, index) => ({
       ...githubRow,
       externalId: `owner/repo/skill-${index}`,
     }));
@@ -415,10 +415,20 @@ describe("skills.sh external mirror", () => {
         leaseToken,
         rows,
       }),
-    ).rejects.toThrow("exceptional hydration exceeds 10 rows");
-    expect(
-      await t.run(async (ctx) => await ctx.db.query("skillsShMirrorDigests").collect()),
-    ).toEqual([]);
+    ).resolves.toMatchObject({ counts: { trendingHydrationAttempts: 50 } });
+
+    await expect(
+      t.mutation(trendingRefs.hydrateTrendingBatchInternal, {
+        runId: trending.runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+        rows: [{ ...githubRow, externalId: "owner/repo/skill-50" }],
+      }),
+    ).rejects.toThrow("exceptional hydration exceeds 50 rows");
+    const conflicts = await t.run(async (ctx) => ctx.db.query("skillsShMirrorConflicts").collect());
+    expect(conflicts).toHaveLength(50);
+    expect(conflicts.some((conflict) => conflict.externalId === "owner/repo/skill-50")).toBe(false);
   });
 
   it("separates known normalizer conflicts from hydratable trending drift", async () => {

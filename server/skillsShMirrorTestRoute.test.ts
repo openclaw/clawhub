@@ -1331,6 +1331,68 @@ describe("skills.sh permanent Test mirror route", () => {
     });
   });
 
+  it("accepts bounded trending hydration drift within one mirror batch", async () => {
+    readBodyMock.mockResolvedValue({ operation: "start-trending", reason: "CLAW-589 proof" });
+    const rows = Array.from({ length: 22 }, (_, index) => ({
+      ...capturedSourcePage().rows[0],
+      id: `owner/repo/new-skill-${index}`,
+    }));
+    measureTrendingSourceMock.mockResolvedValue({
+      catalogTotal: rows.length,
+      observedAt: "2026-07-24T19:44:11.437Z",
+      pageSize: 500,
+      sourceRequests: 1,
+      sourceDurationMs: 100,
+      snapshotHash: "c".repeat(64),
+      sourcePages: [
+        {
+          ...capturedSourcePage(0, rows.length, false, "trending-page-0"),
+          sourceView: "trending",
+          sourceTotal: rows.length,
+          rows,
+        },
+      ],
+      evidence: { endpointExhausted: true, uniqueIds: rows.length, duplicateIds: 0 },
+    });
+    const calls: Array<Record<string, unknown>> = [];
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      calls.push(body);
+      if (body.operation === "mirror-status") {
+        return new Response(JSON.stringify({ control: { enabled: true }, runs: [] }));
+      }
+      if (body.operation === "mirror-trending-join-state") {
+        return new Response(
+          JSON.stringify({
+            joinedExternalIds: [],
+            missingExternalIds: body.externalIds,
+            hydratableExternalIds: body.externalIds,
+            knownConflictExternalIds: [],
+          }),
+        );
+      }
+      if (body.operation === "mirror-source-page-store") {
+        return new Response(JSON.stringify({ stored: true, page: 0, rows: rows.length }));
+      }
+      if (body.operation === "mirror-source-summary") {
+        return new Response(JSON.stringify({ pageDocuments: 1, rows: rows.length }));
+      }
+      return new Response(
+        JSON.stringify({ runId: "skillsShMirrorRuns:trending", status: "running" }),
+      );
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(calls).toContainEqual(
+      expect.objectContaining({ operation: "mirror-source-page-store" }),
+    );
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "mirror-start" }));
+  });
+
   it("rejects cumulative trending hydration drift before storing or starting a run", async () => {
     readBodyMock.mockResolvedValue({ operation: "start-trending", reason: "CLAW-589 proof" });
     const rows = Array.from({ length: 60 }, (_, index) => ({
@@ -1364,7 +1426,7 @@ describe("skills.sh permanent Test mirror route", () => {
       }
       if (body.operation === "mirror-trending-join-state") {
         joinStateCalls += 1;
-        const missingCount = joinStateCalls === 1 ? 6 : 5;
+        const missingCount = joinStateCalls === 1 ? 41 : 10;
         return new Response(
           JSON.stringify({
             joinedExternalIds: body.externalIds.slice(missingCount),
@@ -1381,7 +1443,7 @@ describe("skills.sh permanent Test mirror route", () => {
 
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toMatchObject({
-      message: "trending exceptional hydration exceeds 10 rows",
+      message: "trending exceptional hydration exceeds 50 rows",
     });
     expect(joinStateCalls).toBe(2);
     expect(calls.some((body) => body.operation === "mirror-source-page-store")).toBe(false);
