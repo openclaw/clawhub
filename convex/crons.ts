@@ -27,6 +27,20 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "canonical-trending-snapshot",
+    { hours: 1 },
+    internal.canonicalTrending.materializeInternal,
+    {},
+  );
+
+  crons.interval(
+    "canonical-trending-prune",
+    { hours: 1 },
+    internal.canonicalTrending.pruneExpiredActionInternal,
+    {},
+  );
+
+  crons.interval(
     "package-trending-leaderboard",
     { minutes: 60 },
     internal.packageLeaderboards.rebuildTrendingLeaderboardAction,

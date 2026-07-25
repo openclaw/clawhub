@@ -2,6 +2,10 @@ import { authTables } from "@convex-dev/auth/server";
 import { createClawManifestSummarySchema } from "clawhub-schema";
 import { defineSchema, defineTable } from "convex/server";
 import { type GenericValidator, v } from "convex/values";
+import {
+  canonicalTrendingCardValidator,
+  canonicalTrendingSourceRefValidator,
+} from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -2623,6 +2627,54 @@ const rankingMetricImports = defineTable({
   .index("by_dataset_version", ["datasetVersion"])
   .index("by_imported_at", ["importedAt"]);
 
+const canonicalTrendingSnapshots = defineTable({
+  snapshotId: v.string(),
+  kind: v.literal("skills"),
+  status: v.union(v.literal("building"), v.literal("ready"), v.literal("failed")),
+  rankingVersion: v.string(),
+  generatedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+  windowHours: v.number(),
+  windowStartDay: v.number(),
+  windowEndDay: v.number(),
+  writtenItems: v.number(),
+  totalItems: v.optional(v.number()),
+  sourceCounts: v.optional(
+    v.object({
+      clawhubTrending: v.number(),
+      clawhubRising: v.number(),
+      skillsShTrending: v.number(),
+    }),
+  ),
+  operations: v.optional(
+    v.object({
+      documentsRead: v.number(),
+      documentsWritten: v.number(),
+      functionCalls: v.number(),
+    }),
+  ),
+  error: v.optional(v.string()),
+})
+  .index("by_snapshot_id", ["snapshotId"])
+  .index("by_kind_and_status_and_expires_at", ["kind", "status", "expiresAt"])
+  .index("by_expires_at", ["expiresAt"]);
+
+const canonicalTrendingItems = defineTable({
+  snapshotId: v.string(),
+  position: v.number(),
+  lane: v.union(
+    v.literal("clawhub-trending"),
+    v.literal("clawhub-rising"),
+    v.literal("skills-sh-trending"),
+  ),
+  sourceRef: canonicalTrendingSourceRefValidator,
+  card: canonicalTrendingCardValidator,
+  expiresAt: v.number(),
+})
+  .index("by_snapshot_id_and_position", ["snapshotId", "position"])
+  .index("by_expires_at", ["expiresAt"]);
+
 const skillStatEvents = defineTable({
   skillId: v.id("skills"),
   kind: v.union(
@@ -4096,6 +4148,8 @@ export default defineSchema({
   skillStatBackfillState,
   globalStats,
   rankingMetricImports,
+  canonicalTrendingSnapshots,
+  canonicalTrendingItems,
   skillStatEvents,
   skillStatUpdateCursors,
   skillStatDocSyncLeases,

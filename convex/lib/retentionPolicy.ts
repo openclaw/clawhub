@@ -196,6 +196,24 @@ export const RETENTION_POLICIES = {
   rankingMetricImports: permanent(
     "Versioned Test ranking import provenance is retained until explicit cleanup.",
   ),
+  canonicalTrendingSnapshots: ephemeral(
+    "Canonical Trending headers remain briefly available for stable cursor pagination.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "canonicalTrending.pruneExpiredActionInternal",
+      retention: "Forty-eight hours after snapshot generation.",
+    },
+  ),
+  canonicalTrendingItems: ephemeral(
+    "Materialized Trending cards expire with their snapshot header.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "canonicalTrending.pruneExpiredActionInternal",
+      retention: "Forty-eight hours after snapshot generation.",
+    },
+  ),
   skillStatEvents: ephemeral(
     "Skill stat event log is retained only after both consumers pass it.",
     {

@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
   const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
+  const canonicalTrendingMaterializeRef = Symbol("canonical-trending-materialize");
+  const canonicalTrendingPruneRef = Symbol("canonical-trending-prune");
   const prepublicationQueueHealthRef = Symbol("prepublication-queue-health");
   const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
   const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
@@ -36,6 +38,8 @@ const mocks = vi.hoisted(() => {
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
     promotionsFeedPublishRef,
+    canonicalTrendingMaterializeRef,
+    canonicalTrendingPruneRef,
     prepublicationQueueHealthRef,
     securityScanExpiredLeaseRecoveryRef,
     securityScanDispatchWatchdogRef,
@@ -50,6 +54,10 @@ vi.mock("convex/server", () => ({
 
 vi.mock("./_generated/api", () => ({
   internal: {
+    canonicalTrending: {
+      materializeInternal: mocks.canonicalTrendingMaterializeRef,
+      pruneExpiredActionInternal: mocks.canonicalTrendingPruneRef,
+    },
     githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
     packageLeaderboards: {
@@ -160,6 +168,28 @@ describe("crons", () => {
       "promotions-feed-refresh",
       { hours: 6 },
       mocks.promotionsFeedPublishRef,
+      {},
+    );
+  });
+
+  it("materializes the canonical Trending snapshot hourly", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "canonical-trending-snapshot",
+      { hours: 1 },
+      mocks.canonicalTrendingMaterializeRef,
+      {},
+    );
+  });
+
+  it("prunes canonical Trending snapshots independently each hour", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "canonical-trending-prune",
+      { hours: 1 },
+      mocks.canonicalTrendingPruneRef,
       {},
     );
   });

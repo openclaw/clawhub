@@ -11,6 +11,7 @@
 import type * as agentSkillsHttp from "../agentSkillsHttp.js";
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
+import type * as canonicalTrending from "../canonicalTrending.js";
 import type * as catalogClassification from "../catalogClassification.js";
 import type * as catalogClassificationNode from "../catalogClassificationNode.js";
 import type * as catalogFeed from "../catalogFeed.js";
@@ -46,6 +47,7 @@ import type * as httpApiV1_skillsShCatalogV1 from "../httpApiV1/skillsShCatalogV
 import type * as httpApiV1_skillsV1 from "../httpApiV1/skillsV1.js";
 import type * as httpApiV1_starsV1 from "../httpApiV1/starsV1.js";
 import type * as httpApiV1_transfersV1 from "../httpApiV1/transfersV1.js";
+import type * as httpApiV1_trendingV1 from "../httpApiV1/trendingV1.js";
 import type * as httpApiV1_usersV1 from "../httpApiV1/usersV1.js";
 import type * as httpApiV1_whoamiV1 from "../httpApiV1/whoamiV1.js";
 import type * as httpPreflight from "../httpPreflight.js";
@@ -60,6 +62,7 @@ import type * as lib_batching from "../lib/batching.js";
 import type * as lib_canonicalSkillSearch from "../lib/canonicalSkillSearch.js";
 import type * as lib_canonicalSkillSearchBounds from "../lib/canonicalSkillSearchBounds.js";
 import type * as lib_canonicalSkillSearchResponse from "../lib/canonicalSkillSearchResponse.js";
+import type * as lib_canonicalTrending from "../lib/canonicalTrending.js";
 import type * as lib_catalogClassification from "../lib/catalogClassification.js";
 import type * as lib_catalogClassifier from "../lib/catalogClassifier.js";
 import type * as lib_changelog from "../lib/changelog.js";
@@ -208,6 +211,7 @@ declare const fullApi: ApiFromModules<{
   agentSkillsHttp: typeof agentSkillsHttp;
   appMeta: typeof appMeta;
   auth: typeof auth;
+  canonicalTrending: typeof canonicalTrending;
   catalogClassification: typeof catalogClassification;
   catalogClassificationNode: typeof catalogClassificationNode;
   catalogFeed: typeof catalogFeed;
@@ -243,6 +247,7 @@ declare const fullApi: ApiFromModules<{
   "httpApiV1/skillsV1": typeof httpApiV1_skillsV1;
   "httpApiV1/starsV1": typeof httpApiV1_starsV1;
   "httpApiV1/transfersV1": typeof httpApiV1_transfersV1;
+  "httpApiV1/trendingV1": typeof httpApiV1_trendingV1;
   "httpApiV1/usersV1": typeof httpApiV1_usersV1;
   "httpApiV1/whoamiV1": typeof httpApiV1_whoamiV1;
   httpPreflight: typeof httpPreflight;
@@ -257,6 +262,7 @@ declare const fullApi: ApiFromModules<{
   "lib/canonicalSkillSearch": typeof lib_canonicalSkillSearch;
   "lib/canonicalSkillSearchBounds": typeof lib_canonicalSkillSearchBounds;
   "lib/canonicalSkillSearchResponse": typeof lib_canonicalSkillSearchResponse;
+  "lib/canonicalTrending": typeof lib_canonicalTrending;
   "lib/catalogClassification": typeof lib_catalogClassification;
   "lib/catalogClassifier": typeof lib_catalogClassifier;
   "lib/changelog": typeof lib_changelog;
