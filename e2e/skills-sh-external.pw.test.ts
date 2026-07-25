@@ -27,7 +27,7 @@ test("searches and opens the stored unscanned skills.sh listing", async ({ page 
 
   await result.click();
   await expect(page).toHaveURL(/\/skills-sh\/patrick-erichsen\/skills\/html$/);
-  await expect(page.getByRole("heading", { name: "HTML Artifact Chooser" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "HTML Artifact Chooser" }).first()).toBeVisible();
   await expect(page.getByText("Not scanned by ClawHub").first()).toBeVisible();
   await expect(page.getByText("Upstream checks are separate from ClawHub scanning.")).toBeVisible();
   await expect(
