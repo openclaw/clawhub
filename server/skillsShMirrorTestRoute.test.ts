@@ -1522,6 +1522,7 @@ describe("skills.sh permanent Test mirror route", () => {
       if (body.operation === "mirror-batch-claim") {
         return new Response(
           JSON.stringify({
+            snapshotId: "skills-sh:trending:live",
             sourceView: "trending",
             sourceTotal: 1,
             trendingHydrationAttempts: 0,
@@ -1588,6 +1589,7 @@ describe("skills.sh permanent Test mirror route", () => {
       if (body.operation === "mirror-batch-claim") {
         return new Response(
           JSON.stringify({
+            snapshotId: "skills-sh:trending:live",
             sourceView: "trending",
             sourceTotal: 1,
             trendingHydrationAttempts: 0,
@@ -1664,6 +1666,7 @@ describe("skills.sh permanent Test mirror route", () => {
       if (body.operation === "mirror-batch-claim") {
         return new Response(
           JSON.stringify({
+            snapshotId: "skills-sh:trending:live",
             sourceView: "trending",
             sourceTotal: sourceRows.length,
             trendingHydrationAttempts: 49,
@@ -1721,5 +1724,56 @@ describe("skills.sh permanent Test mirror route", () => {
         ],
       }),
     );
+  });
+
+  it("does not hydrate new missing identities during a captured trending replay", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "step-trending",
+      runId: "skillsShMirrorRuns:trending-replay",
+      page: 0,
+      offset: 0,
+    });
+    const calls: Array<Record<string, unknown>> = [];
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      calls.push(body);
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            snapshotId:
+              "skills-sh:trending-replay:skillsShMirrorRuns:live:2026-07-25T04:41:29.831Z",
+            sourceView: "trending",
+            sourceTotal: 1,
+            trendingHydrationAttempts: 0,
+            sourcePage: {
+              ...capturedSourcePage(0, 1, false, "trending-page-0"),
+              sourceView: "trending",
+              sourceTotal: 1,
+            },
+          }),
+        );
+      }
+      if (body.operation === "mirror-trending-join-state") {
+        return new Response(
+          JSON.stringify({
+            joinedExternalIds: [],
+            missingExternalIds: body.externalIds,
+            hydratableExternalIds: body.externalIds,
+            knownConflictExternalIds: [],
+          }),
+        );
+      }
+      return new Response(JSON.stringify({ status: "completed", counts: { trendingMissing: 1 } }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "mirror-trending-batch" }));
+    expect(calls.some((body) => body.operation === "mirror-trending-hydrate")).toBe(false);
+    expect(getVercelOidcTokenMock).not.toHaveBeenCalled();
+    expect(fetchBatchMock).not.toHaveBeenCalled();
   });
 });

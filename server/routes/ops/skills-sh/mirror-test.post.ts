@@ -699,6 +699,14 @@ export default defineEventHandler(async (event) => {
           1,
           MAX_TEST_SOURCE_ROWS,
         );
+        const snapshotId = requireString(
+          typeof lease.snapshotId === "string" ? lease.snapshotId : undefined,
+          "lease.snapshotId",
+        );
+        const allowsExceptionalHydration = snapshotId.startsWith("skills-sh:trending:");
+        if (!allowsExceptionalHydration && !snapshotId.startsWith("skills-sh:trending-replay:")) {
+          throw new Error("skills.sh trending snapshot ID is invalid");
+        }
         const trendingHydrationAttempts = requireInteger(
           typeof lease.trendingHydrationAttempts === "number"
             ? lease.trendingHydrationAttempts
@@ -707,8 +715,9 @@ export default defineEventHandler(async (event) => {
           0,
           MAX_TRENDING_HYDRATIONS_PER_RUN,
         );
-        const remainingHydrationBudget =
-          MAX_TRENDING_HYDRATIONS_PER_RUN - trendingHydrationAttempts;
+        const remainingHydrationBudget = allowsExceptionalHydration
+          ? MAX_TRENDING_HYDRATIONS_PER_RUN - trendingHydrationAttempts
+          : 0;
         const sourcePage =
           lease.sourcePage &&
           typeof lease.sourcePage === "object" &&
