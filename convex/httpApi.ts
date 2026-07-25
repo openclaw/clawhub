@@ -12,22 +12,11 @@ import type { ActionCtx } from "./_generated/server";
 import { httpAction } from "./functions";
 import { ambiguousSkillSlugMessage } from "./httpApiV1/shared";
 import { requireApiTokenUser, requirePackagePublishAuth } from "./lib/apiTokenAuth";
+import { serializeCanonicalSkillSearchResults } from "./lib/canonicalSkillSearchResponse";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit } from "./lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "./lib/httpUtils";
 import { publishVersionForUser } from "./skills";
-
-type SearchSkillEntry = {
-  score: number;
-  skill: {
-    slug?: string;
-    displayName?: string;
-    summary?: string | null;
-    updatedAt?: number;
-  } | null;
-  ownerHandle?: string | null;
-  version: { version?: string } | null;
-};
 
 const LEGACY_TELEMETRY_BATCH_SIZE = 100;
 const MAX_LEGACY_TELEMETRY_SKILLS = 5_000;
@@ -73,19 +62,9 @@ async function searchSkillsHandler(ctx: ActionCtx, request: Request) {
     limit,
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-  })) as SearchSkillEntry[];
+  })) as unknown[];
 
-  return json({
-    results: results.map((result) => ({
-      score: result.score,
-      slug: result.skill?.slug,
-      ownerHandle: result.ownerHandle ?? null,
-      displayName: result.skill?.displayName,
-      summary: result.skill?.summary ?? null,
-      version: result.version?.version ?? null,
-      updatedAt: result.skill?.updatedAt,
-    })),
-  });
+  return json({ results: serializeCanonicalSkillSearchResults(results) });
 }
 
 export const searchSkillsHttp = httpAction(searchSkillsHandler);

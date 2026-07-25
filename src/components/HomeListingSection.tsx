@@ -596,7 +596,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
         kind === "skills"
           ? Promise.all(
               (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
-                convexHttp.action(api.search.searchSkills, {
+                convexHttp.action(api.search.searchNativeSkills, {
                   query: trimmedSearch,
                   limit: fetchLimit,
                   highlightedOnly: tab === "featured" ? true : undefined,

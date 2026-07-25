@@ -1055,6 +1055,8 @@ describe("skills.sh external mirror", () => {
       normalizedSlugFirstToken: "find",
       normalizedDisplayName: "find skills",
       normalizedDisplayNameFirstToken: "find",
+      searchSummary: "# Find Skills",
+      searchText: expect.stringContaining("# Find Skills"),
       upstreamScanners: githubRow.upstreamScanners,
       inferredCategories: ["development"],
       inferredTopics: ["skill-discovery"],

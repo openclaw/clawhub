@@ -348,6 +348,52 @@ describe("cmdSearch", () => {
     );
     expect(mockLog).toHaveBeenCalledWith("legacy       Legacy Owner  Legacy Skill  1 download");
   });
+
+  it("preserves canonical mixed API order and prints installable external references", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue(undefined);
+    mockApiRequest.mockResolvedValue({
+      results: [
+        {
+          id: "skills-sh:acme/skills/calendar",
+          source: "skills-sh",
+          slug: "calendar",
+          displayName: "External Calendar",
+          score: 6_110,
+          ownerHandle: "acme",
+          install: {
+            kind: "skills-sh",
+            reference: "skills-sh/acme/skills/calendar",
+            sourceUrl: "https://skills.sh/acme/skills/calendar",
+          },
+          sourceIdentity: {
+            id: "acme/skills/calendar",
+            owner: "acme",
+            repo: "skills",
+            host: null,
+            lifetimeInstalls: 99_000,
+          },
+        },
+        {
+          id: "clawhub:skills:calendar",
+          source: "clawhub",
+          slug: "calendar-native",
+          displayName: "Native Calendar",
+          score: 5_095,
+          ownerHandle: "openclaw",
+          metrics: { rolling60DayInstalls: 12, bookmarks: 3, updatedAt: 1 },
+        },
+      ],
+    });
+
+    await cmdSearch(makeOpts(), "calendar");
+
+    const lines = mockLog.mock.calls.map(([line]) => String(line));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("skills-sh/acme/skills/calendar");
+    expect(lines[0]).toContain("99,000 skills.sh lifetime installs");
+    expect(lines[1]).toContain("calendar-native");
+    expect(lines[1]).toContain("12 installs / 60d");
+  });
 });
 
 describe("skill moderation commands", () => {

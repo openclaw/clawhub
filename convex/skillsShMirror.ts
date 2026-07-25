@@ -415,11 +415,17 @@ function prefixUpperBound(prefix: string) {
 function searchFields(row: MirrorRow) {
   const normalizedSlug = normalizedSearchText(row.slug);
   const normalizedDisplayName = normalizedSearchText(row.displayName);
+  const searchSummary = row.detail?.content
+    .replace(/^---[\s\S]*?---\s*/u, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .slice(0, 512);
   return {
     normalizedSlug,
     normalizedSlugFirstToken: firstSearchToken(row.slug),
     normalizedDisplayName,
     normalizedDisplayNameFirstToken: firstSearchToken(row.displayName),
+    ...(searchSummary ? { searchSummary } : {}),
     searchText: [
       row.displayName,
       row.slug,
@@ -428,6 +434,7 @@ function searchFields(row: MirrorRow) {
       row.sourceHost,
       ...row.inferredCategories,
       ...row.inferredTopics,
+      searchSummary,
     ]
       .filter((value): value is string => Boolean(value))
       .join(" "),

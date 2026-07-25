@@ -9,7 +9,7 @@ import {
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
-import type { SkillListEntry, SkillSearchEntry } from "./-types";
+import { isExternalSkillListEntry, type SkillListEntry, type SkillSearchEntry } from "./-types";
 
 const pageSize = 25;
 const maxConsecutiveEmptyPagesPerFetch = 3;
@@ -307,60 +307,78 @@ export function useSkillsBrowseModel({
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
-      return searchResults.map((entry) => ({
-        skill: entry.skill,
-        latestVersion: entry.version,
-        ownerHandle: entry.ownerHandle ?? null,
-        owner: entry.owner ?? null,
-        searchScore: entry.score,
-      }));
+      return searchResults.map(
+        (entry): SkillListEntry =>
+          entry.native
+            ? {
+                skill: entry.native.skill,
+                latestVersion: entry.native.version,
+                ownerHandle: entry.native.ownerHandle,
+                owner: entry.native.owner,
+                searchScore: entry.score,
+              }
+            : { external: entry, searchScore: entry.score },
+      );
     }
     return listResults;
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
     const topicItems = activeTopic
-      ? baseItems.filter((entry) => getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic))
+      ? baseItems.filter(
+          (entry) =>
+            isExternalSkillListEntry(entry) ||
+            getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic),
+        )
       : baseItems;
     const categoryItems = activeCategory
-      ? topicItems.filter((entry) =>
-          getSkillCategoriesForSkill(entry.skill).some(
-            (category) => category.slug === activeCategory.slug,
-          ),
+      ? topicItems.filter(
+          (entry) =>
+            isExternalSkillListEntry(entry) ||
+            getSkillCategoriesForSkill(entry.skill).some(
+              (category) => category.slug === activeCategory.slug,
+            ),
         )
       : topicItems;
-    if (!hasQuery) {
+    if (!hasQuery || sort === "relevance") {
+      // The canonical search action already ordered mixed results. Preserve
+      // that order exactly for web/API/CLI parity.
       return categoryItems;
     }
     const multiplier = dir === "asc" ? 1 : -1;
     const results = [...categoryItems];
     results.sort((a, b) => {
+      const aSkill = isExternalSkillListEntry(a) ? a.external : a.skill;
+      const bSkill = isExternalSkillListEntry(b) ? b.external : b.skill;
+      const aDownloads = isExternalSkillListEntry(a) ? 0 : a.skill.stats.downloads;
+      const bDownloads = isExternalSkillListEntry(b) ? 0 : b.skill.stats.downloads;
+      const aStars = isExternalSkillListEntry(a) ? 0 : a.skill.stats.stars;
+      const bStars = isExternalSkillListEntry(b) ? 0 : b.skill.stats.stars;
       const tieBreak = () => {
-        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier;
+        const updated = (aSkill.updatedAt - bSkill.updatedAt) * multiplier;
         if (updated !== 0) return updated;
-        return a.skill.slug.localeCompare(b.skill.slug);
+        return aSkill.slug.localeCompare(bSkill.slug);
       };
       switch (sort) {
-        case "relevance":
-          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
         case "downloads":
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
+          return (aDownloads - bDownloads) * multiplier || tieBreak();
         case "stars":
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak();
+          return (aStars - bStars) * multiplier || tieBreak();
         case "updated":
           return (
-            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
-            a.skill.slug.localeCompare(b.skill.slug)
+            (aSkill.updatedAt - bSkill.updatedAt) * multiplier ||
+            aSkill.slug.localeCompare(bSkill.slug)
           );
         case "name":
           return (
-            (a.skill.displayName.localeCompare(b.skill.displayName) ||
-              a.skill.slug.localeCompare(b.skill.slug)) * multiplier
+            (aSkill.displayName.localeCompare(bSkill.displayName) ||
+              aSkill.slug.localeCompare(bSkill.slug)) * multiplier
           );
         default:
           return (
-            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
-            a.skill.slug.localeCompare(b.skill.slug)
+            (("createdAt" in aSkill ? aSkill.createdAt : aSkill.updatedAt) -
+              ("createdAt" in bSkill ? bSkill.createdAt : bSkill.updatedAt)) *
+              multiplier || aSkill.slug.localeCompare(bSkill.slug)
           );
       }
     });

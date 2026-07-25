@@ -1,15 +1,24 @@
 import { Link } from "@tanstack/react-router";
-import { Plus } from "lucide-react";
+import { Download, ExternalLink, Plus } from "lucide-react";
 import type { RefObject } from "react";
+import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
 import { SkillListItem } from "../../components/SkillListItem";
 import { SkillStatsTripletLine } from "../../components/SkillStats";
+import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { getSkillBadges } from "../../lib/badges";
+import { formatCompactStat } from "../../lib/numberFormat";
 import { timeAgo } from "../../lib/timeAgo";
+import { truncateText } from "../../lib/truncateText";
 import { useMediaQuery } from "../../lib/useMediaQuery";
-import { buildSkillHref, type SkillListEntry } from "./-types";
+import {
+  buildSkillHref,
+  isExternalSkillListEntry,
+  type SkillListEntry,
+  type SkillSearchEntry,
+} from "./-types";
 import type { SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
@@ -24,6 +33,84 @@ type SkillsResultsProps = {
   loadMoreRef: RefObject<HTMLDivElement | null>;
   loadMore: () => void;
 };
+
+function ExternalSkillSearchListItem({ result }: { result: SkillSearchEntry }) {
+  const owner = result.sourceIdentity.owner ?? result.sourceIdentity.host;
+  return (
+    <a
+      href={result.canonicalUrl}
+      className="skill-list-item skill-list-item-skill skill-list-item-with-taxonomy"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <MarketplaceIcon kind="skill" label={result.displayName} />
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={result.displayName}>
+              {truncateText(result.displayName, 48)}
+            </span>
+            {owner ? <span className="skill-list-item-owner">@{owner}</span> : null}
+          </span>
+          <Badge variant="compact">skills.sh</Badge>
+        </div>
+        {result.summary ? (
+          <p className="skill-list-item-summary">{truncateText(result.summary, 80)}</p>
+        ) : null}
+      </div>
+      <div className="skill-list-item-taxonomy" aria-label="Source">
+        <span className="skill-list-item-category">External source</span>
+      </div>
+      <div className="skill-list-item-meta">
+        <span className="skill-list-item-meta-item is-updated">
+          Observed {timeAgo(result.updatedAt)}
+        </span>
+        {typeof result.sourceIdentity.lifetimeInstalls === "number" ? (
+          <span className="skill-list-item-meta-item" title="skills.sh lifetime installs">
+            <Download size={14} aria-hidden="true" />
+            {formatCompactStat(result.sourceIdentity.lifetimeInstalls)}
+          </span>
+        ) : null}
+        <span className="skill-list-item-meta-item">
+          <ExternalLink size={14} aria-hidden="true" /> Source
+        </span>
+      </div>
+    </a>
+  );
+}
+
+function ExternalSkillSearchCard({ result }: { result: SkillSearchEntry }) {
+  const owner = result.sourceIdentity.owner ?? result.sourceIdentity.host;
+  return (
+    <a
+      href={result.canonicalUrl}
+      className="card flex min-w-0 flex-col gap-3 p-5 transition-colors hover:border-[color:var(--oc-border-strong)]"
+      target="_blank"
+      rel="noreferrer"
+    >
+      <div className="flex items-start gap-3">
+        <MarketplaceIcon kind="skill" label={result.displayName} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate font-semibold text-[color:var(--oc-text-primary)]">
+              {result.displayName}
+            </h3>
+            <Badge variant="compact">skills.sh</Badge>
+          </div>
+          {owner ? (
+            <p className="mt-1 truncate text-xs text-[color:var(--oc-text-muted)]">@{owner}</p>
+          ) : null}
+        </div>
+        <ExternalLink className="shrink-0 text-[color:var(--oc-text-muted)]" size={16} />
+      </div>
+      {result.summary ? (
+        <p className="line-clamp-3 text-sm leading-6 text-[color:var(--oc-text-secondary)]">
+          {result.summary}
+        </p>
+      ) : null}
+    </a>
+  );
+}
 
 export function SkillsResults({
   isLoadingSkills,
@@ -62,6 +149,9 @@ export function SkillsResults({
       ) : effectiveView === "grid" ? (
         <div className="grid browse-results-grid">
           {sorted.map((entry) => {
+            if (isExternalSkillListEntry(entry)) {
+              return <ExternalSkillSearchCard key={entry.external.id} result={entry.external} />;
+            }
             const skill = entry.skill;
             const clawdis = entry.latestVersion?.parsed?.clawdis;
             const isPlugin = Boolean(clawdis?.nix?.plugin);
@@ -98,6 +188,11 @@ export function SkillsResults({
           </div>
           <div className="results-list">
             {sorted.map((entry) => {
+              if (isExternalSkillListEntry(entry)) {
+                return (
+                  <ExternalSkillSearchListItem key={entry.external.id} result={entry.external} />
+                );
+              }
               const skill = entry.skill;
               const ownerHandle = entry.owner?.handle ?? entry.ownerHandle ?? null;
               return (

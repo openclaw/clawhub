@@ -95,7 +95,7 @@ export function useUnifiedSearch(
   activeType: UnifiedSearchType,
   options: UnifiedSearchOptions = {},
 ) {
-  const searchSkills = useAction(api.search.searchSkills);
+  const searchSkills = useAction(api.search.searchNativeSkills);
   const requestRef = useRef(0);
   const debounceMs = options.debounceMs ?? 300;
   const enabled = options.enabled ?? true;

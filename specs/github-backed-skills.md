@@ -107,12 +107,15 @@ controls, durable run cursors, and conflicts remain in their own mirror tables.
 
 - GitHub identities are exact `owner/repo/slug` values. Well-known identities
   are exact `sourceHost/slug` values and must not invent a repository owner.
-- Every digest is permanently `publicVisible: false` and `installable: false`.
-  Mirror ingestion never creates native skills, publisher attachment, claims,
-  scan plans, or scan jobs.
-- The digest stores normalized slug/display-name fields and a lean
-  `searchText`. Exact, prefix, first-token, popularity, freshness, and
-  full-text indexes are staged before activation on the permanent Test corpus.
+- Mirror ingestion always writes `publicVisible: false` and `installable: false`.
+  A separately accepted activation flow may opt an exact row into public search
+  and install surfaces; canonical search requires both flags and fails closed
+  when either is absent. Mirror ingestion never creates native skills,
+  publisher attachment, claims, scan plans, or scan jobs.
+- The digest stores normalized slug/display-name fields, a bounded content
+  summary, and lean `searchText`. Exact, prefix, first-token, freshness, and
+  full-text indexes feed canonical relevance-first search. Upstream popularity
+  is presentation metadata only and has zero search-ranking weight.
 - Gen Agent Trust Hub, Socket, and Snyk observations are stored independently
   with a bounded status plus optional source timestamp and source link. These
   are upstream claims only and must never be serialized as a ClawHub verdict.

@@ -364,14 +364,13 @@ describe("SkillsIndex", () => {
       key: "japanese-conversation-scorer::0::::",
       limit: 25,
       results: [
-        {
-          skill: makeListResult("japanese-conversation-scorer", "Japanese Conversation Scorer")
-            .skill,
-          version: null,
-          ownerHandle: "bianmaxingkong",
-          owner: null,
-          score: 1,
-        },
+        makeSearchResult(
+          "japanese-conversation-scorer",
+          "Japanese Conversation Scorer",
+          1,
+          0,
+          "bianmaxingkong",
+        ),
       ],
     };
     const actionFn = vi.fn().mockResolvedValue([]);
@@ -680,7 +679,7 @@ describe("SkillsIndex", () => {
     expect(links[2]?.textContent).toContain("Skill C");
   });
 
-  it("uses relevance as default sort when searching", async () => {
+  it("preserves canonical API order for default relevance search", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi
       .fn()
@@ -700,8 +699,32 @@ describe("SkillsIndex", () => {
       (node) => node.textContent,
     );
 
-    expect(titles[0]).toBe("Older High Score");
-    expect(titles[1]).toBe("Newer Low Score");
+    expect(titles[0]).toBe("Newer Low Score");
+    expect(titles[1]).toBe("Older High Score");
+  });
+
+  it("renders external skills in the canonical mixed order", async () => {
+    searchMock = { q: "find skills" };
+    convexReactMocks.useAction.mockReturnValue(
+      vi
+        .fn()
+        .mockResolvedValue([
+          makeSearchResult("native-find", "Native Find", 6_000, 2_000),
+          makeExternalSearchResult("vercel-labs/skills/find-skills", "Find Skills", 5_000),
+        ]),
+    );
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Native Find", "Find Skills"]);
+    expect(screen.getByText("skills.sh")).toBeTruthy();
   });
 
   it("includes results explicitly assigned to the selected category", async () => {
@@ -1110,48 +1133,97 @@ function makeListResult(
 }
 
 function makeSearchResults(count: number) {
-  return Array.from({ length: count }, (_, index) => ({
-    score: 0.9,
-    skill: {
-      _id: `skill_${index}`,
-      slug: `skill-${index}`,
-      displayName: `Skill ${index}`,
-      summary: `Summary ${index}`,
-      tags: {},
-      stats: {
-        downloads: 0,
-        installs: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 0,
-      updatedAt: 0,
-    },
-    version: null,
-  }));
+  return Array.from({ length: count }, (_, index) =>
+    makeSearchResult(`skill-${index}`, `Skill ${index}`, 0.9, 0),
+  );
 }
 
-function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+function makeSearchResult(
+  slug: string,
+  displayName: string,
+  score: number,
+  createdAt: number,
+  ownerHandle: string | null = null,
+) {
+  const skill = makeListResult(slug, displayName).skill;
+  skill.createdAt = createdAt;
+  skill.updatedAt = createdAt;
   return {
+    id: `clawhub:${skill._id}`,
+    source: "clawhub",
+    slug,
+    displayName,
+    summary: skill.summary,
     score,
-    skill: {
-      _id: `skill_${slug}`,
-      slug,
-      displayName,
-      summary: `${displayName} summary`,
-      tags: {},
-      stats: {
-        downloads: 0,
-        installs: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt,
-      updatedAt: createdAt,
+    canonicalUrl: `/${ownerHandle ?? "owner"}/skills/${slug}`,
+    links: {
+      canonical: `/${ownerHandle ?? "owner"}/skills/${slug}`,
+      source: null,
     },
+    official: false,
+    featured: false,
+    publisher: null,
+    install: { kind: "clawhub", reference: `${ownerHandle ?? "owner"}/${slug}`, sourceUrl: null },
+    sourceIdentity: {
+      id: skill._id,
+      owner: ownerHandle,
+      repo: null,
+      host: null,
+      lifetimeInstalls: null,
+    },
+    trust: {
+      visibility: "public",
+      installability: "installable",
+      clawHubVerdict: null,
+      upstreamScanners: null,
+      sourceFreshness: "native",
+    },
+    metrics: { rolling60DayInstalls: 0, bookmarks: 0, updatedAt: createdAt },
+    native: { skill, version: null, owner: null, ownerHandle },
+    ownerHandle,
     version: null,
+    downloads: 0,
+    updatedAt: createdAt,
+  };
+}
+
+function makeExternalSearchResult(externalId: string, displayName: string, score: number) {
+  const slug = externalId.split("/").at(-1) ?? externalId;
+  const [owner, repo] = externalId.split("/");
+  return {
+    id: `skills-sh:${externalId}`,
+    source: "skills-sh",
+    slug,
+    displayName,
+    summary: `${displayName} summary`,
+    score,
+    canonicalUrl: `/skills-sh/${externalId}`,
+    links: {
+      canonical: `/skills-sh/${externalId}`,
+      source: `https://skills.sh/${externalId}`,
+    },
+    official: false,
+    featured: false,
+    publisher: null,
+    install: {
+      kind: "skills-sh",
+      reference: `skills-sh/${externalId}`,
+      sourceUrl: `https://skills.sh/${externalId}`,
+    },
+    sourceIdentity: { id: externalId, owner, repo, host: null, lifetimeInstalls: 42 },
+    trust: {
+      visibility: "public",
+      installability: "installable",
+      clawHubVerdict: null,
+      upstreamScanners: {},
+      sourceFreshness: "observed-only",
+    },
+    metrics: { rolling60DayInstalls: null, bookmarks: null, updatedAt: 1_000 },
+    native: null,
+    ownerHandle: owner,
+    version: null,
+    downloads: null,
+    updatedAt: 1_000,
   };
 }
 
@@ -1161,24 +1233,7 @@ function makeSearchEntry(params: {
   stars: number;
   updatedAt: number;
 }) {
-  return {
-    score: 0.9,
-    skill: {
-      _id: `skill_${params.slug}`,
-      slug: params.slug,
-      displayName: params.displayName,
-      summary: `Summary ${params.slug}`,
-      tags: {},
-      stats: {
-        downloads: 0,
-        installs: 0,
-        stars: params.stars,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 0,
-      updatedAt: params.updatedAt,
-    },
-    version: null,
-  };
+  const entry = makeSearchResult(params.slug, params.displayName, 0.9, params.updatedAt);
+  if (entry.native) entry.native.skill.stats.stars = params.stars;
+  return entry;
 }

@@ -406,6 +406,8 @@ export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSch
 
 export const ApiV1SearchResponseSchema = type({
   results: type({
+    "id?": "string",
+    "source?": '"clawhub"|"skills-sh"',
     slug: "string?",
     ownerHandle: "string|null?",
     displayName: "string?",
@@ -418,9 +420,49 @@ export const ApiV1SearchResponseSchema = type({
       handle: "string|null?",
       displayName: "string|null?",
       image: "string|null?",
+      "kind?": '"user"|"org"',
+      "official?": "boolean",
     })
       .or("null")
       .optional(),
+    "canonicalUrl?": "string",
+    "official?": "boolean",
+    "featured?": "boolean",
+    "links?": {
+      canonical: "string",
+      source: "string|null",
+    },
+    "publisher?": type({
+      kind: '"user"|"org"',
+      handle: "string|null",
+      displayName: "string|null",
+      image: "string|null",
+      official: "boolean",
+    }).or("null"),
+    "install?": {
+      kind: '"clawhub"|"github"|"skills-sh"',
+      reference: "string",
+      sourceUrl: "string|null",
+    },
+    "sourceIdentity?": {
+      id: "string",
+      owner: "string|null",
+      repo: "string|null",
+      host: "string|null",
+      lifetimeInstalls: "number|null",
+    },
+    "trust?": {
+      visibility: '"public"',
+      installability: '"installable"',
+      clawHubVerdict: "string|null",
+      upstreamScanners: "unknown|null",
+      sourceFreshness: '"native"|"observed-only"',
+    },
+    "metrics?": {
+      rolling60DayInstalls: "number|null",
+      bookmarks: "number|null",
+      updatedAt: "number",
+    },
   }).array(),
 });
 

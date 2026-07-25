@@ -62,8 +62,9 @@ read_when:
   compatibility.
 - Public Downloads are `statsDownloads` for native-only skills and
   `statsDownloads + statsSkillsShInstalls` for skills.sh-indexed skills.
-- Search ranking continues to use native counters rather than the combined
-  presentation value.
+- Canonical mixed skill search never ranks by this combined presentation value.
+  It uses lexical/semantic relevance first, then ClawHub-observed rolling
+  60-day installs, rolling Bookmarks, and freshness for comparable matches.
 - `createdAt`, `updatedAt`
 
 ### SkillVersion

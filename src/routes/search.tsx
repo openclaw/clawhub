@@ -46,7 +46,7 @@ async function loadInitialSearchResults(query: string | undefined) {
   if (!trimmed) return null;
 
   try {
-    const skillsRaw = (await convexHttp.action(api.search.searchSkills, {
+    const skillsRaw = (await convexHttp.action(api.search.searchNativeSkills, {
       query: trimmed,
       limit: SEARCH_PAGE_SIZE + 1,
     })) as Array<{

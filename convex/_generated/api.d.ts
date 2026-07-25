@@ -57,6 +57,8 @@ import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_artifactText from "../lib/artifactText.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
+import type * as lib_canonicalSkillSearch from "../lib/canonicalSkillSearch.js";
+import type * as lib_canonicalSkillSearchResponse from "../lib/canonicalSkillSearchResponse.js";
 import type * as lib_catalogClassification from "../lib/catalogClassification.js";
 import type * as lib_catalogClassifier from "../lib/catalogClassifier.js";
 import type * as lib_changelog from "../lib/changelog.js";
@@ -247,6 +249,8 @@ declare const fullApi: ApiFromModules<{
   "lib/artifactText": typeof lib_artifactText;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
+  "lib/canonicalSkillSearch": typeof lib_canonicalSkillSearch;
+  "lib/canonicalSkillSearchResponse": typeof lib_canonicalSkillSearchResponse;
   "lib/catalogClassification": typeof lib_catalogClassification;
   "lib/catalogClassifier": typeof lib_catalogClassifier;
   "lib/changelog": typeof lib_changelog;

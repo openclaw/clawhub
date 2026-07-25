@@ -911,6 +911,111 @@ export const seedTestFixtures: ReturnType<typeof internalAction> = internalActio
   },
 });
 
+const LOCAL_CANONICAL_SEARCH_EXTERNAL_ID = "acme/skills/risk-auditor";
+
+/** Explicit local proof fixture; intentionally not part of shared Test seeding. */
+export const seedCanonicalSearchFixture = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_external_id", (q) => q.eq("externalId", LOCAL_CANONICAL_SEARCH_EXTERNAL_ID))
+      .unique();
+    const runId =
+      existing?.lastObservedRunId ??
+      (await ctx.db.insert("skillsShMirrorRuns", {
+        snapshotId: "local-canonical-search-v1",
+        status: "completed",
+        sourceTotal: 1,
+        sourcePageSize: 1,
+        sourceMeasuredAt: new Date(now).toISOString(),
+        page: 1,
+        offset: 0,
+        counts: {
+          observed: 1,
+          inserted: 1,
+          updated: 0,
+          unchanged: 0,
+          rejected: 0,
+          quarantined: 0,
+          quarantinedPreserved: 0,
+          conflicts: 0,
+          detailsInserted: 0,
+          detailsUpdated: 0,
+          detailsUnchanged: 0,
+          detailsMissing: 1,
+          detailsTruncated: 0,
+          tombstoned: 0,
+          reactivated: 0,
+          scansPlanned: 0,
+          scansAdmitted: 0,
+        },
+        operations: {
+          functionCalls: 1,
+          dbReads: 1,
+          dbWrites: 2,
+          sourceRequests: 0,
+          sourceBytes: 0,
+        },
+        actor: "local-dev-seed",
+        reason: "Reusable local canonical mixed-search browser proof fixture.",
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      }));
+    const digest = {
+      externalId: LOCAL_CANONICAL_SEARCH_EXTERNAL_ID,
+      sourceType: "github" as const,
+      upstreamSourceType: "github",
+      owner: "acme",
+      repo: "skills",
+      slug: "risk-auditor",
+      normalizedSlug: "risk auditor",
+      normalizedSlugFirstToken: "risk",
+      displayName: "Risk Auditor",
+      normalizedDisplayName: "risk auditor",
+      normalizedDisplayNameFirstToken: "risk",
+      searchSummary: "Audit agent workflows for security and operational risk.",
+      searchText:
+        "Risk Auditor risk-auditor acme skills security risk-management security-audit Audit agent workflows for security and operational risk.",
+      sourceUrl: "https://skills.sh/acme/skills/risk-auditor",
+      canonicalRepoUrl: "https://github.com/acme/skills",
+      githubPath: "skills/risk-auditor",
+      githubCommit: "0000000000000000000000000000000000000000",
+      upstreamInstalls: 9_000_000,
+      upstreamScanners: {
+        genAgentTrustHub: { status: "unavailable" },
+        socket: { status: "unavailable" },
+        snyk: { status: "unavailable" },
+      },
+      inferredCategories: ["security"],
+      inferredTopics: ["risk-management", "security-audit"],
+      sourceFreshnessStatus: "observed-only" as const,
+      detailStatus: "missing" as const,
+      observationFingerprint: "local-canonical-search-v1",
+      sourceSnapshotId: "local-canonical-search-v1",
+      lastObservedRunId: runId,
+      active: true,
+      publicVisible: true,
+      installable: true,
+      firstObservedAt: existing?.firstObservedAt ?? now,
+      lastObservedAt: now,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, digest);
+      return { ok: true as const, digestId: existing._id };
+    }
+    const digestId = await ctx.db.insert("skillsShMirrorDigests", {
+      ...digest,
+      createdAt: now,
+    });
+    return { ok: true as const, digestId };
+  },
+});
+
 export const backfillExistingPublicCorpusBatchRows = internalMutation({
   args: {
     rows: v.array(publicCorpusSeedRowValidator),

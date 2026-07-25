@@ -1,14 +1,19 @@
 /* @vitest-environment node */
 
+import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
 import {
   __test,
   directPrefixSkillMatches,
+  getExternalSkillSearchCandidates,
   getExactSkillSlugMatch,
+  getOwnerQualifiedSkillMatch,
+  getRollingSkillSearchUsage,
   hydrateResults,
   lexicalFallbackSkills,
-  searchSkills,
+  searchSkills as canonicalSearchSkills,
+  searchNativeSkills,
 } from "./search";
 
 const { generateEmbeddingMock } = vi.hoisted(() => ({
@@ -29,10 +34,16 @@ type WrappedHandler<Result = { skill: { slug: string; _id: string } }> = {
 };
 
 const searchSkillsHandler = (
-  searchSkills as unknown as WrappedHandler<{
+  searchNativeSkills as unknown as WrappedHandler<{
     skill: { slug: string; _id: string };
     score: number;
+    semanticScore: number;
   }>
+)._handler;
+const canonicalSearchSkillsHandler = (
+  canonicalSearchSkills as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<Array<Record<string, unknown>>>;
+  }
 )._handler;
 const lexicalFallbackSkillsHandler = (lexicalFallbackSkills as unknown as WrappedHandler)._handler;
 const directPrefixSkillMatchesHandler = (directPrefixSkillMatches as unknown as WrappedHandler)
@@ -49,6 +60,27 @@ const getExactSkillSlugMatchHandler = (
         owner: { official?: boolean } | null;
       }>
     >;
+  }
+)._handler;
+const getOwnerQualifiedSkillMatchHandler = (
+  getOwnerQualifiedSkillMatch as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ skill: { slug: string }; ownerHandle: string | null }>>;
+  }
+)._handler;
+const getExternalSkillSearchCandidatesHandler = (
+  getExternalSkillSearchCandidates as unknown as {
+    _handler: (ctx: unknown, args: unknown) => Promise<Array<{ externalId: string }>>;
+  }
+)._handler;
+const getRollingSkillSearchUsageHandler = (
+  getRollingSkillSearchUsage as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: unknown,
+    ) => Promise<Array<{ skillId: string; installs: number; bookmarks: number }>>;
   }
 )._handler;
 const hydrateResultsHandler = (
@@ -867,6 +899,25 @@ describe("search helpers", () => {
     expect(result).toEqual([]);
   });
 
+  it("excludes unfeatured skills from featured-only exact slug search", async () => {
+    const exactSlugSkill = makeSkillDoc({
+      id: "skills:unfeatured",
+      slug: "unfeatured",
+      displayName: "Unfeatured",
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill,
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "unfeatured",
+      highlightedOnly: true,
+    });
+
+    expect(result).toEqual([]);
+  });
+
   it("returns duplicate exact slug matches without requiring global slug uniqueness", async () => {
     const ctx = makeLexicalCtx({
       exactSlugSkills: [
@@ -913,6 +964,464 @@ describe("search helpers", () => {
 
     expect(result[0]?.ownerHandle).toBe("org");
     expect(result[0]?.owner?.official).toBe(true);
+  });
+
+  it("resolves an owner-qualified skill through indexed publisher and skill lookups", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:org-demo",
+      slug: "demo",
+      displayName: "Org Demo",
+      ownerPublisherId: "publishers:org",
+    });
+    const usedIndexes: string[] = [];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: (index: string) => {
+            usedIndexes.push(`${table}.${index}`);
+            return {
+              unique: vi.fn(async () => {
+                if (table === "publishers") {
+                  return {
+                    _id: "publishers:org",
+                    _creationTime: 1,
+                    kind: "org",
+                    handle: "org",
+                    displayName: "Org",
+                    createdAt: 1,
+                    updatedAt: 1,
+                  };
+                }
+                if (table === "skills") return skill;
+                return null;
+              }),
+            };
+          },
+        })),
+        get: vi.fn(async (id: string) =>
+          id === "skillVersions:1"
+            ? { _id: id, skillId: skill._id, softDeletedAt: undefined }
+            : null,
+        ),
+      },
+    };
+
+    const result = await getOwnerQualifiedSkillMatchHandler(ctx, {
+      owner: "@ORG",
+      slug: "demo",
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["demo"]);
+    expect(usedIndexes).toEqual([
+      "publishers.by_handle",
+      "skills.by_owner_publisher_slug",
+      "officialPublishers.by_publisher",
+    ]);
+    await expect(
+      getOwnerQualifiedSkillMatchHandler(ctx, {
+        owner: "@ORG",
+        slug: "demo",
+        highlightedOnly: true,
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it("resolves an owner-qualified legacy user-owned skill", async () => {
+    const user = {
+      _id: "users:owner",
+      _creationTime: 1,
+      handle: "legacy",
+      displayName: "Legacy User",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skill = makeSkillDoc({
+      id: "skills:legacy-demo",
+      slug: "demo",
+      displayName: "Legacy Demo",
+      ownerPublisherId: undefined,
+    });
+    const usedIndexes: string[] = [];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: (index: string) => {
+            usedIndexes.push(`${table}.${index}`);
+            return {
+              unique: vi.fn(async () => {
+                if (table === "publishers") return null;
+                if (table === "users" && index === "handle") return user;
+                if (table === "skills" && index === "by_owner_slug") return skill;
+                if (table === "officialPublishers") return null;
+                return null;
+              }),
+            };
+          },
+        })),
+        get: vi.fn(async (id: string) => {
+          if (id === user._id) return user;
+          if (id === "skillVersions:1") {
+            return { _id: id, skillId: skill._id, softDeletedAt: undefined };
+          }
+          return null;
+        }),
+      },
+    };
+
+    const result = await getOwnerQualifiedSkillMatchHandler(ctx, {
+      owner: "@LEGACY",
+      slug: "demo",
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["demo"]);
+    expect(result[0]?.ownerHandle).toBe("legacy");
+    expect(usedIndexes).toEqual([
+      "publishers.by_handle",
+      "users.handle",
+      "skills.by_owner_slug",
+      "publishers.by_linked_user",
+      "officialPublishers.by_publisher",
+    ]);
+  });
+
+  it("fails owner-qualified lookup closed when no installable public version resolves", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:org-demo",
+      slug: "demo",
+      displayName: "Org Demo",
+      ownerPublisherId: "publishers:org",
+      moderationReason: "pending.scan",
+      statsVersions: 2,
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: () =>
+            table === "skillVersions"
+              ? { order: () => ({ take: vi.fn().mockResolvedValue([]) }) }
+              : {
+                  unique: vi.fn(async () => {
+                    if (table === "publishers") {
+                      return {
+                        _id: "publishers:org",
+                        _creationTime: 1,
+                        kind: "org",
+                        handle: "org",
+                        displayName: "Org",
+                        createdAt: 1,
+                        updatedAt: 1,
+                      };
+                    }
+                    if (table === "skills") return skill;
+                    return null;
+                  }),
+                },
+        })),
+        get: vi.fn().mockResolvedValue(null),
+      },
+    };
+
+    await expect(
+      getOwnerQualifiedSkillMatchHandler(ctx, { owner: "org", slug: "demo" }),
+    ).resolves.toEqual([]);
+  });
+
+  it("filters external candidates by visibility and installability and bounds every recall index", async () => {
+    const visible = makeExternalSearchDigest({ externalId: "acme/skills/calendar" });
+    const hidden = makeExternalSearchDigest({
+      externalId: "acme/skills/hidden",
+      publicVisible: false,
+    });
+    const blocked = makeExternalSearchDigest({
+      externalId: "acme/skills/blocked",
+      installable: false,
+    });
+    const takeLimits: number[] = [];
+    const usedIndexes: string[] = [];
+    const equalityFields: string[] = [];
+    const makeRange = (rows: unknown[]) => ({
+      take: vi.fn(async (limit: number) => {
+        takeLimits.push(limit);
+        return rows;
+      }),
+    });
+    const queryBuilder = {
+      eq: (field: string) => {
+        equalityFields.push(field);
+        return queryBuilder;
+      },
+      gte: () => queryBuilder,
+      lt: () => queryBuilder,
+      search: () => queryBuilder,
+    };
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: (index: string, build: (q: typeof queryBuilder) => unknown) => {
+            usedIndexes.push(index);
+            build(queryBuilder);
+            if (index === "by_external_id") {
+              return { unique: vi.fn(async () => visible) };
+            }
+            return makeRange([visible, hidden, blocked]);
+          },
+          withSearchIndex: (index: string, build: (q: typeof queryBuilder) => unknown) => {
+            usedIndexes.push(index);
+            build(queryBuilder);
+            return makeRange([visible, hidden, blocked]);
+          },
+        })),
+      },
+    };
+
+    const result = await getExternalSkillSearchCandidatesHandler(ctx, {
+      query: "acme/skills/calendar",
+      exactExternalId: "acme/skills/calendar",
+    });
+
+    expect(result.map((row) => row.externalId)).toEqual([visible.externalId]);
+    expect(takeLimits).toEqual([50, 50, 50, 50, 50]);
+    expect(usedIndexes).toEqual([
+      "by_external_id",
+      "by_active_visible_installable_fresh_slug",
+      "by_active_visible_installable_fresh_display",
+      "by_active_visible_installable_fresh_slug_token",
+      "by_active_visible_installable_fresh_display_token",
+      "search_by_search_text",
+    ]);
+    expect(equalityFields).toEqual(
+      expect.arrayContaining(["active", "publicVisible", "installable", "sourceFreshnessStatus"]),
+    );
+  });
+
+  it("aggregates only the bounded 60-day install and bookmark window", async () => {
+    const take = vi.fn().mockResolvedValue([
+      { installs: 4, bookmarks: 2 },
+      { installs: 5, bookmarks: 3 },
+    ]);
+    const queryBuilder = {
+      eq: () => queryBuilder,
+      gte: () => queryBuilder,
+      lte: () => queryBuilder,
+    };
+    const withIndex = vi.fn((_index: string, build: (q: typeof queryBuilder) => unknown) => {
+      build(queryBuilder);
+      return { take };
+    });
+
+    const result = await getRollingSkillSearchUsageHandler(
+      { db: { query: vi.fn(() => ({ withIndex })) } },
+      { skillIds: ["skills:demo"], startDay: 100, endDay: 159 },
+    );
+
+    expect(result).toEqual([{ skillId: "skills:demo", installs: 9, bookmarks: 5 }]);
+    expect(withIndex).toHaveBeenCalledWith("by_skill_day", expect.any(Function));
+    expect(take).toHaveBeenCalledWith(60);
+  });
+
+  it("rejects rolling usage batches that could exceed one query transaction budget", async () => {
+    await expect(
+      getRollingSkillSearchUsageHandler(
+        { db: { query: vi.fn() } },
+        {
+          skillIds: Array.from({ length: 41 }, (_, index) => `skills:${index}`),
+          startDay: 100,
+          endDay: 159,
+        },
+      ),
+    ).rejects.toThrow("skillIds exceeds 40");
+  });
+
+  it("returns one ordered native and external contract with canonical routes and install refs", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const native = {
+      skill: makePublicSkill({
+        id: "skills:calendar",
+        slug: "calendar",
+        displayName: "Calendar",
+        downloads: 1_000_000,
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+      },
+    };
+    const external = {
+      ...makeExternalSearchDigest({ externalId: "acme/skills/calendar" }),
+      owner: "acme",
+      repo: "skills",
+      upstreamInstalls: 10_000_000,
+    };
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:getExactSkillSlugMatch":
+        case "search:directPrefixSkillMatches":
+          return [native];
+        case "search:lexicalFallbackSkills":
+          return [];
+        case "search:getExternalSkillSearchCandidates":
+          return [external];
+        case "search:getRollingSkillSearchUsage":
+          return [{ skillId: native.skill._id, installs: 12, bookmarks: 3 }];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "calendar", limit: 10 },
+    );
+
+    expect(result.map((row) => row.source)).toEqual(["clawhub", "skills-sh"]);
+    expect(result[0]).toMatchObject({
+      canonicalUrl: "/openclaw/skills/calendar",
+      install: { reference: "openclaw/calendar" },
+      metrics: { rolling60DayInstalls: 12, bookmarks: 3 },
+    });
+    expect((result[0]?.native as { owner?: unknown })?.owner).not.toHaveProperty("bio");
+    expect(result[1]).toMatchObject({
+      canonicalUrl: "/skills-sh/acme/skills/calendar",
+      links: {
+        canonical: "/skills-sh/acme/skills/calendar",
+        source: "https://skills.sh/acme/skills/calendar",
+      },
+      install: { reference: "skills-sh/acme/skills/calendar" },
+      sourceIdentity: { lifetimeInstalls: 10_000_000 },
+    });
+  });
+
+  it("excludes pending owner-qualified matches when pending scans are disabled", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const pending = {
+      skill: makePublicSkill({
+        id: "skills:pending-calendar",
+        slug: "calendar",
+        displayName: "Calendar",
+        ownerPublisherId: "publishers:openclaw",
+        githubScanStatus: "pending",
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: {
+        _id: "publishers:openclaw",
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+      },
+    };
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:directPrefixSkillMatches":
+        case "search:lexicalFallbackSkills":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:getOwnerQualifiedSkillMatch":
+          return [pending];
+        case "search:getRollingSkillSearchUsage":
+          return [{ skillId: pending.skill._id, installs: 0, bookmarks: 0 }];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "openclaw/calendar", limit: 10, excludePendingScan: true },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("excludes unfeatured owner-qualified matches from featured-only search", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:directPrefixSkillMatches":
+        case "search:lexicalFallbackSkills":
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:getOwnerQualifiedSkillMatch":
+          return [];
+        case "search:getRollingSkillSearchUsage":
+          return [];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      { runQuery, vectorSearch: vi.fn() },
+      { query: "openclaw/calendar", limit: 10, highlightedOnly: true },
+    );
+
+    expect(result).toEqual([]);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        owner: "openclaw",
+        slug: "calendar",
+        highlightedOnly: true,
+      }),
+    );
+  });
+
+  it("keeps exact-token native recall ahead of semantic prefix hits at the candidate bound", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const exact = {
+      skill: makePublicSkill({
+        id: "skills:exact-calendar-sync",
+        slug: "sync-tool-exact",
+        displayName: "Calendar",
+      }),
+      version: null,
+      ownerHandle: "openclaw",
+      owner: null,
+    };
+    const prefixes = Array.from({ length: 100 }, (_, index) => ({
+      embeddingId: `skillEmbeddings:prefix-${index}`,
+      skill: makePublicSkill({
+        id: `skills:prefix-${index}`,
+        slug: `calendars-synchronizer-${index}`,
+        displayName: `Calendars Synchronizer ${index}`,
+      }),
+      version: null,
+      ownerHandle: "community",
+      owner: null,
+    }));
+    const runQuery = vi.fn(async (ref: Parameters<typeof getFunctionName>[0]) => {
+      switch (getFunctionName(ref)) {
+        case "search:directPrefixSkillMatches":
+          return [exact, ...prefixes.map(({ embeddingId: _embeddingId, ...entry }) => entry)];
+        case "search:hydrateResults":
+          return prefixes;
+        case "search:getExternalSkillSearchCandidates":
+          return [];
+        case "search:getRollingSkillSearchUsage":
+          return [];
+        default:
+          throw new Error(`Unexpected query ${getFunctionName(ref)}`);
+      }
+    });
+
+    const result = await canonicalSearchSkillsHandler(
+      {
+        runQuery,
+        vectorSearch: vi.fn().mockResolvedValue(
+          prefixes.map((entry) => ({
+            _id: entry.embeddingId,
+            _score: 0.99,
+          })),
+        ),
+      },
+      { query: "calendar sync", limit: 10 },
+    );
+
+    expect(result[0]).toMatchObject({ id: "clawhub:skills:exact-calendar-sync" });
   });
 
   it("filters duplicate exact slug matches by topic", async () => {
@@ -1225,13 +1734,13 @@ describe("search helpers", () => {
     );
 
     expect(result).toHaveLength(2);
-    expect(result[0].skill.slug).toBe("foo-b");
+    expect(result[0].skill.slug).toBe("foo-a");
     expect(new Set(result.map((entry: { skill: { _id: string } }) => entry.skill._id)).size).toBe(
       2,
     );
   });
 
-  it("uses a stable recall pool before slicing first-page search results (#1756)", async () => {
+  it("uses a stable recall pool without lifetime popularity changing the first page", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
 
     const vectorEntries = Array.from({ length: 25 }, (_, index) => ({
@@ -1287,7 +1796,7 @@ describe("search helpers", () => {
       expect.objectContaining({ query: "image", limit: 200 }),
     );
     expect(result).toHaveLength(25);
-    expect(result.some((entry) => entry.skill.slug === "antigravity-image-generator")).toBe(true);
+    expect(result.some((entry) => entry.skill.slug === "antigravity-image-generator")).toBe(false);
   });
 
   it("orders lexical name matches above summary-only matches before popularity", async () => {
@@ -1336,7 +1845,7 @@ describe("search helpers", () => {
     expect(result[0]).not.toHaveProperty("matchReason");
   });
 
-  it("does not let vector recall make short summary-only skills eligible", async () => {
+  it("admits strong semantic recall without promoting it above lexical tiers", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const summaryOnly = {
       embeddingId: "skillEmbeddings:ai",
@@ -1368,7 +1877,8 @@ describe("search helpers", () => {
       { query: "ai", limit: 10 },
     );
 
-    expect(result).toEqual([]);
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["general-helper"]);
+    expect(result[0]?.semanticScore).toBe(0.99);
   });
 
   it("always includes an exact slug match even when vector exact matches already fill the limit", async () => {
@@ -1835,16 +2345,23 @@ describe("search helpers", () => {
     expect(__test.getNextCandidateLimit(1000, 1000)).toBeNull();
   });
 
+  it("normalizes native owner-qualified and skills.sh install identities", () => {
+    expect(__test.parseQualifiedSearchIdentity("@OpenClaw/Calendar")).toEqual({
+      native: { owner: "openclaw", slug: "calendar" },
+      external: "openclaw/calendar",
+    });
+    expect(__test.parseQualifiedSearchIdentity("skills-sh/Vercel-Labs/Skills/Find-Skills")).toEqual(
+      {
+        native: null,
+        external: "vercel-labs/skills/find-skills",
+      },
+    );
+  });
+
   it("boosts exact slug/name matches over loose matches", () => {
     const queryTokens = tokenize("notion");
-    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync", {
-      installsAllTime: 0,
-      stars: 0,
-    });
-    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync", {
-      installsAllTime: 100,
-      stars: 20,
-    });
+    const exactScore = __test.scoreSkillResult(queryTokens, 0.4, "Notion Sync", "notion-sync");
+    const looseScore = __test.scoreSkillResult(queryTokens, 0.6, "Notes Sync", "notes-sync");
     expect(exactScore).toBeGreaterThan(looseScore);
   });
 
@@ -1855,70 +2372,47 @@ describe("search helpers", () => {
       0.5,
       "Self Improving Agent",
       "self-improving-agent",
-      { installsAllTime: 0, stars: 0 },
     );
     const containingScore = __test.scoreSkillResult(
       queryTokens,
       0.6,
       "Self Improving Agent",
       "xiucheng-self-improving-agent",
-      { installsAllTime: 50, stars: 10 },
     );
     expect(exactScore).toBeGreaterThan(containingScore);
   });
 
   it("keeps extreme popularity below direct lexical relevance", () => {
     const queryTokens = tokenize("needle");
-    const exactScore = __test.scoreSkillResult(queryTokens, 0, "Unrelated Name", "needle", {
-      installsAllTime: 0,
-      stars: 0,
-    });
+    const exactScore = __test.scoreSkillResult(queryTokens, 0, "Unrelated Name", "needle");
     const popularLooseScore = __test.scoreSkillResult(
       queryTokens,
       0.9,
       "Different Tool",
       "different-tool",
-      { installsAllTime: 25_000, stars: 25_000 },
     );
     expect(exactScore).toBeGreaterThan(popularLooseScore);
   });
 
   it("keeps popularity from flipping a strong name match", () => {
     const queryTokens = tokenize("notion");
-    const nameMatchScore = __test.scoreSkillResult(queryTokens, 0, "Notion Helper", "helper", {
-      installsAllTime: 0,
-      stars: 0,
-    });
+    const nameMatchScore = __test.scoreSkillResult(queryTokens, 0, "Notion Helper", "helper");
     const popularVectorScore = __test.scoreSkillResult(
       queryTokens,
       1,
       "Different Tool",
       "different-tool",
-      { installsAllTime: 25_000, stars: 25_000 },
     );
     expect(nameMatchScore).toBeGreaterThan(popularVectorScore);
   });
 
-  it("adds stars and installs popularity for equally relevant matches", () => {
+  it("keeps lifetime stars and installs out of native candidate scoring", () => {
     const queryTokens = tokenize("notion");
-    const noPopularity = __test.scoreSkillResult(
-      queryTokens,
-      0.5,
-      "Notion Helper",
-      "notion-helper",
-      { installsAllTime: 0, stars: 0 },
-    );
-    const highInstallsOnly = __test.scoreSkillResult(
-      queryTokens,
-      0.5,
-      "Notion Helper",
-      "notion-helper",
-      { installsAllTime: 1000, stars: 0 },
-    );
-    expect(highInstallsOnly).toBeGreaterThan(noPopularity);
+    const score = __test.scoreSkillResult(queryTokens, 0.5, "Notion Helper", "notion-helper");
+    expect(score).toBe(__test.getLexicalBoost(queryTokens, "Notion Helper", "notion-helper") + 0.5);
   });
 
-  it("uses installs popularity in live skill search scoring", async () => {
+  it("does not use lifetime installs or downloads in native candidate scoring", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const installed = {
       embeddingId: "skillEmbeddings:installed",
@@ -1969,7 +2463,7 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
   });
 
-  it("breaks capped popularity ties by stars and installs before downloads", async () => {
+  it("does not use lifetime stars, installs, or downloads as a native tie-breaker", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const installedOnly = {
       skill: makePublicSkill({
@@ -2014,10 +2508,9 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-installed", "tool-downloaded"]);
   });
 
-  it("keeps skills.sh installs out of the native download ranking tie-breaker", async () => {
+  it("keeps native and combined lifetime downloads out of native tie-breakers", async () => {
     generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
     const indexed = {
-      nativeDownloads: 10,
       skill: makePublicSkill({
         id: "skills:indexed",
         slug: "tool-indexed",
@@ -2031,7 +2524,6 @@ describe("search helpers", () => {
       owner: null,
     };
     const native = {
-      nativeDownloads: 20,
       skill: makePublicSkill({
         id: "skills:native",
         slug: "tool-native",
@@ -2058,8 +2550,7 @@ describe("search helpers", () => {
       { query: "tool", limit: 2 },
     );
 
-    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-native", "tool-indexed"]);
-    expect(result[0]).not.toHaveProperty("nativeDownloads");
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["tool-indexed", "tool-native"]);
   });
 
   it("uses digest doc instead of full skill doc in hydrateResults but revalidates the owner", async () => {
@@ -2467,6 +2958,36 @@ function makeSkillDoc(params: {
     inferredCategories: params.inferredCategories,
     inferredFromVersionId: params.inferredFromVersionId,
     publicVersion: params.publicVersion,
+  };
+}
+
+function makeExternalSearchDigest(params: {
+  externalId: string;
+  publicVisible?: boolean;
+  installable?: boolean;
+}) {
+  const [, , slug = "skill"] = params.externalId.split("/");
+  return {
+    _id: `skillsShMirrorDigests:${params.externalId}`,
+    _creationTime: 1,
+    externalId: params.externalId,
+    slug,
+    displayName: slug,
+    normalizedSlug: slug,
+    normalizedSlugFirstToken: slug,
+    normalizedDisplayName: slug,
+    normalizedDisplayNameFirstToken: slug,
+    searchText: slug,
+    sourceUrl: `https://skills.sh/${params.externalId}`,
+    upstreamInstalls: 10,
+    upstreamScanners: {},
+    inferredCategories: [],
+    inferredTopics: [],
+    sourceFreshnessStatus: "observed-only",
+    active: true,
+    publicVisible: params.publicVisible ?? true,
+    installable: params.installable ?? true,
+    lastObservedAt: 1,
   };
 }
 

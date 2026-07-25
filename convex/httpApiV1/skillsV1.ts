@@ -20,6 +20,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { serializeCanonicalSkillSearchResults } from "../lib/canonicalSkillSearchResponse";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -87,28 +88,6 @@ const MAX_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_EXPORT_PAGE_LIMIT = 250;
 const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 const MAX_SECURITY_VERDICT_ITEMS = 100;
-
-type SearchSkillEntry = {
-  score: number;
-  skill: {
-    slug?: string;
-    displayName?: string;
-    summary?: string | null;
-    updatedAt?: number;
-    stats: {
-      downloads?: number;
-      stars?: number;
-      installs?: number;
-    };
-  } | null;
-  version: { version?: string; createdAt?: number } | null;
-  ownerHandle?: string | null;
-  owner?: {
-    handle?: string | null;
-    displayName?: string | null;
-    image?: string | null;
-  } | null;
-};
 
 type ListSkillsResult = {
   items: Array<{
@@ -1374,36 +1353,11 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     limit,
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-  })) as SearchSkillEntry[];
+  })) as unknown[];
 
-  return json(
-    {
-      results: results.map((result) => {
-        const owner = result.owner
-          ? {
-              handle: result.owner.handle ?? null,
-              displayName: result.owner.displayName ?? null,
-              image: result.owner.image ?? null,
-            }
-          : null;
-        return {
-          score: result.score,
-          slug: result.skill?.slug,
-          displayName: result.skill?.displayName,
-          summary: result.skill?.summary ?? null,
-          version: result.version?.version ?? null,
-          // searchSkills already returns the ordinary public skill shape, including
-          // the combined presentation value and no source-attribution fields.
-          downloads: result.skill?.stats.downloads ?? 0,
-          updatedAt: result.skill?.updatedAt,
-          ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
-          owner,
-        };
-      }),
-    },
-    200,
-    rate.headers,
-  );
+  // The action owns the canonical shape and ordering for every consumer.
+  // This HTTP surface must serialize it without projecting or re-sorting.
+  return json({ results: serializeCanonicalSkillSearchResults(results) }, 200, rate.headers);
 }
 
 export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Request) {

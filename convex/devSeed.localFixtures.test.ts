@@ -5,6 +5,7 @@ import {
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
   seedCatalogPresentationFixtures,
+  seedCanonicalSearchFixture,
   seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
@@ -26,6 +27,9 @@ const seedFeaturedPluginPackagesHandler = (
 )._handler;
 const seedCatalogPresentationFixturesHandler = (
   seedCatalogPresentationFixtures as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedCanonicalSearchFixtureHandler = (
+  seedCanonicalSearchFixture as unknown as WrappedHandler<Record<string, never>>
 )._handler;
 const seedGitHubBackedSkillSourceHandler = (
   seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
@@ -172,6 +176,26 @@ function seedSkillArgs(storageId: string) {
 }
 
 describe("devSeed local fixtures", () => {
+  it("idempotently seeds an activated external row for local canonical search proof", async () => {
+    const { db, tables } = createDb();
+
+    await seedCanonicalSearchFixtureHandler(createMutationCtx(db) as never, {});
+    await seedCanonicalSearchFixtureHandler(createMutationCtx(db) as never, {});
+
+    expect(tables.skillsShMirrorRuns).toHaveLength(1);
+    expect(tables.skillsShMirrorDigests).toHaveLength(1);
+    expect(tables.skillsShMirrorDigests?.[0]).toEqual(
+      expect.objectContaining({
+        externalId: "acme/skills/risk-auditor",
+        searchSummary: "Audit agent workflows for security and operational risk.",
+        active: true,
+        publicVisible: true,
+        installable: true,
+        sourceFreshnessStatus: "observed-only",
+      }),
+    );
+  });
+
   it("does not preconfigure GitHub-backed source fixtures in the local seed action", async () => {
     const mutationCalls: Array<{ args: Record<string, unknown> }> = [];
     const deletedStorageIds: string[] = [];

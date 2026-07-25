@@ -3248,6 +3248,7 @@ const skillsShMirrorDigests = defineTable({
   displayName: v.string(),
   normalizedDisplayName: v.string(),
   normalizedDisplayNameFirstToken: v.string(),
+  searchSummary: v.optional(v.string()),
   searchText: v.string(),
   sourceUrl: v.string(),
   canonicalRepoUrl: v.optional(v.string()),
@@ -3281,8 +3282,10 @@ const skillsShMirrorDigests = defineTable({
   sourceSnapshotId: v.string(),
   lastObservedRunId: v.id("skillsShMirrorRuns"),
   active: v.boolean(),
-  publicVisible: v.literal(false),
-  installable: v.literal(false),
+  // Mirror ingestion always writes both flags false. Separately accepted
+  // activation work may opt an exact row into public search/install surfaces.
+  publicVisible: v.boolean(),
+  installable: v.boolean(),
   tombstonedAt: v.optional(v.number()),
   firstObservedAt: v.number(),
   lastObservedAt: v.number(),
@@ -3290,6 +3293,36 @@ const skillsShMirrorDigests = defineTable({
   updatedAt: v.number(),
 })
   .index("by_external_id", ["externalId"])
+  .index("by_active_visible_installable_fresh_slug", {
+    fields: ["active", "publicVisible", "installable", "sourceFreshnessStatus", "normalizedSlug"],
+  })
+  .index("by_active_visible_installable_fresh_display", {
+    fields: [
+      "active",
+      "publicVisible",
+      "installable",
+      "sourceFreshnessStatus",
+      "normalizedDisplayName",
+    ],
+  })
+  .index("by_active_visible_installable_fresh_slug_token", {
+    fields: [
+      "active",
+      "publicVisible",
+      "installable",
+      "sourceFreshnessStatus",
+      "normalizedSlugFirstToken",
+    ],
+  })
+  .index("by_active_visible_installable_fresh_display_token", {
+    fields: [
+      "active",
+      "publicVisible",
+      "installable",
+      "sourceFreshnessStatus",
+      "normalizedDisplayNameFirstToken",
+    ],
+  })
   .index("by_active_and_normalized_slug", {
     fields: ["active", "normalizedSlug"],
   })
@@ -3316,7 +3349,7 @@ const skillsShMirrorDigests = defineTable({
   })
   .searchIndex("search_by_search_text", {
     searchField: "searchText",
-    filterFields: ["active"],
+    filterFields: ["active", "publicVisible", "installable", "sourceFreshnessStatus"],
   });
 
 const skillsShMirrorDetails = defineTable({

@@ -275,10 +275,17 @@ function formatPinnedDetails(entry?: { pinReason?: string }) {
 function formatSearchOwner(entry: {
   ownerHandle?: string | null;
   owner?: { handle?: string | null; displayName?: string | null } | null;
+  publisher?: { handle?: string | null; displayName?: string | null } | null;
+  sourceIdentity?: { owner?: string | null; host?: string | null };
 }) {
-  const handle = entry.ownerHandle ?? entry.owner?.handle;
+  const handle =
+    entry.publisher?.handle ??
+    entry.ownerHandle ??
+    entry.owner?.handle ??
+    entry.sourceIdentity?.owner ??
+    entry.sourceIdentity?.host;
   if (handle) return `@${handle}`;
-  return entry.owner?.displayName ?? "unknown owner";
+  return entry.publisher?.displayName ?? entry.owner?.displayName ?? "unknown owner";
 }
 
 export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number) {
@@ -302,7 +309,12 @@ export async function cmdSearch(opts: GlobalOpts, query: string, limit?: number)
     const rows = result.results.map((entry) => {
       const slug = entry.slug ?? "unknown";
       return {
-        slug: entry.version ? `${slug} v${entry.version}` : slug,
+        slug:
+          entry.source === "skills-sh" && entry.install?.reference
+            ? entry.install.reference
+            : entry.version
+              ? `${slug} v${entry.version}`
+              : slug,
         owner: formatSearchOwner(entry),
         name: entry.displayName ?? slug,
         metric: formatSearchMetric(entry),
@@ -329,7 +341,20 @@ function maxColumnWidth(values: string[]) {
   return values.reduce((max, value) => Math.max(max, value.length), 0);
 }
 
-function formatSearchMetric(entry: { downloads?: number; score: number }) {
+function formatSearchMetric(entry: {
+  downloads?: number;
+  score: number;
+  metrics?: { rolling60DayInstalls?: number | null };
+  sourceIdentity?: { lifetimeInstalls?: number | null };
+}) {
+  if (typeof entry.metrics?.rolling60DayInstalls === "number") {
+    const value = new Intl.NumberFormat("en-US").format(entry.metrics.rolling60DayInstalls);
+    return `${value} installs / 60d`;
+  }
+  if (typeof entry.sourceIdentity?.lifetimeInstalls === "number") {
+    const value = new Intl.NumberFormat("en-US").format(entry.sourceIdentity.lifetimeInstalls);
+    return `${value} skills.sh lifetime installs`;
+  }
   if (typeof entry.downloads === "number") {
     const value = new Intl.NumberFormat("en-US").format(entry.downloads);
     return `${value} ${entry.downloads === 1 ? "download" : "downloads"}`;

@@ -6,7 +6,7 @@ ClawHub search is a retrieval surface, not a browse fallback. A package, plugin,
 - exact or token-prefix match in taxonomy fields such as categories and author topics;
 - token-prefix match in exploratory fields such as summary, using a minimum query-token length for every query token to avoid short-query noise.
 
-Trust and business signals are not relevance signals. `official`, verification tier, security status, downloads, stars, installs, highlighting, and recency may break ties between already eligible matches or appear as filters/badges, but they must not make an otherwise unrelated item eligible for search.
+Trust and business signals are not relevance signals. They must not make an otherwise unrelated item eligible for search. Package/plugin search may use its documented adoption tie-breaks; canonical mixed skill search follows the stricter source-neutral contract below.
 
 Generic fallback categories such as `other` are browse groupings, not search evidence.
 
@@ -18,6 +18,19 @@ Search ranking should be lexicographic before it is numeric:
 4. summary match;
 
 Numeric scores, trust state, popularity, and recency may order results inside those broad tiers, but must not make a weaker-evidence match eligible for a stronger tier.
+
+## Canonical mixed skill search
+
+`search.searchSkills` is the one ordered search contract for native ClawHub skills and publicly activated skills.sh mirror rows. It is separate from browse recommendation and Trending.
+
+- Candidate retrieval is bounded and indexed. Native lexical/vector recall and external exact, prefix, first-token, and full-text recall are merged before one final ordering pass; no full-corpus scan is allowed.
+- Shared relevance tiers are exact identity/name, exact token, prefix token, taxonomy, summary/content, then semantic-only recall. Semantic recall can add a candidate but can never displace a lexical candidate from a stronger tier.
+- Official and Featured may reorder only candidates with the same relevance evidence. Within comparable relevance, use ClawHub-observed rolling 60-day installs, then rolling Bookmarks and freshness.
+- Lifetime ClawHub downloads, lifetime OpenClaw installs, skills.sh lifetime installs, GitHub stars, scanner status, and cross-source percentile normalization have zero ordering weight. They may still be returned as clearly labeled metadata.
+- Native public-browse/installability checks and external `active && publicVisible && installable && observed-only && !tombstoned` checks run before ranking. Upstream scanner observations remain source metadata, not a ClawHub verdict.
+- The canonical result includes a ClawHub route, source link, publisher/official metadata, install reference, source identity, trust metadata, rolling metrics, and the native rendering payload when applicable. HTTP, CLI, and web consumers preserve the action order by default.
+
+External install references use `skills-sh/<owner>/<repo>/<slug>` and their canonical ClawHub routes use `/skills-sh/<owner>/<repo>/<slug>`.
 
 ## Exact-Match Squat Gate
 

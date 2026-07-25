@@ -40,7 +40,7 @@ vi.mock("../../convex/_generated/api", () => ({
       listPublicTrendingPage: "skills:listPublicTrendingPage",
     },
     search: {
-      searchSkills: "search:searchSkills",
+      searchNativeSkills: "search:searchNativeSkills",
     },
   },
 }));
@@ -341,7 +341,7 @@ describe("HomeListingSection", () => {
     fireEvent.change(searchInput, { target: { value: "alpha" } });
 
     await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchSkills", {
+      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
         query: "alpha",
         limit: 20,
       });
@@ -380,7 +380,7 @@ describe("HomeListingSection", () => {
     fireEvent.change(searchInput, { target: { value: "alpha" } });
 
     await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchSkills", {
+      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
         query: "alpha",
         limit: 20,
         categorySlug: "development",
@@ -615,7 +615,7 @@ describe("HomeListingSection", () => {
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "search" } });
 
     await waitFor(() => {
-      expect(convexActionMock).toHaveBeenCalledWith("search:searchSkills", {
+      expect(convexActionMock).toHaveBeenCalledWith("search:searchNativeSkills", {
         query: "search",
         limit: 20,
         highlightedOnly: true,

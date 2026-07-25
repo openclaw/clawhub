@@ -92,6 +92,31 @@ describe("httpApi handlers", () => {
     });
   });
 
+  it("searchSkillsHttp preserves canonical mixed action shape and order", async () => {
+    const ordered = [
+      {
+        id: "skills-sh:acme/skills/calendar",
+        source: "skills-sh",
+        slug: "calendar",
+        canonicalUrl: "/skills-sh/acme/skills/calendar",
+      },
+      {
+        id: "clawhub:skills:calendar",
+        source: "clawhub",
+        slug: "calendar-native",
+        canonicalUrl: "/openclaw/skills/calendar-native",
+      },
+    ];
+    const response = await __handlers.searchSkillsHandler(
+      makeCtx({ runAction: vi.fn().mockResolvedValue(ordered) }),
+      new Request("https://example.com/api/search?q=calendar"),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      results: [ordered[0], { ...ordered[1], owner: null }],
+    });
+  });
+
   it("searchSkillsHttp omits highlightedOnly when approvedOnly is false", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(

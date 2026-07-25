@@ -1963,6 +1963,51 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("search preserves canonical mixed result shape and action order", async () => {
+    const ordered = [
+      {
+        id: "clawhub:skills:exact",
+        source: "clawhub",
+        slug: "exact",
+        score: 6_110,
+        canonicalUrl: "/openclaw/skills/exact",
+        publisher: {
+          handle: "openclaw",
+          displayName: "OpenClaw",
+          image: "https://example.com/avatar.png",
+          official: true,
+        },
+      },
+      {
+        id: "skills-sh:vercel-labs/skills/find-skills",
+        source: "skills-sh",
+        slug: "find-skills",
+        score: 5_095,
+        canonicalUrl: "/skills-sh/vercel-labs/skills/find-skills",
+      },
+    ];
+    const runAction = vi.fn().mockResolvedValue(ordered);
+    const response = await __handlers.searchSkillsV1Handler(
+      makeCtx({ runAction, runMutation: vi.fn().mockResolvedValue(okRate()) }),
+      new Request("https://example.com/api/v1/search?q=find"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      results: [
+        {
+          ...ordered[0],
+          owner: {
+            handle: "openclaw",
+            displayName: "OpenClaw",
+            image: "https://example.com/avatar.png",
+          },
+        },
+        ordered[1],
+      ],
+    });
+  });
+
   it("search forwards nonSuspiciousOnly", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());

@@ -1,7 +1,7 @@
 import type { Doc } from "../../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicSkill } from "../../lib/publicUser";
 
-export type SkillListEntry = {
+export type NativeSkillListEntry = {
   skill: PublicSkill;
   latestVersion: {
     version: string;
@@ -24,12 +24,72 @@ export type SkillListEntry = {
 };
 
 export type SkillSearchEntry = {
-  skill: PublicSkill;
-  version: Doc<"skillVersions"> | null;
+  id: string;
+  source: "clawhub" | "skills-sh";
+  slug: string;
+  displayName: string;
+  summary: string | null;
   score: number;
-  ownerHandle?: string | null;
-  owner?: PublicPublisher | null;
+  canonicalUrl: string;
+  links: {
+    canonical: string;
+    source: string | null;
+  };
+  official: boolean;
+  featured: boolean;
+  publisher: {
+    kind: "user" | "org";
+    handle: string | null;
+    displayName: string | null;
+    image: string | null;
+    official: boolean;
+  } | null;
+  install: {
+    kind: "clawhub" | "github" | "skills-sh";
+    reference: string;
+    sourceUrl: string | null;
+  };
+  sourceIdentity: {
+    id: string;
+    owner: string | null;
+    repo: string | null;
+    host: string | null;
+    lifetimeInstalls: number | null;
+  };
+  trust: {
+    visibility: "public";
+    installability: "installable";
+    clawHubVerdict: string | null;
+    upstreamScanners: unknown;
+    sourceFreshness: "native" | "observed-only";
+  };
+  metrics: {
+    rolling60DayInstalls: number | null;
+    bookmarks: number | null;
+    updatedAt: number;
+  };
+  native: {
+    skill: PublicSkill;
+    version: Doc<"skillVersions"> | null;
+    owner: PublicPublisher | null;
+    ownerHandle: string | null;
+  } | null;
+  ownerHandle: string | null;
+  version: string | null;
+  downloads: number | null;
+  updatedAt: number;
 };
+
+export type ExternalSkillListEntry = {
+  external: SkillSearchEntry;
+  searchScore: number;
+};
+
+export type SkillListEntry = NativeSkillListEntry | ExternalSkillListEntry;
+
+export function isExternalSkillListEntry(entry: SkillListEntry): entry is ExternalSkillListEntry {
+  return "external" in entry;
+}
 
 export function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {
   const owner = ownerHandle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
