@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 import { routeVercelProtectionBypass } from "./helpers/vercelProtection";
@@ -7,6 +7,8 @@ test.skip(
   process.env.CLAWHUB_E2E_SKILLS_SH_EXTERNAL !== "1",
   "requires the controlled CLAW-583 permanent-Test fixture",
 );
+
+test.use({ video: { mode: "on", size: { width: 1440, height: 900 } } });
 
 test("searches and opens the stored unscanned skills.sh listing", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
@@ -21,6 +23,7 @@ test("searches and opens the stored unscanned skills.sh listing", async ({ page 
   await expect(result).toBeVisible();
   await expect(result.getByText("Not scanned by ClawHub")).toBeVisible();
   await page.screenshot({ path: "proof/claw-583/external-search.png", fullPage: true });
+  await page.waitForTimeout(1_000);
 
   await result.click();
   await expect(page).toHaveURL(/\/skills-sh\/patrick-erichsen\/skills\/html$/);
@@ -45,4 +48,11 @@ test("searches and opens the stored unscanned skills.sh listing", async ({ page 
   await expect(claim).toHaveAttribute("href", /sourcePath=skills%2Fhtml/);
   await page.screenshot({ path: "proof/claw-583/external-detail.png", fullPage: true });
   await expectHealthyPage(page, errors);
+
+  await page.waitForTimeout(2_000);
+  const video = page.video();
+  await page.close();
+  const videoPath = await video?.path();
+  expect(videoPath).toBeTruthy();
+  await copyFile(videoPath!, "proof/claw-583/external-flow.webm");
 });

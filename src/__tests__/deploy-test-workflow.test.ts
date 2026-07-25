@@ -303,6 +303,7 @@ describe("Test deploy workflow", () => {
     expect(upload?.uses).toBe("actions/upload-artifact@v7");
     expect(upload?.with?.name).toBe("claw583-external-catalog-proof");
     expect(upload?.with?.["if-no-files-found"]).toBe("error");
+    expect(upload?.with?.path).toContain("proof/claw-583/external-flow.webm");
     expect(upload?.with?.path).toContain("proof/claw-583/external-detail.png");
     expect(upload?.with?.path).toContain("claw583-cleanup-readback.json");
   });

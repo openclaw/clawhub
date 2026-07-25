@@ -1086,6 +1086,7 @@ jobs:
           if-no-files-found: error
           path: |
             proof/claw-583/active-fixture.json
+            proof/claw-583/external-flow.webm
             proof/claw-583/external-search.png
             proof/claw-583/external-detail.png
             claw583-fixture-before.json
