@@ -283,14 +283,16 @@ describe("buildGitHubSourceImport", () => {
 });
 
 describe("buildGitHubSkillSourceFetch", () => {
-  it("uses the general token for publisher-selected public repositories", async () => {
+  it("uses public API auth without sending OAuth app credentials to codeload", async () => {
     const previousEnv = {
       token: process.env.GITHUB_TOKEN,
       appId: process.env.GITHUB_APP_ID,
       installationId: process.env.GITHUB_APP_INSTALLATION_ID,
       privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+      oauthClientId: process.env.AUTH_GITHUB_ID,
+      oauthClientSecret: process.env.AUTH_GITHUB_SECRET,
     };
-    process.env.GITHUB_TOKEN = "github-token";
+    delete process.env.GITHUB_TOKEN;
     const { privateKey } = generateKeyPairSync("rsa", {
       modulusLength: 2048,
       privateKeyEncoding: { type: "pkcs1", format: "pem" },
@@ -299,6 +301,8 @@ describe("buildGitHubSkillSourceFetch", () => {
     process.env.GITHUB_APP_ID = "3536245";
     process.env.GITHUB_APP_INSTALLATION_ID = "987654";
     process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+    process.env.AUTH_GITHUB_ID = "oauth-client-id";
+    process.env.AUTH_GITHUB_SECRET = "oauth-client-secret";
     const fetcher = vi.fn(async () => new Response("ok"));
     const wrapped = __test.buildGitHubSkillSourceFetch(fetcher as unknown as typeof fetch);
 
@@ -317,6 +321,10 @@ describe("buildGitHubSkillSourceFetch", () => {
       else process.env.GITHUB_APP_INSTALLATION_ID = previousEnv.installationId;
       if (previousEnv.privateKey === undefined) delete process.env.GITHUB_APP_PRIVATE_KEY;
       else process.env.GITHUB_APP_PRIVATE_KEY = previousEnv.privateKey;
+      if (previousEnv.oauthClientId === undefined) delete process.env.AUTH_GITHUB_ID;
+      else process.env.AUTH_GITHUB_ID = previousEnv.oauthClientId;
+      if (previousEnv.oauthClientSecret === undefined) delete process.env.AUTH_GITHUB_SECRET;
+      else process.env.AUTH_GITHUB_SECRET = previousEnv.oauthClientSecret;
     }
 
     const calls = fetcher.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
@@ -324,9 +332,11 @@ describe("buildGitHubSkillSourceFetch", () => {
     const firstHeaders = calls[0]?.[1]?.headers as Headers;
     const secondHeaders = calls[1]?.[1]?.headers as Headers;
     const thirdInit = calls[2]?.[1];
-    expect(firstHeaders.get("Authorization")).toBe("Bearer github-token");
+    expect(firstHeaders.get("Authorization")).toBe(
+      `Basic ${btoa("oauth-client-id:oauth-client-secret")}`,
+    );
     expect(firstHeaders.get("Accept")).toBe("application/vnd.github+json");
-    expect(secondHeaders.get("Authorization")).toBe("Bearer github-token");
+    expect(secondHeaders.get("Authorization")).toBeNull();
     expect(secondHeaders.get("User-Agent")).toBe("clawhub/github-skill-source");
     expect(thirdInit).toBeUndefined();
   });
@@ -355,7 +365,13 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("stores a canonical lowercase repo identity for alias lookups", async () => {
+  it("uses Test OAuth app auth and stores a canonical lowercase repo identity", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("GITHUB_APP_ID", "");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "");
+    vi.stubEnv("AUTH_GITHUB_ID", "oauth-client-id");
+    vi.stubEnv("AUTH_GITHUB_SECRET", "oauth-client-secret");
     const zip = zipSync({
       "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
     });
@@ -420,6 +436,12 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     );
 
     expect(result).toEqual({ ok: true, stats: { discovered: 1 } });
+    const calls = fetchMock.mock.calls as unknown as Array<[RequestInfo | URL, RequestInit?]>;
+    const expectedAuthorization = `Basic ${btoa("oauth-client-id:oauth-client-secret")}`;
+    expect(new Headers(calls[0]?.[1]?.headers).get("Authorization")).toBe(expectedAuthorization);
+    expect(new Headers(calls[1]?.[1]?.headers).get("Authorization")).toBe(expectedAuthorization);
+    expect(new Headers(calls[2]?.[1]?.headers).get("Authorization")).toBeNull();
+    expect(new Headers(calls[3]?.[1]?.headers).get("Authorization")).toBe(expectedAuthorization);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

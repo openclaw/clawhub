@@ -2375,7 +2375,7 @@ async function fetchPublicGitHubRepoMetadata(
   const response = await fetcher(
     `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repoName)}`,
     {
-      headers: await buildGitHubSkillSourceHeaders(fetcher),
+      headers: await buildGitHubSkillSourceHeaders(fetcher, true),
     },
   );
   if (!response.ok) {
@@ -2437,35 +2437,44 @@ async function revalidateGitHubRepoMetadata(expected: GitHubRepoMetadata, fetche
   return current;
 }
 
-async function buildGitHubSkillSourceHeaders(fetcher: typeof fetch) {
+async function buildGitHubSkillSourceHeaders(
+  fetcher: typeof fetch,
+  useOAuthAppClientCredentials = false,
+) {
   return await buildGitHubApiHeaders({
     userAgent: "clawhub/github-skill-source",
     fetchImpl: fetcher,
     // Installation tokens are repository-scoped and cannot reliably read an
     // arbitrary public repository selected by a publisher.
     useGitHubApp: false,
+    useOAuthAppClientCredentials,
   });
 }
 
 function buildGitHubSkillSourceFetch(fetcher: typeof fetch): typeof fetch {
   return (async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (!shouldAttachGitHubSkillSourceHeaders(input)) return fetcher(input, init);
+    const hostname = getGitHubSkillSourceHostname(input);
+    if (!hostname) return fetcher(input, init);
     const headers = new Headers(init?.headers);
-    for (const [key, value] of Object.entries(await buildGitHubSkillSourceHeaders(fetcher))) {
+    for (const [key, value] of Object.entries(
+      await buildGitHubSkillSourceHeaders(fetcher, hostname === "api.github.com"),
+    )) {
       if (!headers.has(key)) headers.set(key, value);
     }
     return fetcher(input, { ...init, headers });
   }) as typeof fetch;
 }
 
-function shouldAttachGitHubSkillSourceHeaders(input: RequestInfo | URL) {
+function getGitHubSkillSourceHostname(input: RequestInfo | URL) {
   const urlString =
     typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
   try {
     const url = new URL(urlString);
-    return url.hostname === "api.github.com" || url.hostname === "codeload.github.com";
+    return url.hostname === "api.github.com" || url.hostname === "codeload.github.com"
+      ? url.hostname
+      : null;
   } catch {
-    return false;
+    return null;
   }
 }
 

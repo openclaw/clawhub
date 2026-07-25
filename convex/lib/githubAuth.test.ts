@@ -99,4 +99,36 @@ describe("githubAuth", () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("can authenticate public API reads with the configured OAuth app", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "");
+    vi.stubEnv("AUTH_GITHUB_ID", "oauth-client-id");
+    vi.stubEnv("AUTH_GITHUB_SECRET", "oauth-client-secret");
+
+    await expect(
+      buildGitHubApiHeaders({
+        userAgent: "clawhub/test",
+        useGitHubApp: false,
+        useOAuthAppClientCredentials: true,
+      }),
+    ).resolves.toEqual({
+      Accept: "application/vnd.github+json",
+      Authorization: `Basic ${btoa("oauth-client-id:oauth-client-secret")}`,
+      "User-Agent": "clawhub/test",
+    });
+  });
+
+  it("prefers a general token over OAuth app client credentials", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "ghp_pat_token");
+    vi.stubEnv("AUTH_GITHUB_ID", "oauth-client-id");
+    vi.stubEnv("AUTH_GITHUB_SECRET", "oauth-client-secret");
+
+    await expect(
+      buildGitHubApiHeaders({
+        userAgent: "clawhub/test",
+        useGitHubApp: false,
+        useOAuthAppClientCredentials: true,
+      }),
+    ).resolves.toMatchObject({ Authorization: "Bearer ghp_pat_token" });
+  });
 });

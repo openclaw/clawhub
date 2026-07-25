@@ -11,6 +11,11 @@ type GitHubAppConfig = {
   privateKey: string;
 };
 
+type GitHubOAuthAppConfig = {
+  clientId: string;
+  clientSecret: string;
+};
+
 type InstallationToken = {
   token: string;
   expiresAt: number;
@@ -33,6 +38,7 @@ export async function buildGitHubApiHeaders(options: {
   fetchImpl?: FetchImpl;
   allowAnonymous?: boolean;
   useGitHubApp?: boolean;
+  useOAuthAppClientCredentials?: boolean;
 }): Promise<Record<string, string>> {
   const headers = buildGitHubHeaders({
     userAgent: options.userAgent,
@@ -54,6 +60,14 @@ export async function buildGitHubApiHeaders(options: {
   if (token) {
     headers.Authorization = `Bearer ${token}`;
     return headers;
+  }
+
+  if (options.useOAuthAppClientCredentials) {
+    const oauthApp = readGitHubOAuthAppConfig(process.env);
+    if (oauthApp) {
+      headers.Authorization = `Basic ${base64String(`${oauthApp.clientId}:${oauthApp.clientSecret}`)}`;
+      return headers;
+    }
   }
 
   if (options.allowAnonymous === false) {
@@ -157,6 +171,13 @@ function readGitHubAppConfig(env: NodeJS.ProcessEnv): GitHubAppConfig | null {
   return { appId, installationId, privateKey };
 }
 
+function readGitHubOAuthAppConfig(env: NodeJS.ProcessEnv): GitHubOAuthAppConfig | null {
+  const clientId = env.AUTH_GITHUB_ID?.trim();
+  const clientSecret = env.AUTH_GITHUB_SECRET?.trim();
+  if (!clientId || !clientSecret) return null;
+  return { clientId, clientSecret };
+}
+
 async function createGitHubAppJwt(appId: string, rawPrivateKey: string, nowMs: number) {
   const now = Math.floor(nowMs / 1000);
   const header = { alg: "RS256", typ: "JWT" };
@@ -247,6 +268,12 @@ function concatBytes(parts: Uint8Array[]) {
 
 function base64UrlString(value: string) {
   return base64UrlBytes(new TextEncoder().encode(value));
+}
+
+function base64String(value: string) {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(value)) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 function base64UrlBytes(value: Uint8Array) {
