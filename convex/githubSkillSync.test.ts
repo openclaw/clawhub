@@ -348,7 +348,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
-  it("configures any public GitHub repo for an official publisher the user can manage", async () => {
+  it("stores a canonical lowercase repo identity for alias lookups", async () => {
     const zip = zipSync({
       "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
     });
@@ -416,7 +416,7 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        repo: "SomeoneElse/public-skills",
+        repo: "someoneelse/public-skills",
         ownerUserId: "users:publisher-owner",
         ownerPublisherId: "publishers:local",
         snapshot: expect.objectContaining({

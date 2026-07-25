@@ -1867,9 +1867,10 @@ export async function configurePublicGitHubSkillSourceHandler(
   if (snapshot.skills.length === 0) {
     throw new ConvexError("No skills were found in that public GitHub repo.");
   }
+  const canonicalRepo = normalizeRepo(revalidatedMetadata.repo).toLowerCase();
   return await applyFetchedGitHubSkillSourceSnapshot(ctx, {
     sourceId: setup.existingSource?._id,
-    repo: revalidatedMetadata.repo,
+    repo: canonicalRepo,
     ownerUserId: setup.ownerUserId,
     ownerPublisherId: args.ownerPublisherId,
     githubRepositoryId: revalidatedMetadata.repositoryId,
