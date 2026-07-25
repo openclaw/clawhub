@@ -416,6 +416,14 @@ describe("skills.sh external mirror", () => {
         rows,
       }),
     ).resolves.toMatchObject({ counts: { trendingHydrationAttempts: 50 } });
+    await expect(
+      t.mutation(mirrorLeaseRefs.claimBatchLeaseInternal, {
+        runId: trending.runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+      }),
+    ).resolves.toMatchObject({ trendingHydrationAttempts: 50 });
 
     await expect(
       t.mutation(trendingRefs.hydrateTrendingBatchInternal, {

@@ -344,30 +344,6 @@ export default defineEventHandler(async (event) => {
           `skills.sh trending source total ${source.catalogTotal} exceeds the Test capacity`,
         );
       }
-      const sourceExternalIds = source.sourcePages.flatMap((page) =>
-        page.rows.map((row) => requireString(row.id as string, "externalId")),
-      );
-      const hydratableExternalIds = new Set<string>();
-      for (let offset = 0; offset < sourceExternalIds.length; offset += MIRROR_BATCH_SIZE) {
-        const joinState = await callConvexOperator(authorization, {
-          operation: "mirror-trending-join-state",
-          externalIds: sourceExternalIds.slice(offset, offset + MIRROR_BATCH_SIZE),
-        });
-        if (!Array.isArray(joinState.missingExternalIds)) {
-          throw new Error("skills.sh trending join state is invalid");
-        }
-        const batchHydratableExternalIds = Array.isArray(joinState.hydratableExternalIds)
-          ? joinState.hydratableExternalIds
-          : joinState.missingExternalIds;
-        for (const value of batchHydratableExternalIds) {
-          hydratableExternalIds.add(requireString(value as string, "externalId").toLowerCase());
-        }
-        if (hydratableExternalIds.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
-          throw new Error(
-            `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
-          );
-        }
-      }
       let sourceCaptureWrites = 0;
       for (const page of source.sourcePages) {
         const stored = await callConvexOperator(authorization, {
@@ -723,6 +699,16 @@ export default defineEventHandler(async (event) => {
           1,
           MAX_TEST_SOURCE_ROWS,
         );
+        const trendingHydrationAttempts = requireInteger(
+          typeof lease.trendingHydrationAttempts === "number"
+            ? lease.trendingHydrationAttempts
+            : undefined,
+          "lease.trendingHydrationAttempts",
+          0,
+          MAX_TRENDING_HYDRATIONS_PER_RUN,
+        );
+        const remainingHydrationBudget =
+          MAX_TRENDING_HYDRATIONS_PER_RUN - trendingHydrationAttempts;
         const sourcePage =
           lease.sourcePage &&
           typeof lease.sourcePage === "object" &&
@@ -765,17 +751,24 @@ export default defineEventHandler(async (event) => {
           ? joinState.hydratableExternalIds
           : joinState.missingExternalIds;
         const hydratable = new Set(
-          hydratableExternalIds.map((value) => requireString(value as string, "externalId")),
+          hydratableExternalIds.map((value) =>
+            requireString(value as string, "externalId").toLowerCase(),
+          ),
         );
-        if (hydratable.size > MAX_TRENDING_HYDRATIONS_PER_RUN) {
-          throw new Error(
-            `trending exceptional hydration exceeds ${MAX_TRENDING_HYDRATIONS_PER_RUN} rows`,
-          );
-        }
-        if (hydratable.size > 0) {
-          const missingRows = listRows.filter((row) =>
-            hydratable.has(String(row.id).toLowerCase()),
-          );
+        const selectedExternalIds = new Set<string>();
+        const missingRows = listRows.filter((row) => {
+          const externalId = requireString(row.id as string, "externalId").toLowerCase();
+          if (
+            selectedExternalIds.size >= remainingHydrationBudget ||
+            selectedExternalIds.has(externalId) ||
+            !hydratable.has(externalId)
+          ) {
+            return false;
+          }
+          selectedExternalIds.add(externalId);
+          return true;
+        });
+        if (missingRows.length > 0) {
           const beforeRequest = createBatchLeaseHeartbeat({
             authorization,
             runId,

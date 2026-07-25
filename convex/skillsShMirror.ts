@@ -1311,6 +1311,7 @@ export const claimBatchLeaseInternal = internalMutation({
       sourcePageSize: run.sourcePageSize,
       sourceMeasuredAt: run.sourceMeasuredAt,
       sourceDurationMs: run.sourceDurationMs ?? 0,
+      trendingHydrationAttempts: runCounts(run.counts).trendingHydrationAttempts,
       sourcePage,
       page: run.page,
       offset: run.offset,

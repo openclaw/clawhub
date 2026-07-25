@@ -1393,7 +1393,7 @@ describe("skills.sh permanent Test mirror route", () => {
     expect(calls).toContainEqual(expect.objectContaining({ operation: "mirror-start" }));
   });
 
-  it("rejects cumulative trending hydration drift before storing or starting a run", async () => {
+  it("captures and starts trending without a full-corpus join preflight", async () => {
     readBodyMock.mockResolvedValue({ operation: "start-trending", reason: "CLAW-589 proof" });
     const rows = Array.from({ length: 60 }, (_, index) => ({
       ...capturedSourcePage().rows[0],
@@ -1417,37 +1417,33 @@ describe("skills.sh permanent Test mirror route", () => {
       evidence: { endpointExhausted: true, uniqueIds: rows.length, duplicateIds: 0 },
     });
     const calls: Array<Record<string, unknown>> = [];
-    let joinStateCalls = 0;
     const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body));
       calls.push(body);
       if (body.operation === "mirror-status") {
         return new Response(JSON.stringify({ control: { enabled: true }, runs: [] }));
       }
-      if (body.operation === "mirror-trending-join-state") {
-        joinStateCalls += 1;
-        const missingCount = joinStateCalls === 1 ? 41 : 10;
-        return new Response(
-          JSON.stringify({
-            joinedExternalIds: body.externalIds.slice(missingCount),
-            missingExternalIds: body.externalIds.slice(0, missingCount),
-          }),
-        );
+      if (body.operation === "mirror-source-page-store") {
+        return new Response(JSON.stringify({ stored: true, page: 0, rows: rows.length }));
       }
-      return new Response(JSON.stringify({ stored: true }));
+      if (body.operation === "mirror-source-summary") {
+        return new Response(JSON.stringify({ pageDocuments: 1, rows: rows.length }));
+      }
+      return new Response(
+        JSON.stringify({ runId: "skillsShMirrorRuns:trending", status: "running" }),
+      );
     });
     vi.stubGlobal("fetch", convexFetch);
 
     const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
     const response = (await handler({} as never)) as Response;
 
-    expect(response.status).toBe(502);
-    await expect(response.json()).resolves.toMatchObject({
-      message: "trending exceptional hydration exceeds 50 rows",
-    });
-    expect(joinStateCalls).toBe(2);
-    expect(calls.some((body) => body.operation === "mirror-source-page-store")).toBe(false);
-    expect(calls.some((body) => body.operation === "mirror-start")).toBe(false);
+    expect(response.status).toBe(200);
+    expect(calls.some((body) => body.operation === "mirror-trending-join-state")).toBe(false);
+    expect(calls).toContainEqual(
+      expect.objectContaining({ operation: "mirror-source-page-store" }),
+    );
+    expect(calls).toContainEqual(expect.objectContaining({ operation: "mirror-start" }));
   });
 
   it("does not spend the trending hydration bound on known mirror quarantines", async () => {
@@ -1528,6 +1524,7 @@ describe("skills.sh permanent Test mirror route", () => {
           JSON.stringify({
             sourceView: "trending",
             sourceTotal: 1,
+            trendingHydrationAttempts: 0,
             sourcePage: {
               ...capturedSourcePage(0, 1, false, "trending-page-0"),
               sourceView: "trending",
@@ -1593,6 +1590,7 @@ describe("skills.sh permanent Test mirror route", () => {
           JSON.stringify({
             sourceView: "trending",
             sourceTotal: 1,
+            trendingHydrationAttempts: 0,
             sourcePage: {
               ...capturedSourcePage(0, 1, false, "trending-page-0"),
               sourceView: "trending",
@@ -1634,5 +1632,94 @@ describe("skills.sh permanent Test mirror route", () => {
       }),
     );
     expect(calls).toContainEqual(expect.objectContaining({ operation: "mirror-trending-batch" }));
+  });
+
+  it("hydrates only the remaining cumulative trending budget and leaves overflow missing", async () => {
+    readBodyMock.mockResolvedValue({
+      operation: "step-trending",
+      runId: "skillsShMirrorRuns:trending",
+      page: 0,
+      offset: 0,
+    });
+    const sourceRows = Array.from({ length: 3 }, (_, index) => ({
+      ...capturedSourcePage().rows[0],
+      id: `owner/repo/missing-${index + 1}`,
+      installs: index + 1,
+    }));
+    fetchBatchMock.mockResolvedValue({
+      sourceRequests: 2,
+      sourceBytes: 1_024,
+      rows: [
+        {
+          externalId: "owner/repo/missing-1",
+          sourceType: "github",
+          upstreamInstalls: 1,
+        },
+      ],
+    });
+    const calls: Array<Record<string, unknown>> = [];
+    const convexFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      calls.push(body);
+      if (body.operation === "mirror-batch-claim") {
+        return new Response(
+          JSON.stringify({
+            sourceView: "trending",
+            sourceTotal: sourceRows.length,
+            trendingHydrationAttempts: 49,
+            sourcePage: {
+              ...capturedSourcePage(0, sourceRows.length, false, "trending-page-0"),
+              sourceView: "trending",
+              sourceTotal: sourceRows.length,
+              rows: sourceRows,
+            },
+          }),
+        );
+      }
+      if (body.operation === "mirror-trending-join-state") {
+        return new Response(
+          JSON.stringify({
+            joinedExternalIds: [],
+            missingExternalIds: body.externalIds,
+            hydratableExternalIds: body.externalIds,
+            knownConflictExternalIds: [],
+          }),
+        );
+      }
+      if (body.operation === "mirror-classification-states") {
+        return new Response(JSON.stringify({ states: [] }));
+      }
+      return new Response(JSON.stringify({ status: "running" }));
+    });
+    vi.stubGlobal("fetch", convexFetch);
+
+    const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
+    const response = (await handler({} as never)) as Response;
+
+    expect(response.status).toBe(200);
+    expect(fetchBatchMock).toHaveBeenCalledWith(
+      { page: 0, offset: 0, limit: 1, maxDetailBytes: 64 * 1024 },
+      expect.objectContaining({
+        sourcePage: expect.objectContaining({
+          data: [expect.objectContaining({ id: "owner/repo/missing-1" })],
+        }),
+      }),
+    );
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        operation: "mirror-trending-hydrate",
+        rows: [expect.objectContaining({ externalId: "owner/repo/missing-1" })],
+      }),
+    );
+    expect(calls).toContainEqual(
+      expect.objectContaining({
+        operation: "mirror-trending-batch",
+        rows: [
+          expect.objectContaining({ externalId: "owner/repo/missing-1", rank: 1 }),
+          expect.objectContaining({ externalId: "owner/repo/missing-2", rank: 2 }),
+          expect.objectContaining({ externalId: "owner/repo/missing-3", rank: 3 }),
+        ],
+      }),
+    );
   });
 });
