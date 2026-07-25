@@ -30,9 +30,9 @@ points to its manifest:
 }
 ```
 
-`CLAW.md` starts with the grouped Claw manifest as YAML frontmatter. Its
-non-empty Markdown body becomes the managed `SOUL.md` for the new agent, so do
-not also declare an explicit `SOUL.md` bootstrap or supporting-file destination.
+`CLAW.md` starts with the grouped Claw manifest as YAML frontmatter. A non-empty
+Markdown body is the portable agent prompt; OpenClaw applies its exact UTF-8
+contents as the managed `SOUL.md` for the new agent.
 
 ```markdown
 ---
@@ -60,8 +60,13 @@ Reviews and classifies incoming GitHub issues.
 ```
 
 JSON manifests remain compatible. Set `openclaw.claw` to a package-relative
-JSON file such as `openclaw.claw.json`. JSON has no implicit body file and may
-declare an explicit `SOUL.md` source.
+JSON file such as `openclaw.claw.json`; JSON has no Markdown body, so declare
+`workspace.bootstrapFiles.SOUL.md` explicitly when it needs the equivalent
+prompt.
+
+Do not combine a non-empty `CLAW.md` body with an explicit workspace file whose
+portable destination is `SOUL.md`. ClawHub rejects that ambiguous dual source.
+Headings and task lists in the body are prompt text, not package-time commands.
 
 Every `workspace.*.source` must name a file in the same package. Package names
 and versions must match `package.json`, dependency versions must be exact, and
@@ -90,7 +95,7 @@ Publication rejects:
 - a missing, invalid, or escaping `openclaw.claw` path;
 - package identity or version mismatches;
 - malformed `CLAW.md` frontmatter or manifest fields;
-- an empty `CLAW.md` body or simultaneous explicit `SOUL.md` destination;
+- a non-empty `CLAW.md` body combined with an explicit `SOUL.md` destination;
 - missing workspace source files or portable path collisions;
 - floating skill/plugin versions and resolved MCP credentials.
 

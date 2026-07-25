@@ -5,10 +5,6 @@ agent:
   name: Hosted E2E
 metadata:
   openclaw.config: profiles/openclaw.yml
-workspace:
-  bootstrapFiles:
-    SOUL.md:
-      source: workspace/SOUL.md
 packages: []
 mcpServers: {}
 cronJobs: []
@@ -16,4 +12,4 @@ cronJobs: []
 
 # Hosted E2E
 
-Fixture for the ClawHub feed-to-OpenClaw dry-run proof.
+Use the published Claw package without mutating local state during proof.

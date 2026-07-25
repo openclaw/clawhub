@@ -2601,7 +2601,7 @@ describe("package commands", () => {
           "metadata:",
           "  openclaw.config: profiles/openclaw.yml",
           "---",
-          "# GitHub Triage",
+          "Be precise.",
         ].join("\n"),
         "utf8",
       );

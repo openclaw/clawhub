@@ -9320,7 +9320,7 @@ describe("packages public queries", () => {
       ],
       [
         "storage:claw",
-        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\nmetadata:\n  openclaw.config: profiles/openclaw.yml\n---\n# Demo Claw\n`,
+        `---\nschemaVersion: 1\nagent:\n  id: demo-claw\n  name: Demo Claw\n  description: ${longClawDescription}\nmetadata:\n  openclaw.config: profiles/openclaw.yml\n---\nRun the demo workflow precisely.\n`,
       ],
       ["storage:profile", "schemaVersion: 1\nagent:\n  tools:\n    profile: coding\n"],
     ]);

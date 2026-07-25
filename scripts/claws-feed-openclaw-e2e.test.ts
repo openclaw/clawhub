@@ -269,6 +269,19 @@ describe("published Claw to OpenClaw dry-run proof", () => {
         agent: { finalId: "hosted-e2e" },
         summary: { blockedActions: 0 },
       });
+      expect(result.plan.actions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "workspaceFile",
+            id: "SOUL.md",
+            sourceKind: "clawMarkdownBody",
+            blocked: false,
+          }),
+        ]),
+      );
+      expect(JSON.stringify(result.plan)).not.toContain(
+        "Use the published Claw package without mutating local state during proof.",
+      );
     },
     30_000,
   );

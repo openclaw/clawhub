@@ -51,6 +51,9 @@ namespaced key or define their own profile-pointer contract.
 4. Add a separately gated hosted Claws feed and a repeatable published-package
    proof through OpenClaw `claws add --dry-run`
    ([PR #3092](https://github.com/openclaw/clawhub/pull/3092)).
+5. Validate the portable `CLAW.md` prompt body, project it as managed
+   `SOUL.md` capability metadata, and prove the feed-to-OpenClaw mapping
+   (follow-up stacked after PR #3092).
 
 The hosted projection uses the separate
 [experimental Claw feed contract](experimental-claw-feed.md), not an extension
@@ -83,8 +86,11 @@ Claws use the existing package publication pipeline. `package.json` declares
 the package identity, version, and package-relative `openclaw.claw` manifest
 path. Publication parses `CLAW.md` YAML frontmatter or the JSON compatibility
 form and validates the grouped manifest, referenced workspace files, and any
-declared package-local OpenClaw profile. The release retains the exact artifact
-and a bounded derived summary rather than duplicating the full manifest or
+declared package-local OpenClaw profile. A non-empty Markdown body is the
+portable agent prompt and maps to managed `SOUL.md`; publication rejects a body
+combined with any explicit `SOUL.md` workspace declaration. The release retains
+the exact artifact and a bounded derived summary, including the implicit
+`SOUL.md` capability, rather than duplicating the full manifest, prompt body, or
 OpenClaw profile into Convex storage. The server rejects
 `family: claw` before mutation when the experimental gate is disabled; the gate
 does not bypass ownership, moderation, scanning, or release invariants when

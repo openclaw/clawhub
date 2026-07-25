@@ -305,7 +305,7 @@ function parseManifestDocument(raw, manifestPath) {
         try {
             return {
                 value: document.toJSON(),
-                markdownBody: markdown.slice(match[0].length),
+                clawMarkdownBody: markdown.slice(match[0].length),
             };
         }
         catch (error) {
@@ -386,16 +386,8 @@ export function validateClawPackageContents(input) {
         };
     }
     const parsed = parseManifestDocument(manifestFile.text, manifestPath);
-    if (parsed.issues)
+    if ("issues" in parsed)
         return { ok: false, issues: parsed.issues };
-    if (parsed.markdownBody !== undefined && parsed.markdownBody.trim().length === 0) {
-        return {
-            ok: false,
-            issues: [
-                issue("empty_claw_body", manifestPath, "CLAW.md must contain a non-empty Markdown body."),
-            ],
-        };
-    }
     const validated = validateClawManifest(parsed.value);
     if (!validated.ok) {
         return {
@@ -403,15 +395,11 @@ export function validateClawPackageContents(input) {
             issues: validated.issues.map((entry) => issue("invalid_claw_manifest", entry.path, entry.message)),
         };
     }
-    if (parsed.markdownBody !== undefined &&
-        (validated.manifest.workspace?.bootstrapFiles?.["SOUL.md"] !== undefined ||
-            (validated.manifest.workspace?.files ?? []).some((entry) => portablePathKey(entry.path) === portablePathKey("SOUL.md")))) {
-        return {
-            ok: false,
-            issues: [
-                issue("duplicate_claw_body_destination", "SOUL.md", "The CLAW.md body is the managed SOUL.md source and cannot be combined with an explicit SOUL.md declaration."),
-            ],
-        };
+    const hasClawMarkdownBody = (parsed.clawMarkdownBody?.trim().length ?? 0) > 0;
+    const hasExplicitSoul = validated.manifest.workspace?.bootstrapFiles?.["SOUL.md"] !== undefined ||
+        (validated.manifest.workspace?.files ?? []).some((entry) => portablePathKey(entry.path) === portablePathKey("SOUL.md"));
+    if (hasClawMarkdownBody && hasExplicitSoul) {
+        issues.push(issue("claw_body_soul_conflict", "$.workspace", "CLAW.md body content and an explicit SOUL.md workspace declaration cannot both be present."));
     }
     const openClawProfilePath = validated.manifest.metadata?.["openclaw.config"];
     if (openClawProfilePath !== undefined) {
@@ -443,25 +431,13 @@ export function validateClawPackageContents(input) {
     }
     if (issues.length > 0)
         return { ok: false, issues };
-    const summary = summarizeClawManifest(validated.manifest);
-    const implicitWorkspaceFile = parsed.markdownBody === undefined
-        ? undefined
-        : { path: "SOUL.md", text: parsed.markdownBody };
     return {
         ok: true,
         value: {
             manifestPath,
             manifest: validated.manifest,
-            ...(implicitWorkspaceFile ? { implicitWorkspaceFile } : {}),
-            summary: implicitWorkspaceFile
-                ? {
-                    ...summary,
-                    workspace: {
-                        ...summary.workspace,
-                        bootstrapFiles: [...summary.workspace.bootstrapFiles, "SOUL.md"],
-                    },
-                }
-                : summary,
+            summary: summarizeClawManifest(validated.manifest, { clawMarkdownBody: hasClawMarkdownBody }),
+            hasClawMarkdownBody,
         },
     };
 }

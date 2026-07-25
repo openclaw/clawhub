@@ -48,7 +48,7 @@ function packageJson(claw = "CLAW.md") {
   };
 }
 
-function files(manifestText = `---\n${JSON.stringify(manifest)}\n---\n# GitHub Triage\n`) {
+function files(manifestText = `---\n${JSON.stringify(manifest)}\n---\n`) {
   return [
     { path: "package.json", text: JSON.stringify(packageJson()) },
     { path: "CLAW.md", text: manifestText },
@@ -72,7 +72,7 @@ describe("validateClawPackageContents", () => {
     });
   });
 
-  it("validates CLAW.md and derives its safe summary", () => {
+  it("validates frontmatter-only CLAW.md and derives its safe summary", () => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
@@ -84,10 +84,7 @@ describe("validateClawPackageContents", () => {
       ok: true,
       value: expect.objectContaining({
         manifestPath: "CLAW.md",
-        implicitWorkspaceFile: {
-          path: "SOUL.md",
-          text: "# GitHub Triage\n",
-        },
+        hasClawMarkdownBody: false,
         summary: expect.objectContaining({
           agent: {
             id: "github-triage",
@@ -95,9 +92,69 @@ describe("validateClawPackageContents", () => {
             description: "Reviews issues.",
           },
           packages: { skillCount: 1, pluginCount: 0 },
+          workspace: { bootstrapFiles: [], fileCount: 1 },
+        }),
+      }),
+    });
+  });
+
+  it("treats a non-empty CLAW.md body as the portable SOUL.md source", () => {
+    const bodyManifest = {
+      ...manifest,
+      workspace: { files: manifest.workspace.files },
+    };
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(`---\n${JSON.stringify(bodyManifest)}\n---\nBe precise.\n`).filter(
+        (file) => file.path !== "workspace/SOUL.md",
+      ),
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      value: expect.objectContaining({
+        hasClawMarkdownBody: true,
+        summary: expect.objectContaining({
           workspace: { bootstrapFiles: ["SOUL.md"], fileCount: 1 },
         }),
       }),
+    });
+    if (result.ok) expect(result.value).not.toHaveProperty("clawMarkdownBody");
+  });
+
+  it.each([
+    [
+      "bootstrap file",
+      {
+        ...manifest,
+        workspace: {
+          ...manifest.workspace,
+          bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } },
+        },
+      },
+    ],
+    [
+      "workspace file",
+      {
+        ...manifest,
+        workspace: {
+          files: [...manifest.workspace.files, { source: "workspace/SOUL.md", path: "soul.md" }],
+        },
+      },
+    ],
+  ])("rejects a CLAW.md body combined with an explicit SOUL.md %s", (_label, value) => {
+    const result = validateClawPackageContents({
+      packageName: "@acme/github-triage",
+      version: "1.0.0",
+      packageJson: packageJson(),
+      files: files(`---\n${JSON.stringify(value)}\n---\nBe precise.\n`),
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      issues: [expect.objectContaining({ code: "claw_body_soul_conflict" })],
     });
   });
 
@@ -106,13 +163,13 @@ describe("validateClawPackageContents", () => {
       packageName: "@acme/github-triage",
       version: "1.0.0",
       packageJson: packageJson(),
-      files: files(`\uFEFF---\n${JSON.stringify(manifest)}\n---\n# GitHub Triage\n`),
+      files: files(`\uFEFF---\n${JSON.stringify(manifest)}\n---\n`),
     });
 
     expect(result.ok).toBe(true);
   });
 
-  it.each(["", "\n \t\n"])("rejects an empty CLAW.md body", (body) => {
+  it.each(["", "\n \t\n"])("accepts an empty CLAW.md body without implicit SOUL.md", (body) => {
     const result = validateClawPackageContents({
       packageName: "@acme/github-triage",
       version: "1.0.0",
@@ -121,8 +178,13 @@ describe("validateClawPackageContents", () => {
     });
 
     expect(result).toEqual({
-      ok: false,
-      issues: [expect.objectContaining({ code: "empty_claw_body", path: "CLAW.md" })],
+      ok: true,
+      value: expect.objectContaining({
+        hasClawMarkdownBody: false,
+        summary: expect.objectContaining({
+          workspace: expect.objectContaining({ bootstrapFiles: [] }),
+        }),
+      }),
     });
   });
 
@@ -137,43 +199,6 @@ describe("validateClawPackageContents", () => {
     expect(result).toEqual({
       ok: false,
       issues: [expect.objectContaining({ code: "claw_manifest_too_large", path: "CLAW.md" })],
-    });
-  });
-
-  it.each([
-    [
-      "bootstrap source",
-      {
-        ...manifest,
-        workspace: {
-          ...manifest.workspace,
-          bootstrapFiles: { "SOUL.md": { source: "workspace/SOUL.md" } },
-        },
-      },
-    ],
-    [
-      "case-folded supporting-file destination",
-      {
-        ...manifest,
-        workspace: {
-          ...manifest.workspace,
-          files: [{ source: "workspace/reference.md", path: "soul.md" }],
-        },
-      },
-    ],
-  ])("rejects an explicit SOUL.md %s beside the CLAW.md body", (_label, bodyManifest) => {
-    const result = validateClawPackageContents({
-      packageName: "@acme/github-triage",
-      version: "1.0.0",
-      packageJson: packageJson(),
-      files: files(`---\n${JSON.stringify(bodyManifest)}\n---\n# Prompt\n`),
-    });
-
-    expect(result).toEqual({
-      ok: false,
-      issues: [
-        expect.objectContaining({ code: "duplicate_claw_body_destination", path: "SOUL.md" }),
-      ],
     });
   });
 

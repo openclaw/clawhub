@@ -174,4 +174,6 @@ export declare function validateClawManifest(value: unknown): {
     ok: false;
     issues: ClawManifestValidationIssue[];
 };
-export declare function summarizeClawManifest(manifest: ClawManifest): ClawManifestSummary;
+export declare function summarizeClawManifest(manifest: ClawManifest, options?: {
+    clawMarkdownBody?: boolean;
+}): ClawManifestSummary;

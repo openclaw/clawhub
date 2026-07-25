@@ -615,7 +615,7 @@ export function validateClawManifest(value) {
     }
     return issues.length > 0 ? { ok: false, issues } : { ok: true, manifest: parsed };
 }
-export function summarizeClawManifest(manifest) {
+export function summarizeClawManifest(manifest, options = {}) {
     const packages = manifest.packages ?? [];
     const agentName = truncateSummaryText(manifest.agent.name, CLAW_SUMMARY_AGENT_NAME_MAX_CHARS);
     const agentDescription = truncateSummaryText(manifest.agent.description, CLAW_SUMMARY_AGENT_DESCRIPTION_MAX_CHARS);
@@ -627,7 +627,8 @@ export function summarizeClawManifest(manifest) {
             ...(agentDescription ? { description: agentDescription } : {}),
         },
         workspace: {
-            bootstrapFiles: CLAW_BOOTSTRAP_FILE_NAMES.filter((name) => manifest.workspace?.bootstrapFiles?.[name] !== undefined),
+            bootstrapFiles: CLAW_BOOTSTRAP_FILE_NAMES.filter((name) => manifest.workspace?.bootstrapFiles?.[name] !== undefined ||
+                (name === "SOUL.md" && options.clawMarkdownBody === true)),
             fileCount: manifest.workspace?.files?.length ?? 0,
         },
         packages: {
