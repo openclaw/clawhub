@@ -67,31 +67,21 @@ const featuredPlugin = {
 
 function initialPluginListing({
   items = [featuredPlugin],
-  pluginsFeatured = true,
-  skillsFeatured = true,
 }: {
   items?: (typeof featuredPlugin)[];
-  pluginsFeatured?: boolean;
-  skillsFeatured?: boolean;
 } = {}) {
   return {
     kind: "plugins" as const,
-    tab: pluginsFeatured ? ("featured" as const) : ("popular" as const),
+    tab: "featured" as const,
     categorySlugs: [] as [],
     fetchLimit: 20 as const,
     items,
     hasMore: false,
-    featuredAvailability: {
-      plugins: pluginsFeatured,
-      skills: skillsFeatured,
-    },
   };
 }
 
 function renderSkillsListing() {
-  const result = render(
-    <HomeListingSection initialListing={initialPluginListing({ skillsFeatured: false })} />,
-  );
+  const result = render(<HomeListingSection initialListing={initialPluginListing()} />);
   fireEvent.click(screen.getByRole("button", { name: "Skills" }));
   fireEvent.click(screen.getByRole("tab", { name: "New" }));
   return result;
@@ -206,7 +196,6 @@ describe("HomeListingSection", () => {
       <HomeListingSection
         initialListing={initialPluginListing({
           items: [{ ...featuredPlugin, name: "long-plugin", displayName: pluginName }],
-          skillsFeatured: false,
         })}
       />,
     );

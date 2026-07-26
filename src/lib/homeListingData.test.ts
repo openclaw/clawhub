@@ -112,7 +112,9 @@ describe("homeListingData", () => {
       HOME_LISTING_PAGE_SIZE,
     );
 
-    expect(result.page.map((entry) => entry.skill.slug)).toEqual(["newest", "older"]);
+    expect(
+      result.page.map((entry) => ("skill" in entry ? entry.skill.slug : entry.trending.slug)),
+    ).toEqual(["newest", "older"]);
     expect(convexQueryMock).toHaveBeenCalledTimes(2);
     expect(convexQueryMock).toHaveBeenNthCalledWith(
       1,
