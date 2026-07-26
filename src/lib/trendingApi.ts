@@ -41,6 +41,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function isNullableString(value: unknown): value is string | null {
+  return typeof value === "string" || value === null;
+}
+
+function isNullableNumber(value: unknown): value is number | null {
+  return (typeof value === "number" && Number.isFinite(value)) || value === null;
+}
+
+function isCanonicalPath(value: unknown): value is string {
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//")) return false;
+  try {
+    const base = new URL("https://clawhub.invalid");
+    const parsed = new URL(value, base);
+    return (
+      parsed.origin === base.origin &&
+      parsed.username === "" &&
+      parsed.password === "" &&
+      parsed.search === "" &&
+      parsed.hash === "" &&
+      parsed.pathname === value
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalPublisher(value: unknown): value is CanonicalTrendingItem["publisher"] {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  return (
+    (value.kind === "user" || value.kind === "org") &&
+    isNullableString(value.handle) &&
+    isNullableString(value.displayName) &&
+    isNullableString(value.image) &&
+    typeof value.official === "boolean"
+  );
+}
+
 function isCanonicalTrendingItem(value: unknown): value is CanonicalTrendingItem {
   if (!isRecord(value) || !isRecord(value.metrics)) return false;
   return (
@@ -48,10 +86,17 @@ function isCanonicalTrendingItem(value: unknown): value is CanonicalTrendingItem
     (value.source === "clawhub" || value.source === "skills-sh") &&
     typeof value.slug === "string" &&
     typeof value.displayName === "string" &&
-    (typeof value.summary === "string" || value.summary === null) &&
-    typeof value.canonicalUrl === "string" &&
-    (typeof value.metrics.trending24hInstalls === "number" ||
-      value.metrics.trending24hInstalls === null)
+    isNullableString(value.summary) &&
+    isCanonicalPath(value.canonicalUrl) &&
+    isCanonicalPublisher(value.publisher) &&
+    typeof value.official === "boolean" &&
+    typeof value.featured === "boolean" &&
+    isNullableNumber(value.metrics.trending24hInstalls) &&
+    isNullableNumber(value.metrics.trending24hBookmarks) &&
+    isNullableNumber(value.metrics.lifetimeInstalls) &&
+    value.metrics.lifetimeInstallsPeriod === "lifetime" &&
+    typeof value.metrics.updatedAt === "number" &&
+    Number.isFinite(value.metrics.updatedAt)
   );
 }
 

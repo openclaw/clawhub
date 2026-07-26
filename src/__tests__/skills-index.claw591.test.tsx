@@ -172,15 +172,21 @@ describe("SkillsIndex", () => {
   });
 
   it("loads Official through the backend official-publisher filter", async () => {
-    searchMock = { tab: "official" };
+    searchMock = { tab: "official", category: "development" };
     convexHttpMock.query.mockResolvedValue({ page: [], hasMore: false, nextCursor: null });
 
     render(<SkillsIndex />);
     await act(async () => {});
 
     expect(getLastListPageArgs()).toEqual(
-      expect.objectContaining({ officialOnly: true, sort: "newest", numItems: 20 }),
+      expect.objectContaining({
+        categorySlug: "development",
+        officialOnly: true,
+        sort: "newest",
+        numItems: 20,
+      }),
     );
+    expect(getLastListPageArgs()).not.toHaveProperty("officialFirst");
   });
 
   it("shows category navigation outside Trending and sends the selected category", async () => {

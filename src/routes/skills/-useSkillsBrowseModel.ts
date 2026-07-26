@@ -197,7 +197,9 @@ export function useSkillsBrowseModel({
             createdAfter: catalogTab === "new" ? newCutoff : undefined,
             categorySlug: activeCategory?.slug,
             topic: activeTopic,
-            ...(activeCategory && catalogTab !== "new" ? { officialFirst: true } : {}),
+            ...(activeCategory && catalogTab !== "new" && catalogTab !== "official"
+              ? { officialFirst: true }
+              : {}),
             categoryKeywords,
             excludeCategoryKeywords,
           });

@@ -53,4 +53,91 @@ describe("fetchCanonicalTrendingPage", () => {
       "Invalid canonical Trending response",
     );
   });
+
+  it("fails closed on an unsafe canonical link", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(
+            canonicalPage({
+              canonicalUrl: "javascript:alert(document.domain)",
+            }),
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(fetchCanonicalTrendingPage({ limit: 20 })).rejects.toThrow(
+      "Invalid canonical Trending response",
+    );
+  });
+
+  it("fails closed when consumed publisher or metric fields are malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify(
+            canonicalPage({
+              publisher: "not-a-publisher",
+              metrics: {
+                trending24hInstalls: 3,
+                trending24hBookmarks: null,
+                lifetimeInstalls: null,
+                lifetimeInstallsPeriod: "weekly",
+                updatedAt: "yesterday",
+              },
+            }),
+          ),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    await expect(fetchCanonicalTrendingPage({ limit: 20 })).rejects.toThrow(
+      "Invalid canonical Trending response",
+    );
+  });
 });
+
+function canonicalPage(itemOverrides: Record<string, unknown>) {
+  return {
+    kind: "skills",
+    snapshotId: "snapshot-1",
+    snapshotCursor: "snapshot-cursor",
+    generatedAt: "2026-07-26T00:00:00.000Z",
+    windowHours: 24,
+    rankingVersion: "skills-trending-v1",
+    totalItems: 1,
+    items: [
+      {
+        id: "clawhub:skill-1",
+        source: "clawhub",
+        slug: "skill-1",
+        displayName: "Skill One",
+        summary: "A useful skill",
+        canonicalUrl: "/owner/skill-1",
+        publisher: {
+          kind: "user",
+          handle: "owner",
+          displayName: "Owner",
+          image: null,
+          official: false,
+        },
+        official: false,
+        featured: false,
+        metrics: {
+          trending24hInstalls: 3,
+          trending24hBookmarks: null,
+          lifetimeInstalls: 10,
+          lifetimeInstallsPeriod: "lifetime",
+          updatedAt: 1,
+        },
+        ...itemOverrides,
+      },
+    ],
+    nextCursor: null,
+  };
+}
