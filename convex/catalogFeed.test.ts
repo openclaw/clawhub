@@ -434,6 +434,17 @@ describe("catalog feed projection", () => {
       retainedFromSequence: 3,
       currentSequence: 5,
     });
+    await expect(
+      listChangesHandler(
+        { db: { query } },
+        {
+          feedId: CATALOG_FEED_ID,
+          fromSequence: 5,
+          toSequence: 6,
+          paginationOpts: { cursor: null, numItems: 100 },
+        },
+      ),
+    ).rejects.toThrow("starts at or after the current sequence");
     expect(paginate).toHaveBeenCalledTimes(3);
   });
 

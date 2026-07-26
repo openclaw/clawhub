@@ -686,6 +686,9 @@ export const listChanges = internalQuery({
     }
     const state = await readCatalogFeedChangeState(ctx, args.feedId);
     const window = changeWindowFromState(state);
+    if (args.fromSequence >= window.currentSequence && args.toSequence > window.currentSequence) {
+      throw new Error("Catalog feed change range starts at or after the current sequence");
+    }
     if (
       args.fromSequence < window.retainedFromSequence ||
       args.toSequence > window.currentSequence
