@@ -102,12 +102,16 @@
 }
 
 .home-v2-main .oc-segmented {
+  /* Toolbar segments are fixed-size controls, not horizontal scrollers. */
+  overflow: visible;
   border-color: var(--oc-border-subtle);
   border-radius: var(--oc-radius-control);
   background: var(--oc-surface-card);
 }
 
 .home-v2-main .oc-segmented-item {
+  /* Keep the shared 2rem minimum from overflowing the 30px toolbar track. */
+  min-height: var(--clawhub-segmented-seg-h);
   border-radius: var(--oc-radius-inset);
 }
 
