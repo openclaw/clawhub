@@ -82,6 +82,25 @@ function mutationDb(overrides: Record<string, unknown>) {
 }
 
 describe("catalog feed shard publication builder", () => {
+  it("rejects timestamps that cannot be represented by the signed root", async () => {
+    const insert = vi.fn();
+
+    await expect(
+      beginPublicationHandler(
+        { db: mutationDb({ insert }) },
+        {
+          feedId: CATALOG_SKILLS_FEED_ID,
+          generatedAt: "2026-07-17T00:00:00.000Z",
+          expiresAt: "September 18, 2026",
+          description: "Official skills",
+          entryCount: 0,
+          requiresProjection: true,
+        },
+      ),
+    ).rejects.toThrow("Catalog feed shard timestamps are invalid");
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("reserves a reset revision for a shard-only query projection", async () => {
     const insert = vi
       .fn()
@@ -96,7 +115,10 @@ describe("catalog feed shard publication builder", () => {
           return {
             filter: vi.fn(() => ({
               order: vi.fn(() => ({
-                first: vi.fn(async () => ({ sequence: 4, cumulativeChangeCount: 10 })),
+                first: vi.fn(async () => ({
+                  sequence: 4,
+                  cumulativeChangeCount: 10,
+                })),
               })),
             })),
             unique: vi.fn(async () => null),
@@ -169,7 +191,9 @@ describe("catalog feed shard publication builder", () => {
       entryCount: 1001,
       indexedEntryCount: undefined,
     });
-    expect(patch).toHaveBeenNthCalledWith(2, "publication:1", { status: "ready" });
+    expect(patch).toHaveBeenNthCalledWith(2, "publication:1", {
+      status: "ready",
+    });
   });
 
   it("builds complete bounded immutable shards", async () => {
@@ -199,18 +223,16 @@ describe("catalog feed shard publication builder", () => {
         if (table === "catalogFeedShardPublications") {
           return {
             order: vi.fn(() => ({
-              filter: vi.fn(() => ({
-                first: vi.fn(async () => ({
-                  _id: "publication:1",
-                  feedId: CATALOG_SKILLS_FEED_ID,
-                  sequence: 3,
-                  generatedAt: "2026-07-17T00:00:00.000Z",
-                  expiresAt: "2099-07-18T00:00:00.000Z",
-                  description: "Official skills",
-                  entryCount: 1,
-                  expectedShardCount: 1,
-                  publishedAt: 1,
-                })),
+              first: vi.fn(async () => ({
+                _id: "publication:1",
+                feedId: CATALOG_SKILLS_FEED_ID,
+                sequence: 3,
+                generatedAt: "2026-07-17T00:00:00.000Z",
+                expiresAt: "2026-07-18T00:00:00-07:00",
+                description: "Official skills",
+                entryCount: 1,
+                expectedShardCount: 1,
+                publishedAt: 1,
               })),
             })),
           };
@@ -218,7 +240,12 @@ describe("catalog feed shard publication builder", () => {
         return {
           order: vi.fn(() => ({
             collect: vi.fn(async () => [
-              { index: 0, sha256: "a".repeat(64), byteLength: 123, entryCount: 1 },
+              {
+                index: 0,
+                sha256: "a".repeat(64),
+                byteLength: 123,
+                entryCount: 1,
+              },
             ]),
           })),
         };
@@ -228,7 +255,7 @@ describe("catalog feed shard publication builder", () => {
     await expect(
       getLatestHandler(
         { db: { query } },
-        { feedId: CATALOG_SKILLS_FEED_ID, now: "2026-07-17T00:00:00.000Z" },
+        { feedId: CATALOG_SKILLS_FEED_ID, now: "2026-07-18T01:00:00.000Z" },
       ),
     ).resolves.toMatchObject({
       sequence: 3,

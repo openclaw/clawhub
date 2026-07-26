@@ -65,6 +65,17 @@ describe("catalog feed schema", () => {
     expect(serialized.indexOf('"id":"alpha"')).toBeLessThan(serialized.indexOf('"id":"zeta"'));
   });
 
+  it("uses locale-independent ordering for signed entry bytes", () => {
+    const feed = makeFeed({
+      entries: makeFeed().entries.map((entry, index) => ({
+        ...entry,
+        id: index === 0 ? "ä" : "z",
+      })),
+    });
+    const serialized = serializeCatalogFeed(feed);
+    expect(serialized.indexOf('"id":"z"')).toBeLessThan(serialized.indexOf('"id":"ä"'));
+  });
+
   it("serializes equivalent objects to identical canonical bytes", () => {
     const feed = makeFeed();
     const reordered: CatalogFeed = {

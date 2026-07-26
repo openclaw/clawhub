@@ -4,6 +4,7 @@ import {
   CATALOG_FEED_ID,
   CATALOG_FEED_SCHEMA_VERSION,
   CATALOG_SKILLS_FEED_ID,
+  compareCatalogFeedStrings,
   normalizeCatalogFeedEntries,
   type CatalogFeedEntry,
 } from "./catalogFeed.js";
@@ -62,7 +63,7 @@ function requireNonNegativeInteger(value: number, name: string) {
   }
 }
 
-function requireValidWindow(generatedAt: string, expiresAt: string) {
+export function validateCatalogFeedShardWindow(generatedAt: string, expiresAt: string): void {
   const isRfc3339Instant = (value: string) => {
     const match =
       /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/u.exec(
@@ -118,7 +119,7 @@ export function parseCatalogFeedShardRoot(value: unknown): CatalogFeedShardRoot 
   }
   requireFeedId(root.feedId);
   requireNonNegativeInteger(root.sequence, "Catalog feed shard root sequence");
-  requireValidWindow(root.generatedAt, root.expiresAt);
+  validateCatalogFeedShardWindow(root.generatedAt, root.expiresAt);
   if (root.metadata.description !== null && utf8Length(root.metadata.description) > 1024) {
     throw new Error("Catalog feed shard root description exceeds 1024 UTF-8 bytes");
   }
@@ -209,7 +210,7 @@ export function parseCatalogFeedShard(value: unknown): CatalogFeedShard {
     if (identities.has(identity))
       throw new Error("Catalog feed shard entry identity is duplicated");
     identities.add(identity);
-    if (previousId !== undefined && previousId.localeCompare(entry.id) >= 0) {
+    if (previousId !== undefined && compareCatalogFeedStrings(previousId, entry.id) >= 0) {
       throw new Error("Catalog feed shard entries must use deterministic id ordering");
     }
     previousId = entry.id;
@@ -302,7 +303,7 @@ export async function validateCatalogFeedShardSet(
       if (identities.has(identity))
         throw new Error("Catalog feed shard set identity is duplicated");
       identities.add(identity);
-      if (previousId !== undefined && previousId.localeCompare(entry.id) >= 0) {
+      if (previousId !== undefined && compareCatalogFeedStrings(previousId, entry.id) >= 0) {
         throw new Error("Catalog feed shard set ordering is invalid");
       }
       previousId = entry.id;

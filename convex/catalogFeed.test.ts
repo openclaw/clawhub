@@ -68,7 +68,11 @@ const listChangesHandler = (
       feedId: typeof CATALOG_FEED_ID;
       fromSequence: number;
       toSequence: number;
-      paginationOpts: { cursor: string | null; numItems: number; maximumRowsRead?: number };
+      paginationOpts: {
+        cursor: string | null;
+        numItems: number;
+        maximumRowsRead?: number;
+      };
     },
     {
       resetRequired: boolean;
@@ -148,7 +152,14 @@ function makeSkillVersion(overrides: Record<string, unknown> = {}) {
     skillId: "skills:1",
     version: "1.2.3",
     softDeletedAt: undefined,
-    files: [{ path: "SKILL.md", size: 1, storageId: "storage:1", sha256: "file-hash" }],
+    files: [
+      {
+        path: "SKILL.md",
+        size: 1,
+        storageId: "storage:1",
+        sha256: "file-hash",
+      },
+    ],
     sha256hash: "skill-hash",
     ...overrides,
   };
@@ -311,7 +322,12 @@ describe("catalog feed projection", () => {
         nextDescription: "Official",
       }),
     ).toEqual([
-      { sequence: 7, operation: "remove", entryType: "skill", entryId: removed.id },
+      {
+        sequence: 7,
+        operation: "remove",
+        entryType: "skill",
+        entryId: removed.id,
+      },
       { sequence: 7, operation: "upsert", entry: replacement },
     ]);
     expect(
@@ -322,7 +338,13 @@ describe("catalog feed projection", () => {
         previousDescription: "Official",
         nextDescription: "Official",
       }),
-    ).toEqual([{ sequence: 8, operation: "metadata", metadata: { description: "Official" } }]);
+    ).toEqual([
+      {
+        sequence: 8,
+        operation: "metadata",
+        metadata: { description: "Official" },
+      },
+    ]);
   });
 
   it("stores a revision and its journal rows with the current publication", async () => {
@@ -347,7 +369,11 @@ describe("catalog feed projection", () => {
               };
             }
             if (table === "catalogFeedShardPublications") {
-              return { order: vi.fn(() => ({ first: vi.fn(async () => ({ sequence: 4 })) })) };
+              return {
+                order: vi.fn(() => ({
+                  first: vi.fn(async () => ({ sequence: 4 })),
+                })),
+              };
             }
             return { unique: vi.fn(async () => null) };
           }),
@@ -417,13 +443,24 @@ describe("catalog feed projection", () => {
               order: vi.fn((direction: "asc" | "desc") => ({
                 first: vi.fn(async () =>
                   direction === "asc"
-                    ? { sequence: 4, changeCount: 2, cumulativeChangeCount: 2 }
-                    : { sequence: 5, changeCount: 1, cumulativeChangeCount: 3 },
+                    ? {
+                        sequence: 4,
+                        changeCount: 2,
+                        cumulativeChangeCount: 2,
+                      }
+                    : {
+                        sequence: 5,
+                        changeCount: 1,
+                        cumulativeChangeCount: 3,
+                      },
                 ),
               })),
             };
             return {
-              filter: vi.fn(() => ({ ...ordered, first: vi.fn(async () => null) })),
+              filter: vi.fn(() => ({
+                ...ordered,
+                first: vi.fn(async () => null),
+              })),
               unique: vi.fn(async () => ({
                 sequence: 4,
                 changeCount: 2,
@@ -553,7 +590,9 @@ describe("catalog feed projection", () => {
 
     expect(result).toEqual({ deleted: 2, hasMore: true });
     expect(delete_).toHaveBeenCalledTimes(2);
-    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 2 });
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      batchSize: 2,
+    });
   });
 
   it("projects official releases into ClawHub install candidates", async () => {
@@ -681,12 +720,20 @@ describe("catalog feed projection", () => {
         [
           makePackage({ name: "@openclaw/community", channel: "community" }),
           makePackage({ name: "@openclaw/deleted", softDeletedAt: 1 }),
-          makePackage({ name: "@openclaw/malicious", latestReleaseId: "packageReleases:2" }),
-          makePackage({ name: "@openclaw/no-hash", latestReleaseId: "packageReleases:3" }),
+          makePackage({
+            name: "@openclaw/malicious",
+            latestReleaseId: "packageReleases:2",
+          }),
+          makePackage({
+            name: "@openclaw/no-hash",
+            latestReleaseId: "packageReleases:3",
+          }),
         ],
         {
           "packageReleases:1": makeRelease(),
-          "packageReleases:2": makeRelease({ manualModeration: { state: "quarantined" } }),
+          "packageReleases:2": makeRelease({
+            manualModeration: { state: "quarantined" },
+          }),
           "packageReleases:3": makeRelease({ sha256hash: undefined }),
         },
       ),
@@ -732,7 +779,11 @@ describe("catalog feed projection", () => {
           }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "openclaw",
+          },
           "skillVersions:1": makeSkillVersion(),
         },
       ),
@@ -773,12 +824,19 @@ describe("catalog feed projection", () => {
         [
           makeSkill({
             badges: {
-              highlighted: { byUserId: "users:moderator", at: 1_784_280_000_000 },
+              highlighted: {
+                byUserId: "users:moderator",
+                at: 1_784_280_000_000,
+              },
             },
           }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "openclaw",
+          },
           "skillVersions:1": makeSkillVersion(),
         },
       ),
@@ -798,7 +856,11 @@ describe("catalog feed projection", () => {
   it("keeps suspicious hosted skills in hosted ClawHub install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill()], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+        "publishers:1": {
+          _id: "publishers:1",
+          kind: "org",
+          handle: "openclaw",
+        },
         "skillVersions:1": makeSkillVersion({
           llmAnalysis: { status: "complete", verdict: "suspicious" },
         }),
@@ -825,7 +887,11 @@ describe("catalog feed projection", () => {
   it("projects current GitHub-backed skills into public GitHub install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeGitHubSkill({ slug: "aiq-deploy", displayName: "AIQ Deploy" })], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+        "publishers:1": {
+          _id: "publishers:1",
+          kind: "org",
+          handle: "nvidia",
+        },
         "githubSkillSources:1": makeGitHubSource(),
       }),
       { publisherId: "publishers:1", cursor: null },
@@ -966,6 +1032,60 @@ describe("catalog feed projection", () => {
     ]);
   });
 
+  it("bounds skill collection after independently completing plugin publication", async () => {
+    const skillEntries = Array.from({ length: 10_001 }, (_, index) => makeFeedSkillEntry(index));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return { sequence: 1, publishedAt: 1, entryCount: 0 };
+      }
+      return {};
+    });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      if ("publisherId" in args) {
+        return { entries: skillEntries, isDone: true, continueCursor: "" };
+      }
+      return {
+        publishers: [{ _id: "publishers:1" }],
+        isDone: true,
+        continueCursor: "",
+      };
+    });
+
+    await expect(
+      publishHandler({ runQuery, runMutation }, { expiresAt: "2026-06-30T00:00:00.000Z" }),
+    ).rejects.toThrow("runtime publication limit of 10000 entries");
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publicationId: `${CATALOG_FEED_ID}:shards` }),
+    );
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, args]) => args.feedId === CATALOG_SKILLS_FEED_ID && "description" in args,
+        ),
+    ).toBe(false);
+  });
+
   it("publishes Claws through the separate experimental mutation", async () => {
     vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "1");
     const clawEntry = {
@@ -1039,7 +1159,10 @@ describe("catalog feed projection", () => {
     );
     expect(clawMutation?.[1]).toEqual(expect.objectContaining({ entries: [clawEntry] }));
     expect(clawMutation?.[1]).not.toHaveProperty("feedId");
-    expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 });
+    expect(result.at(-1)).toEqual({
+      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      entryCount: 1,
+    });
   });
 
   it("publishes plugins through shards beyond the legacy atomic limit", async () => {
@@ -1076,8 +1199,16 @@ describe("catalog feed projection", () => {
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if (args.family === "code-plugin") {
         return args.cursor === null
-          ? { entries: pluginEntries.slice(0, 600), isDone: false, continueCursor: "plugins-2" }
-          : { entries: pluginEntries.slice(600), isDone: true, continueCursor: "" };
+          ? {
+              entries: pluginEntries.slice(0, 600),
+              isDone: false,
+              continueCursor: "plugins-2",
+            }
+          : {
+              entries: pluginEntries.slice(600),
+              isDone: true,
+              continueCursor: "",
+            };
       }
       if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
       return { publishers: [], isDone: true, continueCursor: "" };
@@ -1126,6 +1257,69 @@ describe("catalog feed projection", () => {
     });
   });
 
+  it("uses shards for byte-heavy plugin feeds below the legacy entry limit", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
+    const pluginEntries = [0, 1].map((index) => ({
+      ...makeFeedPluginEntry(index),
+      description: "x".repeat(480 * 1024),
+    }));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return {
+          sequence: 1,
+          publishedAt: 1,
+          entryCount: args.publicationId.startsWith(CATALOG_FEED_ID) ? 2 : 0,
+        };
+      }
+      return {};
+    });
+    const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.family === "code-plugin") {
+        return { entries: pluginEntries, isDone: true, continueCursor: "" };
+      }
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      return { publishers: [], isDone: true, continueCursor: "" };
+    });
+
+    await publishHandler({ runQuery, runMutation }, { expiresAt: "2026-06-30T00:00:00.000Z" });
+
+    expect(
+      vi
+        .mocked(runMutation)
+        .mock.calls.some(
+          ([, mutationArgs]) =>
+            mutationArgs.feedId === CATALOG_FEED_ID &&
+            "description" in mutationArgs &&
+            "entries" in mutationArgs,
+        ),
+    ).toBe(false);
+    const pluginShardPayloads = vi
+      .mocked(runMutation)
+      .mock.calls.filter(
+        ([, mutationArgs]) =>
+          mutationArgs.publicationId === `${CATALOG_FEED_ID}:shards` && "payload" in mutationArgs,
+      );
+    expect(pluginShardPayloads).toHaveLength(2);
+  });
+
   it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx(
@@ -1137,7 +1331,11 @@ describe("catalog feed projection", () => {
           }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "nvidia",
+          },
           "githubSkillSources:1": makeGitHubSource(),
         },
       ),
@@ -1168,7 +1366,11 @@ describe("catalog feed projection", () => {
   it("includes skills from verified personal publishers", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill({ ownerPublisherId: "publishers:steipete" })], {
-        "publishers:steipete": { _id: "publishers:steipete", kind: "user", handle: "steipete" },
+        "publishers:steipete": {
+          _id: "publishers:steipete",
+          kind: "user",
+          handle: "steipete",
+        },
         "skillVersions:1": makeSkillVersion(),
       }),
       { publisherId: "publishers:steipete", cursor: null },
@@ -1186,7 +1388,11 @@ describe("catalog feed projection", () => {
   it("excludes a latest version blocked by the download safety gate", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill()], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+        "publishers:1": {
+          _id: "publishers:1",
+          kind: "org",
+          handle: "openclaw",
+        },
         "skillVersions:1": makeSkillVersion({
           llmAnalysis: { status: "complete", verdict: "malicious" },
         }),
@@ -1201,14 +1407,26 @@ describe("catalog feed projection", () => {
     const blockedStates = [
       makeGitHubSkill({ slug: "pending-scan", githubScanStatus: "pending" }),
       makeGitHubSkill({ slug: "failed-scan", githubScanStatus: "failed" }),
-      makeGitHubSkill({ slug: "malicious-scan", githubScanStatus: "malicious" }),
-      makeGitHubSkill({ slug: "missing-upstream", githubCurrentStatus: "missing" }),
+      makeGitHubSkill({
+        slug: "malicious-scan",
+        githubScanStatus: "malicious",
+      }),
+      makeGitHubSkill({
+        slug: "missing-upstream",
+        githubCurrentStatus: "missing",
+      }),
       makeGitHubSkill({ slug: "removed-upstream", githubRemovedAt: 1 }),
       makeGitHubSkill({ slug: "hidden", moderationStatus: "hidden" }),
       makeGitHubSkill({ slug: "missing-source", githubSourceId: undefined }),
       makeGitHubSkill({ slug: "missing-path", githubPath: undefined }),
-      makeGitHubSkill({ slug: "missing-commit", githubCurrentCommit: undefined }),
-      makeGitHubSkill({ slug: "missing-hash", githubCurrentContentHash: undefined }),
+      makeGitHubSkill({
+        slug: "missing-commit",
+        githubCurrentCommit: undefined,
+      }),
+      makeGitHubSkill({
+        slug: "missing-hash",
+        githubCurrentContentHash: undefined,
+      }),
     ];
 
     const result = (await listOfficialSkillEntriesHandler(
@@ -1234,7 +1452,9 @@ describe("catalog feed projection", () => {
           kind: "org",
           handle: "community",
         },
-        "githubSkillSources:1": makeGitHubSource({ ownerPublisherId: "publishers:community" }),
+        "githubSkillSources:1": makeGitHubSource({
+          ownerPublisherId: "publishers:community",
+        }),
       }),
       { publisherId: "publishers:community", cursor: null },
     )) as { entries: unknown[] };
@@ -1249,7 +1469,11 @@ describe("catalog feed projection", () => {
 
     const unverified = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill({ ownerPublisherId: "publishers:unverified" })], {
-        "publishers:unverified": { _id: "publishers:unverified", kind: "org", handle: "vendor" },
+        "publishers:unverified": {
+          _id: "publishers:unverified",
+          kind: "org",
+          handle: "vendor",
+        },
         "skillVersions:1": makeSkillVersion(),
       }),
       { publisherId: "publishers:unverified", cursor: null },
@@ -1258,10 +1482,17 @@ describe("catalog feed projection", () => {
       makeCtx(
         [
           makeSkill({ latestVersionId: undefined }),
-          makeSkill({ _id: "skills:no-hash", latestVersionId: "skillVersions:no-hash" }),
+          makeSkill({
+            _id: "skills:no-hash",
+            latestVersionId: "skillVersions:no-hash",
+          }),
         ],
         {
-          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "publishers:1": {
+            _id: "publishers:1",
+            kind: "org",
+            handle: "openclaw",
+          },
           "skillVersions:no-hash": makeSkillVersion({ sha256hash: undefined }),
         },
       ),

@@ -9,6 +9,7 @@ import {
   normalizeCatalogFeedEntries,
   parseCatalogFeedShard,
   serializeCatalogFeedShard,
+  validateCatalogFeedShardWindow,
   type CatalogFeedEntry,
 } from "clawhub-schema";
 import { v } from "convex/values";
@@ -54,7 +55,10 @@ function splitOversizedShard(args: {
   }
   const midpoint = Math.ceil(args.entries.length / 2);
   return [
-    ...splitOversizedShard({ ...args, entries: args.entries.slice(0, midpoint) }),
+    ...splitOversizedShard({
+      ...args,
+      entries: args.entries.slice(0, midpoint),
+    }),
     ...splitOversizedShard({ ...args, entries: args.entries.slice(midpoint) }),
   ];
 }
@@ -126,6 +130,7 @@ export const beginCatalogFeedShardPublication = internalMutation({
     requiresProjection: v.boolean(),
   },
   handler: async (ctx, args) => {
+    validateCatalogFeedShardWindow(args.generatedAt, args.expiresAt);
     const generatedAt = Date.parse(args.generatedAt);
     const expiresAt = Date.parse(args.expiresAt);
     if (
@@ -227,7 +232,9 @@ export const planCatalogFeedShardPublication = internalMutation({
     ) {
       throw new Error("Catalog feed shard publication plan is invalid");
     }
-    await ctx.db.patch(publication._id, { expectedShardCount: args.expectedShardCount });
+    await ctx.db.patch(publication._id, {
+      expectedShardCount: args.expectedShardCount,
+    });
   },
 });
 
@@ -339,7 +346,8 @@ export const finalizeCatalogFeedShardPublication = internalMutation({
 export const getLatestCatalogFeedShardPublication = internalQuery({
   args: { feedId: feedIdValidator, now: v.string() },
   handler: async (ctx, args) => {
-    if (!Number.isFinite(Date.parse(args.now))) {
+    const now = Date.parse(args.now);
+    if (!Number.isFinite(now)) {
       throw new Error("Catalog feed shard lookup time is invalid");
     }
     const publication = await ctx.db
@@ -348,9 +356,8 @@ export const getLatestCatalogFeedShardPublication = internalQuery({
         q.eq("feedId", args.feedId).eq("status", "ready"),
       )
       .order("desc")
-      .filter((q) => q.gt(q.field("expiresAt"), args.now))
       .first();
-    if (!publication) return null;
+    if (!publication || Date.parse(publication.expiresAt) <= now) return null;
     const shards = await ctx.db
       .query("catalogFeedShardDescriptors")
       .withIndex("by_publication_and_index", (q) => q.eq("publicationId", publication._id))

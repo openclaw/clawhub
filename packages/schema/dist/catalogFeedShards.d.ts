@@ -98,6 +98,7 @@ export declare const CatalogFeedShardSchema: import("arktype/internal/variants/o
     })[];
 }, {}>;
 export type CatalogFeedShard = (typeof CatalogFeedShardSchema)[inferred];
+export declare function validateCatalogFeedShardWindow(generatedAt: string, expiresAt: string): void;
 export declare function parseCatalogFeedShardRoot(value: unknown): CatalogFeedShardRoot;
 export declare function parseCatalogFeedShard(value: unknown): CatalogFeedShard;
 export declare function serializeCatalogFeedShard(shard: CatalogFeedShard): string;

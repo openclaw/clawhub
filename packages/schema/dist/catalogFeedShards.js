@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import { CatalogFeedEntrySchema, CATALOG_FEED_ID, CATALOG_FEED_SCHEMA_VERSION, CATALOG_SKILLS_FEED_ID, normalizeCatalogFeedEntries, } from "./catalogFeed.js";
+import { CatalogFeedEntrySchema, CATALOG_FEED_ID, CATALOG_FEED_SCHEMA_VERSION, CATALOG_SKILLS_FEED_ID, compareCatalogFeedStrings, normalizeCatalogFeedEntries, } from "./catalogFeed.js";
 export const CATALOG_FEED_SHARD_ROOT_PAYLOAD_TYPE = "openclaw.official-external-plugin-catalog-shard-root.v1";
 export const CATALOG_SKILLS_FEED_SHARD_ROOT_PAYLOAD_TYPE = "openclaw.official-skills-catalog-shard-root.v1";
 export const CATALOG_FEED_SHARD_MAX_BYTES = 1024 * 1024;
@@ -43,7 +43,7 @@ function requireNonNegativeInteger(value, name) {
         throw new Error(`${name} must be a non-negative safe integer`);
     }
 }
-function requireValidWindow(generatedAt, expiresAt) {
+export function validateCatalogFeedShardWindow(generatedAt, expiresAt) {
     const isRfc3339Instant = (value) => {
         const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|([+-])(\d{2}):(\d{2}))$/u.exec(value);
         if (!match)
@@ -91,7 +91,7 @@ export function parseCatalogFeedShardRoot(value) {
     }
     requireFeedId(root.feedId);
     requireNonNegativeInteger(root.sequence, "Catalog feed shard root sequence");
-    requireValidWindow(root.generatedAt, root.expiresAt);
+    validateCatalogFeedShardWindow(root.generatedAt, root.expiresAt);
     if (root.metadata.description !== null && utf8Length(root.metadata.description) > 1024) {
         throw new Error("Catalog feed shard root description exceeds 1024 UTF-8 bytes");
     }
@@ -180,7 +180,7 @@ export function parseCatalogFeedShard(value) {
         if (identities.has(identity))
             throw new Error("Catalog feed shard entry identity is duplicated");
         identities.add(identity);
-        if (previousId !== undefined && previousId.localeCompare(entry.id) >= 0) {
+        if (previousId !== undefined && compareCatalogFeedStrings(previousId, entry.id) >= 0) {
             throw new Error("Catalog feed shard entries must use deterministic id ordering");
         }
         previousId = entry.id;
@@ -259,7 +259,7 @@ export async function validateCatalogFeedShardSet(rootValue, shardPayloads) {
             if (identities.has(identity))
                 throw new Error("Catalog feed shard set identity is duplicated");
             identities.add(identity);
-            if (previousId !== undefined && previousId.localeCompare(entry.id) >= 0) {
+            if (previousId !== undefined && compareCatalogFeedStrings(previousId, entry.id) >= 0) {
                 throw new Error("Catalog feed shard set ordering is invalid");
             }
             previousId = entry.id;

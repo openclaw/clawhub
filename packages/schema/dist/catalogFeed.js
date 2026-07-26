@@ -67,6 +67,10 @@ export const CATALOG_FEED_SOURCE_REF = "public-clawhub";
 export const CATALOG_FEED_GITHUB_SOURCE_REF = "public-github";
 export const CATALOG_SKILLS_FEED_ID = "clawhub-official-skills";
 export const CATALOG_SKILLS_FEED_DESCRIPTION = "Skills published by verified OpenClaw publishers on ClawHub.";
+/** Locale-independent UTF-16 code-unit ordering for deterministic wire payloads. */
+export function compareCatalogFeedStrings(left, right) {
+    return left < right ? -1 : left > right ? 1 : 0;
+}
 export function parseCatalogFeed(value) {
     const feed = CatalogFeedSchema.assert(value);
     if (feed.schemaVersion !== CATALOG_FEED_SCHEMA_VERSION) {
@@ -92,7 +96,7 @@ export function parseCatalogFeed(value) {
 }
 export function normalizeCatalogFeedEntries(entries) {
     return [...entries]
-        .sort((left, right) => left.id.localeCompare(right.id))
+        .sort((left, right) => compareCatalogFeedStrings(left.id, right.id))
         .map((entry) => ({
         type: entry.type,
         id: entry.id,
@@ -109,9 +113,7 @@ export function normalizeCatalogFeedEntries(entries) {
         },
         install: {
             candidates: [...entry.install.candidates]
-                .sort((left, right) => [left.sourceRef, left.package, left.version, left.integrity]
-                .join("\u0000")
-                .localeCompare([right.sourceRef, right.package, right.version, right.integrity].join("\u0000")))
+                .sort((left, right) => compareCatalogFeedStrings([left.sourceRef, left.package, left.version, left.integrity].join("\u0000"), [right.sourceRef, right.package, right.version, right.integrity].join("\u0000")))
                 .map((candidate) => ({
                 sourceRef: candidate.sourceRef,
                 package: candidate.package,
