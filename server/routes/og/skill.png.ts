@@ -1,6 +1,6 @@
 import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, getRequestHost, setHeader } from "h3";
-import { fetchImageDataUrl } from "../../og/fetchImageDataUrl";
+import { fetchImageDataUrl, fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchSkillOgMeta } from "../../og/fetchSkillOgMeta";
 import { resolveOgDownloadsDisplay } from "../../og/formatOgStats";
 import {
@@ -86,12 +86,19 @@ export default defineEventHandler(async (event) => {
     getWatermarkDataUrl(),
     ensureResvgWasm().then(() => getFontBuffers()),
   ]);
-  const avatarDataUrl = await fetchImageDataUrl(avatarFromQuery || meta?.ownerImage);
+  const skillIconDataUrl = avatarFromQuery
+    ? null
+    : await fetchPublisherProfileImageDataUrl(meta?.icon);
+  const avatarDataUrl = avatarFromQuery
+    ? await fetchImageDataUrl(avatarFromQuery)
+    : (skillIconDataUrl ?? (await fetchPublisherProfileImageDataUrl(meta?.ownerImage)));
 
   const svg = buildSkillOgSvg({
     markDataUrl,
     watermarkDataUrl,
     avatarDataUrl,
+    avatarShape: skillIconDataUrl ? "rounded" : "circle",
+    avatarFit: skillIconDataUrl ? "contain" : "cover",
     title,
     description,
     ownerLabel,

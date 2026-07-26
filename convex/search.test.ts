@@ -1239,6 +1239,7 @@ describe("search helpers", () => {
         id: "skills:calendar",
         slug: "calendar",
         displayName: "Calendar",
+        icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
         downloads: 1_000_000,
       }),
       version: null,
@@ -1281,6 +1282,7 @@ describe("search helpers", () => {
     expect(result[0]).toMatchObject({
       canonicalUrl: "/openclaw/skills/calendar",
       install: { reference: "openclaw/calendar" },
+      icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
       metrics: { rolling60DayInstalls: 12, bookmarks: 3 },
     });
     expect((result[0]?.native as { owner?: unknown })?.owner).not.toHaveProperty("bio");
@@ -1291,6 +1293,7 @@ describe("search helpers", () => {
         source: "https://skills.sh/acme/skills/calendar",
       },
       install: { reference: "skills-sh:acme/skills/calendar" },
+      icon: null,
       sourceIdentity: { lifetimeInstalls: 10_000_000 },
     });
   });
@@ -2887,6 +2890,7 @@ function makePublicSkill(params: {
   slug: string;
   displayName: string;
   summary?: string;
+  icon?: string;
   downloads?: number;
   ownerPublisherId?: string;
   installs?: number;
@@ -2901,6 +2905,7 @@ function makePublicSkill(params: {
     slug: params.slug,
     displayName: params.displayName,
     summary: params.summary ?? `${params.displayName} summary`,
+    icon: params.icon,
     ownerUserId: "users:owner",
     ownerPublisherId: params.ownerPublisherId,
     canonicalSkillId: undefined,

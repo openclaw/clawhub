@@ -11,6 +11,8 @@ const getWatermarkDataUrlMock = vi.fn();
 const ensureResvgWasmMock = vi.fn();
 const getFontBuffersMock = vi.fn();
 const buildSkillOgSvgMock = vi.fn();
+const fetchImageDataUrlMock = vi.fn();
+const fetchPublicOgImageDataUrlMock = vi.fn();
 const renderAsPngMock = vi.fn();
 const freeMock = vi.fn();
 const resvgCtorMock = vi.fn();
@@ -50,7 +52,8 @@ vi.mock("./ogAssets", () => ({
 }));
 
 vi.mock("./fetchImageDataUrl", () => ({
-  fetchImageDataUrl: vi.fn(async () => null),
+  fetchImageDataUrl: (...args: unknown[]) => fetchImageDataUrlMock(...args),
+  fetchPublisherProfileImageDataUrl: (...args: unknown[]) => fetchPublicOgImageDataUrlMock(...args),
 }));
 
 vi.mock("./skillOgSvg", () => ({
@@ -71,6 +74,8 @@ beforeEach(() => {
   ensureResvgWasmMock.mockReset();
   getFontBuffersMock.mockReset();
   buildSkillOgSvgMock.mockReset();
+  fetchImageDataUrlMock.mockReset();
+  fetchPublicOgImageDataUrlMock.mockReset();
   renderAsPngMock.mockReset();
   freeMock.mockReset();
   resvgCtorMock.mockReset();
@@ -80,6 +85,8 @@ beforeEach(() => {
   ensureResvgWasmMock.mockResolvedValue(undefined);
   getFontBuffersMock.mockResolvedValue([new Uint8Array([1, 2, 3])]);
   buildSkillOgSvgMock.mockReturnValue("<svg>skill</svg>");
+  fetchImageDataUrlMock.mockResolvedValue(null);
+  fetchPublicOgImageDataUrlMock.mockResolvedValue(null);
   renderAsPngMock.mockReturnValue(new Uint8Array([7, 8, 9]));
 });
 
@@ -122,6 +129,8 @@ describe("skill og route", () => {
       markDataUrl: "data:image/png;base64,AAA=",
       watermarkDataUrl: "data:image/png;base64,WWW=",
       avatarDataUrl: null,
+      avatarShape: "circle",
+      avatarFit: "cover",
       title: "Gifgrep",
       description: "Search GIFs fast",
       ownerLabel: "@steipete",
@@ -156,6 +165,7 @@ describe("skill og route", () => {
       version: null,
       displayName: "Gifgrep",
       summary: "Search GIFs fast",
+      icon: null,
       ownerImage: null,
       stats: { downloads: 1200 },
       moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
@@ -180,6 +190,72 @@ describe("skill og route", () => {
           { value: "1.2k", label: "Downloads" },
           { value: "PASS", label: "Audit" },
         ],
+      }),
+    );
+  });
+
+  it("prefers the skill icon over the publisher profile image", async () => {
+    const iconUrl = "https://clawhub.ai/api/v1/skill-icons/aaaaaaaa";
+    const ownerImage = "https://avatars.githubusercontent.com/u/1?v=4";
+    getQueryMock.mockReturnValue({ slug: "playwright-interactive" });
+    fetchSkillOgMetaMock.mockResolvedValue({
+      owner: "tridefender",
+      version: "1.0.0",
+      displayName: "Playwright Interactive",
+      summary: "Control a browser interactively",
+      icon: iconUrl,
+      ownerImage,
+      stats: { downloads: 42 },
+      moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
+    });
+    fetchPublicOgImageDataUrlMock.mockImplementation(async (url: string | null | undefined) =>
+      url === iconUrl ? "data:image/png;base64,ICON" : null,
+    );
+
+    const handler = (await import("../routes/og/skill.png")).default;
+    await handler({} as never);
+
+    expect(fetchPublicOgImageDataUrlMock).toHaveBeenCalledTimes(1);
+    expect(fetchPublicOgImageDataUrlMock).toHaveBeenCalledWith(iconUrl);
+    expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        avatarDataUrl: "data:image/png;base64,ICON",
+        avatarShape: "rounded",
+        avatarFit: "contain",
+      }),
+    );
+  });
+
+  it("falls back to the publisher profile image when the skill icon cannot render", async () => {
+    const iconUrl = "https://clawhub.ai/api/v1/skill-icons/aaaaaaaa";
+    const ownerImage = "https://avatars.githubusercontent.com/u/1?v=4";
+    getQueryMock.mockReturnValue({ slug: "playwright-interactive" });
+    fetchSkillOgMetaMock.mockResolvedValue({
+      owner: "tridefender",
+      version: "1.0.0",
+      displayName: "Playwright Interactive",
+      summary: "Control a browser interactively",
+      icon: iconUrl,
+      ownerImage,
+      stats: { downloads: 42 },
+      moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
+    });
+    fetchPublicOgImageDataUrlMock.mockImplementation(async (url: string | null | undefined) =>
+      url === ownerImage ? "data:image/png;base64,PROFILE" : null,
+    );
+
+    const handler = (await import("../routes/og/skill.png")).default;
+    await handler({} as never);
+
+    expect(fetchPublicOgImageDataUrlMock.mock.calls.map(([url]) => url)).toEqual([
+      iconUrl,
+      ownerImage,
+    ]);
+    expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        avatarDataUrl: "data:image/png;base64,PROFILE",
+        avatarShape: "circle",
+        avatarFit: "cover",
       }),
     );
   });

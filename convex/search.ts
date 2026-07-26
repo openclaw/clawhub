@@ -540,6 +540,7 @@ type CanonicalSkillSearchResult = {
   slug: string;
   displayName: string;
   summary: string | null;
+  icon: string | null;
   score: number;
   canonicalUrl: string;
   links: {
@@ -675,6 +676,7 @@ function buildNativeCanonicalResult(
     slug: entry.skill.slug,
     displayName: entry.skill.displayName,
     summary: entry.skill.summary ?? null,
+    icon: entry.skill.icon ?? null,
     score: canonicalScore(relevance),
     canonicalUrl,
     links: { canonical: canonicalUrl, source: null },
@@ -748,6 +750,7 @@ function buildExternalCanonicalResult(
     slug: digest.slug,
     displayName: digest.displayName,
     summary: digest.searchSummary ?? null,
+    icon: null,
     score: canonicalScore(relevance),
     canonicalUrl,
     links: { canonical: canonicalUrl, source: digest.sourceUrl },

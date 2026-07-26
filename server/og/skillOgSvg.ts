@@ -4,6 +4,8 @@ export type SkillOgSvgParams = {
   markDataUrl: string;
   watermarkDataUrl?: string | null;
   avatarDataUrl?: string | null;
+  avatarShape?: "circle" | "rounded";
+  avatarFit?: "cover" | "contain";
   title: string;
   description: string;
   ownerLabel: string;
@@ -17,7 +19,8 @@ export function buildSkillOgSvg(params: SkillOgSvgParams) {
     markDataUrl: params.markDataUrl,
     watermarkDataUrl: params.watermarkDataUrl,
     avatarDataUrl: params.avatarDataUrl,
-    avatarShape: "circle",
+    avatarShape: params.avatarShape ?? "circle",
+    avatarFit: params.avatarFit,
     surfaceLabel: "Skill",
     eyebrow: params.ownerLabel,
     title: params.title,

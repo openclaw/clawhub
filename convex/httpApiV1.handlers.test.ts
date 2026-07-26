@@ -1968,6 +1968,7 @@ describe("httpApiV1 handlers", () => {
           slug: "demo",
           displayName: "Demo",
           summary: "Summary",
+          icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
           updatedAt: 1,
           stats: { downloads: 50 },
         },
@@ -1996,6 +1997,7 @@ describe("httpApiV1 handlers", () => {
           slug: "demo",
           displayName: "Demo",
           summary: "Summary",
+          icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
           version: "1.0.0",
           downloads: 50,
           updatedAt: 1,
@@ -2690,6 +2692,7 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo",
             summary: "s",
+            icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
             topics: ["Automation", "Email"],
             tags: { latest: "versions:1" },
             stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
@@ -2728,6 +2731,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.skill.slug).toBe("demo");
+    expect(json.skill.icon).toBe(`/api/v1/skill-icons/${"a".repeat(64)}`);
     expect(json.skill.topics).toEqual(["Automation", "Email"]);
     expect(json.latestVersion.version).toBe("1.0.0");
     expect(json.moderation).toEqual({

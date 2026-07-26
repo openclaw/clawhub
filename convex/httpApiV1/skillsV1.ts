@@ -191,6 +191,7 @@ type GetBySlugResult = {
     slug: string;
     displayName: string;
     summary?: string;
+    icon?: string;
     topics?: string[];
     tags: Record<string, Id<"skillVersions">>;
     stats: unknown;
@@ -1902,6 +1903,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           slug: result.skill.slug,
           displayName: result.skill.displayName,
           summary: result.skill.summary ?? null,
+          icon: result.skill.icon ?? null,
           description: description ?? result.latestVersion?.parsed?.description ?? null,
           topics: result.skill.topics,
           tags,

@@ -4,6 +4,7 @@ type LegacySearchResult = {
     slug?: unknown;
     displayName?: unknown;
     summary?: unknown;
+    icon?: unknown;
     updatedAt?: unknown;
     stats?: { downloads?: unknown };
   } | null;
@@ -61,6 +62,7 @@ export function serializeCanonicalSkillSearchResults(results: unknown[]) {
       displayName:
         typeof legacy.skill?.displayName === "string" ? legacy.skill.displayName : undefined,
       summary: typeof legacy.skill?.summary === "string" ? legacy.skill.summary : null,
+      icon: typeof legacy.skill?.icon === "string" ? legacy.skill.icon : null,
       version: typeof legacy.version?.version === "string" ? legacy.version.version : null,
       downloads:
         typeof legacy.skill?.stats?.downloads === "number"
