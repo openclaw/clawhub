@@ -46,11 +46,18 @@ type SeedSkillSpec = {
 type SeedActionArgs = {
   reset?: boolean;
   excludeFromPublicCatalog?: boolean;
+  staleProofSkill?: TestProofSkillIdentity;
   ownerUserId?: Id<"users">;
   flaggedSkillSlug?: string;
   scannedSkillSlug?: string;
   flaggedPluginName?: string;
   scannedPluginName?: string;
+};
+
+type TestProofSkillIdentity = {
+  ownerHandle: string;
+  slug: string;
+  summary: string;
 };
 
 type SeedActionResult = {
@@ -278,6 +285,12 @@ const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
 const TRUNCATION_SKILL_SLUG = "local-truncation-plugin-runtime-integration-skill";
 const TRUNCATION_PLUGIN_NAME = "local-truncation-runtime-plugin";
+const CLAW_526_TEST_PROOF_SKILL: TestProofSkillIdentity = {
+  ownerHandle: "patrick-erichsen",
+  slug: "test",
+  summary:
+    "CLAW-526 Clean Preview Skill validates staged publishing through the hosted ClawHub Test UI.",
+};
 const TRUNCATION_FIXTURE_DISPLAY_NAME =
   "[120] Plugin Runtime Integration ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHI";
 const SCANNED_SKILL_SUMMARY =
@@ -863,6 +876,7 @@ async function seedLocalFixturesHandler(
     {
       reset: args.reset,
       excludeFromPublicCatalog: args.excludeFromPublicCatalog,
+      staleProofSkill: args.staleProofSkill,
       flaggedSkillSlug: args.flaggedSkillSlug,
       scannedSkillSlug: args.scannedSkillSlug,
       flaggedPluginName: args.flaggedPluginName,
@@ -906,6 +920,7 @@ export const seedTestFixtures: ReturnType<typeof internalAction> = internalActio
     return await seedLocalFixturesHandler(ctx, {
       reset: false,
       excludeFromPublicCatalog: true,
+      staleProofSkill: CLAW_526_TEST_PROOF_SKILL,
       flaggedSkillSlug: "test-flagged-wallet-sync",
       scannedSkillSlug: "test-agentic-risk-demo",
       flaggedPluginName: "test-flagged-runtime-plugin",
@@ -2814,6 +2829,7 @@ function flaggedWalletClawScanAnalysis(now: number) {
 type SeedLocalModerationFixturesArgs = {
   reset?: boolean;
   excludeFromPublicCatalog?: boolean;
+  staleProofSkill?: TestProofSkillIdentity;
   ownerUserId?: Id<"users">;
   flaggedSkillSlug?: string;
   scannedSkillSlug?: string;
@@ -2829,6 +2845,43 @@ type SeedLocalModerationFixturesArgs = {
   scannedPluginReadme: string;
 };
 
+async function hideStaleTestProofSkill(
+  ctx: MutationCtx,
+  identity: TestProofSkillIdentity,
+  now: number,
+) {
+  const publisher = await ctx.db
+    .query("publishers")
+    .withIndex("by_handle", (q) => q.eq("handle", identity.ownerHandle))
+    .unique();
+  if (!publisher) return;
+  const skill = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_slug", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("slug", identity.slug),
+    )
+    .unique();
+  // The summary guard makes this an exact Test-proof cleanup, not a rule that
+  // hides arbitrary publisher content sharing a short fixture slug.
+  if (!skill || skill.summary !== identity.summary) return;
+  await ctx.db.patch(skill._id, {
+    moderationStatus: "hidden",
+    moderationReason: "test.fixture",
+    updatedAt: now,
+  });
+  const digest = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+    .unique();
+  if (digest) {
+    await ctx.db.patch(digest._id, {
+      moderationStatus: "hidden",
+      moderationReason: "test.fixture",
+      updatedAt: now,
+    });
+  }
+}
+
 export async function seedLocalModerationFixturesHandler(
   ctx: MutationCtx,
   args: SeedLocalModerationFixturesArgs,
@@ -2842,6 +2895,9 @@ export async function seedLocalModerationFixturesHandler(
   const now = Date.now();
   const owner = await ensureSeedOwner(ctx, args.ownerUserId);
   await retireLegacyLocalOwnerPublishers(ctx, owner, now);
+  if (args.excludeFromPublicCatalog && args.staleProofSkill) {
+    await hideStaleTestProofSkill(ctx, args.staleProofSkill, now);
+  }
   const existingSkill = await findSeedSkillFixture(ctx, flaggedSkillSlug);
   const existingScannedSkill = await findScannedSkillFixture(ctx, scannedSkillSlug);
   const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
@@ -3700,6 +3756,9 @@ export const seedLocalModerationFixturesMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
     excludeFromPublicCatalog: v.optional(v.boolean()),
+    staleProofSkill: v.optional(
+      v.object({ ownerHandle: v.string(), slug: v.string(), summary: v.string() }),
+    ),
     ownerUserId: v.optional(v.id("users")),
     flaggedSkillSlug: v.optional(v.string()),
     scannedSkillSlug: v.optional(v.string()),
