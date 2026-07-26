@@ -21,6 +21,11 @@ describe("MarketplaceIcon", () => {
 
     expect(container.querySelector("img")?.getAttribute("src")).toBe(imageUrl);
     expect(container.querySelector("svg.marketplace-icon-glyph")).toBeNull();
+    expect(
+      container
+        .querySelector(".marketplace-icon")
+        ?.classList.contains("marketplace-icon-image-backed"),
+    ).toBe(true);
   });
 
   it("ignores legacy skill custom-icon values", () => {
@@ -39,6 +44,22 @@ describe("MarketplaceIcon", () => {
 
     expect(container.querySelector("img")).toBeNull();
     expect(container.querySelector("svg.marketplace-icon-glyph")).toBeTruthy();
+    expect(
+      container
+        .querySelector(".marketplace-icon")
+        ?.classList.contains("marketplace-icon-image-backed"),
+    ).toBe(false);
+  });
+
+  it("keeps hosted skill icons image-backed in muted contexts", () => {
+    const imageUrl = `/api/v1/skill-icons/${"b".repeat(64)}`;
+    const { container } = render(
+      <MarketplaceIcon kind="skill" label="Muted Icon Skill" imageUrl={imageUrl} tone="muted" />,
+    );
+    const icon = container.querySelector(".marketplace-icon");
+
+    expect(icon?.classList.contains("marketplace-icon-muted")).toBe(true);
+    expect(icon?.classList.contains("marketplace-icon-image-backed")).toBe(true);
   });
 
   it("renders Slash for skills whose stored category cannot resolve", () => {

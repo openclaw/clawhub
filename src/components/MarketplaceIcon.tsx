@@ -66,7 +66,7 @@ export function MarketplaceIcon({
     <span
       className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
         tone === "muted" ? " marketplace-icon-muted" : ""
-      }`}
+      }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}`}
       style={
         {
           "--marketplace-icon-accent": hashedTone.accent,

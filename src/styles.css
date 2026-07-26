@@ -3910,6 +3910,14 @@ code {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--marketplace-icon-accent) 20%, transparent);
 }
 
+.marketplace-icon.marketplace-icon-image-backed,
+.marketplace-icon.marketplace-icon-image-backed:hover {
+  background: #fff;
+  border-color: rgb(0 0 0 / 14%);
+  border-radius: var(--oc-radius-control);
+  box-shadow: none;
+}
+
 .marketplace-icon-muted,
 .marketplace-icon-muted:hover {
   background: color-mix(in srgb, var(--ink) 4%, transparent);
