@@ -995,14 +995,38 @@ describe("catalog feed projection", () => {
       },
     };
     const runQuery = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
-      if ("family" in args) return [];
+      if ("family" in args) return { entries: [], isDone: true, continueCursor: "" };
+      if ("publisherId" in args) return { entries: [], isDone: true, continueCursor: "" };
       if ("cursor" in args) return { publishers: [], isDone: true, continueCursor: "" };
       return [clawEntry];
     });
-    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => ({
-      feedId: typeof args.feedId === "string" ? args.feedId : EXPERIMENTAL_CLAW_FEED_ID,
-      entryCount: Array.isArray(args.entries) ? args.entries.length : 0,
-    }));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("entries" in args && !("feedId" in args)) {
+        return { feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 };
+      }
+      if ("description" in args && "entries" in args) {
+        return {
+          feedId: args.feedId,
+          sequence: 1,
+          entryCount: (args.entries as unknown[]).length,
+        };
+      }
+      if ("description" in args) {
+        return {
+          publicationId: `${String(args.feedId)}:shards`,
+          sequence: 1,
+          publishedAt: 1,
+        };
+      }
+      if (
+        typeof args.publicationId === "string" &&
+        !("expectedShardCount" in args) &&
+        !("payload" in args)
+      ) {
+        return { sequence: 1, publishedAt: 1, entryCount: 0 };
+      }
+      return {};
+    });
 
     const result = await publishHandler(
       { runQuery, runMutation },
@@ -1010,15 +1034,16 @@ describe("catalog feed projection", () => {
     );
 
     expect(runMutation).toHaveBeenCalled();
-    expect(runMutation).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ entries: [clawEntry] }),
+    const clawMutation = runMutation.mock.calls.find(
+      ([, args]) => Array.isArray(args.entries) && !("feedId" in args),
     );
-    expect(runMutation.mock.calls.at(-1)?.[1]).not.toHaveProperty("feedId");
+    expect(clawMutation?.[1]).toEqual(expect.objectContaining({ entries: [clawEntry] }));
+    expect(clawMutation?.[1]).not.toHaveProperty("feedId");
     expect(result.at(-1)).toEqual({ feedId: EXPERIMENTAL_CLAW_FEED_ID, entryCount: 1 });
   });
 
   it("publishes plugins through shards beyond the legacy atomic limit", async () => {
+    vi.stubEnv("CLAWHUB_EXPERIMENTAL_CLAWS", "0");
     const pluginEntries = Array.from({ length: 1001 }, (_, index) => makeFeedPluginEntry(index));
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if ("description" in args && "entries" in args) {

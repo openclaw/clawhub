@@ -290,6 +290,31 @@ async function listFamilyEntries(
   const entries: Array<CatalogFeedPluginEntry | ExperimentalClawFeedEntry> = [];
   let cursor: string | null = null;
 
+  if (family === CATALOG_CLAW_FAMILY) {
+    while (true) {
+      const page = await ctx.db
+        .query("packages")
+        .withIndex("by_active_family_official_downloads", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", true),
+        )
+        .order("desc")
+        .paginate({ cursor, numItems: CATALOG_FEED_PAGE_SIZE });
+      for (const pkg of page.page) {
+        const entry = await buildEntry(ctx, pkg);
+        if (!entry) continue;
+        if (entry.type !== "claw") {
+          throw new Error("Claw feed projection returned a mismatched entry type");
+        }
+        entries.push(entry);
+        if (entries.length > MAX_ATOMIC_CATALOG_FEED_ENTRIES) {
+          throw new Error(`Catalog feed exceeds ${MAX_ATOMIC_CATALOG_FEED_ENTRIES} entries`);
+        }
+      }
+      if (page.isDone) return entries;
+      cursor = page.continueCursor;
+    }
+  }
+
   while (true) {
     const page = await listFamilyEntryPage(ctx, family, cursor);
     entries.push(...page.entries);
@@ -310,10 +335,14 @@ async function listFamilyEntryPage(
     )
     .order("desc")
     .paginate({ cursor, numItems: CATALOG_FEED_PAGE_SIZE });
-  const entries: CatalogFeedEntry[] = [];
+  const entries: CatalogFeedPluginEntry[] = [];
   for (const pkg of page.page) {
     const entry = await buildEntry(ctx, pkg);
-    if (entry) entries.push(entry);
+    if (!entry) continue;
+    if (entry.type !== "plugin") {
+      throw new Error("Plugin feed projection returned a mismatched entry type");
+    }
+    entries.push(entry);
   }
   return {
     entries,
