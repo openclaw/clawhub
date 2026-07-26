@@ -3,6 +3,7 @@ import {
   createHash,
   createPublicKey,
   generateKeyPairSync,
+  randomUUID,
   verify as verifyDetached,
 } from "node:crypto";
 import { existsSync } from "node:fs";
@@ -11,6 +12,7 @@ import { resolve } from "node:path";
 
 const ACTIVE_CONFIG_NAME = "CLAWHUB_FEED_SIGNING_CONFIG";
 const PENDING_CONFIG_NAME = "CLAWHUB_FEED_SIGNING_PENDING_CONFIG";
+const PREVIOUS_CONFIG_NAME = "CLAWHUB_FEED_SIGNING_PREVIOUS_CONFIG";
 const PAYLOAD_TYPE = "openclaw.official-external-plugin-catalog-feed.v1";
 
 type Target = "prod" | { deployment: string };
@@ -113,15 +115,15 @@ function runConvex(args: string[], input?: string) {
   return child.stdout ?? "";
 }
 
-function parseSigningConfig(raw: string) {
+function parseSigningConfig(raw: string, label = "Pending") {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw.trim());
   } catch {
-    throw new Error("Pending signing config is not valid JSON");
+    throw new Error(`${label} signing config is not valid JSON`);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Pending signing config is not an object");
+    throw new Error(`${label} signing config is not an object`);
   }
   const record = parsed as Record<string, unknown>;
   if (
@@ -129,7 +131,7 @@ function parseSigningConfig(raw: string) {
     typeof record.keyId !== "string" ||
     typeof record.privateKey !== "string"
   ) {
-    throw new Error("Pending signing config has an unexpected shape");
+    throw new Error(`${label} signing config has an unexpected shape`);
   }
   return { keyId: record.keyId, privateKey: record.privateKey };
 }
@@ -150,8 +152,16 @@ function dsseInput(payload: Buffer) {
   ]);
 }
 
-async function verifyEndpoint(url: string, publicKey: string, keyId: string) {
-  const response = await fetch(url, { headers: { Accept: "application/vnd.dsse+json" } });
+export async function verifyEndpoint(url: string, publicKey: string, keyId: string) {
+  const verificationUrl = new URL(url);
+  verificationUrl.searchParams.set("feed-signing-verification", randomUUID());
+  const response = await fetch(verificationUrl, {
+    headers: {
+      Accept: "application/vnd.dsse+json",
+      "Cache-Control": "no-cache, no-store",
+      Pragma: "no-cache",
+    },
+  });
   if (!response.ok) throw new Error(`Signed feed verification failed with HTTP ${response.status}`);
   const envelope = (await response.json()) as {
     payloadType?: string;
@@ -216,8 +226,25 @@ export async function activateSigningKey(
     throw new Error("Pending private key does not match the reviewed public key");
   }
 
+  const environmentNames = runner(["env", "list", "--names-only", ...targetArgs(options.target)]);
+  let activeAlreadyPending = false;
+  if (environmentNames.split(/\r?\n/u).some((name) => name.trim() === ACTIVE_CONFIG_NAME)) {
+    const activeRaw = runner(["env", "get", ACTIVE_CONFIG_NAME, ...targetArgs(options.target)]);
+    const active = parseSigningConfig(activeRaw, "Active");
+    activeAlreadyPending =
+      active.keyId === pending.keyId && active.privateKey === pending.privateKey;
+    if (!activeAlreadyPending) {
+      runner(
+        ["env", "set", PREVIOUS_CONFIG_NAME, ...targetArgs(options.target)],
+        JSON.stringify(active),
+      );
+    }
+  }
+
   const config = JSON.stringify(pending);
-  runner(["env", "set", ACTIVE_CONFIG_NAME, ...targetArgs(options.target)], config);
+  if (!activeAlreadyPending) {
+    runner(["env", "set", ACTIVE_CONFIG_NAME, ...targetArgs(options.target)], config);
+  }
   try {
     runner(["env", "remove", PENDING_CONFIG_NAME, ...targetArgs(options.target)]);
   } catch (error) {

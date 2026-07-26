@@ -8,6 +8,7 @@ import {
   parseOptions,
   prepareSigningKey,
   type ConvexRunner,
+  verifyEndpoint,
 } from "./provision-catalog-feed-signing-key";
 
 const temporaryDirectories: string[] = [];
@@ -19,6 +20,7 @@ async function temporaryDirectory() {
 }
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
   );
@@ -138,9 +140,39 @@ describe("catalog feed signing key provisioner", () => {
 
     expect(calls).toEqual([
       ["env", "get", "CLAWHUB_FEED_SIGNING_PENDING_CONFIG", "--prod"],
+      ["env", "list", "--names-only", "--prod"],
       ["env", "set", "CLAWHUB_FEED_SIGNING_CONFIG", "--prod"],
       ["env", "remove", "CLAWHUB_FEED_SIGNING_PENDING_CONFIG", "--prod"],
     ]);
+  });
+
+  it("preserves the active signer before rotating to the pending key", async () => {
+    const directory = await temporaryDirectory();
+    const publicKey = join(directory, "next.pem");
+    let pendingConfig = "";
+    await prepareSigningKey(
+      { command: "prepare", keyId: "next", publicKeyOut: publicKey, target: "prod" },
+      { runConvex: (_args, input) => ((pendingConfig = input ?? ""), "") },
+    );
+    const activeConfig = JSON.stringify({ keyId: "current", privateKey: "current-private-key" });
+    const writes = new Map<string, string>();
+    const runConvex: ConvexRunner = (args, input) => {
+      const name = args[2] ?? "";
+      if (args[1] === "list") return "CLAWHUB_FEED_SIGNING_CONFIG\nOTHER_NAME\n";
+      if (args[1] === "get") {
+        return name === "CLAWHUB_FEED_SIGNING_PENDING_CONFIG" ? pendingConfig : activeConfig;
+      }
+      if (args[1] === "set") writes.set(name, input ?? "");
+      return "";
+    };
+
+    await activateSigningKey(
+      { command: "activate", keyId: "next", publicKey, target: "prod" },
+      { runConvex },
+    );
+
+    expect(writes.get("CLAWHUB_FEED_SIGNING_PREVIOUS_CONFIG")).toBe(activeConfig);
+    expect(writes.get("CLAWHUB_FEED_SIGNING_CONFIG")).toBe(pendingConfig);
   });
 
   it("refuses activation when the reviewed public key does not match", async () => {
@@ -179,6 +211,7 @@ describe("catalog feed signing key provisioner", () => {
     const runConvex: ConvexRunner = (args) => {
       calls.push(args);
       if (args[1] === "get") return pendingConfig;
+      if (args[1] === "list") return "";
       throw new Error("promotion failed");
     };
 
@@ -202,6 +235,7 @@ describe("catalog feed signing key provisioner", () => {
     let activated = false;
     const runConvex: ConvexRunner = (args) => {
       if (args[1] === "get") return pendingConfig;
+      if (args[1] === "list") return "";
       if (args[1] === "set") {
         activated = true;
         return "";
@@ -216,6 +250,42 @@ describe("catalog feed signing key provisioner", () => {
       ),
     ).rejects.toThrow("Signer activated, but pending-secret cleanup failed");
     expect(activated).toBe(true);
+  });
+
+  it("retries cleanup without overwriting the rollback signer", async () => {
+    const directory = await temporaryDirectory();
+    const publicKey = join(directory, "next.pem");
+    let pendingConfig = "";
+    await prepareSigningKey(
+      { command: "prepare", keyId: "next", publicKeyOut: publicKey, target: "prod" },
+      { runConvex: (_args, input) => ((pendingConfig = input ?? ""), "") },
+    );
+    const calls: string[][] = [];
+    const runConvex: ConvexRunner = (args) => {
+      calls.push(args);
+      if (args[1] === "list") return "CLAWHUB_FEED_SIGNING_CONFIG\n";
+      if (args[1] === "get") return pendingConfig;
+      return "";
+    };
+
+    await activateSigningKey(
+      { command: "activate", keyId: "next", publicKey, target: "prod" },
+      { runConvex },
+    );
+
+    expect(calls).not.toContainEqual([
+      "env",
+      "set",
+      "CLAWHUB_FEED_SIGNING_PREVIOUS_CONFIG",
+      "--prod",
+    ]);
+    expect(calls).not.toContainEqual(["env", "set", "CLAWHUB_FEED_SIGNING_CONFIG", "--prod"]);
+    expect(calls).toContainEqual([
+      "env",
+      "remove",
+      "CLAWHUB_FEED_SIGNING_PENDING_CONFIG",
+      "--prod",
+    ]);
   });
 
   it("reports endpoint failure as post-activation verification", async () => {
@@ -245,5 +315,22 @@ describe("catalog feed signing key provisioner", () => {
         },
       ),
     ).rejects.toThrow("Signer activated and pending secret removed");
+  });
+
+  it("bypasses shared caches during endpoint verification", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("unavailable", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      verifyEndpoint("https://clawhub.ai/api/v1/feeds/plugins", "unused", "next"),
+    ).rejects.toThrow("HTTP 503");
+
+    const [requestUrl, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(requestUrl.searchParams.get("feed-signing-verification")).toBeTruthy();
+    expect(init.headers).toMatchObject({
+      Accept: "application/vnd.dsse+json",
+      "Cache-Control": "no-cache, no-store",
+      Pragma: "no-cache",
+    });
   });
 });

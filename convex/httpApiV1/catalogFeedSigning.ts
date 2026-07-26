@@ -191,11 +191,30 @@ export async function signedCatalogFeedV1Handler(
 }
 
 function acceptsSignedCatalogFeed(request: Request) {
-  return (request.headers.get("Accept") ?? "").split(",").some((value) => {
-    const [mediaType, ...parameters] = value.split(";").map((part) => part.trim());
-    const disabled = parameters.some((parameter) => /^q=0(?:\.0*)?$/u.test(parameter));
-    return mediaType?.toLowerCase() === "application/vnd.dsse+json" && !disabled;
+  const ranges = (request.headers.get("Accept") ?? "").split(",").map((value) => {
+    const [rawMediaType, ...parameters] = value.split(";").map((part) => part.trim());
+    const qualityParameter = parameters.find((parameter) => /^q\s*=/iu.test(parameter));
+    const quality = qualityParameter
+      ? Number.parseFloat(qualityParameter.slice(qualityParameter.indexOf("=") + 1).trim())
+      : 1;
+    return {
+      mediaType: rawMediaType?.toLowerCase(),
+      quality: Number.isFinite(quality) && quality >= 0 && quality <= 1 ? quality : 0,
+    };
   });
+  const qualityFor = (...mediaTypesBySpecificity: string[]) => {
+    for (const mediaType of mediaTypesBySpecificity) {
+      const matchingQualities = ranges
+        .filter((range) => range.mediaType === mediaType)
+        .map((range) => range.quality);
+      if (matchingQualities.length > 0) return Math.max(...matchingQualities);
+    }
+    return 0;
+  };
+  const signedQuality = qualityFor("application/vnd.dsse+json");
+  if (!signedQuality) return false;
+  const unsignedQuality = qualityFor("application/json", "application/*", "*/*");
+  return signedQuality >= unsignedQuality;
 }
 
 function addAcceptVary(response: Response) {

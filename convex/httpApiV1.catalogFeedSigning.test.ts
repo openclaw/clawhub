@@ -84,6 +84,31 @@ describe("signed catalog feed", () => {
     expect(signed.headers.get("vary")).toContain("Accept");
   });
 
+  it.each([
+    ["application/json, application/vnd.dsse+json;q=0.1", "application/json; charset=utf-8"],
+    ["application/vnd.dsse+json;Q=0", "application/json; charset=utf-8"],
+    [
+      "application/json;q=0.5, application/vnd.dsse+json;q=0.9",
+      "application/vnd.dsse+json; charset=utf-8",
+    ],
+    [
+      "application/vnd.dsse+json;q=0.8, application/json;q=0.7, */*;q=1",
+      "application/vnd.dsse+json; charset=utf-8",
+    ],
+  ])("respects Accept quality preferences for %s", async (accept, expectedContentType) => {
+    const { env } = await signingFixture();
+    const response = await negotiatedCatalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/api/v1/feeds/plugins", {
+        headers: { Accept: accept },
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(expectedContentType);
+  });
+
   it("contains signing failures to clients that request the signed representation", async () => {
     const unsigned = await negotiatedCatalogFeedV1Handler(
       ctx as never,

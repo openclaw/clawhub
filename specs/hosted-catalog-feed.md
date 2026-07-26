@@ -233,8 +233,14 @@ bootstrap endpoint from the same origin as the feed.
 
    Activation reads the pending secret into process memory, derives its public
    key, and requires it to match the reviewed file before atomically replacing
-   `CLAWHUB_FEED_SIGNING_CONFIG`. It removes the pending secret only after the
-   active write succeeds.
+   `CLAWHUB_FEED_SIGNING_CONFIG`. When an active signer already exists, the
+   script first copies it to `CLAWHUB_FEED_SIGNING_PREVIOUS_CONFIG` so operators
+   retain one rollback signer. It removes the pending secret only after the
+   previous and active writes succeed. Endpoint verification uses a unique query
+   value plus no-cache request directives so a CDN cannot satisfy it with the
+   prior signed envelope. If pending-secret cleanup fails after activation,
+   rerunning the same command detects that the pending signer is already active
+   and retries cleanup without replacing the rollback copy.
 
 6. Publish a fresh `clawhub-official` snapshot and verify that
    an `Accept: application/vnd.dsse+json` request to `/api/v1/feeds/plugins`
@@ -251,6 +257,9 @@ bootstrap endpoint from the same origin as the feed.
    key remains trusted.
 3. After that trust update is released, run `activate` with the same key id and
    reviewed public-key file. Never activate before the trust overlap is live.
+   Activation retains the displaced signer in
+   `CLAWHUB_FEED_SIGNING_PREVIOUS_CONFIG`; do not remove it until the new signer
+   has passed the publication proof.
 4. Verify a higher-sequence publication under the new key before retiring the
    old private key.
 5. Remove the old public key in a later OpenClaw release after the supported
