@@ -948,7 +948,7 @@ const STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX = "pkgstable:";
 type StablePackageFamily = (typeof STABLE_PACKAGE_FAMILIES)[number];
 type StablePackageDiscoverySourceState = { key: IndexKey | null; done: boolean };
 type StablePackageDiscoveryCursorState = {
-  sort: "updated" | "downloads" | "recommended" | "installs";
+  sort: "updated" | "created" | "downloads" | "recommended" | "installs";
   sources: Record<StablePackageFamily, StablePackageDiscoverySourceState>;
 };
 const OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX = "pkgofficialfirst:";
@@ -3366,6 +3366,27 @@ export const listPublicPage = query({
   },
 });
 
+export const listPublicNewPluginsPage = query({
+  args: {
+    category: v.optional(v.string()),
+    createdAfter: v.number(),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, args) => {
+    const category = isPluginCategorySlug(args.category) ? args.category : undefined;
+    if (args.category && !category) {
+      return { page: [], isDone: true, continueCursor: "" };
+    }
+    return await listStablePackageDiscoveryPage(ctx, {
+      families: ["code-plugin", "bundle-plugin"],
+      category,
+      sort: "created",
+      createdAfter: args.createdAfter,
+      paginationOpts: args.paginationOpts,
+    });
+  },
+});
+
 export const listAuditPage = query({
   args: {
     paginationOpts: paginationOptsValidator,
@@ -3533,14 +3554,15 @@ function encodeStablePackageDiscoveryCursor(state: StablePackageDiscoveryCursorS
 
 function readStablePackageDiscoveryCursorSort(
   raw: string | null | undefined,
-): "updated" | "recommended" | null {
+): "updated" | "created" | "recommended" | null {
   if (!raw?.startsWith(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX)) return null;
   try {
     const parsed = JSON.parse(raw.slice(STABLE_PACKAGE_DISCOVERY_CURSOR_PREFIX.length)) as {
       v?: unknown;
       sort?: unknown;
     };
-    return parsed.v === 1 && (parsed.sort === "updated" || parsed.sort === "recommended")
+    return parsed.v === 1 &&
+      (parsed.sort === "updated" || parsed.sort === "created" || parsed.sort === "recommended")
       ? parsed.sort
       : null;
   } catch {
@@ -3972,12 +3994,13 @@ export const countPublicPlugins = query({
 function compareStablePackageDiscoveryCandidates(
   a: PackageDigestLike,
   b: PackageDigestLike,
-  sort: "updated" | "downloads" | "recommended" | "installs",
+  sort: "updated" | "created" | "downloads" | "recommended" | "installs",
 ) {
   const metric = (candidate: PackageDigestLike) => {
     if (sort === "downloads") return candidate.stats?.downloads ?? 0;
     if (sort === "installs") return candidate.stats?.installs ?? 0;
     if (sort === "recommended") return candidate.recommendedScore ?? 0;
+    if (sort === "created") return candidate.createdAt;
     return candidate.updatedAt;
   };
   const metricDiff = metric(b) - metric(a);
@@ -3992,12 +4015,14 @@ function compareStablePackageDiscoveryCandidates(
 async function listStablePackageDiscoveryPage(
   ctx: DbReaderCtx,
   args: {
+    families?: StablePackageFamily[];
     channel?: PackageChannel;
     isOfficial?: boolean;
     category?: PluginCategorySlug;
     topic?: string;
     excludedScanStatuses?: PackageListScanStatus[];
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "created" | "downloads" | "recommended" | "installs";
+    createdAfter?: number;
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -4023,6 +4048,10 @@ async function listStablePackageDiscoveryPage(
     if (recommendationScoresMissing) sort = "updated";
   }
   const cursor = decodeStablePackageDiscoveryCursor(args.paginationOpts.cursor, sort);
+  const families = args.families ?? [...STABLE_PACKAGE_FAMILIES];
+  for (const family of STABLE_PACKAGE_FAMILIES) {
+    if (!families.includes(family)) cursor.sources[family].done = true;
+  }
   const scanLimit = Math.min(MAX_PUBLIC_LIST_PAGE_SIZE, Math.max(targetCount * 5, 50));
   const loadFamily = async (family: StablePackageFamily) => {
     const state = cursor.sources[family];
@@ -4030,13 +4059,17 @@ async function listStablePackageDiscoveryPage(
       return { family, rows: [] as PackageDigestLike[], keys: [] as IndexKey[], hasMore: false };
     }
     const eqPrefix: IndexKey = [undefined, family];
-    if (sort === "updated") {
+    if (sort === "updated" || sort === "created") {
+      const index = sort === "created" ? "by_active_family_created" : "by_active_family_updated";
       const result = await getPage(ctx, {
         table: "packageSearchDigest",
-        index: "by_active_family_updated",
+        index,
         startIndexKey: state.key ?? eqPrefix,
         startInclusive: state.key === null,
-        endIndexKey: eqPrefix,
+        endIndexKey:
+          sort === "created" && args.createdAfter !== undefined
+            ? [undefined, family, args.createdAfter]
+            : eqPrefix,
         endInclusive: true,
         order: "desc",
         absoluteMaxRows: scanLimit,
@@ -4073,9 +4106,7 @@ async function listStablePackageDiscoveryPage(
       hasMore: result.hasMore,
     };
   };
-  const familyPages = await Promise.all(
-    STABLE_PACKAGE_FAMILIES.map(async (family) => await loadFamily(family)),
-  );
+  const familyPages = await Promise.all(families.map(async (family) => await loadFamily(family)));
   const membershipCache = new Map<string, Promise<boolean>>();
   const page: PublicPackageListItem[] = [];
   const consumedByFamily = new Map<StablePackageFamily, number>();
@@ -4101,7 +4132,7 @@ async function listStablePackageDiscoveryPage(
     const consumed = consumedByFamily.get(source.family) ?? 0;
     cursor.sources[source.family].done = consumed === source.rows.length && !source.hasMore;
   }
-  const hasMore = STABLE_PACKAGE_FAMILIES.some((family) => !cursor.sources[family].done);
+  const hasMore = families.some((family) => !cursor.sources[family].done);
   return {
     page,
     isDone: !hasMore,

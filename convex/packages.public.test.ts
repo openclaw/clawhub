@@ -48,6 +48,7 @@ import {
   listPluginExportPageInternal,
   reservePackageNameInternal,
   listPublicPage,
+  listPublicNewPluginsPage,
   listPageForViewerInternal,
   listVersions,
   listVersionsForManager,
@@ -153,6 +154,20 @@ const listPublicPageHandler = (
     },
     {
       page: Array<{ name: string; featuredAt?: number }>;
+      isDone: boolean;
+      continueCursor: string;
+    }
+  >
+)._handler;
+const listPublicNewPluginsPageHandler = (
+  listPublicNewPluginsPage as unknown as WrappedHandler<
+    {
+      category?: string;
+      createdAfter: number;
+      paginationOpts: { cursor: string | null; numItems: number };
+    },
+    {
+      page: Array<{ name: string; createdAt: number }>;
       isDone: boolean;
       continueCursor: string;
     }
@@ -1821,8 +1836,8 @@ function readIndexField(row: Record<string, unknown>, field: string) {
   }, row);
 }
 
-function makePluginExportIndexKey(row: Record<string, unknown>) {
-  return [row.softDeletedAt, row.family, row.updatedAt, row._creationTime, row._id] as unknown[];
+function makePluginExportIndexKey(row: Record<string, unknown>, field = "updatedAt") {
+  return [row.softDeletedAt, row.family, row[field], row._creationTime, row._id] as unknown[];
 }
 
 function makePluginExportCtx(
@@ -1876,7 +1891,10 @@ function makePluginExportCtx(
                 lte: (field: string, value: unknown) => unknown;
               }) => unknown,
             ) => {
-              if (indexName !== "by_active_family_updated") {
+              if (
+                indexName !== "by_active_family_updated" &&
+                indexName !== "by_active_family_created"
+              ) {
                 throw new Error(`Unexpected packageSearchDigest index ${indexName}`);
               }
               const filters: Array<{
@@ -1921,8 +1939,10 @@ function makePluginExportCtx(
                       }),
                     )
                     .sort((a, b) => {
-                      const updatedDiff = Number(a.updatedAt) - Number(b.updatedAt);
-                      if (updatedDiff !== 0) return order === "desc" ? -updatedDiff : updatedDiff;
+                      const sortField =
+                        indexName === "by_active_family_created" ? "createdAt" : "updatedAt";
+                      const metricDiff = Number(a[sortField]) - Number(b[sortField]);
+                      if (metricDiff !== 0) return order === "desc" ? -metricDiff : metricDiff;
                       const idDiff = String(a._id).localeCompare(String(b._id));
                       return order === "desc" ? -idDiff : idDiff;
                     });
@@ -1934,7 +1954,13 @@ function makePluginExportCtx(
                     },
                     async *iterWithKeys() {
                       for (const row of matches) {
-                        yield [row, makePluginExportIndexKey(row)];
+                        yield [
+                          row,
+                          makePluginExportIndexKey(
+                            row,
+                            indexName === "by_active_family_created" ? "createdAt" : "updatedAt",
+                          ),
+                        ];
                       }
                     },
                   };
@@ -2672,6 +2698,49 @@ function makeSoftDeletePackageCtx(options?: {
 }
 
 describe("packages public queries", () => {
+  it("pages eligible plugins by immutable creation time without scanning the catalog client-side", async () => {
+    const ctx = makePluginExportCtx([
+      makeDigest("updated-old", {
+        family: "code-plugin",
+        createdAt: 50,
+        updatedAt: 500,
+        _creationTime: 1,
+      }),
+      makeDigest("newest-bundle", {
+        family: "bundle-plugin",
+        createdAt: 300,
+        updatedAt: 300,
+        _creationTime: 2,
+      }),
+      makeDigest("newer-code", {
+        family: "code-plugin",
+        createdAt: 200,
+        updatedAt: 200,
+        _creationTime: 3,
+      }),
+      makeDigest("native-skill", {
+        family: "skill",
+        createdAt: 400,
+        updatedAt: 400,
+        _creationTime: 4,
+      }),
+    ]);
+
+    const first = await listPublicNewPluginsPageHandler(ctx, {
+      createdAfter: 100,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    const second = await listPublicNewPluginsPageHandler(ctx, {
+      createdAfter: 100,
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(first.page.map((entry) => entry.name)).toEqual(["newest-bundle"]);
+    expect(first.isDone).toBe(false);
+    expect(second.page.map((entry) => entry.name)).toEqual(["newer-code"]);
+    expect(second.isDone).toBe(true);
+  });
+
   it("keeps partially consumed plugin export family pages active", async () => {
     const ctx = makePluginExportCtx([
       makePluginExportDigest("newer-code", "code-plugin", 300),

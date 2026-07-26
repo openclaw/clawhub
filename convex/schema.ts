@@ -2223,6 +2223,7 @@ const packageSearchDigest = defineTable({
     "updatedAt",
   ])
   .index("by_active_family_updated", ["softDeletedAt", "family", "updatedAt"])
+  .index("by_active_family_created", ["softDeletedAt", "family", "createdAt"])
   .index("by_active_family_channel_updated", ["softDeletedAt", "family", "channel", "updatedAt"])
   .index("by_active_family_official_updated", [
     "softDeletedAt",
@@ -2604,6 +2605,7 @@ const skillStatBackfillState = defineTable({
 const globalStats = defineTable({
   key: v.string(),
   activeSkillsCount: v.number(),
+  activeExternalSkillsCount: v.optional(v.number()),
   activePluginsCount: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);

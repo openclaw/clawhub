@@ -5426,6 +5426,8 @@ export const listPublicPageV4 = query({
     ),
     dir: v.optional(v.union(v.literal("asc"), v.literal("desc"))),
     highlightedOnly: v.optional(v.boolean()),
+    officialOnly: v.optional(v.boolean()),
+    createdAfter: v.optional(v.number()),
     nonSuspiciousOnly: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
@@ -5564,6 +5566,8 @@ export const listPublicPageV4 = query({
     const hasDigestFilters =
       Boolean(categorySlug) ||
       Boolean(topic) ||
+      Boolean(args.officialOnly) ||
+      typeof args.createdAfter === "number" ||
       categoryKeywords.length > 0 ||
       excludeCategoryKeywords.length > 0;
 
@@ -5628,6 +5632,16 @@ export const listPublicPageV4 = query({
         const digest = result.page[index];
         const cursor = result.indexKeys[index];
         if (
+          sort === "newest" &&
+          dir === "desc" &&
+          typeof args.createdAfter === "number" &&
+          digest.createdAt < args.createdAfter
+        ) {
+          return { page: items, hasMore: false, nextCursor: null };
+        }
+        if (
+          (!args.officialOnly || isSkillCatalogOfficial(digest)) &&
+          (typeof args.createdAfter !== "number" || digest.createdAt >= args.createdAfter) &&
           digestPassesPublicListFilters(digest, {
             categorySlug,
             topic,
@@ -5639,6 +5653,16 @@ export const listPublicPageV4 = query({
           if (item) items.push(item);
         }
         if (items.length >= numItems) {
+          const nextDigest = result.page[index + 1];
+          if (
+            sort === "newest" &&
+            dir === "desc" &&
+            typeof args.createdAfter === "number" &&
+            nextDigest &&
+            nextDigest.createdAt < args.createdAfter
+          ) {
+            return { page: items, hasMore: false, nextCursor: null };
+          }
           hasMore = result.hasMore || index < result.page.length - 1;
           nextCursor = hasMore ? encodeIndexKey(indexName, cursor) : null;
           return { page: items, hasMore, nextCursor };

@@ -1200,6 +1200,7 @@ describe("devSeed local fixtures", () => {
         flaggedPluginReadme: "# Flagged plugin",
         scannedPluginStorageId: "storage:scanned-plugin",
         scannedPluginReadme: "# Scanned plugin",
+        excludeFromPublicCatalog: true,
       } as never,
     );
     const reseedResult = (await seedLocalModerationFixturesHandler(
@@ -1235,6 +1236,15 @@ describe("devSeed local fixtures", () => {
     };
     expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
     expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
+    expect(
+      tables.skills
+        ?.filter((skill) =>
+          [scannedSkillSlug, "local-truncation-plugin-runtime-integration-skill"].includes(
+            String(skill.slug),
+          ),
+        )
+        .every((skill) => skill.moderationStatus === "hidden"),
+    ).toBe(true);
     const deduplicatedReseedResult = (await seedLocalModerationFixturesHandler(
       createMutationCtx(db) as never,
       {

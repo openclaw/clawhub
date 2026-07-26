@@ -45,6 +45,7 @@ type SeedSkillSpec = {
 
 type SeedActionArgs = {
   reset?: boolean;
+  excludeFromPublicCatalog?: boolean;
   ownerUserId?: Id<"users">;
   flaggedSkillSlug?: string;
   scannedSkillSlug?: string;
@@ -861,6 +862,7 @@ async function seedLocalFixturesHandler(
     internal.devSeed.seedLocalModerationFixturesMutation,
     {
       reset: args.reset,
+      excludeFromPublicCatalog: args.excludeFromPublicCatalog,
       flaggedSkillSlug: args.flaggedSkillSlug,
       scannedSkillSlug: args.scannedSkillSlug,
       flaggedPluginName: args.flaggedPluginName,
@@ -903,6 +905,7 @@ export const seedTestFixtures: ReturnType<typeof internalAction> = internalActio
     assertTestSeedAllowed();
     return await seedLocalFixturesHandler(ctx, {
       reset: false,
+      excludeFromPublicCatalog: true,
       flaggedSkillSlug: "test-flagged-wallet-sync",
       scannedSkillSlug: "test-agentic-risk-demo",
       flaggedPluginName: "test-flagged-runtime-plugin",
@@ -2810,6 +2813,7 @@ function flaggedWalletClawScanAnalysis(now: number) {
 
 type SeedLocalModerationFixturesArgs = {
   reset?: boolean;
+  excludeFromPublicCatalog?: boolean;
   ownerUserId?: Id<"users">;
   flaggedSkillSlug?: string;
   scannedSkillSlug?: string;
@@ -2859,6 +2863,26 @@ export async function seedLocalModerationFixturesHandler(
     for (const skill of [existingSkill, existingScannedSkill, existingTruncationSkill]) {
       if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
         await ctx.db.patch(skill._id, ownerPatch);
+      }
+    }
+    if (args.excludeFromPublicCatalog) {
+      for (const skill of [existingScannedSkill, existingTruncationSkill]) {
+        await ctx.db.patch(skill._id, {
+          moderationStatus: "hidden",
+          moderationReason: "test.fixture",
+          updatedAt: now,
+        });
+        const digest = await ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+          .unique();
+        if (digest) {
+          await ctx.db.patch(digest._id, {
+            moderationStatus: "hidden",
+            moderationReason: "test.fixture",
+            updatedAt: now,
+          });
+        }
       }
     }
     await ctx.db.patch(existingScannedSkill._id, {
@@ -3124,8 +3148,8 @@ export async function seedLocalModerationFixturesHandler(
     tags: {},
     softDeletedAt: undefined,
     badges: { redactionApproved: undefined },
-    moderationStatus: "active",
-    moderationReason: "scanner.llm.suspicious",
+    moderationStatus: args.excludeFromPublicCatalog ? "hidden" : "active",
+    moderationReason: args.excludeFromPublicCatalog ? "test.fixture" : "scanner.llm.suspicious",
     moderationVerdict: "suspicious",
     moderationReasonCodes: ["suspicious.agentic_risk_fixture"],
     moderationEvidence: scannedSkillStaticScan.findings,
@@ -3220,8 +3244,8 @@ export async function seedLocalModerationFixturesHandler(
     tags: {},
     softDeletedAt: undefined,
     badges: { redactionApproved: undefined },
-    moderationStatus: "active",
-    moderationReason: undefined,
+    moderationStatus: args.excludeFromPublicCatalog ? "hidden" : "active",
+    moderationReason: args.excludeFromPublicCatalog ? "test.fixture" : undefined,
     moderationVerdict: "clean",
     moderationReasonCodes: [],
     moderationEvidence: undefined,
@@ -3675,6 +3699,7 @@ export async function seedLocalModerationFixturesHandler(
 export const seedLocalModerationFixturesMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
+    excludeFromPublicCatalog: v.optional(v.boolean()),
     ownerUserId: v.optional(v.id("users")),
     flaggedSkillSlug: v.optional(v.string()),
     scannedSkillSlug: v.optional(v.string()),
