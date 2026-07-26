@@ -14,6 +14,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  buildLocalAuthTrendingSnapshotArgs,
   resolveLocalAuthDeployment,
   resolveLocalAuthRunnerConfig,
 } from "./playwright-local-auth-config";
@@ -479,6 +480,7 @@ async function main() {
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID ?? "local-dev",
     AUTH_GITHUB_SECRET: process.env.AUTH_GITHUB_SECRET ?? "local-dev",
     CLAWHUB_DISABLE_CRONS: "1",
+    CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
     CLAWHUB_EMAIL_CAPTURE_FILE: process.env.CLAWHUB_EMAIL_CAPTURE_FILE ?? emailCaptureFile,
     CONVEX_AGENT_MODE: process.env.CONVEX_AGENT_MODE ?? "anonymous",
     CONVEX_SITE_URL: convexSiteUrl,
@@ -504,6 +506,7 @@ async function main() {
       `AUTH_GITHUB_ID=${e2eEnv.AUTH_GITHUB_ID}`,
       `AUTH_GITHUB_SECRET=${e2eEnv.AUTH_GITHUB_SECRET}`,
       "CLAWHUB_DISABLE_CRONS=1",
+      "CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test",
       `CLAWHUB_EMAIL_CAPTURE_FILE=${e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE}`,
       ...(deployment ? [`CONVEX_DEPLOYMENT=${deployment}`] : []),
       `CONVEX_SITE_URL=${convexSiteUrl}`,
@@ -552,6 +555,7 @@ async function main() {
     { name: "AUTH_GITHUB_ID", value: e2eEnv.AUTH_GITHUB_ID ?? "local-dev" },
     { name: "AUTH_GITHUB_SECRET", value: e2eEnv.AUTH_GITHUB_SECRET ?? "local-dev" },
     { name: "CLAWHUB_DISABLE_CRONS", value: "1" },
+    { name: "CLAWHUB_SKILLS_SH_ROLLOUT_MODE", value: "test" },
     { name: "CLAWHUB_EMAIL_CAPTURE_FILE", value: e2eEnv.CLAWHUB_EMAIL_CAPTURE_FILE ?? "" },
     { name: "CLAWHUB_STAGED_PREPUBLICATION_PUBLISHES", value: "1" },
     { name: "DEV_AUTH_CONVEX_DEPLOYMENT", value: localAuthDeployment },
@@ -568,6 +572,19 @@ async function main() {
 
   console.log("Waiting for local Convex functions.");
   await runConvexFunctionWhenReady("appMeta:getDeploymentInfo", {}, e2eEnv);
+
+  console.log("Materializing an empty canonical Trending snapshot for the isolated runtime.");
+  const trendingSnapshot = buildLocalAuthTrendingSnapshotArgs(Date.now());
+  await runConvexFunctionWhenReady(
+    "canonicalTrending:startSnapshotInternal",
+    trendingSnapshot.start,
+    e2eEnv,
+  );
+  await runConvexFunctionWhenReady(
+    "canonicalTrending:finalizeSnapshotInternal",
+    trendingSnapshot.finalize,
+    e2eEnv,
+  );
 
   console.log("Building ClawHub for local-auth Playwright e2e.");
   runRequired("bun", ["run", "build"], e2eEnv);
