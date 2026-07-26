@@ -898,7 +898,7 @@ describe("catalog feed projection", () => {
       { expiresAt: "2026-07-20T00:00:00.000Z" },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(runMutation).toHaveBeenCalledTimes(5);
     expect(runMutation).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({ entries: [clawEntry] }),

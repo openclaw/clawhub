@@ -56,11 +56,14 @@ const CATALOG_CLAW_FAMILY = "claw" as const;
 type CatalogQueryCtx = Pick<QueryCtx, "db">;
 type CatalogFeedPublicationResult = {
   publicationId: string;
-  feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID;
+  feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID | typeof EXPERIMENTAL_CLAW_FEED_ID;
   sequence: number;
   payloadSha256: string;
   publishedAt: number;
   entryCount: number;
+};
+type IndexedCatalogFeedPublicationResult = CatalogFeedPublicationResult & {
+  feedId: typeof CATALOG_FEED_ID | typeof CATALOG_SKILLS_FEED_ID;
 };
 
 function appendEntriesWithinFeedLimit<T>(target: T[], entries: T[]) {
@@ -669,7 +672,7 @@ export const storeClawPublication = internalMutation({
       : await ctx.db.insert("catalogFeedPublications", publication);
     return {
       publicationId,
-      feedId: EXPERIMENTAL_CLAW_FEED_ID,
+      feedId: EXPERIMENTAL_CLAW_FEED_ID as typeof EXPERIMENTAL_CLAW_FEED_ID,
       sequence,
       payloadSha256,
       publishedAt,
@@ -1383,7 +1386,7 @@ export const publish = internalAction({
 
     const pluginEntries = entries.sort((left, right) => left.id.localeCompare(right.id));
     const sortedSkillEntries = skillEntries.sort((left, right) => left.id.localeCompare(right.id));
-    const pluginResult: CatalogFeedPublicationResult = await ctx.runMutation(
+    const pluginResult: IndexedCatalogFeedPublicationResult = await ctx.runMutation(
       internal.catalogFeed.storePublication,
       {
         feedId: CATALOG_FEED_ID,
@@ -1393,7 +1396,7 @@ export const publish = internalAction({
         entries: pluginEntries,
       },
     );
-    const skillsResult: CatalogFeedPublicationResult = await ctx.runMutation(
+    const skillsResult: IndexedCatalogFeedPublicationResult = await ctx.runMutation(
       internal.catalogFeed.storePublication,
       {
         feedId: CATALOG_SKILLS_FEED_ID,
