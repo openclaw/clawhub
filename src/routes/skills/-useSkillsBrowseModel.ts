@@ -8,10 +8,18 @@ import {
   getSkillCategoryBySlug,
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
+import { fetchCanonicalTrendingPage } from "../../lib/trendingApi";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
-import { isExternalSkillListEntry, type SkillListEntry, type SkillSearchEntry } from "./-types";
+import {
+  isExternalSkillListEntry,
+  isTrendingSkillListEntry,
+  type SkillListEntry,
+  type SkillSearchEntry,
+} from "./-types";
 
-const pageSize = 25;
+const pageSize = 20;
+const featuredPageSize = 40;
+const newWindowMs = 14 * 24 * 60 * 60 * 1_000;
 const maxConsecutiveEmptyPagesPerFetch = 3;
 
 function isNavigationAbortError(err: unknown) {
@@ -22,6 +30,7 @@ function isNavigationAbortError(err: unknown) {
 }
 
 export type SkillsView = "grid" | "list";
+export type SkillsCatalogTab = "trending" | "new" | "featured" | "official";
 type LegacySkillsView = SkillsView | "cards";
 
 export function normalizeSkillsView(value: unknown): SkillsView | undefined {
@@ -40,7 +49,21 @@ export type SkillsSearchState = {
   topic?: string;
   view?: LegacySkillsView;
   focus?: "search";
+  tab?: SkillsCatalogTab;
 };
+
+export function normalizeSkillsCatalogTab(
+  value: unknown,
+  legacy?: Pick<SkillsSearchState, "featured" | "highlighted" | "sort" | "category" | "topic">,
+): SkillsCatalogTab {
+  if (value === "trending" || value === "new" || value === "featured" || value === "official") {
+    return value;
+  }
+  if (legacy?.featured || legacy?.highlighted) return "featured";
+  if (legacy?.sort === "newest") return "new";
+  if (legacy?.category || legacy?.topic) return "new";
+  return "trending";
+}
 
 export type InitialSkillsSearchData = {
   key: string;
@@ -102,7 +125,16 @@ export function useSkillsBrowseModel({
   const excludeCategoryKeywords =
     activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
   const hasQuery = trimmedQuery.length > 0;
-  const requestedSort = search.sort === "default" ? "recommended" : search.sort;
+  const catalogTab = normalizeSkillsCatalogTab(search.tab, search);
+  const requestedSort = hasQuery
+    ? search.sort === "default"
+      ? "recommended"
+      : search.sort
+    : catalogTab === "new" || catalogTab === "official"
+      ? "newest"
+      : catalogTab === "featured"
+        ? "updated"
+        : "trending";
   const sort: SortKey =
     requestedSort === "relevance" && !hasQuery
       ? "recommended"
@@ -132,44 +164,49 @@ export function useSkillsBrowseModel({
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
   const [listCursor, setListCursor] = useState<string | null>(null);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
-  const [listAutoLoadPaused, setListAutoLoadPaused] = useState(false);
+  const [, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
+  const newCutoff = useMemo(() => Date.now() - newWindowMs, [catalogTab]);
 
   const fetchPage = useCallback(
     async (cursor: string | null, generation: number) => {
       let pageCursor = cursor;
       let consecutiveEmptyPages = 0;
       try {
-        if (sort === "trending") {
-          const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
+        if (catalogTab === "trending") {
+          const result = await fetchCanonicalTrendingPage({
+            cursor: pageCursor,
             limit: pageSize,
-            nonSuspiciousOnly: true,
-            categorySlug: activeCategory?.slug,
-            topic: activeTopic,
           });
           if (generation !== fetchGeneration.current) return;
-          setListResults(result.items);
-          setListCursor(null);
+          const entries = result.items.map((trending) => ({ trending }));
+          setListResults((prev) => (cursor ? [...prev, ...entries] : entries));
+          setListCursor(result.nextCursor);
           setListAutoLoadPaused(false);
-          setListStatus("done");
+          setListStatus(result.nextCursor ? "idle" : "done");
           return;
         }
         while (true) {
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
-            numItems: pageSize,
+            numItems: catalogTab === "featured" ? featuredPageSize : pageSize,
             ...(listSort ? { sort: listSort } : {}),
             dir,
-            highlightedOnly: featuredOnly,
+            highlightedOnly: catalogTab === "featured" ? true : undefined,
+            officialOnly: catalogTab === "official" ? true : undefined,
+            createdAfter: catalogTab === "new" ? newCutoff : undefined,
             categorySlug: activeCategory?.slug,
             topic: activeTopic,
-            ...(activeCategory ? { officialFirst: true } : {}),
+            ...(activeCategory && catalogTab !== "new" ? { officialFirst: true } : {}),
             categoryKeywords,
             excludeCategoryKeywords,
           });
           if (generation !== fetchGeneration.current) return;
           const nextCursor =
-            result.hasMore && result.nextCursor != null && result.nextCursor !== pageCursor
+            catalogTab !== "featured" &&
+            result.hasMore &&
+            result.nextCursor != null &&
+            result.nextCursor !== pageCursor
               ? result.nextCursor
               : null;
 
@@ -202,11 +239,13 @@ export function useSkillsBrowseModel({
     [
       activeCategory?.slug,
       activeTopic,
+      catalogTab,
       categoryKeywords,
       dir,
       excludeCategoryKeywords,
       featuredOnly,
       listSort,
+      newCutoff,
       sort,
     ],
   );
@@ -328,6 +367,7 @@ export function useSkillsBrowseModel({
       ? baseItems.filter(
           (entry) =>
             isExternalSkillListEntry(entry) ||
+            isTrendingSkillListEntry(entry) ||
             getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic),
         )
       : baseItems;
@@ -335,6 +375,7 @@ export function useSkillsBrowseModel({
       ? topicItems.filter(
           (entry) =>
             isExternalSkillListEntry(entry) ||
+            isTrendingSkillListEntry(entry) ||
             getSkillCategoriesForSkill(entry.skill).some(
               (category) => category.slug === activeCategory.slug,
             ),
@@ -348,6 +389,7 @@ export function useSkillsBrowseModel({
     const multiplier = dir === "asc" ? 1 : -1;
     const results = [...categoryItems];
     results.sort((a, b) => {
+      if (isTrendingSkillListEntry(a) || isTrendingSkillListEntry(b)) return 0;
       const aSkill = isExternalSkillListEntry(a) ? a.external : a.skill;
       const bSkill = isExternalSkillListEntry(b) ? b.external : b.skill;
       const aDownloads = isExternalSkillListEntry(a) ? 0 : a.skill.stats.downloads;
@@ -390,8 +432,7 @@ export function useSkillsBrowseModel({
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
   const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
-  const canAutoLoad =
-    typeof IntersectionObserver !== "undefined" && (hasQuery || !listAutoLoadPaused);
+  const canAutoLoad = false;
 
   const loadMore = useCallback(() => {
     if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return;
@@ -412,23 +453,6 @@ export function useSkillsBrowseModel({
   }, [isLoadingMore]);
 
   useEffect(() => {
-    if (!canLoadMore || !canAutoLoad) return () => {};
-    const target = loadMoreRef.current;
-    if (!target) return () => {};
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          loadMore();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [canAutoLoad, canLoadMore, loadMore]);
-
-  useEffect(() => {
     return () => window.clearTimeout(navigateTimer.current);
   }, []);
 
@@ -445,6 +469,7 @@ export function useSkillsBrowseModel({
             return {
               ...prev,
               q: trimmed ? next : undefined,
+              ...(enteringSearch ? { category: undefined, topic: undefined } : null),
               ...(enteringSearch && parseSort(prev.sort) === "recommended"
                 ? { sort: undefined, dir: undefined }
                 : null),
@@ -555,6 +580,7 @@ export function useSkillsBrowseModel({
     activeFilters,
     activeCategory: activeCategory?.slug,
     activeTopic,
+    catalogTab,
     canAutoLoad,
     canLoadMore,
     dir,

@@ -1,5 +1,6 @@
 import type { Doc } from "../../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicSkill } from "../../lib/publicUser";
+import type { CanonicalTrendingItem } from "../../lib/trendingApi";
 
 export type NativeSkillListEntry = {
   skill: PublicSkill;
@@ -85,10 +86,18 @@ export type ExternalSkillListEntry = {
   searchScore: number;
 };
 
-export type SkillListEntry = NativeSkillListEntry | ExternalSkillListEntry;
+export type TrendingSkillListEntry = {
+  trending: CanonicalTrendingItem;
+};
+
+export type SkillListEntry = NativeSkillListEntry | ExternalSkillListEntry | TrendingSkillListEntry;
 
 export function isExternalSkillListEntry(entry: SkillListEntry): entry is ExternalSkillListEntry {
   return "external" in entry;
+}
+
+export function isTrendingSkillListEntry(entry: SkillListEntry): entry is TrendingSkillListEntry {
+  return "trending" in entry;
 }
 
 export function buildSkillHref(skill: PublicSkill, ownerHandle?: string | null) {

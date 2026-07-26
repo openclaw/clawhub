@@ -1,18 +1,30 @@
-import { PACKAGE_TRENDING_LEADERBOARD_LIMIT } from "clawhub-schema";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
 import type { PublicSkill, PublicUser } from "./publicUser";
+import { fetchCanonicalTrendingPage, type CanonicalTrendingItem } from "./trendingApi";
 
 export type HomeListingKind = "skills" | "plugins";
-export type HomeListingTab = "featured" | "popular" | "trending";
+export type HomeListingTab = "trending" | "new" | "featured" | "official";
 
-export type HomeSkillListingEntry = {
+export type HomeNativeSkillListingEntry = {
   skill: PublicSkill;
   ownerHandle?: string | null;
   owner?: PublicUser | null;
 };
+
+type HomeTrendingSkillListingEntry = {
+  trending: CanonicalTrendingItem;
+};
+
+export type HomeSkillListingEntry = HomeNativeSkillListingEntry | HomeTrendingSkillListingEntry;
+
+export function isHomeTrendingSkillEntry(
+  entry: HomeSkillListingEntry,
+): entry is HomeTrendingSkillListingEntry {
+  return "trending" in entry;
+}
 
 export type HomeListingCacheEntry =
   | { kind: "skills"; items: HomeSkillListingEntry[]; hasMore: boolean }
@@ -23,7 +35,6 @@ type HomeListingInitialDataBase = {
   categorySlugs: [];
   fetchLimit: typeof HOME_LISTING_PAGE_SIZE;
   hasMore: boolean;
-  featuredAvailability: Record<HomeListingKind, boolean>;
 };
 
 export type HomeListingInitialData =
@@ -37,10 +48,11 @@ export type HomeListingInitialData =
     });
 
 export const HOME_LISTING_PAGE_SIZE = 20;
+export const HOME_NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1_000;
 
 const PLUGIN_CATALOG_PAGE_LIMIT = 100;
-// Highlighted skill responses are cursorless, so request the backend's full public maximum.
-const FEATURED_SKILL_LIST_LIMIT = 200;
+// Featured is intentionally a finite editorial feed: the latest 40 badge-history rows.
+const FEATURED_SKILL_LIMIT = 40;
 
 export function homeListingCacheKey({
   kind,
@@ -71,62 +83,51 @@ export function skillMatchesAnyHomeCategory(skill: PublicSkill, categorySlugs: r
   return categorySlugs.some((slug) => categories.some((category) => category.slug === slug));
 }
 
-export function uniqueHomeSkillEntries(entries: HomeSkillListingEntry[]) {
-  const byId = new Map<string, HomeSkillListingEntry>();
-  for (const entry of entries) {
-    byId.set(String(entry.skill._id), entry);
-  }
+export function uniqueHomeSkillEntries(entries: HomeNativeSkillListingEntry[]) {
+  const byId = new Map<string, HomeNativeSkillListingEntry>();
+  for (const entry of entries) byId.set(String(entry.skill._id), entry);
   return [...byId.values()];
 }
 
 export function uniqueHomePlugins(items: PackageListItem[]) {
   const byName = new Map<string, PackageListItem>();
-  for (const item of items) {
-    byName.set(item.name, item);
-  }
+  for (const item of items) byName.set(item.name, item);
   return [...byName.values()];
-}
-
-function sortHomeSkillEntries(entries: HomeSkillListingEntry[]) {
-  return [...entries].sort((left, right) => {
-    return (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0);
-  });
-}
-
-function sortFeaturedHomeSkillEntries(entries: HomeSkillListingEntry[]) {
-  return [...entries].sort((left, right) => {
-    return (right.skill.badges?.highlighted?.at ?? 0) - (left.skill.badges?.highlighted?.at ?? 0);
-  });
-}
-
-function sortFeaturedHomePlugins(items: PackageListItem[]) {
-  return [...items].sort((left, right) => (right.featuredAt ?? 0) - (left.featuredAt ?? 0));
 }
 
 export async function fetchHomeSkillListing(
   tab: HomeListingTab,
   categorySlugs: readonly string[],
   numItems: number,
+  signal?: AbortSignal,
 ) {
   if (tab === "trending") {
-    const requestLimit = categorySlugs.length > 0 ? 200 : numItems;
-    const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
-      limit: requestLimit,
-    });
-    const items = ((result as { items?: HomeSkillListingEntry[] }).items ?? []).filter((entry) =>
-      skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
-    );
-    return {
-      page: uniqueHomeSkillEntries(items).slice(0, numItems),
-      hasMore: items.length > numItems || (items.length >= numItems && numItems < 200),
-    };
+    const items: HomeTrendingSkillListingEntry[] = [];
+    let cursor: string | null = null;
+    let hasMore = false;
+    const maxRequests =
+      numItems < HOME_LISTING_PAGE_SIZE ? numItems : Math.ceil(numItems / HOME_LISTING_PAGE_SIZE);
+    for (let pageIndex = 0; pageIndex < maxRequests; pageIndex += 1) {
+      const result = await fetchCanonicalTrendingPage({
+        cursor,
+        limit: Math.min(HOME_LISTING_PAGE_SIZE, numItems - items.length),
+        signal,
+      });
+      items.push(...result.items.map((trending) => ({ trending })));
+      cursor = result.nextCursor;
+      hasMore = cursor !== null;
+      if (!cursor || items.length >= numItems) break;
+    }
+    return { page: items, hasMore };
   }
 
-  const requestLimit = tab === "featured" ? FEATURED_SKILL_LIST_LIMIT : numItems;
+  // highlightedOnly is a dedicated backend path ordered by skillBadges.by_kind_at;
+  // the nominal sort below is ignored for Featured and never chooses its candidate set.
+  const requestLimit = tab === "featured" ? FEATURED_SKILL_LIMIT : numItems;
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
     categoriesToFetch.map(async (categorySlug) => {
-      const page: HomeSkillListingEntry[] = [];
+      const page: HomeNativeSkillListingEntry[] = [];
       let cursor: string | null | undefined;
       let hasMore = false;
 
@@ -134,14 +135,14 @@ export async function fetchHomeSkillListing(
         const result = await convexHttp.query(api.skills.listPublicPageV4, {
           cursor: cursor ?? undefined,
           numItems: requestLimit - page.length,
-          sort: "downloads",
+          sort: tab === "new" || tab === "official" ? "newest" : "updated",
           dir: "desc",
           highlightedOnly: tab === "featured" ? true : undefined,
+          officialOnly: tab === "official" ? true : undefined,
+          createdAfter: tab === "new" ? Date.now() - HOME_NEW_WINDOW_MS : undefined,
           categorySlug: categorySlug ?? undefined,
         });
-        if (Array.isArray(result)) break;
-
-        const resultPage = ((result as { page?: HomeSkillListingEntry[] }).page ?? []).filter(
+        const resultPage = ((result as { page?: HomeNativeSkillListingEntry[] }).page ?? []).filter(
           (entry) => skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
         );
         page.push(...resultPage);
@@ -155,126 +156,122 @@ export async function fetchHomeSkillListing(
       return { page, hasMore };
     }),
   );
-  const pages = results.flatMap((result) => result.page);
-  const unique = uniqueHomeSkillEntries(pages);
-  const sorted =
-    tab === "featured" ? sortFeaturedHomeSkillEntries(unique) : sortHomeSkillEntries(unique);
-  const hasMore =
-    sorted.length > numItems || (tab !== "featured" && results.some((result) => result.hasMore));
-  const page = sorted.slice(0, numItems);
-  return { page, hasMore };
+  const items = uniqueHomeSkillEntries(results.flatMap((result) => result.page)).sort(
+    (left, right) => {
+      if (tab === "featured") {
+        return (
+          (right.skill.badges?.highlighted?.at ?? 0) - (left.skill.badges?.highlighted?.at ?? 0)
+        );
+      }
+      if (tab === "new" || tab === "official") {
+        return right.skill.createdAt - left.skill.createdAt;
+      }
+      return 0;
+    },
+  );
+  return {
+    page: items.slice(0, numItems),
+    hasMore:
+      tab === "featured"
+        ? numItems < FEATURED_SKILL_LIMIT &&
+          (items.length > numItems || results.some((result) => result.hasMore))
+        : items.length > numItems || results.some((result) => result.hasMore),
+  };
 }
 
 export async function fetchHomePluginListing(
-  tab: HomeListingTab,
+  tab: Exclude<HomeListingTab, "trending">,
   categorySlugs: readonly string[],
   limit: number,
   signal?: AbortSignal,
 ) {
-  const featured = tab === "featured";
-  const trending = tab === "trending";
-  const usesGlobalTrendingFilter = trending && categorySlugs.length > 1;
-  const categoriesToFetch = usesGlobalTrendingFilter
-    ? [null]
-    : categorySlugs.length > 0
-      ? categorySlugs
-      : [null];
+  const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
+  const newestCutoff = Date.now() - HOME_NEW_WINDOW_MS;
+  if (tab === "new") {
+    const results = await Promise.all(
+      categoriesToFetch.map(async (categorySlug) => {
+        const page: PackageListItem[] = [];
+        let cursor: string | null = null;
+        let isDone = false;
+        while (page.length < limit && !isDone) {
+          signal?.throwIfAborted();
+          const result = (await convexHttp.query(api.packages.listPublicNewPluginsPage, {
+            category: categorySlug ?? undefined,
+            createdAfter: newestCutoff,
+            paginationOpts: {
+              cursor,
+              numItems: Math.min(HOME_LISTING_PAGE_SIZE, limit - page.length),
+            },
+          })) as {
+            page: PackageListItem[];
+            isDone: boolean;
+            continueCursor: string;
+          };
+          signal?.throwIfAborted();
+          page.push(
+            ...(result.page.filter(
+              (item) => item.family === "code-plugin" || item.family === "bundle-plugin",
+            ) as PackageListItem[]),
+          );
+          isDone = result.isDone;
+          if (isDone || !result.continueCursor || result.continueCursor === cursor) break;
+          cursor = result.continueCursor;
+        }
+        return { page, isDone };
+      }),
+    );
+    const items = uniqueHomePlugins(results.flatMap((result) => result.page)).sort(
+      (left, right) => right.createdAt - left.createdAt,
+    );
+    return {
+      items: items.slice(0, limit),
+      hasMore: items.length > limit || results.some((result) => !result.isDone),
+    };
+  }
   const results = await Promise.all(
     categoriesToFetch.map(async (categorySlug) => {
       const items: PackageListItem[] = [];
       let cursor: string | null | undefined;
       let hasMore = false;
-      let trendingCandidatesScanned = 0;
 
       while (items.length < limit) {
         const result = await fetchPluginCatalog({
           category: categorySlug ?? undefined,
           cursor: cursor ?? undefined,
-          featured: featured ? true : undefined,
-          sort: trending ? "trending" : "downloads",
-          limit: usesGlobalTrendingFilter
-            ? PLUGIN_CATALOG_PAGE_LIMIT
-            : Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
+          featured: tab === "featured" ? true : undefined,
+          isOfficial: tab === "official" ? true : undefined,
+          sort: "updated",
+          limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
           signal,
         });
-        trendingCandidatesScanned += result.items.length;
-        items.push(
-          ...result.items.filter((item) => itemMatchesAnyHomeCategory(item, categorySlugs)),
-        );
-
-        hasMore = result.nextCursor != null;
-        if (
-          usesGlobalTrendingFilter &&
-          trendingCandidatesScanned >= PACKAGE_TRENDING_LEADERBOARD_LIMIT &&
-          result.nextCursor
-        ) {
-          throw new Error(
-            `Trending plugin feed exceeded ${PACKAGE_TRENDING_LEADERBOARD_LIMIT}-item contract`,
-          );
-        }
+        const page = result.items.filter((item) => itemMatchesAnyHomeCategory(item, categorySlugs));
+        items.push(...page);
+        hasMore = result.nextCursor !== null;
         if (!result.nextCursor || result.nextCursor === cursor) break;
         cursor = result.nextCursor;
       }
-
       return { items, hasMore };
     }),
   );
-  let items = uniqueHomePlugins(results.flatMap((result) => result.items));
-  if (featured) {
-    items = sortFeaturedHomePlugins(items);
-  } else if (tab === "popular") {
-    items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
-  }
-  const page = items.slice(0, limit);
+  const items = uniqueHomePlugins(results.flatMap((result) => result.items)).sort((left, right) => {
+    if (tab === "featured") return (right.featuredAt ?? 0) - (left.featuredAt ?? 0);
+    return right.updatedAt - left.updatedAt;
+  });
   return {
-    items: page,
+    items: items.slice(0, limit),
     hasMore: items.length > limit || results.some((result) => result.hasMore),
   };
 }
 
-export async function fetchHomeFeaturedAvailability(kind: HomeListingKind, signal?: AbortSignal) {
-  if (kind === "skills") {
-    const result = await convexHttp.query(api.skills.listPublicPageV4, {
-      numItems: 1,
-      sort: "downloads",
-      dir: "desc",
-      highlightedOnly: true,
-    });
-    return (
-      !Array.isArray(result) &&
-      ((result as { page?: HomeSkillListingEntry[] }).page?.length ?? 0) > 0
-    );
-  }
-
-  const result = await fetchPluginCatalog({
-    featured: true,
-    sort: "downloads",
-    limit: 1,
-    signal,
-  });
-  return result.items.length > 0;
-}
-
 export async function fetchInitialHomeListing(): Promise<HomeListingInitialData> {
-  const [featuredPlugins, hasFeaturedSkills] = await Promise.all([
-    fetchHomePluginListing("featured", [], HOME_LISTING_PAGE_SIZE),
-    fetchHomeFeaturedAvailability("skills").catch(() => false),
-  ]);
-  const hasFeaturedPlugins = featuredPlugins.items.length > 0;
-  const result = hasFeaturedPlugins
-    ? featuredPlugins
-    : await fetchHomePluginListing("popular", [], HOME_LISTING_PAGE_SIZE);
+  const result = await fetchHomeSkillListing("trending", [], HOME_LISTING_PAGE_SIZE);
   return {
-    kind: "plugins",
-    tab: hasFeaturedPlugins ? "featured" : "popular",
+    kind: "skills",
+    tab: "trending",
     categorySlugs: [],
     fetchLimit: HOME_LISTING_PAGE_SIZE,
-    items: result.items,
+    items: result.page,
     hasMore: result.hasMore,
-    featuredAvailability: {
-      plugins: hasFeaturedPlugins,
-      skills: hasFeaturedSkills,
-    },
   };
 }
 

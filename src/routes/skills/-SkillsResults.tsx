@@ -16,10 +16,12 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
   buildSkillHref,
   isExternalSkillListEntry,
+  isTrendingSkillListEntry,
   type SkillListEntry,
   type SkillSearchEntry,
+  type TrendingSkillListEntry,
 } from "./-types";
-import type { SkillsView } from "./-useSkillsBrowseModel";
+import type { SkillsCatalogTab, SkillsView } from "./-useSkillsBrowseModel";
 
 type SkillsResultsProps = {
   isLoadingSkills: boolean;
@@ -32,7 +34,75 @@ type SkillsResultsProps = {
   canAutoLoad: boolean;
   loadMoreRef: RefObject<HTMLDivElement | null>;
   loadMore: () => void;
+  catalogTab: SkillsCatalogTab;
 };
+
+function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
+  const trending = item.trending;
+  const owner = trending.publisher?.handle;
+  return (
+    <Link to={trending.canonicalUrl} className="skill-list-item skill-list-item-skill">
+      <MarketplaceIcon kind="skill" label={trending.displayName} />
+      <div className="skill-list-item-body">
+        <div className="skill-list-item-main">
+          <span className="skill-list-item-identity">
+            <span className="skill-list-item-name" title={trending.displayName}>
+              {truncateText(trending.displayName, 48)}
+            </span>
+            {owner ? <span className="skill-list-item-owner">@{owner}</span> : null}
+          </span>
+        </div>
+        {trending.summary ? (
+          <p className="skill-list-item-summary">{truncateText(trending.summary, 80)}</p>
+        ) : null}
+      </div>
+      <div className="skill-list-item-meta" aria-label="24-hour installs">
+        {typeof trending.metrics.trending24hInstalls === "number" ? (
+          <span className="skill-list-item-meta-item">
+            <Download size={14} aria-hidden="true" />
+            {formatCompactStat(trending.metrics.trending24hInstalls)}
+          </span>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+function TrendingSkillCard({ item }: { item: TrendingSkillListEntry }) {
+  const trending = item.trending;
+  const owner = trending.publisher?.handle;
+  return (
+    <Link
+      to={trending.canonicalUrl}
+      className="card flex min-w-0 flex-col gap-3 p-5 transition-colors hover:border-[color:var(--oc-border-strong)]"
+    >
+      <div className="flex items-start gap-3">
+        <MarketplaceIcon kind="skill" label={trending.displayName} />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate font-semibold text-[color:var(--oc-text-primary)]">
+            {trending.displayName}
+          </h3>
+          {owner ? (
+            <p className="mt-1 truncate text-xs text-[color:var(--oc-text-muted)]">@{owner}</p>
+          ) : null}
+        </div>
+      </div>
+      {trending.summary ? (
+        <p className="line-clamp-3 text-sm leading-6 text-[color:var(--oc-text-secondary)]">
+          {trending.summary}
+        </p>
+      ) : null}
+      {typeof trending.metrics.trending24hInstalls === "number" ? (
+        <div className="skill-card-grid-meta" aria-label="24-hour installs">
+          <span>
+            <Download size={14} aria-hidden="true" />
+            {formatCompactStat(trending.metrics.trending24hInstalls)}
+          </span>
+        </div>
+      ) : null}
+    </Link>
+  );
+}
 
 function ExternalSkillSearchListItem({ result }: { result: SkillSearchEntry }) {
   const owner = result.sourceIdentity.owner ?? result.sourceIdentity.host;
@@ -123,9 +193,11 @@ export function SkillsResults({
   canAutoLoad,
   loadMoreRef,
   loadMore,
+  catalogTab,
 }: SkillsResultsProps) {
   const isMobileBrowse = useMediaQuery("(max-width: 760px)");
   const effectiveView = isMobileBrowse ? "list" : view;
+  const showTrendingLayout = !hasQuery && catalogTab === "trending";
 
   return (
     <>
@@ -149,6 +221,9 @@ export function SkillsResults({
       ) : effectiveView === "grid" ? (
         <div className="grid browse-results-grid">
           {sorted.map((entry) => {
+            if (isTrendingSkillListEntry(entry)) {
+              return <TrendingSkillCard key={entry.trending.id} item={entry} />;
+            }
             if (isExternalSkillListEntry(entry)) {
               return <ExternalSkillSearchCard key={entry.external.id} result={entry.external} />;
             }
@@ -183,11 +258,16 @@ export function SkillsResults({
           <div className="browse-list-head" aria-hidden="true">
             <span className="browse-list-head-icon-spacer" />
             <span className="browse-list-head-label">Skill</span>
-            <span className="browse-list-head-label">Category</span>
-            <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
+            {showTrendingLayout ? null : <span className="browse-list-head-label">Category</span>}
+            <span className="browse-list-head-label browse-list-head-stat">
+              {showTrendingLayout ? "24h installs" : "Popularity"}
+            </span>
           </div>
           <div className="results-list">
             {sorted.map((entry) => {
+              if (isTrendingSkillListEntry(entry)) {
+                return <TrendingSkillListItem key={entry.trending.id} item={entry} />;
+              }
               if (isExternalSkillListEntry(entry)) {
                 return (
                   <ExternalSkillSearchListItem key={entry.external.id} result={entry.external} />
