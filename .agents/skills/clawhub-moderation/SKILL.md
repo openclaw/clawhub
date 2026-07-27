@@ -148,6 +148,7 @@ status|moderation-status <name>
 queue|moderation-queue
 reports
 triage-report <report-id>
+hard-delete <name>
 transfer <name>
 repair-name <name>
 migrations
@@ -159,6 +160,8 @@ Examples:
 
 ```sh
 bun run admin -- packages status <name>
+bun run admin -- packages hard-delete <name> --owner <handle> --reason "<reason>" # dry-run
+bun run admin -- packages hard-delete <name> --owner <handle> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- packages transfer <name> --to <owner> --reason "<reason>"       # dry-run
 bun run admin -- packages transfer <name> --to <owner> --reason "<reason>" --apply
 bun run admin -- packages repair-name <name> --next-name <name> --reason "<reason>"
@@ -228,5 +231,8 @@ only after admin auth succeeds.
   moderation hold, restores skills hidden by that hold, and writes an audit log.
 - `packages transfer` preserves the package row, stats, releases, and history;
   it changes the owner publisher.
+- `packages hard-delete` is admin-only, requires an already-soft-deleted package,
+  exact owner handle, reason, and dry-run token, and permanently removes all
+  package releases and related history.
 - `org delete` soft-deletes an empty org publisher and retains member rows for
   history; it refuses orgs with active skills or packages.

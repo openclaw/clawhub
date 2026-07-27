@@ -584,6 +584,23 @@ export const ApiV1PackageTransferResponseSchema = type({
     channel: PackageChannelSchema,
     isOfficial: "boolean",
 });
+export const PackageHardDeleteRequestSchema = type({
+    ownerHandle: "string",
+    reason: "string",
+    dryRun: "boolean?",
+    confirmationToken: "string?",
+});
+export const ApiV1PackageHardDeleteResponseSchema = type({
+    ok: "true",
+    packageId: "string",
+    name: "string",
+    ownerHandle: "string",
+    displayName: "string",
+    runtimeId: "string|null?",
+    dryRun: "boolean",
+    deleted: "boolean",
+    confirmationToken: "string",
+});
 export const PackageRepairNameRequestSchema = type({
     nextName: "string",
     retireTarget: "boolean?",

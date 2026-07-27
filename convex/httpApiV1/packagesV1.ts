@@ -4,6 +4,7 @@ import {
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageSecurityResponseSchema,
+  PackageHardDeleteRequestSchema,
   PackageAppealResolveRequestSchema,
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
@@ -116,6 +117,7 @@ const internalRefs = internal as unknown as {
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
     getPackageByNameInternal: unknown;
+    hardDeleteForAdminInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     getVersionSecurityByNameForViewerInternal: unknown;
@@ -2662,6 +2664,40 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
   if (!packageRoute) return text("Not found", 404);
   const packageName = packageRoute.packageName;
   const packageSegments = packageRoute.rest;
+
+  if (packageSegments[0] === "hard-delete" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+
+    try {
+      const body = parseArk(
+        PackageHardDeleteRequestSchema,
+        await request.json(),
+        "Package hard-delete payload",
+      ) as {
+        ownerHandle: string;
+        reason: string;
+        dryRun?: boolean;
+        confirmationToken?: string;
+      };
+      const result = await runMutationRef(ctx, internalRefs.packages.hardDeleteForAdminInternal, {
+        actorUserId: auth.userId,
+        name: packageName,
+        ownerHandle: body.ownerHandle,
+        reason: body.reason,
+        ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
+        ...(body.confirmationToken ? { confirmationToken: body.confirmationToken } : {}),
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package hard delete failed");
+    }
+  }
 
   if (packageSegments[0] === "rescan" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");

@@ -52,6 +52,7 @@ import {
 } from "./commands/orgs.js";
 import {
   cmdDeletePackageTrustedPublisher,
+  cmdHardDeletePackage,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
@@ -594,6 +595,21 @@ function registerOrgCommands(command: Command) {
 }
 
 function registerPluginGovernanceCommands(command: Command) {
+  command
+    .command("hard-delete")
+    .description("Permanently delete one soft-deleted plugin package and all related history")
+    .argument("<name>", "Plugin package name")
+    .requiredOption("--owner <handle>", "Current owner publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Delete permanently; defaults to dry-run")
+    .option("--confirm <token>", "Confirmation token returned by the dry-run")
+    .option("--yes", "Skip confirmation for --apply")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdHardDeletePackage(opts, name, options, isInputAllowed());
+    });
+
   command
     .command("transfer")
     .description("Transfer a plugin package to another publisher without changing package stats")

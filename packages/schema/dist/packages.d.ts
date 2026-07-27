@@ -913,6 +913,25 @@ export declare const ApiV1PackageTransferResponseSchema: import("arktype/interna
     isOfficial: boolean;
 }, {}>;
 export type ApiV1PackageTransferResponse = (typeof ApiV1PackageTransferResponseSchema)[inferred];
+export declare const PackageHardDeleteRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ownerHandle: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+    confirmationToken?: string | undefined;
+}, {}>;
+export type PackageHardDeleteRequest = (typeof PackageHardDeleteRequestSchema)[inferred];
+export declare const ApiV1PackageHardDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    packageId: string;
+    name: string;
+    ownerHandle: string;
+    displayName: string;
+    runtimeId?: string | null | undefined;
+    dryRun: boolean;
+    deleted: boolean;
+    confirmationToken: string;
+}, {}>;
+export type ApiV1PackageHardDeleteResponse = (typeof ApiV1PackageHardDeleteResponseSchema)[inferred];
 export declare const PackageRepairNameRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     nextName: string;
     retireTarget?: boolean | undefined;

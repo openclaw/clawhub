@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
 import {
+  ApiV1PackageHardDeleteResponseSchema,
   ApiV1PackageVersionResponseSchema,
   ApiV1PackagePublishResponseSchema,
   getPackageScopeOwnerMismatch,
@@ -24,6 +25,26 @@ import {
 } from "./schemas";
 
 describe("clawhub-schema", () => {
+  it("parses package hard-delete responses", () => {
+    const result = parseArk(
+      ApiV1PackageHardDeleteResponseSchema,
+      {
+        ok: true,
+        packageId: "packages:tencent",
+        name: "openclaw-tencent-provider",
+        ownerHandle: "hxy91819",
+        displayName: "Tencent Cloud",
+        runtimeId: "tencent",
+        dryRun: true,
+        deleted: false,
+        confirmationToken:
+          "hard-delete-package:@hxy91819/openclaw-tencent-provider:packages:tencent",
+      },
+      "Package hard-delete response",
+    );
+    expect(result.deleted).toBe(false);
+  });
+
   it("parses skill hard-delete responses", () => {
     const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:demo";
     const response = parseArk(

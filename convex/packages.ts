@@ -617,6 +617,7 @@ const ownedPackageScanScopeValidator = v.optional(
   v.union(v.literal("ownerUserId"), v.literal("personalPublisher")),
 );
 const hardDeletePackageSourceValidator = v.union(
+  v.literal("admin"),
   v.literal("account.delete"),
   v.literal("publisher.delete"),
 );
@@ -5491,7 +5492,8 @@ async function hardDeletePackageDoc(
   params: {
     actorUserId: Id<"users">;
     deletedAt: number;
-    source: "account.delete" | "publisher.delete";
+    source: "admin" | "account.delete" | "publisher.delete";
+    reason?: string;
   },
 ) {
   const releases = await ctx.db
@@ -5574,6 +5576,7 @@ async function hardDeletePackageDoc(
       ownerUserId: pkg.ownerUserId,
       ownerPublisherId: pkg.ownerPublisherId,
       source: params.source,
+      reason: params.reason,
       releases: releases.length,
       reports: reports.length,
       appeals: appeals.length,
@@ -5606,6 +5609,78 @@ export const hardDeletePackageInternal = internalMutation({
       source: args.source,
     });
     return { ...result, deleted: true as const };
+  },
+});
+
+export const hardDeleteForAdminInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    ownerHandle: v.string(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const name = normalizePackageName(args.name);
+    const ownerHandle = normalizePublisherHandle(args.ownerHandle);
+    const reason = args.reason.trim();
+    if (!name) throw new ConvexError("Package name required");
+    if (!ownerHandle) throw new ConvexError("Owner handle required");
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const pkg = await getPackageByNormalizedName(ctx, name);
+    if (!pkg) throw new ConvexError("Package not found");
+    if (!pkg.softDeletedAt) throw new ConvexError("Package must be soft-deleted first");
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: pkg.ownerPublisherId,
+      ownerUserId: pkg.ownerUserId,
+    });
+    if (normalizePublisherHandle(owner?.handle) !== ownerHandle) {
+      throw new ConvexError("Package owner does not match --owner");
+    }
+
+    const confirmationToken = `hard-delete-package:@${ownerHandle}/${pkg.normalizedName}:${pkg._id}`;
+    const baseResult = {
+      ok: true as const,
+      packageId: pkg._id,
+      name: pkg.normalizedName,
+      ownerHandle,
+      displayName: pkg.displayName,
+      runtimeId: pkg.runtimeId ?? null,
+      confirmationToken,
+    };
+    if (args.dryRun !== false) return { ...baseResult, dryRun: true, deleted: false };
+    if (args.confirmationToken !== confirmationToken) {
+      throw new ConvexError(`Confirmation token must be "${confirmationToken}"`);
+    }
+
+    const now = Date.now();
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "package.hard_delete.requested",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        name: pkg.normalizedName,
+        ownerHandle,
+        reason,
+        source: "clawhub-admin",
+      },
+      createdAt: now,
+    });
+    await hardDeletePackageDoc(ctx, pkg, {
+      actorUserId: args.actorUserId,
+      deletedAt: now,
+      source: "admin",
+      reason,
+    });
+    return { ...baseResult, dryRun: false, deleted: true };
   },
 });
 

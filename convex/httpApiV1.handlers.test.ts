@@ -8161,6 +8161,81 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
+  it("package hard-delete dry-runs through the admin-only API", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+    const token = "hard-delete-package:@hxy91819/openclaw-tencent-provider:packages:1";
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:1",
+        name: "openclaw-tencent-provider",
+        ownerHandle: "hxy91819",
+        displayName: "Tencent Cloud",
+        runtimeId: "tencent",
+        dryRun: true,
+        deleted: false,
+        confirmationToken: token,
+      };
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/openclaw-tencent-provider/hard-delete", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({
+          ownerHandle: "hxy91819",
+          reason: "Owner-requested cleanup",
+          dryRun: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      dryRun: true,
+      deleted: false,
+      confirmationToken: token,
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      (internal as unknown as { packages: Record<string, unknown> }).packages
+        .hardDeleteForAdminInternal,
+      {
+        actorUserId: "users:admin",
+        name: "openclaw-tencent-provider",
+        ownerHandle: "hxy91819",
+        reason: "Owner-requested cleanup",
+        dryRun: true,
+      },
+    );
+  });
+
+  it("package hard-delete forbids non-admin API tokens", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("should not hard-delete");
+    });
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/packages/demo/hard-delete", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test" },
+        body: JSON.stringify({ ownerHandle: "openclaw", reason: "Cleanup" }),
+      }),
+    );
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Admin role required.");
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("skill rescan enqueues owner-authorized ClawScan jobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:moderator",
@@ -15251,7 +15326,7 @@ describe("httpApiV1 handlers", () => {
       }),
     );
 
-    expect(response.status, await response.clone().text()).toBe(200);
+    expect(response.status).toBe(200);
     expect(storageStore).toHaveBeenCalledTimes(3);
     expect(runAction).toHaveBeenCalledWith(
       expect.anything(),
