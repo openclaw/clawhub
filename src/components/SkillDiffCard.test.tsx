@@ -5,12 +5,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { SkillDiffCard } from "./SkillDiffCard";
 
-const getFileTextMock = vi.fn();
+const getFilePreviewMock = vi.fn();
 let diffEditorMounts = 0;
 let diffEditorUnmounts = 0;
 
 vi.mock("convex/react", () => ({
-  useAction: () => getFileTextMock,
+  useAction: () => getFilePreviewMock,
 }));
 
 vi.mock("../lib/monacoLoader", () => ({
@@ -87,8 +87,8 @@ const skill = {
 
 describe("SkillDiffCard", () => {
   beforeEach(() => {
-    getFileTextMock.mockReset();
-    getFileTextMock.mockResolvedValue({ text: "content" });
+    getFilePreviewMock.mockReset();
+    getFilePreviewMock.mockResolvedValue({ text: "content" });
     diffEditorMounts = 0;
     diffEditorUnmounts = 0;
   });
@@ -163,5 +163,26 @@ describe("SkillDiffCard", () => {
 
     expect(diffEditorMounts).toBe(1);
     expect(diffEditorUnmounts).toBe(0);
+  });
+
+  it("shows a download-only state when either file cannot be previewed as text", async () => {
+    installMatchMedia(false);
+    getFilePreviewMock.mockImplementation(({ versionId }: { versionId: string }) =>
+      Promise.resolve({
+        text: versionId === "skillVersions:1" ? null : "<svg>changed</svg>",
+      }),
+    );
+
+    const leftVersion = makeVersion("skillVersions:1", "1.0.1");
+    const rightVersion = makeVersion("skillVersions:2", "1.0.2");
+    leftVersion.files = [{ path: "diagram.svg", size: 18 }] as typeof leftVersion.files;
+    rightVersion.files = [{ path: "diagram.svg", size: 22 }] as typeof rightVersion.files;
+
+    render(<SkillDiffCard skill={skill} versions={[leftVersion, rightVersion]} />);
+
+    expect(
+      await screen.findByText(/base file is download-only and cannot be compared as text/i),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("diff-editor")).toBeNull();
   });
 });

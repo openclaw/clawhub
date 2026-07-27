@@ -20,6 +20,7 @@ export const LockfileSchema = type({
             version: "string|null",
             installedAt: "number",
             ownerHandle: "string?",
+            sourceRef: "string?",
             pinned: "boolean?",
             pinReason: "string?",
         },
@@ -92,6 +93,11 @@ export const ApiCliPublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const CliSkillDeleteRequestSchema = type({
     slug: "string",
@@ -133,15 +139,63 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
     message: "string",
     status: "number",
 });
+export const ApiV1SkillsShCatalogEntrySchema = type({
+    ref: "string",
+    route: "string",
+    displayName: "string",
+    summary: "string",
+    owner: {
+        handle: "string",
+        githubUrl: "string",
+    },
+    repository: "string",
+    githubPath: "string",
+    githubCommit: "string",
+    githubContentHash: "string",
+    sourceUrl: "string",
+    installs: "number",
+    security: {
+        verdict: '"clean"|"suspicious"',
+        source: '"clawhub"',
+        attemptId: "string",
+        scannedAt: "number",
+    },
+    install: {
+        ok: "true",
+        slug: "string",
+        installKind: '"github"',
+        github: {
+            repo: "string",
+            path: "string",
+            commit: "string",
+            contentHash: "string",
+            sourceUrl: "string",
+        },
+    },
+});
 export const CliTelemetryInstallRequestSchema = type({
     event: '"install"',
     slug: "string",
     ownerHandle: "string?",
+    sourceRef: "string?",
+    sourceKind: '"skills-sh"?',
+    sourceRepository: "string?",
+    sourcePath: "string?",
+    sourceUrl: "string?",
+    canonicalRef: "string?",
+    clawhubScan: '"unscanned"|"scanned"?',
+    trustLabel: "string?",
     version: "string?",
     // Deprecated compatibility fields accepted and ignored by the backend.
     rootId: "string?",
     rootLabel: "string?",
-}).or({
+})
+    .or({
+    event: '"plugin_install"',
+    packageName: "string",
+    version: "string?",
+})
+    .or({
     // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
     roots: type({
         rootId: "string",
@@ -462,6 +516,22 @@ export const ApiV1SkillRescanResponseSchema = type({
     scheduled: "boolean",
     alreadyQueued: "boolean",
 });
+export const ApiV1SkillHardDeleteRequestSchema = type({
+    ownerHandle: "string",
+    reason: "string",
+    dryRun: "boolean?",
+    confirmationToken: "string?",
+});
+export const ApiV1SkillHardDeleteResponseSchema = type({
+    ok: "true",
+    skillId: "string",
+    slug: "string",
+    ownerHandle: "string",
+    displayName: "string",
+    dryRun: "boolean",
+    scheduled: "boolean",
+    confirmationToken: "string",
+});
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
 export const ApiV1SkillScanSourceSchema = type({
     kind: '"upload"',
@@ -665,6 +735,11 @@ export const ApiV1PublishResponseSchema = type({
     ok: "true",
     skillId: "string",
     versionId: "string",
+    status: '"pending"|"published"?',
+    slug: "string?",
+    version: "string?",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
 });
 export const ApiV1DeleteResponseSchema = type({
     ok: "true",

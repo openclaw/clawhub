@@ -32,8 +32,16 @@ describe("security-scan-codex workflow", () => {
     const workflow = parseYaml(
       await readFile(".github/workflows/security-scan-codex.yml", "utf8"),
     ) as {
+      concurrency?: {
+        "cancel-in-progress"?: boolean;
+        group?: string;
+      };
       jobs: {
         "codex-security-scan": {
+          concurrency?: {
+            "cancel-in-progress"?: boolean;
+            group?: string;
+          };
           env?: Record<string, unknown>;
           steps: WorkflowStep[];
           strategy?: {
@@ -53,6 +61,9 @@ describe("security-scan-codex workflow", () => {
     const jobEnv = workflow.jobs["codex-security-scan"].env ?? {};
     const scanIndex = steps.findIndex((step) => step.id === "diagnostics_secret_scan");
     const uploadIndex = steps.findIndex((step) => step.uses === "actions/upload-artifact@v7");
+    const prepareStep = steps.find(
+      (step) => step.name === "Prepare Codex security diagnostics scan",
+    );
     const scanStep = steps[scanIndex];
     const uploadStep = steps[uploadIndex];
 
@@ -67,14 +78,22 @@ describe("security-scan-codex workflow", () => {
     expect(scanStep?.run).toContain("--only-verified");
     expect(scanStep?.run).toContain("--fail");
     expect(scanStep?.run).not.toContain("--debug");
+    expect(prepareStep?.if).toBe("${{ !cancelled() }}");
+    expect(scanStep?.if).toBe("${{ !cancelled() }}");
     expect(uploadStep?.if).toBe(
       "${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}",
     );
     expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
+    expect(uploadStep?.with?.["if-no-files-found"]).toBe("ignore");
     expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(40);
     expect(workflow.on?.workflow_dispatch).toBeDefined();
     expect(workflow.on?.repository_dispatch?.types).toEqual(["clawhub-security-scan"]);
     expect(workflow.on?.schedule).toBeUndefined();
+    expect(workflow.concurrency).toBeUndefined();
+    expect(workflow.jobs["codex-security-scan"].concurrency).toEqual({
+      group: "clawhub-security-scan-${{ matrix.shard }}",
+      "cancel-in-progress": false,
+    });
     expect(workflow.jobs["codex-security-scan"].strategy?.["max-parallel"]).toBe(10);
     expect(workflow.jobs["codex-security-scan"].strategy?.matrix?.include).toEqual([
       { lane: "priority", shard: "priority-0" },
@@ -98,12 +117,12 @@ describe("security-scan-codex workflow", () => {
     expect(jobEnv.CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES).toBe(
       "${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}",
     );
-    expect(jobEnv.CODEX_SECURITY_SCAN_TIMEOUT_MS).toBe(
-      "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",
+    expect(jobEnv.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS).toBe(
+      "${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}",
     );
-    expect(jobEnv.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN).toBe(
-      "${{ vars.CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN || '0' }}",
-    );
+    expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_MODE");
+    expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_TIMEOUT_MS");
+    expect(jobEnv).not.toHaveProperty("CODEX_SECURITY_SCAN_SHADOW_CLAWSCAN");
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(jobEnv).not.toHaveProperty("CODEX_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
@@ -113,14 +132,20 @@ describe("security-scan-codex workflow", () => {
       "Run Codex security worker",
     ]);
     expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
+    expectSecretStepAllowlist(steps, "VT_API_KEY", []);
     expect(scanStep?.env ?? {}).not.toHaveProperty("CODEX_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expect(scanStep?.env ?? {}).not.toHaveProperty("VIRUSTOTAL_API_KEY");
+    expect(uploadStep?.env ?? {}).not.toHaveProperty("VIRUSTOTAL_API_KEY");
     expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();
     const codexInstall = steps.find((step) => step.name === "Install Codex CLI")?.run;
+    const clawScanInstall = steps.find((step) => step.name === "Install ClawScan CLI")?.run;
     const skillspectorInstall = steps.find((step) => step.name === "Install SkillSpector")?.run;
     expect(codexInstall).toContain("npm install -g @openai/codex@0.142.3");
     expect(codexInstall).not.toContain("@latest");
+    expect(clawScanInstall).toContain("npm install -g @openclaw/clawscan@0.1.6");
+    expect(clawScanInstall).not.toContain("@latest");
     expect(skillspectorInstall).toContain("git+https://github.com/NVIDIA/skillspector.git@8f37cfa");
     expect(skillspectorInstall).not.toContain("git+https://github.com/NVIDIA/skillspector.git'");
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({

@@ -212,7 +212,7 @@ function UserStatsTooltipContent({
             </span>
             <span
               className="flex items-center gap-1 text-fs-xs text-ink-soft"
-              title="Stars received"
+              title="Bookmarks received"
             >
               <Star size={12} />
               {formatCompactStat(stats.totalStars)}

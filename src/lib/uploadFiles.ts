@@ -1,36 +1,11 @@
-import { TEXT_FILE_EXTENSION_SET } from "clawhub-schema/textFiles";
 import { gunzipSync, unzipSync } from "fflate";
-
-const TEXT_TYPES = new Map([
-  ["md", "text/markdown"],
-  ["markdown", "text/markdown"],
-  ["txt", "text/plain"],
-  ["json", "application/json"],
-  ["yaml", "text/yaml"],
-  ["yml", "text/yaml"],
-  ["toml", "text/plain"],
-  ["js", "text/javascript"],
-  ["ts", "text/plain"],
-  ["tsx", "text/plain"],
-  ["jsx", "text/plain"],
-  ["css", "text/css"],
-  ["html", "text/html"],
-  ["svg", "image/svg+xml"],
-]);
 
 type ExpandFilesReport = {
   files: File[];
   ignoredLocalMetadataPaths: string[];
 };
 
-type ExpandFilesOptions = {
-  includeBinaryArchiveFiles?: boolean;
-};
-
-export async function expandFilesWithReport(
-  selected: File[],
-  options: ExpandFilesOptions = {},
-): Promise<ExpandFilesReport> {
+export async function expandFilesWithReport(selected: File[]): Promise<ExpandFilesReport> {
   const expanded: File[] = [];
   const ignoredLocalMetadataPaths: string[] = [];
   for (const file of selected) {
@@ -41,13 +16,12 @@ export async function expandFilesWithReport(
         expanded,
         ignoredLocalMetadataPaths,
         Object.entries(entries).map(([path, data]) => ({ path, data })),
-        options,
       );
       continue;
     }
     if (lower.endsWith(".tar.gz") || lower.endsWith(".tgz")) {
       const unpacked = gunzipSync(new Uint8Array(await readArrayBuffer(file)));
-      pushArchiveEntries(expanded, ignoredLocalMetadataPaths, untar(unpacked), options);
+      pushArchiveEntries(expanded, ignoredLocalMetadataPaths, untar(unpacked));
       continue;
     }
     if (lower.endsWith(".gz")) {
@@ -139,7 +113,6 @@ function pushArchiveEntries(
   target: File[],
   ignoredLocalMetadataPaths: string[],
   entries: Array<{ path: string; data: Uint8Array }>,
-  options: ExpandFilesOptions = {},
 ) {
   const normalized: Array<{ path: string; data: Uint8Array }> = [];
 
@@ -150,7 +123,6 @@ function pushArchiveEntries(
       ignoredLocalMetadataPaths.push(path);
       continue;
     }
-    if (!options.includeBinaryArchiveFiles && !isTextPath(path)) continue;
     normalized.push({ path, data: entry.data });
   }
 
@@ -193,11 +165,7 @@ async function readArrayBuffer(file: Blob) {
 }
 
 function guessContentType(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase();
-  if (!ext) return "application/octet-stream";
-  const known = TEXT_TYPES.get(ext);
-  if (known) return known;
-  if (TEXT_FILE_EXTENSION_SET.has(ext)) return "text/plain";
+  void path;
   return "application/octet-stream";
 }
 
@@ -270,14 +238,6 @@ function isLocalMetadataPath(path: string) {
   if (basename === ".ds_store") return true;
   if (basename.startsWith("._")) return true;
   return false;
-}
-
-function isTextPath(path: string) {
-  const normalized = path.trim().toLowerCase();
-  const parts = normalized.split(".");
-  const extension = parts.length > 1 ? (parts.at(-1) ?? "") : "";
-  if (!extension) return false;
-  return TEXT_FILE_EXTENSION_SET.has(extension);
 }
 
 type WebkitDataTransferItem = DataTransferItem & {

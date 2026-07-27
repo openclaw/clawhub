@@ -11,6 +11,11 @@ const useMutationMock = vi.fn();
 
 vi.mock("convex/react", () => ({
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  usePaginatedQuery: () => ({
+    results: [],
+    status: "Exhausted",
+    loadMore: vi.fn(),
+  }),
 }));
 
 beforeEach(() => {

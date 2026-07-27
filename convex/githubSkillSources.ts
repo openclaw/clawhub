@@ -7,15 +7,23 @@ import { requireUser } from "./lib/access";
 import { deleteGitHubSkillScansForSource } from "./lib/githubSkillScans";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
+import { toPublicSkill } from "./lib/public";
 import {
+  getOwnerPublisher,
   getPersonalPublisherForUserOrFallback,
   isPublisherActive,
   isPublisherRoleAllowed,
   requirePublisherRole,
 } from "./lib/publishers";
+import {
+  assertGenericGitHubSkillSyncEnabled,
+  getRuntimeRolloutCapabilities,
+  isLegacyNvidiaSkillSource,
+} from "./lib/rolloutCapabilities";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 
 const GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE = 25;
+const SKILLS_SH_ALIAS_SOURCE_SKILL_LIMIT = 500;
 
 type PublicGitHubSkillSource = Pick<
   Doc<"githubSkillSources">,
@@ -42,6 +50,51 @@ type PublicGitHubSkillSource = Pick<
 export const getByIdInternal = internalQuery({
   args: { sourceId: v.id("githubSkillSources") },
   handler: async (ctx, args) => ctx.db.get(args.sourceId),
+});
+
+export const getSkillsShAliasTargetInternal = internalQuery({
+  args: { repo: v.string(), path: v.string() },
+  handler: async (ctx, args) => {
+    const repo = args.repo.trim().toLowerCase();
+    const path = args.path.trim().replace(/^\/+|\/+$/g, "");
+    if (!repo || !path) return null;
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", repo))
+      .unique();
+    if (!source) return null;
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+      .take(SKILLS_SH_ALIAS_SOURCE_SKILL_LIMIT + 1);
+    if (skills.length > SKILLS_SH_ALIAS_SOURCE_SKILL_LIMIT) return null;
+    const matches = skills.filter(
+      (skill) =>
+        skill.githubPath === path &&
+        skill.installKind === "github" &&
+        skill.githubCurrentStatus === "present" &&
+        (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious") &&
+        Boolean(skill.githubCurrentCommit) &&
+        Boolean(skill.githubCurrentContentHash) &&
+        Boolean(toPublicSkill(skill)),
+    );
+    if (matches.length !== 1) return null;
+    const skill = matches[0]!;
+    const publisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (!publisher) return null;
+    const handle = publisher.handle?.trim();
+    if (!handle) return null;
+    return {
+      source,
+      skill,
+      publisher: { handle, displayName: publisher.displayName ?? handle },
+      canonicalRef: `@${handle}/${skill.slug}`,
+      canonicalRoute: `/${encodeURIComponent(handle)}/skills/${encodeURIComponent(skill.slug)}`,
+    };
+  },
 });
 
 async function toPublicGitHubSkillSource(
@@ -102,7 +155,10 @@ export const listForPublisher = query({
       .query("githubSkillSources")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId))
       .collect();
-    const sortedSources = sources.sort((a, b) => b.updatedAt - a.updatedAt);
+    const visibleSources = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled
+      ? sources
+      : sources.filter((source) => isLegacyNvidiaSkillSource(source.repo));
+    const sortedSources = visibleSources.sort((a, b) => b.updatedAt - a.updatedAt);
     return await Promise.all(sortedSources.map((source) => toPublicGitHubSkillSource(ctx, source)));
   },
 });
@@ -144,7 +200,11 @@ export const listForManageableOfficialPublishers = query({
           .collect(),
       ),
     );
-    const sortedSources = sourceGroups.flat().sort((a, b) => b.updatedAt - a.updatedAt);
+    const sources = sourceGroups.flat();
+    const visibleSources = getRuntimeRolloutCapabilities().githubSkillSync.runtimeEnabled
+      ? sources
+      : sources.filter((source) => isLegacyNvidiaSkillSource(source.repo));
+    const sortedSources = visibleSources.sort((a, b) => b.updatedAt - a.updatedAt);
     return await Promise.all(sortedSources.map((source) => toPublicGitHubSkillSource(ctx, source)));
   },
 });
@@ -168,6 +228,7 @@ export async function deleteForPublisherHandler(
   if (!source || source.ownerPublisherId !== args.ownerPublisherId) {
     throw new ConvexError("GitHub source not found.");
   }
+  assertGenericGitHubSkillSyncEnabled(source.repo);
 
   const now = args.now ?? Date.now();
   const contents = await ctx.db
@@ -176,6 +237,20 @@ export async function deleteForPublisherHandler(
     .collect();
   for (const content of contents) {
     await ctx.db.delete(content._id);
+  }
+  const candidates = await ctx.db
+    .query("githubSkillCandidates")
+    .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
+    .collect();
+  for (const candidate of candidates) {
+    const skill = await ctx.db.get(candidate.skillId);
+    if (skill?.githubPendingCandidateId === candidate._id) {
+      await ctx.db.patch(skill._id, {
+        githubPendingCandidateId: undefined,
+        updatedAt: now,
+      });
+    }
+    await ctx.db.delete(candidate._id);
   }
   await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
     sourceId: args.sourceId,

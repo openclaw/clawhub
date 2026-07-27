@@ -6,13 +6,24 @@ import {
 } from "./githubSkillSync";
 
 const encoder = new TextEncoder();
+const validPng = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+    "base64",
+  ),
+);
 
 function bytes(text: string) {
   return encoder.encode(text);
 }
 
-function repoEntries(entries: Record<string, string>) {
-  return Object.fromEntries(Object.entries(entries).map(([path, text]) => [path, bytes(text)]));
+function repoEntries(entries: Record<string, string | Uint8Array>) {
+  return Object.fromEntries(
+    Object.entries(entries).map(([path, value]) => [
+      path,
+      value instanceof Uint8Array ? value : bytes(value),
+    ]),
+  );
 }
 
 describe("parseSkillsShDisplayManifest", () => {
@@ -69,11 +80,14 @@ describe("buildGitHubSkillSourceSnapshot", () => {
       "skills/aiq-deploy/SKILL.md":
         "---\nname: AIQ Deploy\nversion: 0.2.0\ndescription: Deploy AgentIQ workflows.\n---\n# AIQ Deploy\n",
       "skills/aiq-deploy/skill-card.md": "# Card\n",
+      "skills/aiq-deploy/agents/openai.yaml":
+        "interface:\n  display_name: '🚀 AIQ Deploy Console'\n  short_description: Deploy from the OpenAI console.\n  icon_small: ../assets/icon.png\n  icon_large: assets/icon.png\n",
       "skills/vision-helper/SKILL.md": "# Vision Helper\n",
       "skills.sh.json": JSON.stringify({
         groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
       }),
     });
+    baseEntries["skills/aiq-deploy/assets/icon.png"] = validPng;
     const changedEntries = {
       ...baseEntries,
       "skills/aiq-deploy/skill-card.md": bytes("# Card changed\n"),
@@ -100,8 +114,15 @@ describe("buildGitHubSkillSourceSnapshot", () => {
       expect.arrayContaining([
         expect.objectContaining({
           slug: "aiq-deploy",
-          displayName: "AIQ Deploy",
-          summary: "Deploy AgentIQ workflows.",
+          displayName: "AIQ Deploy Console",
+          summary: "Deploy from the OpenAI console.",
+          iconAsset: {
+            path: "assets/icon.png",
+            contentType: "image/png",
+            size: validPng.byteLength,
+            sha256: expect.stringMatching(/^[a-f\d]{64}$/),
+          },
+          iconBytes: validPng,
           upstreamVersion: "0.2.0",
           path: "skills/aiq-deploy",
           skillMarkdownPath: "skills/aiq-deploy/SKILL.md",
@@ -148,6 +169,26 @@ describe("buildGitHubSkillSourceSnapshot", () => {
     });
 
     expect(changed.skills[0]?.contentHash).not.toBe(base.skills[0]?.contentHash);
+  });
+
+  it("falls back to icon_large when icon_small cannot be decoded", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "1".repeat(40),
+      entries: repoEntries({
+        "skills/demo/SKILL.md": "# Demo\n",
+        "skills/demo/agents/openai.yaml":
+          "interface:\n  icon_small: assets/icon.png\n  icon_large: assets/icon.svg\n",
+        "skills/demo/assets/icon.png": validPng,
+        "skills/demo/assets/icon.svg": '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+      }),
+      validateRasterIcon: async () => false,
+    });
+
+    expect(snapshot.skills[0]).toMatchObject({
+      iconAsset: { path: "assets/icon.svg", contentType: "image/svg+xml" },
+    });
   });
 
   it("rejects duplicate normalized skill slugs before syncing content", async () => {
@@ -218,6 +259,9 @@ describe("buildGitHubSkillSyncPlan", () => {
       commit: "2".repeat(40),
       entries: repoEntries({
         "skills/aiq-deploy/SKILL.md": "# AIQ Deploy v2\n",
+        "skills/aiq-deploy/agents/openai.yaml":
+          "interface:\n  display_name: AIQ Deploy Console\n  icon_small: assets/icon.png\n",
+        "skills/aiq-deploy/assets/icon.png": validPng,
         "skills.sh.json": JSON.stringify({
           groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
         }),
@@ -248,6 +292,8 @@ describe("buildGitHubSkillSyncPlan", () => {
         skillId: "skills:aiq-deploy",
         slug: "aiq-deploy",
         patch: expect.objectContaining({
+          displayName: "AIQ Deploy Console",
+          icon: expect.stringMatching(/^\/api\/v1\/skill-icons\/[a-f\d]{64}$/),
           githubCurrentCommit: "2".repeat(40),
           githubCurrentContentHash: snapshot.skills[0]?.contentHash,
           githubScanStatus: "pending",

@@ -6,7 +6,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchGitHubSource, resolveLocalGitInfo, resolveSourceInput } from "./github";
+import {
+  createGitHubRetryBudget,
+  fetchGitHubSource,
+  resolveLocalGitInfo,
+  resolveSourceInput,
+} from "./github";
 
 async function makeTmpDir() {
   return await mkdtemp(join(tmpdir(), "clawhub-github-test-"));
@@ -341,6 +346,421 @@ describe("github publish source helpers", () => {
       expect(await readFile(join(fetched.dir, "package.json"), "utf8")).toContain('"name":"demo"');
     } finally {
       await fetched.cleanup();
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("retries transient GitHub repository lookup failures", async () => {
+    vi.useFakeTimers();
+    const archiveBytes = zipSync({
+      "repo-root/package.json": new TextEncoder().encode('{"name":"demo","version":"1.0.0"}\n'),
+      "repo-root/openclaw.plugin.json": new TextEncoder().encode(
+        '{"id":"demo","configSchema":{"type":"object"}}\n',
+      ),
+    });
+    const archiveBody = archiveBytes.buffer.slice(
+      archiveBytes.byteOffset,
+      archiveBytes.byteOffset + archiveBytes.byteLength,
+    ) as ArrayBuffer;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response("temporarily unavailable", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ default_branch: "main" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ sha: "0123456789abcdef0123456789abcdef01234567" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(archiveBody, {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        }),
+      );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const fetchedPromise = fetchGitHubSource({
+        kind: "github",
+        owner: "owner",
+        repo: "repo",
+        path: ".",
+        url: "https://github.com/owner/repo",
+      });
+      await vi.runAllTimersAsync();
+      const fetched = await fetchedPromise;
+      await fetched.cleanup();
+
+      expect(fetchMock).toHaveBeenCalledTimes(5);
+      expect(fetched.source.ref).toBe("main");
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("does not retry a missing GitHub repository", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("not found", { status: 404 }));
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      await expect(
+        fetchGitHubSource({
+          kind: "github",
+          owner: "owner",
+          repo: "missing",
+          path: ".",
+          url: "https://github.com/owner/missing",
+        }),
+      ).rejects.toThrow("GitHub repo not found: owner/missing");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("honors a bounded GitHub rate-limit retry delay", async () => {
+    vi.useFakeTimers();
+    const archiveBytes = zipSync({
+      "repo-root/package.json": new TextEncoder().encode('{"name":"demo","version":"1.0.0"}\n'),
+      "repo-root/openclaw.plugin.json": new TextEncoder().encode(
+        '{"id":"demo","configSchema":{"type":"object"}}\n',
+      ),
+    });
+    const archiveBody = archiveBytes.buffer.slice(
+      archiveBytes.byteOffset,
+      archiveBytes.byteOffset + archiveBytes.byteLength,
+    ) as ArrayBuffer;
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("rate limited", {
+          status: 403,
+          headers: { "retry-after": "1" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ default_branch: "main" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ sha: "0123456789abcdef0123456789abcdef01234567" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(archiveBody, {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        }),
+      );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const fetchedPromise = fetchGitHubSource({
+        kind: "github",
+        owner: "owner",
+        repo: "repo",
+        path: ".",
+        url: "https://github.com/owner/repo",
+      });
+      await vi.advanceTimersByTimeAsync(999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const fetched = await fetchedPromise;
+      await fetched.cleanup();
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("does not retry a GitHub rate limit beyond the bounded delay", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "60" },
+      }),
+    );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      await expect(
+        fetchGitHubSource({
+          kind: "github",
+          owner: "owner",
+          repo: "repo",
+          path: ".",
+          url: "https://github.com/owner/repo",
+        }),
+      ).rejects.toThrow("GitHub repo lookup failed (429): owner/repo");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("retries transient failures while reading a GitHub response body", async () => {
+    vi.useFakeTimers();
+    const archiveBytes = zipSync({
+      "repo-root/package.json": new TextEncoder().encode('{"name":"demo","version":"1.0.0"}\n'),
+      "repo-root/openclaw.plugin.json": new TextEncoder().encode(
+        '{"id":"demo","configSchema":{"type":"object"}}\n',
+      ),
+    });
+    const archiveBody = archiveBytes.buffer.slice(
+      archiveBytes.byteOffset,
+      archiveBytes.byteOffset + archiveBytes.byteLength,
+    ) as ArrayBuffer;
+    const failedBody = new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError("connection reset"));
+      },
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(failedBody, { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ default_branch: "main" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ sha: "0123456789abcdef0123456789abcdef01234567" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(archiveBody, {
+          status: 200,
+          headers: { "content-type": "application/zip" },
+        }),
+      );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const fetchedPromise = fetchGitHubSource({
+        kind: "github",
+        owner: "owner",
+        repo: "repo",
+        path: ".",
+        url: "https://github.com/owner/repo",
+      });
+      await vi.runAllTimersAsync();
+      const fetched = await fetchedPromise;
+      await fetched.cleanup();
+
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("enforces the GitHub rate-limit delay budget cumulatively", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response("rate limited", {
+        status: 403,
+        headers: { "retry-after": "3" },
+      }),
+    );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const fetchedPromise = fetchGitHubSource({
+        kind: "github",
+        owner: "owner",
+        repo: "repo",
+        path: ".",
+        url: "https://github.com/owner/repo",
+      });
+      const rejection = expect(fetchedPromise).rejects.toThrow(
+        "GitHub repo lookup failed (403): owner/repo",
+      );
+      await vi.advanceTimersByTimeAsync(3_000);
+      await rejection;
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("shares the GitHub rate-limit delay budget across source requests", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("rate limited", {
+          status: 403,
+          headers: { "retry-after": "3" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ default_branch: "main" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("rate limited", {
+          status: 403,
+          headers: { "retry-after": "3" },
+        }),
+      );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const fetchedPromise = fetchGitHubSource({
+        kind: "github",
+        owner: "owner",
+        repo: "repo",
+        path: ".",
+        url: "https://github.com/owner/repo",
+      });
+      const rejection = expect(fetchedPromise).rejects.toThrow(
+        "GitHub ref not found: owner/repo@main",
+      );
+      await vi.advanceTimersByTimeAsync(3_000);
+      await rejection;
+
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+      Object.defineProperty(globalThis, "fetch", {
+        value: originalFetch,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
+  it("shares the GitHub rate-limit delay budget across URL resolution and fetch", async () => {
+    vi.useFakeTimers();
+    const retryBudget = createGitHubRetryBudget();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response("rate limited", {
+          status: 403,
+          headers: { "retry-after": "3" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ sha: "0123456789abcdef0123456789abcdef01234567" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response("rate limited", {
+          status: 403,
+          headers: { "retry-after": "3" },
+        }),
+      );
+    const originalFetch = globalThis.fetch;
+    Object.defineProperty(globalThis, "fetch", {
+      value: fetchMock,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const resolvedPromise = resolveSourceInput("https://github.com/owner/repo/tree/main", {
+        workdir: "/tmp",
+        retryBudget,
+      });
+      await vi.advanceTimersByTimeAsync(3_000);
+      const resolved = await resolvedPromise;
+      if (resolved.kind !== "github") throw new Error("Expected GitHub source");
+
+      await expect(fetchGitHubSource(resolved, retryBudget)).rejects.toThrow(
+        "GitHub ref not found: owner/repo@main",
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
       Object.defineProperty(globalThis, "fetch", {
         value: originalFetch,
         configurable: true,

@@ -6,6 +6,8 @@ export function familyLabel(family: PackageFamily) {
       return "Code Plugin";
     case "bundle-plugin":
       return "Bundle Plugin";
+    case "claw":
+      return "Claw";
     default:
       return "Skill";
   }

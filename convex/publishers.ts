@@ -3,8 +3,9 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalMutation, internalQuery, mutation, query } from "./functions";
+import { action, internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
+import { GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS } from "./lib/githubOrgMemberships";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -43,7 +44,7 @@ import {
   isHandleReservedForAnotherUser,
 } from "./lib/reservedHandles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
-import { readCanonicalStat } from "./lib/skillStats";
+import { readCanonicalStat, readPublicDownloads } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
@@ -61,6 +62,10 @@ const PUBLISHER_OG_AFFILIATION_LIMIT = 5;
 const PUBLISHER_OG_MEMBERSHIP_PAGE_SIZE = 64;
 const PUBLISHER_OG_MEMBERSHIP_SCAN_LIMIT = 512;
 const MAX_HOME_PUBLISHER_SUMMARIES = 10;
+const MAX_HOME_OFFICIAL_CREATOR_SUMMARIES = 16;
+const HOME_OFFICIAL_CREATOR_PAGE_SIZE = 32;
+// Official status is staff-curated. Keep the set bounded so public home/browse reads stay predictable.
+const MAX_OFFICIAL_PUBLISHER_COUNT = 128;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -383,7 +388,7 @@ function getIndexedPublisherStatsFromRows(rows: PublisherPublishedRows): Publish
   for (const skill of rows.skills) {
     stats.skills += 1;
     stats.installs += readCanonicalStat(skill, "installsAllTime");
-    stats.downloads += readCanonicalStat(skill, "downloads");
+    stats.downloads += readPublicDownloads(skill);
     stats.stars += readCanonicalStat(skill, "stars");
   }
 
@@ -411,7 +416,7 @@ function getPublisherPublishedItems(
       inferredCategories: skill.inferredCategories,
       latestVersionId: skill.latestVersionId,
       inferredFromVersionId: skill.inferredFromVersionId,
-      downloads: readCanonicalStat(skill, "downloads"),
+      downloads: readPublicDownloads(skill),
       installs: readCanonicalStat(skill, "installsAllTime"),
     })),
     ...rows.packages.map((pkg) => ({
@@ -546,7 +551,7 @@ function toPublisherSkillCatalogItem(
     icon: skill.icon ?? null,
     href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
     installs: readCanonicalStat(skill, "installsAllTime"),
-    downloads: readCanonicalStat(skill, "downloads"),
+    downloads: readPublicDownloads(skill),
     stars: readCanonicalStat(skill, "stars"),
     isOfficial: publisherOfficial || Boolean(skill.badges?.official),
     updatedAt: skill.updatedAt,
@@ -2269,6 +2274,7 @@ export const listMine = query({
           publisher: {
             ...(includePublishedItems ? publicPublisher : withoutPublishedItems(publicPublisher)),
             imageStorageId: publisher?.imageStorageId,
+            githubOrgId: publisher?.githubOrgId,
           },
           role: publisher?.kind === "user" ? "owner" : membership.role,
         };
@@ -2292,6 +2298,7 @@ export const listMine = query({
         publisher: {
           ...(includePublishedItems ? personalPublisher : withoutPublishedItems(personalPublisher)),
           imageStorageId: personalPublisherDoc?.imageStorageId,
+          githubOrgId: personalPublisherDoc?.githubOrgId,
         },
         role: "owner",
       });
@@ -2428,6 +2435,72 @@ export const getHomePublisherSummaries = query({
   },
 });
 
+export const getHomeOfficialCreatorSummariesPageInternal = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, args) => {
+    const page = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .paginate({ cursor: args.cursor, numItems: HOME_OFFICIAL_CREATOR_PAGE_SIZE });
+    const summaries = (
+      await Promise.all(
+        page.page.map(async (row) =>
+          toHomePublisherSummary(ctx, await ctx.db.get(row.publisherId)),
+        ),
+      )
+    ).filter(
+      (summary): summary is NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>> =>
+        Boolean(
+          summary && summary.kind === "org" && summary.stats.skills + summary.stats.packages > 0,
+        ),
+    );
+
+    return {
+      summaries,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+export const getHomeOfficialCreatorSummaries: ReturnType<typeof action> = action({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = clampInt(
+      args.limit ?? MAX_HOME_OFFICIAL_CREATOR_SUMMARIES,
+      1,
+      MAX_HOME_OFFICIAL_CREATOR_SUMMARIES,
+    );
+    const summaries: Array<NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>>> = [];
+    let cursor: string | null = null;
+    let scanned = 0;
+
+    while (scanned < MAX_OFFICIAL_PUBLISHER_COUNT) {
+      const page: {
+        summaries: Array<NonNullable<Awaited<ReturnType<typeof toHomePublisherSummary>>>>;
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(internal.publishers.getHomeOfficialCreatorSummariesPageInternal, {
+        cursor,
+      });
+      summaries.push(...page.summaries);
+      scanned += HOME_OFFICIAL_CREATOR_PAGE_SIZE;
+      if (page.isDone || page.continueCursor === cursor) break;
+      if (scanned >= MAX_OFFICIAL_PUBLISHER_COUNT) {
+        throw new ConvexError("Official publisher limit exceeded");
+      }
+      cursor = page.continueCursor;
+    }
+
+    return summaries
+      .sort(
+        (left, right) =>
+          right.stats.installs - left.stats.installs || left.handle.localeCompare(right.handle),
+      )
+      .slice(0, limit);
+  },
+});
+
 export const getOgMetaByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) => {
@@ -2505,7 +2578,7 @@ export const listStarredPage = query({
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             installs: readCanonicalStat(skill, "installsAllTime"),
-            downloads: readCanonicalStat(skill, "downloads"),
+            downloads: readPublicDownloads(skill),
             stars: readCanonicalStat(skill, "stars"),
             isOfficial: official || Boolean(skill.badges?.official),
             updatedAt: skill.updatedAt,
@@ -3025,6 +3098,7 @@ export const updateProfile = mutation({
     image: v.optional(v.string()),
     imageStorageId: v.optional(v.id("_storage")),
     imageUploadTicket: v.optional(v.id("publisherImageUploadTickets")),
+    githubOrgId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
@@ -3108,11 +3182,59 @@ export const updateProfile = mutation({
     }
 
     const now = Date.now();
+    let githubPatch:
+      | {
+          githubHandle: string;
+          githubOrgId: string;
+          githubVerifiedAt: number;
+          githubVerifiedByUserId: Id<"users">;
+        }
+      | {
+          githubHandle: undefined;
+          githubOrgId: undefined;
+          githubVerifiedAt: undefined;
+          githubVerifiedByUserId: undefined;
+        }
+      | undefined;
+    if (args.githubOrgId === null) {
+      githubPatch = {
+        githubHandle: undefined,
+        githubOrgId: undefined,
+        githubVerifiedAt: undefined,
+        githubVerifiedByUserId: undefined,
+      };
+    } else if (args.githubOrgId !== undefined) {
+      const githubOrgId = args.githubOrgId.trim();
+      if (!/^[1-9]\d*$/.test(githubOrgId)) {
+        throw new ConvexError("Select a GitHub organization from your connected account");
+      }
+      const githubMembership = await ctx.db
+        .query("githubOrgMemberships")
+        .withIndex("by_user_and_github_org", (q) =>
+          q.eq("userId", userId).eq("githubOrgId", githubOrgId),
+        )
+        .unique();
+      if (
+        !githubMembership ||
+        now - githubMembership.syncedAt > GITHUB_ORG_MEMBERSHIP_VERIFICATION_MAX_AGE_MS
+      ) {
+        throw new ConvexError("Reconnect GitHub to verify your organization membership");
+      }
+      githubPatch = {
+        githubHandle: githubMembership.login,
+        githubOrgId: githubMembership.githubOrgId,
+        githubVerifiedAt: now,
+        githubVerifiedByUserId: userId,
+      };
+    }
+    const nextGithubHandle = githubPatch ? githubPatch.githubHandle : publisher.githubHandle;
+    const nextGithubOrgId = githubPatch ? githubPatch.githubOrgId : publisher.githubOrgId;
     await ctx.db.patch(publisher._id, {
       displayName,
       bio,
       image: imageUrl,
       imageStorageId,
+      ...githubPatch,
       updatedAt: now,
     });
     if (
@@ -3132,6 +3254,8 @@ export const updateProfile = mutation({
         bio,
         image: imageUrl,
         imageStorageId,
+        githubHandle: nextGithubHandle,
+        githubOrgId: nextGithubOrgId,
       },
       createdAt: now,
     });
@@ -3530,6 +3654,14 @@ export const addOfficialPublisherInternal = internalMutation({
         handle: publisher.handle,
         officialPublisherId: existing._id,
       };
+    }
+
+    const officialPublisherLimitProbe = await ctx.db
+      .query("officialPublishers")
+      .withIndex("by_created", (q) => q)
+      .take(MAX_OFFICIAL_PUBLISHER_COUNT);
+    if (officialPublisherLimitProbe.length >= MAX_OFFICIAL_PUBLISHER_COUNT) {
+      throw new ConvexError(`Official publisher limit reached (${MAX_OFFICIAL_PUBLISHER_COUNT})`);
     }
 
     const now = Date.now();

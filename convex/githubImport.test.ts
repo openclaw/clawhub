@@ -86,15 +86,6 @@ describe("githubImport", () => {
     ]);
   });
 
-  it("uses publish-supported text extensions for tree path imports", () => {
-    expect(__test.isPreviewFetchableTextPath("skill/SKILL.md")).toBe(true);
-    expect(__test.isPreviewFetchableTextPath("skill/icon.svg")).toBe(true);
-    expect(__test.isPreviewFetchableTextPath("skill/styles.scss")).toBe(true);
-    expect(__test.isPreviewFetchableTextPath("skill/install.ps1")).toBe(true);
-    expect(__test.isPreviewFetchableTextPath("skill/config.conf")).toBe(true);
-    expect(__test.isPreviewFetchableTextPath("skill/binary.exe")).toBe(false);
-  });
-
   it("rejects a public repo owned by another GitHub account before repo lookup", async () => {
     const ctx = {
       runQuery: vi.fn().mockResolvedValue("123"),

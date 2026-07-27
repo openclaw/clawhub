@@ -322,10 +322,14 @@ migration.
   must include `migrateOwner: true`
 - owner migration requires admin or owner access on both the current publisher
   and the destination publisher
+- explicit owner migration may replace the destination publisher's exact-slug
+  historical redirect; a live destination skill with that slug remains a hard
+  collision
 - migration preserves the skill id, versions, stats, forks, aliases,
   search digest identity, and audit history
-- migration writes a `skill.ownership.migrate` audit event; the new version's
-  `createdBy` remains the publishing actor
+- migration writes a `skill.ownership.migrate` audit event, including any
+  replaced destination redirect; the new version's `createdBy` remains the
+  publishing actor
 
 ### Packages
 

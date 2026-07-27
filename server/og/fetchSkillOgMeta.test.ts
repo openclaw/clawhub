@@ -15,6 +15,7 @@ describe("fetchSkillOgMeta", () => {
         skill: {
           displayName: "Gifgrep",
           summary: "Search GIFs fast",
+          icon: `/api/v1/skill-icons/${"a".repeat(64)}`,
           stats: { downloads: 99, installsAllTime: 1200 },
           statsDownloads: 1200,
         },
@@ -34,5 +35,6 @@ describe("fetchSkillOgMeta", () => {
       },
     );
     expect(meta?.stats.downloads).toBe(1200);
+    expect(meta?.icon).toBe(`https://clawhub.ai/api/v1/skill-icons/${"a".repeat(64)}`);
   });
 });

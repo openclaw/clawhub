@@ -1202,6 +1202,168 @@ describe("owner skill version deletion", () => {
   });
 });
 
+describe("owner skill version restore", () => {
+  it("exports the public mutation contract", () => {
+    expect(skillsModule.restoreOwnedVersion).toBeTypeOf("function");
+  });
+
+  it("restores only the owner tombstone and audits without changing latest or search metadata", async () => {
+    const restoreOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "restoreOwnedSkillVersionForActor",
+    );
+    const withdrawn = makeSkillVersion("skillVersions:v1", "1.0.0", {
+      softDeletedAt: 30,
+      ownerDeletedAt: 30,
+      ownerDeletedBy: "users:owner",
+    });
+    const { actors, audits, ctx, digest, patches, skill, versions } = makeSkillDeletionCtx({
+      versions: [withdrawn, makeSkillVersion("skillVersions:v2", "2.0.0")],
+    });
+    const parentBefore = structuredClone(skill);
+    const digestBefore = structuredClone(digest);
+    const artifactBefore = structuredClone(versions[0]);
+
+    await expect(
+      restoreOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v1" }),
+    ).resolves.toMatchObject({
+      ok: true,
+      skillId: "skills:demo",
+      versionId: "skillVersions:v1",
+    });
+
+    expect(patches).toContainEqual({
+      id: "skillVersions:v1",
+      patch: {
+        softDeletedAt: undefined,
+        ownerDeletedAt: undefined,
+        ownerDeletedBy: undefined,
+      },
+    });
+    expect(versions[0]).toEqual({
+      ...artifactBefore,
+      softDeletedAt: undefined,
+      ownerDeletedAt: undefined,
+      ownerDeletedBy: undefined,
+    });
+    expect(skill).toEqual(parentBefore);
+    expect(digest).toEqual(digestBefore);
+    expect(audits).toContainEqual(
+      expect.objectContaining({
+        actorUserId: "users:owner",
+        action: "skill.version.restore",
+        targetType: "skillVersion",
+        targetId: "skillVersions:v1",
+        metadata: {
+          skillId: "skills:demo",
+          slug: "demo",
+          version: "1.0.0",
+        },
+      }),
+    );
+  });
+
+  it("requires the same owner actor who withdrew the version", async () => {
+    const restoreOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "restoreOwnedSkillVersionForActor",
+    );
+    const { actors, audits, ctx, patches } = makeSkillDeletionCtx({
+      skill: {
+        ...makeSkillDeletionCtx({}).skill,
+        ownerPublisherId: "publishers:org",
+      },
+      versions: [
+        makeSkillVersion("skillVersions:v1", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+        }),
+      ],
+      membership: {
+        publisherId: "publishers:org",
+        userId: "users:org-admin",
+        role: "admin",
+      },
+    });
+
+    await expect(
+      restoreOwned(ctx, actors["users:org-admin"], { versionId: "skillVersions:v1" }),
+    ).rejects.toThrow(/not withdrawn by this owner/i);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  it.each([
+    [
+      "manually revoked",
+      {
+        manualRevocation: {
+          reason: "confirmed compromise",
+          reviewerUserId: "users:moderator",
+          revokedAt: 31,
+        },
+      },
+    ],
+    [
+      "malicious",
+      {
+        llmAnalysis: {
+          status: "malicious",
+          checkedAt: 31,
+        },
+      },
+    ],
+  ])("does not restore an owner-withdrawn version that is %s", async (_label, state) => {
+    const restoreOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "restoreOwnedSkillVersionForActor",
+    );
+    const { actors, audits, ctx, patches } = makeSkillDeletionCtx({
+      versions: [
+        makeSkillVersion("skillVersions:v1", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+          ...state,
+        }),
+      ],
+    });
+
+    await expect(
+      restoreOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v1" }),
+    ).rejects.toThrow(/cannot be restored/i);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  it("does not restore through an unavailable parent skill", async () => {
+    const restoreOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "restoreOwnedSkillVersionForActor",
+    );
+    const { actors, audits, ctx, patches } = makeSkillDeletionCtx({
+      skill: {
+        ...makeSkillDeletionCtx({}).skill,
+        moderationStatus: "hidden",
+      },
+      versions: [
+        makeSkillVersion("skillVersions:v1", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+        }),
+      ],
+    });
+
+    await expect(
+      restoreOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v1" }),
+    ).rejects.toThrow(/skill is unavailable/i);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+});
+
 describe("owner package release deletion", () => {
   it("exports the public mutation contract", () => {
     expect(packagesModule.deleteOwnedRelease).toBeTypeOf("function");
@@ -1723,5 +1885,194 @@ describe("owner package release deletion", () => {
       deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
     ).rejects.toThrow(/skills deletion flow/i);
     expect(patches).toEqual([]);
+  });
+});
+
+describe("owner package release restore", () => {
+  it("exports the public mutation contract", () => {
+    expect(packagesModule.restoreOwnedRelease).toBeTypeOf("function");
+  });
+
+  it("restores only the retained release, clears dist-tags, and preserves package/search metadata", async () => {
+    const restoreOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "restoreOwnedPackageReleaseForActor",
+    );
+    const withdrawn = makePackageRelease("packageReleases:v1", "1.0.0", {
+      softDeletedAt: 30,
+      ownerDeletedAt: 30,
+      ownerDeletedBy: "users:owner",
+      distTags: ["stable", "legacy"],
+    });
+    const { actors, audits, ctx, digest, patches, pkg, releases } = makePackageDeletionCtx({
+      releases: [withdrawn, makePackageRelease("packageReleases:v2", "2.0.0")],
+    });
+    const parentBefore = structuredClone(pkg);
+    const digestBefore = structuredClone(digest);
+    const artifactBefore = structuredClone(releases[0]);
+
+    await expect(
+      restoreOwned(ctx, actors["users:owner"], {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "packageReleases:v1",
+    });
+
+    expect(patches).toContainEqual({
+      id: "packageReleases:v1",
+      patch: {
+        softDeletedAt: undefined,
+        ownerDeletedAt: undefined,
+        ownerDeletedBy: undefined,
+        distTags: [],
+      },
+    });
+    expect(releases[0]).toEqual({
+      ...artifactBefore,
+      softDeletedAt: undefined,
+      ownerDeletedAt: undefined,
+      ownerDeletedBy: undefined,
+      distTags: [],
+    });
+    expect(pkg).toEqual(parentBefore);
+    expect(digest).toEqual(digestBefore);
+    expect(audits).toContainEqual(
+      expect.objectContaining({
+        actorUserId: "users:owner",
+        action: "package.release.restore",
+        targetType: "packageRelease",
+        targetId: "packageReleases:v1",
+        metadata: {
+          packageId: "packages:demo",
+          name: "demo-plugin",
+          version: "1.0.0",
+        },
+      }),
+    );
+  });
+
+  it("requires the same owner actor who withdrew the release", async () => {
+    const restoreOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "restoreOwnedPackageReleaseForActor",
+    );
+    const { actors, audits, ctx, patches } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        ownerPublisherId: "publishers:org",
+      },
+      releases: [
+        makePackageRelease("packageReleases:v1", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+        }),
+      ],
+      membership: {
+        publisherId: "publishers:org",
+        userId: "users:org-admin",
+        role: "admin",
+      },
+    });
+
+    await expect(
+      restoreOwned(ctx, actors["users:org-admin"], {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow(/not withdrawn by this owner/i);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  it.each([
+    [
+      "quarantined",
+      {
+        manualModeration: {
+          state: "quarantined",
+          reason: "security review",
+          reviewerUserId: "users:moderator",
+          reviewedAt: 31,
+        },
+      },
+    ],
+    [
+      "revoked",
+      {
+        manualModeration: {
+          state: "revoked",
+          reason: "confirmed compromise",
+          reviewerUserId: "users:moderator",
+          reviewedAt: 31,
+        },
+      },
+    ],
+    [
+      "malicious",
+      {
+        llmAnalysis: {
+          status: "malicious",
+          checkedAt: 31,
+        },
+      },
+    ],
+  ])("does not restore an owner-withdrawn release that is %s", async (_label, state) => {
+    const restoreOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "restoreOwnedPackageReleaseForActor",
+    );
+    const { actors, audits, ctx, patches } = makePackageDeletionCtx({
+      releases: [
+        makePackageRelease("packageReleases:v1", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+          ...state,
+        }),
+      ],
+    });
+
+    await expect(
+      restoreOwned(ctx, actors["users:owner"], {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow(/cannot be restored/i);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  it("does not restore through an unavailable parent package", async () => {
+    const restoreOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "restoreOwnedPackageReleaseForActor",
+    );
+    const { actors, audits, ctx, patches } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        scanStatus: "malicious",
+      },
+      releases: [
+        makePackageRelease("packageReleases:v1", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+        }),
+      ],
+    });
+
+    await expect(
+      restoreOwned(ctx, actors["users:owner"], {
+        name: "demo-plugin",
+        version: "1.0.0",
+      }),
+    ).rejects.toThrow(/package is unavailable/i);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
   });
 });

@@ -280,6 +280,7 @@ export function derivePluginManifestSummary(params: {
   files: PluginManifestSummaryFile[];
   compatibility?: PackageCompatibility;
 }) {
+  const icon = normalizePluginManifestIcon(params.pluginManifest);
   const compatibility = extractCompatibilityFromManifest(
     params.pluginManifest,
     params.compatibility,
@@ -312,6 +313,7 @@ export function derivePluginManifestSummary(params: {
 
   return {
     schemaVersion: 1 as const,
+    ...(icon ? { icon } : {}),
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
     configFields: extractConfigFields(params.pluginManifest),
@@ -353,13 +355,17 @@ export function normalizePublishFiles(files: PublishFile[]) {
 }
 
 export function assertPackageVersion(
-  family: "code-plugin" | "bundle-plugin" | "skill",
+  family: "code-plugin" | "bundle-plugin" | "skill" | "claw",
   version: string,
 ) {
   const trimmed = version.trim();
   if (!trimmed) throw new ConvexError("Version required");
-  if (family === "code-plugin" && !semver.valid(trimmed)) {
-    throw new ConvexError("Code plugin versions must be valid semver");
+  if ((family === "code-plugin" || family === "claw") && !semver.valid(trimmed)) {
+    throw new ConvexError(
+      family === "claw"
+        ? "Claw versions must be valid semver"
+        : "Code plugin versions must be valid semver",
+    );
   }
   return trimmed;
 }
@@ -367,22 +373,39 @@ export function assertPackageVersion(
 export async function readStorageText(
   ctx: Pick<ActionCtx, "storage">,
   storageId: string,
+  options: { maxBytes?: number; label?: string; strictUtf8?: boolean } = {},
 ): Promise<string> {
   const blob = await ctx.storage.get(storageId as never);
   if (!blob) throw new ConvexError("Uploaded file no longer exists");
-  return await blob.text();
+  if (options.maxBytes !== undefined && blob.size > options.maxBytes) {
+    throw new ConvexError(`${options.label ?? "Uploaded text file"} exceeds byte limit`);
+  }
+  if (!options.strictUtf8) return await blob.text();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(await blob.arrayBuffer());
+  } catch {
+    throw new ConvexError(`${options.label ?? "Uploaded text file"} must be valid UTF-8`);
+  }
 }
 
 export async function readOptionalTextFile(
   ctx: Pick<ActionCtx, "storage">,
   files: PublishFile[],
   pathMatch: (path: string) => boolean,
+  options: {
+    exactPath?: boolean;
+    maxBytes?: number;
+    label?: string;
+    strictUtf8?: boolean;
+  } = {},
 ) {
-  const file = files.find((entry) => pathMatch(entry.path.toLowerCase()));
+  const file = files.find((entry) =>
+    pathMatch(options.exactPath ? entry.path : entry.path.toLowerCase()),
+  );
   if (!file) return null;
   return {
     file,
-    text: await readStorageText(ctx, file.storageId),
+    text: await readStorageText(ctx, file.storageId, options),
   };
 }
 

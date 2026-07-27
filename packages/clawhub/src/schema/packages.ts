@@ -1,7 +1,8 @@
 import { type inferred, type } from "arktype";
+import { ClawManifestSummarySchema } from "./claws.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
 
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
 
 export const PackageChannelSchema = type('"official"|"community"|"private"');
@@ -25,6 +26,7 @@ export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred]
 
 export const PluginManifestSummarySchema = type({
   schemaVersion: "number",
+  icon: "string?",
   compatibility: PackageCompatibilitySchema.optional(),
   manifestIdentity: type({
     name: "string?",
@@ -397,6 +399,7 @@ export const ApiV1PackageResponseSchema = type({
     tags: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+    clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -433,6 +436,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     files: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
     pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+    clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
@@ -861,6 +865,8 @@ export const ApiV1PackagePublishResponseSchema = type({
   ok: "true",
   packageId: "string",
   releaseId: "string",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
   inspectorFindings: type({
     findingKind: '"warning"|"error"',
     code: "string",

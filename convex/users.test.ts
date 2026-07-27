@@ -333,11 +333,21 @@ function makeDevPersonaCtx() {
         }),
       };
     }
+    if (table === "githubOrgMemberships") {
+      return {
+        withIndex: vi.fn((name: string) => {
+          if (name !== "by_user") {
+            throw new Error(`Unexpected githubOrgMemberships index ${name}`);
+          }
+          return { collect: vi.fn(async () => []) };
+        }),
+      };
+    }
     throw new Error(`Unexpected table ${table}`);
   });
 
   return {
-    ctx: { db: { patch, get, insert, query, normalizeId: vi.fn() } } as never,
+    ctx: { db: { patch, get, insert, query, delete: vi.fn(), normalizeId: vi.fn() } } as never,
     auditLogs,
     inserts,
     patches,
@@ -1990,6 +2000,13 @@ describe("users profile audit logs", () => {
     });
     query.mockImplementation(((table: string) => {
       if (table === "apiTokens") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn(async () => []),
+          }),
+        };
+      }
+      if (table === "githubOrgMemberships") {
         return {
           withIndex: () => ({
             collect: vi.fn(async () => []),

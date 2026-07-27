@@ -44,6 +44,8 @@ type PublicListArgs = {
     | "name";
   dir?: "asc" | "desc";
   highlightedOnly?: boolean;
+  officialOnly?: boolean;
+  createdAfter?: number;
   nonSuspiciousOnly?: boolean;
   capabilityTag?: string;
   topic?: string;
@@ -300,6 +302,81 @@ describe("public skill list deterministic cursors", () => {
     expect((result.page as Array<{ owner?: { official?: boolean } }>)[0]?.owner?.official).toBe(
       true,
     );
+  });
+
+  it("applies Official and New eligibility at the backend cursor boundary", async () => {
+    const officialNew = makeSearchDigest({
+      skillId: "skills:official-new",
+      slug: "official-new",
+      badges: { official: { byUserId: "users:admin", at: 200 } },
+      createdAt: 200,
+    });
+    const communityNew = makeSearchDigest({
+      skillId: "skills:community-new",
+      slug: "community-new",
+      createdAt: 200,
+    });
+    const officialOld = makeSearchDigest({
+      skillId: "skills:official-old",
+      slug: "official-old",
+      badges: { official: { byUserId: "users:admin", at: 50 } },
+      createdAt: 50,
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [officialNew, communityNew, officialOld],
+      hasMore: false,
+      indexKeys: [
+        [undefined, 200, officialNew.updatedAt, officialNew._id],
+        [undefined, 200, communityNew.updatedAt, communityNew._id],
+        [undefined, 50, officialOld.updatedAt, officialOld._id],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler({} as never, {
+      officialOnly: true,
+      createdAfter: 100,
+      sort: "newest",
+      numItems: 10,
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["official-new"]);
+  });
+
+  it("ends descending New pagination when the creation window boundary is reached", async () => {
+    const recent = makeSearchDigest({
+      skillId: "skills:recent",
+      slug: "recent",
+      createdAt: 200,
+    });
+    const old = makeSearchDigest({
+      skillId: "skills:old",
+      slug: "old",
+      createdAt: 99,
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [recent, old],
+      hasMore: true,
+      indexKeys: [
+        [undefined, recent.createdAt, recent.updatedAt, recent._id],
+        [undefined, old.createdAt, old.updatedAt, old._id],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler({} as never, {
+      createdAfter: 100,
+      sort: "newest",
+      dir: "desc",
+      numItems: 10,
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["recent"]);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+    expect(getPageMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses the topic digest index for topic-filtered recommended browse", async () => {

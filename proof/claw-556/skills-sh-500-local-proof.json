@@ -1,0 +1,292 @@
+{
+  "verdict": "pass",
+  "generatedAt": "2026-07-21T09:02:16.188Z",
+  "deployment": {
+    "kind": "disposable-local-convex",
+    "name": "local-amantus-clawdhub-7449",
+    "cloudUrl": "http://127.0.0.1:3210",
+    "permanentTestDeployed": false,
+    "productionDeployed": false
+  },
+  "runtime": {
+    "elapsedMs": 42507,
+    "memory": {
+      "backendPid": 97459,
+      "backendRssStartKiB": 816368,
+      "backendRssPeakKiB": 891456,
+      "backendRssEndKiB": 863968,
+      "driverRssStartBytes": 51904512,
+      "driverRssPeakBytes": 75415552,
+      "driverRssEndBytes": 75415552,
+      "driverHeapPeakBytes": 6130176
+    },
+    "clientCalls": {
+      "mutation": 279,
+      "query": 297,
+      "expectedErrors": 8,
+      "unexpectedErrors": 0
+    },
+    "sourceFetchesDuringProof": 0,
+    "frozenSnapshotCaptureFetches": 528
+  },
+  "defaultState": {
+    "controls": {
+      "discoveryEnabled": false,
+      "maxCatalogInFlight": 0,
+      "maxCatalogQueued": 0,
+      "maxEntriesPerBatch": 0,
+      "maxEntriesPerRun": 0,
+      "maxNativeInFlight": 0,
+      "maxNativeQueued": 0,
+      "maxPlannedScans": 0,
+      "maxScanAdmissionsPerBatch": 0,
+      "maxScanAdmissionsPerDay": 0,
+      "maxScanAdmissionsPerRun": 0,
+      "maxWritesPerBatch": 0,
+      "mode": "off",
+      "paused": true,
+      "publicVisibilityEnabled": false,
+      "realScanAllowlist": [],
+      "reason": null,
+      "scanAdmissionEnabled": false,
+      "scanPlanningEnabled": false,
+      "updatedAt": null,
+      "updatedBy": null,
+      "writesEnabled": false
+    },
+    "schedulesPresent": false,
+    "catalogScanAttempts": 0,
+    "realScanAttempts": 0
+  },
+  "discovery20000": {
+    "observed": 20000,
+    "plannedScans": 20000,
+    "wouldInsert": 20000,
+    "persistedInserts": 0,
+    "authoritativePersistedEntries": 0,
+    "authoritativeScanAttempts": 0,
+    "authoritativeNativeScanJobs": 0,
+    "batches": 200,
+    "operationEstimates": {
+      "dbReads": 20401,
+      "dbWrites": 201,
+      "functionCalls": 201
+    }
+  },
+  "frozen500": {
+    "capture": {
+      "snapshotId": "skills-sh-500-2026-07-21",
+      "capturedAt": "2026-07-21T02:35:28.482Z",
+      "sourceFetches": 528
+    },
+    "configuredBudgets": {
+      "maxEntriesPerBatch": 125,
+      "maxEntriesPerRun": 500,
+      "maxPlannedScans": 500,
+      "maxScanAdmissionsPerBatch": 49,
+      "maxScanAdmissionsPerDay": 500,
+      "maxScanAdmissionsPerRun": 500,
+      "maxWritesPerBatch": 100
+    },
+    "firstRun": {
+      "expectedActions": {
+        "wouldInsert": 500,
+        "wouldUpdate": 0,
+        "scansPlanned": 500
+      },
+      "persistedActions": {
+        "inserted": 500,
+        "updated": 0,
+        "authoritativeEntries": 500,
+        "authoritativeAttempts": 496,
+        "completedDeterministicAttempts": 496
+      },
+      "counts": {
+        "inserted": 500,
+        "observed": 500,
+        "rejected": 0,
+        "scansAdmitted": 496,
+        "scansCanceled": 0,
+        "scansCompleted": 496,
+        "scansPlanned": 500,
+        "unchanged": 0,
+        "updated": 0,
+        "wouldInsert": 500,
+        "wouldUpdate": 0
+      },
+      "batches": {
+        "batchesProcessed": 6,
+        "entriesObserved": 500,
+        "lastBatchReads": 7,
+        "lastBatchWrites": 6,
+        "scanAdmissionBatches": 11,
+        "scansAdmitted": 496,
+        "scansPlanned": 500
+      },
+      "operationEstimates": {
+        "dbReads": 2163,
+        "dbWrites": 2515,
+        "functionCalls": 31
+      }
+    },
+    "pauseResume": {
+      "pausedCursor": 99,
+      "pausedObserved": 99,
+      "resumedFinalCursor": 500,
+      "resumedFinalObserved": 500,
+      "replayedCompletedBatch": false
+    },
+    "identicalRerun": {
+      "counts": {
+        "inserted": 0,
+        "observed": 500,
+        "rejected": 0,
+        "scansAdmitted": 0,
+        "scansCanceled": 0,
+        "scansCompleted": 0,
+        "scansPlanned": 0,
+        "unchanged": 500,
+        "updated": 0,
+        "wouldInsert": 0,
+        "wouldUpdate": 0
+      },
+      "authoritativeAttempts": 0,
+      "operationEstimates": {
+        "dbReads": 1023,
+        "dbWrites": 507,
+        "functionCalls": 7
+      }
+    },
+    "changedRerun": {
+      "counts": {
+        "inserted": 0,
+        "observed": 500,
+        "rejected": 0,
+        "scansAdmitted": 1,
+        "scansCanceled": 0,
+        "scansCompleted": 1,
+        "scansPlanned": 1,
+        "unchanged": 498,
+        "updated": 2,
+        "wouldInsert": 0,
+        "wouldUpdate": 2
+      },
+      "authoritativeAttempts": 1,
+      "exactSourceHashRescan": "665c585455decbcb02116bc928adf5148b9cd0f67b7eb4908c8c0d647c00f680",
+      "artifactHash": null,
+      "hashSemantics": "sourceContentHash is the upstream observation; deterministic fixture completion is not an independent ClawScan artifact hash",
+      "operationEstimates": {
+        "dbReads": 1040,
+        "dbWrites": 513,
+        "functionCalls": 9
+      }
+    },
+    "finalAuthoritativeEntries": 500,
+    "allEntriesDark": true
+  },
+  "concurrency": {
+    "sameRun": {
+      "fulfilled": 1,
+      "rejected": 1,
+      "cap": 1
+    },
+    "queueHealth": {
+      "queuedAtThresholdRejected": true,
+      "inFlightAtThresholdRejected": true,
+      "maxCatalogQueued": 1,
+      "maxCatalogInFlight": 1,
+      "maxNativeQueued": 0,
+      "maxNativeInFlight": 0,
+      "queuedThresholdObserved": {
+        "nativeQueued": 0,
+        "nativeInFlight": 0,
+        "catalogQueued": 1,
+        "catalogInFlight": 0
+      },
+      "inFlightThresholdObserved": {
+        "nativeQueued": 0,
+        "nativeInFlight": 0,
+        "catalogQueued": 1,
+        "catalogInFlight": 1
+      }
+    },
+    "crossRunDaily": {
+      "fulfilled": 1,
+      "rejected": 1,
+      "cap": 499,
+      "attemptsBeforeRace": 498
+    },
+    "finalCatalogAttemptsToday": 500
+  },
+  "admissionContainment": {
+    "deterministicOnlyInLocalProof": true,
+    "realDispatchOutsideStagingLiveRejected": true,
+    "realDispatchRejection": "[Request ID: add843a2d41d4f84] Server Error\nUncaught ConvexError: real skills.sh scan admission requires staging-live controls\n    at handler (../convex/skillsShCatalog.ts:915:14)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n"
+  },
+  "lifecycleContainment": {
+    "canceledRunningAttempts": 1,
+    "canceledQueuedAttempts": 1,
+    "canceledAttemptReadback": [
+      {
+        "dispatchKind": "deterministic",
+        "status": "canceled"
+      },
+      {
+        "dispatchKind": "deterministic",
+        "status": "canceled"
+      }
+    ],
+    "canceledRunAdmissionRejected": true,
+    "canceledRunAdmissionRejection": "[Request ID: 286aefc65cc575ac] Server Error\nUncaught ConvexError: Cannot admit scans for canceled run\n    at handler (../convex/skillsShCatalog.ts:902:24)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n",
+    "killSwitchAdmissionRejected": true,
+    "killSwitchAdmissionRejection": "[Request ID: b4c1e019ae188e8a] Server Error\nUncaught ConvexError: skills.sh catalog controls are disabled\n    at assertCatalogActive (../convex/skillsShCatalog.ts:157:14)\n    at assertScanAdmissionEnabled (../convex/skillsShCatalog.ts:179:14)\n    at handler (../convex/skillsShCatalog.ts:893:24)\n    at async handler (../../node_modules/convex-helpers/server/customFunctions.js:268:27)\n"
+  },
+  "rollback": {
+    "controls": {
+      "discoveryEnabled": false,
+      "maxCatalogInFlight": 10,
+      "maxCatalogQueued": 50,
+      "maxEntriesPerBatch": 125,
+      "maxEntriesPerRun": 500,
+      "maxNativeInFlight": 0,
+      "maxNativeQueued": 0,
+      "maxPlannedScans": 500,
+      "maxScanAdmissionsPerBatch": 49,
+      "maxScanAdmissionsPerDay": 500,
+      "maxScanAdmissionsPerRun": 500,
+      "maxWritesPerBatch": 100,
+      "mode": "off",
+      "paused": true,
+      "publicVisibilityEnabled": false,
+      "realScanAllowlist": [],
+      "reason": "visibility and control rollback proof",
+      "scanAdmissionEnabled": false,
+      "scanPlanningEnabled": false,
+      "updatedAt": 1784624535953,
+      "updatedBy": "claw-556-local-proof",
+      "writesEnabled": false
+    },
+    "schedulesPresent": false,
+    "nativeBefore": {
+      "skills": 0,
+      "scanJobs": 0,
+      "sha256": "3da07503745b0261278284c398b652c73edeb004df305c460686e5b0b12c05b0"
+    },
+    "nativeAfter": {
+      "skills": 0,
+      "scanJobs": 0,
+      "sha256": "3da07503745b0261278284c398b652c73edeb004df305c460686e5b0b12c05b0"
+    },
+    "nativeStateUnchanged": true
+  },
+  "limits": {
+    "operationCountsAreEstimates": true,
+    "realTestQueueIntegration": "not deployed; real attempts require an allowlisted Test control and an external artifact fetch before completion",
+    "statusPreviewLimit": {
+      "entries": 50,
+      "runs": 20,
+      "scanAttempts": 50
+    },
+    "authoritativeReadback": "all entry, attempt, native skill, and native scan-job counts above use paginated internal queries"
+  }
+}

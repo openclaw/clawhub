@@ -62,7 +62,7 @@ export function BrowseResultsSkeleton({
             key={i}
             className="skill-list-item skill-list-item-has-creator browse-results-skeleton-row"
           >
-            <Skeleton className="browse-results-skeleton-icon h-9 w-9 shrink-0 rounded-[var(--oc-radius-inset)]" />
+            <Skeleton className="browse-results-skeleton-icon h-[27px] w-[27px] shrink-0 rounded-[var(--oc-radius-inset)]" />
             <div className="skill-list-item-body">
               <div className="skill-list-item-main">
                 <Skeleton className="h-5 w-32 max-w-[45%]" />

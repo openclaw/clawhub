@@ -5,7 +5,18 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+  pull_request:
+    types: [synchronize, labeled]
   workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: Exact branch SHA permitted for a temporary protected Test deploy
+        required: false
+        type: string
+      branch_test_confirm:
+        description: Confirmation phrase for an explicitly guarded branch-only Test deploy
+        required: false
+        type: string
 
 concurrency:
   group: deploy-test
@@ -18,7 +29,33 @@ jobs:
   deploy-test:
     if: >-
       (github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/heads/main') ||
+      (github.ref == 'refs/heads/main' ||
+      ((github.ref == 'refs/heads/pe/claw-563-skills-sh-mirror-10k' &&
+      inputs.branch_test_confirm == 'deploy-claw-563-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-589-trending-rank-overlay' &&
+      inputs.branch_test_confirm == 'deploy-claw-589-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search' &&
+      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey' &&
+      inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-560-verified-adoption' &&
+      inputs.branch_test_confirm == 'deploy-claw-560-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-590-trending-snapshot' &&
+      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test')) &&
+      github.actor == 'Patrick-Erichsen' &&
+      inputs.expected_sha != '')) ||
+      (github.event_name == 'pull_request' &&
+      ((github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')) ||
+      (github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
+      contains(github.event.pull_request.labels.*.name, 'test-trending-load')) ||
+      (github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search' &&
+      contains(github.event.pull_request.labels.*.name, 'test-search-load')) ||
+      (github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey' &&
+      contains(github.event.pull_request.labels.*.name, 'test-external-catalog'))) &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor == 'Patrick-Erichsen' &&
+      github.event.pull_request.head.sha != '') ||
       (github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
@@ -30,11 +67,17 @@ jobs:
       deployment_url: ${{ steps.vercel.outputs.deployment_url }}
       deploy_sha: ${{ steps.revision.outputs.deploy_sha }}
       fixture_version: ${{ steps.revision.outputs.fixture_version }}
+      branch_test: ${{ steps.revision.outputs.branch_test }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref }}
+          ref: >-
+            ${{
+              github.event_name == 'workflow_run' && github.event.workflow_run.head_sha ||
+              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+              github.ref
+            }}
 
       - name: Resolve deployment revision
         id: revision
@@ -44,8 +87,94 @@ jobs:
           git fetch --no-tags origin main
           main_sha="$(git rev-parse origin/main)"
           if [[ "$deploy_sha" != "$main_sha" ]]; then
-            echo "::error::Refusing stale Test deploy: $deploy_sha is not current main $main_sha"
-            exit 1
+            branch_test_allowed=false
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-563-skills-sh-mirror-10k ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-563-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-589-trending-rank-overlay ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-589-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-577-canonical-mixed-search ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-577-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-583-mirrored-search-journey ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-583-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-560-verified-adoption ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-560-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-590-trending-snapshot ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-590-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-563-skills-sh-mirror-10k ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-589-trending-rank-overlay ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-577-canonical-mixed-search ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == pull_request ]] &&
+              [[ "$GITHUB_HEAD_REF" == pe/claw-583-mirrored-search-journey ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ github.event.pull_request.head.repo.full_name }}" == "$GITHUB_REPOSITORY" ]] &&
+              [[ "${{ github.event.pull_request.head.sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$branch_test_allowed" != true ]]; then
+              echo "::error::Refusing non-main Test deploy without an exact approved branch guard"
+              exit 1
+            fi
+            echo "branch_test=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "branch_test=false" >> "$GITHUB_OUTPUT"
           fi
           fixture_version="$(
             git hash-object convex/devSeed.ts convex/lib/testSeed.ts |
@@ -95,6 +224,14 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
+      - name: Enable Test rollout modes
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          bunx convex env set CLAWHUB_SKILLS_SH_ROLLOUT_MODE test --prod
+          bunx convex env set CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE test --prod
+
       - name: Stamp Convex build SHA
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -115,7 +252,22 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bun run verify:convex-contract -- --prod
 
+      - name: Verify Test rollout capabilities
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e '
+            .environment == "test" and
+            .skillsSh.mode == "test" and
+            .skillsSh.runtimeEnabled == true and
+            .githubSkillSync.mode == "test" and
+            .githubSkillSync.selfServiceEnabled == true
+          ' <<< "$capabilities"
+
       - name: Apply additive Test fixtures
+        if: steps.revision.outputs.branch_test != 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
           CONVEX_DEPLOYMENT: ${{ vars.CONVEX_DEPLOYMENT }}
@@ -142,16 +294,22 @@ jobs:
               --meta githubSha="${{ steps.revision.outputs.deploy_sha }}" \
               --meta clawhubEnvironment=test \
               --build-env CONVEX_DEPLOY_KEY= \
-              --build-env VERCEL_ENV=test \
               --build-env VERCEL_TARGET_ENV=test \
               --build-env CLAWHUB_ENV=test \
+              --build-env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
+              --build-env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
+              --build-env CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED=1 \
               --build-env SITE_URL="$TEST_SITE_URL" \
               --build-env VITE_CLAWHUB_DEPLOY_ENV=test \
               --build-env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
               --build-env VITE_CONVEX_SITE_URL="$VITE_CONVEX_SITE_URL" \
               --build-env VITE_SITE_URL="$TEST_SITE_URL" \
               --env CONVEX_DEPLOY_KEY= \
+              --env VERCEL_TARGET_ENV=test \
               --env CLAWHUB_ENV=test \
+              --env CLAWHUB_SKILLS_SH_ROLLOUT_MODE=test \
+              --env CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE=test \
+              --env CLAWHUB_SKILLS_SH_TEST_LIVE_FETCH_ENABLED=1 \
               --env SITE_URL="$TEST_SITE_URL" \
               --env VITE_CLAWHUB_DEPLOY_ENV=test \
               --env VITE_CONVEX_URL="$VITE_CONVEX_URL" \
@@ -230,3 +388,959 @@ jobs:
             echo "- Fixture version: \`${FIXTURE_VERSION:-unresolved}\`"
             echo "- Result: \`${{ job.status }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  claw563-mirror-load:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-563-skills-sh-mirror-10k' &&
+      contains(github.event.pull_request.labels.*.name, 'test-mirror-load')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Load and prove the authenticated leaderboard mirror foundation
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          operator_token=""
+          cleanup() {
+            set +e
+            bunx convex run --no-push skillsShMirror:configureInternal \
+              '{
+                "actor":"CLAW-563 Test workflow",
+                "reason":"CLAW-563 proof cleanup",
+                "confirm":"enable-skills-sh-mirror-test",
+                "enabled":false,
+                "maxRowsPerRun":50000,
+                "maxRowsPerBatch":50,
+                "maxDetailBytes":65536
+              }' > claw563-control-disabled.json 2>&1
+            disable_exit=$?
+            bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}' >/dev/null
+            token_rotation_exit=$?
+            if [[ -n "$operator_token" ]]; then
+              revoked_status="$(
+                curl \
+                  --silent \
+                  --output /dev/null \
+                  --write-out '%{http_code}' \
+                  --header "Authorization: Bearer $operator_token" \
+                  https://academic-chihuahua-392.convex.site/api/v1/operator/skills-sh/catalog-test
+              )"
+            else
+              revoked_status="not-created"
+            fi
+            jq -n \
+              --argjson disableExit "$disable_exit" \
+              --argjson tokenRotationExit "$token_rotation_exit" \
+              --arg revokedStatus "$revoked_status" \
+              '{
+                disableExit:$disableExit,
+                tokenRotationExit:$tokenRotationExit,
+                revokedStatus:$revokedStatus
+              }' > claw563-cleanup.json
+            set -e
+            [[
+              "$disable_exit" -eq 0 &&
+              "$token_rotation_exit" -eq 0 &&
+              "$revoked_status" == "401"
+            ]]
+          }
+          trap cleanup EXIT
+
+          deployment_json="$(bunx convex run --no-push appMeta:getDeploymentInfo)"
+          build_sha="$(jq -r '.appBuildSha // empty' <<<"$deployment_json")"
+          if [[ "$build_sha" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Unexpected Convex Test build SHA: $build_sha"
+            exit 1
+          fi
+
+          token_seed="$(bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}')"
+          operator_token="$(jq -r '.admin.token // empty' <<<"$token_seed")"
+          token_seed=""
+          if [[ -z "$operator_token" ]]; then
+            echo "::error::Test admin fixture token is missing"
+            exit 1
+          fi
+          echo "::add-mask::$operator_token"
+
+          export CLAWHUB_TEST_MIRROR_GATE_URL="$TEST_SITE_URL/ops/skills-sh/mirror-test"
+          export CLAWHUB_TEST_OPERATOR_TOKEN="$operator_token"
+          bun run skills-sh:prove-mirror > claw563-proof-output.json
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer $operator_token" \
+            --header "Content-Type: application/json" \
+            --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            --data '{"operation":"read","externalId":"patrick-erichsen/skills/html"}' \
+            "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-controlled-entry.json
+          jq -e '
+            .digest.externalId == "patrick-erichsen/skills/html" and
+            .digest.sourceType == "github" and
+            .digest.owner == "patrick-erichsen" and
+            .digest.repo == "skills" and
+            .digest.githubPath == "skills/html" and
+            .digest.githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .digest.sourceContentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
+            .digest.active == true and
+            .digest.publicVisible == false and
+            .digest.installable == false
+          ' claw563-controlled-entry.json >/dev/null
+
+          curl \
+            --fail-with-body \
+            --silent \
+            --show-error \
+            --request POST \
+            --header "Authorization: Bearer $operator_token" \
+            --header "Content-Type: application/json" \
+            --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+            --data '{"operation":"read","externalId":"steipete/clawdis/discrawl"}' \
+            "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw563-discrawl-entry.json
+          jq -e '
+            .digest.externalId == "steipete/clawdis/discrawl" and
+            .digest.sourceType == "github" and
+            .digest.owner == "steipete" and
+            .digest.repo == "clawdis" and
+            .digest.githubPath == ".agents/skills/discrawl" and
+            .digest.githubCommit == "690ed564419291ca6e832dc69b53061300075b62" and
+            .digest.sourceContentHash == "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d" and
+            .digest.active == true and
+            .digest.publicVisible == false and
+            .digest.installable == false
+          ' claw563-discrawl-entry.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw563-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .disableExit == 0 and
+            .tokenRotationExit == 0 and
+            .revokedStatus == "401"
+          ' claw563-cleanup.json >/dev/null
+
+      - name: Upload permanent Test mirror proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw563-mirror-proof
+          if-no-files-found: warn
+          path: |
+            proof/claw-563/skills-sh-mirror-test-proof.json
+            claw563-proof-output.json
+            claw563-controlled-entry.json
+            claw563-discrawl-entry.json
+            claw563-control-disabled.json
+            claw563-cleanup.json
+            claw563-deployment.json
+
+  claw589-trending-load:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-589-trending-rank-overlay' &&
+      contains(github.event.pull_request.labels.*.name, 'test-trending-load')
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Observe and prove the authenticated skills.sh Trending overlay
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          operator_token=""
+          export CLAWHUB_TEST_MIRROR_GATE_URL="$TEST_SITE_URL/ops/skills-sh/mirror-test"
+          cleanup() {
+            set +e
+            owned_run="$(jq -r '.runId // empty' proof/claw-589/active-run.json 2>/dev/null)"
+            active_run=""
+            discard_exit=0
+            if [[ -n "$operator_token" && -n "$owned_run" ]]; then
+              active_run="$(
+                curl \
+                  --fail-with-body \
+                  --silent \
+                  --show-error \
+                  --request POST \
+                  --header "Authorization: Bearer $operator_token" \
+                  --header "Content-Type: application/json" \
+                  --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                  --data '{"operation":"status"}' \
+                  "$CLAWHUB_TEST_MIRROR_GATE_URL" 2>/dev/null |
+                  jq -r --arg ownedRun "$owned_run" '.runs[]? | select(.runId == $ownedRun and (.status == "running" or .status == "paused" or .status == "reconciling")) | .runId' |
+                  head -n 1
+              )"
+              if [[ -n "$active_run" ]]; then
+                jq -n \
+                  --arg runId "$active_run" \
+                  '{operation:"discard",runId:$runId,reason:"CLAW-589 fail-closed cleanup"}' |
+                  curl \
+                    --fail-with-body \
+                    --silent \
+                    --show-error \
+                    --request POST \
+                    --header "Authorization: Bearer $operator_token" \
+                    --header "Content-Type: application/json" \
+                    --header "x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET" \
+                    --data-binary @- \
+                    "$CLAWHUB_TEST_MIRROR_GATE_URL" > claw589-discarded-run.json 2>&1
+                discard_exit=$?
+              fi
+            fi
+            bunx convex run --no-push skillsShMirror:configureInternal \
+              '{
+                "actor":"CLAW-589 Test workflow",
+                "reason":"CLAW-589 proof cleanup",
+                "confirm":"enable-skills-sh-mirror-test",
+                "enabled":false,
+                "maxRowsPerRun":50000,
+                "maxRowsPerBatch":50,
+                "maxDetailBytes":65536
+              }' > claw589-control-disabled.json 2>&1
+            disable_exit=$?
+            bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}' >/dev/null
+            token_rotation_exit=$?
+            if [[ -n "$operator_token" ]]; then
+              revoked_status="$(
+                curl \
+                  --silent \
+                  --output /dev/null \
+                  --write-out '%{http_code}' \
+                  --header "Authorization: Bearer $operator_token" \
+                  https://academic-chihuahua-392.convex.site/api/v1/operator/skills-sh/catalog-test
+              )"
+            else
+              revoked_status="not-created"
+            fi
+            jq -n \
+              --arg activeRun "$active_run" \
+              --arg ownedRun "$owned_run" \
+              --argjson discardExit "$discard_exit" \
+              --argjson disableExit "$disable_exit" \
+              --argjson tokenRotationExit "$token_rotation_exit" \
+              --arg revokedStatus "$revoked_status" \
+              '{
+                activeRun:$activeRun,
+                ownedRun:$ownedRun,
+                discardExit:$discardExit,
+                disableExit:$disableExit,
+                tokenRotationExit:$tokenRotationExit,
+                revokedStatus:$revokedStatus
+              }' > claw589-cleanup.json
+            set -e
+            [[
+              "$discard_exit" -eq 0 &&
+              "$disable_exit" -eq 0 &&
+              "$token_rotation_exit" -eq 0 &&
+              "$revoked_status" == "401"
+            ]]
+          }
+          trap cleanup EXIT
+
+          deployment_json="$(bunx convex run --no-push appMeta:getDeploymentInfo)"
+          build_sha="$(jq -r '.appBuildSha // empty' <<<"$deployment_json")"
+          if [[ "$build_sha" != "$DEPLOY_SHA" ]]; then
+            echo "::error::Unexpected Convex Test build SHA: $build_sha"
+            exit 1
+          fi
+
+          token_seed="$(bunx convex run --no-push devSeed:seedCliRoleHelpFixtures '{}')"
+          operator_token="$(jq -r '.admin.token // empty' <<<"$token_seed")"
+          token_seed=""
+          if [[ -z "$operator_token" ]]; then
+            echo "::error::Test admin fixture token is missing"
+            exit 1
+          fi
+          echo "::add-mask::$operator_token"
+          export CLAWHUB_TEST_OPERATOR_TOKEN="$operator_token"
+          bun run skills-sh:prove-trending > claw589-proof-output.json
+
+          jq -e '
+            .target.environment == "permanent Test" and
+            .target.productionWrites == 0 and
+            .source.view == "trending" and
+            .source.total > 0 and
+            .source.requestCount > 0 and
+            .source.durationMs >= 0 and
+            .source.countContract.trending24hInstalls == null and
+            .live.run.counts.observed == .source.total and
+            .replay.run.counts.trendingUpdated == 0 and
+            .stale.run.counts.trendingUpdated == 0 and
+            .hydration.maximumRowsPerRun == 50 and
+            .hydration.withinBound == true and
+            .isolation.unchanged == true
+          ' proof/claw-589/skills-sh-trending-test-proof.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw589-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .discardExit == 0 and
+            .disableExit == 0 and
+            .tokenRotationExit == 0 and
+            .revokedStatus == "401"
+          ' claw589-cleanup.json >/dev/null
+
+      - name: Upload permanent Test Trending proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw589-trending-proof
+          if-no-files-found: warn
+          path: |
+            proof/claw-589/skills-sh-trending-test-proof.json
+            proof/claw-589/active-run.json
+            claw589-proof-output.json
+            claw589-control-disabled.json
+            claw589-cleanup.json
+            claw589-deployment.json
+            claw589-discarded-run.json
+
+  claw577-search-proof:
+    needs: deploy-test
+    if: >-
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-577-canonical-mixed-search' &&
+      contains(github.event.pull_request.labels.*.name, 'test-search-load')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/pe/claw-577-canonical-mixed-search' &&
+      inputs.branch_test_confirm == 'deploy-claw-577-to-permanent-test' &&
+      inputs.expected_sha == needs.deploy-test.outputs.deploy_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+              inputs.expected_sha
+            }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Prove canonical search order and cost in permanent Test
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          confirm=manage-claw-577-canonical-search-test-fixture
+          mkdir -p proof/claw-577
+          printf '{}\n' > proof/claw-577/active-fixture.json
+          cleanup() {
+            set +e
+            digest_id="$(jq -r '.digestId // empty' proof/claw-577/active-fixture.json 2>/dev/null)"
+            run_id="$(jq -r '.runId // empty' proof/claw-577/active-fixture.json 2>/dev/null)"
+            recovery_exit=0
+            cleanup_exit=0
+            if [[ -z "$digest_id" || -z "$run_id" ]]; then
+              bunx convex run --no-push \
+                searchTestFixtures:readCanonicalSearchTestFixture \
+                "{\"confirm\":\"$confirm\"}" > claw577-cleanup-recovery.json 2>&1
+              recovery_exit=$?
+              if [[ "$recovery_exit" -eq 0 ]]; then
+                digest_id="$(jq -r '.digestId // empty' claw577-cleanup-recovery.json)"
+                run_id="$(jq -r '.runId // empty' claw577-cleanup-recovery.json)"
+              fi
+            else
+              jq -n '{skipped:true,reason:"active fixture IDs were recorded"}' \
+                > claw577-cleanup-recovery.json
+            fi
+            if [[ -n "$digest_id" && -n "$run_id" ]]; then
+              cleanup_args="$(
+                jq -cn \
+                  --arg confirm "$confirm" \
+                  --arg digestId "$digest_id" \
+                  --arg runId "$run_id" \
+                  '{confirm:$confirm,digestId:$digestId,runId:$runId}'
+              )"
+              bunx convex run --no-push \
+                searchTestFixtures:cleanupCanonicalSearchTestFixture \
+                "$cleanup_args" > claw577-cleanup.json 2>&1
+              cleanup_exit=$?
+            else
+              jq -n '{ok:true,removed:false,skipped:true}' > claw577-cleanup.json
+              if [[ "$recovery_exit" -ne 0 ]]; then
+                cleanup_exit="$recovery_exit"
+              fi
+            fi
+            bunx convex run --no-push \
+              searchTestFixtures:readCanonicalSearchTestFixture \
+              "{\"confirm\":\"$confirm\"}" > claw577-cleanup-readback.json 2>&1
+            readback_exit=$?
+            jq -n \
+              --argjson cleanupExit "$cleanup_exit" \
+              --argjson recoveryExit "$recovery_exit" \
+              --argjson readbackExit "$readback_exit" \
+              '{cleanupExit:$cleanupExit,recoveryExit:$recoveryExit,readbackExit:$readbackExit}' \
+              > claw577-cleanup-status.json
+            set -e
+            [[ "$cleanup_exit" -eq 0 && "$recovery_exit" -eq 0 && "$readback_exit" -eq 0 ]]
+            jq -e '.present == false' claw577-cleanup-readback.json >/dev/null
+          }
+          trap cleanup EXIT
+
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_SHA" ]]
+          bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw577-deployment-readback.json
+          jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw577-deployment-readback.json
+          bunx convex run --no-push \
+            searchTestFixtures:readCanonicalSearchTestFixture \
+            "{\"confirm\":\"$confirm\"}" > claw577-fixture-before.json
+          jq -e '.present == false' claw577-fixture-before.json >/dev/null
+
+          bunx convex run --no-push \
+            searchTestFixtures:seedCanonicalSearchTestFixture \
+            "{\"confirm\":\"$confirm\"}" > proof/claw-577/active-fixture.json
+          jq -e '
+            .ok == true and
+            .created == true and
+            (.digestId | type == "string") and
+            (.runId | type == "string")
+          ' proof/claw-577/active-fixture.json >/dev/null
+
+          bun run search:prove-test > claw577-proof-output.json
+          jq -e --arg sha "$DEPLOY_SHA" '
+            .target.environment == "permanent Test" and
+            .target.deploySha == $sha and
+            .target.productionWrites == 0 and
+            .target.schedulesCreated == 0 and
+            .target.scansPlanned == 0 and
+            .target.scansAdmitted == 0 and
+            .target.claimsCreated == 0 and
+            .fixture.lifetimeInstalls == 9000000 and
+            .fixture.rankingWeight == 0 and
+            .contract.samplesPerSurface >= 3 and
+            (.cases | length) == 4
+          ' proof/claw-577/canonical-search-test-proof.json >/dev/null
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexDeployment:"academic-chihuahua-392"
+            }' > claw577-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .cleanupExit == 0 and
+            .recoveryExit == 0 and
+            .readbackExit == 0
+          ' claw577-cleanup-status.json >/dev/null
+
+      - name: Upload permanent Test canonical search proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw577-search-proof
+          if-no-files-found: error
+          path: |
+            proof/claw-577/canonical-search-test-proof.json
+            proof/claw-577/active-fixture.json
+            claw577-proof-output.json
+            claw577-fixture-before.json
+            claw577-cleanup.json
+            claw577-cleanup-recovery.json
+            claw577-cleanup-readback.json
+            claw577-cleanup-status.json
+            claw577-deployment-readback.json
+            claw577-deployment.json
+
+  claw583-external-catalog-proof:
+    needs: deploy-test
+    if: >-
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.ref == 'pe/claw-583-mirrored-search-journey' &&
+      contains(github.event.pull_request.labels.*.name, 'test-external-catalog')) ||
+      (github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/pe/claw-583-mirrored-search-journey' &&
+      inputs.branch_test_confirm == 'deploy-claw-583-to-permanent-test' &&
+      inputs.expected_sha == needs.deploy-test.outputs.deploy_sha)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: >-
+            ${{
+              github.event_name == 'pull_request' && github.event.pull_request.head.sha ||
+              inputs.expected_sha
+            }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Install Playwright browser
+        run: bunx playwright install --with-deps chromium
+
+      - name: Prove external search, detail, install, verify, and cleanup in permanent Test
+        env:
+          CLAWHUB_E2E_SKILLS_SH_EXTERNAL: "1"
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          PLAYWRIGHT_BASE_URL: ${{ vars.SITE_URL }}
+          PLAYWRIGHT_WORKERS: "1"
+          TEST_CONVEX_SITE_URL: ${{ vars.VITE_CONVEX_SITE_URL }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          confirm=manage-claw-583-external-catalog-test-fixture
+          mkdir -p proof/claw-583
+          printf '{}\n' > proof/claw-583/active-fixture.json
+          cleanup() {
+            set +e
+            bunx convex run --no-push \
+              skillsShPublicTestFixtures:readControlledExternalSkill \
+              "{\"confirm\":\"$confirm\"}" > claw583-cleanup-recovery.json 2>&1
+            recovery_exit=$?
+            digest_id="$(jq -r '.digestId // empty' claw583-cleanup-recovery.json 2>/dev/null)"
+            snapshot_id="$(jq -r '.sourceSnapshotId // empty' claw583-cleanup-recovery.json 2>/dev/null)"
+            cleanup_args="$(
+              jq -cn \
+                --arg confirm "$confirm" \
+                --arg digestId "$digest_id" \
+                --arg sourceSnapshotId "$snapshot_id" \
+                '{confirm:$confirm}
+                 + (if $digestId == "" then {} else {digestId:$digestId} end)
+                 + (if $sourceSnapshotId == "" then {} else {sourceSnapshotId:$sourceSnapshotId} end)'
+            )"
+            bunx convex run --no-push \
+              skillsShPublicTestFixtures:deactivateControlledExternalSkill \
+              "$cleanup_args" > claw583-cleanup.json 2>&1
+            cleanup_exit=$?
+            bunx convex run --no-push \
+              skillsShPublicTestFixtures:readControlledExternalSkill \
+              "{\"confirm\":\"$confirm\"}" > claw583-cleanup-readback.json 2>&1
+            readback_exit=$?
+            jq -n \
+              --argjson cleanupExit "$cleanup_exit" \
+              --argjson recoveryExit "$recovery_exit" \
+              --argjson readbackExit "$readback_exit" \
+              '{cleanupExit:$cleanupExit,recoveryExit:$recoveryExit,readbackExit:$readbackExit}' \
+              > claw583-cleanup-status.json
+            set -e
+            [[ "$cleanup_exit" -eq 0 && "$recovery_exit" -eq 0 && "$readback_exit" -eq 0 ]]
+            jq -e '.publicVisible == false and .installable == false' \
+              claw583-cleanup-readback.json >/dev/null
+          }
+          trap cleanup EXIT
+
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_SHA" ]]
+          bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw583-deployment-readback.json
+          jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw583-deployment-readback.json
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:prepareControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > claw583-fixture-preparation.json
+          jq -e '
+            .ok == true and
+            .contentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw583-fixture-preparation.json >/dev/null
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:readControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > claw583-fixture-before.json
+          jq -e '
+            .externalId == "patrick-erichsen/skills/html" and
+            .publicVisible == false and
+            .installable == false and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw583-fixture-before.json >/dev/null
+
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:activateControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > proof/claw-583/active-fixture.json
+          jq -e '
+            .ok == true and
+            (.digestId | type == "string") and
+            (.detailId | type == "string") and
+            (.sourceSnapshotId | type == "string") and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' proof/claw-583/active-fixture.json >/dev/null
+          bunx convex run --no-push \
+            skillsShPublicTestFixtures:readControlledExternalSkill \
+            "{\"confirm\":\"$confirm\"}" > claw583-fixture-active.json
+          jq -e '
+            .publicVisible == true and
+            .installable == true and
+            .repo == "patrick-erichsen/skills" and
+            .path == "skills/html" and
+            .commit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .contentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw583-fixture-active.json >/dev/null
+
+          bunx convex run --no-push search:searchSkills \
+            '{"query":"skills-sh:patrick-erichsen/skills/html","limit":10}' \
+            > claw583-search.json
+          jq -e '
+            map(select(.id == "skills-sh:patrick-erichsen/skills/html")) as $matches |
+            ($matches | length) == 1 and
+            $matches[0].canonicalUrl == "/skills-sh/patrick-erichsen/skills/html" and
+            $matches[0].install.reference == "skills-sh:patrick-erichsen/skills/html"
+          ' claw583-search.json >/dev/null
+
+          curl --fail-with-body --silent --show-error \
+            "$TEST_CONVEX_SITE_URL/api/v1/skills-sh/patrick-erichsen/skills/html" \
+            > claw583-detail.json
+          jq -e '
+            .reference == "skills-sh:patrick-erichsen/skills/html" and
+            .githubPath == "skills/html" and
+            .githubCommit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .sourceContentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
+            (.content.markdown | length) > 0
+          ' claw583-detail.json >/dev/null
+
+          curl --fail-with-body --silent --show-error \
+            "$TEST_CONVEX_SITE_URL/api/v1/skills-sh/patrick-erichsen/skills/html/install" \
+            > claw583-install.json
+          jq -e '
+            .ok == true and
+            .slug == "skills-sh:patrick-erichsen/skills/html" and
+            .installKind == "github" and
+            .github.repo == "patrick-erichsen/skills" and
+            .github.path == "skills/html" and
+            .github.commit == "050daba89f6b6636470add5cb300aac46a412cf8" and
+            .github.contentHash == "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f" and
+            .provenance.source == "skills.sh" and
+            .provenance.reference == "skills-sh:patrick-erichsen/skills/html" and
+            .trust.clawhubScan == "unscanned" and
+            .trust.label == "Not scanned by ClawHub" and
+            .canonicalRef == null
+          ' claw583-install.json >/dev/null
+
+          curl --fail-with-body --silent --show-error \
+            "$TEST_CONVEX_SITE_URL/api/v1/skills/html/verify?reference=skills-sh%3Apatrick-erichsen%2Fskills%2Fhtml" \
+            > claw583-verify.json
+          jq -e '
+            .ok == false and
+            .decision == "fail" and
+            (.reasons | index("Not scanned by ClawHub")) != null and
+            .provenance.source == "skills.sh" and
+            .provenance.reference == "skills-sh:patrick-erichsen/skills/html" and
+            .security.clawhubScan == "unscanned" and
+            .security.label == "Not scanned by ClawHub"
+          ' claw583-verify.json >/dev/null
+
+          bunx playwright test --project=chromium e2e/skills-sh-external.pw.test.ts
+
+          jq -n \
+            --arg sourceSha "$DEPLOY_SHA" \
+            --arg deploymentUrl "$TEST_SITE_URL" \
+            --arg convexSiteUrl "$TEST_CONVEX_SITE_URL" \
+            '{
+              sourceSha:$sourceSha,
+              deploymentUrl:$deploymentUrl,
+              convexSiteUrl:$convexSiteUrl,
+              convexDeployment:"academic-chihuahua-392",
+              productionWrites:0,
+              schedulesCreated:0,
+              scansPlanned:0,
+              scansAdmitted:0,
+              claimsCreated:0
+            }' > claw583-deployment.json
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .cleanupExit == 0 and
+            .recoveryExit == 0 and
+            .readbackExit == 0
+          ' claw583-cleanup-status.json >/dev/null
+
+      - name: Upload permanent Test external catalog proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw583-external-catalog-proof
+          if-no-files-found: error
+          path: |
+            proof/claw-583/active-fixture.json
+            proof/claw-583/external-flow.webm
+            proof/claw-583/external-search.png
+            proof/claw-583/external-detail.png
+            claw583-fixture-before.json
+            claw583-fixture-active.json
+            claw583-search.json
+            claw583-detail.json
+            claw583-install.json
+            claw583-verify.json
+            claw583-cleanup.json
+            claw583-cleanup-recovery.json
+            claw583-cleanup-readback.json
+            claw583-cleanup-status.json
+            claw583-deployment-readback.json
+            claw583-deployment.json
+
+  claw590-canonical-trending-proof:
+    needs: deploy-test
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/pe/claw-590-trending-snapshot' &&
+      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test' &&
+      inputs.expected_sha == needs.deploy-test.outputs.deploy_sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: Test
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.expected_sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Prove canonical Trending materialization and API in permanent Test
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DEPLOY_SHA: ${{ needs.deploy-test.outputs.deploy_sha }}
+          TEST_SITE_URL: ${{ vars.SITE_URL }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: |
+          set -euo pipefail
+          confirm=manage-claw-590-canonical-trending-test-proof
+          snapshot_id="claw-590-proof-$DEPLOY_SHA"
+          mkdir -p proof/claw-590
+          printf '{"armed":false}\n' > proof/claw-590/active-snapshot.json
+          cleanup() {
+            set +e
+            armed="$(jq -r '.armed // false' proof/claw-590/active-snapshot.json 2>/dev/null)"
+            active_snapshot_id="$(jq -r '.snapshotId // empty' proof/claw-590/active-snapshot.json 2>/dev/null)"
+            cleanup_exit=0
+            if [[ "$armed" == true && -n "$active_snapshot_id" ]]; then
+              cleanup_args="$(
+                jq -cn \
+                  --arg confirm "$confirm" \
+                  --arg snapshotId "$active_snapshot_id" \
+                  '{confirm:$confirm,snapshotId:$snapshotId}'
+              )"
+              bunx convex run --no-push \
+                canonicalTrendingTestFixtures:cleanupCanonicalTrendingProof \
+                "$cleanup_args" > claw590-cleanup.json 2>&1
+              cleanup_exit=$?
+              bunx convex run --no-push \
+                canonicalTrendingTestFixtures:readCanonicalTrendingProof \
+                "$cleanup_args" > claw590-cleanup-readback.json 2>&1
+              readback_exit=$?
+            else
+              jq -n '{ok:true,skipped:true}' > claw590-cleanup.json
+              jq -n '{present:false,skipped:true}' > claw590-cleanup-readback.json
+              readback_exit=0
+            fi
+            snapshot_removed=false
+            if [[ "$cleanup_exit" -eq 0 && "$readback_exit" -eq 0 ]] && \
+              jq -e '.present == false' claw590-cleanup-readback.json >/dev/null; then
+              snapshot_removed=true
+            fi
+            source_args="$(jq -cn --arg confirm "$confirm" '{confirm:$confirm}')"
+            if [[ "$snapshot_removed" == true ]]; then
+              bunx convex run --no-push \
+                canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture \
+                "$source_args" > claw590-source-cleanup.json 2>&1
+              source_cleanup_exit=$?
+            else
+              jq -n \
+                '{ok:false,skipped:true,reason:"snapshot cleanup incomplete; source retained"}' \
+                > claw590-source-cleanup.json
+              source_cleanup_exit=0
+            fi
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-cleanup-readback.json 2>&1
+            source_readback_exit=$?
+            jq -n \
+              --argjson cleanupExit "$cleanup_exit" \
+              --argjson readbackExit "$readback_exit" \
+              --argjson sourceCleanupExit "$source_cleanup_exit" \
+              --argjson sourceReadbackExit "$source_readback_exit" \
+              '{
+                cleanupExit:$cleanupExit,
+                readbackExit:$readbackExit,
+                sourceCleanupExit:$sourceCleanupExit,
+                sourceReadbackExit:$sourceReadbackExit
+              }' \
+              > claw590-cleanup-status.json
+            set -e
+            [[ \
+              "$cleanup_exit" -eq 0 && \
+              "$readback_exit" -eq 0 && \
+              "$source_cleanup_exit" -eq 0 && \
+              "$source_readback_exit" -eq 0 \
+            ]]
+            jq -e '.present == false' claw590-cleanup-readback.json >/dev/null
+            jq -e '.present == false' claw590-source-cleanup-readback.json >/dev/null
+          }
+          trap cleanup EXIT
+
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_SHA" ]]
+          bunx convex run --no-push appMeta:getDeploymentInfo '{}' > claw590-deployment-readback.json
+          jq -e --arg sha "$DEPLOY_SHA" '.appBuildSha == $sha' claw590-deployment-readback.json
+          proof_args="$(
+            jq -cn \
+              --arg confirm "$confirm" \
+              --arg snapshotId "$snapshot_id" \
+              '{confirm:$confirm,snapshotId:$snapshotId}'
+          )"
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:readCanonicalTrendingProof \
+            "$proof_args" > claw590-before.json
+          if jq -e '.present == true' claw590-before.json >/dev/null; then
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:cleanupCanonicalTrendingProof \
+              "$proof_args" > claw590-recovery.json
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:readCanonicalTrendingProof \
+              "$proof_args" > claw590-recovery-readback.json
+            jq -e '.present == false' claw590-recovery-readback.json >/dev/null
+          else
+            jq -n '{ok:true,skipped:true}' > claw590-recovery.json
+            cp claw590-before.json claw590-recovery-readback.json
+          fi
+          jq -e '.present == false' claw590-recovery-readback.json >/dev/null
+
+          source_args="$(jq -cn --arg confirm "$confirm" '{confirm:$confirm}')"
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+            "$source_args" > claw590-source-before.json
+          if jq -e '.present == true' claw590-source-before.json >/dev/null; then
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:cleanupCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-recovery.json
+            bunx convex run --no-push \
+              canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+              "$source_args" > claw590-source-recovery-readback.json
+            jq -e '.present == false' claw590-source-recovery-readback.json >/dev/null
+          else
+            jq -n '{ok:true,skipped:true}' > claw590-source-recovery.json
+            cp claw590-source-before.json claw590-source-recovery-readback.json
+          fi
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:seedCanonicalTrendingSourceFixture \
+            "$source_args" > claw590-source-seed.json
+          bunx convex run --no-push \
+            canonicalTrendingTestFixtures:readCanonicalTrendingSourceFixture \
+            "$source_args" > claw590-source-active.json
+          jq -e '
+            .present == true and
+            .nativeCount == 12 and
+            .nativePublisherCount == 6 and
+            .externalCount == 8 and
+            .scansPlanned == 0 and
+            .scansAdmitted == 0
+          ' claw590-source-active.json >/dev/null
+
+          bun run trending:prove-test > claw590-proof-output.json
+          jq -e '
+            .target.environment == "permanent Test" and
+            .target.deploySha == env.DEPLOY_SHA and
+            .materialization.snapshotId == ("claw-590-proof-" + env.DEPLOY_SHA) and
+            .materialization.totalItems >= 20 and
+            .materialization.operations.documentsRead > 0 and
+            .materialization.operations.documentsWritten > 0 and
+            .materialization.operations.functionCalls > 0 and
+            .assertions.laneCounts["clawhub-trending"] == 8 and
+            .assertions.laneCounts["clawhub-rising"] == 4 and
+            .assertions.laneCounts["skills-sh-trending"] == 8 and
+            .assertions.maximumPublisherCount <= 2 and
+            .assertions.stableSnapshot == true and
+            .assertions.stableCursor == true and
+            .assertions.stableOrder == true and
+            .assertions.completePagination == true and
+            .assertions.skillsShTrending24hInstalls == null
+          ' proof/claw-590/canonical-trending-test-proof.json >/dev/null
+
+          cleanup
+          trap - EXIT
+          jq -e '
+            .cleanupExit == 0 and
+            .readbackExit == 0 and
+            .sourceCleanupExit == 0 and
+            .sourceReadbackExit == 0
+          ' claw590-cleanup-status.json >/dev/null
+          jq -e '.present == false' claw590-cleanup-readback.json >/dev/null
+          jq -e '.present == false' claw590-source-cleanup-readback.json >/dev/null
+
+      - name: Upload permanent Test canonical Trending proof
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: claw590-canonical-trending-proof
+          if-no-files-found: error
+          path: |
+            proof/claw-590/canonical-trending-test-proof.json
+            proof/claw-590/active-snapshot.json
+            claw590-proof-output.json
+            claw590-before.json
+            claw590-recovery.json
+            claw590-recovery-readback.json
+            claw590-cleanup.json
+            claw590-cleanup-readback.json
+            claw590-cleanup-status.json
+            claw590-deployment-readback.json
+            claw590-source-before.json
+            claw590-source-recovery.json
+            claw590-source-recovery-readback.json
+            claw590-source-seed.json
+            claw590-source-active.json
+            claw590-source-cleanup.json
+            claw590-source-cleanup-readback.json

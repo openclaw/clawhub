@@ -24,6 +24,14 @@ export const LockfileSchema = type({
       version: "string|null",
       installedAt: "number",
       ownerHandle: "string?",
+      sourceRef: "string?",
+      sourceKind: '"skills-sh"?',
+      sourceRepository: "string?",
+      sourcePath: "string?",
+      sourceUrl: "string?",
+      canonicalRef: "string?",
+      clawhubScan: '"unscanned"|"scanned"?',
+      trustLabel: "string?",
       pinned: "boolean?",
       pinReason: "string?",
     },
@@ -108,6 +116,11 @@ export const ApiCliPublishResponseSchema = type({
   ok: "true",
   skillId: "string",
   versionId: "string",
+  status: '"pending"|"published"?',
+  slug: "string?",
+  version: "string?",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
 });
 
 export const CliSkillDeleteRequestSchema = type({
@@ -158,25 +171,75 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
 export type ApiV1SkillInstallResolveResponse =
   (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 
+export const ApiV1SkillsShCatalogEntrySchema = type({
+  ref: "string",
+  route: "string",
+  displayName: "string",
+  summary: "string",
+  owner: {
+    handle: "string",
+    githubUrl: "string",
+  },
+  repository: "string",
+  githubPath: "string",
+  githubCommit: "string",
+  githubContentHash: "string",
+  sourceUrl: "string",
+  installs: "number",
+  security: {
+    verdict: '"clean"|"suspicious"',
+    source: '"clawhub"',
+    attemptId: "string",
+    scannedAt: "number",
+  },
+  install: {
+    ok: "true",
+    slug: "string",
+    installKind: '"github"',
+    github: {
+      repo: "string",
+      path: "string",
+      commit: "string",
+      contentHash: "string",
+      sourceUrl: "string",
+    },
+  },
+});
+export type ApiV1SkillsShCatalogEntry = (typeof ApiV1SkillsShCatalogEntrySchema)[inferred];
+
 export const CliTelemetryInstallRequestSchema = type({
   event: '"install"',
   slug: "string",
   ownerHandle: "string?",
+  sourceRef: "string?",
+  sourceKind: '"skills-sh"?',
+  sourceRepository: "string?",
+  sourcePath: "string?",
+  sourceUrl: "string?",
+  canonicalRef: "string?",
+  clawhubScan: '"unscanned"|"scanned"?',
+  trustLabel: "string?",
   version: "string?",
   // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",
   rootLabel: "string?",
-}).or({
-  // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
-  roots: type({
-    rootId: "string",
-    label: "string",
-    skills: type({
-      slug: "string",
-      version: "string|null?",
+})
+  .or({
+    event: '"plugin_install"',
+    packageName: "string",
+    version: "string?",
+  })
+  .or({
+    // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
+    roots: type({
+      rootId: "string",
+      label: "string",
+      skills: type({
+        slug: "string",
+        version: "string|null?",
+      }).array(),
     }).array(),
-  }).array(),
-});
+  });
 export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 
 export const ApiCliTelemetryInstallResponseSchema = type({
@@ -357,6 +420,8 @@ export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSch
 
 export const ApiV1SearchResponseSchema = type({
   results: type({
+    "id?": "string",
+    "source?": '"clawhub"|"skills-sh"',
     slug: "string?",
     ownerHandle: "string|null?",
     displayName: "string?",
@@ -369,9 +434,49 @@ export const ApiV1SearchResponseSchema = type({
       handle: "string|null?",
       displayName: "string|null?",
       image: "string|null?",
+      "kind?": '"user"|"org"',
+      "official?": "boolean",
     })
       .or("null")
       .optional(),
+    "canonicalUrl?": "string",
+    "official?": "boolean",
+    "featured?": "boolean",
+    "links?": {
+      canonical: "string",
+      source: "string|null",
+    },
+    "publisher?": type({
+      kind: '"user"|"org"',
+      handle: "string|null",
+      displayName: "string|null",
+      image: "string|null",
+      official: "boolean",
+    }).or("null"),
+    "install?": {
+      kind: '"clawhub"|"github"|"skills-sh"',
+      reference: "string",
+      sourceUrl: "string|null",
+    },
+    "sourceIdentity?": {
+      id: "string",
+      owner: "string|null",
+      repo: "string|null",
+      host: "string|null",
+      lifetimeInstalls: "number|null",
+    },
+    "trust?": {
+      visibility: '"public"',
+      installability: '"installable"',
+      clawHubVerdict: "string|null",
+      upstreamScanners: "unknown|null",
+      sourceFreshness: '"native"|"observed-only"',
+    },
+    "metrics?": {
+      rolling60DayInstalls: "number|null",
+      bookmarks: "number|null",
+      updatedAt: "number",
+    },
   }).array(),
 });
 
@@ -642,6 +747,26 @@ export const ApiV1SkillRescanResponseSchema = type({
 });
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 
+export const ApiV1SkillHardDeleteRequestSchema = type({
+  ownerHandle: "string",
+  reason: "string",
+  dryRun: "boolean?",
+  confirmationToken: "string?",
+});
+export type ApiV1SkillHardDeleteRequest = (typeof ApiV1SkillHardDeleteRequestSchema)[inferred];
+
+export const ApiV1SkillHardDeleteResponseSchema = type({
+  ok: "true",
+  skillId: "string",
+  slug: "string",
+  ownerHandle: "string",
+  displayName: "string",
+  dryRun: "boolean",
+  scheduled: "boolean",
+  confirmationToken: "string",
+});
+export type ApiV1SkillHardDeleteResponse = (typeof ApiV1SkillHardDeleteResponseSchema)[inferred];
+
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
 export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
 
@@ -885,6 +1010,11 @@ export const ApiV1PublishResponseSchema = type({
   ok: "true",
   skillId: "string",
   versionId: "string",
+  status: '"pending"|"published"?',
+  slug: "string?",
+  version: "string?",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
 });
 
 export const ApiV1DeleteResponseSchema = type({
@@ -953,6 +1083,13 @@ export const ApiV1UnbanUserResponseSchema = type({
   ok: "true",
   alreadyUnbanned: "boolean",
   restoredSkills: "number?",
+});
+
+export const ApiV1LiftModerationHoldResponseSchema = type({
+  ok: "true",
+  alreadyCleared: "boolean",
+  restoredSkills: "number",
+  scheduledSkills: "boolean",
 });
 
 export const ApiV1ReclassifyBanResponseSchema = type({

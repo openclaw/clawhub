@@ -11,8 +11,14 @@ import {
 } from "./helpers/convexReactMocks";
 
 const navigateMock = vi.fn();
+const fetchCatalogDiscoveryCapabilitiesMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
 let loaderDataMock: unknown = null;
+
+vi.mock("../lib/catalogDiscoveryCapabilities", () => ({
+  fetchCatalogDiscoveryCapabilities: (...args: unknown[]) =>
+    fetchCatalogDiscoveryCapabilitiesMock(...args),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown; validateSearch: unknown }) => ({
@@ -44,9 +50,16 @@ describe("SkillsIndex", () => {
   beforeEach(() => {
     resetConvexReactMocks();
     navigateMock.mockReset();
-    searchMock = {};
+    // Keep legacy browse/search regressions on the native New feed. Trending has
+    // its own canonical API seam and focused CLAW-591 coverage.
+    searchMock = { tab: "new" };
     loaderDataMock = null;
     setupDefaultConvexReactMocks();
+    fetchCatalogDiscoveryCapabilitiesMock.mockReset();
+    fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
+      apiVersion: 1,
+      canonicalTrendingEnabled: true,
+    });
   });
 
   afterEach(() => {
@@ -96,55 +109,34 @@ describe("SkillsIndex", () => {
     expect(args).toEqual(
       expect.objectContaining({
         dir: "desc",
-        highlightedOnly: false,
+        highlightedOnly: undefined,
         cursor: undefined,
-        numItems: 25,
+        numItems: 20,
+        sort: "newest",
       }),
     );
-    expect(args).not.toHaveProperty("sort");
     expect(args).not.toHaveProperty("officialFirst");
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    const sortOptions = Array.from(
+    expect(screen.getByRole("radio", { name: "New" }).getAttribute("aria-checked")).toBe("true");
+    const tabs = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Top", "Most starred", "Featured"]);
+    expect(tabs).toEqual(["Trending", "New", "Featured", "Official"]);
   });
 
-  it("offers Top without exposing downloads as a browse view", async () => {
+  it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.getByRole("radio", { name: "Top" })).toBeTruthy();
-    expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
-  });
+    const categorySidebar = screen.getByLabelText("Skill categories");
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(15);
+    expect(categorySidebar.textContent).toContain("Development");
+    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
 
-  it("separates primary views from secondary sort options", async () => {
-    render(<SkillsIndex />);
-    await act(async () => {});
+    fireEvent.click(
+      categorySidebar.querySelector('button[aria-pressed="false"]') as HTMLButtonElement,
+    );
 
-    const views = Array.from(
-      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
-    ).map((option) => option.textContent);
-    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
-    const sortOptions = screen.getAllByRole("option").map((option) => option.textContent);
-
-    expect(views).toEqual(["All", "Trending", "Top", "Most starred", "Featured"]);
-    expect(sortOptions).toEqual(["Recently updated", "Newest", "Name"]);
-  });
-
-  it("preserves a secondary sort when switching to Featured", async () => {
-    searchMock = { sort: "updated", dir: "desc" };
-    render(<SkillsIndex />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
-
-    const lastCall = getLastNavigateCall();
-    expect(lastCall.search({ sort: "updated", dir: "desc" })).toEqual({
-      sort: "updated",
-      dir: "desc",
-      featured: true,
-      highlighted: undefined,
-    });
+    expect(navigateMock).toHaveBeenCalled();
   });
 
   it("renders an empty state when no skills are returned", async () => {
@@ -155,6 +147,7 @@ describe("SkillsIndex", () => {
   });
 
   it("renders the total skills count in the unfiltered page title", async () => {
+    searchMock = {};
     convexReactMocks.useQuery.mockReturnValue(70_300);
 
     render(<SkillsIndex />);
@@ -348,14 +341,13 @@ describe("SkillsIndex", () => {
       key: "japanese-conversation-scorer::0::::",
       limit: 25,
       results: [
-        {
-          skill: makeListResult("japanese-conversation-scorer", "Japanese Conversation Scorer")
-            .skill,
-          version: null,
-          ownerHandle: "bianmaxingkong",
-          owner: null,
-          score: 1,
-        },
+        makeSearchResult(
+          "japanese-conversation-scorer",
+          "Japanese Conversation Scorer",
+          1,
+          0,
+          "bianmaxingkong",
+        ),
       ],
     };
     const actionFn = vi.fn().mockResolvedValue([]);
@@ -389,7 +381,9 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: "remind",
       highlightedOnly: false,
-      limit: 25,
+      categorySlug: undefined,
+      topic: undefined,
+      limit: 20,
     });
     await act(async () => {
       await vi.runAllTimersAsync();
@@ -397,7 +391,9 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenCalledWith({
       query: "remind",
       highlightedOnly: false,
-      limit: 25,
+      categorySlug: undefined,
+      topic: undefined,
+      limit: 20,
     });
   });
 
@@ -416,11 +412,12 @@ describe("SkillsIndex", () => {
       query: "helper",
       highlightedOnly: false,
       categorySlug: "development",
-      limit: 25,
+      topic: undefined,
+      limit: 20,
     });
   });
 
-  it("keeps All as the visible default search view", async () => {
+  it("keeps the accepted feed tabs visible while search uses relevance", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi.fn().mockResolvedValue([]);
     convexReactMocks.useAction.mockReturnValue(actionFn);
@@ -428,24 +425,14 @@ describe("SkillsIndex", () => {
 
     render(<SkillsIndex />);
 
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Trending" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
-    const sortOptions = Array.from(
+    const tabs = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions[0]).toBe("All");
-  });
-
-  it("keeps recommended sort stable while typing a search", async () => {
-    vi.useFakeTimers();
-
-    render(<SkillsIndex />);
-
-    const input = screen.getByPlaceholderText("Search skills...");
-    fireEvent.change(input, { target: { value: "agent" } });
-
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
+    expect(tabs).toEqual(["Trending", "New", "Featured", "Official"]);
   });
 
   it("keeps the skills sort option list stable while typing a search", async () => {
@@ -564,56 +551,13 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("does not reuse a stale recommended direction when choosing an explicit browse sort", async () => {
-    searchMock = { sort: "recommended", dir: "asc" };
-    render(<SkillsIndex />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Top" }));
-
-    const lastCall = getLastNavigateCall();
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "recommended", dir: "asc" })).toEqual({
-      sort: "downloads",
-      dir: "desc",
-    });
-  });
-
-  it("does not reuse a stale relevance direction when choosing an explicit search sort", async () => {
-    searchMock = { q: "notion", sort: "relevance", dir: "asc" };
-    render(<SkillsIndex />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "Top" }));
-
-    const lastCall = getLastNavigateCall();
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ q: "notion", sort: "relevance", dir: "asc" })).toEqual({
-      q: "notion",
-      sort: "downloads",
-      dir: "desc",
-    });
-  });
-
-  it("clears direction when returning to the All view", async () => {
-    searchMock = { sort: "downloads", dir: "asc" };
-    render(<SkillsIndex />);
-
-    fireEvent.click(screen.getByRole("radio", { name: "All" }));
-
-    const lastCall = getLastNavigateCall();
-    expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "downloads", dir: "asc" })).toEqual({
-      sort: undefined,
-      dir: undefined,
-    });
-  });
-
   it("loads more results when search pagination is requested", async () => {
     searchMock = { q: "remind" };
     vi.stubGlobal("IntersectionObserver", undefined);
     const actionFn = vi
       .fn()
-      .mockResolvedValueOnce(makeSearchResults(25))
-      .mockResolvedValueOnce(makeSearchResults(50));
+      .mockResolvedValueOnce(makeSearchResults(20))
+      .mockResolvedValueOnce(makeSearchResults(40));
     convexReactMocks.useAction.mockReturnValue(actionFn);
     vi.useFakeTimers();
 
@@ -633,7 +577,9 @@ describe("SkillsIndex", () => {
     expect(actionFn).toHaveBeenLastCalledWith({
       query: "remind",
       highlightedOnly: false,
-      limit: 50,
+      categorySlug: undefined,
+      topic: undefined,
+      limit: 40,
     });
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
@@ -664,7 +610,7 @@ describe("SkillsIndex", () => {
     expect(links[2]?.textContent).toContain("Skill C");
   });
 
-  it("uses relevance as default sort when searching", async () => {
+  it("preserves canonical API order for default relevance search", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi
       .fn()
@@ -684,8 +630,32 @@ describe("SkillsIndex", () => {
       (node) => node.textContent,
     );
 
-    expect(titles[0]).toBe("Older High Score");
-    expect(titles[1]).toBe("Newer Low Score");
+    expect(titles[0]).toBe("Newer Low Score");
+    expect(titles[1]).toBe("Older High Score");
+  });
+
+  it("renders external skills in the canonical mixed order", async () => {
+    searchMock = { q: "find skills" };
+    convexReactMocks.useAction.mockReturnValue(
+      vi
+        .fn()
+        .mockResolvedValue([
+          makeSearchResult("native-find", "Native Find", 6_000, 2_000),
+          makeExternalSearchResult("vercel-labs/skills/find-skills", "Find Skills", 5_000),
+        ]),
+    );
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Native Find", "Find Skills"]);
+    expect(screen.getByText("skills.sh")).toBeTruthy();
   });
 
   it("includes results explicitly assigned to the selected category", async () => {
@@ -713,7 +683,6 @@ describe("SkillsIndex", () => {
     expect(args).toEqual(
       expect.objectContaining({
         categorySlug: "development",
-        officialFirst: true,
         categoryKeywords: expect.arrayContaining(["developer"]),
         excludeCategoryKeywords: undefined,
       }),
@@ -832,7 +801,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
-  it("preserves backend official-first ordering on category pages", async () => {
+  it("preserves backend ordering on New category pages without client reranking", async () => {
     searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({
       page: [
@@ -855,7 +824,7 @@ describe("SkillsIndex", () => {
       (node) => node.textContent,
     );
     expect(titles).toEqual(["Official Dev", "Community Dev"]);
-    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ officialFirst: true }));
+    expect(getLastListPageArgs()).not.toHaveProperty("officialFirst");
   });
 
   it("does not render the warning filter", async () => {
@@ -883,7 +852,7 @@ describe("SkillsIndex", () => {
         highlightedOnly: true,
       }),
     );
-    expect(args).not.toHaveProperty("sort");
+    expect(args.sort).toBe("updated");
   });
 
   it("shows load-more button when more results are available", async () => {
@@ -1094,48 +1063,97 @@ function makeListResult(
 }
 
 function makeSearchResults(count: number) {
-  return Array.from({ length: count }, (_, index) => ({
-    score: 0.9,
-    skill: {
-      _id: `skill_${index}`,
-      slug: `skill-${index}`,
-      displayName: `Skill ${index}`,
-      summary: `Summary ${index}`,
-      tags: {},
-      stats: {
-        downloads: 0,
-        installs: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 0,
-      updatedAt: 0,
-    },
-    version: null,
-  }));
+  return Array.from({ length: count }, (_, index) =>
+    makeSearchResult(`skill-${index}`, `Skill ${index}`, 0.9, 0),
+  );
 }
 
-function makeSearchResult(slug: string, displayName: string, score: number, createdAt: number) {
+function makeSearchResult(
+  slug: string,
+  displayName: string,
+  score: number,
+  createdAt: number,
+  ownerHandle: string | null = null,
+) {
+  const skill = makeListResult(slug, displayName).skill;
+  skill.createdAt = createdAt;
+  skill.updatedAt = createdAt;
   return {
+    id: `clawhub:${skill._id}`,
+    source: "clawhub",
+    slug,
+    displayName,
+    summary: skill.summary,
     score,
-    skill: {
-      _id: `skill_${slug}`,
-      slug,
-      displayName,
-      summary: `${displayName} summary`,
-      tags: {},
-      stats: {
-        downloads: 0,
-        installs: 0,
-        stars: 0,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt,
-      updatedAt: createdAt,
+    canonicalUrl: `/${ownerHandle ?? "owner"}/skills/${slug}`,
+    links: {
+      canonical: `/${ownerHandle ?? "owner"}/skills/${slug}`,
+      source: null,
     },
+    official: false,
+    featured: false,
+    publisher: null,
+    install: { kind: "clawhub", reference: `${ownerHandle ?? "owner"}/${slug}`, sourceUrl: null },
+    sourceIdentity: {
+      id: skill._id,
+      owner: ownerHandle,
+      repo: null,
+      host: null,
+      lifetimeInstalls: null,
+    },
+    trust: {
+      visibility: "public",
+      installability: "installable",
+      clawHubVerdict: null,
+      upstreamScanners: null,
+      sourceFreshness: "native",
+    },
+    metrics: { rolling60DayInstalls: 0, bookmarks: 0, updatedAt: createdAt },
+    native: { skill, version: null, owner: null, ownerHandle },
+    ownerHandle,
     version: null,
+    downloads: 0,
+    updatedAt: createdAt,
+  };
+}
+
+function makeExternalSearchResult(externalId: string, displayName: string, score: number) {
+  const slug = externalId.split("/").at(-1) ?? externalId;
+  const [owner, repo] = externalId.split("/");
+  return {
+    id: `skills-sh:${externalId}`,
+    source: "skills-sh",
+    slug,
+    displayName,
+    summary: `${displayName} summary`,
+    score,
+    canonicalUrl: `/skills-sh/${externalId}`,
+    links: {
+      canonical: `/skills-sh/${externalId}`,
+      source: `https://skills.sh/${externalId}`,
+    },
+    official: false,
+    featured: false,
+    publisher: null,
+    install: {
+      kind: "skills-sh",
+      reference: `skills-sh/${externalId}`,
+      sourceUrl: `https://skills.sh/${externalId}`,
+    },
+    sourceIdentity: { id: externalId, owner, repo, host: null, lifetimeInstalls: 42 },
+    trust: {
+      visibility: "public",
+      installability: "installable",
+      clawHubVerdict: null,
+      upstreamScanners: {},
+      sourceFreshness: "observed-only",
+    },
+    metrics: { rolling60DayInstalls: null, bookmarks: null, updatedAt: 1_000 },
+    native: null,
+    ownerHandle: owner,
+    version: null,
+    downloads: null,
+    updatedAt: 1_000,
   };
 }
 
@@ -1145,24 +1163,7 @@ function makeSearchEntry(params: {
   stars: number;
   updatedAt: number;
 }) {
-  return {
-    score: 0.9,
-    skill: {
-      _id: `skill_${params.slug}`,
-      slug: params.slug,
-      displayName: params.displayName,
-      summary: `Summary ${params.slug}`,
-      tags: {},
-      stats: {
-        downloads: 0,
-        installs: 0,
-        stars: params.stars,
-        versions: 1,
-        comments: 0,
-      },
-      createdAt: 0,
-      updatedAt: params.updatedAt,
-    },
-    version: null,
-  };
+  const entry = makeSearchResult(params.slug, params.displayName, 0.9, params.updatedAt);
+  if (entry.native) entry.native.skill.stats.stars = params.stars;
+  return entry;
 }

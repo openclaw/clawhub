@@ -151,8 +151,8 @@ export declare const SKILL_CATEGORY_DEFINITIONS: readonly [{
 }];
 export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
 export type SkillCategorySlug = (typeof SKILL_CATEGORY_DEFINITIONS)[number]["slug"];
-export declare const PLUGIN_CATEGORY_SLUGS: ("other" | "channels" | "models" | "memory" | "context" | "voice" | "media" | "web" | "tools" | "runtime" | "gateway" | "security")[];
-export declare const SKILL_CATEGORY_SLUGS: ("other" | "security" | "integrations" | "automation" | "research" | "development" | "productivity" | "communication" | "creative" | "knowledge" | "agents" | "operations" | "finance" | "lifestyle")[];
+export declare const PLUGIN_CATEGORY_SLUGS: ("channels" | "context" | "gateway" | "media" | "memory" | "models" | "other" | "runtime" | "security" | "tools" | "voice" | "web")[];
+export declare const SKILL_CATEGORY_SLUGS: ("agents" | "automation" | "communication" | "creative" | "development" | "finance" | "integrations" | "knowledge" | "lifestyle" | "operations" | "other" | "productivity" | "research" | "security")[];
 export declare function isPluginCategorySlug(value: string | null | undefined): value is PluginCategorySlug;
 export declare function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug;
 export declare function normalizePluginCategories(values: readonly string[] | null | undefined): PluginCategorySlug[];

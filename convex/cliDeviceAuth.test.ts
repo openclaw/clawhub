@@ -1,3 +1,4 @@
+import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./lib/access", () => ({
@@ -206,6 +207,35 @@ describe("cliDeviceAuth approval", () => {
     expect(patch).not.toHaveBeenCalledWith("cliDeviceCodes:approved", expect.anything());
     expect(patch).not.toHaveBeenCalledWith("cliDeviceCodes:denied", expect.anything());
     expect(patch).not.toHaveBeenCalledWith("cliDeviceCodes:consumed", expect.anything());
+  });
+
+  it.each([
+    ["expired", "Device code expired"],
+    ["consumed", "Device code already used"],
+    ["approved", "Device code already authorized"],
+    ["denied", "Device code was denied"],
+  ])("surfaces %s codes as user-facing errors", async (status, message) => {
+    const now = Date.now();
+    const { ctx } = makeCtx([
+      {
+        _id: `cliDeviceCodes:${status}`,
+        _creationTime: now - 1_000,
+        status,
+        userCode: "Q639-NBSX",
+        createdAt: now - 1_000,
+        expiresAt: now + 60_000,
+      },
+    ]);
+
+    let caught: unknown;
+    try {
+      await approveHandler(ctx, { userCode: "Q639-NBSX" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ConvexError);
+    expect((caught as ConvexError<string>).data).toBe(message);
   });
 
   it("denies the newest active pending row when duplicate user codes exist", async () => {

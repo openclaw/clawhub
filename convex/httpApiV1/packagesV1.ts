@@ -16,6 +16,7 @@ import {
   PackageTransferRequestSchema,
   PackageTrustedPublisherUpsertRequestSchema,
   PublishTokenMintRequestSchema,
+  normalizeContentType,
   isPluginCategorySlug,
   parseArk,
   type PackagePublishMetadata,
@@ -33,6 +34,7 @@ import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
+import { experimentalClawsEnabled } from "../lib/experimentalClaws";
 import {
   fetchGitHubRepositoryIdentity,
   verifyGitHubActionsTrustedPublishJwt,
@@ -64,7 +66,7 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
-import { isMacJunkPath, isTextFile } from "../lib/skills";
+import { isMacJunkPath } from "../lib/skills";
 import {
   buildDeterministicPackageZip,
   buildMergedExportZip,
@@ -82,7 +84,8 @@ import {
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
   requirePackagePublishAuthOrResponse,
-  safeTextFileResponse,
+  safeStoredFilePreviewResponse,
+  safeStoredFileResponse,
   softDeleteErrorToResponse,
   ambiguousSkillSlugResponse,
   type AmbiguousSkillSlugChoice,
@@ -122,6 +125,7 @@ const internalRefs = internal as unknown as {
     transferPackageOwnerForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
     deleteOwnedReleaseForUserInternal: unknown;
+    restoreOwnedReleaseForUserInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -143,6 +147,7 @@ const internalRefs = internal as unknown as {
     listOfficialPluginMigrationsInternal: unknown;
     upsertOfficialPluginMigrationForUserInternal: unknown;
     listPackageModerationQueueInternal: unknown;
+    setPackageFeaturedForUserInternal: unknown;
   };
   downloadMetrics: {
     recordDownloadMetricInternal: unknown;
@@ -308,6 +313,11 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 }
 
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
+const PACKAGE_FAMILY_VALUES_WITH_CLAWS = [...PACKAGE_FAMILY_VALUES, "claw"] as const;
+
+function publicPackageFamilyValues() {
+  return experimentalClawsEnabled() ? PACKAGE_FAMILY_VALUES_WITH_CLAWS : PACKAGE_FAMILY_VALUES;
+}
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = [
@@ -458,7 +468,7 @@ function parsePackageOfficialMigrationPhase(
 }
 
 type PackageListQueryArgs = {
-  family?: "skill" | "code-plugin" | "bundle-plugin";
+  family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
   highlightedOnly?: boolean;
@@ -517,6 +527,7 @@ type ReleaseLike = {
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
   pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
+  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -646,6 +657,7 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
   return {
     kind: "legacy-zip" as const,
     ...(sha256 ? { sha256 } : {}),
+    ...(release.clawpackSize !== undefined ? { size: release.clawpackSize } : {}),
     format: "zip",
     source: "clawhub" as const,
     artifactKind: "legacy-zip" as const,
@@ -823,7 +835,7 @@ async function resolvePackageTags(
 type CatalogListItem = {
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
   runtimeId?: string | null;
   channel: "official" | "community" | "private";
   isOfficial: boolean;
@@ -1156,7 +1168,7 @@ async function searchPackageCatalog(
   args: {
     query: string;
     limit: number;
-    family?: "skill" | "code-plugin" | "bundle-plugin";
+    family?: "skill" | "code-plugin" | "bundle-plugin" | "claw";
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
@@ -1266,13 +1278,7 @@ type PackagePublishTarballPart =
       uploadTicket: Id<"packagePublishUploadTickets">;
     };
 
-function inferStoredPackageContentType(path: string) {
-  const lower = path.toLowerCase();
-  if (lower.endsWith(".json")) return "application/json";
-  if (lower.endsWith(".js") || lower.endsWith(".mjs") || lower.endsWith(".cjs")) {
-    return "text/javascript; charset=utf-8";
-  }
-  if (isTextFile(path)) return "text/plain; charset=utf-8";
+function defaultStoredPackageContentType() {
   return "application/octet-stream";
 }
 
@@ -1286,7 +1292,7 @@ async function storeClawPackFile(
   ctx: ActionCtx,
   entry: { path: string; bytes: Uint8Array },
 ): Promise<StoredPackagePublishFile> {
-  const contentType = inferStoredPackageContentType(entry.path);
+  const contentType = defaultStoredPackageContentType();
   const storageId = await ctx.storage.store(
     new Blob([bytesToArrayBuffer(entry.bytes)], { type: contentType }),
   );
@@ -1319,7 +1325,7 @@ async function storeUploadedPackageFile(
     throw new Error(getPublishFileSizeError(entry.name));
   }
   const buffer = new Uint8Array(await entry.arrayBuffer());
-  const contentType = inferStoredPackageContentType(entry.name);
+  const contentType = normalizeContentType(entry.type) ?? defaultStoredPackageContentType();
   const storageId = await ctx.storage.store(
     new Blob([bytesToArrayBuffer(buffer)], { type: contentType }),
   );
@@ -1463,6 +1469,9 @@ async function parseMultipartPackagePublish(
     parsedPayload,
     "Package publish payload",
   );
+  if (metadata.family === "claw" && !experimentalClawsEnabled()) {
+    throw new Error("Experimental Claw publication is disabled");
+  }
 
   const tarballPart = getTarballPart(form);
   const fileParts = getFileParts(
@@ -1550,7 +1559,7 @@ async function listPackages(
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const rawCursor = url.searchParams.get("cursor");
-  const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
+  const familyParam = parseEnumQueryParam(url.searchParams, "family", publicPackageFamilyValues());
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
   if (!channelParam.ok) return text(channelParam.message, 400, rate.headers);
@@ -1586,14 +1595,19 @@ async function listPackages(
       : options?.defaultSort;
   const isLegacyInstallSortRequest = sortParam.value === "installs";
   const effectiveSort = normalizePublicPackageSort(sortParam.value ?? pluginDefaultSort);
-  if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
+  if (
+    category &&
+    (effectiveFamily === "skill" ||
+      effectiveFamily === "claw" ||
+      (!effectiveFamily && includeSkills))
+  ) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
       400,
       rate.headers,
     );
   }
-  if (effectiveSort === "trending" && includeSkills) {
+  if (effectiveSort === "trending" && (includeSkills || effectiveFamily === "claw")) {
     return text(
       "Trending sort is only supported for plugin package endpoints; use /api/v1/skills?sort=trending for skills.",
       400,
@@ -1763,6 +1777,32 @@ async function listPackages(
       topic,
       excludedScanStatuses: excludedScanStatuses.value,
       sort: "trending",
+      viewerUserId: viewerUserId ?? undefined,
+      paginationOpts: { cursor: rawCursor, numItems: limit },
+    });
+    return json(
+      {
+        items: result.page,
+        nextCursor: result.isDone ? null : result.continueCursor,
+      },
+      200,
+      rate.headers,
+    );
+  }
+
+  if (!effectiveFamily && options?.pluginFamilies?.length && highlightedOnly) {
+    const result = await runQueryRef<{
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string | null;
+    }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+      families: options.pluginFamilies,
+      channel: channelParam.value,
+      isOfficial: isOfficial.value,
+      highlightedOnly: true,
+      category,
+      topic,
+      excludedScanStatuses: excludedScanStatuses.value,
       viewerUserId: viewerUserId ?? undefined,
       paginationOpts: { cursor: rawCursor, numItems: limit },
     });
@@ -2916,6 +2956,37 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
+  if (packageSegments[0] === "featured" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = await readOptionalJson(request);
+      const featured =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>).featured
+          : undefined;
+      if (typeof featured !== "boolean") {
+        return text("featured must be a boolean", 400, rate.headers);
+      }
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.setPackageFeaturedForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          featured,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package feature update failed");
+    }
+  }
+
   if (packageSegments[0] === "report" && packageSegments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -2996,6 +3067,33 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
       return softDeleteErrorToResponse("package", error, rate.headers);
+    }
+  }
+
+  if (
+    packageSegments[0] === "versions" &&
+    packageSegments[1] &&
+    packageSegments[2] === "restore" &&
+    packageSegments.length === 3
+  ) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.packages.restoreOwnedReleaseForUserInternal,
+        {
+          actorUserId: auth.userId,
+          name: packageName,
+          version: packageSegments[1],
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      return packageOperationErrorToResponse(error, rate.headers, "Package version restore failed");
     }
   }
 
@@ -3364,7 +3462,7 @@ async function searchPackages(
   const queryText = url.searchParams.get("q")?.trim() ?? "";
   if (!queryText) return text("Missing q query parameter", 400, rate.headers);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-  const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
+  const familyParam = parseEnumQueryParam(url.searchParams, "family", publicPackageFamilyValues());
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
   if (!channelParam.ok) return text(channelParam.message, 400, rate.headers);
@@ -3387,7 +3485,7 @@ async function searchPackages(
   }
   const family = familyParam.value;
   const includeSkills = options?.includeSkills ?? family === undefined;
-  if (category && (family === "skill" || (!family && includeSkills))) {
+  if (category && (family === "skill" || family === "claw" || (!family && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
       400,
@@ -3953,6 +4051,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
           })),
           compatibility: result.version.compatibility ?? null,
           pluginManifestSummary: result.version.pluginManifestSummary ?? null,
+          clawManifestSummary: result.version.clawManifestSummary ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
@@ -3968,8 +4067,10 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   }
 
   if (packageSegments[0] === "file") {
-    const path = new URL(request.url).searchParams.get("path")?.trim();
+    const requestUrl = new URL(request.url);
+    const path = requestUrl.searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
+    const preview = requestUrl.searchParams.get("preview") === "1";
     if (skillDetail?.skill) {
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
@@ -3986,14 +4087,22 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
       if (!file) return text("File not found", 404, rate.headers);
       if (!("storageId" in file) || !file.storageId)
         return text("File not found", 404, rate.headers);
-      if (!isTextFile(file.path, file.contentType)) {
-        return text("Binary files are not served inline", 415, rate.headers);
-      }
-      if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
+      const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+      if (file.size > maxBytes) return text("File too large", 413, rate.headers);
       const blob = await ctx.storage.get(file.storageId);
       if (!blob) return text("File not found", 404, rate.headers);
-      return safeTextFileResponse({
-        textContent: await blob.text(),
+      if (preview) {
+        return await safeStoredFilePreviewResponse({
+          blob,
+          path: file.path,
+          contentType: file.contentType,
+          sha256: file.sha256,
+          size: file.size,
+          headers: rate.headers,
+        });
+      }
+      return await safeStoredFileResponse({
+        blob,
         path: file.path,
         contentType: file.contentType,
         sha256: file.sha256,
@@ -4007,21 +4116,21 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
     const file = resolvePackageFilePath(release, path);
     if (!file) return text("File not found", 404, rate.headers);
-    if (!isTextFile(file.path, file.contentType)) {
-      return text("Binary files are not served inline", 415, rate.headers);
-    }
-    if (file.size > MAX_RAW_FILE_BYTES) return text("File too large", 413, rate.headers);
+    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+    if (file.size > maxBytes) return text("File too large", 413, rate.headers);
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File not found", 404, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    const responseParams = {
+      blob,
       path: file.path,
       contentType: file.contentType,
       sha256: file.sha256,
       size: file.size,
       headers: rate.headers,
-    });
+    };
+    return preview
+      ? await safeStoredFilePreviewResponse(responseParams)
+      : await safeStoredFileResponse(responseParams);
   }
 
   if (packageSegments[0] === "download") {
@@ -4045,16 +4154,29 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     const securityBlock = getReleaseSecurityBlock(release);
     if (securityBlock) return text(securityBlock.message, securityBlock.status, rate.headers);
-    const entries: Array<{ path: string; bytes: Uint8Array }> = [];
-    for (const file of release.files) {
-      const blob = await ctx.storage.get(file.storageId);
-      if (!blob) return text(`Missing stored file: ${file.path}`, 500, rate.headers);
-      entries.push({
-        path: file.path,
-        bytes: new Uint8Array(await blob.arrayBuffer()),
-      });
+    const storedZip =
+      release.artifactKind === "legacy-zip" && release.clawpackStorageId
+        ? await ctx.storage.get(release.clawpackStorageId)
+        : null;
+    if (release.artifactKind === "legacy-zip" && release.clawpackStorageId && !storedZip) {
+      return text("Missing stored package artifact", 500, rate.headers);
     }
-    const zip = buildDeterministicPackageZip(entries);
+    let zip: Uint8Array;
+    if (storedZip) {
+      zip = new Uint8Array(await storedZip.arrayBuffer());
+    } else {
+      // Historical legacy releases and npm packs need a compatibility ZIP projection.
+      const entries: Array<{ path: string; bytes: Uint8Array }> = [];
+      for (const file of release.files) {
+        const blob = await ctx.storage.get(file.storageId);
+        if (!blob) return text(`Missing stored file: ${file.path}`, 500, rate.headers);
+        entries.push({
+          path: file.path,
+          bytes: new Uint8Array(await blob.arrayBuffer()),
+        });
+      }
+      zip = buildDeterministicPackageZip(entries);
+    }
     const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
       const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
@@ -4072,7 +4194,11 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
-    return new Response(new Blob([zip], { type: "application/zip" }), {
+    const zipBody = zip.buffer.slice(
+      zip.byteOffset,
+      zip.byteOffset + zip.byteLength,
+    ) as ArrayBuffer;
+    return new Response(new Blob([zipBody], { type: "application/zip" }), {
       status: 200,
       headers: mergeHeaders(
         rate.headers,
@@ -4237,7 +4363,7 @@ type PublicPackageDocLike = {
   _id: Id<"packages">;
   name: string;
   displayName: string;
-  family: "skill" | "code-plugin" | "bundle-plugin";
+  family: "skill" | "code-plugin" | "bundle-plugin" | "claw";
   tags: Record<string, Id<"packageReleases">>;
   latestReleaseId?: Id<"packageReleases">;
   channel: "official" | "community" | "private";
@@ -4260,6 +4386,7 @@ type PublicPackageDocLike = {
     npmUnpackedSize?: number;
     npmFileCount?: number;
   };
+  clawManifestSummary?: Doc<"packageReleases">["clawManifestSummary"];
   stats?: { downloads: number; installs: number; stars: number; versions: number };
   createdAt: number;
   updatedAt: number;

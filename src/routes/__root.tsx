@@ -17,6 +17,7 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { Footer } from "../components/Footer";
 import { GenericNotFoundPage } from "../components/GenericNotFoundPage";
 import Header from "../components/Header";
+import { PromotionsBar } from "../components/PromotionsBar";
 import {
   BANNED_ACCOUNT_PATH,
   isBannedAccountAuthError,
@@ -27,7 +28,7 @@ import { getThemeModeFromCookieHeader, normalizeThemeMode } from "../lib/themeCo
 import designSystemCss from "../design-system.css?url";
 import appCss from "../styles.css?url";
 
-const OG_IMAGE_VERSION = "20260624-1";
+const OG_IMAGE_VERSION = "20260723-1";
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
     if (location.pathname === BANNED_ACCOUNT_PATH) return;
@@ -194,6 +195,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <AppProviders>
           <div className="app-shell">
+            <PromotionsBar />
             <Header />
             <ClientOnly>
               <DeploymentDriftBanner />

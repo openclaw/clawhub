@@ -70,6 +70,7 @@ const publisher = {
   handle: "nvidia",
   image: null,
   kind: "org" as const,
+  githubHandle: "nvidia",
   official: true,
   publishedItems: [],
   stats: {
@@ -125,6 +126,24 @@ describe("user profile route", () => {
     expect(screen.queryByRole("button", { name: "Follow" })).toBeNull();
     expect(screen.getByRole("button", { name: "Profile actions" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /github/i })).toBeTruthy();
+  });
+
+  it("does not guess a GitHub profile for an unlinked organization", async () => {
+    const unlinkedPublisher = { ...publisher, githubHandle: undefined };
+    loaderDataMock.mockReturnValue({ publisher: unlinkedPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: unlinkedPublisher, members: [] };
+      if ("kind" in args) return null;
+      return unlinkedPublisher;
+    });
+
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("link", { name: /github/i })).toBeNull();
   });
 
   it("shows edit profile instead of report on the viewer's own publisher page", async () => {

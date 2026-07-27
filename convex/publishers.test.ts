@@ -15,6 +15,8 @@ import {
   listMine,
   getDeletionInventory,
   getMyProfileHandle,
+  getHomeOfficialCreatorSummaries,
+  getHomeOfficialCreatorSummariesPageInternal,
   getHomePublisherSummaries,
   getProfileByHandle,
   createMemberInvite,
@@ -281,7 +283,12 @@ const listPublishedPageHandler = (
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
-      page: Array<{ displayName: string; href: string; kind: "skill" | "plugin" }>;
+      page: Array<{
+        displayName: string;
+        href: string;
+        kind: "skill" | "plugin";
+        downloads: number;
+      }>;
       continueCursor: string;
       isDone: boolean;
     }
@@ -318,6 +325,16 @@ const getProfileByHandleHandler = (
 
 const getHomePublisherSummariesHandler = (
   getHomePublisherSummaries as unknown as WrappedHandler<{ handles: string[] }>
+)._handler;
+
+const getHomeOfficialCreatorSummariesHandler = (
+  getHomeOfficialCreatorSummaries as unknown as WrappedHandler<{ limit?: number }>
+)._handler;
+
+const getHomeOfficialCreatorSummariesPageInternalHandler = (
+  getHomeOfficialCreatorSummariesPageInternal as unknown as WrappedHandler<{
+    cursor: string | null;
+  }>
 )._handler;
 
 const getOgMetaByHandleHandler = (
@@ -365,6 +382,7 @@ const updateProfileHandler = (
     image?: string;
     imageStorageId?: string;
     imageUploadTicket?: string;
+    githubOrgId?: string | null;
   }>
 )._handler;
 
@@ -933,6 +951,109 @@ describe("home publisher summaries", () => {
     ).resolves.toEqual([]);
     expect(query).toHaveBeenCalledTimes(8);
     expect(get).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("home official creator summaries", () => {
+  it("pages the official publisher index and returns only active organizations with content", async () => {
+    const publishers = [
+      makeHomeSummaryPublisher("high", { totalInstalls: 100 }),
+      makeHomeSummaryPublisher("person", {
+        kind: "user",
+        linkedUserId: "users:person",
+        totalInstalls: 80,
+      }),
+      makeHomeSummaryPublisher("empty", {
+        publishedSkills: 0,
+        publishedPackages: 0,
+        totalInstalls: 70,
+      }),
+      makeHomeSummaryPublisher("inactive", { deactivatedAt: 2, totalInstalls: 50 }),
+    ];
+    const officialRows = publishers.map((publisher, index) => ({
+      _id: `officialPublishers:${index}`,
+      publisherId: publisher._id,
+      createdAt: index,
+      updatedAt: index,
+    }));
+    const query = vi.fn((table: string) => {
+      if (table === "officialPublishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            expect(indexName).toBe("by_created");
+            return indexedRows(officialRows);
+          }),
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    });
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:person") return { _id: id, displayName: "Person" };
+      return publishers.find((publisher) => publisher._id === id) ?? null;
+    });
+
+    const result = (await getHomeOfficialCreatorSummariesPageInternalHandler(
+      { db: { query, get } } as never,
+      { cursor: null },
+    )) as {
+      summaries: Array<{ handle: string; kind: string }>;
+      isDone: boolean;
+      continueCursor: string;
+    };
+
+    expect(result.summaries.map((summary) => summary.handle)).toEqual(["high"]);
+    expect(result.summaries.every((summary) => summary.kind === "org")).toBe(true);
+    expect(result.isDone).toBe(true);
+  });
+
+  it("collects every official page, orders by installs, and clamps the result to sixteen", async () => {
+    const makeSummary = (index: number, installs: number) => ({
+      ...makeHomeSummaryPublisher(`org-${index}`, { totalInstalls: installs }),
+      stats: { skills: 2, packages: 1, installs, downloads: installs, stars: 5 },
+    });
+    const firstPage = Array.from({ length: 12 }, (_, index) => makeSummary(index, 20 - index));
+    const secondPage = Array.from({ length: 8 }, (_, index) =>
+      makeSummary(index + 12, 100 - index),
+    );
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        summaries: firstPage,
+        continueCursor: "page-2",
+        isDone: false,
+      })
+      .mockResolvedValueOnce({
+        summaries: secondPage,
+        continueCursor: "",
+        isDone: true,
+      });
+
+    const summaries = (await getHomeOfficialCreatorSummariesHandler({ runQuery } as never, {
+      limit: 99,
+    })) as Array<{ handle: string; stats: { installs: number } }>;
+
+    expect(summaries).toHaveLength(16);
+    expect(summaries.map((summary) => summary.stats.installs)).toEqual([
+      100, 99, 98, 97, 96, 95, 94, 93, 20, 19, 18, 17, 16, 15, 14, 13,
+    ]);
+    expect(runQuery).toHaveBeenNthCalledWith(1, expect.anything(), { cursor: null });
+    expect(runQuery).toHaveBeenNthCalledWith(2, expect.anything(), { cursor: "page-2" });
+  });
+
+  it("fails closed when legacy official rows exceed the bounded curation limit", async () => {
+    const runQuery = vi.fn();
+    for (let page = 0; page < 4; page += 1) {
+      runQuery.mockResolvedValueOnce({
+        summaries: [],
+        continueCursor: `page-${page + 1}`,
+        isDone: false,
+      });
+    }
+
+    await expect(getHomeOfficialCreatorSummariesHandler({ runQuery } as never, {})).rejects.toThrow(
+      "Official publisher limit exceeded",
+    );
+    expect(runQuery).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -3023,6 +3144,7 @@ describe("publishers membership controls", () => {
       slug: "demo",
       displayName: "Demo Skill",
       moderationStatus: "active",
+      statsSkillsShInstalls: 6,
       stats: { downloads: 10, stars: 1, installsCurrent: 1, installsAllTime: 2 },
       updatedAt: 5,
     };
@@ -3072,6 +3194,7 @@ describe("publishers membership controls", () => {
     });
 
     expect(firstPage.page.map((item) => item.kind)).toEqual(["skill"]);
+    expect(firstPage.page[0]?.downloads).toBe(16);
     expect(firstPage.continueCursor).toBe("1");
     expect(firstPage.isDone).toBe(false);
     expect(secondPage.page.map((item) => item.kind)).toEqual(["plugin"]);
@@ -3115,6 +3238,7 @@ describe("publishers membership controls", () => {
       displayName: "Modern Low",
       moderationStatus: "active",
       statsDownloads: 7,
+      statsSkillsShInstalls: 100,
       stats: { downloads: 7, stars: 1, installsCurrent: 1, installsAllTime: 2 },
       updatedAt: 6,
     };
@@ -3167,6 +3291,7 @@ describe("publishers membership controls", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
     legacyLookup.first.mockResolvedValue(null);
+    expect(firstPage.page[0]?.displayName).toBe("Legacy High");
     const secondPage = await listPublishedPageHandler(ctx as never, {
       handle: "legacy",
       kind: "skill",
@@ -3347,6 +3472,7 @@ describe("publishers membership controls", () => {
       ownerPublisherId: "publishers:openclaw",
       softDeletedAt: undefined,
       moderationStatus: "active",
+      statsSkillsShInstalls: 8,
       stats: { downloads: 42, stars: 2, installsCurrent: 4, installsAllTime: 7 },
     };
     const pkg = {
@@ -3393,7 +3519,7 @@ describe("publishers membership controls", () => {
       skills: 1,
       packages: 1,
       installs: 12,
-      downloads: 50,
+      downloads: 58,
       stars: 3,
     });
   });
@@ -6239,6 +6365,138 @@ describe("publishers membership controls", () => {
     );
   });
 
+  it("links only a freshly verified GitHub organization membership", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const publisher = {
+      _id: "publishers:org",
+      kind: "org",
+      handle: "cua",
+      displayName: "Cua",
+      image: undefined,
+      bio: undefined,
+    };
+    const patch = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") return publisher;
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publisherMembers:admin",
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "githubOrgMemberships") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  userId: "users:admin",
+                  githubOrgId: "42",
+                  login: "trycua",
+                  role: "member",
+                  syncedAt: Date.now(),
+                }),
+              })),
+            };
+          }
+          if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert: vi.fn(async () => "auditLogs:1"),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await updateProfileHandler(ctx as never, {
+      publisherId: "publishers:org",
+      displayName: "Cua",
+      githubOrgId: "42",
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:org",
+      expect.objectContaining({
+        githubHandle: "trycua",
+        githubOrgId: "42",
+        githubVerifiedAt: expect.any(Number),
+        githubVerifiedByUserId: "users:admin",
+      }),
+    );
+  });
+
+  it("rejects stale GitHub organization membership verification", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "cua",
+              displayName: "Cua",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "githubOrgMemberships") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  userId: "users:admin",
+                  githubOrgId: "42",
+                  login: "trycua",
+                  role: "member",
+                  syncedAt: Date.now() - 16 * 60 * 1000,
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch: vi.fn(),
+        insert: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      updateProfileHandler(ctx as never, {
+        publisherId: "publishers:org",
+        displayName: "Cua",
+        githubOrgId: "42",
+      }),
+    ).rejects.toThrow("Reconnect GitHub to verify your organization membership");
+  });
+
   it("issues logo upload tickets only to org admins", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
     const insert = vi.fn(async () => "publisherImageUploadTickets:1");
@@ -6599,6 +6857,9 @@ describe("official publisher administration", () => {
           }
           if (table === "officialPublishers" && indexName === "by_publisher") {
             return { unique: vi.fn(async () => null) };
+          }
+          if (table === "officialPublishers" && indexName === "by_created") {
+            return { take: vi.fn(async () => []) };
           }
           throw new Error(`unexpected ${table} index ${indexName}`);
         },

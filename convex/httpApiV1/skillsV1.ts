@@ -2,6 +2,7 @@ import {
   ApiRoutes,
   ApiV1SkillBulkRescanBatchRequestSchema,
   ApiV1SkillBulkRescanStatusRequestSchema,
+  ApiV1SkillHardDeleteRequestSchema,
   ApiV1SkillRepairVtPendingRequestSchema,
   ApiV1SkillScanBatchRequestSchema,
   ApiV1SkillScanBatchStatusRequestSchema,
@@ -10,7 +11,7 @@ import {
   SkillAppealResolveRequestSchema,
   SkillReportTriageRequestSchema,
   SkillVersionRevokeRequestSchema,
-  normalizeTextContentType,
+  normalizeContentType,
   parseArk,
   type SkillAppealListStatus,
   type SkillReportListStatus,
@@ -19,6 +20,7 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import { serializeCanonicalSkillSearchResults } from "../lib/canonicalSkillSearchResponse";
 import {
   buildGitHubSkillHandoffDescriptor,
   getGitHubHandoffBlock,
@@ -35,6 +37,8 @@ import {
   type InstallResolverSource,
   type SkillInstallResolution,
 } from "../lib/installResolver";
+import { MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
+import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
@@ -48,7 +52,6 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
-import { readCanonicalStat } from "../lib/skillStats";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -72,40 +75,24 @@ import {
   requireAdminOrResponse,
   requireApiTokenUserOrResponse,
   resolveTagsBatch,
+  safeStoredFilePreviewResponse,
+  safeStoredFileResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
   text,
   toOptionalNumber,
 } from "./shared";
+import {
+  parseSkillsShCatalogReference,
+  resolveSkillsShInstall,
+  resolveSkillsShVerify,
+} from "./skillsShCatalogV1";
 
 const MAX_EXPORT_FILE_COUNT = 10_000;
 const MAX_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_EXPORT_PAGE_LIMIT = 250;
 const MAX_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 const MAX_SECURITY_VERDICT_ITEMS = 100;
-
-type SearchSkillEntry = {
-  score: number;
-  skill: {
-    slug?: string;
-    displayName?: string;
-    summary?: string | null;
-    updatedAt?: number;
-    stats: {
-      downloads?: number;
-      stars?: number;
-      installs?: number;
-    };
-    statsDownloads?: number;
-  } | null;
-  version: { version?: string; createdAt?: number } | null;
-  ownerHandle?: string | null;
-  owner?: {
-    handle?: string | null;
-    displayName?: string | null;
-    image?: string | null;
-  } | null;
-};
 
 type ListSkillsResult = {
   items: Array<{
@@ -204,6 +191,7 @@ type GetBySlugResult = {
     slug: string;
     displayName: string;
     summary?: string;
+    icon?: string;
     topics?: string[];
     tags: Record<string, Id<"skillVersions">>;
     stats: unknown;
@@ -347,18 +335,21 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     deleteOwnedVersionForUserInternal: unknown;
+    restoreOwnedVersionForUserInternal: unknown;
     revokeSkillVersionForUserInternal: unknown;
     getSecurityVerdictTargetInternal: unknown;
     getVerifyTargetBySlugInternal: unknown;
     getSkillBySlugInternal: unknown;
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
+    hardDeleteForAdminInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
     submitSkillAppealForUserInternal: unknown;
     listSkillAppealsInternal: unknown;
     resolveSkillAppealForUserInternal: unknown;
+    setSkillFeaturedForUserInternal: unknown;
   };
 };
 
@@ -818,7 +809,7 @@ function sourceFilesForVerify(
     path: file.path,
     size: file.size,
     sha256: file.sha256,
-    contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+    contentType: normalizeContentType(file.contentType) ?? null,
   }));
 }
 
@@ -1368,34 +1359,11 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
     limit,
     highlightedOnly: highlightedOnly || undefined,
     nonSuspiciousOnly: nonSuspiciousOnly || undefined,
-  })) as SearchSkillEntry[];
+  })) as unknown[];
 
-  return json(
-    {
-      results: results.map((result) => {
-        const owner = result.owner
-          ? {
-              handle: result.owner.handle ?? null,
-              displayName: result.owner.displayName ?? null,
-              image: result.owner.image ?? null,
-            }
-          : null;
-        return {
-          score: result.score,
-          slug: result.skill?.slug,
-          displayName: result.skill?.displayName,
-          summary: result.skill?.summary ?? null,
-          version: result.version?.version ?? null,
-          downloads: result.skill ? readCanonicalStat(result.skill, "downloads") : 0,
-          updatedAt: result.skill?.updatedAt,
-          ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
-          owner,
-        };
-      }),
-    },
-    200,
-    rate.headers,
-  );
+  // The action owns the canonical shape and ordering for every consumer.
+  // This HTTP surface must serialize it without projecting or re-sorting.
+  return json({ results: serializeCanonicalSkillSearchResults(results) }, 200, rate.headers);
 }
 
 export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Request) {
@@ -1550,7 +1518,14 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       : null,
   }));
 
-  return json({ items, nextCursor: result.nextCursor ?? null }, 200, rate.headers);
+  const responseHeaders =
+    sort === "trending" && getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
+      ? mergeHeaders(rate.headers, {
+          Deprecation: "true",
+          Link: `<${ApiRoutes.trending}?kind=skills>; rel="successor-version"`,
+        })
+      : rate.headers;
+  return json({ items, nextCursor: result.nextCursor ?? null }, 200, responseHeaders);
 }
 
 async function describeOwnerVisibleSkillState(
@@ -1821,6 +1796,19 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
   if (second === "install" && segments.length === 2) {
     const installUrl = new URL(request.url);
+    if (installUrl.searchParams.has("reference")) {
+      const reference = installUrl.searchParams.get("reference") ?? "";
+      const catalogRef = parseSkillsShCatalogReference(reference);
+      if (!catalogRef || catalogRef.slug !== slug) {
+        return text("Invalid skills.sh reference", 400, rate.headers);
+      }
+      if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+        return text("Skill not found", 404, rate.headers);
+      }
+      const resolution = await resolveSkillsShInstall(ctx, request, catalogRef);
+      if (!resolution) return text("Skill not found", 404, rate.headers);
+      return json(resolution, resolution.ok ? 200 : resolution.status, rate.headers);
+    }
     const forceInstall = parseBooleanQueryParam(installUrl.searchParams.get("forceInstall"));
     const skill = (await runQueryRef<
       | (InstallResolverSkill & {
@@ -1915,6 +1903,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           slug: result.skill.slug,
           displayName: result.skill.displayName,
           summary: result.skill.summary ?? null,
+          icon: result.skill.icon ?? null,
           description: description ?? result.latestVersion?.parsed?.description ?? null,
           topics: result.skill.topics,
           tags,
@@ -2139,7 +2128,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
             path: file.path,
             size: file.size,
             sha256: file.sha256,
-            contentType: normalizeTextContentType(file.path, file.contentType) ?? null,
+            contentType: normalizeContentType(file.contentType) ?? null,
           })),
           security: security ?? undefined,
         },
@@ -2262,6 +2251,20 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const versionParam = verifyUrl.searchParams.get("version")?.trim();
     const tagParam = verifyUrl.searchParams.get("tag")?.trim();
     if (versionParam && tagParam) return text("Use either version or tag", 400, rate.headers);
+    if (verifyUrl.searchParams.has("reference")) {
+      const reference = verifyUrl.searchParams.get("reference") ?? "";
+      const catalogRef = parseSkillsShCatalogReference(reference);
+      if (!catalogRef || catalogRef.slug !== slug || versionParam || tagParam) {
+        return text("Invalid skills.sh reference", 400, rate.headers);
+      }
+      if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+        return text("Skill not found", 404, rate.headers);
+      }
+      const verification = await resolveSkillsShVerify(ctx, request, catalogRef);
+      return verification
+        ? json(verification, 200, rate.headers)
+        : text("Skill not found", 404, rate.headers);
+    }
 
     const skillResult = (await runQueryRef<GetBySlugResult>(
       ctx,
@@ -2478,6 +2481,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
   if (second === "file" && segments.length === 2) {
     const path = url.searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
+    const preview = url.searchParams.get("preview") === "1";
     const versionParam = url.searchParams.get("version")?.trim();
     const tagParam = url.searchParams.get("tag")?.trim();
 
@@ -2537,13 +2541,29 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       version.files.find((entry) => entry.path === normalized) ??
       version.files.find((entry) => entry.path.toLowerCase() === normalizedLower);
     if (!file) return text("File not found", 404, rate.headers);
-    if (file.size > MAX_RAW_FILE_BYTES) return text("File exceeds 200KB limit", 413, rate.headers);
+    const maxBytes = preview ? MAX_RAW_FILE_BYTES : MAX_PUBLISH_FILE_BYTES;
+    if (file.size > maxBytes) {
+      return text(
+        preview ? "File exceeds 200KB preview limit" : "File exceeds 10MB limit",
+        413,
+        rate.headers,
+      );
+    }
 
     const blob = await ctx.storage.get(file.storageId);
     if (!blob) return text("File missing in storage", 410, rate.headers);
-    const textContent = await blob.text();
-    return safeTextFileResponse({
-      textContent,
+    if (preview) {
+      return await safeStoredFilePreviewResponse({
+        blob,
+        path: file.path,
+        contentType: file.contentType ?? undefined,
+        sha256: file.sha256,
+        size: file.size,
+        headers: rate.headers,
+      });
+    }
+    return await safeStoredFileResponse({
+      blob,
       path: file.path,
       contentType: file.contentType ?? undefined,
       sha256: file.sha256,
@@ -3042,6 +3062,38 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     }
   }
 
+  if (segments.length === 2 && action === "hard-delete") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    try {
+      const payload = parseArk(
+        ApiV1SkillHardDeleteRequestSchema,
+        await request.json(),
+        "Skill hard-delete payload",
+      ) as {
+        ownerHandle: string;
+        reason: string;
+        dryRun?: boolean;
+        confirmationToken?: string;
+      };
+      const result = await runMutationRef(ctx, internalRefs.skills.hardDeleteForAdminInternal, {
+        actorUserId: auth.userId,
+        slug,
+        ownerHandle: payload.ownerHandle,
+        reason: payload.reason,
+        ...(payload.dryRun !== undefined ? { dryRun: payload.dryRun } : {}),
+        ...(payload.confirmationToken ? { confirmationToken: payload.confirmationToken } : {}),
+      });
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillHardDeleteErrorToResponse(error, rate.headers);
+    }
+  }
+
   if (
     segments[0] === "-" &&
     segments[1] === "reports" &&
@@ -3130,12 +3182,18 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     if (!parsed.ok) return parsed.response;
     const reason = typeof parsed.payload.reason === "string" ? parsed.payload.reason : "";
     const version = typeof parsed.payload.version === "string" ? parsed.payload.version : undefined;
+    const url = new URL(request.url);
+    const ownerHandle =
+      optionalStringField(parsed.payload, "ownerHandle") ??
+      optionalStringField(parsed.payload, "owner") ??
+      getOwnerHandleParam(url);
     try {
       const result = await runMutationRef(ctx, internalRefs.skills.reportSkillForUserInternal, {
         actorUserId: auth.userId,
         slug,
         reason,
         ...(version ? { version } : {}),
+        ...(ownerHandle ? { ownerHandle } : {}),
       });
       return json(result, 200, rate.headers);
     } catch (error) {
@@ -3144,6 +3202,39 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
         400,
         rate.headers,
       );
+    }
+  }
+
+  if (segments.length === 2 && action === "featured") {
+    if (!slug) return text("Slug required", 400, rate.headers);
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+
+    try {
+      const body = await readOptionalJson(request);
+      const featured =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>).featured
+          : undefined;
+      if (typeof featured !== "boolean") {
+        return text("featured must be a boolean", 400, rate.headers);
+      }
+      const ownerHandle =
+        optionalStringField(body, "ownerHandle") ?? getOwnerHandleParam(new URL(request.url));
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.setSkillFeaturedForUserInternal,
+        {
+          actorUserId: auth.userId,
+          slug,
+          ...(ownerHandle ? { ownerHandle } : {}),
+          featured,
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillRescanErrorToResponse(error, rate.headers);
     }
   }
 
@@ -3226,6 +3317,34 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
     }
   }
 
+  if (
+    segments.length === 4 &&
+    segments[1] === "versions" &&
+    segments[2] &&
+    segments[3] === "restore"
+  ) {
+    try {
+      const { userId } = await requireApiTokenUser(ctx, request);
+      const body = await readOptionalJson(request);
+      const ownerHandle =
+        optionalStringField(body, "ownerHandle") ?? getOwnerHandleParam(new URL(request.url));
+      const result = await runMutationRef(
+        ctx,
+        internalRefs.skills.restoreOwnedVersionForUserInternal,
+        {
+          actorUserId: userId,
+          slug,
+          version: segments[2],
+          ...(ownerHandle ? { ownerHandle } : {}),
+        },
+      );
+      return json(result, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return skillVersionDeleteErrorToResponse(error, rate.headers);
+    }
+  }
+
   if (action === "transfer") {
     return handleSkillsTransferPost(ctx, request, segments, rate.headers);
   }
@@ -3245,6 +3364,15 @@ export async function skillsPostRouterV1Handler(ctx: ActionCtx, request: Request
 
 function skillVersionModerationErrorToResponse(error: unknown, headers: HeadersInit) {
   const message = error instanceof Error ? error.message : "Skill version moderation failed";
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized")) return text(message, 401, headers);
+  if (lower.includes("forbidden")) return text(message, 403, headers);
+  if (lower.includes("not found")) return text(message, 404, headers);
+  return text(message, 400, headers);
+}
+
+function skillHardDeleteErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = error instanceof Error ? error.message : "Skill hard delete failed";
   const lower = message.toLowerCase();
   if (lower.includes("unauthorized")) return text(message, 401, headers);
   if (lower.includes("forbidden")) return text(message, 403, headers);

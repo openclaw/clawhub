@@ -763,8 +763,8 @@ export function SkillDetailPage({
       });
       void router.invalidate();
     } catch (error) {
-      console.error("Failed to toggle star", error);
-      toast.error(getUserFacingConvexError(error, "Unable to update star. Please try again."));
+      console.error("Failed to toggle bookmark", error);
+      toast.error(getUserFacingConvexError(error, "Unable to update bookmark. Please try again."));
     }
   };
 
@@ -947,6 +947,7 @@ export function SkillDetailPage({
             hasSkillCard={hasSkillCard}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
+            latestVersion={latestVersion?.version ?? null}
             canDeleteVersions={canDeleteSkillVersions}
             skill={skill as Doc<"skills">}
             ownerHandle={ownerHandle}

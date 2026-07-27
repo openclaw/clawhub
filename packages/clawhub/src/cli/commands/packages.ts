@@ -46,6 +46,7 @@ import {
   type PackageFamily,
   type PackageTrustedPublisher,
   type PackageVerificationSummary,
+  decodeUtf8Text,
   validateOpenClawExternalCodePluginPackageContents,
   validateOpenClawExternalCodePluginPackageJson,
 } from "../../schema/index.js";
@@ -62,6 +63,7 @@ import {
   styleText,
 } from "../ui.js";
 import {
+  createGitHubRetryBudget,
   fetchGitHubSource,
   normalizeGitHubRepo,
   resolveLocalGitInfo,
@@ -142,8 +144,10 @@ type PackageExploreOptions = {
   json?: boolean;
 };
 
+type PublishablePackageFamily = "code-plugin" | "bundle-plugin" | "claw";
+
 type PackagePublishOptions = {
-  family?: "code-plugin" | "bundle-plugin";
+  family?: PublishablePackageFamily;
   name?: string;
   displayName?: string;
   owner?: string;
@@ -232,7 +236,7 @@ type PackageDeleteOptions = {
   version?: string;
 };
 
-type PackageUndeleteOptions = Omit<PackageDeleteOptions, "version">;
+type PackageUndeleteOptions = PackageDeleteOptions;
 
 type PackageTransferOptions = {
   to: string;
@@ -260,7 +264,7 @@ type PackagePublishPayload = {
   name: string;
   displayName: string;
   ownerHandle?: string;
-  family: "code-plugin" | "bundle-plugin";
+  family: PublishablePackageFamily;
   version: string;
   changelog: string;
   manualOverrideReason?: string;
@@ -287,7 +291,7 @@ type PackagePublishPlan = {
     source: string;
     name: string;
     displayName: string;
-    family: "code-plugin" | "bundle-plugin";
+    family: PublishablePackageFamily;
     version: string;
     commit?: string;
     files: number;
@@ -438,6 +442,7 @@ export async function cmdInspectPackage(
         registry,
       );
       url.searchParams.set("path", options.file);
+      url.searchParams.set("preview", "1");
       if (options.version) {
         url.searchParams.set("version", options.version);
       } else if (options.tag) {
@@ -975,12 +980,22 @@ export async function cmdPublishPackage(
         ApiV1PackagePublishResponseSchema,
       );
 
+      const publicationStatus = result.publicationStatus;
+      const outputStatus =
+        publicationStatus === "pending"
+          ? "pending-publication"
+          : publicationStatus === "published"
+            ? "published"
+            : "submitted";
       if (options.json) {
         process.stdout.write(
           `${JSON.stringify(
             {
               ...plan.output,
+              status: outputStatus,
               releaseId: result.releaseId,
+              publicationStatus,
+              attemptId: result.attemptId,
               inspectorFindings: result.inspectorFindings,
             },
             null,
@@ -988,9 +1003,19 @@ export async function cmdPublishPackage(
           )}\n`,
         );
       } else {
-        spinner?.succeed(
-          `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
-        );
+        if (publicationStatus === "pending") {
+          spinner?.succeed(
+            `Update submitted for ${plan.payload.name}@${plan.payload.version}; pending security scans before it becomes public.`,
+          );
+        } else if (publicationStatus === "published") {
+          spinner?.succeed(
+            `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
+          );
+        } else {
+          spinner?.succeed(
+            `Update submitted for ${plan.payload.name}@${plan.payload.version}; publication status was not reported.`,
+          );
+        }
         printPackageInspectorFindings(result);
       }
     } catch (error) {
@@ -1302,7 +1327,7 @@ export async function cmdDeletePackage(
     if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
     const ok = await promptConfirm(
       version
-        ? `Delete ${name} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`
+        ? `Delete ${name} version ${version}? (withdraws public access; the exact retained artifact can be restored, but the version number remains reserved; publish a replacement first if deleting the current latest version)`
         : `Delete ${name}? (soft delete package and all releases)`,
     );
     if (!ok) return undefined;
@@ -1351,27 +1376,36 @@ export async function cmdUndeletePackage(
 ) {
   const name = nameArg.trim();
   if (!name) fail("Package name required");
+  const version = normalizeDeleteVersion(options.version);
 
   if (!options.yes) {
     if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(`Restore ${name}? (restore package and releases)`);
+    const ok = await promptConfirm(
+      version
+        ? `Restore ${name} version ${version}? (restores the exact retained artifact; does not make it latest or restore tags or dist-tags)`
+        : `Restore ${name}? (restore package and releases)`,
+    );
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createCrabLoader(`Restoring ${name}`);
+  const target = version ? `${name} version ${version}` : name;
+  const spinner = createCrabLoader(`Restoring ${target}`);
   try {
     const result = await apiRequest(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/undelete`,
+        path: version
+          ? `${ApiRoutes.packages}/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}/restore`
+          : `${ApiRoutes.packages}/${encodeURIComponent(name)}/undelete`,
         token,
+        ...(version ? { retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. Restored ${name}`);
+    spinner.succeed(`OK. Restored ${target}`);
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     }
@@ -2153,9 +2187,23 @@ function hasLooseBundleMarker(fileSet: Set<string>) {
 
 function detectPackageFamily(
   fileSet: Set<string>,
-  explicit?: "code-plugin" | "bundle-plugin",
-): "code-plugin" | "bundle-plugin" {
+  packageJson: unknown,
+  explicit?: PublishablePackageFamily,
+): PublishablePackageFamily {
   if (explicit) return explicit;
+  const packageRecord =
+    packageJson && typeof packageJson === "object" && !Array.isArray(packageJson)
+      ? (packageJson as Record<string, unknown>)
+      : undefined;
+  const openclaw =
+    packageRecord?.openclaw &&
+    typeof packageRecord.openclaw === "object" &&
+    !Array.isArray(packageRecord.openclaw)
+      ? (packageRecord.openclaw as Record<string, unknown>)
+      : undefined;
+  if (typeof openclaw?.claw === "string") {
+    return "claw";
+  }
   if (hasRealBundleManifest(fileSet)) return "bundle-plugin";
   if (fileSet.has("openclaw.plugin.json")) return "code-plugin";
   if (hasLooseBundleMarker(fileSet)) return "bundle-plugin";
@@ -2205,9 +2253,11 @@ async function preparePackagePublishPlan(
   sourceArg: string,
   options: PackagePublishOptions,
 ): Promise<PackagePublishPlan> {
+  const githubRetryBudget = createGitHubRetryBudget();
   const resolvedSource = await resolveSourceInput(sourceArg, {
     workdir: opts.workdir,
     localWorkdirs: [process.cwd(), opts.workdir],
+    retryBudget: githubRetryBudget,
   });
   const sourceForFetch = applyGitHubSourcePath(resolvedSource, options.sourcePath);
   let folder = sourceForFetch.kind === "local" ? sourceForFetch.path : "";
@@ -2228,7 +2278,7 @@ async function preparePackagePublishPlan(
       ? null
       : createCrabLoader(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
     try {
-      const fetched = await fetchGitHubSource(sourceForFetch);
+      const fetched = await fetchGitHubSource(sourceForFetch, githubRetryBudget);
       folder = fetched.dir;
       cleanup = fetched.cleanup;
       inferredSource = fetched.source;
@@ -2285,7 +2335,7 @@ async function preparePackagePublishPlan(
     (parsedClawpack ? null : await readJsonFile(join(folder, "openclaw.plugin.json")));
   const bundleManifestInfo = await readBundleManifestInfo(filesOnDisk, folder, parsedClawpack);
   const bundleManifest = bundleManifestInfo.manifest;
-  const family = detectPackageFamily(fileSet, options.family);
+  const family = detectPackageFamily(fileSet, packageJson, options.family);
   const name =
     options.name?.trim() ||
     parsedClawpack?.packageName ||
@@ -2312,9 +2362,11 @@ async function preparePackagePublishPlan(
   if (!name) fail("--name required");
   if (!displayName) fail("--display-name required");
   if (!version) fail("--version required");
-  if (!fileSet.has("openclaw.plugin.json")) fail("openclaw.plugin.json required");
-  if (family === "code-plugin" && !semver.valid(version)) {
-    fail("--version must be valid semver for code plugins");
+  if (family !== "claw" && !fileSet.has("openclaw.plugin.json")) {
+    fail("openclaw.plugin.json required");
+  }
+  if ((family === "code-plugin" || family === "claw") && !semver.valid(version)) {
+    fail(`--version must be valid semver for ${family === "claw" ? "Claws" : "code plugins"}`);
   }
   if (family === "code-plugin") {
     if (!fileSet.has("package.json")) fail("package.json required");
@@ -2322,6 +2374,22 @@ async function preparePackagePublishPlan(
     const validation = validateOpenClawExternalCodePluginPackageJson(packageJson);
     if (validation.issues.length > 0) {
       fail(validation.issues.map((issue) => issue.message).join(" "));
+    }
+  }
+
+  if (family === "claw") {
+    const { validateClawPackageContents } = await import("../../schema/clawPackage.js");
+    const validation = validateClawPackageContents({
+      packageName: name,
+      version,
+      packageJson,
+      files: filesOnDisk.map((file) => ({
+        path: file.relPath,
+        text: decodeUtf8Text(file.bytes) ?? undefined,
+      })),
+    });
+    if (!validation.ok) {
+      fail(validation.issues.map((issue) => `${issue.path}: ${issue.message}`).join(" "));
     }
   }
 

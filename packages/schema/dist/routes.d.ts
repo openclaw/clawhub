@@ -16,6 +16,8 @@ export declare const ApiRoutes: {
     readonly download: "/api/v1/download";
     readonly publishTokenMint: "/api/v1/publish/token/mint";
     readonly skills: "/api/v1/skills";
+    readonly trending: "/api/v1/trending";
+    readonly skillsSh: "/api/v1/skills-sh";
     readonly skillScans: "/api/v1/skills/-/scan";
     readonly plugins: "/api/v1/plugins";
     readonly pluginsExport: "/api/v1/plugins/export";
@@ -25,6 +27,7 @@ export declare const ApiRoutes: {
     readonly promotions: "/api/v1/promotions";
     readonly catalogFeed: "/api/v1/feeds/plugins";
     readonly catalogSkillsFeed: "/api/v1/feeds/skills";
+    readonly catalogClawsFeed: "/api/v1/feeds/claws";
     readonly promotionsFeed: "/api/v1/feeds/promotions";
     readonly stars: "/api/v1/stars";
     readonly transfers: "/api/v1/transfers";

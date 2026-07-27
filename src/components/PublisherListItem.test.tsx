@@ -15,9 +15,19 @@ describe("PublisherListItem", () => {
   it("renders official publishers with the compact official mark", () => {
     const { container } = render(<PublisherListItem publisher={makePublisher()} />);
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.queryByText("Org")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
+  });
+
+  it("can hide the official mark when the surrounding page already communicates it", () => {
+    const { container } = render(
+      <PublisherListItem publisher={makePublisher()} showOfficialBadge={false} />,
+    );
+
+    expect(screen.queryByLabelText("Official")).toBeNull();
+    expect(container.querySelector(".official-badge")).toBeNull();
   });
 
   it("renders downloads as the adoption metric", () => {

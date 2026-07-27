@@ -14,6 +14,7 @@ export type SkillFileModerationInfo = {
 
 type SkillVersionSecuritySource = {
   _id: Id<"skillVersions"> | string;
+  publicationStatus?: "pending" | "published" | "blocked" | null;
   llmAnalysis?: {
     status?: string | null;
     verdict?: string | null;
@@ -132,15 +133,35 @@ export function isSkillVersionForSkill(
   return version?.skillId === skillId;
 }
 
+export function isPublishedSkillVersion(
+  version:
+    | {
+        publicationStatus?: string | null;
+      }
+    | null
+    | undefined,
+) {
+  return Boolean(
+    version &&
+    (version.publicationStatus === undefined || version.publicationStatus === "published"),
+  );
+}
+
 export function isPublicSkillVersionAvailableForSkill(
   version:
     | {
         skillId?: Id<"skills"> | string | null;
         softDeletedAt?: number | null;
+        publicationStatus?: string | null;
       }
     | null
     | undefined,
   skillId: Id<"skills"> | string,
 ) {
-  return Boolean(version && !version.softDeletedAt && isSkillVersionForSkill(version, skillId));
+  return Boolean(
+    version &&
+    !version.softDeletedAt &&
+    isPublishedSkillVersion(version) &&
+    isSkillVersionForSkill(version, skillId),
+  );
 }

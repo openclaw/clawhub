@@ -92,6 +92,31 @@ describe("httpApi handlers", () => {
     });
   });
 
+  it("searchSkillsHttp preserves canonical mixed action shape and order", async () => {
+    const ordered = [
+      {
+        id: "skills-sh:acme/skills/calendar",
+        source: "skills-sh",
+        slug: "calendar",
+        canonicalUrl: "/skills-sh/acme/skills/calendar",
+      },
+      {
+        id: "clawhub:skills:calendar",
+        source: "clawhub",
+        slug: "calendar-native",
+        canonicalUrl: "/openclaw/skills/calendar-native",
+      },
+    ];
+    const response = await __handlers.searchSkillsHandler(
+      makeCtx({ runAction: vi.fn().mockResolvedValue(ordered) }),
+      new Request("https://example.com/api/search?q=calendar"),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      results: [ordered[0], { ...ordered[1], owner: null }],
+    });
+  });
+
   it("searchSkillsHttp omits highlightedOnly when approvedOnly is false", async () => {
     const runAction = vi.fn().mockResolvedValue([]);
     await __handlers.searchSkillsHandler(
@@ -327,6 +352,14 @@ describe("httpApi handlers", () => {
           event: "install",
           slug: "weather",
           ownerHandle: "openclaw",
+          sourceRef: "skills-sh:openclaw/skills/weather",
+          sourceKind: "skills-sh",
+          sourceRepository: "openclaw/skills",
+          sourcePath: "skills/weather",
+          sourceUrl: "https://github.com/openclaw/skills/tree/abc/skills/weather",
+          canonicalRef: "@openclaw/weather",
+          clawhubScan: "scanned",
+          trustLabel: "Scanned by ClawHub",
           version: "1.0.0",
           rootId: "abc",
           rootLabel: "~/skills",
@@ -339,8 +372,76 @@ describe("httpApi handlers", () => {
       userId: "users:1",
       slug: "weather",
       ownerHandle: "openclaw",
+      sourceRef: "skills-sh:openclaw/skills/weather",
+      sourceKind: "skills-sh",
+      sourceRepository: "openclaw/skills",
+      sourcePath: "skills/weather",
+      sourceUrl: "https://github.com/openclaw/skills/tree/abc/skills/weather",
+      canonicalRef: "@openclaw/weather",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
       version: "1.0.0",
     });
+  });
+
+  it("cliTelemetryInstallHttp forwards a successful plugin install", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "plugin_install",
+          packageName: "@openclaw/voice-call",
+          version: "2026.7.23",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      userId: "users:1",
+      packageName: "@openclaw/voice-call",
+      version: "2026.7.23",
+    });
+  });
+
+  it("cliTelemetryInstallHttp rejects malformed plugin install reports", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn();
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ event: "plugin_install", version: "2026.7.23" }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("cliTelemetryInstallHttp accepts unknown plugin packages as telemetry no-ops", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event: "plugin_install",
+          packageName: "@missing/plugin",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
   });
 
   it("cliTelemetryInstallHttp accepts legacy roots snapshots", async () => {
@@ -413,7 +514,7 @@ describe("httpApi handlers", () => {
     const result = {
       device_code: "device",
       user_code: "ABCD-2345",
-      verification_uri: "https://clawhub.ai/cli/device?code=ABCD-2345",
+      verification_uri: "https://clawhub.ai/cli/device?user_code=ABCD-2345",
       expires_in: 900,
       interval: 5,
     };

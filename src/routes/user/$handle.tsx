@@ -156,7 +156,7 @@ const DEFAULT_PUBLISHER_BIO = "Publisher on Clawhub.";
 const PROFILE_CATALOG_SORT_OPTIONS = [
   { value: "downloads", label: "Most downloaded" },
   { value: "recent", label: "Recent" },
-  { value: "stars", label: "Stars" },
+  { value: "stars", label: "Bookmarks" },
 ] as const;
 
 const DEFAULT_PROFILE_CATALOG_SORT: ProfileCatalogSort = "downloads";
@@ -193,7 +193,7 @@ function buildCatalogTabOptions(publisher: PublicPublisherProfileItem) {
   if (publisher.kind === "user") {
     options.push({
       value: "stars",
-      label: "Starred",
+      label: "Bookmarks",
       count:
         publisher.starredCount === undefined
           ? undefined
@@ -285,7 +285,7 @@ export function buildPublisherStatCards(
     {
       key: "stars",
       value: formatCompactStat(publisher.stats.stars),
-      label: "stars",
+      label: "bookmarks",
       icon: Star,
     },
   ];
@@ -547,6 +547,7 @@ export function PublisherProfilePage({
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  const githubHandle = publisher?.kind === "org" ? publisher.githubHandle : publisher?.handle;
 
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
@@ -708,7 +709,7 @@ export function PublisherProfilePage({
             icon={Building2}
             title="Publisher not found"
             description="This publisher doesn't exist or may have been removed."
-            action={{ label: "Browse creators", href: "/creators" }}
+            action={{ label: "Browse official organizations", href: "/official" }}
           />
         </Container>
       </main>
@@ -827,28 +828,30 @@ export function PublisherProfilePage({
                     </section>
                   ) : null}
 
-                  <section
-                    className="publisher-profile-detail-block publisher-profile-details-links"
-                    aria-label="Links"
-                  >
-                    <h2 className="publisher-profile-detail-label">Links</h2>
-                    <div className="publisher-profile-meta-row">
-                      <a
-                        className="publisher-profile-meta-link"
-                        href={`https://github.com/${publisher.handle}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <GitHubIcon size={14} />
-                        GitHub
-                        <ArrowUpRight
-                          className="publisher-profile-meta-link-external-icon"
-                          size={12}
-                          aria-hidden="true"
-                        />
-                      </a>
-                    </div>
-                  </section>
+                  {githubHandle ? (
+                    <section
+                      className="publisher-profile-detail-block publisher-profile-details-links"
+                      aria-label="Links"
+                    >
+                      <h2 className="publisher-profile-detail-label">Links</h2>
+                      <div className="publisher-profile-meta-row">
+                        <a
+                          className="publisher-profile-meta-link"
+                          href={`https://github.com/${githubHandle}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <GitHubIcon size={14} />
+                          GitHub · @{githubHandle}
+                          <ArrowUpRight
+                            className="publisher-profile-meta-link-external-icon"
+                            size={12}
+                            aria-hidden="true"
+                          />
+                        </a>
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -951,7 +954,7 @@ export function PublisherProfilePage({
                       : catalogSearch.trim().length > 0
                         ? "No matching items"
                         : catalogTab === "stars"
-                          ? "No starred items yet"
+                          ? "No bookmarks yet"
                           : catalogTab === "plugins"
                             ? "No published plugins yet"
                             : "No published skills yet"

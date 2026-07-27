@@ -20,8 +20,13 @@ const CatalogFeedEntryBaseSchema = {
     "+": "reject",
     id: "string",
     title: "string",
+    description: "string?",
+    icon: "string?",
     version: "string",
     state: CatalogFeedStateSchema,
+    // Additive v1 metadata: existing hosted-feed consumers ignore unknown entry fields.
+    featured: "boolean?",
+    featuredAt: "number?",
     publisher: {
         "+": "reject",
         id: "string",
@@ -77,6 +82,12 @@ export function parseCatalogFeed(value) {
     if (Date.parse(feed.expiresAt) <= Date.parse(feed.generatedAt)) {
         throw new Error("Catalog feed expiresAt must be after generatedAt");
     }
+    for (const entry of feed.entries) {
+        if (entry.featuredAt !== undefined &&
+            (entry.featured !== true || !Number.isSafeInteger(entry.featuredAt) || entry.featuredAt < 0)) {
+            throw new Error("Catalog feed featuredAt requires a featured entry and epoch milliseconds");
+        }
+    }
     return feed;
 }
 export function serializeCatalogFeed(feed) {
@@ -87,8 +98,12 @@ export function serializeCatalogFeed(feed) {
         type: entry.type,
         id: entry.id,
         title: entry.title,
+        ...(entry.description === undefined ? {} : { description: entry.description }),
+        ...(entry.icon === undefined ? {} : { icon: entry.icon }),
         version: entry.version,
         state: entry.state,
+        ...(entry.featured === undefined ? {} : { featured: entry.featured }),
+        ...(entry.featuredAt === undefined ? {} : { featuredAt: entry.featuredAt }),
         publisher: {
             id: entry.publisher.id,
             trust: entry.publisher.trust,

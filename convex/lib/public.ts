@@ -1,6 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import { isPublicSkillDoc } from "./globalStats";
-import { readCanonicalStat } from "./skillStats";
+import { readCanonicalStat, readPublicDownloads } from "./skillStats";
 
 export type PublicUser = Pick<
   Doc<"users">,
@@ -9,7 +9,16 @@ export type PublicUser = Pick<
 
 export type PublicPublisher = Pick<
   Doc<"publishers">,
-  "_id" | "_creationTime" | "kind" | "handle" | "displayName" | "image" | "bio" | "linkedUserId"
+  | "_id"
+  | "_creationTime"
+  | "kind"
+  | "handle"
+  | "displayName"
+  | "image"
+  | "bio"
+  | "linkedUserId"
+  | "githubHandle"
+  | "githubVerifiedAt"
 > & { official?: boolean };
 
 export type PublicSkillStats = {
@@ -92,6 +101,8 @@ export type HydratableSkill = Pick<
   | "statsStars"
   | "statsInstallsCurrent"
   | "statsInstallsAllTime"
+  | "statsSkillsShInstalls"
+  | "statsGithubStars"
   | "softDeletedAt"
   | "moderationStatus"
   | "moderationFlags"
@@ -130,6 +141,8 @@ export function toPublicPublisher(
     image: publisher.image,
     bio: publisher.bio,
     linkedUserId: publisher.linkedUserId,
+    githubHandle: publisher.githubHandle,
+    githubVerifiedAt: publisher.githubVerifiedAt,
     ...(options?.official ? { official: true } : {}),
   };
 }
@@ -138,7 +151,7 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
   if (!skill) return null;
   if (!isPublicSkillDoc(skill)) return null;
   const stats = {
-    downloads: readCanonicalStat(skill, "downloads"),
+    downloads: readPublicDownloads(skill),
     stars: readCanonicalStat(skill, "stars"),
     installs: readCanonicalStat(skill, "installsAllTime"),
     versions: skill.stats?.versions ?? 0,

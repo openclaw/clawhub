@@ -44,7 +44,7 @@ function runCli(args: string[], env: NodeJS.ProcessEnv) {
 }
 
 describe("version delete CLI registration", () => {
-  it("shows permanent --version help only on skill and package delete", () => {
+  it("documents reversible version withdrawal and restore", () => {
     const skillDelete = runCliSync(["delete", "--help"]);
     const skillUndelete = runCliSync(["undelete", "--help"]);
     const packageDelete = runCliSync(["package", "delete", "--help"]);
@@ -54,16 +54,19 @@ describe("version delete CLI registration", () => {
       const help = result.stdout.replace(/\s+/g, " ");
       expect(result.status).toBe(0);
       expect(help).toContain("--version <version>");
-      expect(help).toContain("cannot be restored or republished");
-      expect(help).toContain("publish a replacement first");
+      expect(help).toContain("retained artifact can be restored");
+      expect(help).toContain("version number remains reserved");
     }
-    expect(skillUndelete.status).toBe(0);
-    expect(skillUndelete.stdout).not.toContain("--version <version>");
-    expect(packageUndelete.status).toBe(0);
-    expect(packageUndelete.stdout).not.toContain("--version <version>");
+    for (const result of [skillUndelete, packageUndelete]) {
+      const help = result.stdout.replace(/\s+/g, " ");
+      expect(result.status).toBe(0);
+      expect(help).toContain("--version <version>");
+      expect(help).toContain("exact retained");
+      expect(help).toContain("without changing latest");
+    }
   });
 
-  it("parses and forwards skill and package delete versions to HTTP requests", async () => {
+  it("forwards skill and package version delete and restore requests", async () => {
     const requests: Array<{ body: unknown; method: string | undefined; url: string | undefined }> =
       [];
     const server = createServer(async (request, response) => {
@@ -108,9 +111,30 @@ describe("version delete CLI registration", () => {
         ],
         env,
       );
+      const skillRestoreResult = await runCli(
+        ["--registry", registry, "--no-input", "undelete", "demo", "--version", "1.2.3", "--yes"],
+        env,
+      );
+      const packageRestoreResult = await runCli(
+        [
+          "--registry",
+          registry,
+          "--no-input",
+          "package",
+          "undelete",
+          "@openclaw/demo",
+          "--version",
+          "2.3.4",
+          "--yes",
+          "--json",
+        ],
+        env,
+      );
 
       expect(skillResult).toMatchObject({ code: 0 });
       expect(packageResult).toMatchObject({ code: 0 });
+      expect(skillRestoreResult).toMatchObject({ code: 0 });
+      expect(packageRestoreResult).toMatchObject({ code: 0 });
       expect(requests).toEqual([
         {
           method: "DELETE",
@@ -121,6 +145,16 @@ describe("version delete CLI registration", () => {
           method: "DELETE",
           url: "/api/v1/packages/%40openclaw%2Fdemo/versions/2.3.4",
           body: { version: "2.3.4" },
+        },
+        {
+          method: "POST",
+          url: "/api/v1/skills/demo/versions/1.2.3/restore",
+          body: { version: "1.2.3" },
+        },
+        {
+          method: "POST",
+          url: "/api/v1/packages/%40openclaw%2Fdemo/versions/2.3.4/restore",
+          body: {},
         },
       ]);
     } finally {

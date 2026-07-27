@@ -11,6 +11,7 @@ import {
 } from "react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import type { BrowseCategory } from "../lib/categories";
+import { Skeleton } from "./ui/skeleton";
 
 type BrowseChoice = {
   value: string | undefined;
@@ -404,9 +405,15 @@ type BrowseCategorySelectProps = {
   categories: readonly BrowseCategory[];
   value: string | undefined;
   onChange: (value: string | undefined) => void;
+  responsive?: boolean;
 };
 
-export function BrowseCategorySelect({ categories, value, onChange }: BrowseCategorySelectProps) {
+export function BrowseCategorySelect({
+  categories,
+  value,
+  onChange,
+  responsive = false,
+}: BrowseCategorySelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -457,7 +464,10 @@ export function BrowseCategorySelect({ categories, value, onChange }: BrowseCate
   };
 
   return (
-    <div className="browse-category-select" ref={rootRef}>
+    <div
+      className={`browse-category-select${responsive ? " browse-category-select-responsive" : ""}`}
+      ref={rootRef}
+    >
       <button
         type="button"
         className="browse-category-trigger"
@@ -563,18 +573,93 @@ export function BrowseCategorySelect({ categories, value, onChange }: BrowseCate
   );
 }
 
+type BrowseCategorySidebarProps = {
+  ariaLabel: string;
+  categories: readonly BrowseCategory[];
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+  disabled?: boolean;
+};
+
+export function BrowseCategorySidebar({
+  ariaLabel,
+  categories,
+  value,
+  onChange,
+  disabled = false,
+}: BrowseCategorySidebarProps) {
+  return (
+    <aside className="browse-sidebar browse-category-sidebar" aria-label={ariaLabel}>
+      <fieldset className="sidebar-section">
+        <legend className="sidebar-title">Categories</legend>
+        <button
+          className={`sidebar-option${!value ? " is-active" : ""}`}
+          type="button"
+          aria-pressed={!value}
+          onClick={() => onChange(undefined)}
+          disabled={disabled}
+        >
+          <BrowseCategoryIcon slug={null} size={16} className="sidebar-option-icon" />
+          <span>All categories</span>
+        </button>
+        {categories.map((category) => {
+          const active = category.slug === value;
+          return (
+            <button
+              key={category.slug}
+              className={`sidebar-option${active ? " is-active" : ""}`}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(category.slug)}
+              disabled={disabled}
+            >
+              <BrowseCategoryIcon
+                slug={category.slug}
+                icon={category.icon}
+                size={16}
+                className="sidebar-option-icon"
+              />
+              <span>{category.label}</span>
+            </button>
+          );
+        })}
+      </fieldset>
+    </aside>
+  );
+}
+
 type BrowseTopicChipsProps = {
   topics: readonly string[];
   activeTopic?: string;
   onChange: (topic: string | undefined) => void;
+  loading?: boolean;
 };
 
-export function BrowseTopicChips({ topics, activeTopic, onChange }: BrowseTopicChipsProps) {
+export function BrowseTopicChips({
+  topics,
+  activeTopic,
+  onChange,
+  loading = false,
+}: BrowseTopicChipsProps) {
   const displayTopics = useMemo(() => {
     const safeTopics = Array.isArray(topics) ? topics.filter(Boolean) : [];
     if (!activeTopic || safeTopics.includes(activeTopic)) return safeTopics;
     return [activeTopic, ...safeTopics];
   }, [activeTopic, topics]);
+
+  if (loading && !activeTopic) {
+    return (
+      <div className="browse-topic-chips" role="status" aria-label="Loading topics">
+        {Array.from({ length: 8 }, (_, index) => (
+          <Skeleton
+            // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
+            key={index}
+            className="browse-topic-chip-skeleton"
+          />
+        ))}
+      </div>
+    );
+  }
 
   if (displayTopics.length === 0) return null;
 

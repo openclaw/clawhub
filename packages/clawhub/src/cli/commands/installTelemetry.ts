@@ -6,6 +6,14 @@ export async function reportInstalledSkillsTelemetryIfEnabled(params: {
   registry: string;
   slug: string;
   ownerHandle?: string | null;
+  sourceRef?: string | null;
+  sourceKind?: "skills-sh" | null;
+  sourceRepository?: string | null;
+  sourcePath?: string | null;
+  sourceUrl?: string | null;
+  canonicalRef?: string | null;
+  clawhubScan?: "unscanned" | "scanned" | null;
+  trustLabel?: string | null;
   version?: string | null;
 }) {
   if (!params.token || isTelemetryDisabled()) return;
@@ -23,6 +31,14 @@ export async function reportInstalledSkillsTelemetryIfEnabled(params: {
           event: "install",
           slug,
           ownerHandle: params.ownerHandle ?? undefined,
+          sourceRef: params.sourceRef ?? undefined,
+          sourceKind: params.sourceKind ?? undefined,
+          sourceRepository: params.sourceRepository ?? undefined,
+          sourcePath: params.sourcePath ?? undefined,
+          sourceUrl: params.sourceUrl ?? undefined,
+          canonicalRef: params.canonicalRef ?? undefined,
+          clawhubScan: params.clawhubScan ?? undefined,
+          trustLabel: params.trustLabel ?? undefined,
           version: params.version ?? undefined,
         },
       },

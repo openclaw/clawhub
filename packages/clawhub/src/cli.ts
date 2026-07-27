@@ -290,7 +290,7 @@ registerCommand(program, ["search"])
 
 registerCommand(program, ["install"])
   .description("Install a skill into <dir>")
-  .argument("<skill>", "Skill to install, e.g. @openclaw/demo")
+  .argument("<skill>", "Skill to install, e.g. @openclaw/demo or skills-sh:owner/repo/slug")
   .option("--version <version>", "Version to install")
   .option("--force", "Overwrite existing folder")
   .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
@@ -301,7 +301,7 @@ registerCommand(program, ["install"])
 
 registerCommand(program, ["update"])
   .description("Update installed skills")
-  .argument("[skill]", "Skill to update, e.g. @openclaw/demo")
+  .argument("[skill]", "Skill to update, e.g. @openclaw/demo or skills-sh:owner/repo/slug")
   .option("--all", "Update all installed skills")
   .option("--version <version>", "Update to specific version (single slug only)")
   .option("--force", "Overwrite when local files do not match any version")
@@ -369,7 +369,7 @@ registerCommand(program, ["inspect"])
   .option("--versions", "List version history (first page)")
   .option("--limit <n>", "Max versions to list (1-200)", (value) => Number.parseInt(value, 10))
   .option("--files", "List files for the selected version")
-  .option("--file <path>", "Fetch raw file content (text <= 200KB)")
+  .option("--file <path>", "Fetch raw file bytes (<= 10MB)")
   .option("--json", "Output JSON")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -431,11 +431,11 @@ registerCommand(scanCmd, ["scan", "download"])
   });
 
 registerCommand(program, ["delete"])
-  .description("Soft-delete a skill or permanently delete one version")
+  .description("Soft-delete a skill or withdraw one version")
   .argument("<skill>", "Skill ref")
   .option(
     "--version <version>",
-    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+    "Withdraw one non-latest version; the retained artifact can be restored, but the version number remains reserved",
   )
   .option("--reason <text>", "Whole-skill moderation note/reason")
   .option("--note <text>", "Alias for --reason")
@@ -457,8 +457,12 @@ registerCommand(program, ["hide"])
   });
 
 registerCommand(program, ["undelete"])
-  .description("Restore one of your hidden skills")
+  .description("Restore a hidden skill or an owner-withdrawn version")
   .argument("<skill>", "Skill to restore")
+  .option(
+    "--version <version>",
+    "Restore the exact retained version without changing latest or tags",
+  )
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -538,7 +542,7 @@ const packageCmd = registerCommandGroup(program, ["package"]).description(
 registerCommand(packageCmd, ["package", "explore"])
   .description("Browse published packages and plugins")
   .argument("[query...]", "Optional search query")
-  .option("--family <family>", "skill|code-plugin|bundle-plugin")
+  .option("--family <family>", "skill|code-plugin|bundle-plugin|claw")
   .option("--official", "Only official packages")
   .option("--executes-code", "Only packages that execute code")
   .option("--target <target>", "Filter by host target, e.g. darwin-arm64")
@@ -575,7 +579,7 @@ registerCommand(packageCmd, ["package", "inspect"])
   .option("--versions", "List version history (first page)")
   .option("--limit <n>", "Max versions to list (1-100)", (value) => Number.parseInt(value, 10))
   .option("--files", "List files for the selected version")
-  .option("--file <path>", "Fetch raw file content (text only)")
+  .option("--file <path>", "Fetch a text preview (<= 200KB)")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
     const opts = await resolveGlobalOpts();
@@ -628,11 +632,11 @@ registerCommand(packageCmd, ["package", "validate"])
   });
 
 registerCommand(packageCmd, ["package", "delete"])
-  .description("Soft-delete a package or permanently delete one version")
+  .description("Soft-delete a package or withdraw one version")
   .argument("<name>", "Package name")
   .option(
     "--version <version>",
-    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+    "Withdraw one non-latest version; the retained artifact can be restored, but the version number remains reserved",
   )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
@@ -642,8 +646,12 @@ registerCommand(packageCmd, ["package", "delete"])
   });
 
 registerCommand(packageCmd, ["package", "undelete"])
-  .description("Restore a soft-deleted package and releases")
+  .description("Restore a soft-deleted package or an owner-withdrawn release")
   .argument("<name>", "Package name")
+  .option(
+    "--version <version>",
+    "Restore the exact retained release without changing latest or dist-tags",
+  )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
@@ -713,7 +721,7 @@ registerCommand(packageCmd, ["package", "pack"])
 registerCommand(packageCmd, ["package", "publish"])
   .description("Publish a code plugin or bundle plugin from a folder or GitHub source")
   .argument("<source>", "Package folder path, GitHub repo (owner/repo[@ref]), or URL")
-  .option("--family <family>", "code-plugin|bundle-plugin")
+  .option("--family <family>", "code-plugin|bundle-plugin|claw")
   .option("--name <name>", "Package name")
   .option("--display-name <name>", "Display name")
   .option("--owner <handle>", "Publish under this owner/publisher handle")

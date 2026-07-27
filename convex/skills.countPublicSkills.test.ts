@@ -16,14 +16,18 @@ const countPublicSkillsHandler = (
 )._handler;
 
 describe("skills.countPublicSkills", () => {
-  it("returns precomputed global stats count when available", async () => {
+  it("returns the deduplicated native plus public skills.sh catalog count", async () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
           if (table === "globalStats") {
             return {
               withIndex: () => ({
-                unique: async () => ({ _id: "globalStats:1", activeSkillsCount: 123 }),
+                unique: async () => ({
+                  _id: "globalStats:1",
+                  activeSkillsCount: 123,
+                  activeExternalSkillsCount: 7,
+                }),
               }),
             };
           }
@@ -33,7 +37,7 @@ describe("skills.countPublicSkills", () => {
     };
 
     const result = await countPublicSkillsHandler(ctx, {});
-    expect(result).toBe(123);
+    expect(result).toBe(130);
   });
 
   it("returns zero when the global stats row is missing", async () => {

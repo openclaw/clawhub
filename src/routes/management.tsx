@@ -285,8 +285,14 @@ export function Management() {
   );
   const snoozePublisherAbuseSignal = useMutation(api.publisherAbuse.snoozePublisherAbuseSignal);
   const dismissPublisherAbuseSignal = useMutation(api.publisherAbuse.dismissPublisherAbuseSignal);
+  const reviewPublisherAbuseSignalsBatch = useMutation(
+    api.publisherAbuse.reviewPublisherAbuseSignalsBatch,
+  );
   const reopenPublisherAbuseSignal = useMutation(api.publisherAbuse.reopenPublisherAbuseSignal);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
+  const startPublisherAbuseSignalScan = useAction(
+    api.publisherAbuseTemporalScan.startPublisherAbuseSignalScan,
+  );
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState<Id<"users"> | "">("");
@@ -665,7 +671,7 @@ export function Management() {
   const requestSnoozePublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Snooze ${item.signal.skillDisplayName}?`,
-      body: "Hides this signal from the default review queue for 14 days. If it reappears after that, it will reopen and notify Hermit again.",
+      body: "Hides this signal for at least 14 days and acknowledges the evidence shown now. It reopens only if fresh activity crosses the lower repeat threshold.",
       confirmLabel: "Snooze 14 days",
       reason: {
         label: "Note (optional)",
@@ -716,6 +722,52 @@ export function Management() {
       onConfirm: (note) => {
         void dismissPublisherAbuseSignal({ signalId: item.signal._id, note })
           .then(() => toast.success("Signal dismissed."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestSnoozePublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
+    const count = signalIds.length;
+    if (count === 0) return;
+    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
+    setConfirmRequest({
+      title: `Snooze ${label}?`,
+      body: "Hides the selected signals for 14 days and acknowledges the evidence shown now. Each signal reopens only if fresh activity crosses the repeat threshold.",
+      confirmLabel: `Snooze ${label}`,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you snoozing these signals?",
+      },
+      onConfirm: (note) => {
+        void reviewPublisherAbuseSignalsBatch({
+          signalIds,
+          status: "snoozed",
+          note,
+          days: 14,
+        })
+          .then((result) => toast.success(`${result.updated} signals snoozed.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestDismissPublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
+    const count = signalIds.length;
+    if (count === 0) return;
+    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
+    setConfirmRequest({
+      title: `Dismiss ${label}?`,
+      body: "Archives the selected signals and removes them from the Open queue. They will not notify Hermit unless a moderator reopens them.",
+      confirmLabel: `Dismiss ${label}`,
+      destructive: true,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you dismissing these signals?",
+      },
+      onConfirm: (note) => {
+        void reviewPublisherAbuseSignalsBatch({ signalIds, status: "dismissed", note })
+          .then((result) => toast.success(`${result.updated} signals dismissed.`))
           .catch((error) => toast.error(formatMutationError(error)));
       },
     });
@@ -860,6 +912,7 @@ export function Management() {
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
             onDismissSignal={requestDismissPublisherAbuseSignal}
+            onDismissSignals={requestDismissPublisherAbuseSignals}
             onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {
@@ -869,6 +922,25 @@ export function Management() {
               }
             }}
             onRefresh={() => {
+              if (publisherAbuseTab === "signals") {
+                setConfirmRequest({
+                  title: "Rescan publisher abuse signals?",
+                  body: "Re-checks every active skill for all download/install signal types and refreshes the Signals tab. This can take a while.",
+                  confirmLabel: "Run signal scan",
+                  onConfirm: () => {
+                    void startPublisherAbuseSignalScan({})
+                      .then((result) =>
+                        toast.success(
+                          "alreadyRunning" in result && result.alreadyRunning
+                            ? "Signal scan is already running."
+                            : "Signal scan started.",
+                        ),
+                      )
+                      .catch((error) => toast.error(formatMutationError(error)));
+                  },
+                });
+                return;
+              }
               setConfirmRequest({
                 title: "Run a new abuse scan?",
                 body: "Re-scores every publisher in the catalog against the latest model. This normally runs automatically every few days; a manual run can take a while.",
@@ -890,6 +962,7 @@ export function Management() {
               setSelectedPublisherAbuseNominationId(nominationId);
             }}
             onSnoozeSignal={requestSnoozePublisherAbuseSignal}
+            onSnoozeSignals={requestSnoozePublisherAbuseSignals}
           />
         ) : null}
 

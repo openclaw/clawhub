@@ -156,5 +156,31 @@ describe("skillZip", () => {
       ]);
       expect(unzipped["_meta.json"]).toBeUndefined();
     });
+
+    it("rejects file/ancestor collisions before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "workspace", bytes: new TextEncoder().encode("file") },
+          { path: "workspace/SOUL.md", bytes: new TextEncoder().encode("child") },
+        ]),
+      ).toThrow("file/ancestor path collision");
+    });
+
+    it("rejects Unicode-folded hierarchy collisions before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "Straße", bytes: new TextEncoder().encode("file") },
+          { path: "STRASSE/child", bytes: new TextEncoder().encode("child") },
+        ]),
+      ).toThrow("file/ancestor path collision");
+    });
+
+    it("rejects unsafe package paths before creating the legacy ZIP", () => {
+      expect(() =>
+        buildDeterministicPackageZip([
+          { path: "workspace/a\u0085.md", bytes: new TextEncoder().encode("unsafe") },
+        ]),
+      ).toThrow("unsafe package path");
+    });
   });
 });

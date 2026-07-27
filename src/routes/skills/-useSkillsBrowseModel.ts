@@ -3,15 +3,24 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
+import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
 import {
   ALL_CATEGORY_KEYWORDS,
   getSkillCategoryBySlug,
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
+import { fetchCanonicalTrendingPage } from "../../lib/trendingApi";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
-import type { SkillListEntry, SkillSearchEntry } from "./-types";
+import {
+  isExternalSkillListEntry,
+  isTrendingSkillListEntry,
+  type SkillListEntry,
+  type SkillSearchEntry,
+} from "./-types";
 
-const pageSize = 25;
+const pageSize = 20;
+const featuredPageSize = 40;
+const newWindowMs = 14 * 24 * 60 * 60 * 1_000;
 const maxConsecutiveEmptyPagesPerFetch = 3;
 
 function isNavigationAbortError(err: unknown) {
@@ -22,6 +31,7 @@ function isNavigationAbortError(err: unknown) {
 }
 
 export type SkillsView = "grid" | "list";
+export type SkillsCatalogTab = "trending" | "new" | "featured" | "official";
 type LegacySkillsView = SkillsView | "cards";
 
 export function normalizeSkillsView(value: unknown): SkillsView | undefined {
@@ -40,7 +50,21 @@ export type SkillsSearchState = {
   topic?: string;
   view?: LegacySkillsView;
   focus?: "search";
+  tab?: SkillsCatalogTab;
 };
+
+export function normalizeSkillsCatalogTab(
+  value: unknown,
+  legacy?: Pick<SkillsSearchState, "featured" | "highlighted" | "sort" | "category" | "topic">,
+): SkillsCatalogTab {
+  if (value === "trending" || value === "new" || value === "featured" || value === "official") {
+    return value;
+  }
+  if (legacy?.featured || legacy?.highlighted) return "featured";
+  if (legacy?.sort === "newest") return "new";
+  if (legacy?.category || legacy?.topic) return "new";
+  return "trending";
+}
 
 export type InitialSkillsSearchData = {
   key: string;
@@ -102,7 +126,16 @@ export function useSkillsBrowseModel({
   const excludeCategoryKeywords =
     activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
   const hasQuery = trimmedQuery.length > 0;
-  const requestedSort = search.sort === "default" ? "recommended" : search.sort;
+  const catalogTab = normalizeSkillsCatalogTab(search.tab, search);
+  const requestedSort = hasQuery
+    ? search.sort === "default"
+      ? "recommended"
+      : search.sort
+    : catalogTab === "new" || catalogTab === "official"
+      ? "newest"
+      : catalogTab === "featured"
+        ? "updated"
+        : "trending";
   const sort: SortKey =
     requestedSort === "relevance" && !hasQuery
       ? "recommended"
@@ -132,49 +165,87 @@ export function useSkillsBrowseModel({
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
   const [listCursor, setListCursor] = useState<string | null>(null);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
-  const [listAutoLoadPaused, setListAutoLoadPaused] = useState(false);
+  const [, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
+  const newCutoff = useMemo(() => Date.now() - newWindowMs, [catalogTab]);
 
   const fetchPage = useCallback(
     async (cursor: string | null, generation: number) => {
       let pageCursor = cursor;
       let consecutiveEmptyPages = 0;
       try {
-        if (sort === "trending") {
+        if (catalogTab === "trending") {
+          const capabilities = await fetchCatalogDiscoveryCapabilities();
+          if (capabilities.canonicalTrendingEnabled) {
+            const result = await fetchCanonicalTrendingPage({
+              cursor: pageCursor,
+              limit: pageSize,
+            });
+            if (generation !== fetchGeneration.current) return;
+            const entries = result.items.map((trending) => ({ trending }));
+            setListResults((prev) => (cursor ? [...prev, ...entries] : entries));
+            setListCursor(result.nextCursor);
+            setListAutoLoadPaused(false);
+            setListStatus(result.nextCursor ? "idle" : "done");
+            return;
+          }
+
           const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
             limit: pageSize,
-            nonSuspiciousOnly: true,
             categorySlug: activeCategory?.slug,
             topic: activeTopic,
           });
           if (generation !== fetchGeneration.current) return;
-          setListResults(result.items);
+          const entries = (result as { items: SkillListEntry[] }).items;
+          setListResults(entries);
           setListCursor(null);
           setListAutoLoadPaused(false);
           setListStatus("done");
           return;
         }
+        const capabilities =
+          catalogTab === "new"
+            ? await fetchCatalogDiscoveryCapabilities()
+            : { apiVersion: 1 as const };
         while (true) {
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
-            numItems: pageSize,
+            numItems: catalogTab === "featured" ? featuredPageSize : pageSize,
             ...(listSort ? { sort: listSort } : {}),
             dir,
-            highlightedOnly: featuredOnly,
+            highlightedOnly: catalogTab === "featured" ? true : undefined,
+            officialOnly: catalogTab === "official" ? true : undefined,
+            ...(catalogTab === "new" && capabilities.apiVersion >= 1
+              ? { createdAfter: newCutoff }
+              : {}),
             categorySlug: activeCategory?.slug,
             topic: activeTopic,
-            ...(activeCategory ? { officialFirst: true } : {}),
+            ...(activeCategory && catalogTab !== "new" && catalogTab !== "official"
+              ? { officialFirst: true }
+              : {}),
             categoryKeywords,
             excludeCategoryKeywords,
           });
           if (generation !== fetchGeneration.current) return;
+          const visiblePage =
+            catalogTab === "new" && capabilities.apiVersion === 0
+              ? result.page.filter((entry) => entry.skill.createdAt >= newCutoff)
+              : result.page;
+          const reachedLegacyNewCutoff =
+            catalogTab === "new" &&
+            capabilities.apiVersion === 0 &&
+            result.page.some((entry) => entry.skill.createdAt < newCutoff);
           const nextCursor =
-            result.hasMore && result.nextCursor != null && result.nextCursor !== pageCursor
+            catalogTab !== "featured" &&
+            !reachedLegacyNewCutoff &&
+            result.hasMore &&
+            result.nextCursor != null &&
+            result.nextCursor !== pageCursor
               ? result.nextCursor
               : null;
 
           // Filtered scans can yield empty transport pages before reaching visible results.
-          if (result.page.length === 0 && nextCursor) {
+          if (visiblePage.length === 0 && nextCursor) {
             consecutiveEmptyPages += 1;
             if (consecutiveEmptyPages < maxConsecutiveEmptyPagesPerFetch) {
               pageCursor = nextCursor;
@@ -182,9 +253,9 @@ export function useSkillsBrowseModel({
             }
           }
 
-          setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
+          setListResults((prev) => (cursor ? [...prev, ...visiblePage] : visiblePage));
           setListCursor(nextCursor);
-          setListAutoLoadPaused(result.page.length === 0 && Boolean(nextCursor));
+          setListAutoLoadPaused(visiblePage.length === 0 && Boolean(nextCursor));
           setListStatus(nextCursor ? "idle" : "done");
           return;
         }
@@ -202,11 +273,13 @@ export function useSkillsBrowseModel({
     [
       activeCategory?.slug,
       activeTopic,
+      catalogTab,
       categoryKeywords,
       dir,
       excludeCategoryKeywords,
       featuredOnly,
       listSort,
+      newCutoff,
       sort,
     ],
   );
@@ -307,60 +380,81 @@ export function useSkillsBrowseModel({
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
-      return searchResults.map((entry) => ({
-        skill: entry.skill,
-        latestVersion: entry.version,
-        ownerHandle: entry.ownerHandle ?? null,
-        owner: entry.owner ?? null,
-        searchScore: entry.score,
-      }));
+      return searchResults.map(
+        (entry): SkillListEntry =>
+          entry.native
+            ? {
+                skill: entry.native.skill,
+                latestVersion: entry.native.version,
+                ownerHandle: entry.native.ownerHandle,
+                owner: entry.native.owner,
+                searchScore: entry.score,
+              }
+            : { external: entry, searchScore: entry.score },
+      );
     }
     return listResults;
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
     const topicItems = activeTopic
-      ? baseItems.filter((entry) => getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic))
+      ? baseItems.filter(
+          (entry) =>
+            isExternalSkillListEntry(entry) ||
+            isTrendingSkillListEntry(entry) ||
+            getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic),
+        )
       : baseItems;
     const categoryItems = activeCategory
-      ? topicItems.filter((entry) =>
-          getSkillCategoriesForSkill(entry.skill).some(
-            (category) => category.slug === activeCategory.slug,
-          ),
+      ? topicItems.filter(
+          (entry) =>
+            isExternalSkillListEntry(entry) ||
+            isTrendingSkillListEntry(entry) ||
+            getSkillCategoriesForSkill(entry.skill).some(
+              (category) => category.slug === activeCategory.slug,
+            ),
         )
       : topicItems;
-    if (!hasQuery) {
+    if (!hasQuery || sort === "relevance") {
+      // The canonical search action already ordered mixed results. Preserve
+      // that order exactly for web/API/CLI parity.
       return categoryItems;
     }
     const multiplier = dir === "asc" ? 1 : -1;
     const results = [...categoryItems];
     results.sort((a, b) => {
+      if (isTrendingSkillListEntry(a) || isTrendingSkillListEntry(b)) return 0;
+      const aSkill = isExternalSkillListEntry(a) ? a.external : a.skill;
+      const bSkill = isExternalSkillListEntry(b) ? b.external : b.skill;
+      const aDownloads = isExternalSkillListEntry(a) ? 0 : a.skill.stats.downloads;
+      const bDownloads = isExternalSkillListEntry(b) ? 0 : b.skill.stats.downloads;
+      const aStars = isExternalSkillListEntry(a) ? 0 : a.skill.stats.stars;
+      const bStars = isExternalSkillListEntry(b) ? 0 : b.skill.stats.stars;
       const tieBreak = () => {
-        const updated = (a.skill.updatedAt - b.skill.updatedAt) * multiplier;
+        const updated = (aSkill.updatedAt - bSkill.updatedAt) * multiplier;
         if (updated !== 0) return updated;
-        return a.skill.slug.localeCompare(b.skill.slug);
+        return aSkill.slug.localeCompare(bSkill.slug);
       };
       switch (sort) {
-        case "relevance":
-          return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
         case "downloads":
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
+          return (aDownloads - bDownloads) * multiplier || tieBreak();
         case "stars":
-          return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak();
+          return (aStars - bStars) * multiplier || tieBreak();
         case "updated":
           return (
-            (a.skill.updatedAt - b.skill.updatedAt) * multiplier ||
-            a.skill.slug.localeCompare(b.skill.slug)
+            (aSkill.updatedAt - bSkill.updatedAt) * multiplier ||
+            aSkill.slug.localeCompare(bSkill.slug)
           );
         case "name":
           return (
-            (a.skill.displayName.localeCompare(b.skill.displayName) ||
-              a.skill.slug.localeCompare(b.skill.slug)) * multiplier
+            (aSkill.displayName.localeCompare(bSkill.displayName) ||
+              aSkill.slug.localeCompare(bSkill.slug)) * multiplier
           );
         default:
           return (
-            (a.skill.createdAt - b.skill.createdAt) * multiplier ||
-            a.skill.slug.localeCompare(b.skill.slug)
+            (("createdAt" in aSkill ? aSkill.createdAt : aSkill.updatedAt) -
+              ("createdAt" in bSkill ? bSkill.createdAt : bSkill.updatedAt)) *
+              multiplier || aSkill.slug.localeCompare(bSkill.slug)
           );
       }
     });
@@ -372,8 +466,7 @@ export function useSkillsBrowseModel({
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
   const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
-  const canAutoLoad =
-    typeof IntersectionObserver !== "undefined" && (hasQuery || !listAutoLoadPaused);
+  const canAutoLoad = false;
 
   const loadMore = useCallback(() => {
     if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return;
@@ -394,23 +487,6 @@ export function useSkillsBrowseModel({
   }, [isLoadingMore]);
 
   useEffect(() => {
-    if (!canLoadMore || !canAutoLoad) return () => {};
-    const target = loadMoreRef.current;
-    if (!target) return () => {};
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          observer.disconnect();
-          loadMore();
-        }
-      },
-      { rootMargin: "200px" },
-    );
-    observer.observe(target);
-    return () => observer.disconnect();
-  }, [canAutoLoad, canLoadMore, loadMore]);
-
-  useEffect(() => {
     return () => window.clearTimeout(navigateTimer.current);
   }, []);
 
@@ -427,6 +503,7 @@ export function useSkillsBrowseModel({
             return {
               ...prev,
               q: trimmed ? next : undefined,
+              ...(enteringSearch ? { category: undefined, topic: undefined } : null),
               ...(enteringSearch && parseSort(prev.sort) === "recommended"
                 ? { sort: undefined, dir: undefined }
                 : null),
@@ -537,6 +614,7 @@ export function useSkillsBrowseModel({
     activeFilters,
     activeCategory: activeCategory?.slug,
     activeTopic,
+    catalogTab,
     canAutoLoad,
     canLoadMore,
     dir,

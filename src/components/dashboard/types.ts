@@ -7,6 +7,7 @@ export type DashboardSkill = Pick<
   | "slug"
   | "displayName"
   | "summary"
+  | "icon"
   | "ownerUserId"
   | "ownerPublisherId"
   | "canonicalSkillId"
@@ -27,6 +28,14 @@ export type DashboardSkill = Pick<
   ownerPath: string;
   detailHref?: string;
   settingsHref?: string;
+  metricSources?: {
+    clawHubDownloads: number;
+    skillsShInstalls: number;
+    openClawInstallsCurrent: number;
+    openClawInstallsAllTime: number;
+    githubStars: number;
+    bookmarks: number;
+  };
   pendingReview?: boolean;
   qualityDecision?: "pass" | "quarantine" | "reject";
   latestVersion: {
@@ -48,6 +57,7 @@ export type DashboardPackage = {
   runtimeId?: string | null;
   sourceRepo?: string | null;
   summary?: string | null;
+  icon?: string | null;
   latestVersion?: string | null;
   inspectorWarningCount?: number;
   topInspectorFinding?: {

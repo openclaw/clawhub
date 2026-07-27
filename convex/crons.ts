@@ -27,6 +27,20 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   );
 
   crons.interval(
+    "canonical-trending-snapshot",
+    { hours: 1 },
+    internal.canonicalTrending.materializeInternal,
+    {},
+  );
+
+  crons.interval(
+    "canonical-trending-prune",
+    { hours: 1 },
+    internal.canonicalTrending.pruneExpiredActionInternal,
+    {},
+  );
+
+  crons.interval(
     "package-trending-leaderboard",
     { minutes: 60 },
     internal.packageLeaderboards.rebuildTrendingLeaderboardAction,
@@ -114,16 +128,15 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
   crons.interval(
     "publisher-temporal-abuse-scan",
     { hours: 24 },
-    internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
-    {
-      mode: "current",
-      dryRun: true,
-      archiveDryRunSignals: true,
-      candidateLimit: 1_000,
-      batchSize: 50,
-      maxPages: 20,
-      trigger: "cron",
-    },
+    internal.publisherAbuseTemporalScan.runScheduledTemporalPublisherAbuseScanInternal,
+    {},
+  );
+
+  crons.interval(
+    "publisher-temporal-abuse-scan-row-prune",
+    { hours: 24 },
+    internal.publisherAbuseTemporalScan.pruneExpiredTemporalScanRowsInternal,
+    { batchSize: 500 },
   );
 
   crons.interval(
@@ -166,6 +179,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1" && process.env.CLAWHUB_PREVIEW !==
     "codex-scan-queue-health",
     { minutes: 5 },
     internal.securityScan.logCodexScanQueueHealthInternal,
+    {},
+  );
+
+  crons.interval(
+    "prepublication-queue-health",
+    { minutes: 5 },
+    internal.prepublicationObservability.logPrePublicationQueueHealthInternal,
     {},
   );
 

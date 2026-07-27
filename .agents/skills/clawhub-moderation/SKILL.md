@@ -55,6 +55,7 @@ skills|skill
 `bun run admin -- skills --help` exposes:
 
 ```text
+hard-delete <skill>
 unhide <slug>
 revoke-version <slug>
 rescan <slug>
@@ -65,6 +66,8 @@ triage-report <report-id>
 Examples:
 
 ```sh
+bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>"                    # dry-run
+bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- skills unhide <slug> --reason "<reason>" --yes
 bun run admin -- skills revoke-version <slug> --version <version> --reason "<reason>" --yes
 bun run admin -- skills rescan <slug> --reason "<reason>" --yes
@@ -72,7 +75,11 @@ bun run admin -- skills reports --status open
 bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
 
-Pass `--owner <handle>` to `revoke-version` when more than one publisher uses the same slug.
+`hard-delete` requires an owner-qualified ref and defaults to a dry-run. Apply
+only with the exact confirmation token returned by that dry-run.
+
+Pass `--owner <handle>` to `revoke-version` when more than one publisher uses
+the same slug.
 
 ### Users
 
@@ -81,6 +88,7 @@ Pass `--owner <handle>` to `revoke-version` when more than one publisher uses th
 ```text
 ban <handleOrId>
 unban <handleOrId>
+lift-moderation-hold <handleOrId>
 set-role <handleOrId> <role>
 reclassify-ban <handleOrId>
 remediate-autobans
@@ -91,6 +99,7 @@ Examples:
 ```sh
 bun run admin -- users ban <handleOrId> --reason "<reason>" --yes
 bun run admin -- users unban <handleOrId> --reason "<reason>" --yes
+bun run admin -- users lift-moderation-hold <handleOrId> --reason "<reason>" --yes
 bun run admin -- users set-role <handleOrId> <user|moderator|admin> --yes
 bun run admin -- users reclassify-ban <handleOrId> --reason "<reason>" --apply --yes
 bun run admin -- users remediate-autobans --apply --reason "<reason>"
@@ -191,6 +200,7 @@ only after admin auth succeeds.
 ## Verification
 
 - For skills, inspect the page/API status after `skills unhide`.
+- For `skills hard-delete`, verify owner-scoped page/API reads return not found.
 - For users, prefer user search/admin surfaces for target accounts where
   available.
 - For orgs and packages, use the public publisher/plugin pages and the relevant
@@ -214,6 +224,8 @@ only after admin auth succeeds.
   hides owned skills, soft-deletes comments, and writes audit logs.
 - `users unban` is admin-only. It clears ban state and restores skills that were
   hidden by the matching ban flow; revoked API tokens stay revoked.
+- `users lift-moderation-hold` is admin-only. It clears the account-level
+  moderation hold, restores skills hidden by that hold, and writes an audit log.
 - `packages transfer` preserves the package row, stats, releases, and history;
   it changes the owner publisher.
 - `org delete` soft-deletes an empty org publisher and retains member rows for

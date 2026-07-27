@@ -10,17 +10,17 @@ export declare const PromotionsFeedEntrySchema: import("arktype/internal/variant
     slug: string;
     title: string;
     blurb: string;
+    sponsor?: string | undefined;
     startsAt: number;
     endsAt: number;
+    provider?: string | undefined;
+    authChoiceId?: string | undefined;
+    pluginNames?: string[] | undefined;
     models: {
         modelRef: string;
         alias?: string | undefined;
         suggestedDefault?: boolean | undefined;
     }[];
-    sponsor?: string | undefined;
-    provider?: string | undefined;
-    authChoiceId?: string | undefined;
-    pluginNames?: string[] | undefined;
     signupUrl?: string | undefined;
     docsUrl?: string | undefined;
     launchPageUrl?: string | undefined;
@@ -32,27 +32,27 @@ export declare const PromotionsFeedSchema: import("arktype/internal/variants/obj
     generatedAt: string;
     sequence: number;
     expiresAt: string;
+    description?: string | undefined;
     entries: {
         type: "promotion";
         slug: string;
         title: string;
         blurb: string;
+        sponsor?: string | undefined;
         startsAt: number;
         endsAt: number;
+        provider?: string | undefined;
+        authChoiceId?: string | undefined;
+        pluginNames?: string[] | undefined;
         models: {
             modelRef: string;
             alias?: string | undefined;
             suggestedDefault?: boolean | undefined;
         }[];
-        sponsor?: string | undefined;
-        provider?: string | undefined;
-        authChoiceId?: string | undefined;
-        pluginNames?: string[] | undefined;
         signupUrl?: string | undefined;
         docsUrl?: string | undefined;
         launchPageUrl?: string | undefined;
     }[];
-    description?: string | undefined;
 }, {}>;
 export type PromotionsFeed = (typeof PromotionsFeedSchema)[inferred];
 /**

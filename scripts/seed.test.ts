@@ -13,6 +13,10 @@ describe("shared seed runner", () => {
         args: ["scripts/public-corpus/seed-public-corpus.ts"],
       },
       {
+        command: "bun",
+        args: ["scripts/public-corpus/seed-catalog-presentation.ts"],
+      },
+      {
         command: "bunx",
         args: ["convex", "run", "--no-push", "statsMaintenance:updateGlobalStatsAction"],
       },
@@ -28,6 +32,14 @@ describe("shared seed runner", () => {
       {
         command: "bun",
         args: ["scripts/public-corpus/seed-public-corpus.ts", "--preview-name", "feature/demo"],
+      },
+      {
+        command: "bun",
+        args: [
+          "scripts/public-corpus/seed-catalog-presentation.ts",
+          "--preview-name",
+          "feature/demo",
+        ],
       },
       {
         command: "bunx",

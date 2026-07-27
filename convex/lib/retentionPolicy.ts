@@ -66,6 +66,10 @@ export const RETENTION_POLICIES = {
     retention: "Convex Auth session total duration.",
   }),
   authAccounts: permanent("Provider account links for active users."),
+  githubOrgMemberships: derived(
+    "Active GitHub organization memberships synced during OAuth.",
+    "Reconnect the GitHub account with read:org access.",
+  ),
   authRefreshTokens: ephemeral("Convex Auth refresh tokens expire after inactive duration.", {
     expirationField: "expirationTime",
     expirationIndex: "by_expiration_time",
@@ -104,6 +108,7 @@ export const RETENTION_POLICIES = {
   officialPublishers: permanent("Manual official publisher assignments."),
   githubSkillSources: permanent("Tracked GitHub source configuration."),
   githubSkillContents: derived("Cached GitHub source content snapshots.", "githubSkillSources"),
+  githubSkillCandidates: derived("Pending exact GitHub source candidates.", "githubSkillSources"),
   githubSkillScans: derived("Cached GitHub source scan state.", "githubSkillSources"),
   skills: permanent("Canonical skill records."),
   skillSlugAliases: permanent("Historical slug routing aliases."),
@@ -174,6 +179,9 @@ export const RETENTION_POLICIES = {
     "packages",
   ),
   skillVersions: permanent("Canonical skill version records."),
+  skillPresentationAssets: permanent(
+    "Immutable content-addressed icon copies referenced by skill presentation metadata.",
+  ),
   skillVersionFingerprints: derived("Fingerprint projection of skill versions.", "skillVersions"),
   skillBadges: permanent("Curated skill badges."),
   skillEmbeddings: derived("Search embedding projection of skill versions.", "skillVersions"),
@@ -185,6 +193,27 @@ export const RETENTION_POLICIES = {
   skillLeaderboards: derived("Leaderboard snapshots can be rebuilt from stats.", "skillDailyStats"),
   skillStatBackfillState: permanent("Backfill cursor state."),
   globalStats: derived("Global stats aggregate can be recalculated.", "skills/packages"),
+  rankingMetricImports: permanent(
+    "Versioned Test ranking import provenance is retained until explicit cleanup.",
+  ),
+  canonicalTrendingSnapshots: ephemeral(
+    "Canonical Trending headers remain briefly available for stable cursor pagination.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "canonicalTrending.pruneExpiredActionInternal",
+      retention: "Forty-eight hours after snapshot generation.",
+    },
+  ),
+  canonicalTrendingItems: ephemeral(
+    "Materialized Trending cards expire with their snapshot header.",
+    {
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "canonicalTrending.pruneExpiredActionInternal",
+      retention: "Forty-eight hours after snapshot generation.",
+    },
+  ),
   skillStatEvents: ephemeral(
     "Skill stat event log is retained only after both consumers pass it.",
     {
@@ -211,7 +240,40 @@ export const RETENTION_POLICIES = {
   promotions: permanent("Curated promotional offers; ended records stay for launch-page history."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
+  skillsShCatalogControls: permanent("Durable skills.sh catalog operator controls."),
+  skillsShCatalogRuns: permanent("Skills.sh catalog run, cursor, and rollback audit history."),
+  skillsShCatalogEntries: permanent("Normalized unclaimed skills.sh catalog identities."),
+  skillsShCatalogScanAttempts: permanent(
+    "Exact-hash skills.sh scan attempts are durable audit and deduplication history.",
+  ),
+  skillsShMirrorControls: permanent("Durable skills.sh external mirror operator controls."),
+  skillsShMirrorRuns: permanent("Skills.sh external mirror cursor and reconciliation history."),
+  skillsShMirrorSourcePages: permanent(
+    "Immutable authenticated leaderboard source pages retained for mirror provenance.",
+  ),
+  skillsShMirrorDigests: permanent("Normalized skills.sh external search digests."),
+  skillsShMirrorDetails: permanent("Bounded skills.sh external detail content."),
+  skillsShMirrorFacets: permanent("Indexed skills.sh external category and topic metadata."),
+  skillsShMirrorConflicts: permanent("Skills.sh external observation conflict audit history."),
   publisherAbuseScoreRuns: permanent("Abuse scoring run history."),
+  publisherAbuseTemporalScanSamples: ephemeral(
+    "Exact temporal percentile samples are temporary scan working state.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "publisherAbuseTemporalScan.pruneExpiredTemporalScanRowsInternal",
+      retention: "Seven days after the scan starts.",
+    },
+  ),
+  publisherAbuseTemporalScanCandidates: ephemeral(
+    "Temporal review candidates are temporary scan working state.",
+    {
+      expirationField: "expirationTime",
+      expirationIndex: "by_expiration_time",
+      prune: "publisherAbuseTemporalScan.pruneExpiredTemporalScanRowsInternal",
+      retention: "Seven days after the scan starts.",
+    },
+  ),
   publisherAbuseScores: permanent("Abuse score history used for review decisions."),
   publisherAbuseReviewNominations: permanent("Abuse review workflow state."),
   publisherAbuseReviewEvents: permanent("Abuse review event history."),
@@ -271,6 +333,7 @@ export const RETENTION_POLICIES = {
   registryArtifactBackupSyncState: permanent("Legacy registry artifact backup cursor state."),
   registryArtifactBackupJobs: permanent("Legacy registry artifact backup job history."),
   userSkillInstalls: permanent("Current user install records."),
+  userPackageInstalls: permanent("Current user package install records."),
   skillOwnershipTransfers: ephemeral("Ownership transfer invitations expire.", {
     expirationField: "expiresAt",
     prune: "usage-time validation plus pending retention cleanup",

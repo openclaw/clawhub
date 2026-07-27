@@ -1,6 +1,37 @@
 import { expect, test } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 
+test("home segmented controls stay within their fixed tracks", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+
+  for (const name of ["Content type", "Layout"]) {
+    const group = page.getByRole("group", { name });
+    await expect(group).toBeVisible();
+    const firstButton = group.getByRole("button").first();
+    await firstButton.focus();
+    await expect(firstButton).toBeFocused();
+
+    const metrics = await group.evaluate((element) => {
+      const style = window.getComputedStyle(element);
+      return {
+        overflowX: style.overflowX,
+        overflowY: style.overflowY,
+        contentFits:
+          element.scrollHeight <= element.clientHeight &&
+          element.scrollWidth <= element.clientWidth,
+        buttonHeights: [...element.children].map((child) => child.getBoundingClientRect().height),
+      };
+    });
+
+    expect(metrics.overflowX).toBe("visible");
+    expect(metrics.overflowY).toBe("visible");
+    expect(metrics.contentFits).toBe(true);
+    expect(metrics.buttonHeights.every((height) => height <= 30)).toBe(true);
+  }
+});
+
 test("home search and browse entry points work", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
 

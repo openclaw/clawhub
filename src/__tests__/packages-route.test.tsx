@@ -618,6 +618,18 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
   });
 
+  it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const categorySidebar = screen.getByLabelText("Plugin categories");
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(13);
+    expect(categorySidebar.textContent).toContain("Channels");
+    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
+  });
+
   it("uses recommendation ranking as the plugin browse default", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
@@ -910,6 +922,7 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Loading results")).toBeNull();
   });
 
   it("keeps plugin count copy hidden on non-first browse pages", async () => {
@@ -1119,6 +1132,7 @@ describe("plugins route", () => {
     render(<PendingComponent />);
 
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Loading results")).toBeNull();
     expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 
@@ -1570,7 +1584,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Verified" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Updated" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
@@ -1716,7 +1730,7 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Verified", "Updated"]);
+    expect(sortOptions).toEqual(["All", "Trending", "Official", "Updated"]);
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();

@@ -1,4 +1,9 @@
-import { CliPublishRequestSchema, normalizeTextContentType, parseArk } from "clawhub-schema";
+import {
+  CliPublishRequestSchema,
+  decodeUtf8Text,
+  normalizeContentType,
+  parseArk,
+} from "clawhub-schema";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
@@ -15,29 +20,27 @@ const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
 const SAFE_TEXT_FILE_CSP =
   "default-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-function isSvgLike(contentType: string | undefined, path: string) {
-  return contentType?.toLowerCase().includes("svg") || path.toLowerCase().endsWith(".svg");
+function attachmentDisposition(path: string) {
+  return `attachment; filename*=UTF-8''${encodeURIComponent(path.split("/").at(-1) || "download")}`;
 }
 
-export function safeTextFileResponse(params: {
-  textContent: string;
+type SafeFileResponseParams = {
   path: string;
   contentType?: string;
   sha256: string;
   size: number;
   headers?: HeadersInit;
-}) {
-  const contentType =
-    normalizeTextContentType(params.path, params.contentType) ?? params.contentType;
-  const isSvg = isSvgLike(contentType, params.path);
+};
 
-  // For any text response that a browser might try to render, lock it down.
-  // In particular, this prevents SVG <foreignObject> script execution from reading
-  // localStorage tokens on this origin.
-  const headers = mergeHeaders(
+function safeFileResponseHeaders(
+  params: SafeFileResponseParams,
+  contentType: string,
+  forceAttachment: boolean,
+) {
+  return mergeHeaders(
     params.headers,
     {
-      "Content-Type": contentType ? `${contentType}; charset=utf-8` : "text/plain; charset=utf-8",
+      "Content-Type": contentType,
       "Cache-Control": "private, max-age=60",
       ETag: params.sha256,
       "X-Content-SHA256": params.sha256,
@@ -45,12 +48,49 @@ export function safeTextFileResponse(params: {
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Content-Security-Policy": SAFE_TEXT_FILE_CSP,
-      ...(isSvg ? { "Content-Disposition": "attachment" } : {}),
+      ...(forceAttachment ? { "Content-Disposition": attachmentDisposition(params.path) } : {}),
     },
     corsHeaders(),
   );
+}
+
+export function safeTextFileResponse(params: SafeFileResponseParams & { textContent: string }) {
+  const normalized = normalizeContentType(params.contentType);
+  const contentType = normalized ? `${normalized}; charset=utf-8` : "text/plain; charset=utf-8";
+  const headers = safeFileResponseHeaders(params, contentType, false);
 
   return new Response(params.textContent, { status: 200, headers });
+}
+
+export async function safeStoredFileResponse(
+  params: SafeFileResponseParams & {
+    blob: Blob;
+  },
+) {
+  const bytes = new Uint8Array(await params.blob.arrayBuffer());
+  const contentType = normalizeContentType(params.contentType) ?? "application/octet-stream";
+
+  return new Response(bytes, {
+    status: 200,
+    headers: safeFileResponseHeaders(params, contentType, true),
+  });
+}
+
+export async function safeStoredFilePreviewResponse(
+  params: SafeFileResponseParams & {
+    blob: Blob;
+  },
+) {
+  const bytes = new Uint8Array(await params.blob.arrayBuffer());
+  const textContent = decodeUtf8Text(bytes);
+  if (textContent === null) {
+    return text("File cannot be previewed as text", 415, params.headers);
+  }
+
+  return new Response(textContent, {
+    status: 200,
+    headers: safeFileResponseHeaders(params, "text/plain; charset=utf-8", false),
+  });
 }
 
 export function json(value: unknown, status = 200, headers?: HeadersInit) {

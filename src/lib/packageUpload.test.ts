@@ -105,7 +105,7 @@ describe("buildPackageUploadEntries", () => {
     expect(uploaded.map((entry) => entry.path)).toEqual(["package.json", "dist/index.js"]);
   });
 
-  it("normalizes misleading text MIME types in upload entries", async () => {
+  it("preserves supplied MIME hints without extension-based rewriting", async () => {
     const uploaded = await buildPackageUploadEntries(
       [
         {
@@ -121,7 +121,7 @@ describe("buildPackageUploadEntries", () => {
       },
     );
 
-    expect(uploaded[0]?.contentType).toBe("application/typescript");
+    expect(uploaded[0]?.contentType).toBe("video/mp2t");
   });
 
   it("keeps nested archive paths when files do not have webkitRelativePath", async () => {

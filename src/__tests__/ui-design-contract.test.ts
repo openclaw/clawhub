@@ -75,11 +75,11 @@ describe("restored UI design contract", () => {
     const rootSource = rootRoute();
     const sharedCss = designSystemStyles();
 
-    expect(sharedCss).toContain('@import "@openclaw/design-system/tokens.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/typography.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/themes/product.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/components.css";');
-    expect(sharedCss).toContain('@import "@openclaw/design-system/compat/clawhub.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/tokens.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/typography.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/themes/product.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/components.css";');
+    expect(sharedCss).toContain('@import "@openclaw/carapace/compat/clawhub.css";');
     expect(sharedCss).toContain(".home-v2-main.oc-app-surface");
     expect(sharedCss).toContain("--hv2-bg: var(--oc-bg-page)");
     expect(sharedCss).toContain("--hv2-text: var(--oc-text-primary)");
@@ -104,16 +104,13 @@ describe("restored UI design contract", () => {
     const css = styles();
 
     for (const selector of [
-      ".home-v2-headline-trigger",
       ".home-v2-listing-search-bar",
       ".home-v2-listing-search-close",
       ".home-v2-listing-category-trigger",
     ]) {
       expect(cssRule(css, selector)).toContain("border-radius: var(--oc-radius-control)");
     }
-    expect(cssRule(css, ".home-v2-promotion-title-icon")).toContain(
-      "border-radius: var(--oc-radius-inset)",
-    );
+    expect(cssRule(css, ".promotion-bar-icon")).toContain("border-radius: var(--oc-radius-inset)");
     expect(cssRule(css, ".home-v2-apps-workflow-tile")).toContain(
       "border-radius: var(--oc-radius-surface)",
     );
@@ -171,6 +168,13 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".clawhub-segmented")).toContain(
       "border: 1px solid var(--clawhub-segmented-border)",
     );
+    expect(cssRule(css, ".clawhub-segmented")).toContain("border-radius: var(--oc-radius-control)");
+    expect(
+      cssRule(
+        css,
+        ".clawhub-segmented-btn,\n.home-v2-listing-kind-btn,\n.home-v2-listing-view-btn,\n.browse-view-btn",
+      ),
+    ).toContain("border-radius: var(--oc-radius-inset)");
     expect(cssRule(css, ".clawhub-segmented-btn.browse-view-btn")).toContain(
       "width: var(--clawhub-segmented-seg-h)",
     );
@@ -269,7 +273,7 @@ describe("restored UI design contract", () => {
     expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Creators"');
+    expect(navSource).toContain('label: "Official"');
     expect(navSource).toContain('label: "Docs"');
     expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
     expect(publicRegistrySource).toContain(
@@ -337,7 +341,7 @@ describe("restored UI design contract", () => {
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
   });
 
-  it("requires the experiment hero and canonical home catalog without later sections", () => {
+  it("requires the static hero and canonical home catalog without later sections", () => {
     const homeSource = home();
     const listingSource = read("src/components/HomeListingSection.tsx");
     const appsSource = read("src/components/HomeAppsSection.tsx");
@@ -346,13 +350,29 @@ describe("restored UI design contract", () => {
 
     expect(homeSource).toContain('className="home-v2-main oc-app-surface"');
     expect(homeSource).toContain("home-v2-headline oc-hero-title");
+    expect(cssRule(css, ".home-v2-static-headline")).toContain("color: var(--oc-accent-primary)");
+    expect(css.lastIndexOf(".home-v2-static-headline")).toBeGreaterThan(
+      css.lastIndexOf(".home-v2-action-word"),
+    );
     expect(listingSource).toContain("home-v2-listing-card oc-card oc-card-interactive");
-    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented");
+    expect(listingSource).toContain("home-v2-listing-kind clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item",
+    );
+    expect(listingSource).toContain("home-v2-listing-view clawhub-segmented oc-segmented");
+    expect(listingSource).toContain(
+      "home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item",
+    );
     expect(appsSource).toContain('className="home-v2-apps-tile"');
     expect(appsSource).toContain('className="home-v2-apps-workflow-header"');
     expect(appsSource).not.toContain('className="home-v2-apps-workflow-header oc-card"');
     expect(publishersSource).toContain(
       "home-v2-popular-publisher-card oc-card oc-card-interactive",
+    );
+    expect(publishersSource).toContain("Official creators");
+    expect(publishersSource).toContain("Explore skills and plugins from official creators.");
+    expect(cssRule(css, ".home-v2-popular-publishers-track")).toContain(
+      "grid-template-columns: repeat(6, minmax(0, 1fr))",
     );
     expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
     expect(homeSource).not.toContain("Unleash.");
@@ -423,7 +443,7 @@ describe("restored UI design contract", () => {
 
   it("keeps runtime requirement text high contrast in both themes", () => {
     const css = styles();
-    const designTokens = read("node_modules/@openclaw/design-system/styles/tokens.css");
+    const designTokens = read("node_modules/@openclaw/carapace/styles/tokens.css");
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
     expect(installCardSource).toContain("requirements-env-row");
@@ -462,12 +482,15 @@ describe("restored UI design contract", () => {
     );
   });
 
-  it("keeps promotion cards within narrow mobile viewports", () => {
+  it("keeps the promotion bar thin and horizontally bounded", () => {
+    const rootSource = rootRoute();
     const css = styles();
 
-    expect(cssRule(css, ".home-v2-promotions")).toContain("padding: 0 48px 56px");
-    expect(cssRule(css, ".home-v2-promotions-track")).toContain("display: grid");
-    expect(css).toContain("padding: 0 20px 48px");
+    expect(rootSource.indexOf("<PromotionsBar />")).toBeLessThan(rootSource.indexOf("<Header />"));
+    expect(cssRule(css, ".promotion-bar-track")).toContain("min-height: 36px");
+    expect(cssRule(css, ".promotion-bar-track")).toContain("overflow-x: auto");
+    expect(cssRule(css, ".promotion-bar-item")).toContain("min-width: min(100%, 520px)");
+    expect(css).toContain("min-width: 100%");
   });
 
   it("keeps typeahead creator avatars round for users and square for orgs", () => {

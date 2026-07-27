@@ -1,5 +1,5 @@
 ---
-summary: "Skill folder format, required files, allowed file types, limits."
+summary: "Skill folder format, required files, supporting artifacts, limits."
 read_when:
   - Publishing skills
   - Debugging publish failures
@@ -17,7 +17,7 @@ Required:
 
 Optional:
 
-- any supporting _text-based_ files (see “Allowed files”)
+- any supporting regular files (see “Skill files”)
 - `.clawhubignore` (ignore patterns for publishing, legacy `.clawdhubignore`)
 - `.gitignore` (also honored)
 
@@ -168,18 +168,21 @@ metadata:
 ---
 ```
 
-## Allowed files
+## Skill files
 
-Only “text-based” files are accepted by publish.
+Publish accepts all regular files in the skill folder, regardless of extension. Ignore files,
+hidden paths, symlinks, macOS metadata, and server-side size limits still apply.
 
-- Extension allowlist is in `packages/schema/src/textFiles.ts` (`TEXT_FILE_EXTENSIONS`).
-- Script files are still scanned after upload; PowerShell `.ps1`, `.psm1`, and `.psd1` files are accepted as text.
-- Content types starting with `text/` are treated as text; plus a small allowlist (JSON/YAML/TOML/JS/TS/Markdown/SVG).
+- Bounded files that contain valid UTF-8 can be previewed as escaped plain text and are included
+  in bounded text analysis.
+- Other files keep their exact bytes and are available to download.
+- Security scanners receive the complete stored artifact; text detection is a rendering and
+  analysis concern, not an upload allowlist.
 
 Limits (server-side):
 
 - Total bundle size: 50MB.
-- Embedding text includes `SKILL.md` + up to ~40 non-`.md` files (best-effort cap).
+- Embedding text includes `SKILL.md` + up to ~40 bounded UTF-8 files (best-effort cap).
 
 ## Slugs
 

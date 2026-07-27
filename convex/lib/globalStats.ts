@@ -136,6 +136,31 @@ export async function setGlobalPublicPluginsCount(
   }
 }
 
+export async function setGlobalPublicExternalSkillsCount(
+  ctx: GlobalStatsWriteCtx,
+  count: number,
+  now = Date.now(),
+) {
+  const normalizedCount = Math.max(0, Math.trunc(Number.isFinite(count) ? count : 0));
+  const existing = await ctx.db
+    .query("globalStats")
+    .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
+    .unique();
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      activeExternalSkillsCount: normalizedCount,
+      updatedAt: now,
+    });
+    return;
+  }
+  await ctx.db.insert("globalStats", {
+    key: GLOBAL_STATS_KEY,
+    activeSkillsCount: 0,
+    activeExternalSkillsCount: normalizedCount,
+    updatedAt: now,
+  });
+}
+
 export async function adjustGlobalPublicSkillsCount(
   ctx: GlobalStatsWriteCtx,
   delta: number,
@@ -208,7 +233,7 @@ export async function readGlobalPublicSkillsCount(ctx: GlobalStatsReadCtx) {
       .query("globalStats")
       .withIndex("by_key", (q) => q.eq("key", GLOBAL_STATS_KEY))
       .unique();
-    return stats?.activeSkillsCount ?? null;
+    return stats ? stats.activeSkillsCount + (stats.activeExternalSkillsCount ?? 0) : null;
   } catch (error) {
     if (isGlobalStatsStorageNotReadyError(error)) return null;
     throw error;

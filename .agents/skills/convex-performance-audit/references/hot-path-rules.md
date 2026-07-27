@@ -144,10 +144,10 @@ defineTable({ team: v.id("teams"), user: v.id("users") })
 
 ```ts
 // Good: single compound index serves both query patterns
-defineTable({ team: v.id("teams"), user: v.id("users") }).index("by_team_and_user", [
-  "team",
-  "user",
-]);
+defineTable({ team: v.id("teams"), user: v.id("users") }).index(
+  "by_team_and_user",
+  ["team", "user"],
+);
 ```
 
 Exception: `.index("by_foo", ["foo"])` is really an index on `foo` +
@@ -195,7 +195,8 @@ const ownerName = project.ownerName ?? "Unknown owner";
 
 ```ts
 // Good: denormalized data is an optimization, not the only source of truth
-const ownerName = project.ownerName ?? (await ctx.db.get(project.ownerId))?.name ?? null;
+const ownerName =
+  project.ownerName ?? (await ctx.db.get(project.ownerId))?.name ?? null;
 ```
 
 Bad lookup map pattern:

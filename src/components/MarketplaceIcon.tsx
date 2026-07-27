@@ -8,8 +8,6 @@ type MarketplaceIconProps = {
   label: string;
   imageUrl?: string | null;
   categorySlug?: string | null;
-  /** Legacy skill custom-icon value. Ignored for rendering. */
-  icon?: string | null;
   skill?: {
     categories?: readonly string[] | null;
     inferredCategories?: readonly string[] | null;
@@ -20,6 +18,7 @@ type MarketplaceIconProps = {
     summary?: string | null;
   } | null;
   size?: "xs" | "sm" | "md";
+  tone?: "default" | "muted";
 };
 
 const TONES = [
@@ -42,6 +41,7 @@ export function MarketplaceIcon({
   categorySlug,
   skill,
   size = "sm",
+  tone = "default",
 }: MarketplaceIconProps) {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -56,16 +56,21 @@ export function MarketplaceIcon({
       : kind === "plugin" && pluginCategory
         ? (getCategoryIconComponent(pluginCategory.icon) ?? MARKETPLACE_KIND_ICONS.plugin)
         : MARKETPLACE_KIND_ICONS[kind];
-  const tone = hashTone(label);
-  const visibleImageUrl = imageUrl && failedImageUrl !== imageUrl ? imageUrl : null;
+  const hashedTone = hashTone(label);
+  const supportedImageUrl =
+    kind !== "skill" || isHostedSkillPresentationIcon(imageUrl) ? imageUrl : null;
+  const visibleImageUrl =
+    supportedImageUrl && failedImageUrl !== supportedImageUrl ? supportedImageUrl : null;
 
   return (
     <span
-      className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}`}
+      className={`marketplace-icon marketplace-icon-${kind} marketplace-icon-${size}${
+        tone === "muted" ? " marketplace-icon-muted" : ""
+      }${visibleImageUrl ? " marketplace-icon-image-backed" : ""}`}
       style={
         {
-          "--marketplace-icon-accent": tone.accent,
-          "--marketplace-icon-wash": tone.wash,
+          "--marketplace-icon-accent": hashedTone.accent,
+          "--marketplace-icon-wash": hashedTone.wash,
         } as CSSProperties
       }
       aria-hidden="true"
@@ -85,4 +90,8 @@ export function MarketplaceIcon({
       )}
     </span>
   );
+}
+
+function isHostedSkillPresentationIcon(value: string | null | undefined) {
+  return /^\/api\/v1\/skill-icons\/[a-f\d]{64}$/u.test(value ?? "");
 }

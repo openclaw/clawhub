@@ -1,7 +1,7 @@
 import { Package, Upload } from "lucide-react";
 import { type DragEvent, useRef, useState } from "react";
 import { expandDroppedItems } from "../lib/uploadFiles";
-import { formatBytes } from "../routes/upload/-utils";
+import { formatBytes } from "../lib/uploadUtils";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";

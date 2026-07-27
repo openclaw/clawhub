@@ -23,6 +23,7 @@ import {
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
+import { recomputePublisherStats } from "./lib/publisherStats";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
@@ -44,11 +45,19 @@ type SeedSkillSpec = {
 
 type SeedActionArgs = {
   reset?: boolean;
+  excludeFromPublicCatalog?: boolean;
+  staleProofSkill?: TestProofSkillIdentity;
   ownerUserId?: Id<"users">;
   flaggedSkillSlug?: string;
   scannedSkillSlug?: string;
   flaggedPluginName?: string;
   scannedPluginName?: string;
+};
+
+type TestProofSkillIdentity = {
+  ownerHandle: string;
+  slug: string;
+  summary: string;
 };
 
 type SeedActionResult = {
@@ -276,6 +285,12 @@ const FLAGGED_PLUGIN_NAME = "local-flagged-runtime-plugin";
 const SCANNED_PLUGIN_NAME = "local-scanned-runtime-plugin";
 const TRUNCATION_SKILL_SLUG = "local-truncation-plugin-runtime-integration-skill";
 const TRUNCATION_PLUGIN_NAME = "local-truncation-runtime-plugin";
+const CLAW_526_TEST_PROOF_SKILL: TestProofSkillIdentity = {
+  ownerHandle: "patrick-erichsen",
+  slug: "test",
+  summary:
+    "CLAW-526 Clean Preview Skill validates staged publishing through the hosted ClawHub Test UI.",
+};
 const TRUNCATION_FIXTURE_DISPLAY_NAME =
   "[120] Plugin Runtime Integration ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHI";
 const SCANNED_SKILL_SUMMARY =
@@ -860,6 +875,8 @@ async function seedLocalFixturesHandler(
     internal.devSeed.seedLocalModerationFixturesMutation,
     {
       reset: args.reset,
+      excludeFromPublicCatalog: args.excludeFromPublicCatalog,
+      staleProofSkill: args.staleProofSkill,
       flaggedSkillSlug: args.flaggedSkillSlug,
       scannedSkillSlug: args.scannedSkillSlug,
       flaggedPluginName: args.flaggedPluginName,
@@ -902,11 +919,118 @@ export const seedTestFixtures: ReturnType<typeof internalAction> = internalActio
     assertTestSeedAllowed();
     return await seedLocalFixturesHandler(ctx, {
       reset: false,
+      excludeFromPublicCatalog: true,
+      staleProofSkill: CLAW_526_TEST_PROOF_SKILL,
       flaggedSkillSlug: "test-flagged-wallet-sync",
       scannedSkillSlug: "test-agentic-risk-demo",
       flaggedPluginName: "test-flagged-runtime-plugin",
       scannedPluginName: "test-scanned-runtime-plugin",
     });
+  },
+});
+
+const LOCAL_CANONICAL_SEARCH_EXTERNAL_ID = "acme/skills/risk-auditor";
+
+/** Explicit local proof fixture; intentionally not part of shared Test seeding. */
+export const seedCanonicalSearchFixture = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_external_id", (q) => q.eq("externalId", LOCAL_CANONICAL_SEARCH_EXTERNAL_ID))
+      .unique();
+    const runId =
+      existing?.lastObservedRunId ??
+      (await ctx.db.insert("skillsShMirrorRuns", {
+        snapshotId: "local-canonical-search-v1",
+        status: "completed",
+        sourceTotal: 1,
+        sourcePageSize: 1,
+        sourceMeasuredAt: new Date(now).toISOString(),
+        page: 1,
+        offset: 0,
+        counts: {
+          observed: 1,
+          inserted: 1,
+          updated: 0,
+          unchanged: 0,
+          rejected: 0,
+          quarantined: 0,
+          quarantinedPreserved: 0,
+          conflicts: 0,
+          detailsInserted: 0,
+          detailsUpdated: 0,
+          detailsUnchanged: 0,
+          detailsMissing: 1,
+          detailsTruncated: 0,
+          tombstoned: 0,
+          reactivated: 0,
+          scansPlanned: 0,
+          scansAdmitted: 0,
+        },
+        operations: {
+          functionCalls: 1,
+          dbReads: 1,
+          dbWrites: 2,
+          sourceRequests: 0,
+          sourceBytes: 0,
+        },
+        actor: "local-dev-seed",
+        reason: "Reusable local canonical mixed-search browser proof fixture.",
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      }));
+    const digest = {
+      externalId: LOCAL_CANONICAL_SEARCH_EXTERNAL_ID,
+      sourceType: "github" as const,
+      upstreamSourceType: "github",
+      owner: "acme",
+      repo: "skills",
+      slug: "risk-auditor",
+      normalizedSlug: "risk auditor",
+      normalizedSlugFirstToken: "risk",
+      displayName: "Risk Auditor",
+      normalizedDisplayName: "risk auditor",
+      normalizedDisplayNameFirstToken: "risk",
+      searchSummary: "Audit agent workflows for security and operational risk.",
+      searchText:
+        "Risk Auditor risk-auditor acme skills security risk-management security-audit Audit agent workflows for security and operational risk.",
+      sourceUrl: "https://skills.sh/acme/skills/risk-auditor",
+      canonicalRepoUrl: "https://github.com/acme/skills",
+      githubPath: "skills/risk-auditor",
+      githubCommit: "0000000000000000000000000000000000000000",
+      upstreamInstalls: 9_000_000,
+      upstreamScanners: {
+        genAgentTrustHub: { status: "unavailable" },
+        socket: { status: "unavailable" },
+        snyk: { status: "unavailable" },
+      },
+      inferredCategories: ["security"],
+      inferredTopics: ["risk-management", "security-audit"],
+      sourceFreshnessStatus: "observed-only" as const,
+      detailStatus: "missing" as const,
+      observationFingerprint: "local-canonical-search-v1",
+      sourceSnapshotId: "local-canonical-search-v1",
+      lastObservedRunId: runId,
+      active: true,
+      publicVisible: true,
+      installable: true,
+      firstObservedAt: existing?.firstObservedAt ?? now,
+      lastObservedAt: now,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, digest);
+      return { ok: true as const, digestId: existing._id };
+    }
+    const digestId = await ctx.db.insert("skillsShMirrorDigests", {
+      ...digest,
+      createdAt: now,
+    });
+    return { ok: true as const, digestId };
   },
 });
 
@@ -1366,6 +1490,148 @@ export const seedPublicCorpusBatchMutation = internalMutation({
     }
 
     return { ok: true, seeded, skipped };
+  },
+});
+
+export const seedCatalogPresentationFixtures = internalMutation({
+  args: {
+    orgs: v.array(
+      v.object({
+        sourceOwnerHandle: v.string(),
+        handle: v.string(),
+        displayName: v.string(),
+        bio: v.string(),
+        image: v.string(),
+        skillSlug: v.string(),
+        packageName: v.string(),
+        featured: v.boolean(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const affectedPublisherIds = new Set<Id<"publishers">>();
+    const seeded: string[] = [];
+
+    for (const spec of args.orgs) {
+      const sourcePublisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", spec.sourceOwnerHandle))
+        .unique();
+      if (!sourcePublisher || sourcePublisher.kind !== "user" || !sourcePublisher.linkedUserId) {
+        throw new Error(`Catalog presentation source owner not found: ${spec.sourceOwnerHandle}`);
+      }
+
+      const skill = await ctx.db
+        .query("skills")
+        .withIndex("by_slug", (q) => q.eq("slug", spec.skillSlug))
+        .unique();
+      const pkg = await findSeedPluginFixtureByName(ctx, spec.packageName);
+      if (!skill || !pkg) {
+        throw new Error(`Catalog presentation content not found for ${spec.handle}`);
+      }
+
+      const existingPublisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", spec.handle))
+        .unique();
+      if (existingPublisher && existingPublisher.kind !== "org") {
+        throw new Error(`Catalog presentation handle is not an organization: ${spec.handle}`);
+      }
+
+      const publisherPatch = {
+        kind: "org" as const,
+        handle: spec.handle,
+        displayName: spec.displayName,
+        bio: spec.bio,
+        image: spec.image,
+        linkedUserId: undefined,
+        trustedPublisher: false,
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        updatedAt: now,
+      };
+      const publisherId =
+        existingPublisher?._id ??
+        (await ctx.db.insert("publishers", {
+          ...publisherPatch,
+          publishedSkills: 0,
+          publishedPackages: 0,
+          totalInstalls: 0,
+          totalDownloads: 0,
+          totalStars: 0,
+          skillTotalInstalls: 0,
+          skillTotalDownloads: 0,
+          skillTotalStars: 0,
+          createdAt: now,
+        }));
+      if (existingPublisher) {
+        await ctx.db.patch(existingPublisher._id, publisherPatch);
+      }
+
+      const official = await ctx.db
+        .query("officialPublishers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+        .unique();
+      const officialPatch = {
+        reason: "Synthetic local and preview catalog presentation fixture.",
+        createdByUserId: sourcePublisher.linkedUserId,
+        updatedAt: now,
+      };
+      if (official) {
+        await ctx.db.patch(official._id, officialPatch);
+      } else {
+        await ctx.db.insert("officialPublishers", {
+          publisherId,
+          ...officialPatch,
+          createdAt: now,
+        });
+      }
+
+      const membership = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher_user", (q) =>
+          q.eq("publisherId", publisherId).eq("userId", sourcePublisher.linkedUserId!),
+        )
+        .unique();
+      if (membership) {
+        await ctx.db.patch(membership._id, { role: "owner", updatedAt: now });
+      } else {
+        await ctx.db.insert("publisherMembers", {
+          publisherId,
+          userId: sourcePublisher.linkedUserId,
+          role: "owner",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      if (skill.ownerPublisherId !== publisherId) {
+        if (skill.ownerPublisherId) affectedPublisherIds.add(skill.ownerPublisherId);
+        await ctx.db.patch(skill._id, { ownerPublisherId: publisherId, updatedAt: now });
+      }
+      if (pkg.ownerPublisherId !== publisherId) {
+        if (pkg.ownerPublisherId) affectedPublisherIds.add(pkg.ownerPublisherId);
+        await ctx.db.patch(pkg._id, { ownerPublisherId: publisherId, updatedAt: now });
+      }
+      if (spec.featured) {
+        await ensureHighlightedSkillBadge(ctx, skill._id, sourcePublisher.linkedUserId, now);
+        await ensureHighlightedPackageBadge(ctx, pkg._id, sourcePublisher.linkedUserId, now);
+      }
+
+      affectedPublisherIds.add(publisherId);
+      seeded.push(spec.handle);
+    }
+
+    for (const publisherId of affectedPublisherIds) {
+      if (!(await ctx.db.get(publisherId))) continue;
+      await ctx.db.patch(publisherId, {
+        ...(await recomputePublisherStats(ctx, publisherId)),
+        updatedAt: now,
+      });
+    }
+
+    return { ok: true as const, seeded };
   },
 });
 
@@ -2562,6 +2828,8 @@ function flaggedWalletClawScanAnalysis(now: number) {
 
 type SeedLocalModerationFixturesArgs = {
   reset?: boolean;
+  excludeFromPublicCatalog?: boolean;
+  staleProofSkill?: TestProofSkillIdentity;
   ownerUserId?: Id<"users">;
   flaggedSkillSlug?: string;
   scannedSkillSlug?: string;
@@ -2577,6 +2845,43 @@ type SeedLocalModerationFixturesArgs = {
   scannedPluginReadme: string;
 };
 
+async function hideStaleTestProofSkill(
+  ctx: MutationCtx,
+  identity: TestProofSkillIdentity,
+  now: number,
+) {
+  const publisher = await ctx.db
+    .query("publishers")
+    .withIndex("by_handle", (q) => q.eq("handle", identity.ownerHandle))
+    .unique();
+  if (!publisher) return;
+  const skill = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_slug", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("slug", identity.slug),
+    )
+    .unique();
+  // The summary guard makes this an exact Test-proof cleanup, not a rule that
+  // hides arbitrary publisher content sharing a short fixture slug.
+  if (!skill || skill.summary !== identity.summary) return;
+  await ctx.db.patch(skill._id, {
+    moderationStatus: "hidden",
+    moderationReason: "test.fixture",
+    updatedAt: now,
+  });
+  const digest = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+    .unique();
+  if (digest) {
+    await ctx.db.patch(digest._id, {
+      moderationStatus: "hidden",
+      moderationReason: "test.fixture",
+      updatedAt: now,
+    });
+  }
+}
+
 export async function seedLocalModerationFixturesHandler(
   ctx: MutationCtx,
   args: SeedLocalModerationFixturesArgs,
@@ -2590,6 +2895,9 @@ export async function seedLocalModerationFixturesHandler(
   const now = Date.now();
   const owner = await ensureSeedOwner(ctx, args.ownerUserId);
   await retireLegacyLocalOwnerPublishers(ctx, owner, now);
+  if (args.excludeFromPublicCatalog && args.staleProofSkill) {
+    await hideStaleTestProofSkill(ctx, args.staleProofSkill, now);
+  }
   const existingSkill = await findSeedSkillFixture(ctx, flaggedSkillSlug);
   const existingScannedSkill = await findScannedSkillFixture(ctx, scannedSkillSlug);
   const existingPlugin = await findSeedPluginFixture(ctx, flaggedPluginName);
@@ -2611,6 +2919,26 @@ export async function seedLocalModerationFixturesHandler(
     for (const skill of [existingSkill, existingScannedSkill, existingTruncationSkill]) {
       if (skill.ownerUserId !== userId || skill.ownerPublisherId !== publisherId) {
         await ctx.db.patch(skill._id, ownerPatch);
+      }
+    }
+    if (args.excludeFromPublicCatalog) {
+      for (const skill of [existingScannedSkill, existingTruncationSkill]) {
+        await ctx.db.patch(skill._id, {
+          moderationStatus: "hidden",
+          moderationReason: "test.fixture",
+          updatedAt: now,
+        });
+        const digest = await ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+          .unique();
+        if (digest) {
+          await ctx.db.patch(digest._id, {
+            moderationStatus: "hidden",
+            moderationReason: "test.fixture",
+            updatedAt: now,
+          });
+        }
       }
     }
     await ctx.db.patch(existingScannedSkill._id, {
@@ -2876,8 +3204,8 @@ export async function seedLocalModerationFixturesHandler(
     tags: {},
     softDeletedAt: undefined,
     badges: { redactionApproved: undefined },
-    moderationStatus: "active",
-    moderationReason: "scanner.llm.suspicious",
+    moderationStatus: args.excludeFromPublicCatalog ? "hidden" : "active",
+    moderationReason: args.excludeFromPublicCatalog ? "test.fixture" : "scanner.llm.suspicious",
     moderationVerdict: "suspicious",
     moderationReasonCodes: ["suspicious.agentic_risk_fixture"],
     moderationEvidence: scannedSkillStaticScan.findings,
@@ -2972,8 +3300,8 @@ export async function seedLocalModerationFixturesHandler(
     tags: {},
     softDeletedAt: undefined,
     badges: { redactionApproved: undefined },
-    moderationStatus: "active",
-    moderationReason: undefined,
+    moderationStatus: args.excludeFromPublicCatalog ? "hidden" : "active",
+    moderationReason: args.excludeFromPublicCatalog ? "test.fixture" : undefined,
     moderationVerdict: "clean",
     moderationReasonCodes: [],
     moderationEvidence: undefined,
@@ -3427,6 +3755,10 @@ export async function seedLocalModerationFixturesHandler(
 export const seedLocalModerationFixturesMutation = internalMutation({
   args: {
     reset: v.optional(v.boolean()),
+    excludeFromPublicCatalog: v.optional(v.boolean()),
+    staleProofSkill: v.optional(
+      v.object({ ownerHandle: v.string(), slug: v.string(), summary: v.string() }),
+    ),
     ownerUserId: v.optional(v.id("users")),
     flaggedSkillSlug: v.optional(v.string()),
     scannedSkillSlug: v.optional(v.string()),
@@ -4343,11 +4675,11 @@ description: Disposable local-auth version deletion fixture skill.
 
 # ${args.skillDisplayName}
 
-This fixture proves one-way owner deletion of an older skill version.
+This fixture proves reversible owner withdrawal of an older skill version.
 `;
     const pluginReadme = `# ${args.packageDisplayName}
 
-This fixture proves one-way owner deletion of an older plugin release.
+This fixture proves reversible owner withdrawal of an older plugin release.
 `;
     const [skillStorageId, pluginReadmeStorageId] = await Promise.all([
       ctx.storage.store(new Blob([skillMd], { type: "text/markdown" })),
@@ -4712,6 +5044,14 @@ export const getVersionDeletionFixtureState: ReturnType<typeof rawInternalMutati
           q.eq("targetType", "packageRelease").eq("targetId", args.olderPackageReleaseId),
         )
         .take(10);
+      const skillDigest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+        .unique();
+      const packageDigest = await ctx.db
+        .query("packageSearchDigest")
+        .withIndex("by_package", (q) => q.eq("packageId", args.packageId))
+        .unique();
 
       return {
         ok: true as const,
@@ -4720,6 +5060,9 @@ export const getVersionDeletionFixtureState: ReturnType<typeof rawInternalMutati
         skillLatestTagVersionId: skill?.tags.latest ?? null,
         skillLatestSummaryVersion: skill?.latestVersionSummary?.version ?? null,
         skillStatsVersions: skill?.stats.versions ?? null,
+        skillDigestLatestVersionId: skillDigest?.latestVersionId ?? null,
+        skillDigestLatestSummaryVersion: skillDigest?.latestVersionSummary?.version ?? null,
+        skillDigestTags: skillDigest?.tags ?? null,
         skillActiveVersions: skillActiveVersions.map((version) => version.version),
         olderSkillVersion: versionDeletionRowState(olderSkillVersion),
         latestSkillVersion: versionDeletionRowState(latestSkillVersion),
@@ -4728,7 +5071,9 @@ export const getVersionDeletionFixtureState: ReturnType<typeof rawInternalMutati
         packageLatestTagReleaseId: pkg?.tags.latest ?? null,
         packageLatestSummaryVersion: pkg?.latestVersionSummary?.version ?? null,
         packageStatsVersions: pkg?.stats.versions ?? null,
+        packageDigestLatestVersion: packageDigest?.latestVersion ?? null,
         packageActiveVersions: packageActiveReleases.map((release) => release.version),
+        olderPackageDistTags: olderPackageRelease?.distTags ?? null,
         olderPackageRelease: versionDeletionRowState(olderPackageRelease),
         latestPackageRelease: versionDeletionRowState(latestPackageRelease),
         packageAuditActions: packageAuditLogs.map((log) => log.action),
@@ -5061,6 +5406,51 @@ export const getAccountRecreationState: ReturnType<typeof rawInternalMutation> =
               deletedAt: activePublisher.deletedAt ?? null,
             }
           : null,
+      };
+    },
+  });
+
+export const getPrePublicationSkillAttemptState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      attemptId: v.id("publishAttempts"),
+    },
+    handler: async (ctx, args) => {
+      const attempt = await ctx.db.get(args.attemptId);
+      if (!attempt || attempt.kind !== "skill") {
+        return {
+          ok: true as const,
+          attemptExists: Boolean(attempt),
+          skillExists: false,
+          versionExists: false,
+        };
+      }
+
+      const skill = attempt.skillId ? await ctx.db.get(attempt.skillId) : null;
+      const version = attempt.skillVersionId ? await ctx.db.get(attempt.skillVersionId) : null;
+
+      return {
+        ok: true as const,
+        attemptExists: true,
+        attempt: {
+          attemptId: attempt._id,
+          status: attempt.status,
+          slug: attempt.slug,
+          version: attempt.version,
+          skillId: attempt.skillId ?? null,
+          skillVersionId: attempt.skillVersionId ?? null,
+          filesCount: attempt.files.length,
+          hasSkillInsertArgs: attempt.skillInsertArgs !== undefined,
+          hasFollowup: attempt.followup !== undefined,
+          trufflehogStatus: attempt.checks.trufflehog.status,
+          trufflehogRedactedFindingCount: attempt.checks.trufflehog.redactedFindings?.length ?? 0,
+          clawscanStatus: attempt.checks.clawscan.status,
+          blockedAt: attempt.blockedAt ?? null,
+        },
+        skillExists: Boolean(skill),
+        skillLatestVersionId: skill?.latestVersionId ?? null,
+        versionExists: Boolean(version),
+        versionPublicationStatus: version?.publicationStatus ?? null,
       };
     },
   });

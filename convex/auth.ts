@@ -6,6 +6,12 @@ import { ConvexError } from "convex/values";
 import { internal } from "./_generated/api";
 import type { DataModel, Id } from "./_generated/dataModel";
 import { isLocalDevAuthEnabled } from "./lib/devAuth";
+import {
+  GITHUB_ORG_MEMBERSHIP_SYNC_PROFILE_KEY,
+  fetchActiveGitHubOrgMemberships,
+  readGitHubOrgMembershipSync,
+  replaceGitHubOrgMemberships,
+} from "./lib/githubOrgMemberships";
 import { shouldScheduleGitHubProfileSync } from "./lib/githubProfileSync";
 
 export const BANNED_REAUTH_MESSAGE =
@@ -39,15 +45,34 @@ export function createGitHubAuthProvider() {
   return GitHub({
     clientId: process.env.AUTH_GITHUB_ID ?? "",
     clientSecret: process.env.AUTH_GITHUB_SECRET ?? "",
+    authorization: {
+      params: { scope: "read:user user:email read:org" },
+    },
     // GitHub's OAuth email must not be treated as a ClawHub account key. The
     // immutable GitHub provider account id is the only account-linking key.
     allowDangerousEmailAccountLinking: false,
-    profile(profile) {
+    async profile(profile, tokens) {
+      let githubOrgMembershipSync;
+      const accessToken = tokens.access_token?.trim();
+      if (accessToken) {
+        try {
+          githubOrgMembershipSync = await fetchActiveGitHubOrgMemberships(accessToken);
+        } catch (error) {
+          console.warn(
+            `[auth] GitHub organization membership sync failed: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
       return {
         id: normalizeGitHubProfileId(profile.id),
         name: profile.login,
         email: profile.email ?? undefined,
         image: profile.avatar_url,
+        ...(githubOrgMembershipSync
+          ? { [GITHUB_ORG_MEMBERSHIP_SYNC_PROFILE_KEY]: githubOrgMembershipSync }
+          : {}),
       };
     },
   });
@@ -120,6 +145,7 @@ function userDataFromAuthProfile(args: {
   const {
     emailVerified: profileEmailVerified,
     phoneVerified: profilePhoneVerified,
+    [GITHUB_ORG_MEMBERSHIP_SYNC_PROFILE_KEY]: _githubOrgMembershipSync,
     ...profile
   } = args.profile;
   const emailVerified =
@@ -187,6 +213,7 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
      */
     async createOrUpdateUser(ctx, args) {
       const userData = userDataFromAuthProfile(args);
+      const githubOrgMembershipSync = readGitHubOrgMembershipSync(args.profile);
       if (args.existingUserId !== null) {
         const userId = args.existingUserId as Id<"users">;
         const existingUser = await ctx.db.get(userId);
@@ -194,11 +221,17 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
           return userId;
         }
         await ctx.db.patch(userId, userData);
+        if (githubOrgMembershipSync) {
+          await replaceGitHubOrgMemberships(ctx, userId, githubOrgMembershipSync);
+        }
         await schedulePostUserCreatedOrUpdated(ctx, userId, existingUser);
         return userId;
       }
 
       const userId = await ctx.db.insert("users", userData);
+      if (githubOrgMembershipSync) {
+        await replaceGitHubOrgMemberships(ctx, userId, githubOrgMembershipSync);
+      }
       const user = await ctx.db.get(userId);
       await schedulePostUserCreatedOrUpdated(ctx, userId, user);
       return userId;

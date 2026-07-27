@@ -32,8 +32,9 @@ export function VersionDeleteDialog({
         <DialogHeader>
           <DialogTitle>Delete version {version}?</DialogTitle>
           <DialogDescription>
-            Deletion is permanent. Version {version} cannot be restored or republished, and the
-            version number remains reserved. Recovery is publishing a new version.
+            This withdraws the version from public use. You can restore the exact retained artifact
+            later, but the version number remains reserved and cannot be republished with different
+            contents.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

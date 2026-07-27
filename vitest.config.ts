@@ -41,6 +41,7 @@ export default defineConfig({
       "**/dist/**",
       "**/coverage/**",
       "**/convex/_generated/**",
+      ".github/scripts/catalog-feed-schema-version-guard.test.cjs",
       "packages/clawhub/**",
       "packages/clawhub-admin/test-artifact/**",
       "e2e/**",

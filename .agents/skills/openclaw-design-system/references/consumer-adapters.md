@@ -1,5 +1,10 @@
 # Consumer Adapters
 
+This compatibility reference uses the legacy `@openclaw/design-system`
+specifier so consumers pinned to `v0.0.1` keep building. If the consumer
+manifest already installs `@openclaw/carapace`, use that package name for the
+same exported paths.
+
 ## Plain CSS And Astro
 
 Use the complete contract when the global reset is desired:
