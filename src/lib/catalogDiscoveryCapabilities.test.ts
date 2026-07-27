@@ -23,17 +23,29 @@ describe("fetchCatalogDiscoveryCapabilities", () => {
 
   it("enables canonical discovery only when the backend advertises it", async () => {
     convexQueryMock.mockResolvedValue({
-      catalogDiscovery: { apiVersion: 1 },
+      catalogDiscovery: { apiVersion: 2 },
       skillsSh: { runtimeEnabled: true },
     });
 
     await expect(fetchCatalogDiscoveryCapabilities()).resolves.toEqual({
-      apiVersion: 1,
+      apiVersion: 2,
       canonicalTrendingEnabled: true,
     });
   });
 
-  it("treats the previous response shape as a legacy backend", async () => {
+  it("preserves the previous catalog discovery contract version", async () => {
+    convexQueryMock.mockResolvedValue({
+      catalogDiscovery: { apiVersion: 1 },
+      skillsSh: { runtimeEnabled: false },
+    });
+
+    await expect(fetchCatalogDiscoveryCapabilities()).resolves.toEqual({
+      apiVersion: 1,
+      canonicalTrendingEnabled: false,
+    });
+  });
+
+  it("treats a response without catalog discovery capabilities as legacy", async () => {
     convexQueryMock.mockResolvedValue({
       skillsSh: { runtimeEnabled: false },
     });

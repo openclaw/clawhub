@@ -50,7 +50,7 @@ describe("homeListingData", () => {
     fetchPluginCatalogMock.mockReset();
     fetchCatalogDiscoveryCapabilitiesMock.mockReset();
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
-      apiVersion: 1,
+      apiVersion: 2,
       canonicalTrendingEnabled: true,
     });
     convexQueryMock.mockResolvedValue({

@@ -304,6 +304,52 @@ describe("public skill list deterministic cursors", () => {
     );
   });
 
+  it("includes skills owned by official publishers in the Official feed", async () => {
+    const officialPublisherSkill = makeSearchDigest({
+      skillId: "skills:publisher-official",
+      slug: "publisher-official",
+      ownerPublisherId: "publishers:openclaw",
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+      ownerName: undefined,
+      ownerDisplayName: "OpenClaw",
+    });
+    const communitySkill = makeSearchDigest({
+      skillId: "skills:community",
+      slug: "community",
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [officialPublisherSkill, communitySkill],
+      hasMore: false,
+      indexKeys: [
+        [undefined, officialPublisherSkill.createdAt, officialPublisherSkill._id],
+        [undefined, communitySkill.createdAt, communitySkill._id],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "officialPublishers") {
+              throw new Error(`Unexpected table: ${table}`);
+            }
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({ publisherId: "publishers:openclaw" }),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { officialOnly: true, sort: "newest", numItems: 10 },
+    );
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["publisher-official"]);
+  });
+
   it("applies Official and New eligibility at the backend cursor boundary", async () => {
     const officialNew = makeSearchDigest({
       skillId: "skills:official-new",

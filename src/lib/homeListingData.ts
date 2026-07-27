@@ -1,5 +1,6 @@
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
+import { isOfficialSkillListing } from "./badges";
 import { fetchCatalogDiscoveryCapabilities } from "./catalogDiscoveryCapabilities";
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
@@ -53,6 +54,7 @@ export const HOME_NEW_WINDOW_MS = 14 * 24 * 60 * 60 * 1_000;
 
 const PLUGIN_CATALOG_PAGE_LIMIT = 100;
 const LEGACY_NEW_PLUGIN_MAX_REQUESTS = 10;
+const LEGACY_OFFICIAL_SKILL_MAX_REQUESTS = 10;
 // Featured is intentionally a finite editorial feed: the latest 40 badge-history rows.
 const FEATURED_SKILL_LIMIT = 40;
 
@@ -138,7 +140,10 @@ export async function fetchHomeSkillListing(
   // highlightedOnly is a dedicated backend path ordered by skillBadges.by_kind_at;
   // the nominal sort below is ignored for Featured and never chooses its candidate set.
   const capabilities =
-    tab === "new" ? await fetchCatalogDiscoveryCapabilities() : { apiVersion: 1 as const };
+    tab === "new" || tab === "official"
+      ? await fetchCatalogDiscoveryCapabilities()
+      : { apiVersion: 2 as const };
+  const useBackendOfficialFilter = tab === "official" && capabilities.apiVersion >= 2;
   const newestCutoff = Date.now() - HOME_NEW_WINDOW_MS;
   const requestLimit = tab === "featured" ? FEATURED_SKILL_LIMIT : numItems;
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
@@ -147,15 +152,21 @@ export async function fetchHomeSkillListing(
       const page: HomeNativeSkillListingEntry[] = [];
       let cursor: string | null | undefined;
       let hasMore = false;
+      const maxRequests =
+        tab === "official" && !useBackendOfficialFilter
+          ? LEGACY_OFFICIAL_SKILL_MAX_REQUESTS
+          : Number.POSITIVE_INFINITY;
 
-      while (page.length < requestLimit) {
+      let requestCount = 0;
+      while (page.length < requestLimit && requestCount < maxRequests) {
+        requestCount += 1;
         const result = await convexHttp.query(api.skills.listPublicPageV4, {
           cursor: cursor ?? undefined,
           numItems: requestLimit - page.length,
           sort: tab === "new" || tab === "official" ? "newest" : "updated",
           dir: "desc",
           highlightedOnly: tab === "featured" ? true : undefined,
-          officialOnly: tab === "official" ? true : undefined,
+          ...(useBackendOfficialFilter ? { officialOnly: true } : {}),
           ...(tab === "new" && capabilities.apiVersion >= 1 ? { createdAfter: newestCutoff } : {}),
           categorySlug: categorySlug ?? undefined,
         });
@@ -163,6 +174,9 @@ export async function fetchHomeSkillListing(
         const resultPage = transportPage.filter(
           (entry) =>
             skillMatchesAnyHomeCategory(entry.skill, categorySlugs) &&
+            (tab !== "official" ||
+              useBackendOfficialFilter ||
+              isOfficialSkillListing(entry.skill, entry.owner)) &&
             (tab !== "new" ||
               capabilities.apiVersion >= 1 ||
               entry.skill.createdAt >= newestCutoff),

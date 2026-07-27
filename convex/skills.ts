@@ -5606,6 +5606,7 @@ export const listPublicPageV4 = query({
       numItems,
       Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, numItems * 12),
     );
+    const officialPublisherCache = new Map<string, boolean>();
 
     for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
       if (remainingRows <= 0) break;
@@ -5639,19 +5640,23 @@ export const listPublicPageV4 = query({
         ) {
           return { page: items, hasMore: false, nextCursor: null };
         }
-        if (
-          (!args.officialOnly || isSkillCatalogOfficial(digest)) &&
+        const passesFilters =
           (typeof args.createdAfter !== "number" || digest.createdAt >= args.createdAfter) &&
           digestPassesPublicListFilters(digest, {
             categorySlug,
             topic,
             categoryKeywords,
             excludeCategoryKeywords,
-          })
+          });
+        if (!passesFilters) continue;
+        if (
+          args.officialOnly &&
+          !(await isOfficialSkillBrowseDigest(ctx, digest, officialPublisherCache))
         ) {
-          const item = await buildPublicSkillEntryFromDigest(ctx, digest);
-          if (item) items.push(item);
+          continue;
         }
+        const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+        if (item) items.push(item);
         if (items.length >= numItems) {
           const nextDigest = result.page[index + 1];
           if (
@@ -6399,6 +6404,21 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
 
 function isSkillCatalogOfficial(digest: Doc<"skillSearchDigest">) {
   return Boolean(digest.badges?.official);
+}
+
+async function isOfficialSkillBrowseDigest(
+  ctx: Pick<QueryCtx, "db">,
+  digest: Doc<"skillSearchDigest">,
+  publisherCache: Map<string, boolean>,
+) {
+  if (isSkillCatalogOfficial(digest)) return true;
+  if (!digest.ownerPublisherId) return false;
+  const publisherId = String(digest.ownerPublisherId);
+  const cached = publisherCache.get(publisherId);
+  if (cached !== undefined) return cached;
+  const official = await hasOfficialPublisherRow(ctx, digest.ownerPublisherId);
+  publisherCache.set(publisherId, official);
+  return official;
 }
 
 function isCuratedSkillDigest(digest: Pick<Doc<"skillSearchDigest">, "badges">) {

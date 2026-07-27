@@ -68,7 +68,7 @@ describe("SkillsIndex", () => {
     fetchCanonicalTrendingPageMock.mockResolvedValue(canonicalPage([]));
     fetchCatalogDiscoveryCapabilitiesMock.mockReset();
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
-      apiVersion: 1,
+      apiVersion: 2,
       canonicalTrendingEnabled: true,
     });
   });
@@ -172,9 +172,9 @@ describe("SkillsIndex", () => {
         dir: "desc",
         numItems: 20,
         highlightedOnly: undefined,
-        officialOnly: undefined,
       }),
     );
+    expect(args).not.toHaveProperty("officialOnly");
     expect(typeof args.createdAfter).toBe("number");
     expect(Date.now() - Number(args.createdAfter)).toBeLessThanOrEqual(
       14 * 24 * 60 * 60 * 1000 + 1000,
@@ -241,6 +241,54 @@ describe("SkillsIndex", () => {
       }),
     );
     expect(getLastListPageArgs()).not.toHaveProperty("officialFirst");
+  });
+
+  it("scans legacy pages for official publishers without sending officialOnly", async () => {
+    searchMock = { tab: "official" };
+    fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
+      apiVersion: 0,
+      canonicalTrendingEnabled: false,
+    });
+    const official = {
+      ...makeListResult("official-skill", "Official Skill"),
+      ownerHandle: "sdk-team",
+      owner: { handle: "sdk-team", official: true },
+    };
+    const legacyPages = [
+      {
+        page: [makeListResult("community-1", "Community 1")],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      },
+      {
+        page: [makeListResult("community-2", "Community 2")],
+        hasMore: true,
+        nextCursor: "cursor-2",
+      },
+      {
+        page: [makeListResult("community-3", "Community 3")],
+        hasMore: true,
+        nextCursor: "cursor-3",
+      },
+      { page: [official], hasMore: false, nextCursor: null },
+    ];
+    convexHttpMock.query.mockImplementation(
+      async (_functionReference: unknown, args: Record<string, unknown>) => {
+        if ("officialOnly" in args) {
+          throw new Error("Object contains extra field `officialOnly`");
+        }
+        return legacyPages.shift();
+      },
+    );
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("Official Skill")).toBeTruthy();
+    expect(screen.queryByText("Community 1")).toBeNull();
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(4);
+    for (const [, args] of convexHttpMock.query.mock.calls) {
+      expect(args).not.toHaveProperty("officialOnly");
+    }
   });
 
   it("shows category navigation outside Trending and sends the selected category", async () => {

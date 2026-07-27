@@ -5,6 +5,7 @@ type BadgeKind = Doc<"skillBadges">["kind"];
 type SkillBadgeMap = Partial<Record<BadgeKind, { byUserId: Id<"users">; at: number }>>;
 
 type SkillLike = { badges?: SkillBadgeMap | null };
+type SkillOwnerLike = object | null | undefined;
 
 type BadgeLabel = "Deprecated" | "Official";
 
@@ -14,6 +15,13 @@ export function isSkillHighlighted(skill: SkillLike) {
 
 export function isSkillOfficial(skill: SkillLike) {
   return Boolean(skill.badges?.official);
+}
+
+export function isOfficialSkillListing(skill: SkillLike, owner?: SkillOwnerLike) {
+  return (
+    isSkillOfficial(skill) ||
+    (owner !== null && owner !== undefined && "official" in owner && owner.official === true)
+  );
 }
 
 export function isSkillDeprecated(skill: SkillLike) {

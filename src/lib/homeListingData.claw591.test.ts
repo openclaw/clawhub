@@ -51,7 +51,7 @@ describe("homeListingData", () => {
     fetchCanonicalTrendingPageMock.mockReset();
     fetchCatalogDiscoveryCapabilitiesMock.mockReset();
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
-      apiVersion: 1,
+      apiVersion: 2,
       canonicalTrendingEnabled: true,
     });
     convexQueryMock.mockResolvedValue({ page: [], hasMore: false, nextCursor: null });
@@ -196,6 +196,52 @@ describe("homeListingData", () => {
       "skills:listPublicPageV4",
       expect.objectContaining({ officialOnly: true, sort: "newest" }),
     );
+  });
+
+  it("filters legacy Official pages by publisher status without the new argument", async () => {
+    fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
+      apiVersion: 1,
+      canonicalTrendingEnabled: false,
+    });
+    const official = {
+      ...makeNative("official-skill", 1, 0),
+      owner: { handle: "sdk-team", official: true },
+    };
+    const legacyPages = [
+      {
+        page: [makeNative("community-1", 4, 0)],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      },
+      {
+        page: [makeNative("community-2", 3, 0)],
+        hasMore: true,
+        nextCursor: "cursor-2",
+      },
+      {
+        page: [makeNative("community-3", 2, 0)],
+        hasMore: true,
+        nextCursor: "cursor-3",
+      },
+      { page: [official], hasMore: false, nextCursor: null },
+    ];
+    convexQueryMock.mockImplementation(
+      async (_functionReference: unknown, args: Record<string, unknown>) => {
+        if ("officialOnly" in args) {
+          throw new Error("Object contains extra field `officialOnly`");
+        }
+        return legacyPages.shift();
+      },
+    );
+
+    await expect(fetchHomeSkillListing("official", [], HOME_LISTING_PAGE_SIZE)).resolves.toEqual({
+      page: [official],
+      hasMore: false,
+    });
+    expect(convexQueryMock).toHaveBeenCalledTimes(4);
+    for (const [, args] of convexQueryMock.mock.calls) {
+      expect(args).not.toHaveProperty("officialOnly");
+    }
   });
 
   it("keeps plugins out of Trending and supports New, Featured, and Official", async () => {

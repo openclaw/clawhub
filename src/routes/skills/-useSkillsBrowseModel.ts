@@ -3,6 +3,7 @@ import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
 import { convexHttp } from "../../convex/client";
+import { isOfficialSkillListing } from "../../lib/badges";
 import { fetchCatalogDiscoveryCapabilities } from "../../lib/catalogDiscoveryCapabilities";
 import {
   ALL_CATEGORY_KEYWORDS,
@@ -22,6 +23,7 @@ const pageSize = 20;
 const featuredPageSize = 40;
 const newWindowMs = 14 * 24 * 60 * 60 * 1_000;
 const maxConsecutiveEmptyPagesPerFetch = 3;
+const legacyOfficialMaxRequestsPerFetch = 10;
 
 function isNavigationAbortError(err: unknown) {
   if (!(err instanceof Error)) return false;
@@ -204,17 +206,21 @@ export function useSkillsBrowseModel({
           return;
         }
         const capabilities =
-          catalogTab === "new"
+          catalogTab === "new" || catalogTab === "official"
             ? await fetchCatalogDiscoveryCapabilities()
-            : { apiVersion: 1 as const };
+            : { apiVersion: 2 as const };
+        const useBackendOfficialFilter = catalogTab === "official" && capabilities.apiVersion >= 2;
+        const legacyOfficialResults: SkillListEntry[] = [];
+        let legacyOfficialRequestCount = 0;
         while (true) {
+          legacyOfficialRequestCount += 1;
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
             numItems: catalogTab === "featured" ? featuredPageSize : pageSize,
             ...(listSort ? { sort: listSort } : {}),
             dir,
             highlightedOnly: catalogTab === "featured" ? true : undefined,
-            officialOnly: catalogTab === "official" ? true : undefined,
+            ...(useBackendOfficialFilter ? { officialOnly: true } : {}),
             ...(catalogTab === "new" && capabilities.apiVersion >= 1
               ? { createdAfter: newCutoff }
               : {}),
@@ -227,10 +233,15 @@ export function useSkillsBrowseModel({
             excludeCategoryKeywords,
           });
           if (generation !== fetchGeneration.current) return;
-          const visiblePage =
-            catalogTab === "new" && capabilities.apiVersion === 0
-              ? result.page.filter((entry) => entry.skill.createdAt >= newCutoff)
-              : result.page;
+          const visiblePage = result.page.filter(
+            (entry) =>
+              (catalogTab !== "new" ||
+                capabilities.apiVersion >= 1 ||
+                entry.skill.createdAt >= newCutoff) &&
+              (catalogTab !== "official" ||
+                useBackendOfficialFilter ||
+                isOfficialSkillListing(entry.skill, entry.owner)),
+          );
           const reachedLegacyNewCutoff =
             catalogTab === "new" &&
             capabilities.apiVersion === 0 &&
@@ -243,6 +254,26 @@ export function useSkillsBrowseModel({
             result.nextCursor !== pageCursor
               ? result.nextCursor
               : null;
+
+          if (catalogTab === "official" && !useBackendOfficialFilter) {
+            legacyOfficialResults.push(...visiblePage);
+            if (
+              nextCursor &&
+              legacyOfficialResults.length < pageSize &&
+              legacyOfficialRequestCount < legacyOfficialMaxRequestsPerFetch
+            ) {
+              pageCursor = nextCursor;
+              continue;
+            }
+
+            setListResults((prev) =>
+              cursor ? [...prev, ...legacyOfficialResults] : legacyOfficialResults,
+            );
+            setListCursor(nextCursor);
+            setListAutoLoadPaused(legacyOfficialResults.length === 0 && Boolean(nextCursor));
+            setListStatus(nextCursor ? "idle" : "done");
+            return;
+          }
 
           // Filtered scans can yield empty transport pages before reaching visible results.
           if (visiblePage.length === 0 && nextCursor) {

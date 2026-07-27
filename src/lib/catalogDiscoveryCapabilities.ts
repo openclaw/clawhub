@@ -2,7 +2,7 @@ import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 
 type CatalogDiscoveryCapabilities = {
-  apiVersion: 0 | 1;
+  apiVersion: 0 | 1 | 2;
   canonicalTrendingEnabled: boolean;
 };
 
@@ -21,7 +21,12 @@ export async function fetchCatalogDiscoveryCapabilities(): Promise<CatalogDiscov
       skillsSh?: { runtimeEnabled?: unknown };
     };
     return {
-      apiVersion: response.catalogDiscovery?.apiVersion === 1 ? 1 : 0,
+      apiVersion:
+        response.catalogDiscovery?.apiVersion === 2
+          ? 2
+          : response.catalogDiscovery?.apiVersion === 1
+            ? 1
+            : 0,
       canonicalTrendingEnabled: response.skillsSh?.runtimeEnabled === true,
     };
   } catch {
