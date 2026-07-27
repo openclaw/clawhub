@@ -27851,6 +27851,8 @@ a.home-v2-apps-see-all:focus-visible svg {
   }
 
   .home-v2-apps-categories {
+    width: 100%;
+    min-width: 0;
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;

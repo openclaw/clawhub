@@ -385,6 +385,16 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".home-v2-listing-row::before")).toContain("border-radius: 0");
   });
 
+  it("keeps the mobile app-category scroller within the page width", () => {
+    const css = styles();
+
+    cssMediaContaining(css, "(max-width: 760px)", [
+      ".home-v2-apps-categories {\n    width: 100%;",
+      "min-width: 0;",
+      "overflow-x: auto;",
+    ]);
+  });
+
   it("requires the restored footer columns and mobile section toggles", () => {
     const footerSource = footer();
     const navSource = navItems();
