@@ -375,6 +375,29 @@ describe("pre-publication worker", () => {
     expect(client.action).toHaveBeenCalledTimes(2);
   });
 
+  it("reserves one batch claim for expired retries, including filtered batches", async () => {
+    const client = {
+      action: vi.fn().mockResolvedValue(null),
+    };
+
+    await expect(
+      claimPrePublicationBatch(client, "worker-token", 4, { kind: "skill" }),
+    ).resolves.toEqual({
+      attempts: [],
+      claimFailures: 0,
+    });
+    expect(client.action.mock.calls.map(([, args]) => args.preferRetry)).toEqual([
+      true,
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ kind: "skill", preferRetry: true }),
+    );
+  });
+
   it("fails the worker batch when claims fail without claiming work", async () => {
     const client = {
       action: vi

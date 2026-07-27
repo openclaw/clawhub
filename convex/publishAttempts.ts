@@ -712,23 +712,36 @@ export const claimPendingPublishAttemptChecksInternal = internalMutation({
     claimId: v.string(),
     attemptId: v.optional(v.id("publishAttempts")),
     kind: v.optional(v.union(v.literal("skill"), v.literal("package"))),
+    retryOnly: v.optional(v.boolean()),
     slug: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     const targetedAttempt = args.attemptId ? await ctx.db.get(args.attemptId) : null;
-    const candidates = args.attemptId
-      ? targetedAttempt
-        ? [targetedAttempt]
-        : []
-      : await ctx.db
-          .query("publishAttempts")
-          .withIndex("by_status_check_claim_expires_at_created", (q) =>
-            q.eq("status", "pending_checks"),
-          )
-          .order("asc")
-          .take(25);
+    let candidates: Doc<"publishAttempts">[];
+    if (args.attemptId) {
+      candidates = targetedAttempt ? [targetedAttempt] : [];
+    } else if (args.retryOnly) {
+      candidates = await ctx.db
+        .query("publishAttempts")
+        .withIndex("by_status_check_claim_expires_at_created", (q) =>
+          q
+            .eq("status", "pending_checks")
+            .gte("checkClaimExpiresAt", 0)
+            .lte("checkClaimExpiresAt", now),
+        )
+        .order("asc")
+        .take(25);
+    } else {
+      candidates = await ctx.db
+        .query("publishAttempts")
+        .withIndex("by_status_check_claim_expires_at_created", (q) =>
+          q.eq("status", "pending_checks"),
+        )
+        .order("asc")
+        .take(25);
+    }
 
     for (const attempt of candidates) {
       if (attempt.status !== "pending_checks") {
@@ -1177,6 +1190,7 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
     token: v.string(),
     attemptId: v.optional(v.id("publishAttempts")),
     kind: v.optional(v.union(v.literal("skill"), v.literal("package"))),
+    preferRetry: v.optional(v.boolean()),
     slug: v.optional(v.string()),
     version: v.optional(v.string()),
   },
@@ -1190,10 +1204,17 @@ export const claimPrePublicationChecks: ReturnType<typeof action> = action({
       slug: args.slug,
       version: args.version,
     };
-    const claimed = ((await ctx.runMutation(
-      internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
-      claimArgs,
-    )) ??
+    const reservedRetry = args.preferRetry
+      ? await ctx.runMutation(internal.publishAttempts.claimPendingPublishAttemptChecksInternal, {
+          ...claimArgs,
+          retryOnly: true,
+        })
+      : null;
+    const claimed = (reservedRetry ??
+      (await ctx.runMutation(
+        internal.publishAttempts.claimReadyPublishAttemptFinalizationRetryInternal,
+        claimArgs,
+      )) ??
       (await ctx.runMutation(
         internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
         claimArgs,

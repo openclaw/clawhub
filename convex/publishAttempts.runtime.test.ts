@@ -7,7 +7,55 @@ import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.ts");
 
-describe("publish attempt orphan recovery", () => {
+describe("publish attempt runtime recovery", () => {
+  it("reserves retry-first claims for expired attempts under sustained fresh traffic", async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    const retryAttemptId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", {});
+      const insertAttempt = async (
+        idempotencyKey: string,
+        createdAt: number,
+        checkClaimExpiresAt?: number,
+      ) =>
+        await ctx.db.insert("publishAttempts", {
+          kind: "skill",
+          status: "pending_checks",
+          userId,
+          slug: idempotencyKey,
+          displayName: idempotencyKey,
+          version: "1.0.0",
+          idempotencyKey,
+          artifactFingerprint: idempotencyKey,
+          files: [],
+          checks: {
+            trufflehog: { status: "pending" },
+            clawscan: { status: "pending" },
+          },
+          checkClaimExpiresAt,
+          createdAt,
+          updatedAt: createdAt,
+          expiresAt: now + 60_000,
+        });
+
+      const retryId = await insertAttempt("expired-retry", now - 60_000, now - 1);
+      for (let index = 0; index < 30; index += 1) {
+        await insertAttempt(`fresh-${index}`, now + index);
+      }
+      return retryId;
+    });
+
+    const claimed = await t.mutation(
+      internal.publishAttempts.claimPendingPublishAttemptChecksInternal,
+      {
+        claimId: "retry-reserved-claim",
+        retryOnly: true,
+      } as never,
+    );
+
+    expect(claimed).toMatchObject({ attemptId: retryAttemptId });
+  });
+
   it("terminalizes a pending attempt after its staged version is deleted", async () => {
     const t = convexTest(schema, modules);
     const ids = await t.run(async (ctx) => {

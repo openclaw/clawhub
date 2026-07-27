@@ -396,6 +396,57 @@ describe("publishAttempts", () => {
     expect(ctx.storage.getUrl).not.toHaveBeenCalled();
   });
 
+  it("uses reserved claims for expired pending-check retries before finalization work", async () => {
+    const previousToken = process.env.SECURITY_SCAN_WORKER_TOKEN;
+    process.env.SECURITY_SCAN_WORKER_TOKEN = "worker-token";
+    const retry = {
+      attemptId: "publishAttempts:retry",
+      status: "pending_checks",
+      claimId: "claim-1",
+      kind: "skill",
+      userId: "users:publisher",
+      slug: "retry-skill",
+      displayName: "Retry Skill",
+      version: "1.0.0",
+      artifactFingerprint: "fingerprint",
+      files: [],
+      checkClaimExpiresAt: Date.now() + 60_000,
+      createdAt: Date.now(),
+    };
+    const ctx = {
+      runMutation: vi.fn(async (ref: Parameters<typeof getFunctionName>[0], _args?: unknown) => {
+        const name = getFunctionName(ref);
+        return name === "publishAttempts:claimPendingPublishAttemptChecksInternal"
+          ? retry
+          : { ...retry, attemptId: "publishAttempts:ready", status: "ready_to_finalize" };
+      }),
+      storage: {
+        getUrl: vi.fn(),
+      },
+    };
+
+    try {
+      await expect(
+        claimPrePublicationChecksHandler(ctx, {
+          token: "worker-token",
+          preferRetry: true,
+        }),
+      ).resolves.toMatchObject({
+        attemptId: "publishAttempts:retry",
+        status: "pending_checks",
+      });
+    } finally {
+      if (previousToken === undefined) delete process.env.SECURITY_SCAN_WORKER_TOKEN;
+      else process.env.SECURITY_SCAN_WORKER_TOKEN = previousToken;
+    }
+
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
+    expect(
+      getFunctionName(ctx.runMutation.mock.calls[0]?.[0] as Parameters<typeof getFunctionName>[0]),
+    ).toBe("publishAttempts:claimPendingPublishAttemptChecksInternal");
+    expect(ctx.runMutation.mock.calls[0]?.[1]).toMatchObject({ retryOnly: true });
+  });
+
   it("lets targeted pending attempts fall through the ready-finalization lookup", async () => {
     const ctx = {
       db: {

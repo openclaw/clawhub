@@ -791,10 +791,12 @@ export async function claimPrePublicationAttempt(
   client: PrePublicationWorkerClient,
   token: string,
   filters: PrePublicationClaimFilters = {},
+  preferRetry = false,
 ) {
   return (await client.action(api.publishAttempts.claimPrePublicationChecks, {
     token,
     ...filters,
+    ...(preferRetry ? { preferRetry: true } : {}),
   })) as ClaimedPrePublicationAttempt | null;
 }
 
@@ -805,7 +807,9 @@ export async function claimPrePublicationBatch(
   filters: PrePublicationClaimFilters = {},
 ) {
   const claims = await Promise.allSettled(
-    Array.from({ length: limit }, () => claimPrePublicationAttempt(client, token, filters)),
+    Array.from({ length: limit }, (_, index) =>
+      claimPrePublicationAttempt(client, token, filters, index === 0),
+    ),
   );
   const attempts: ClaimedPrePublicationAttempt[] = [];
   const failures: unknown[] = [];
