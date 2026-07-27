@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
+import { Bookmark, Flag, Settings, ShieldCheck, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { ActivityTrend } from "../lib/activityTrend";
@@ -212,14 +212,14 @@ export function SkillHeader({
         className="skill-sidebar-action-link skill-sidebar-star-action"
         onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
         aria-pressed={Boolean(isAuthenticated && isStarred)}
-        aria-label={isStarred ? "Remove bookmark" : "Bookmark skill"}
+        aria-label={isStarred ? "Unbookmark skill" : "Bookmark skill"}
       >
-        <Star
+        <Bookmark
           size={14}
           aria-hidden="true"
           fill={isAuthenticated && isStarred ? "currentColor" : "none"}
         />
-        {isAuthenticated && isStarred ? "Bookmarked" : "Bookmark"}
+        {isAuthenticated && isStarred ? "Unbookmark" : "Bookmark"}
         <span className="skill-action-count">{formattedStats.stars}</span>
       </button>
     </SignedInActionTooltip>

@@ -1795,11 +1795,11 @@ describe("SkillDetailPage", () => {
     fireEvent.click(starButton);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Remove bookmark" }).textContent).toContain("9");
+      expect(screen.getByRole("button", { name: "Unbookmark skill" }).textContent).toContain("9");
     });
     expect(toggleStarMock).toHaveBeenCalledWith({ skillId });
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove bookmark" }));
+    fireEvent.click(screen.getByRole("button", { name: "Unbookmark skill" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Bookmark skill" }).textContent).toContain("8");
@@ -1869,7 +1869,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
 
-    expect((await screen.findByRole("button", { name: "Remove bookmark" })).textContent).toContain(
+    expect((await screen.findByRole("button", { name: "Unbookmark skill" })).textContent).toContain(
       "1",
     );
   });

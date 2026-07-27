@@ -11,13 +11,13 @@ import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   ArrowRight,
   ArrowUpRight,
+  Bookmark,
   Building2,
   Download,
   Flag,
   MoreHorizontal,
   Plus,
   Search,
-  Star,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -286,7 +286,7 @@ export function buildPublisherStatCards(
       key: "stars",
       value: formatCompactStat(publisher.stats.stars),
       label: "bookmarks",
-      icon: Star,
+      icon: Bookmark,
     },
   ];
 }

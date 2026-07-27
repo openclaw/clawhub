@@ -1,4 +1,4 @@
-import { Download, Package, Star } from "lucide-react";
+import { Bookmark, Download, Package } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -214,7 +214,7 @@ function UserStatsTooltipContent({
               className="flex items-center gap-1 text-fs-xs text-ink-soft"
               title="Bookmarks received"
             >
-              <Star size={12} />
+              <Bookmark size={12} />
               {formatCompactStat(stats.totalStars)}
             </span>
             <span

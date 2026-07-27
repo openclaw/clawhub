@@ -1,4 +1,4 @@
-import { Download, Star } from "lucide-react";
+import { Bookmark, Download } from "lucide-react";
 import { formatSkillStatsTriplet, type SkillStatsTriplet } from "../lib/numberFormat";
 
 export function SkillStatsTripletLine({ stats }: { stats: SkillStatsTriplet }) {
@@ -6,7 +6,7 @@ export function SkillStatsTripletLine({ stats }: { stats: SkillStatsTriplet }) {
   return (
     <span className="skill-stats-triplet">
       <span className="skill-stats-item">
-        <Star size={14} aria-hidden="true" />
+        <Bookmark size={14} aria-hidden="true" />
         {formatted.stars}
       </span>
       <span className="skill-stats-item">

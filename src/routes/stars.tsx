@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { ArrowDownUp, LayoutGrid, List, Star } from "lucide-react";
+import { ArrowDownUp, Bookmark, LayoutGrid, List } from "lucide-react";
 import { startTransition, useOptimistic } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -82,8 +82,8 @@ export function Stars() {
       startTransition(() => {
         updateOptimisticSkills({ type: "restore", skill });
       });
-      console.error("Failed to remove skill bookmark:", err);
-      toast.error("Unable to remove this bookmark. Please try again.");
+      console.error("Failed to unbookmark skill:", err);
+      toast.error("Unable to unbookmark this skill. Please try again.");
     });
   };
 
@@ -94,7 +94,7 @@ export function Stars() {
   if (!isAuthenticated || !me) {
     return (
       <SignInPrompt
-        icon={Star}
+        icon={Bookmark}
         title="Sign in to see your bookmarks"
         description="Bookmark skills for quick access later."
       />
@@ -171,7 +171,7 @@ export function Stars() {
 
       {skills.length === 0 ? (
         <EmptyState
-          icon={Star}
+          icon={Bookmark}
           title="No bookmarks yet"
           description="Browse skills and bookmark your favorites."
           action={{ label: "Browse skills", href: "/skills" }}
@@ -198,10 +198,10 @@ export function Stars() {
                     e.stopPropagation();
                     handleUnstar(skill);
                   }}
-                  aria-label={`Remove bookmark for ${skill.displayName}`}
+                  aria-label={`Unbookmark ${skill.displayName}`}
                   className="stars-card-unstar text-[color:var(--gold)] hover:text-status-error-fg"
                 >
-                  <Star className="h-4 w-4 fill-current" />
+                  <Bookmark className="h-4 w-4 fill-current" />
                 </Button>
               </div>
             );
@@ -220,10 +220,10 @@ export function Stars() {
                   e.stopPropagation();
                   handleUnstar(skill);
                 }}
-                aria-label={`Remove bookmark for ${skill.displayName}`}
+                aria-label={`Unbookmark ${skill.displayName}`}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--gold)] hover:text-status-error-fg"
               >
-                <Star className="h-4 w-4 fill-current" />
+                <Bookmark className="h-4 w-4 fill-current" />
               </Button>
             </div>
           ))}

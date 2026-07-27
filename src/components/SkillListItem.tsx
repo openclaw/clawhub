@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Download, Star } from "lucide-react";
+import { Bookmark, Download } from "lucide-react";
 import { getSkillBadges } from "../lib/badges";
 import { getSkillCategoriesForSkill } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
@@ -71,7 +71,7 @@ export function SkillListItem({
           Updated {timeAgo(skill.updatedAt)}
         </span>
         <span className="skill-list-item-meta-item">
-          <Star size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
+          <Bookmark size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
         </span>
         <span className="skill-list-item-meta-item">
           <Download size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.downloads)}

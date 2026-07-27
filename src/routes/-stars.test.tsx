@@ -85,10 +85,12 @@ describe("Stars", () => {
       return undefined;
     });
 
-    render(<Stars />);
+    const { container } = render(<Stars />);
 
     expect(screen.getByText("Sign in to see your bookmarks")).toBeTruthy();
     expect(screen.getByRole("button", { name: /sign in/i })).toBeTruthy();
+    expect(container.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(container.querySelector(".lucide-star")).toBeNull();
   });
 
   it("shows skeleton while loading", () => {
@@ -125,10 +127,13 @@ describe("Stars", () => {
       return [makeSkill({ _id: "skill_1", slug: "test-skill", displayName: "Test Skill" })];
     });
 
-    render(<Stars />);
+    const { container } = render(<Stars />);
 
     expect(screen.getByRole("heading", { name: "Test Skill" })).toBeTruthy();
-    expect(screen.getByLabelText("Remove bookmark for Test Skill")).toBeTruthy();
+    const removeBookmark = screen.getByLabelText("Unbookmark Test Skill");
+    expect(removeBookmark.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(removeBookmark.querySelector(".lucide-star")).toBeNull();
+    expect(container.querySelectorAll(".lucide-star")).toHaveLength(0);
     expect(screen.getByText("Your bookmarks")).toBeTruthy();
   });
 
@@ -140,7 +145,7 @@ describe("Stars", () => {
     });
 
     render(<Stars />);
-    const unstarBtn = screen.getByLabelText("Remove bookmark for Test Skill");
+    const unstarBtn = screen.getByLabelText("Unbookmark Test Skill");
     fireEvent.click(unstarBtn);
 
     expect(toggleStarMock).toHaveBeenCalledWith({ skillId: "skill_1" });

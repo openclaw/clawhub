@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { isPluginCategorySlug, isSkillCategorySlug } from "clawhub-schema";
 import {
   Binoculars,
+  Bookmark,
   CloudOff,
   Download,
   LayoutGrid,
@@ -10,7 +11,6 @@ import {
   Plus,
   Rows3,
   Search,
-  Star,
   X,
 } from "lucide-react";
 import {
@@ -247,7 +247,7 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
       {showStats ? (
         <div className="home-v2-listing-row-stats" aria-label="Popularity">
           <span>
-            <Star size={13} aria-hidden="true" />
+            <Bookmark size={13} aria-hidden="true" />
             {formatCompactStat(entry.skill.stats?.stars ?? 0)}
           </span>
           <span>
@@ -363,7 +363,7 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
       {showStats ? (
         <div className="home-v2-listing-card-stats" aria-label="Popularity">
           <span>
-            <Star size={13} aria-hidden="true" />
+            <Bookmark size={13} aria-hidden="true" />
             {formatCompactStat(entry.skill.stats?.stars ?? 0)}
           </span>
           <span>

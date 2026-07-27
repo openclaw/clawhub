@@ -497,7 +497,17 @@ describe("SkillHeader", () => {
       name: "Bookmark skill",
     });
     expect(starButton.className).toContain("skill-sidebar-star-action");
+    expect(starButton.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(starButton.querySelector(".lucide-star")).toBeNull();
     expect(container.querySelector(".skill-hero-title-row .skill-title-actions")).toBeNull();
+  });
+
+  it("presents the active bookmark control as an Unbookmark action", () => {
+    renderHeader({ isAuthenticated: true, isStarred: true });
+
+    const unbookmark = screen.getByRole("button", { name: "Unbookmark skill" });
+    expect(unbookmark.textContent).toContain("Unbookmark");
+    expect(unbookmark.querySelector(".lucide-bookmark")).toBeTruthy();
   });
 
   it("places Bookmark on the creator row on mobile detail layout", () => {

@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   ArrowRight,
+  Bookmark,
   ExternalLink,
   ChevronDown,
   Command,
@@ -15,7 +16,6 @@ import {
   Plus,
   Search,
   Settings,
-  Star,
   Sun,
   UserRound,
   X,
@@ -660,7 +660,7 @@ export default function Header() {
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/stars" className="flex items-center gap-2">
-                      <Star size={14} aria-hidden="true" />
+                      <Bookmark size={14} aria-hidden="true" />
                       Bookmarks
                     </Link>
                   </DropdownMenuItem>

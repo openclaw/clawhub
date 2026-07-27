@@ -54,6 +54,8 @@ describe("SkillListItem", () => {
 
     expect(screen.getByText("@creator")).toBeTruthy();
     expect(container.querySelector(".skill-list-item-main img")).toBeNull();
+    expect(container.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(container.querySelector(".lucide-star")).toBeNull();
   });
 
   it("previews long names without displacing the creator identity", () => {

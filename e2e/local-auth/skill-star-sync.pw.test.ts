@@ -69,7 +69,7 @@ async function expectHealthyStarPage(page: import("@playwright/test").Page, erro
   );
 }
 
-test("starring a skill survives refresh with the synchronized count", async ({
+test("bookmarking a skill survives refresh with the synchronized count", async ({
   page,
 }, testInfo) => {
   const errors = trackRuntimeErrors(page);
@@ -89,23 +89,26 @@ test("starring a skill survives refresh with the synchronized count", async ({
 
   await signInAsLocalPersona(page, "user");
   errors.length = 0;
-  const starButton = await gotoUntilStarButtonReady(page, buildSkillDetailHref(ownerHandle, slug));
+  const bookmarkButton = await gotoUntilStarButtonReady(
+    page,
+    buildSkillDetailHref(ownerHandle, slug),
+  );
   await expectLocalPersonaActive(page, "user");
 
-  await expect(starButton).toContainText("0");
+  await expect(bookmarkButton).toContainText("0");
 
-  await starButton.click();
+  await bookmarkButton.click();
 
-  const unstarButton = page.getByRole("button", { name: "Remove bookmark" });
-  await expect(unstarButton).toBeVisible({ timeout: 30_000 });
-  await expect(unstarButton).toContainText("1", { timeout: 30_000 });
+  const unbookmarkButton = page.getByRole("button", { name: "Unbookmark skill" });
+  await expect(unbookmarkButton).toBeVisible({ timeout: 30_000 });
+  await expect(unbookmarkButton).toContainText("1", { timeout: 30_000 });
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForHydration(page);
 
-  const refreshedUnstarButton = page.getByRole("button", { name: "Remove bookmark" });
-  await expect(refreshedUnstarButton).toBeVisible({ timeout: 30_000 });
-  await expect(refreshedUnstarButton).toContainText("1", { timeout: 30_000 });
+  const refreshedUnbookmarkButton = page.getByRole("button", { name: "Unbookmark skill" });
+  await expect(refreshedUnbookmarkButton).toBeVisible({ timeout: 30_000 });
+  await expect(refreshedUnbookmarkButton).toContainText("1", { timeout: 30_000 });
 
   await expectHealthyStarPage(page, errors);
 });

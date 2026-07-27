@@ -712,7 +712,10 @@ export function AbusePage({
                       label="Total installs"
                       value={selectedScore?.totalInstalls}
                     />
-                    <PublisherAbuseMetric label="Total stars" value={selectedScore?.totalStars} />
+                    <PublisherAbuseMetric
+                      label="Total bookmarks"
+                      value={selectedScore?.totalStars}
+                    />
                     <PublisherAbuseMetric
                       label="Total downloads"
                       value={selectedScore?.totalDownloads}
@@ -725,7 +728,7 @@ export function AbusePage({
                       ratio
                     />
                     <PublisherAbuseMetric
-                      label="Stars / skill"
+                      label="Bookmarks / skill"
                       value={selectedScore?.starsPerSkill}
                       ratio
                     />
@@ -1793,7 +1796,7 @@ function formatReasonCode(reason: string) {
     .replace("High / Catalog / Volume", "High Catalog Volume")
     .replace("Extreme / Volume / Low / Engagement", "Extreme Volume, Low Engagement")
     .replace("Low / Installs / Per / Skill", "Low Installs / Skill")
-    .replace("Low / Stars / Per / Skill", "Low Stars / Skill")
+    .replace("Low / Stars / Per / Skill", "Low Bookmarks / Skill")
     .replace("Low / Downloads / Per / Skill", "Low Downloads / Skill")
     .replace("Temporal / Download / Spike / Flat / Installs", "Temporal Spike, Flat Installs")
     .replace(
@@ -1807,13 +1810,13 @@ function describeReasonCode(reason: string) {
     return "Publisher has an unusually high number of skills compared to peers.";
   }
   if (reason === "extreme_volume_low_engagement") {
-    return "Very high catalog volume with extremely low engagement across installs, stars, and downloads.";
+    return "Very high catalog volume with extremely low engagement across installs, bookmarks, and downloads.";
   }
   if (reason === "low_installs_per_skill") {
     return "Installs per skill are far below the platform median.";
   }
   if (reason === "low_stars_per_skill") {
-    return "Stars per skill are far below the platform median.";
+    return "Bookmarks per skill are far below the platform median.";
   }
   if (reason === "low_downloads_per_skill") {
     return "Downloads per skill are far below the platform median.";

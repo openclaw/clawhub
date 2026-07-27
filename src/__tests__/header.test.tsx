@@ -754,7 +754,10 @@ describe("Header", () => {
     expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("Bookmarks").closest("a")?.getAttribute("href")).toBe("/stars");
+    const bookmarksLink = screen.getByText("Bookmarks").closest("a");
+    expect(bookmarksLink?.getAttribute("href")).toBe("/stars");
+    expect(bookmarksLink?.querySelector(".lucide-bookmark")).toBeTruthy();
+    expect(bookmarksLink?.querySelector(".lucide-star")).toBeNull();
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
   });

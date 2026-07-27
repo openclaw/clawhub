@@ -1,4 +1,4 @@
-import { Download, Star } from "lucide-react";
+import { Bookmark, Download } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
@@ -109,7 +109,7 @@ export function SkillRelatedSection({
                   {isCompact ? (
                     <span className="related-skill-stats" aria-label="Related skill stats">
                       <span className="related-skill-stat">
-                        <Star size={13} aria-hidden="true" />
+                        <Bookmark size={13} aria-hidden="true" />
                         {formattedStats.stars}
                       </span>
                       <span className="related-skill-stat">
