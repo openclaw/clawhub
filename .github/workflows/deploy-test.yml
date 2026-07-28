@@ -41,7 +41,9 @@ jobs:
       (github.ref == 'refs/heads/pe/claw-560-verified-adoption' &&
       inputs.branch_test_confirm == 'deploy-claw-560-to-permanent-test') ||
       (github.ref == 'refs/heads/pe/claw-590-trending-snapshot' &&
-      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test')) &&
+      inputs.branch_test_confirm == 'deploy-claw-590-to-permanent-test') ||
+      (github.ref == 'refs/heads/pe/claw-602-honest-trending' &&
+      inputs.branch_test_confirm == 'deploy-claw-602-to-permanent-test')) &&
       github.actor == 'Patrick-Erichsen' &&
       inputs.expected_sha != '')) ||
       (github.event_name == 'pull_request' &&
@@ -132,6 +134,14 @@ jobs:
               [[ "$GITHUB_REF" == refs/heads/pe/claw-590-trending-snapshot ]] &&
               [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
               [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-590-to-permanent-test ]] &&
+              [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
+            then
+              branch_test_allowed=true
+            fi
+            if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]] &&
+              [[ "$GITHUB_REF" == refs/heads/pe/claw-602-honest-trending ]] &&
+              [[ "$GITHUB_ACTOR" == Patrick-Erichsen ]] &&
+              [[ "${{ inputs.branch_test_confirm }}" == deploy-claw-602-to-permanent-test ]] &&
               [[ "${{ inputs.expected_sha }}" == "$deploy_sha" ]]
             then
               branch_test_allowed=true

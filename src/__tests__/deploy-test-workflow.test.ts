@@ -119,6 +119,22 @@ describe("Test deploy workflow", () => {
     expect(revision).toContain("$GITHUB_REPOSITORY");
   });
 
+  it("admits the CLAW-602 UI correction only through an exact guarded manual dispatch", async () => {
+    const workflow = await readWorkflow();
+    const job = workflow.jobs?.["deploy-test"];
+    const steps = job?.steps ?? [];
+    const revision = steps.find((step) => step.name === "Resolve deployment revision")?.run ?? "";
+
+    expect(job?.if).toContain("github.ref == 'refs/heads/pe/claw-602-honest-trending'");
+    expect(job?.if).toContain("inputs.branch_test_confirm == 'deploy-claw-602-to-permanent-test'");
+    expect(job?.if).not.toContain(
+      "github.event.pull_request.head.ref == 'pe/claw-602-honest-trending'",
+    );
+    expect(revision).toContain("refs/heads/pe/claw-602-honest-trending");
+    expect(revision).toContain("deploy-claw-602-to-permanent-test");
+    expect(revision).toContain('inputs.expected_sha }}" == "$deploy_sha"');
+  });
+
   it("uses only the Test environment and narrowly scoped secrets", async () => {
     const workflow = await readWorkflow();
     const job = workflow.jobs?.["deploy-test"];
