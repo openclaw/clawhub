@@ -29,194 +29,208 @@ type WrappedHandler<TArgs, TResult> = {
 const listMineInternalHandler = (
   listMineInternal as unknown as WrappedHandler<
     { userId: string; cursor?: string | null; limit?: number },
-    { items: unknown[]; nextCursor: string | null }
+    {
+      groups: Array<{ recordedItemCount: number; previewItems: unknown[] }>;
+      nextCursor: string | null;
+    }
   >
 )._handler;
 const deletePublisherActivityInternalHandler = (
   deletePublisherActivityInternal as unknown as WrappedHandler<
-    { publisherId: string; cursor?: string },
+    { publisherId: string; phase?: "events" | "groups"; cursor?: string },
     { deleted: number; scheduled: boolean }
   >
 )._handler;
 
-function queryBuilder(params: {
-  existingActivity?: Record<string, unknown> | null;
-  activities?: Array<Record<string, unknown>>;
-  followedPublisherIds?: Set<string>;
-}) {
-  return vi.fn((table: string) => ({
-    withIndex: (_index: string, build?: (query: unknown) => unknown) => {
-      const filters = new Map<string, unknown>();
-      const q = {
-        eq(field: string, value: unknown) {
-          filters.set(field, value);
-          return q;
-        },
-        lt(field: string, value: unknown) {
-          filters.set(`lt:${field}`, value);
-          return q;
-        },
-      };
-      build?.(q);
-      return {
-        unique: async () => params.existingActivity ?? null,
-        order: () => ({
-          take: async (limit: number) => {
-            if (table === "publisherFollows") {
-              return [...(params.followedPublisherIds ?? [])]
-                .map((publisherId, index) => ({
-                  _id: `publisherFollows:${index}`,
-                  followerUserId: "users:viewer",
-                  publisherId,
-                }))
-                .slice(0, limit);
-            }
-            const publisherId = filters.get("publisherId");
-            const before = filters.get("lt:sortKey");
-            return (params.activities ?? [])
-              .map((activity) => {
-                const sortKey =
-                  typeof activity.sortKey === "string"
-                    ? activity.sortKey
-                    : `${String(activity.eventAt).padStart(15, "0")}:${String(activity._id)}`;
-                return { ...activity, sortKey } as Record<string, unknown> & { sortKey: string };
-              })
-              .filter(
-                (activity) =>
-                  activity.publisherId === publisherId &&
-                  (typeof before !== "string" || activity.sortKey < before),
-              )
-              .sort((left, right) => right.sortKey.localeCompare(left.sortKey))
-              .slice(0, limit);
-          },
-        }),
-      };
+type Row = Record<string, unknown> & { _id: string };
+
+function indexedQuery(rows: Row[], build?: (query: unknown) => unknown) {
+  const filters = new Map<string, unknown>();
+  const upperBounds = new Map<string, unknown>();
+  const q = {
+    eq(field: string, value: unknown) {
+      filters.set(field, value);
+      return q;
     },
-  }));
+    lt(field: string, value: unknown) {
+      upperBounds.set(field, value);
+      return q;
+    },
+  };
+  build?.(q);
+  const filtered = () =>
+    rows.filter((row) => {
+      for (const [field, value] of filters) if (row[field] !== value) return false;
+      for (const [field, value] of upperBounds) {
+        if (typeof row[field] !== "string" || typeof value !== "string" || row[field] >= value) {
+          return false;
+        }
+      }
+      return true;
+    });
+  const ordered = () =>
+    filtered().sort((left, right) =>
+      String(right.sortKey ?? right._id).localeCompare(String(left.sortKey ?? left._id)),
+    );
+  return {
+    unique: async () => filtered()[0] ?? null,
+    order: () => ({
+      take: async (limit: number) => ordered().slice(0, limit),
+      paginate: async ({ numItems }: { cursor: string | null; numItems: number }) => ({
+        page: ordered().slice(0, numItems),
+        continueCursor: "",
+        isDone: true,
+      }),
+    }),
+    paginate: async ({ numItems }: { cursor: string | null; numItems: number }) => ({
+      page: ordered().slice(0, numItems),
+      continueCursor: "",
+      isDone: true,
+    }),
+  };
 }
 
-describe("publisher activity", () => {
+describe("publisher activity groups", () => {
   afterEach(() => vi.clearAllMocks());
 
-  it("records one deduplicated activity row without follower fanout", async () => {
-    const query = queryBuilder({ existingActivity: null });
-    const insert = vi.fn(async () => "publisherActivity:1");
-    const get = vi.fn(async () => ({
+  it("coalesces releases that share a publication batch while retaining granular events", async () => {
+    const activities: Row[] = [];
+    const groups: Row[] = [];
+    const publisher = {
       _id: "publishers:nvidia",
       handle: "nvidia",
       displayName: "NVIDIA",
       kind: "org",
+    };
+    let nextId = 1;
+    const query = vi.fn((table: string) => ({
+      withIndex: (_index: string, build?: (query: unknown) => unknown) =>
+        indexedQuery(table === "publisherActivity" ? activities : groups, build),
     }));
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const row = { _id: `${table}:${nextId++}`, ...value };
+      (table === "publisherActivity" ? activities : groups).push(row);
+      return row._id;
+    });
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      const row = groups.find((candidate) => candidate._id === id);
+      Object.assign(row!, value);
+    });
+    const ctx = { db: { get: vi.fn(async () => publisher), query, insert, patch } } as never;
 
-    const result = await recordPublisherPublicationActivity(
-      { db: { get, query, insert } } as never,
-      {
+    for (let index = 0; index < 2; index += 1) {
+      await recordPublisherPublicationActivity(ctx, {
         publisherId: "publishers:nvidia" as never,
         eventType: "skill.publish",
-        skillId: "skills:cuda" as never,
-        skillVersionId: "skillVersions:1" as never,
-        version: "1.2.3",
-        eventAt: 42,
-      },
-    );
+        skillId: `skills:${index}` as never,
+        skillVersionId: `skillVersions:${index}` as never,
+        version: "2.0.0",
+        eventAt: 100 + index,
+        publicationBatchId: "github:nvidia/skills:abc123",
+      });
+    }
 
-    expect(result).toMatchObject({ created: true, activityId: "publisherActivity:1" });
-    expect(insert).toHaveBeenCalledTimes(1);
-    expect(insert).toHaveBeenCalledWith(
-      "publisherActivity",
-      expect.objectContaining({
-        dedupeKey: "skill.publish:skillVersions:1",
-        eventAt: 42,
-      }),
-    );
+    expect(activities).toHaveLength(2);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({ itemCount: 2, eventAt: 101 });
+    expect(activities[0]?.batchKey).toBe(groups[0]?.batchKey);
   });
 
-  it("returns only currently followed, visible, still-owned artifacts", async () => {
-    const activities = [
+  it("renders a 50-skill batch plus an unrelated plugin release as two groups", async () => {
+    const publisher = {
+      _id: "publishers:patrick",
+      handle: "patrick",
+      displayName: "Patrick",
+      kind: "user",
+      image: undefined,
+    };
+    const groups: Row[] = [
       {
-        _id: "publisherActivity:visible",
-        publisherId: "publishers:nvidia",
-        eventType: "skill.publish",
-        skillId: "skills:cuda",
-        skillVersionId: "skillVersions:1",
-        version: "1.2.3",
-        eventAt: 42,
+        _id: "publisherActivityGroups:skills",
+        publisherId: publisher._id,
+        batchKey: "batch:skills",
+        eventAt: 200,
+        sortKey: "000000000000200:batch:skills",
+        itemCount: 50,
       },
       {
-        _id: "publisherActivity:unfollowed",
-        publisherId: "publishers:other",
-        eventType: "skill.publish",
-        skillId: "skills:other",
-        skillVersionId: "skillVersions:2",
-        version: "2.0.0",
-        eventAt: 41,
-      },
-      {
-        _id: "publisherActivity:revoked",
-        publisherId: "publishers:nvidia",
-        eventType: "plugin.publish",
-        packageId: "packages:blocked",
-        packageReleaseId: "packageReleases:blocked",
-        version: "3.0.0",
-        eventAt: 40,
-      },
-      {
-        _id: "publisherActivity:blocked-skill",
-        publisherId: "publishers:nvidia",
-        eventType: "skill.publish",
-        skillId: "skills:blocked",
-        skillVersionId: "skillVersions:blocked",
-        version: "4.0.0",
-        eventAt: 39,
+        _id: "publisherActivityGroups:plugin",
+        publisherId: publisher._id,
+        batchKey: "batch:plugin",
+        eventAt: 100,
+        sortKey: "000000000000100:batch:plugin",
+        itemCount: 1,
       },
     ];
-    const query = queryBuilder({
-      activities,
-      followedPublisherIds: new Set(["publishers:nvidia"]),
-    });
-    const docs: Record<string, Record<string, unknown>> = {
-      "publishers:nvidia": {
-        _id: "publishers:nvidia",
-        handle: "nvidia",
-        displayName: "NVIDIA",
-        kind: "org",
-        image: undefined,
+    const activities: Row[] = [
+      ...Array.from({ length: 50 }, (_, index) => ({
+        _id: `publisherActivity:skill:${index}`,
+        publisherId: publisher._id,
+        batchKey: "batch:skills",
+        eventType: "skill.publish",
+        skillId: `skills:${index}`,
+        skillVersionId: `skillVersions:${index}`,
+        version: "2.0.0",
+        eventAt: 200 - index,
+        sortKey: `${String(200 - index).padStart(15, "0")}:skill:${index}`,
+      })),
+      {
+        _id: "publisherActivity:plugin",
+        publisherId: publisher._id,
+        batchKey: "batch:plugin",
+        eventType: "plugin.publish",
+        packageId: "packages:one",
+        packageReleaseId: "packageReleases:one",
+        version: "1.0.0",
+        eventAt: 100,
+        sortKey: "000000000000100:plugin",
       },
-      "skills:cuda": {
-        _id: "skills:cuda",
-        ownerPublisherId: "publishers:nvidia",
-        displayName: "CUDA Helper",
-        slug: "cuda-helper",
+    ];
+    const follows: Row[] = [
+      {
+        _id: "publisherFollows:1",
+        followerUserId: "users:viewer",
+        publisherId: publisher._id,
       },
-      "skillVersions:1": {
-        _id: "skillVersions:1",
-        skillId: "skills:cuda",
-      },
-      "packages:blocked": {
-        _id: "packages:blocked",
-        ownerPublisherId: "publishers:nvidia",
-        normalizedName: "@nvidia/blocked",
-        displayName: "Blocked Plugin",
+    ];
+    const docs: Record<string, Row | Record<string, unknown>> = {
+      [publisher._id]: publisher,
+      "packages:one": {
+        _id: "packages:one",
+        ownerPublisherId: publisher._id,
+        normalizedName: "@patrick/one",
+        displayName: "One Plugin",
         family: "code-plugin",
         channel: "public",
       },
-      "packageReleases:blocked": {
-        _id: "packageReleases:blocked",
-        packageId: "packages:blocked",
-        manualModeration: { state: "revoked" },
-      },
-      "skills:blocked": {
-        _id: "skills:blocked",
-        ownerPublisherId: "publishers:nvidia",
-        displayName: "Blocked Skill",
-        slug: "blocked-skill",
-      },
-      "skillVersions:blocked": {
-        _id: "skillVersions:blocked",
-        skillId: "skills:blocked",
-        llmAnalysis: { verdict: "malicious" },
+      "packageReleases:one": {
+        _id: "packageReleases:one",
+        packageId: "packages:one",
       },
     };
+    for (let index = 0; index < 50; index += 1) {
+      docs[`skills:${index}`] = {
+        _id: `skills:${index}`,
+        ownerPublisherId: publisher._id,
+        displayName: `Skill ${index}`,
+        slug: `skill-${index}`,
+      };
+      docs[`skillVersions:${index}`] = {
+        _id: `skillVersions:${index}`,
+        skillId: `skills:${index}`,
+      };
+    }
+    const query = vi.fn((table: string) => ({
+      withIndex: (_index: string, build?: (query: unknown) => unknown) =>
+        indexedQuery(
+          table === "publisherFollows"
+            ? follows
+            : table === "publisherActivityGroups"
+              ? groups
+              : activities,
+          build,
+        ),
+    }));
     const get = vi.fn(async (id: string) => docs[id] ?? null);
 
     const result = await listMineInternalHandler(
@@ -225,88 +239,18 @@ describe("publisher activity", () => {
     );
 
     expect(result.nextCursor).toBeNull();
-    expect(result.items).toEqual([
-      expect.objectContaining({
-        activityId: "publisherActivity:visible",
-        artifact: expect.objectContaining({
-          kind: "skill",
-          href: "/nvidia/skills/cuda-helper",
-        }),
-      }),
-    ]);
+    expect(result.groups).toHaveLength(2);
+    expect(result.groups.map((group) => group.recordedItemCount)).toEqual([50, 1]);
+    expect(result.groups[0]?.previewItems).toHaveLength(3);
   });
 
-  it("keeps an independent pagination frontier for each followed publisher", async () => {
-    const activities = [
-      ...[40, 30, 20].map((eventAt, index) => ({
-        _id: `publisherActivity:a${index}`,
-        publisherId: "publishers:a",
-        eventType: "skill.publish",
-        skillId: `skills:a${index}`,
-        skillVersionId: `skillVersions:a${index}`,
-        version: `${index + 1}.0.0`,
-        eventAt,
-      })),
-      {
-        _id: "publisherActivity:b0",
-        publisherId: "publishers:b",
-        eventType: "skill.publish",
-        skillId: "skills:b0",
-        skillVersionId: "skillVersions:b0",
-        version: "1.0.0",
-        eventAt: 10,
-      },
-    ];
-    const query = queryBuilder({
-      activities,
-      followedPublisherIds: new Set(["publishers:a", "publishers:b"]),
-    });
-    const get = vi.fn(async (id: string) => {
-      if (id === "publishers:a" || id === "publishers:b") {
-        const handle = id.endsWith(":a") ? "a" : "b";
-        return { _id: id, handle, displayName: handle.toUpperCase(), kind: "org" };
-      }
-      if (id.startsWith("skills:")) {
-        const suffix = id.slice("skills:".length);
-        return {
-          _id: id,
-          ownerPublisherId: `publishers:${suffix[0]}`,
-          displayName: suffix.toUpperCase(),
-          slug: suffix,
-        };
-      }
-      if (id.startsWith("skillVersions:")) {
-        return { _id: id, skillId: `skills:${id.slice("skillVersions:".length)}` };
-      }
-      return null;
-    });
-
-    const seen: string[] = [];
-    let cursor: string | null | undefined;
-    do {
-      const page = await listMineInternalHandler(
-        { db: { get, query } },
-        { userId: "users:viewer", limit: 1, cursor },
-      );
-      seen.push(...(page.items as Array<{ activityId: string }>).map((item) => item.activityId));
-      cursor = page.nextCursor;
-    } while (cursor);
-
-    expect(seen).toEqual([
-      "publisherActivity:a0",
-      "publisherActivity:a1",
-      "publisherActivity:a2",
-      "publisherActivity:b0",
-    ]);
-  });
-
-  it("deletes publisher activity in resumable batches", async () => {
+  it("deletes granular events before scheduling group cleanup", async () => {
     const deleteDoc = vi.fn();
     const runAfter = vi.fn();
     const paginate = vi.fn(async () => ({
       page: [{ _id: "publisherActivity:1" }, { _id: "publisherActivity:2" }],
-      continueCursor: "next",
-      isDone: false,
+      continueCursor: "",
+      isDone: true,
     }));
     const query = vi.fn(() => ({ withIndex: () => ({ paginate }) }));
 
@@ -320,7 +264,7 @@ describe("publisher activity", () => {
     expect(runAfter).toHaveBeenCalledWith(
       0,
       expect.anything(),
-      expect.objectContaining({ publisherId: "publishers:nvidia", cursor: "next" }),
+      expect.objectContaining({ publisherId: "publishers:nvidia", phase: "groups" }),
     );
   });
 });

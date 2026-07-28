@@ -2965,6 +2965,7 @@ const publisherFollows = defineTable({
 
 const publisherActivity = defineTable({
   publisherId: v.id("publishers"),
+  batchKey: v.string(),
   eventType: v.union(v.literal("skill.publish"), v.literal("plugin.publish")),
   skillId: v.optional(v.id("skills")),
   packageId: v.optional(v.id("packages")),
@@ -2976,7 +2977,20 @@ const publisherActivity = defineTable({
   sortKey: v.string(),
 })
   .index("by_publisher_and_sortKey", ["publisherId", "sortKey"])
+  .index("by_publisher_and_batchKey_and_sortKey", ["publisherId", "batchKey", "sortKey"])
   .index("by_dedupeKey", ["dedupeKey"]);
+
+const publisherActivityGroups = defineTable({
+  publisherId: v.id("publishers"),
+  batchKey: v.string(),
+  eventAt: v.number(),
+  sortKey: v.string(),
+  itemCount: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_publisher_and_sortKey", ["publisherId", "sortKey"])
+  .index("by_publisher_and_batchKey", ["publisherId", "batchKey"]);
 
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
@@ -4217,6 +4231,7 @@ export default defineSchema({
   promotions,
   publisherFollows,
   publisherActivity,
+  publisherActivityGroups,
   auditLogs,
   systemSettings,
   skillsShCatalogControls,

@@ -1,9 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, query } from "./functions";
 import { requireUser } from "./lib/access";
+import { sha256Hex } from "./lib/clawpack";
 import { isPublicPluginDoc, isPublicSkillDoc } from "./lib/globalStats";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { getPublicPublisherVisibility, MAX_FOLLOWED_PUBLISHERS } from "./lib/publishers";
@@ -12,9 +13,15 @@ import {
   getSkillFileModerationInfoFromSkill,
 } from "./lib/skillFileAccess";
 
-const DEFAULT_TIMELINE_LIMIT = 25;
-const MAX_TIMELINE_LIMIT = 100;
+const DEFAULT_GROUP_LIMIT = 25;
+const MAX_GROUP_LIMIT = 100;
+const DEFAULT_GROUP_ITEM_LIMIT = 25;
+const MAX_GROUP_ITEM_LIMIT = 100;
 const MAX_ACTIVITY_CANDIDATES_PER_QUERY = 2_000;
+const MAX_GROUP_PREVIEW_SCAN = 100;
+const GROUP_PREVIEW_LIMIT = 3;
+const MAX_GROUP_ITEM_SCAN_PAGES = 4;
+const MAX_PUBLICATION_BATCH_ID_LENGTH = 1_000;
 const DELETE_BATCH_SIZE = 200;
 
 type PublicationActivityArgs =
@@ -25,6 +32,7 @@ type PublicationActivityArgs =
       skillVersionId: Id<"skillVersions">;
       version: string;
       eventAt: number;
+      publicationBatchId?: string;
     }
   | {
       publisherId: Id<"publishers">;
@@ -33,11 +41,12 @@ type PublicationActivityArgs =
       packageReleaseId: Id<"packageReleases">;
       version: string;
       eventAt: number;
+      publicationBatchId?: string;
     };
 
-function clampLimit(limit: number | undefined) {
-  if (!Number.isFinite(limit ?? DEFAULT_TIMELINE_LIMIT)) return DEFAULT_TIMELINE_LIMIT;
-  return Math.min(Math.max(Math.trunc(limit ?? DEFAULT_TIMELINE_LIMIT), 1), MAX_TIMELINE_LIMIT);
+function clampLimit(value: number | undefined, defaultValue: number, maxValue: number) {
+  if (!Number.isFinite(value ?? defaultValue)) return defaultValue;
+  return Math.min(Math.max(Math.trunc(value ?? defaultValue), 1), maxValue);
 }
 
 function activityDedupeKey(args: PublicationActivityArgs) {
@@ -46,39 +55,48 @@ function activityDedupeKey(args: PublicationActivityArgs) {
     : `plugin.publish:${args.packageReleaseId}`;
 }
 
-function activitySortKey(eventAt: number, dedupeKey: string) {
-  return `${Math.trunc(eventAt).toString().padStart(15, "0")}:${dedupeKey}`;
+function activitySortKey(eventAt: number, suffix: string) {
+  return `${Math.trunc(eventAt).toString().padStart(15, "0")}:${suffix}`;
 }
 
-type TimelineCursor = {
-  v: 2;
+async function activityBatchKey(args: PublicationActivityArgs, dedupeKey: string) {
+  const supplied = args.publicationBatchId?.trim();
+  if (supplied && supplied.length > MAX_PUBLICATION_BATCH_ID_LENGTH) {
+    throw new ConvexError("Publisher activity batch id is too long");
+  }
+  const source = supplied || dedupeKey;
+  return await sha256Hex(new TextEncoder().encode(`${args.publisherId}:${source}`));
+}
+
+type ActivityCursor = {
+  v: 3;
   beforeByPublisher: Record<string, string | null>;
 };
 
-function encodeTimelineCursor(cursor: TimelineCursor) {
+function encodeActivityCursor(cursor: ActivityCursor) {
   return btoa(JSON.stringify(cursor)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
-function decodeTimelineCursor(cursor: string | null | undefined) {
+function decodeActivityCursor(cursor: string | null | undefined) {
   if (!cursor) return null;
   try {
     const base64 = cursor.replaceAll("-", "+").replaceAll("_", "/");
     const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-    const parsed = JSON.parse(atob(padded)) as Partial<TimelineCursor>;
+    const parsed = JSON.parse(atob(padded)) as Partial<ActivityCursor>;
     if (
-      parsed.v !== 2 ||
+      parsed.v !== 3 ||
       !parsed.beforeByPublisher ||
       typeof parsed.beforeByPublisher !== "object" ||
       Array.isArray(parsed.beforeByPublisher)
     ) {
-      throw new Error("invalid timeline cursor");
+      throw new Error("invalid activity cursor");
     }
     for (const value of Object.values(parsed.beforeByPublisher)) {
       if (value !== null && (typeof value !== "string" || !value)) {
-        throw new Error("invalid publisher timeline frontier");
+        throw new Error("invalid publisher activity frontier");
       }
     }
-    return parsed as TimelineCursor;
+    return parsed as ActivityCursor;
   } catch {
     throw new ConvexError("Invalid publisher activity cursor");
   }
@@ -98,8 +116,17 @@ export async function recordPublisherPublicationActivity(
     .unique();
   if (existing) return { created: false, reason: "duplicate" as const };
 
+  const batchKey = await activityBatchKey(args, dedupeKey);
+  const existingGroup = await ctx.db
+    .query("publisherActivityGroups")
+    .withIndex("by_publisher_and_batchKey", (q) =>
+      q.eq("publisherId", args.publisherId).eq("batchKey", batchKey),
+    )
+    .unique();
+  const eventSortKey = activitySortKey(args.eventAt, dedupeKey);
   const activityId = await ctx.db.insert("publisherActivity", {
     publisherId: args.publisherId,
+    batchKey,
     eventType: args.eventType,
     ...(args.eventType === "skill.publish"
       ? { skillId: args.skillId, skillVersionId: args.skillVersionId }
@@ -107,25 +134,34 @@ export async function recordPublisherPublicationActivity(
     version: args.version,
     dedupeKey,
     eventAt: args.eventAt,
-    sortKey: activitySortKey(args.eventAt, dedupeKey),
+    sortKey: eventSortKey,
   });
-  return { created: true, activityId };
+
+  let groupId: Id<"publisherActivityGroups">;
+  if (existingGroup) {
+    const eventAt = Math.max(existingGroup.eventAt, args.eventAt);
+    await ctx.db.patch(existingGroup._id, {
+      eventAt,
+      sortKey: activitySortKey(eventAt, batchKey),
+      itemCount: existingGroup.itemCount + 1,
+      updatedAt: args.eventAt,
+    });
+    groupId = existingGroup._id;
+  } else {
+    groupId = await ctx.db.insert("publisherActivityGroups", {
+      publisherId: args.publisherId,
+      batchKey,
+      eventAt: args.eventAt,
+      sortKey: activitySortKey(args.eventAt, batchKey),
+      itemCount: 1,
+      createdAt: args.eventAt,
+      updatedAt: args.eventAt,
+    });
+  }
+  return { created: true, activityId, groupId };
 }
 
-async function hydrateVisibleActivity(
-  ctx: QueryCtx,
-  activity: {
-    _id: Id<"publisherActivity">;
-    publisherId: Id<"publishers">;
-    eventType: "skill.publish" | "plugin.publish";
-    skillId?: Id<"skills">;
-    packageId?: Id<"packages">;
-    skillVersionId?: Id<"skillVersions">;
-    packageReleaseId?: Id<"packageReleases">;
-    version: string;
-    eventAt: number;
-  },
-) {
+async function hydrateVisibleActivity(ctx: QueryCtx, activity: Doc<"publisherActivity">) {
   const visibility = await getPublicPublisherVisibility(
     ctx,
     await ctx.db.get(activity.publisherId),
@@ -159,13 +195,6 @@ async function hydrateVisibleActivity(
       eventType: activity.eventType,
       eventAt: activity.eventAt,
       version: activity.version,
-      publisher: {
-        publisherId: publisher._id,
-        handle: publisher.handle,
-        displayName: publisher.displayName,
-        kind: publisher.kind,
-        image: publisher.image ?? null,
-      },
       artifact: {
         kind: "skill" as const,
         artifactId: skill._id,
@@ -199,13 +228,6 @@ async function hydrateVisibleActivity(
     eventType: activity.eventType,
     eventAt: activity.eventAt,
     version: activity.version,
-    publisher: {
-      publisherId: publisher._id,
-      handle: publisher.handle,
-      displayName: publisher.displayName,
-      kind: publisher.kind,
-      image: publisher.image ?? null,
-    },
     artifact: {
       kind: "plugin" as const,
       artifactId: pkg._id,
@@ -215,16 +237,52 @@ async function hydrateVisibleActivity(
   };
 }
 
-async function listTimelineForUser(
+async function hydrateVisibleGroup(ctx: QueryCtx, group: Doc<"publisherActivityGroups">) {
+  const visibility = await getPublicPublisherVisibility(ctx, await ctx.db.get(group.publisherId));
+  if (!visibility) return null;
+  const publisher = visibility.publisher;
+  const candidates = await ctx.db
+    .query("publisherActivity")
+    .withIndex("by_publisher_and_batchKey_and_sortKey", (q) =>
+      q.eq("publisherId", group.publisherId).eq("batchKey", group.batchKey),
+    )
+    .order("desc")
+    .take(MAX_GROUP_PREVIEW_SCAN);
+  const previewItems = [];
+  for (const candidate of candidates) {
+    const item = await hydrateVisibleActivity(ctx, candidate);
+    if (item) previewItems.push(item);
+    if (previewItems.length >= GROUP_PREVIEW_LIMIT) break;
+  }
+  if (previewItems.length === 0) return null;
+
+  return {
+    groupId: group._id,
+    eventAt: group.eventAt,
+    recordedItemCount: group.itemCount,
+    previewItems,
+    hasMoreItems: group.itemCount > previewItems.length,
+    reason: "following" as const,
+    publisher: {
+      publisherId: publisher._id,
+      handle: publisher.handle,
+      displayName: publisher.displayName,
+      kind: publisher.kind,
+      image: publisher.image ?? null,
+    },
+  };
+}
+
+async function listGroupsForUser(
   ctx: QueryCtx,
   args: { userId: Id<"users">; cursor?: string | null; limit?: number },
 ) {
-  const limit = clampLimit(args.limit);
-  const items: NonNullable<Awaited<ReturnType<typeof hydrateVisibleActivity>>>[] = [];
-  const decodedCursor = decodeTimelineCursor(args.cursor);
+  const limit = clampLimit(args.limit, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT);
+  const groups: NonNullable<Awaited<ReturnType<typeof hydrateVisibleGroup>>>[] = [];
+  const decodedCursor = decodeActivityCursor(args.cursor);
   const follows = await ctx.db
     .query("publisherFollows")
-    .withIndex("by_follower_and_updatedAt", (q) => q.eq("followerUserId", args.userId))
+    .withIndex("by_follower", (q) => q.eq("followerUserId", args.userId))
     .order("desc")
     .take(MAX_FOLLOWED_PUBLISHERS + 1);
   if (follows.length > MAX_FOLLOWED_PUBLISHERS) {
@@ -240,60 +298,103 @@ async function listTimelineForUser(
         : initialFrontier,
     ]),
   ) as Record<string, string | null>;
-
   const perPublisherLimit = Math.max(
     1,
     Math.min(
       limit * 2,
-      MAX_TIMELINE_LIMIT,
+      MAX_GROUP_LIMIT,
       Math.floor(MAX_ACTIVITY_CANDIDATES_PER_QUERY / Math.max(follows.length, 1)),
     ),
   );
   const activeFollows = follows.filter((follow) => beforeByPublisher[follow.publisherId] !== null);
-  const activityBatches = await Promise.all(
+  const groupBatches = await Promise.all(
     activeFollows.map(async (follow) => {
       const beforeSortKey = beforeByPublisher[follow.publisherId];
-      if (!beforeSortKey) return { publisherId: follow.publisherId, activities: [] };
-      const activities = await ctx.db
-        .query("publisherActivity")
+      if (!beforeSortKey) return { publisherId: follow.publisherId, groups: [] };
+      const publisherGroups = await ctx.db
+        .query("publisherActivityGroups")
         .withIndex("by_publisher_and_sortKey", (q) =>
           q.eq("publisherId", follow.publisherId).lt("sortKey", beforeSortKey),
         )
         .order("desc")
         .take(perPublisherLimit);
-      return { publisherId: follow.publisherId, activities };
+      return { publisherId: follow.publisherId, groups: publisherGroups };
     }),
   );
-  const candidates = activityBatches
-    .flatMap((batch) => batch.activities)
+  const candidates = groupBatches
+    .flatMap((batch) => batch.groups)
     .sort((left, right) => right.sortKey.localeCompare(left.sortKey));
   const nextBeforeByPublisher = { ...beforeByPublisher };
   const scannedByPublisher = new Map<string, number>();
-  for (const activity of candidates) {
+  for (const candidate of candidates) {
     scannedByPublisher.set(
-      activity.publisherId,
-      (scannedByPublisher.get(activity.publisherId) ?? 0) + 1,
+      candidate.publisherId,
+      (scannedByPublisher.get(candidate.publisherId) ?? 0) + 1,
     );
-    nextBeforeByPublisher[activity.publisherId] = activity.sortKey;
-    const item = await hydrateVisibleActivity(ctx, activity);
-    if (item) items.push(item);
-    if (items.length >= limit) break;
+    nextBeforeByPublisher[candidate.publisherId] = candidate.sortKey;
+    const group = await hydrateVisibleGroup(ctx, candidate);
+    if (group) groups.push(group);
+    if (groups.length >= limit) break;
   }
 
-  for (const batch of activityBatches) {
+  for (const batch of groupBatches) {
     const scanned = scannedByPublisher.get(batch.publisherId) ?? 0;
-    if (scanned === batch.activities.length && batch.activities.length < perPublisherLimit) {
+    if (scanned === batch.groups.length && batch.groups.length < perPublisherLimit) {
       nextBeforeByPublisher[batch.publisherId] = null;
     }
   }
   const hasMore = Object.values(nextBeforeByPublisher).some((frontier) => frontier !== null);
   return {
     ok: true as const,
-    items,
+    groups,
     nextCursor: hasMore
-      ? encodeTimelineCursor({ v: 2, beforeByPublisher: nextBeforeByPublisher })
+      ? encodeActivityCursor({ v: 3, beforeByPublisher: nextBeforeByPublisher })
       : null,
   };
+}
+
+async function listGroupItemsForUser(
+  ctx: QueryCtx,
+  args: {
+    userId: Id<"users">;
+    groupId: Id<"publisherActivityGroups">;
+    cursor?: string | null;
+    limit?: number;
+  },
+) {
+  const group = await ctx.db.get(args.groupId);
+  if (!group) throw new ConvexError("Publisher activity group not found");
+  const follow = await ctx.db
+    .query("publisherFollows")
+    .withIndex("by_follower_publisher", (q) =>
+      q.eq("followerUserId", args.userId).eq("publisherId", group.publisherId),
+    )
+    .unique();
+  if (!follow) throw new ConvexError("Publisher activity group not found");
+
+  const limit = clampLimit(args.limit, DEFAULT_GROUP_ITEM_LIMIT, MAX_GROUP_ITEM_LIMIT);
+  const items = [];
+  let cursor = args.cursor ?? null;
+  let isDone = false;
+  let scannedPages = 0;
+  while (items.length < limit && !isDone && scannedPages < MAX_GROUP_ITEM_SCAN_PAGES) {
+    const page = await ctx.db
+      .query("publisherActivity")
+      .withIndex("by_publisher_and_batchKey_and_sortKey", (q) =>
+        q.eq("publisherId", group.publisherId).eq("batchKey", group.batchKey),
+      )
+      .order("desc")
+      .paginate({ cursor, numItems: Math.min(limit - items.length, MAX_GROUP_ITEM_LIMIT) });
+    for (const activity of page.page) {
+      const item = await hydrateVisibleActivity(ctx, activity);
+      if (item) items.push(item);
+      if (items.length >= limit) break;
+    }
+    cursor = page.continueCursor;
+    isDone = page.isDone;
+    scannedPages += 1;
+  }
+  return { ok: true as const, items, continueCursor: isDone ? "" : cursor, isDone };
 }
 
 export const listMine = query({
@@ -303,7 +404,19 @@ export const listMine = query({
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
-    return await listTimelineForUser(ctx, { ...args, userId });
+    return await listGroupsForUser(ctx, { ...args, userId });
+  },
+});
+
+export const listGroupItems = query({
+  args: {
+    groupId: v.id("publisherActivityGroups"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx);
+    return await listGroupItemsForUser(ctx, { ...args, userId });
   },
 });
 
@@ -313,23 +426,48 @@ export const listMineInternal = internalQuery({
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
   },
-  handler: listTimelineForUser,
+  handler: listGroupsForUser,
+});
+
+export const listGroupItemsInternal = internalQuery({
+  args: {
+    userId: v.id("users"),
+    groupId: v.id("publisherActivityGroups"),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+  },
+  handler: listGroupItemsForUser,
 });
 
 export const deletePublisherActivityInternal = internalMutation({
-  args: { publisherId: v.id("publishers"), cursor: v.optional(v.string()) },
-  handler: async (ctx, args) => {
+  args: {
+    publisherId: v.id("publishers"),
+    phase: v.optional(v.union(v.literal("events"), v.literal("groups"))),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ deleted: number; scheduled: boolean }> => {
+    const phase = args.phase ?? "events";
+    const table = phase === "events" ? "publisherActivity" : "publisherActivityGroups";
     const page = await ctx.db
-      .query("publisherActivity")
+      .query(table)
       .withIndex("by_publisher_and_sortKey", (q) => q.eq("publisherId", args.publisherId))
       .paginate({ cursor: args.cursor ?? null, numItems: DELETE_BATCH_SIZE });
-    for (const activity of page.page) await ctx.db.delete(activity._id);
+    for (const row of page.page) await ctx.db.delete(row._id);
     if (!page.isDone) {
       await ctx.scheduler.runAfter(0, internal.publisherActivity.deletePublisherActivityInternal, {
         publisherId: args.publisherId,
+        phase,
         cursor: page.continueCursor,
       });
+      return { deleted: page.page.length, scheduled: true };
     }
-    return { deleted: page.page.length, scheduled: !page.isDone };
+    if (phase === "events") {
+      await ctx.scheduler.runAfter(0, internal.publisherActivity.deletePublisherActivityInternal, {
+        publisherId: args.publisherId,
+        phase: "groups",
+      });
+      return { deleted: page.page.length, scheduled: true };
+    }
+    return { deleted: page.page.length, scheduled: false };
   },
 });

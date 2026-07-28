@@ -10831,6 +10831,10 @@ export const insertReleaseInternal = internalMutation({
           packageReleaseId: releaseId,
           version: args.version,
           eventAt: now,
+          publicationBatchId:
+            args.publishActor?.kind === "github-actions"
+              ? `github:${args.publishActor.repository}:${args.publishActor.sha}`
+              : undefined,
         });
       } catch (error) {
         console.warn("Failed to record publisher plugin activity", {

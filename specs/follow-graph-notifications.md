@@ -87,15 +87,26 @@ enough public display metadata for notifications. They should not carry private
 review evidence, secrets, raw signing keys, private source URLs, or unpublished
 package metadata.
 
-Each eligible public skill or plugin release creates one deduplicated activity
-row, independent of follower count. Publish does not fan out per-user rows,
-or schedule one job per follower. Activity reads apply the
-current follow graph and re-check publisher, artifact, version, moderation, and
-ownership visibility before returning an entry. The authenticated query is
+Each eligible public skill or plugin release creates one immutable deduplicated
+activity row, independent of follower count. A compact activity-group row
+projects releases sharing a stable publication batch. GitHub imports group by
+repository commit and GitHub Actions package publishes group by repository SHA;
+manual publishes remain independent groups. Time windows are not batch
+identity.
+
+Publish does not fan out per-user rows or schedule one job per follower.
+Activity reads page the compact group projection, then re-check publisher,
+artifact, version, moderation, ownership, and the current private follow edge
+before returning previews or expanded items. The authenticated query is
 bounded, cursor-paginated, and returns `nextCursor: null` at completion.
-It reads the user's bounded followed-publisher set and each corresponding
-publisher activity index; unrelated publisher releases do not invalidate or
-rescan a user's activity view.
+Unrelated publisher releases do not invalidate or rescan a user's activity
+view.
+
+The group API uses presentation-neutral activity vocabulary. An inbox and a
+chronological Following feed are projections over the same groups and cursors;
+they are not separate event stores. Group counts describe recorded release
+events, while previews and expansion contain only entries still eligible at
+read time.
 
 Activity recording is secondary to publishing: a timeline storage failure is
 reported to operators but does not roll back an otherwise valid artifact

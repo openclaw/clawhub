@@ -13069,6 +13069,9 @@ export const insertVersion = internalMutation({
           skillVersionId: versionId,
           version: args.version,
           eventAt: now,
+          publicationBatchId: args.sourceProvenance
+            ? `github:${args.sourceProvenance.repo}:${args.sourceProvenance.commit}`
+            : undefined,
         });
       } catch (error) {
         console.warn("Failed to record publisher skill activity", {
