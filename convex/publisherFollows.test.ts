@@ -459,7 +459,11 @@ describe("publisher follows", () => {
 
   it.each([
     ["follower", deletePublisherFollowsForFollowerInternalHandler, { followerUserId: "users:1" }],
-    ["publisher", deletePublisherFollowsForPublisherInternalHandler, { publisherId: "publishers:1" }],
+    [
+      "publisher",
+      deletePublisherFollowsForPublisherInternalHandler,
+      { publisherId: "publishers:1" },
+    ],
   ] as const)("deletes %s follow edges in resumable batches", async (_kind, handler, args) => {
     const deleteDoc = vi.fn();
     const runAfter = vi.fn();
