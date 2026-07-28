@@ -1103,7 +1103,7 @@ describe("publishers membership controls", () => {
             return emptyOfficialPublishersQuery();
           }
           if (table === "publisherFeedPublications") {
-            return emptyPublisherFeedPublicationQuery();
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
@@ -1516,7 +1516,7 @@ describe("publishers membership controls", () => {
             return emptyOfficialPublishersQuery();
           }
           if (table === "publisherFeedPublications") {
-            return emptyPublisherFeedPublicationQuery();
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
