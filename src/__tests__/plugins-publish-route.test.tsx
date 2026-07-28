@@ -708,6 +708,73 @@ describe("plugins publish route", () => {
     });
   });
 
+  it("does not apply a package changelog preview after preview inputs change", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    let resolvePreview: ((value: { changelog: string }) => void) | undefined;
+    generateChangelogPreview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+    generateChangelogPreview.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.change(screen.getByPlaceholderText("Version"), {
+      target: { value: "1.2.5" },
+    });
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(2);
+    });
+
+    const changelog = screen.getByPlaceholderText(
+      "Describe what changed in this release...",
+    ) as HTMLTextAreaElement;
+    resolvePreview?.({ changelog: "- Stale generated text." });
+
+    await waitFor(() => {
+      expect(changelog.value).toBe("");
+    });
+  });
+
   it("sends explicit empty catalog metadata when it is cleared on a plugin version publish", async () => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",

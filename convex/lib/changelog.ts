@@ -220,18 +220,15 @@ export async function generatePackageChangelogPreview(
     version: string;
     readmeText: string;
     filePaths?: string[];
+    latestReleaseId?: Id<"packageReleases"> | null;
   },
 ): Promise<string> {
   try {
-    const pkg = (await ctx.runQuery(internal.packages.getPackageByNameInternal, {
-      name: args.name,
-    })) as Doc<"packages"> | null;
-    const previous: Doc<"packageReleases"> | null =
-      pkg?.latestReleaseId && !pkg.softDeletedAt
-        ? ((await ctx.runQuery(internal.packages.getReleaseByIdInternal, {
-            releaseId: pkg.latestReleaseId,
-          })) as Doc<"packageReleases"> | null)
-        : null;
+    const previous: Doc<"packageReleases"> | null = args.latestReleaseId
+      ? ((await ctx.runQuery(internal.packages.getReleaseByIdInternal, {
+          releaseId: args.latestReleaseId,
+        })) as Doc<"packageReleases"> | null)
+      : null;
 
     const oldReadmeText: string | null = previous
       ? await readReadmeFromPackageRelease(ctx, previous)

@@ -517,6 +517,12 @@ export function PublishPluginRoute() {
   }, [existing]);
 
   useEffect(() => {
+    changelogRequestRef.current += 1;
+    changelogKeyRef.current = null;
+    if (!changelogTouchedRef.current) setChangelog("");
+  }, [family, name, normalizedPaths, version]);
+
+  useEffect(() => {
     if (!showChangelogField) return;
     if (isMetadataLocked) return;
     if (changelogTouchedRef.current) return;

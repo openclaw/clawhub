@@ -2918,13 +2918,14 @@ export const assertCanGenerateChangelogPreviewInternal = internalQuery({
     }
 
     const pkg = await getPackageByNormalizedName(ctx, args.name);
-    if (!pkg || pkg.softDeletedAt) return { ok: true as const };
+    if (!pkg || pkg.softDeletedAt) return { ok: true as const, latestReleaseId: null };
     if (pkg.family === "skill") throw new ConvexError("Forbidden");
-    if (actor.role === "admin" || actor.role === "moderator") return { ok: true as const };
+    const result = { ok: true as const, latestReleaseId: pkg.latestReleaseId ?? null };
+    if (actor.role === "admin" || actor.role === "moderator") return result;
 
     const canPublish = await viewerCanAccessPackageOwner(ctx, pkg, args.actorUserId);
     if (!canPublish) throw new ConvexError("Forbidden");
-    return { ok: true as const };
+    return result;
   },
 });
 
@@ -8914,7 +8915,10 @@ export const generateChangelogPreview: ReturnType<typeof action> = action({
     const { userId } = await requireUserFromAction(ctx);
     const name = normalizePackageName(args.name);
     const version = assertPackageVersion(args.family, args.version);
-    await runQueryRef(ctx, internalRefs.packages.assertCanGenerateChangelogPreviewInternal, {
+    const authorizedPreview = await runQueryRef<{
+      ok: true;
+      latestReleaseId?: Id<"packageReleases"> | null;
+    }>(ctx, internalRefs.packages.assertCanGenerateChangelogPreviewInternal, {
       actorUserId: userId,
       name,
     });
@@ -8923,6 +8927,7 @@ export const generateChangelogPreview: ReturnType<typeof action> = action({
       version,
       readmeText: args.readmeText,
       filePaths: args.filePaths,
+      latestReleaseId: authorizedPreview.latestReleaseId ?? null,
     });
     return { changelog };
   },

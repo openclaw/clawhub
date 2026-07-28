@@ -2784,12 +2784,7 @@ describe("packages public queries", () => {
           _id: "users:preview",
           role: "user",
         })
-        .mockResolvedValueOnce({ ok: true })
-        .mockResolvedValueOnce({
-          _id: "packages:demo",
-          latestReleaseId: "packageReleases:demo-1",
-          softDeletedAt: undefined,
-        })
+        .mockResolvedValueOnce({ ok: true, latestReleaseId: "packageReleases:demo-1" })
         .mockResolvedValueOnce({
           _id: "packageReleases:demo-1",
           files: [{ path: "README.md", storageId: "storage:readme", sha256: "old" }],
@@ -2811,7 +2806,7 @@ describe("packages public queries", () => {
       );
 
       expect(result.changelog).toContain("Updated README and package contents");
-      expect(runQuery).toHaveBeenCalledTimes(4);
+      expect(runQuery).toHaveBeenCalledTimes(3);
       expect(storageGet).toHaveBeenCalledWith("storage:readme");
     } finally {
       if (previousKey === undefined) {
@@ -2879,7 +2874,7 @@ describe("packages public queries", () => {
         }) as never,
         { actorUserId: "users:owner", name: "demo-plugin" },
       ),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toMatchObject({ ok: true, latestReleaseId: expect.anything() });
   });
 
   it.each(["owner", "admin", "publisher"] as const)(
@@ -2899,7 +2894,7 @@ describe("packages public queries", () => {
           }) as never,
           { actorUserId: "users:publisher-member", name: "demo-plugin" },
         ),
-      ).resolves.toEqual({ ok: true });
+      ).resolves.toMatchObject({ ok: true, latestReleaseId: expect.anything() });
     },
   );
 
@@ -2915,7 +2910,7 @@ describe("packages public queries", () => {
           }) as never,
           { actorUserId: "users:staff", name: "demo-plugin" },
         ),
-      ).resolves.toEqual({ ok: true });
+      ).resolves.toMatchObject({ ok: true, latestReleaseId: expect.anything() });
     },
   );
 
