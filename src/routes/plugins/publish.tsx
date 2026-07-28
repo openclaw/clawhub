@@ -316,6 +316,7 @@ export function PublishPluginRoute() {
   const isMetadataLocked = files.length === 0;
   const isNewPluginPublishEmpty = files.length === 0 && !search.name;
   const metadataDisabled = isMetadataLocked || isSubmitting;
+  const sourceFieldsRequired = family === "code-plugin";
   const ownerScopeError = useMemo(() => {
     return (
       getPackageScopeOwnerMismatch(name, selectedPublisher?.handle ?? ownerHandle)?.message ?? null
@@ -326,12 +327,12 @@ export function PublishPluginRoute() {
     const blockers: string[] = [];
     if (!name.trim()) blockers.push("Plugin name is required.");
     if (!version.trim()) blockers.push("Version is required.");
-    if (family === "code-plugin") {
+    if (sourceFieldsRequired) {
       if (!sourceRepo.trim()) blockers.push("GitHub repository is required.");
       if (!sourceCommit.trim()) blockers.push("Commit SHA is required.");
     }
     return blockers;
-  }, [family, isMetadataLocked, name, sourceCommit, sourceRepo, version]);
+  }, [isMetadataLocked, name, sourceCommit, sourceFieldsRequired, sourceRepo, version]);
   const hasPackageBlocker =
     Boolean(validationError) || Boolean(ownerScopeError) || codePluginFieldIssues.length > 0;
   const hasPublished =
@@ -594,13 +595,21 @@ export function PublishPluginRoute() {
         {!isNewPluginPublishEmpty ? (
           <div className="contents">
             <Card
-              className={isMetadataLocked ? "pointer-events-none opacity-60" : ""}
+              className={`publish-skill-metadata ${
+                isMetadataLocked ? "pointer-events-none opacity-60" : ""
+              }`}
               aria-disabled={isMetadataLocked}
             >
+              <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
+                Details
+              </h2>
               <div className="flex flex-col gap-5">
                 <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="pluginName">Plugin name</Label>
+                    <Label htmlFor="pluginName">
+                      Plugin name
+                      <RequiredIndicator />
+                    </Label>
                     <Input
                       id="pluginName"
                       placeholder="Plugin name"
@@ -620,16 +629,10 @@ export function PublishPluginRoute() {
                     />
                   </div>
                   <div className="flex flex-col gap-2">
-                    <Label htmlFor="pluginFamily">Package type</Label>
-                    <div
-                      id="pluginFamily"
-                      className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                    >
-                      {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <Label htmlFor="pluginVersion">Version</Label>
+                    <Label htmlFor="pluginVersion">
+                      Version
+                      <RequiredIndicator />
+                    </Label>
                     <VersionInput
                       id="pluginVersion"
                       placeholder="Version"
@@ -638,8 +641,18 @@ export function PublishPluginRoute() {
                       onValueChange={setVersion}
                     />
                   </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="pluginFamily">Package type</Label>
+                    <div
+                      id="pluginFamily"
+                      className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                    >
+                      {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
+                    </div>
+                  </div>
                   <CatalogMetadataFields
                     kind="plugin"
+                    presentation="publish"
                     categories={categories}
                     suggestedCategories={suggestedCategories}
                     topics={topics}
@@ -719,6 +732,7 @@ export function PublishPluginRoute() {
                     <FieldLabelWithHelp
                       htmlFor="pluginSourceRepo"
                       help="Use owner/repo, for example openclaw/demo-plugin."
+                      required={sourceFieldsRequired}
                     >
                       GitHub repository
                     </FieldLabelWithHelp>
@@ -727,6 +741,7 @@ export function PublishPluginRoute() {
                       placeholder="owner/repo"
                       value={sourceRepo}
                       disabled={metadataDisabled}
+                      required={sourceFieldsRequired}
                       onChange={(event) => setSourceRepo(event.target.value)}
                     />
                   </div>
@@ -734,6 +749,7 @@ export function PublishPluginRoute() {
                     <FieldLabelWithHelp
                       htmlFor="pluginSourceCommit"
                       help="Use the exact Git commit SHA for this release, preferably the full hash."
+                      required={sourceFieldsRequired}
                     >
                       Commit SHA
                     </FieldLabelWithHelp>
@@ -742,6 +758,7 @@ export function PublishPluginRoute() {
                       placeholder="Full commit SHA"
                       value={sourceCommit}
                       disabled={metadataDisabled}
+                      required={sourceFieldsRequired}
                       onChange={(event) => setSourceCommit(event.target.value)}
                     />
                     {readmeAssetWarning ? (
@@ -1026,10 +1043,29 @@ export function PublishPluginRoute() {
   );
 }
 
-function FieldLabelWithHelp(props: { htmlFor: string; help: string; children: ReactNode }) {
+function RequiredIndicator() {
+  return (
+    <>
+      <span className="text-status-error-fg" aria-hidden="true">
+        *
+      </span>
+      <span className="sr-only"> (required)</span>
+    </>
+  );
+}
+
+function FieldLabelWithHelp(props: {
+  htmlFor: string;
+  help: string;
+  children: ReactNode;
+  required?: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5">
-      <Label htmlFor={props.htmlFor}>{props.children}</Label>
+      <Label htmlFor={props.htmlFor}>
+        {props.children}
+        {props.required ? <RequiredIndicator /> : null}
+      </Label>
       <span
         tabIndex={0}
         role="img"

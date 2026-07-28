@@ -60,7 +60,10 @@ function isLocalDevPersonaEnabled() {
   if (getRuntimeEnv("VITE_ENABLE_DEV_AUTH") !== "1") return false;
   if (typeof window === "undefined") return false;
   const hostname = window.location.hostname.toLowerCase();
-  return hostname === "localhost" || hostname === "127.0.0.1";
+  const isPublishForm =
+    window.location.pathname === "/skills/publish" ||
+    window.location.pathname === "/plugins/publish";
+  return !isPublishForm && (hostname === "localhost" || hostname === "127.0.0.1");
 }
 
 async function withDevAuthTimeout<T>(operation: Promise<T>) {

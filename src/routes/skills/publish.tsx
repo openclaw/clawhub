@@ -782,19 +782,17 @@ export function Upload() {
   }
 
   return (
-    <main className={isNewSkillPublishEmpty ? "publish-empty-main" : "py-10"}>
+    <main className={isNewSkillPublishEmpty ? "publish-empty-main" : "publish-skill-main"}>
       <Container
         size="narrow"
         className={isNewSkillPublishEmpty ? "publish-empty-container" : undefined}
       >
         <header
-          className={
-            isNewSkillPublishEmpty
-              ? "publish-empty-header"
-              : "mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
-          }
+          className={isNewSkillPublishEmpty ? "publish-empty-header" : "publish-skill-header"}
         >
-          <div className={isNewSkillPublishEmpty ? "publish-empty-heading" : undefined}>
+          <div
+            className={isNewSkillPublishEmpty ? "publish-empty-heading" : "publish-skill-heading"}
+          >
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
               {isNewSkillPublishEmpty ? "Publish Skill" : "Publish a skill"}
             </h1>
@@ -808,7 +806,7 @@ export function Upload() {
             className={
               isNewSkillPublishEmpty
                 ? "publish-empty-actions flex flex-wrap items-center gap-2"
-                : "flex flex-wrap items-center gap-2"
+                : "publish-skill-actions flex flex-wrap items-center gap-2"
             }
           >
             {isNewSkillPublishEmpty ? (
@@ -833,7 +831,7 @@ export function Upload() {
           className={
             isNewSkillPublishEmpty
               ? "publish-empty-skill-form flex flex-col gap-6"
-              : "flex flex-col gap-6"
+              : "publish-skill-form flex flex-col gap-6"
           }
         >
           {/* File upload panel */}
@@ -852,7 +850,7 @@ export function Upload() {
 
           {files.length > 0 ? (
             <div
-              className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
+              className={`publish-skill-files overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
                 isDragging
                   ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
                   : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -864,7 +862,7 @@ export function Upload() {
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleFilesDrop}
             >
-              <div className="flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
+              <div className="publish-skill-files-header flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
@@ -901,7 +899,7 @@ export function Upload() {
                   </button>
                 </div>
               </div>
-              <div className="mt-2 overflow-hidden rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)]">
+              <div className="publish-skill-files-body mt-2 overflow-hidden rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)]">
                 <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto p-3">
                   {!hasRequiredFile ? (
                     <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-status-error-fg/35 bg-status-error-bg px-3 py-1.5 text-sm text-status-error-fg">
@@ -918,7 +916,7 @@ export function Upload() {
                     return (
                       <div
                         key={`${index}:${path}`}
-                        className="flex items-center gap-2 rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-sm text-[color:var(--ink-soft)]"
+                        className="publish-skill-file-row flex items-center gap-2 rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-sm text-[color:var(--ink-soft)]"
                       >
                         <span className="min-w-0 flex-1 truncate font-mono" title={path}>
                           {path}
@@ -1028,9 +1026,9 @@ export function Upload() {
           )}
 
           {/* Metadata panel */}
-          <Card>
-            <CardContent className="gap-5">
-              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+          <Card className="publish-skill-section publish-skill-metadata">
+            <CardContent className="publish-skill-section-content gap-5">
+              <div className="publish-skill-primary-grid grid gap-x-4 gap-y-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="displayName">Display name</Label>
                   <Input
@@ -1117,6 +1115,7 @@ export function Upload() {
               <div>
                 <CatalogMetadataFields
                   kind="skill"
+                  presentation="publish"
                   categories={categories}
                   suggestedCategories={suggestedCategories}
                   topics={topics}
@@ -1177,8 +1176,8 @@ export function Upload() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="gap-4">
+          <Card className="publish-skill-section publish-skill-version">
+            <CardContent className="publish-skill-section-content gap-4">
               <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="version">Version</Label>
@@ -1212,10 +1211,16 @@ export function Upload() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="gap-4">
+          <Card className="publish-skill-section publish-skill-license">
+            <CardContent className="publish-skill-section-content gap-4">
               <div>
-                <CardTitle>License</CardTitle>
+                <CardTitle>
+                  License
+                  <span className="text-status-error-fg" aria-hidden="true">
+                    *
+                  </span>
+                  <span className="sr-only"> (required)</span>
+                </CardTitle>
                 <p className="text-sm text-[color:var(--ink-soft)]">
                   {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
                 </p>
@@ -1230,9 +1235,11 @@ export function Upload() {
                 </p>
               </div>
               <div className="flex flex-col gap-2">
-                <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
+                <label className="publish-skill-license-acceptance flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
                   <input
                     type="checkbox"
+                    required
+                    aria-required="true"
                     className="mt-0.5 h-4 w-4 accent-[color:var(--accent)]"
                     checked={acceptedLicenseTerms}
                     onChange={(event) => {
@@ -1241,6 +1248,7 @@ export function Upload() {
                   />
                   <span>
                     I have the rights to publish this skill under {PLATFORM_SKILL_LICENSE}.
+                    <span className="sr-only"> (required)</span>
                   </span>
                 </label>
               </div>
@@ -1248,8 +1256,8 @@ export function Upload() {
           </Card>
 
           {showChangelogField ? (
-            <Card>
-              <CardContent>
+            <Card className="publish-skill-section publish-skill-changelog">
+              <CardContent className="publish-skill-section-content">
                 <div>
                   <CardTitle>Changelog</CardTitle>
                   <p className="text-sm text-[color:var(--ink-soft)]">
@@ -1288,7 +1296,7 @@ export function Upload() {
           ) : null}
 
           {/* Submit row */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="publish-skill-submit flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
               {error ? (
                 <div className="text-sm font-medium text-status-error-fg" role="alert">

@@ -108,6 +108,21 @@ describe("Upload route", () => {
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 
+  it("marks license acceptance as required after selecting skill files", async () => {
+    render(<Upload />);
+
+    const file = new File(["---\nname: example\n---\n# Example"], "SKILL.md", {
+      type: "text/markdown",
+    });
+    fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
+
+    const licenseCheckbox = await screen.findByRole("checkbox", {
+      name: /i have the rights to publish this skill under mit-0.*required/i,
+    });
+    expect(licenseCheckbox.getAttribute("required")).not.toBeNull();
+    expect(licenseCheckbox.getAttribute("aria-required")).toBe("true");
+  });
+
   it("drops invalid legacy category metadata and offers explicit generation on republish", async () => {
     useSearchMock.mockReturnValue({ updateSlug: "uncategorized-skill" });
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
@@ -132,7 +147,7 @@ describe("Upload route", () => {
 
     await waitFor(() => {
       expect(screen.getByText("0/3")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "Generate categories" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Suggestions for categories" })).toBeTruthy();
     });
   });
 
@@ -157,7 +172,7 @@ describe("Upload route", () => {
 
     render(<Upload />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Generate categories" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Suggestions for categories" }));
     expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Automation");
   });
 
@@ -178,7 +193,7 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
 
     await waitFor(() => {
-      fireEvent.click(screen.getByRole("button", { name: "Generate categories" }));
+      fireEvent.click(screen.getByRole("button", { name: "Suggestions for categories" }));
       expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain(
         "Automation",
       );
@@ -342,7 +357,7 @@ describe("Upload route", () => {
       );
     });
     selectCategory("Development");
-    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development topic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development keyword" }));
 
     fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
       target: { value: "Clear category override." },

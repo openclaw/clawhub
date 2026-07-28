@@ -1,12 +1,13 @@
 import {
   CATALOG_CATEGORY_LIMIT,
+  CATALOG_TOPIC_LIMIT,
   INTERNAL_UNCATEGORIZED_CATEGORY,
   PLUGIN_CATEGORY_DEFINITIONS,
   SKILL_CATEGORY_DEFINITIONS,
 } from "clawhub-schema";
-import { ChevronDown, Sparkles } from "lucide-react";
+import { ChevronDown, Lightbulb, Sparkles } from "lucide-react";
 import { getCategoryIconComponent } from "../lib/categoryIcons";
-import { CatalogTopicInput } from "./CatalogTopicInput";
+import { CatalogTopicInput, parseCatalogTopicsInput } from "./CatalogTopicInput";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -21,6 +22,7 @@ export { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogTopi
 type CatalogMetadataFieldsProps = {
   kind: "skill" | "plugin";
   idPrefix?: string;
+  presentation?: "default" | "publish";
   categories: string[];
   suggestedCategories?: string[];
   topics: string;
@@ -32,6 +34,7 @@ type CatalogMetadataFieldsProps = {
 export function CatalogMetadataFields({
   kind,
   idPrefix,
+  presentation = "default",
   categories: selectedCategories,
   suggestedCategories,
   topics,
@@ -39,9 +42,11 @@ export function CatalogMetadataFields({
   onCategoriesChange,
   onTopicsChange,
 }: CatalogMetadataFieldsProps) {
+  const isPublishPresentation = presentation === "publish";
   const categories = kind === "skill" ? SKILL_CATEGORY_DEFINITIONS : PLUGIN_CATEGORY_DEFINITIONS;
   const prefix = kind === "skill" ? "skill" : "plugin";
   const fieldIdPrefix = idPrefix ?? prefix;
+  const topicCountId = `${fieldIdPrefix}TopicsCount`;
   const selected = new Set(selectedCategories);
   const limitReached = selectedCategories.length >= CATALOG_CATEGORY_LIMIT;
   const selectedLabels = categories
@@ -79,15 +84,19 @@ export function CatalogMetadataFields({
           variant="ghost"
           size="xs"
           disabled={disabled}
-          aria-label="Generate categories"
+          aria-label={isPublishPresentation ? "Suggestions for categories" : "Generate categories"}
           onClick={() =>
             onCategoriesChange(
               generatedCategories.length ? generatedCategories : [INTERNAL_UNCATEGORIZED_CATEGORY],
             )
           }
         >
-          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-          Generate
+          {isPublishPresentation ? (
+            <Lightbulb className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+          {isPublishPresentation ? "Suggestions" : "Generate"}
         </Button>
       ) : null}
       <span className="text-xs font-medium text-[color:var(--ink-soft)]">
@@ -97,7 +106,10 @@ export function CatalogMetadataFields({
   );
 
   return (
-    <div className="catalog-metadata-fields col-span-full">
+    <div
+      className="catalog-metadata-fields col-span-full"
+      data-presentation={isPublishPresentation ? "publish" : undefined}
+    >
       <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
         <div className="catalog-metadata-field-header">
           <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
@@ -158,7 +170,23 @@ export function CatalogMetadataFields({
       </div>
       <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
         <div className="catalog-metadata-field-header">
-          <Label htmlFor={`${fieldIdPrefix}Topics`}>Topics</Label>
+          <Label htmlFor={`${fieldIdPrefix}Topics`}>
+            {isPublishPresentation ? "Search keywords" : "Topics"}
+            {isPublishPresentation ? (
+              <span
+                id={topicCountId}
+                className="ml-2 text-xs font-medium text-[color:var(--ink-soft)]"
+                aria-live="polite"
+              >
+                <span aria-hidden="true">
+                  {parseCatalogTopicsInput(topics).length}/{CATALOG_TOPIC_LIMIT}
+                </span>
+                <span className="sr-only">
+                  {parseCatalogTopicsInput(topics).length} of {CATALOG_TOPIC_LIMIT} keywords used
+                </span>
+              </span>
+            ) : null}
+          </Label>
           <div
             className="catalog-metadata-field-actions min-h-[30px] shrink-0"
             aria-hidden="true"
@@ -168,6 +196,8 @@ export function CatalogMetadataFields({
           id={`${fieldIdPrefix}Topics`}
           value={topics}
           disabled={disabled}
+          describedBy={isPublishPresentation ? topicCountId : undefined}
+          vocabulary={isPublishPresentation ? "keywords" : "topics"}
           onChange={onTopicsChange}
         />
       </div>

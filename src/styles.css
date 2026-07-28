@@ -2652,7 +2652,146 @@ code {
   gap: 0;
 }
 
+.publish-skill-main {
+  padding-block: 40px 128px;
+}
+
+.publish-skill-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--oc-space-4);
+  margin-bottom: var(--oc-space-5);
+}
+
+.publish-skill-heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--oc-space-1);
+}
+
+.publish-skill-heading h1,
+.publish-skill-heading p {
+  margin: 0;
+}
+
+.publish-skill-actions {
+  justify-self: end;
+}
+
+.publish-skill-files {
+  border-radius: var(--oc-radius-surface);
+}
+
+.publish-skill-files-header {
+  min-height: 66px;
+  padding: var(--oc-space-4);
+}
+
+.publish-skill-files-body {
+  margin-top: 0;
+  border-radius: 0;
+  background: var(--oc-bg-elevated);
+}
+
+.publish-skill-file-row {
+  min-height: 40px;
+  border-radius: var(--oc-radius-inset);
+  background: color-mix(in srgb, var(--oc-bg-surface) 84%, var(--oc-bg-elevated));
+}
+
+.publish-skill-section {
+  padding: var(--oc-space-5);
+}
+
+.publish-skill-section-content {
+  gap: var(--oc-space-5);
+}
+
+.publish-skill-primary-grid {
+  row-gap: var(--oc-space-5);
+}
+
+.publish-skill-metadata textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.publish-skill-metadata
+  .catalog-metadata-fields[data-presentation="publish"]
+  .catalog-metadata-field:first-child
+  .catalog-metadata-field-header {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--oc-space-2);
+}
+
+.publish-skill-metadata
+  .catalog-metadata-fields[data-presentation="publish"]
+  .catalog-metadata-field:first-child
+  .catalog-metadata-field-actions {
+  display: contents;
+}
+
+.publish-skill-metadata
+  .catalog-metadata-fields[data-presentation="publish"]
+  .catalog-metadata-field:first-child
+  .catalog-metadata-field-actions
+  > button {
+  grid-column: 3;
+  justify-self: end;
+}
+
+.publish-skill-metadata
+  .catalog-metadata-fields[data-presentation="publish"]
+  .catalog-metadata-field:first-child
+  .catalog-metadata-field-actions
+  > span {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.publish-skill-license-acceptance {
+  min-height: 44px;
+  align-items: center;
+  border-radius: var(--oc-radius-inset);
+  background: var(--oc-bg-surface);
+}
+
+.publish-skill-license-acceptance input {
+  margin-top: 0;
+}
+
 @media (max-width: 640px) {
+  .publish-skill-main {
+    padding-block: 24px 80px;
+  }
+
+  .publish-skill-header {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+    margin-bottom: var(--oc-space-5);
+  }
+
+  .publish-skill-actions {
+    justify-self: start;
+  }
+
+  .publish-skill-section {
+    padding: var(--oc-space-4);
+  }
+
+  .publish-skill-submit {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .publish-skill-submit > button {
+    width: 100%;
+  }
+
   .publish-empty-main {
     min-height: 560px;
     padding-top: 24px;

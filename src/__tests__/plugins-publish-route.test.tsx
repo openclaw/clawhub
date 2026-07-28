@@ -539,7 +539,7 @@ describe("plugins publish route", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
-      expect(screen.getByRole("button", { name: "Remove GPU development topic" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
     });
 
     const packageJson = withRelativePath(
@@ -637,10 +637,10 @@ describe("plugins publish route", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
-      expect(screen.getByRole("button", { name: "Remove GPU development topic" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
     });
     selectCategory("Tools");
-    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development topic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development keyword" }));
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
@@ -1128,6 +1128,7 @@ describe("plugins publish route", () => {
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Plugin submitted" })).toBeNull();
   });
 
   it("shows a canonical submitted modal for an existing plugin uploaded from the generic route", async () => {
