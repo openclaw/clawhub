@@ -73,4 +73,38 @@ describe("CatalogTopicInput", () => {
     expect(screen.getByText("#ci, cd")).toBeTruthy();
     expect(screen.getByText("#gpu development")).toBeTruthy();
   });
+
+  it("uses keyword vocabulary consistently", () => {
+    function KeywordHarness() {
+      const [value, setValue] = useState("email, calendar, search, automation, productivity");
+      return (
+        <CatalogTopicInput id="keywords" value={value} vocabulary="keywords" onChange={setValue} />
+      );
+    }
+
+    render(<KeywordHarness />);
+
+    expect(screen.getByPlaceholderText("Maximum 5 keywords")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Remove email keyword" }));
+    expect(screen.getByPlaceholderText("Add keywords")).toBeTruthy();
+  });
+
+  it("associates supporting count text with the keyword input", () => {
+    render(
+      <>
+        <span id="keyword-count">0 of 5 keywords used</span>
+        <CatalogTopicInput
+          id="keywords"
+          value=""
+          describedBy="keyword-count"
+          vocabulary="keywords"
+          onChange={() => {}}
+        />
+      </>,
+    );
+
+    expect(screen.getByLabelText("Search keywords").getAttribute("aria-describedby")).toBe(
+      "keyword-count",
+    );
+  });
 });

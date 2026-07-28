@@ -3,6 +3,9 @@ const DEFAULT_CONVEX_SITE_URL = "http://127.0.0.1:3211";
 export const DEFAULT_LOCAL_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_ARGS = ["--project=chromium", "e2e/local-auth"];
 const DEFAULT_PLAYWRIGHT_RETRIES = "1";
+const LOCAL_AUTH_TRENDING_SNAPSHOT_ID = "local-auth-canonical-trending-v1";
+const DAY_MS = 24 * 60 * 60 * 1_000;
+const SNAPSHOT_RETENTION_MS = 2 * DAY_MS;
 
 type RunnerEnv = Record<string, string | undefined>;
 
@@ -12,6 +15,34 @@ export type LocalAuthRunnerConfig = {
   convexUrl: string;
   playwrightArgs: string[];
 };
+
+export function buildLocalAuthTrendingSnapshotArgs(now: number) {
+  const windowEndDay = Math.floor(now / DAY_MS);
+  return {
+    start: {
+      snapshotId: LOCAL_AUTH_TRENDING_SNAPSHOT_ID,
+      generatedAt: now,
+      expiresAt: now + SNAPSHOT_RETENTION_MS,
+      windowStartDay: Math.max(0, windowEndDay - 1),
+      windowEndDay,
+    },
+    finalize: {
+      snapshotId: LOCAL_AUTH_TRENDING_SNAPSHOT_ID,
+      completedAt: now,
+      totalItems: 0,
+      sourceCounts: {
+        clawhubTrending: 0,
+        clawhubRising: 0,
+        skillsShTrending: 0,
+      },
+      operations: {
+        documentsRead: 0,
+        documentsWritten: 2,
+        functionCalls: 2,
+      },
+    },
+  };
+}
 
 function stripPackageManagerSeparator(args: string[]) {
   return args[0] === "--" ? args.slice(1) : args;

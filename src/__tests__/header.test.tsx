@@ -171,6 +171,7 @@ vi.mock("../lib/gravatar", () => ({
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
+  isUnifiedNativeSkillResult: (result: { type: string }) => result.type === "skill",
   useUnifiedSearch: (...args: unknown[]) => useUnifiedSearchMock(...args),
 }));
 
@@ -298,7 +299,7 @@ describe("Header", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.getAllByText("Creators")).toHaveLength(1);
+    expect(screen.getAllByText("Official")).toHaveLength(1);
     expect(screen.getAllByText("Docs")).toHaveLength(2);
     expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
@@ -310,7 +311,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
-    expect(screen.getAllByText("Creators")).toHaveLength(2);
+    expect(screen.getAllByText("Official")).toHaveLength(2);
     expect(screen.getAllByText("Docs")).toHaveLength(3);
     expect(screen.queryByText("About")).toBeNull();
   });
@@ -525,6 +526,49 @@ describe("Header", () => {
     });
   });
 
+  it("opens external skill typeahead results on their stored catalog route", () => {
+    navigateMock.mockReset();
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          type: "skills-sh",
+          score: 5000,
+          result: {
+            source: "skills.sh",
+            externalId: "patrick-erichsen/skills/html",
+            route: "/skills-sh/patrick-erichsen/skills/html",
+            reference: "skills-sh:patrick-erichsen/skills/html",
+            owner: "patrick-erichsen",
+            repo: "skills",
+            slug: "html",
+            displayName: "HTML Artifact Chooser",
+            upstreamInstalls: 100,
+            lastObservedAt: 1,
+          },
+        },
+      ],
+      skillCount: 1,
+      pluginResults: [],
+      pluginCount: 0,
+      creatorResults: [],
+      creatorCount: 0,
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "html" } });
+    const option = screen.getByRole("option", { name: /HTML Artifact Chooser/i });
+    expect(option.textContent).toContain("patrick-erichsen/skills / html");
+    fireEvent.click(option);
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/skills-sh/patrick-erichsen/skills/html",
+    });
+  });
+
   it("navigates creator typeahead rows to profiles and creator footers to scoped search", () => {
     navigateMock.mockReset();
 
@@ -657,13 +701,37 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Creators", "Docs"]);
+    expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
     expect(
       document.querySelector(".mobile-nav-appearance-section .navbar-theme-switcher"),
     ).toBeTruthy();
   });
 
-  it("links profile and starred skills from the signed-in avatar menu", () => {
+  it("keeps signed-in account links out of the mobile menu", () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
+
+    const labels = Array.from(document.querySelectorAll(".mobile-nav-section .mobile-nav-link"))
+      .map((element) => element.textContent?.trim())
+      .filter((label): label is string => Boolean(label));
+
+    expect(labels).toEqual(["Home", "Skills", "Plugins", "Official", "Docs"]);
+  });
+
+  it("links profile and bookmarks from the signed-in avatar menu", () => {
     profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -686,7 +754,7 @@ describe("Header", () => {
     expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
+    expect(screen.getByText("Bookmarks").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
   });

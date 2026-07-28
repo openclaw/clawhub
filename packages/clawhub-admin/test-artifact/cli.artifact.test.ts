@@ -37,8 +37,12 @@ describe("packed admin CLI", () => {
         npm_config_ignore_scripts: "false",
       },
     });
-    const metadata = JSON.parse(output) as Array<{ filename?: string }>;
-    const filename = metadata[0]?.filename;
+    const metadata = JSON.parse(output) as
+      | Array<{ filename?: string }>
+      | Record<string, { filename?: string }>;
+    const filename = Array.isArray(metadata)
+      ? metadata[0]?.filename
+      : Object.values(metadata)[0]?.filename;
     expect(filename).toBeTruthy();
 
     const tarballPath = join(packDir, filename!);

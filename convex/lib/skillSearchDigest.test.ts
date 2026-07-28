@@ -58,6 +58,8 @@ function makeSkillDoc(overrides: Record<string, unknown> = {}) {
     statsStars: 5,
     statsInstallsCurrent: 10,
     statsInstallsAllTime: 100,
+    statsSkillsShInstalls: 8,
+    statsGithubStars: 250,
     stats: {
       downloads: 42,
       installsCurrent: 10,
@@ -88,6 +90,8 @@ describe("extractDigestFields", () => {
     expect(digest.statsStars).toBe(5);
     expect(digest.statsInstallsCurrent).toBe(10);
     expect(digest.statsInstallsAllTime).toBe(100);
+    expect(digest.statsSkillsShInstalls).toBe(8);
+    expect(digest.statsGithubStars).toBe(250);
     expect(digest.recommendedScore).toBe(
       computeRecommendationScore({ downloads: 42, installs: 100, stars: 5 }),
     );
@@ -247,7 +251,11 @@ describe("extractValidatedDigestFields", () => {
     const digest = await extractValidatedDigestFields(
       {
         db: {
-          get: async () => ({ skillId: "skills:abc", softDeletedAt: undefined }),
+          get: async () => ({
+            _id: "skillVersions:v1",
+            skillId: "skills:abc",
+            softDeletedAt: undefined,
+          }),
         },
       } as never,
       makeSkillDoc() as never,
@@ -256,6 +264,10 @@ describe("extractValidatedDigestFields", () => {
     expect(digest.latestVersionId).toBe("skillVersions:v1");
     expect(digest.latestVersionSkillId).toBe("skills:abc");
     expect(digest.latestVersionSummary).toMatchObject({ version: "1.0.0" });
+    expect(digest.publicVersion).toEqual({
+      status: "available",
+      versionId: "skillVersions:v1",
+    });
   });
 
   it("clears stale latest-version metadata when the version belongs to another skill", async () => {
@@ -271,6 +283,7 @@ describe("extractValidatedDigestFields", () => {
     expect(digest.latestVersionId).toBeUndefined();
     expect(digest.latestVersionSkillId).toBeUndefined();
     expect(digest.latestVersionSummary).toBeUndefined();
+    expect(digest.publicVersion).toEqual({ status: "unavailable" });
   });
 });
 

@@ -73,9 +73,9 @@ vi.mock("./ui/select", () => ({
   SelectValue: () => <span>Auth</span>,
 }));
 
-function setHostname(hostname: string) {
+function setLocation(hostname: string, pathname = "/") {
   Object.defineProperty(window, "location", {
-    value: { hostname },
+    value: { hostname, pathname },
     configurable: true,
   });
 }
@@ -97,7 +97,7 @@ describe("DevPersonaFab", () => {
     vi.stubGlobal("fetch", fetchMock);
     process.env.VITE_ENABLE_DEV_AUTH = "1";
     delete process.env.VITE_DEV_AUTH_SECRET;
-    setHostname("localhost");
+    setLocation("localhost");
   });
 
   it("stays hidden unless local dev auth is enabled", () => {
@@ -109,7 +109,15 @@ describe("DevPersonaFab", () => {
   });
 
   it("stays hidden away from localhost", () => {
-    setHostname("clawhub.ai");
+    setLocation("clawhub.ai");
+
+    render(<DevPersonaFab />);
+
+    expect(screen.queryByRole("button", { name: /open local dev personas/i })).toBeNull();
+  });
+
+  it.each(["/skills/publish", "/plugins/publish"])("stays hidden on the %s form", (pathname) => {
+    setLocation("localhost", pathname);
 
     render(<DevPersonaFab />);
 

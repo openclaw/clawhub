@@ -198,7 +198,7 @@ async function githubDownloadHandoffResponse(
   });
 }
 
-async function scheduleSkillDownloadMetric(
+export async function scheduleSkillDownloadMetric(
   ctx: DownloadCtx,
   request: Request,
   skillId: Id<"skills">,

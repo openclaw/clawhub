@@ -1,7 +1,7 @@
 import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
   internalAction,
@@ -45,6 +45,7 @@ const PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY =
   "smoke:publisher-abuse-hermit-digest:2026-07-03" as const;
 const PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM =
   "create-publisher-abuse-hermit-digest-smoke-2026-07-03" as const;
+const SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM = "repair-skill-lineage-cycles-2026-07-23" as const;
 const legacyPluginSkillSpectorRepairFamilyValidator = v.union(
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
@@ -178,6 +179,85 @@ type PublisherAbuseSignalSmokeTarget = {
   sourcePublisherId: Id<"publishers"> | null;
   sourceUserId: Id<"users"> | null;
   sourcePublisherHandle: string | null;
+};
+
+type SkillLineageCycleRepairPageResult = {
+  items: Array<{
+    skillId: Id<"skills">;
+    slug: string;
+  }>;
+  scanned: number;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type SkillLineageCycleInspection =
+  | {
+      status: "repairable";
+      skillId: Id<"skills">;
+      slug: string;
+      sourceSkillId: Id<"skills">;
+      sourceSlug: string;
+    }
+  | {
+      status: "paired_source";
+      skillId: Id<"skills">;
+      slug: string;
+      finalSkillId: Id<"skills">;
+      finalSlug: string;
+    }
+  | {
+      status: "uncertain";
+      skillId: Id<"skills">;
+      slug: string;
+      reason:
+        | "missing_skill"
+        | "no_self_reference"
+        | "unexpected_self_reference_shape"
+        | "missing_linked_skill"
+        | "pair_shape_mismatch"
+        | "missing_matching_merge_audit";
+      linkedSkillId?: Id<"skills">;
+      linkedSlug?: string;
+    };
+
+type SkillLineageCycleRepairStats = {
+  skillsScanned: number;
+  selfReferencesFound: number;
+  repairable: number;
+  pairedSources: number;
+  uncertain: number;
+  repaired: number;
+  changedBeforeApply: number;
+};
+
+export type SkillLineageCycleRepairArgs = {
+  cursor?: string;
+  dryRun?: boolean;
+  confirm?: string;
+  batchSize?: number;
+  maxBatches?: number;
+};
+
+export type SkillLineageCycleRepairResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM;
+  cursor: string | null;
+  isDone: boolean;
+  stats: SkillLineageCycleRepairStats;
+  samples: Array<{
+    status: SkillLineageCycleInspection["status"] | "repaired" | "changed_before_apply";
+    skillId: Id<"skills">;
+    slug: string;
+    sourceSkillId?: Id<"skills">;
+    sourceSlug?: string;
+    finalSkillId?: Id<"skills">;
+    finalSlug?: string;
+    linkedSkillId?: Id<"skills">;
+    linkedSlug?: string;
+    reason?: Extract<SkillLineageCycleInspection, { status: "uncertain" }>["reason"];
+  }>;
 };
 
 export const getSkillBackfillPageInternal = internalQuery({
@@ -2648,6 +2728,363 @@ export const backfillIsSuspiciousInternal = internalMutation({
 
     return { patched, isDone, scanned: page.length };
   },
+});
+
+export const getSkillLineageCycleRepairPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SkillLineageCycleRepairPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("skills")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    return {
+      items: page
+        .filter(
+          (skill) => skill.canonicalSkillId === skill._id || skill.forkOf?.skillId === skill._id,
+        )
+        .map((skill) => ({ skillId: skill._id, slug: skill.slug })),
+      scanned: page.length,
+      cursor: continueCursor,
+      isDone,
+    };
+  },
+});
+
+function parseSkillMergeTargetId(metadata: unknown): string | null {
+  if (typeof metadata !== "object" || metadata === null) return null;
+  const targetSkillId = (metadata as Record<string, unknown>).targetSkillId;
+  return typeof targetSkillId === "string" ? targetSkillId : null;
+}
+
+export async function inspectSkillLineageCycleInternalHandler(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  skillId: Id<"skills">,
+): Promise<SkillLineageCycleInspection> {
+  const skill = await ctx.db.get(skillId);
+  if (!skill) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: "<missing>",
+      reason: "missing_skill",
+    };
+  }
+
+  const hasSelfReference =
+    skill.canonicalSkillId === skill._id || skill.forkOf?.skillId === skill._id;
+  if (!hasSelfReference) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "no_self_reference",
+    };
+  }
+
+  const isFinalShape =
+    skill.softDeletedAt === undefined &&
+    skill.canonicalSkillId !== undefined &&
+    skill.canonicalSkillId !== skill._id &&
+    skill.forkOf?.skillId === skill._id &&
+    skill.forkOf.kind === "duplicate";
+  const isSourceShape =
+    skill.softDeletedAt !== undefined &&
+    skill.moderationStatus === "hidden" &&
+    skill.moderationReason === "owner.merged" &&
+    skill.canonicalSkillId === skill._id &&
+    skill.forkOf !== undefined &&
+    skill.forkOf.skillId !== skill._id &&
+    skill.forkOf.kind === "duplicate";
+  if (!isFinalShape && !isSourceShape) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "unexpected_self_reference_shape",
+    };
+  }
+
+  const linkedSkillId: Id<"skills"> | undefined = isFinalShape
+    ? skill.canonicalSkillId
+    : skill.forkOf?.skillId;
+  if (!linkedSkillId || linkedSkillId === skill._id) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "unexpected_self_reference_shape",
+    };
+  }
+  const linkedSkill: Doc<"skills"> | null = await ctx.db.get(linkedSkillId);
+  if (linkedSkill === null) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "missing_linked_skill",
+      linkedSkillId,
+    };
+  }
+
+  const finalSkill: Doc<"skills"> = isFinalShape ? skill : linkedSkill;
+  const sourceSkill: Doc<"skills"> = isSourceShape ? skill : linkedSkill;
+  const pairMatches =
+    finalSkill.softDeletedAt === undefined &&
+    finalSkill.canonicalSkillId === sourceSkill._id &&
+    finalSkill.forkOf?.skillId === finalSkill._id &&
+    finalSkill.forkOf.kind === "duplicate" &&
+    sourceSkill.softDeletedAt !== undefined &&
+    sourceSkill.moderationStatus === "hidden" &&
+    sourceSkill.moderationReason === "owner.merged" &&
+    sourceSkill.canonicalSkillId === sourceSkill._id &&
+    sourceSkill.forkOf?.skillId === finalSkill._id &&
+    sourceSkill.forkOf.kind === "duplicate";
+  if (!pairMatches) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "pair_shape_mismatch",
+      linkedSkillId: linkedSkill._id,
+      linkedSlug: linkedSkill.slug,
+    };
+  }
+
+  const mergeAuditLogs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target_action", (q) =>
+      q.eq("targetType", "skill").eq("targetId", sourceSkill._id).eq("action", "skill.merge"),
+    )
+    .order("desc")
+    .take(10);
+  const matchingAudit = mergeAuditLogs.some(
+    (log) =>
+      log.createdAt === sourceSkill.forkOf?.at &&
+      parseSkillMergeTargetId(log.metadata) === finalSkill._id,
+  );
+  if (!matchingAudit) {
+    return {
+      status: "uncertain",
+      skillId,
+      slug: skill.slug,
+      reason: "missing_matching_merge_audit",
+      linkedSkillId: linkedSkill._id,
+      linkedSlug: linkedSkill.slug,
+    };
+  }
+
+  if (isSourceShape) {
+    return {
+      status: "paired_source",
+      skillId: sourceSkill._id,
+      slug: sourceSkill.slug,
+      finalSkillId: finalSkill._id,
+      finalSlug: finalSkill.slug,
+    };
+  }
+
+  return {
+    status: "repairable",
+    skillId: finalSkill._id,
+    slug: finalSkill.slug,
+    sourceSkillId: sourceSkill._id,
+    sourceSlug: sourceSkill.slug,
+  };
+}
+
+export const inspectSkillLineageCycleInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args): Promise<SkillLineageCycleInspection> =>
+    inspectSkillLineageCycleInternalHandler(ctx, args.skillId),
+});
+
+export async function applySkillLineageCycleRepairInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    skillId: Id<"skills">;
+    sourceSkillId: Id<"skills">;
+  },
+): Promise<{ repaired: true } | { repaired: false; reason: "changed_before_apply" }> {
+  const inspection = await inspectSkillLineageCycleInternalHandler(ctx, args.skillId);
+  if (inspection.status !== "repairable" || inspection.sourceSkillId !== args.sourceSkillId) {
+    return {
+      repaired: false as const,
+      reason: "changed_before_apply" as const,
+    };
+  }
+
+  const [finalSkill, sourceSkill] = await Promise.all([
+    ctx.db.get(args.skillId),
+    ctx.db.get(args.sourceSkillId),
+  ]);
+  if (!finalSkill || !sourceSkill || !sourceSkill.forkOf) {
+    return {
+      repaired: false as const,
+      reason: "changed_before_apply" as const,
+    };
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(finalSkill._id, {
+    canonicalSkillId: undefined,
+    forkOf: undefined,
+    updatedAt: now,
+  });
+  await ctx.db.patch(sourceSkill._id, {
+    canonicalSkillId: finalSkill._id,
+    forkOf: {
+      ...sourceSkill.forkOf,
+      skillId: finalSkill._id,
+    },
+    updatedAt: now,
+  });
+  await ctx.db.insert("auditLogs", {
+    action: "skill.lineage_cycle.repair",
+    targetType: "skill",
+    targetId: finalSkill._id,
+    metadata: {
+      repairVersion: "skill-lineage-cycle-2026-07-23",
+      slug: finalSkill.slug,
+      sourceSkillId: inspection.sourceSkillId,
+      sourceSlug: inspection.sourceSlug,
+      previousFinalCanonicalSkillId: finalSkill.canonicalSkillId,
+      previousFinalForkOf: finalSkill.forkOf,
+      previousSourceCanonicalSkillId: sourceSkill.canonicalSkillId,
+      previousSourceForkOf: sourceSkill.forkOf,
+    },
+    createdAt: now,
+  });
+
+  return { repaired: true as const };
+}
+
+export const applySkillLineageCycleRepairInternal = internalMutation({
+  args: {
+    skillId: v.id("skills"),
+    sourceSkillId: v.id("skills"),
+  },
+  handler: applySkillLineageCycleRepairInternalHandler,
+});
+
+// This is a paired relationship repair, not a table-wide shape migration. It stays in
+// maintenance.ts so every write can revalidate both skill records and the merge audit.
+export async function repairSkillLineageCyclesInternalHandler(
+  ctx: ActionCtx,
+  args: SkillLineageCycleRepairArgs,
+): Promise<SkillLineageCycleRepairResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM) {
+    throw new ConvexError(`Pass confirm="${SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM}" to apply.`);
+  }
+
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const stats: SkillLineageCycleRepairStats = {
+    skillsScanned: 0,
+    selfReferencesFound: 0,
+    repairable: 0,
+    pairedSources: 0,
+    uncertain: 0,
+    repaired: 0,
+    changedBeforeApply: 0,
+  };
+  const samples: SkillLineageCycleRepairResult["samples"] = [];
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let batch = 0; batch < maxBatches; batch++) {
+    const page = (await ctx.runQuery(internal.maintenance.getSkillLineageCycleRepairPageInternal, {
+      cursor: cursor ?? undefined,
+      batchSize,
+    })) as SkillLineageCycleRepairPageResult;
+    cursor = page.cursor;
+    isDone = page.isDone;
+    stats.skillsScanned += page.scanned;
+    stats.selfReferencesFound += page.items.length;
+
+    for (const item of page.items) {
+      const inspection = (await ctx.runQuery(
+        internal.maintenance.inspectSkillLineageCycleInternal,
+        { skillId: item.skillId },
+      )) as SkillLineageCycleInspection;
+
+      if (inspection.status === "uncertain") {
+        stats.uncertain++;
+        if (samples.length < 200) samples.push(inspection);
+        continue;
+      }
+      if (inspection.status === "paired_source") {
+        stats.pairedSources++;
+        if (samples.length < 200) samples.push(inspection);
+        continue;
+      }
+
+      stats.repairable++;
+      if (dryRun) {
+        if (samples.length < 200) samples.push(inspection);
+        continue;
+      }
+
+      const result = (await ctx.runMutation(
+        internal.maintenance.applySkillLineageCycleRepairInternal,
+        {
+          skillId: inspection.skillId,
+          sourceSkillId: inspection.sourceSkillId,
+        },
+      )) as { repaired: true } | { repaired: false; reason: "changed_before_apply" };
+      if (result.repaired) {
+        stats.repaired++;
+        if (samples.length < 200) {
+          samples.push({
+            status: "repaired",
+            skillId: inspection.skillId,
+            slug: inspection.slug,
+            sourceSkillId: inspection.sourceSkillId,
+            sourceSlug: inspection.sourceSlug,
+          });
+        }
+      } else {
+        stats.changedBeforeApply++;
+        if (samples.length < 200) {
+          samples.push({
+            status: "changed_before_apply",
+            skillId: inspection.skillId,
+            slug: inspection.slug,
+            sourceSkillId: inspection.sourceSkillId,
+            sourceSlug: inspection.sourceSlug,
+          });
+        }
+      }
+    }
+
+    if (isDone) break;
+  }
+
+  return {
+    ok: true,
+    dryRun,
+    ...(dryRun ? { confirmRequired: SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM } : {}),
+    cursor,
+    isDone,
+    stats,
+    samples,
+  };
+}
+
+export const repairSkillLineageCyclesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: repairSkillLineageCyclesInternalHandler,
 });
 
 function isActiveLegacyPublisherRepairUser(

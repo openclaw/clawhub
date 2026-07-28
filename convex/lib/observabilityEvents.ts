@@ -3,6 +3,8 @@ export const Events = {
   GitHubSkillSourceSyncCompleted: "github_skill_source_sync.completed",
   GitHubSkillSourceSyncSourceFailed: "github_skill_source_sync.source_failed",
   GitHubSkillSourceSyncFailed: "github_skill_source_sync.failed",
+  PrePublicationQueueSnapshot: "prepublication_queue.snapshot",
+  SecurityScanQueueSnapshot: "security_scan_queue.snapshot",
 } as const;
 
 export type EventName = (typeof Events)[keyof typeof Events];

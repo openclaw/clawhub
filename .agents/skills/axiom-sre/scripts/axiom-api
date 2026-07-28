@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Axiom API helper - uses unified config
+# Usage: axiom-api <deployment> <method> <endpoint> [body]
+# Examples:
+#   axiom-api dev POST "/v1/datasets/_apl?format=tabular" '{"apl": "..."}'
+#   axiom-api dev GET "/v1/datasets"
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+METHOD="${2:-GET}"
+ENDPOINT="${3:-}"
+BODY="${4:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$ENDPOINT" ]]; then
+  echo "Usage: axiom-api <deployment> <method> <endpoint> [body]" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" axiom "$DEPLOYMENT")"
+
+if [[ -n "$BODY" ]]; then
+  "$SCRIPT_DIR/curl-auth" axiom "$DEPLOYMENT" -X "$METHOD" -d "$BODY" "${AXIOM_URL}${ENDPOINT}"
+else
+  "$SCRIPT_DIR/curl-auth" axiom "$DEPLOYMENT" -X "$METHOD" "${AXIOM_URL}${ENDPOINT}"
+fi

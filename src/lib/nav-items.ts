@@ -44,7 +44,7 @@ const SKILLS_SEARCH = {
 
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
-// These map to the content-type tabs: Skills | Plugins | Creators
+// These map to the content-type tabs: Skills | Plugins | Official
 // ---------------------------------------------------------------------------
 
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
@@ -60,9 +60,8 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     activePathPrefixes: ["/plugin/"],
   },
   {
-    label: "Creators",
-    to: PublicRegistryPaths.creators,
-    activePathPrefixes: ["/publishers"],
+    label: "Official",
+    to: PublicRegistryPaths.official,
   },
 ];
 
@@ -117,7 +116,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: PublicRegistryPaths.skills, search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: PublicRegistryPaths.plugins },
-      { kind: "link", label: "Creators", to: PublicRegistryPaths.creators },
+      { kind: "link", label: "Official", to: PublicRegistryPaths.official },
       {
         kind: "link",
         label: "Audits",
@@ -185,6 +184,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
 ];
 
 export const FOOTER_PLATFORM_LINKS = [
+  { label: "Status", href: "https://clawhub.betteruptime.com" },
   { label: "Deployed on Vercel", href: "https://vercel.com" },
   { label: "Powered by Convex", href: "https://www.convex.dev" },
 ] as const;

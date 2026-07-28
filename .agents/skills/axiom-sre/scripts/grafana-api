@@ -1,0 +1,36 @@
+#!/bin/bash
+# Make raw Grafana API calls
+# Usage: grafana-api <deployment> <endpoint>
+#
+# Examples:
+#   grafana-api prod api/datasources
+#   grafana-api prod api/search?type=dash-db
+#   grafana-api prod 'api/datasources/proxy/uid/prometheus/api/v1/label/__name__/values'
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+endpoint="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$endpoint" ]]; then
+    echo "Usage: grafana-api <deployment> <endpoint>" >&2
+    echo "" >&2
+    echo "Common endpoints:" >&2
+    echo "  api/datasources                    - List datasources" >&2
+    echo "  api/search?type=dash-db            - Search dashboards" >&2
+    echo "  api/alertmanager/grafana/api/v2/alerts - Get alerts" >&2
+    echo "  api/datasources/proxy/uid/<uid>/*  - Proxy to datasource" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" grafana "$DEPLOYMENT")"
+
+api_url="${GRAFANA_URL}/${endpoint}"
+result=$("$SCRIPT_DIR/curl-auth" grafana "$DEPLOYMENT" "$api_url")
+
+if command -v jq &>/dev/null; then
+    echo "$result" | jq .
+else
+    echo "$result"
+fi

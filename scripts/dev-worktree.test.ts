@@ -8,7 +8,6 @@ import {
   buildEnvFileCandidates,
   buildViteArgs,
   applyLocalConvexEnvForUrl,
-  isConvexFunctionUnavailableOutput,
   isLocalConvexUrl,
   isRunningPid,
   parseArgs,
@@ -16,6 +15,7 @@ import {
   shouldSeedLocalData,
   shouldStartDevWorkers,
 } from "./dev-worktree";
+import { isConvexFunctionUnavailableOutput } from "./seed";
 
 describe("dev-worktree helpers", () => {
   it("seeds local fixtures and public corpus when Worktrunk starts dev services", () => {

@@ -19,11 +19,124 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdRepairPackageName, cmdRepairPackageRuntimeId, cmdTransferPackageOwner } =
-  await import("./packages");
+const {
+  cmdHardDeletePackage,
+  cmdRepairPackageName,
+  cmdRepairPackageRuntimeId,
+  cmdTransferPackageOwner,
+} = await import("./packages");
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+describe("cmdHardDeletePackage", () => {
+  it("dry-runs an owner-qualified package by default", async () => {
+    const confirmationToken =
+      "hard-delete-package:@hxy91819/openclaw-tencent-provider:packages:tencent";
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      packageId: "packages:tencent",
+      name: "openclaw-tencent-provider",
+      ownerHandle: "hxy91819",
+      displayName: "Tencent Cloud",
+      runtimeId: "tencent",
+      dryRun: true,
+      deleted: false,
+      confirmationToken,
+    });
+
+    const result = await cmdHardDeletePackage(
+      makeGlobalOpts(),
+      "openclaw-tencent-provider",
+      {
+        owner: "HXY91819",
+        reason: "Free the stale package name for Tencent externalization",
+        json: true,
+      },
+      false,
+    );
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      deleted: false,
+      ownerHandle: "hxy91819",
+      name: "openclaw-tencent-provider",
+    });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/openclaw-tencent-provider/hard-delete",
+        token: "tkn",
+        body: {
+          ownerHandle: "hxy91819",
+          reason: "Free the stale package name for Tencent externalization",
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires owner, reason, and an apply confirmation token", async () => {
+    await expect(
+      cmdHardDeletePackage(makeGlobalOpts(), "demo", { reason: "Cleanup" }, false),
+    ).rejects.toThrow(/--owner required/i);
+    await expect(
+      cmdHardDeletePackage(makeGlobalOpts(), "demo", { owner: "openclaw" }, false),
+    ).rejects.toThrow(/--reason required/i);
+    await expect(
+      cmdHardDeletePackage(
+        makeGlobalOpts(),
+        "demo",
+        { owner: "openclaw", reason: "Cleanup", apply: true, yes: true },
+        false,
+      ),
+    ).rejects.toThrow(/--confirm required/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("applies with the exact token and disables retries", async () => {
+    const confirmationToken =
+      "hard-delete-package:@hxy91819/openclaw-tencent-provider:packages:tencent";
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      packageId: "packages:tencent",
+      name: "openclaw-tencent-provider",
+      ownerHandle: "hxy91819",
+      displayName: "Tencent Cloud",
+      runtimeId: "tencent",
+      dryRun: false,
+      deleted: true,
+      confirmationToken,
+    });
+    await cmdHardDeletePackage(
+      makeGlobalOpts(),
+      "openclaw-tencent-provider",
+      {
+        owner: "hxy91819",
+        reason: "Cleanup",
+        apply: true,
+        confirm: confirmationToken,
+        yes: true,
+      },
+      false,
+    );
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        retryCount: 0,
+        body: {
+          ownerHandle: "hxy91819",
+          reason: "Cleanup",
+          dryRun: false,
+          confirmationToken,
+        },
+      }),
+      expect.anything(),
+    );
+  });
 });
 
 describe("cmdRepairPackageName", () => {

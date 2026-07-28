@@ -1,0 +1,4 @@
+interface:
+  display_name: "ClawHub Convex"
+  short_description: "Apply ClawHub-specific Convex conventions"
+  default_prompt: "Use $clawhub-convex to make this Convex change with ClawHub-specific safeguards."

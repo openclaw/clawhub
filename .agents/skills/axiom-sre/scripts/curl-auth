@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Authenticated curl wrapper - handles multiple auth methods
+# Usage: curl-auth <tool> <deployment> [options] <url> [curl-args...]
+#
+# Options:
+#   -X <method>   HTTP method (GET, POST, etc.)
+#   -d <data>     Request body (implies -X POST and Content-Type: application/json)
+#
+# Auth priority:
+#   1. access_command (e.g., cloudflared access curl)
+#   2. CF Access headers
+#   3. token (Bearer auth)
+#   4. username/password (Basic auth)
+#   5. No auth
+#
+# Examples:
+#   curl-auth grafana prod https://grafana.internal/api/health
+#   curl-auth grafana prod -X POST -d '{"query":"..."}' https://grafana.internal/api/ds/query
+#   curl-auth sentry prod https://sentry.io/api/0/organizations/my-org/issues/
+
+set -euo pipefail
+
+TOOL="${1:-}"
+DEPLOYMENT="${2:-}"
+shift 2 2>/dev/null || true
+
+# Parse options
+METHOD="GET"
+DATA=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -X)
+            METHOD="$2"
+            shift 2
+            ;;
+        -d)
+            DATA="$2"
+            shift 2
+            ;;
+        -*)
+            # Pass through other curl options
+            break
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+URL="${1:-}"
+shift 1 2>/dev/null || true
+
+if [[ -z "$TOOL" || -z "$DEPLOYMENT" || -z "$URL" ]]; then
+    echo "Usage: curl-auth <tool> <deployment> [options] <url> [curl-args...]" >&2
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  -X <method>   HTTP method (GET, POST)" >&2
+    echo "  -d <data>     Request body (JSON)" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load config
+CONFIG_OUTPUT="$("$SCRIPT_DIR/config" "$TOOL" "$DEPLOYMENT")" || exit 1
+eval "$CONFIG_OUTPUT"
+
+# Build base curl args
+CURL_ARGS=(-s --connect-timeout 10 --max-time 30 -X "$METHOD")
+if [[ -n "$DATA" ]]; then
+    CURL_ARGS+=(-H "Content-Type: application/json" -d "$DATA")
+fi
+
+# Helper to run curl with auth
+run_curl() {
+    local auth_args=("$@")
+    curl "${CURL_ARGS[@]}" "${auth_args[@]}" "$URL" "$@"
+}
+
+# Determine auth method and build curl command
+case "$TOOL" in
+    grafana)
+        if [[ -n "${GRAFANA_ACCESS_CMD:-}" ]]; then
+            # cloudflared access curl requires URL as the first positional argument
+            if [[ -n "$DATA" ]]; then
+                $GRAFANA_ACCESS_CMD "$URL" -s -X "$METHOD" -H "Content-Type: application/json" -d "$DATA" "$@"
+            else
+                $GRAFANA_ACCESS_CMD "$URL" -s "$@"
+            fi
+        elif [[ -n "${GRAFANA_CF_ACCESS_CLIENT_ID:-}" && -n "${GRAFANA_CF_ACCESS_CLIENT_SECRET:-}" ]]; then
+            curl "${CURL_ARGS[@]}" \
+                -H "CF-Access-Client-Id: $GRAFANA_CF_ACCESS_CLIENT_ID" \
+                -H "CF-Access-Client-Secret: $GRAFANA_CF_ACCESS_CLIENT_SECRET" \
+                "$URL" "$@"
+        elif [[ -n "${GRAFANA_TOKEN:-}" ]]; then
+            curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $GRAFANA_TOKEN" "$URL" "$@"
+        elif [[ -n "${GRAFANA_USERNAME:-}" ]]; then
+            curl "${CURL_ARGS[@]}" -u "$GRAFANA_USERNAME:$GRAFANA_PASSWORD" "$URL" "$@"
+        else
+            curl "${CURL_ARGS[@]}" "$URL" "$@"
+        fi
+        ;;
+    
+    pyroscope)
+        if [[ -n "${PYROSCOPE_ACCESS_CMD:-}" ]]; then
+            # cloudflared access curl requires URL as the first positional argument
+            if [[ -n "$DATA" ]]; then
+                $PYROSCOPE_ACCESS_CMD "$URL" -s -X "$METHOD" -H "Content-Type: application/json" -d "$DATA" "$@"
+            else
+                $PYROSCOPE_ACCESS_CMD "$URL" -s "$@"
+            fi
+        elif [[ -n "${PYROSCOPE_CF_ACCESS_CLIENT_ID:-}" && -n "${PYROSCOPE_CF_ACCESS_CLIENT_SECRET:-}" ]]; then
+            curl "${CURL_ARGS[@]}" \
+                -H "CF-Access-Client-Id: $PYROSCOPE_CF_ACCESS_CLIENT_ID" \
+                -H "CF-Access-Client-Secret: $PYROSCOPE_CF_ACCESS_CLIENT_SECRET" \
+                "$URL" "$@"
+        elif [[ -n "${PYROSCOPE_TOKEN:-}" ]]; then
+            curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $PYROSCOPE_TOKEN" "$URL" "$@"
+        elif [[ -n "${PYROSCOPE_USERNAME:-}" ]]; then
+            curl "${CURL_ARGS[@]}" -u "$PYROSCOPE_USERNAME:$PYROSCOPE_PASSWORD" "$URL" "$@"
+        else
+            curl "${CURL_ARGS[@]}" "$URL" "$@"
+        fi
+        ;;
+
+    sentry)
+        if [[ -n "${SENTRY_TOKEN:-}" ]]; then
+            curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $SENTRY_TOKEN" "$URL" "$@"
+        else
+            curl "${CURL_ARGS[@]}" "$URL" "$@"
+        fi
+        ;;
+    
+    axiom)
+        curl "${CURL_ARGS[@]}" \
+            -H "Authorization: Bearer $AXIOM_TOKEN" \
+            -H "X-Axiom-Org-Id: $AXIOM_ORG_ID" \
+            -H "Content-Type: application/json" \
+            "$URL" "$@"
+        ;;
+    
+    slack)
+        curl "${CURL_ARGS[@]}" -H "Authorization: Bearer $SLACK_TOKEN" "$URL" "$@"
+        ;;
+    
+    *)
+        echo "Error: Unknown tool '$TOOL'" >&2
+        exit 1
+        ;;
+esac

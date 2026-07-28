@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# Test curl-auth and refactored scripts
+# Creates temp config, validates scripts parse correctly and call curl-auth
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEST_DIR=$(mktemp -d)
+trap 'rm -rf "$TEST_DIR"' EXIT
+
+# Create mock config
+export SRE_CONFIG_DIR="$TEST_DIR"
+export SRE_CONFIG="$TEST_DIR/config.toml"
+
+cat > "$SRE_CONFIG" << 'EOF'
+[axiom.deployments.test]
+url = "https://api.axiom.test"
+token = "xapt-test-token-12345"
+org_id = "test-org"
+
+[grafana.deployments.test]
+url = "https://grafana.test"
+token = "glsa_test_token_12345"
+
+[pyroscope.deployments.test]
+url = "https://pyroscope.test"
+token = "pyro-test-token"
+
+[sentry.deployments.test]
+url = "https://example-org.sentry.io"
+token = "sntryu_test_sentry_token_12345"
+organization_slug = "example-org"
+project_slug = "example-project"
+
+[slack.workspaces.test]
+token = "xoxb-test-slack-token"
+EOF
+
+echo "=== Testing config script ==="
+
+# Test config --list
+echo -n "config --list axiom: "
+result=$("$SCRIPT_DIR/config" --list axiom)
+[[ "$result" == "test" ]] && echo "OK" || { echo "FAIL: $result"; exit 1; }
+
+echo -n "config --list grafana: "
+result=$("$SCRIPT_DIR/config" --list grafana)
+[[ "$result" == "test" ]] && echo "OK" || { echo "FAIL: $result"; exit 1; }
+
+echo -n "config --list pyroscope: "
+result=$("$SCRIPT_DIR/config" --list pyroscope)
+[[ "$result" == "test" ]] && echo "OK" || { echo "FAIL: $result"; exit 1; }
+
+echo -n "config --list sentry: "
+result=$("$SCRIPT_DIR/config" --list sentry)
+[[ "$result" == "test" ]] && echo "OK" || { echo "FAIL: $result"; exit 1; }
+
+echo -n "config --list slack: "
+result=$("$SCRIPT_DIR/config" --list slack)
+[[ "$result" == "test" ]] && echo "OK" || { echo "FAIL: $result"; exit 1; }
+
+# Test config outputs correct env vars (captured, not displayed)
+echo -n "config axiom test: "
+output=$(eval "$("$SCRIPT_DIR/config" axiom test)" && echo "$AXIOM_URL|$AXIOM_TOKEN|$AXIOM_ORG_ID")
+expected="https://api.axiom.test|xapt-test-token-12345|test-org"
+[[ "$output" == "$expected" ]] && echo "OK" || { echo "FAIL"; exit 1; }
+
+echo -n "config grafana test: "
+output=$(eval "$("$SCRIPT_DIR/config" grafana test)" && echo "$GRAFANA_URL|$GRAFANA_TOKEN")
+expected="https://grafana.test|glsa_test_token_12345"
+[[ "$output" == "$expected" ]] && echo "OK" || { echo "FAIL"; exit 1; }
+
+echo -n "config pyroscope test: "
+output=$(eval "$("$SCRIPT_DIR/config" pyroscope test)" && echo "$PYROSCOPE_URL|$PYROSCOPE_TOKEN")
+expected="https://pyroscope.test|pyro-test-token"
+[[ "$output" == "$expected" ]] && echo "OK" || { echo "FAIL"; exit 1; }
+
+echo -n "config sentry test: "
+output=$(eval "$("$SCRIPT_DIR/config" sentry test)" && echo "$SENTRY_URL|$SENTRY_TOKEN|$SENTRY_ORG_SLUG|$SENTRY_PROJECT_SLUG")
+expected="https://example-org.sentry.io|sntryu_test_sentry_token_12345|example-org|example-project"
+[[ "$output" == "$expected" ]] && echo "OK" || { echo "FAIL"; exit 1; }
+
+echo -n "config slack test: "
+output=$(eval "$("$SCRIPT_DIR/config" slack test)" && echo "$SLACK_TOKEN")
+expected="xoxb-test-slack-token"
+[[ "$output" == "$expected" ]] && echo "OK" || { echo "FAIL"; exit 1; }
+
+echo ""
+echo "=== Testing curl-auth builds correct commands ==="
+
+# We can't actually run curl, but we can verify the script parses and builds args correctly
+# by using a mock curl that just prints its args
+
+MOCK_CURL="$TEST_DIR/curl"
+cat > "$MOCK_CURL" << 'EOF'
+#!/bin/bash
+echo "CURL_ARGS: $*"
+EOF
+chmod +x "$MOCK_CURL"
+export PATH="$TEST_DIR:$PATH"
+
+echo -n "curl-auth axiom GET: "
+result=$("$SCRIPT_DIR/curl-auth" axiom test "https://api.axiom.test/v1/datasets" 2>&1)
+[[ "$result" == *"Authorization: Bearer"* ]] && echo "OK" || { echo "FAIL: no auth header"; exit 1; }
+[[ "$result" == *"X-Axiom-Org-Id"* ]] && echo -n "" || { echo "FAIL: no org header"; exit 1; }
+
+echo -n "curl-auth grafana GET: "
+result=$("$SCRIPT_DIR/curl-auth" grafana test "https://grafana.test/api/health" 2>&1)
+[[ "$result" == *"Authorization: Bearer"* ]] && echo "OK" || { echo "FAIL: no auth header"; exit 1; }
+
+echo -n "curl-auth grafana POST: "
+result=$("$SCRIPT_DIR/curl-auth" grafana test -X POST -d '{"query":"test"}' "https://grafana.test/api/query" 2>&1)
+[[ "$result" == *"POST"* ]] && echo -n "" || { echo "FAIL: not POST"; exit 1; }
+[[ "$result" == *"Authorization: Bearer"* ]] && echo "OK" || { echo "FAIL: no auth header"; exit 1; }
+
+echo -n "curl-auth pyroscope POST: "
+result=$("$SCRIPT_DIR/curl-auth" pyroscope test -X POST -d '{}' "https://pyroscope.test/query" 2>&1)
+[[ "$result" == *"POST"* ]] && echo -n "" || { echo "FAIL: not POST"; exit 1; }
+[[ "$result" == *"Authorization: Bearer"* ]] && echo "OK" || { echo "FAIL: no auth header"; exit 1; }
+
+echo -n "curl-auth sentry GET: "
+result=$("$SCRIPT_DIR/curl-auth" sentry test "https://example-org.sentry.io/api/0/issues/" 2>&1)
+[[ "$result" == *"Authorization: Bearer"* ]] && echo "OK" || { echo "FAIL: no auth header"; exit 1; }
+
+echo -n "curl-auth slack GET: "
+result=$("$SCRIPT_DIR/curl-auth" slack test "https://slack.com/api/users.list" 2>&1)
+[[ "$result" == *"Authorization: Bearer"* ]] && echo "OK" || { echo "FAIL: no auth header"; exit 1; }
+
+echo ""
+echo "=== Testing scripts don't expose secrets in output ==="
+
+# Verify secrets don't appear in stdout/stderr when running help
+echo -n "grafana-api help doesn't leak: "
+result=$("$SCRIPT_DIR/grafana-api" 2>&1 || true)
+[[ "$result" != *"glsa_test"* ]] && echo "OK" || { echo "FAIL: token leaked"; exit 1; }
+
+echo -n "pyroscope-services help doesn't leak: "
+result=$("$SCRIPT_DIR/pyroscope-services" 2>&1 || true)
+[[ "$result" != *"pyro-test"* ]] && echo "OK" || { echo "FAIL: token leaked"; exit 1; }
+
+echo -n "sentry-api help doesn't leak: "
+result=$("$SCRIPT_DIR/sentry-api" 2>&1 || true)
+[[ "$result" != *"sntryu_test_sentry_token_12345"* ]] && echo "OK" || { echo "FAIL: token leaked"; exit 1; }
+
+echo -n "slack help doesn't leak: "
+result=$("$SCRIPT_DIR/slack" 2>&1 || true)
+[[ "$result" != *"xoxb-test"* ]] && echo "OK" || { echo "FAIL: token leaked"; exit 1; }
+
+echo ""
+echo "=== All tests passed ==="

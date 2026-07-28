@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildLocalAuthTrendingSnapshotArgs,
   resolveLocalAuthDeployment,
   resolveLocalAuthRunnerConfig,
 } from "./playwright-local-auth-config";
@@ -64,6 +65,33 @@ describe("playwright local-auth runner config", () => {
       resolveLocalAuthRunnerConfig({}, ["--", "--retries", "2", "e2e/example.pw.test.ts"]),
     ).toMatchObject({
       playwrightArgs: ["--retries", "2", "e2e/example.pw.test.ts"],
+    });
+  });
+
+  it("builds a valid empty canonical snapshot for the isolated runtime", () => {
+    expect(buildLocalAuthTrendingSnapshotArgs(86_400_000)).toEqual({
+      start: {
+        snapshotId: "local-auth-canonical-trending-v1",
+        generatedAt: 86_400_000,
+        expiresAt: 259_200_000,
+        windowStartDay: 0,
+        windowEndDay: 1,
+      },
+      finalize: {
+        snapshotId: "local-auth-canonical-trending-v1",
+        completedAt: 86_400_000,
+        totalItems: 0,
+        sourceCounts: {
+          clawhubTrending: 0,
+          clawhubRising: 0,
+          skillsShTrending: 0,
+        },
+        operations: {
+          documentsRead: 0,
+          documentsWritten: 2,
+          functionCalls: 2,
+        },
+      },
     });
   });
 });

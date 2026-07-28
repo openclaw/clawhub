@@ -1,12 +1,13 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DocsLinks } from "clawhub-schema";
 import { getFunctionName } from "convex/server";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { toastErrorMock } = vi.hoisted(() => ({
+const { navigateMock, toastErrorMock } = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
   toastErrorMock: vi.fn(),
 }));
 
@@ -15,6 +16,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
+  useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
 }));
 
@@ -30,7 +32,9 @@ vi.mock("sonner", () => ({
 
 const generateUploadUrl = vi.fn();
 const publishRelease = vi.fn();
+const generateChangelogPreview = vi.fn();
 const fetchMock = vi.fn();
+const writeTextMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const useQueryMock = vi.fn();
 const useSearchMock = vi.fn();
@@ -39,7 +43,10 @@ const originalFetch = globalThis.fetch;
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useMutation: () => generateUploadUrl,
-  useAction: () => publishRelease,
+  useAction: (fn: unknown) => {
+    const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+    return name === "packages:generateChangelogPreview" ? generateChangelogPreview : publishRelease;
+  },
   useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
@@ -76,6 +83,38 @@ function makeCodePluginPackageJson(overrides: Record<string, unknown>) {
   });
 }
 
+function uploadCodePluginPackage(
+  packageJsonOverrides: Record<string, unknown>,
+  directory = "demo-plugin",
+) {
+  const packageJson = withRelativePath(
+    new File([makeCodePluginPackageJson(packageJsonOverrides)], "package.json", {
+      type: "application/json",
+    }),
+    `${directory}/package.json`,
+  );
+  const manifest = withRelativePath(
+    new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+    `${directory}/openclaw.plugin.json`,
+  );
+  fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+}
+
+function makeVintageAyuMembership(
+  overrides: { kind?: "user" | "org"; role?: "owner" | "publisher" } = {},
+) {
+  return {
+    publisher: {
+      _id: "publishers:vintageayu",
+      handle: "vintageayu",
+      displayName: "VintageAyu",
+      kind: overrides.kind ?? "user",
+      image: "/clawd-logo.png",
+    },
+    role: overrides.role ?? "owner",
+  };
+}
+
 function getFileInput() {
   const input = document.querySelector('input[type="file"]');
   if (!(input instanceof HTMLInputElement)) throw new Error("Missing file input");
@@ -99,10 +138,13 @@ describe("plugins publish route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
     publishRelease.mockReset();
+    generateChangelogPreview.mockReset();
     fetchMock.mockReset();
+    writeTextMock.mockReset();
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
     useSearchMock.mockReset();
+    navigateMock.mockReset();
     toastErrorMock.mockReset();
 
     useSearchMock.mockReturnValue({
@@ -122,21 +164,11 @@ describe("plugins publish route", () => {
       if (args === "skip") return undefined;
       const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
       if (name !== "publishers:listMine") return null;
-      return [
-        {
-          publisher: {
-            _id: "publishers:vintageayu",
-            handle: "vintageayu",
-            displayName: "VintageAyu",
-            kind: "user",
-            image: "/clawd-logo.png",
-          },
-          role: "owner",
-        },
-      ];
+      return [makeVintageAyuMembership()];
     });
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
+    generateChangelogPreview.mockResolvedValue({ changelog: "- Updated package." });
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
       ok: true,
       json: async () => ({
@@ -147,6 +179,12 @@ describe("plugins publish route", () => {
       value: fetchMock,
       configurable: true,
       writable: true,
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: writeTextMock.mockResolvedValue(undefined),
+      },
     });
   });
 
@@ -165,7 +203,7 @@ describe("plugins publish route", () => {
   it("links to the plugin publishing guide", () => {
     renderPublishRoute();
 
-    const guideLink = screen.getByRole("link", { name: /Plugin publishing guide/i });
+    const guideLink = screen.getByRole("link", { name: /Plugin docs/i });
     expect(guideLink.getAttribute("href")).toBe(
       "https://docs.openclaw.ai/clawhub/publishing#plugins",
     );
@@ -185,23 +223,21 @@ describe("plugins publish route", () => {
     expect(
       screen.getByText("You need to be signed in to publish plugins on ClawHub."),
     ).toBeTruthy();
-    expect(screen.queryByText(/Upload plugin code first/i)).toBeNull();
+    expect(screen.queryByText(/Upload plugin first/i)).toBeNull();
     expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
   });
 
-  it("keeps metadata inputs locked until plugin code is uploaded", () => {
+  it("hides metadata inputs until plugin files are uploaded", () => {
     renderPublishRoute();
 
-    expect(screen.getByText(/Upload plugin code first/i)).toBeTruthy();
-    expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
-    expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
+    expect(screen.getByText(/Upload plugin first/i)).toBeTruthy();
+    expect(screen.getByText("Drop a plugin file or folder here.")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Plugin name")).toBeNull();
+    expect(screen.queryByPlaceholderText("Display name")).toBeNull();
+    expect(screen.queryByPlaceholderText("Version")).toBeNull();
     expect(screen.queryByPlaceholderText("Describe what changed in this release...")).toBeNull();
-    expect(screen.getByLabelText("Owner").textContent).toContain("@vintageayu · VintageAyu");
-    expect(document.querySelector('img[src="/clawd-logo.png"]')).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
-    ).not.toBeNull();
+    expect(screen.queryByLabelText("Owner")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish plugin" })).toBeNull();
   });
 
   it("opens only the directory picker when clicking Choose folder", () => {
@@ -219,7 +255,7 @@ describe("plugins publish route", () => {
     expect(archiveClick).not.toHaveBeenCalled();
   });
 
-  it("opens only the archive picker when clicking Choose archive", () => {
+  it("opens only the archive picker when clicking Choose file", () => {
     renderPublishRoute();
 
     const [archiveInput, directoryInput] = getFileInputs();
@@ -228,7 +264,7 @@ describe("plugins publish route", () => {
     archiveInput.click = archiveClick;
     directoryInput.click = directoryClick;
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose file" }));
 
     expect(archiveClick).toHaveBeenCalledTimes(1);
     expect(directoryClick).not.toHaveBeenCalled();
@@ -284,6 +320,13 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
     });
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          /Published\. Pending security checks and verification before public listing\./i,
+        ),
+      ).toBeTruthy();
+    });
 
     expect(generateUploadUrl).toHaveBeenCalledTimes(3);
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -311,6 +354,163 @@ describe("plugins publish route", () => {
     });
   });
 
+  it("shows the submitted plugin modal with plugin identity and canonical actions", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "@VintageAyu",
+      name: undefined,
+      displayName: undefined,
+      family: undefined,
+      nextVersion: undefined,
+      sourceRepo: undefined,
+    });
+    renderPublishRoute();
+
+    uploadCodePluginPackage({
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      version: "1.2.3",
+      repository: "https://github.com/openclaw/demo-plugin.git",
+    });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    expect(await screen.findByRole("heading", { name: "Plugin submitted" })).toBeTruthy();
+    const submittedDialog = within(screen.getByRole("dialog"));
+    expect(submittedDialog.getByText("Your plugin is under review")).toBeTruthy();
+    expect(submittedDialog.getByText("Demo Plugin")).toBeTruthy();
+    expect(submittedDialog.getByText("VintageAyu")).toBeTruthy();
+    expect(submittedDialog.getByText("@vintageayu")).toBeTruthy();
+
+    const pluginLink = screen.getByRole("link", {
+      name: "clawhub.ai/vintageayu/plugins/demo-plugin",
+    });
+    expect(pluginLink.getAttribute("href")).toBe(
+      "https://clawhub.ai/vintageayu/plugins/demo-plugin",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy plugin link" }));
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        "https://clawhub.ai/vintageayu/plugins/demo-plugin",
+      );
+    });
+
+    const viewPlugin = screen.getByRole("link", { name: "View plugin" });
+    expect(viewPlugin.getAttribute("href")).toBe("/vintageayu/plugins/demo-plugin");
+    expect(publishRelease).toHaveBeenCalledWith({
+      payload: expect.objectContaining({ ownerHandle: "vintageayu" }),
+    });
+    expect(screen.queryByRole("link", { name: /Share on Discord/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /Share on Twitter/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "Plugin submitted" })).toBeNull();
+    });
+  });
+
+  it("keeps publish disabled until a publisher identity resolves", async () => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "publishers:listMine") return undefined;
+      return null;
+    });
+    renderPublishRoute();
+
+    uploadCodePluginPackage({ name: "demo-plugin", version: "1.0.0" });
+
+    expect(await screen.findByText("Loading publishing identities…")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
+  });
+
+  it("keeps publish disabled when the requested publisher is not available", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "not-a-member",
+      name: undefined,
+      displayName: undefined,
+      family: undefined,
+      nextVersion: undefined,
+      sourceRepo: undefined,
+    });
+
+    renderPublishRoute();
+
+    uploadCodePluginPackage({ name: "demo-plugin", version: "1.0.0" });
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Full commit SHA").getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+
+    expect(screen.getByText("Select an available publisher to publish.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
+  });
+
+  it("skips the package-page lookup for backend-reserved package names", async () => {
+    let getByNameCalls = 0;
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getByName") {
+        getByNameCalls += 1;
+        throw new Error("Reserved package names must not be queried");
+      }
+      if (name === "publishers:listMine") {
+        return [makeVintageAyuMembership()];
+      }
+      return null;
+    });
+
+    renderPublishRoute();
+
+    uploadCodePluginPackage({ name: "publish", version: "1.0.0" }, "publish");
+
+    expect(await screen.findByDisplayValue("publish")).toBeTruthy();
+    expect(getByNameCalls).toBe(0);
+  });
+
+  it("keeps an existing-plugin publish disabled until its context resolves", () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getManageContext") return undefined;
+      if (name === "publishers:listMine") {
+        return [makeVintageAyuMembership()];
+      }
+      return null;
+    });
+
+    renderPublishRoute();
+
+    expect(screen.getByText("Loading plugin details…")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
+    ).not.toBeNull();
+    expect(publishRelease).not.toHaveBeenCalled();
+  });
+
   it("prefills and preserves catalog metadata when publishing a new plugin version", async () => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
@@ -335,7 +535,9 @@ describe("plugins publish route", () => {
           suggestedCategories: [],
         };
       }
-      if (name === "publishers:listMine") return [];
+      if (name === "publishers:listMine") {
+        return [makeVintageAyuMembership()];
+      }
       return null;
     });
 
@@ -343,7 +545,7 @@ describe("plugins publish route", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
-      expect(screen.getByRole("button", { name: "Remove GPU development topic" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
     });
 
     const packageJson = withRelativePath(
@@ -386,6 +588,193 @@ describe("plugins publish route", () => {
     });
   });
 
+  it("auto-fills a package changelog preview from the uploaded README", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    generateChangelogPreview.mockResolvedValueOnce({
+      changelog: "- Added README-driven install guidance.",
+    });
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledWith({
+        name: "demo-plugin",
+        family: "code-plugin",
+        version: "1.2.4",
+        readmeText: "# Demo Plugin\n\nAdds install guidance.",
+        filePaths: ["package.json", "openclaw.plugin.json", "README.md"],
+      });
+      expect(
+        (
+          screen.getByPlaceholderText(
+            "Describe what changed in this release...",
+          ) as HTMLTextAreaElement
+        ).value,
+      ).toBe("- Added README-driven install guidance.");
+    });
+  });
+
+  it("does not let a stale package changelog preview overwrite manual text", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    let resolvePreview: ((value: { changelog: string }) => void) | undefined;
+    generateChangelogPreview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
+    });
+    const changelog = screen.getByPlaceholderText(
+      "Describe what changed in this release...",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(changelog, { target: { value: "Manual release notes." } });
+    resolvePreview?.({ changelog: "- Stale generated text." });
+
+    await waitFor(() => {
+      expect(changelog.value).toBe("Manual release notes.");
+    });
+  });
+
+  it("does not apply a package changelog preview after preview inputs change", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    let resolvePreview: ((value: { changelog: string }) => void) | undefined;
+    generateChangelogPreview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePreview = resolve;
+        }),
+    );
+    generateChangelogPreview.mockImplementationOnce(() => new Promise(() => {}));
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const readme = withRelativePath(
+      new File(["# Demo Plugin\n\nAdds install guidance."], "README.md", {
+        type: "text/markdown",
+      }),
+      "demo-plugin/README.md",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, readme] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.change(screen.getByPlaceholderText("Version"), {
+      target: { value: "1.2.5" },
+    });
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(2);
+    });
+
+    const changelog = screen.getByPlaceholderText(
+      "Describe what changed in this release...",
+    ) as HTMLTextAreaElement;
+    resolvePreview?.({ changelog: "- Stale generated text." });
+
+    await waitFor(() => {
+      expect(changelog.value).toBe("");
+    });
+  });
+
   it("sends explicit empty catalog metadata when it is cleared on a plugin version publish", async () => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
@@ -410,7 +799,9 @@ describe("plugins publish route", () => {
           suggestedCategories: [],
         };
       }
-      if (name === "publishers:listMine") return [];
+      if (name === "publishers:listMine") {
+        return [makeVintageAyuMembership()];
+      }
       return null;
     });
 
@@ -439,10 +830,10 @@ describe("plugins publish route", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
-      expect(screen.getByRole("button", { name: "Remove GPU development topic" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Remove GPU development keyword" })).toBeTruthy();
     });
     selectCategory("Tools");
-    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development topic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development keyword" }));
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
@@ -829,7 +1220,14 @@ describe("plugins publish route", () => {
     expect(publishRelease).not.toHaveBeenCalled();
   });
 
-  it("shows pending verification messaging after plugin publish", async () => {
+  it("redirects to the dashboard after a staged plugin publish is accepted", async () => {
+    publishRelease.mockResolvedValueOnce({
+      ok: true,
+      status: "pending",
+      attemptId: "publishAttempts:1",
+      packageName: "demo-plugin",
+      version: "1.0.0",
+    });
     renderPublishRoute();
 
     const packageJson = withRelativePath(
@@ -864,12 +1262,114 @@ describe("plugins publish route", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
 
-    expect(
-      await screen.findByText(/Pending security checks and verification before public listing\./i),
-    ).toBeTruthy();
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({ to: "/dashboard" });
+    });
+    expect(screen.queryByText(/Running TruffleHog and ClawScan/i)).toBeNull();
+    expect(screen.queryByText("Publishing release...")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Plugin submitted" })).toBeNull();
+  });
+
+  it("shows the submitted modal for a staged version of an existing plugin", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getManageContext") {
+        return {
+          package: { name: "demo-plugin", displayName: "Demo Plugin" },
+          latestRelease: { version: "1.2.3" },
+          suggestedCategories: [],
+        };
+      }
+      if (name === "publishers:listMine") {
+        return [makeVintageAyuMembership()];
+      }
+      return null;
+    });
+    publishRelease.mockResolvedValueOnce({
+      ok: true,
+      status: "pending",
+      attemptId: "publishAttempts:2",
+      packageName: "demo-plugin",
+      version: "1.2.4",
+    });
+    renderPublishRoute();
+
+    uploadCodePluginPackage({ name: "demo-plugin", version: "1.2.4" });
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Full commit SHA").getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    expect(await screen.findByRole("heading", { name: "Plugin submitted" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View plugin" }).getAttribute("href")).toBe(
+      "/vintageayu/plugins/demo-plugin",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.getByText("Publish received. Security checks are running.")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Plugin submitted" })).toBeNull();
+  });
+
+  it("shows a canonical submitted modal for an existing plugin uploaded from the generic route", async () => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getByName") {
+        return {
+          package: { name: "demo-plugin", displayName: "Demo Plugin" },
+          latestRelease: { version: "1.2.3" },
+          owner: { handle: "vintageayu" },
+        };
+      }
+      if (name === "publishers:listMine") {
+        return [makeVintageAyuMembership({ kind: "org", role: "publisher" })];
+      }
+      return null;
+    });
+    publishRelease.mockResolvedValueOnce({
+      ok: true,
+      status: "pending",
+      attemptId: "publishAttempts:3",
+      packageName: "demo-plugin",
+      version: "1.2.4",
+    });
+    renderPublishRoute();
+
+    uploadCodePluginPackage({
+      name: "Demo-Plugin",
+      displayName: "Demo Plugin",
+      version: "1.2.4",
+      repository: "https://github.com/openclaw/demo-plugin.git",
+    });
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Full commit SHA").getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    expect(await screen.findByRole("heading", { name: "Plugin submitted" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View plugin" }).getAttribute("href")).toBe(
+      "/vintageayu/plugins/demo-plugin",
+    );
+    expect(
+      screen.getByRole("link", { name: "clawhub.ai/vintageayu/plugins/demo-plugin" }),
+    ).toBeTruthy();
   });
 
   it("warns when README references relative image paths but no source repo/commit is set", async () => {

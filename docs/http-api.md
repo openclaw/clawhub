@@ -101,7 +101,7 @@ Query params:
 
 - `q` (required): query string
 - `limit` (optional): integer
-- `mode` (optional): `prefix` for deterministic skill slug-prefix matches or `exact` for deterministic exact-slug matches
+- `mode` (optional): `exact` for deterministic exact-slug matches
 - `highlightedOnly` (optional): `true` to filter to highlighted skills
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
@@ -109,8 +109,7 @@ Query params:
 Search modes:
 
 - Omit `mode` for the default relevance-ranked skill search.
-- `mode=prefix` treats `q` as a skill slug prefix, bypasses semantic/vector recall, and is capped at 200 results.
-- `mode=exact` treats `q` as an exact skill slug, bypasses semantic/vector recall, and is capped at 200 results.
+- `mode=exact` treats `q` as an exact skill slug and bypasses native semantic/vector recall.
 - Invalid `mode` values return `400 Invalid search mode`.
 
 Response:
@@ -157,7 +156,8 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `name`, legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
+- `prefix` (optional): literal skill-slug prefix; results use ascending slug order and require `sort=name` when `sort` is supplied
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
@@ -168,6 +168,7 @@ Notes:
 - `recommended` uses engagement and recency signals.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
+- Prefix listing is complete across pages: keep following `nextCursor` until it is `null`.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
 - Use `nextCursor` to continue pagination when present. A short page does not by itself mean end-of-results.
 
@@ -528,18 +529,22 @@ Response:
 
 ### `GET /api/v1/skills/{slug}/file`
 
-Returns raw text content.
+Returns exact stored file bytes as a download. Add `preview=1` to request a bounded escaped-text
+preview; any file with valid UTF-8 bytes can be previewed, regardless of its extension or MIME
+metadata.
 
 Query params:
 
 - `path` (required)
 - `version` (optional)
 - `tag` (optional)
+- `preview=1` (optional; returns `text/plain` or `415` when the bytes are not valid UTF-8)
 
 Notes:
 
 - Defaults to latest version.
-- File size limit: 200KB.
+- Raw download limit: 10MB.
+- Text preview limit: 200KB.
 
 ### `GET /api/v1/packages`
 
@@ -1205,20 +1210,22 @@ Every change writes an audit log entry.
 
 ### `GET /api/v1/packages/{name}/file`
 
-Returns raw text content for a package file.
+Returns exact stored package file bytes as a download. Add `preview=1` to request the same bounded
+UTF-8 text preview used for skill files.
 
 Query params:
 
 - `path` (required)
 - `version` (optional)
 - `tag` (optional)
+- `preview=1` (optional; returns `text/plain` or `415` when the bytes are not valid UTF-8)
 
 Notes:
 
 - Defaults to the latest release.
 - Uses the read rate bucket, not the download bucket.
-- Binary files return `415`.
-- File size limit: 200KB.
+- Raw download limit: 10MB.
+- Text preview limit: 200KB; opaque files return `415` only for preview requests.
 - Pending VirusTotal scans do not block reads; malicious releases may still be withheld elsewhere.
 - Private packages return `404` unless the caller can read the owning publisher.
 
@@ -1592,7 +1599,8 @@ Response:
 
 ### `POST /api/v1/stars/{slug}` / `DELETE /api/v1/stars/{slug}`
 
-Add/remove a star (highlights). Both endpoints are idempotent.
+Add/remove a Bookmark. The legacy `stars` route and response field names remain
+for compatibility. Both endpoints are idempotent.
 
 Responses:
 

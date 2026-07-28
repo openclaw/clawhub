@@ -435,40 +435,73 @@ describe("publisher abuse scoring", () => {
       }),
       dailyStats: [
         ...dailyRange(64, 30, { downloads: 5, installs: 0 }),
-        ...dailyRange(94, 7, { downloads: 200, installs: 0 }),
+        ...dailyRange(94, 7, { downloads: 400, installs: 0 }),
       ],
     });
 
     expect(score.spike).toBe(true);
     expect(score.sustained).toBe(false);
-    expect(score.recent7Downloads).toBe(1_400);
+    expect(score.recent7Downloads).toBe(2_800);
     expect(score.recent7Installs).toBe(0);
     expect(score.previous30Downloads).toBe(150);
-    expect(score.spikeMultiplier).toBeCloseTo(14);
-    expect(score.spikeMultiplierCohortBand).toBe("p95");
+    expect(score.spikeMultiplier).toBeCloseTo(28);
+    expect(score.spikeMultiplierCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_download_spike_flat_installs");
   });
 
-  it("flags sustained high downloads with flat installs", () => {
+  it("flags sustained flat-install traffic one download above six times platform P99", () => {
     const todayDay = 100;
     const score = computeCurrentSkillTemporalAbuseScore({
       todayDay,
       benchmark: temporalBenchmark({
-        downloads30dP95: 3_000,
-        downloads30dP99: 6_000,
+        downloads30dP95: 284,
+        downloads30dP99: 600,
         spikeMultiplier7dP95: 20,
         spikeMultiplier7dP99: 50,
       }),
-      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+      dailyStats: [
+        ...dailyRange(71, 29, { downloads: 120, installs: 0 }),
+        { day: 100, downloads: 121, installs: 0 },
+      ],
     });
 
     expect(score.spike).toBe(false);
     expect(score.sustained).toBe(true);
-    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.recent30Downloads).toBe(3_601);
     expect(score.recent30Installs).toBe(0);
-    expect(score.downloadInstallRatio30).toBe(3_600);
-    expect(score.downloads30dCohortBand).toBe("p95");
+    expect(score.downloadInstallRatio30).toBe(3_601);
+    expect(score.downloads30dCohortBand).toBe("p99");
     expect(score.reasonCodes).toContain("temporal_sustained_downloads_flat_installs");
+  });
+
+  it("keeps P95-only sustained download traffic below review thresholds", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 3_000,
+        downloads30dP99: 6_000,
+      }),
+      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+    });
+
+    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.sustained).toBe(false);
+    expect(score.downloads30dCohortBand).toBeUndefined();
+  });
+
+  it("keeps downloads at exactly six times platform P99 below the sustained threshold", () => {
+    const score = computeCurrentSkillTemporalAbuseScore({
+      todayDay: 100,
+      benchmark: temporalBenchmark({
+        downloads30dP95: 284,
+        downloads30dP99: 600,
+      }),
+      dailyStats: dailyRange(71, 30, { downloads: 120, installs: 0 }),
+    });
+
+    expect(score.recent30Downloads).toBe(3_600);
+    expect(score.sustained).toBe(false);
+    expect(score.downloads30dCohortBand).toBeUndefined();
   });
 
   it("flags high-volume installs that track downloads too closely", () => {
@@ -581,15 +614,15 @@ describe("publisher abuse scoring", () => {
   it("finds historical spike and sustained windows for backfill scans", () => {
     const score = computeHistoricalSkillTemporalAbuseScore({
       benchmark: temporalBenchmark({
-        downloads30dP95: 3_000,
-        downloads30dP99: 10_000,
+        downloads30dP95: 284,
+        downloads30dP99: 1_000,
         spikeMultiplier7dP95: 5,
         spikeMultiplier7dP99: 25,
       }),
       dailyStats: [
         ...dailyRange(10, 30, { downloads: 3, installs: 0 }),
-        ...dailyRange(40, 7, { downloads: 220, installs: 0 }),
-        ...dailyRange(80, 30, { downloads: 150, installs: 0 }),
+        ...dailyRange(40, 7, { downloads: 400, installs: 0 }),
+        ...dailyRange(80, 30, { downloads: 400, installs: 0 }),
       ],
     });
 

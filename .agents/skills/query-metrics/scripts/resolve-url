@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# resolve-url: Resolve the regional edge URL for a dataset
+#
+# Usage: resolve-url <deployment> <dataset>
+#
+# Fetches the dataset's edgeDeployment from the Axiom API and maps it to the
+# correct edge URL. Prints the URL to stdout.
+#
+# Edge deployment mapping:
+#   cloud.us-east-1.aws    → https://us-east-1.aws.edge.axiom.co
+#   cloud.eu-central-1.aws → https://eu-central-1.aws.edge.axiom.co
+#   (null/empty)           → falls back to deployment URL from config
+#
+# Environment overrides:
+#   AXIOM_URL_OVERRIDE     → if set, returned verbatim and no API/cache
+#                            lookup is performed. Mirrors axiom-api's own
+#                            AXIOM_URL_OVERRIDE handling so callers can
+#                            point both scripts at a non-default edge with
+#                            a single env var.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+DATASET="${2:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$DATASET" ]]; then
+    echo "Usage: resolve-url <deployment> <dataset>" >&2
+    exit 1
+fi
+
+# Honour an explicit override before touching the cache or the API.
+# Skipping the cache write keeps session-scoped overrides from leaking
+# into later invocations that don't set the env var.
+if [[ -n "${AXIOM_URL_OVERRIDE:-}" ]]; then
+    echo "$AXIOM_URL_OVERRIDE"
+    exit 0
+fi
+
+CONFIG_FILE="$HOME/.axiom.toml"
+CACHE_DIR="${TMPDIR:-/tmp}/axiom-resolve-url"
+CACHE_FILE="${CACHE_DIR}/${DEPLOYMENT}__${DATASET}"
+CACHE_TTL=3600  # 1 hour
+
+# Return cached result if fresh
+if [[ -f "$CACHE_FILE" ]]; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+        FILE_AGE=$(( $(date +%s) - $(stat -f %m "$CACHE_FILE") ))
+    else
+        FILE_AGE=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE") ))
+    fi
+    if [[ "$FILE_AGE" -lt "$CACHE_TTL" ]]; then
+        cat "$CACHE_FILE"
+        exit 0
+    fi
+fi
+
+extract_value() {
+    local key="$1"
+    awk -v deployment="$DEPLOYMENT" -v key="$key" '
+        /^[[:space:]]*\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment && $1 == key { gsub(/[" ]/, "", $3); print $3; exit }
+    ' "$CONFIG_FILE"
+}
+
+FALLBACK_URL=$(extract_value "url")
+
+EDGE_DEPLOYMENT=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET /v2/datasets \
+    | jq -r --arg name "$DATASET" '.[] | select(.name == $name) | .edgeDeployment // empty')
+
+RESOLVED_URL=""
+if [[ -z "$EDGE_DEPLOYMENT" || "$EDGE_DEPLOYMENT" == "null" ]]; then
+    RESOLVED_URL="$FALLBACK_URL"
+else
+    # cloud.us-east-1.aws → https://us-east-1.aws.edge.axiom.co
+    EDGE_HOST="${EDGE_DEPLOYMENT#cloud.}"
+    RESOLVED_URL="https://${EDGE_HOST}.edge.axiom.co"
+fi
+
+mkdir -p "$CACHE_DIR"
+echo "$RESOLVED_URL" > "$CACHE_FILE"
+echo "$RESOLVED_URL"

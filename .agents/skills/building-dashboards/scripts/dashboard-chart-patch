@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# dashboard-chart-patch: Patch one chart in an existing dashboard
+#
+# Usage:
+#   dashboard-chart-patch <deployment> <dashboard-uid> <chart-id> <patch-json-file> (--version <version> | --overwrite) [--message <message>]
+#
+# The patch file must contain a JSON object. It is sent as the `chart` JSON
+# merge patch, so null values remove existing chart fields.
+#
+# Examples:
+#   dashboard-chart-patch prod dash-uid error-rate ./chart.patch.json --version 12
+#   dashboard-chart-patch prod dash-uid error-rate ./chart.patch.json --overwrite --message "Update error chart"
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+    echo "Usage: dashboard-chart-patch <deployment> <dashboard-uid> <chart-id> <patch-json-file> (--version <version> | --overwrite) [--message <message>]" >&2
+}
+
+DEPLOYMENT="${1:-}"
+DASHBOARD_UID="${2:-}"
+CHART_ID="${3:-}"
+PATCH_FILE="${4:-}"
+
+if [[ $# -lt 4 || -z "$DEPLOYMENT" || -z "$DASHBOARD_UID" || -z "$CHART_ID" || -z "$PATCH_FILE" ]]; then
+    usage
+    exit 1
+fi
+
+shift 4
+
+VERSION=""
+OVERWRITE="false"
+MESSAGE=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --version)
+            if [[ $# -lt 2 || -z "${2:-}" ]]; then
+                echo "Error: --version requires a value" >&2
+                usage
+                exit 1
+            fi
+            VERSION="$2"
+            shift 2
+            ;;
+        --overwrite)
+            OVERWRITE="true"
+            shift
+            ;;
+        --message)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --message requires a value" >&2
+                usage
+                exit 1
+            fi
+            MESSAGE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "Error: Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+if [[ ! -f "$PATCH_FILE" ]]; then
+    echo "Error: File not found: $PATCH_FILE" >&2
+    exit 1
+fi
+
+if [[ "$OVERWRITE" == "true" && -n "$VERSION" ]]; then
+    echo "Error: Use either --version or --overwrite, not both" >&2
+    exit 1
+fi
+
+if [[ "$OVERWRITE" == "false" && -z "$VERSION" ]]; then
+    echo "Error: --version is required unless --overwrite is set" >&2
+    echo "Fetch the current dashboard first: dashboard-get $DEPLOYMENT $DASHBOARD_UID" >&2
+    exit 1
+fi
+
+if [[ -n "$VERSION" && ! "$VERSION" =~ ^[0-9]+$ ]]; then
+    echo "Error: --version must be a numeric dashboard version" >&2
+    exit 1
+fi
+
+if ! jq -e 'type == "object"' "$PATCH_FILE" > /dev/null; then
+    echo "Error: chart patch must be a JSON object" >&2
+    exit 1
+fi
+
+PATCH_ID=$(jq -r 'if has("id") then .id else empty end' "$PATCH_FILE")
+if [[ -n "$PATCH_ID" && "$PATCH_ID" != "$CHART_ID" ]]; then
+    echo "Error: chart patch id must match chart id '$CHART_ID'" >&2
+    exit 1
+fi
+
+CHART_PATCH=$(jq -c '.' "$PATCH_FILE")
+
+BODY=$(jq -n \
+    --argjson chart "$CHART_PATCH" \
+    --arg message "$MESSAGE" \
+    --argjson overwrite "$OVERWRITE" \
+    '{chart: $chart}
+     + (if $overwrite then {overwrite: true} else {} end)
+     + (if $message != "" then {message: $message} else {} end)')
+
+if [[ -n "$VERSION" ]]; then
+    BODY=$(echo "$BODY" | jq --argjson version "$VERSION" '. + {version: $version}')
+fi
+
+RESPONSE=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" PATCH "/dashboards/uid/$DASHBOARD_UID/charts/$CHART_ID" "$BODY")
+
+echo "$RESPONSE" | jq .

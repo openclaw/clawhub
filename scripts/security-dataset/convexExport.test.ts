@@ -200,6 +200,10 @@ describe("Convex export dataset ingestion", () => {
       skillMdContentRedacted: "Use this skill safely. [REDACTED_SECRET]",
       bundleFilesRedacted: [
         {
+          path: "SKILL.md",
+          content: "Use this skill safely. [REDACTED_SECRET]",
+        },
+        {
           path: "scripts/export.py",
           content: "import json\n[REDACTED_SECRET]\n",
         },
@@ -305,6 +309,10 @@ describe("Convex export dataset ingestion", () => {
         {
           path: "docs/skills.md",
           content: "Nested authored plural readme",
+        },
+        {
+          path: "skills.md",
+          content: "Primary readme [REDACTED_SECRET]",
         },
       ],
     });

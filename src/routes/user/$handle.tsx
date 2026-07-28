@@ -72,7 +72,7 @@ import type {
   PublicPublisher,
   PublicPublisherCatalogDisplay,
   PublicPublisherCatalogItem,
-  PublicPublisherListItem,
+  PublicPublisherProfileItem,
   PublicSkill,
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
@@ -92,7 +92,7 @@ export const Route = createFileRoute("/user/$handle")({
     const { convexHttp } = await import("../../convex/client");
     const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
       handle: params.handle,
-    })) as PublicPublisherListItem | null;
+    })) as PublicPublisherProfileItem | null;
     if (!publisher) throw notFound();
     return { publisher };
   },
@@ -156,7 +156,7 @@ const DEFAULT_PUBLISHER_BIO = "Publisher on Clawhub.";
 const PROFILE_CATALOG_SORT_OPTIONS = [
   { value: "downloads", label: "Most downloaded" },
   { value: "recent", label: "Recent" },
-  { value: "stars", label: "Stars" },
+  { value: "stars", label: "Bookmarks" },
 ] as const;
 
 const DEFAULT_PROFILE_CATALOG_SORT: ProfileCatalogSort = "downloads";
@@ -166,15 +166,19 @@ function formatCatalogTabCount(value: number) {
 }
 
 export function resolveDefaultCatalogTab(
-  publisher: Pick<PublicPublisherListItem, "stats">,
+  publisher: Pick<PublicPublisherProfileItem, "stats">,
 ): Extract<ProfileCatalogTab, "skills" | "plugins"> {
   if (publisher.stats.skills > 0) return "skills";
   if (publisher.stats.packages > 0) return "plugins";
   return "skills";
 }
 
-function buildCatalogTabOptions(publisher: PublicPublisherListItem) {
-  const options = [
+function buildCatalogTabOptions(publisher: PublicPublisherProfileItem) {
+  const options: Array<{
+    value: ProfileCatalogTab;
+    label: string;
+    count?: string;
+  }> = [
     {
       value: "skills",
       label: "Skills",
@@ -189,8 +193,11 @@ function buildCatalogTabOptions(publisher: PublicPublisherListItem) {
   if (publisher.kind === "user") {
     options.push({
       value: "stars",
-      label: "Starred",
-      count: formatCatalogTabCount(publisher.starredCount ?? 0),
+      label: "Bookmarks",
+      count:
+        publisher.starredCount === undefined
+          ? undefined
+          : formatCatalogTabCount(publisher.starredCount),
     });
   }
   return options;
@@ -265,7 +272,9 @@ type PublisherStatCard = {
   icon: LucideIcon;
 };
 
-export function buildPublisherStatCards(publisher: PublicPublisherListItem): PublisherStatCard[] {
+export function buildPublisherStatCards(
+  publisher: PublicPublisherProfileItem,
+): PublisherStatCard[] {
   return [
     {
       key: "downloads",
@@ -276,7 +285,7 @@ export function buildPublisherStatCards(publisher: PublicPublisherListItem): Pub
     {
       key: "stars",
       value: formatCompactStat(publisher.stats.stars),
-      label: "stars",
+      label: "bookmarks",
       icon: Star,
     },
   ];
@@ -374,7 +383,7 @@ function PublisherProfileMembers({
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="publisher-profile-members-menu !overflow-hidden !rounded-2xl p-0 shadow-none"
+        className="publisher-profile-members-menu !overflow-hidden !rounded-[var(--oc-radius-surface)] p-0 shadow-none"
         aria-label={`${members.length} members`}
       >
         <div className="publisher-profile-members-menu-list">
@@ -396,24 +405,31 @@ function PublisherProfileMembers({
 function PublisherProfile() {
   const { handle } = Route.useParams();
   const { publisher: loaderPublisher } = Route.useLoaderData() as {
-    publisher: PublicPublisherListItem;
+    publisher: PublicPublisherProfileItem;
   };
   return <PublisherProfilePage handle={handle} loaderPublisher={loaderPublisher} />;
 }
 
 function PublisherProfileChromeActions({
   addHandle,
+  showEditProfile,
   isAuthenticated,
   onReport,
   requireSignIn,
 }: {
   addHandle?: string;
+  showEditProfile: boolean;
   isAuthenticated: boolean;
   onReport: () => void;
   requireSignIn: () => void;
 }) {
   return (
     <div className="publisher-profile-chrome-actions">
+      {showEditProfile ? (
+        <Button asChild size="sm" variant="outline">
+          <Link to="/settings">Edit profile</Link>
+        </Button>
+      ) : null}
       {addHandle ? (
         <Button asChild size="sm" variant="primary">
           <Link to="/add" search={{ kind: "skill", ownerHandle: addHandle, method: undefined }}>
@@ -422,38 +438,40 @@ function PublisherProfileChromeActions({
           </Link>
         </Button>
       ) : null}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Profile actions"
-            className="publisher-profile-chrome-more-trigger rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
-          >
-            <MoreHorizontal size={16} aria-hidden="true" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
-          <DropdownMenuItem
-            onSelect={() => {
-              if (!isAuthenticated) {
-                requireSignIn();
-                return;
-              }
-              onReport();
-            }}
-          >
-            <Flag size={14} aria-hidden="true" />
-            Report profile
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {showEditProfile ? null : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Profile actions"
+              className="publisher-profile-chrome-more-trigger rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
+            >
+              <MoreHorizontal size={16} aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
+            <DropdownMenuItem
+              onSelect={() => {
+                if (!isAuthenticated) {
+                  requireSignIn();
+                  return;
+                }
+                onReport();
+              }}
+            >
+              <Flag size={14} aria-hidden="true" />
+              Report profile
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
 
-function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublisherListItem }) {
+function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublisherProfileItem }) {
   return (
     <div className="publisher-profile-chrome-identity">
       <div className="publisher-profile-avatar">
@@ -489,7 +507,7 @@ export function PublisherProfilePage({
   loaderPublisher,
 }: {
   handle: string;
-  loaderPublisher: PublicPublisherListItem;
+  loaderPublisher: PublicPublisherProfileItem;
 }) {
   const { isAuthenticated, me } = useAuthStatus();
   const { signIn } = useAuthActions();
@@ -525,10 +543,11 @@ export function PublisherProfilePage({
   }, [handle, catalogTab, apiSort]);
 
   const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
-    | PublicPublisherListItem
+    | PublicPublisherProfileItem
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  const githubHandle = publisher?.kind === "org" ? publisher.githubHandle : publisher?.handle;
 
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
@@ -558,6 +577,9 @@ export function PublisherProfilePage({
     () => Boolean(myPublisherMemberships?.some((entry) => entry.publisher.handle === handle)),
     [myPublisherMemberships, handle],
   );
+  const viewerOwnsPersonalPublisher =
+    publisher?.kind === "user" &&
+    (viewerCanAddToPublisher || (me?.handle != null && me.handle === handle));
   const viewerCanSeeOrgRoles = isAdmin(me) || (me?.handle != null && me.handle === handle);
 
   const {
@@ -629,7 +651,7 @@ export function PublisherProfilePage({
     setIsReportDialogOpen(true);
   };
 
-  const submitPublisherReport = async (reportedPublisher: PublicPublisherListItem) => {
+  const submitPublisherReport = async (reportedPublisher: PublicPublisherProfileItem) => {
     const trimmedReason = reportReason.trim();
     if (!trimmedReason) {
       setReportError("Report reason required.");
@@ -687,7 +709,7 @@ export function PublisherProfilePage({
             icon={Building2}
             title="Publisher not found"
             description="This publisher doesn't exist or may have been removed."
-            action={{ label: "Browse creators", href: "/creators" }}
+            action={{ label: "Browse official organizations", href: "/official" }}
           />
         </Container>
       </main>
@@ -731,6 +753,7 @@ export function PublisherProfilePage({
               <PublisherProfileChromeIdentity publisher={publisher} />
               <PublisherProfileChromeActions
                 addHandle={viewerCanAddToPublisher ? publisher.handle : undefined}
+                showEditProfile={viewerOwnsPersonalPublisher}
                 isAuthenticated={isAuthenticated}
                 onReport={openReportDialog}
                 requireSignIn={() => {
@@ -805,28 +828,30 @@ export function PublisherProfilePage({
                     </section>
                   ) : null}
 
-                  <section
-                    className="publisher-profile-detail-block publisher-profile-details-links"
-                    aria-label="Links"
-                  >
-                    <h2 className="publisher-profile-detail-label">Links</h2>
-                    <div className="publisher-profile-meta-row">
-                      <a
-                        className="publisher-profile-meta-link"
-                        href={`https://github.com/${publisher.handle}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <GitHubIcon size={14} />
-                        GitHub
-                        <ArrowUpRight
-                          className="publisher-profile-meta-link-external-icon"
-                          size={12}
-                          aria-hidden="true"
-                        />
-                      </a>
-                    </div>
-                  </section>
+                  {githubHandle ? (
+                    <section
+                      className="publisher-profile-detail-block publisher-profile-details-links"
+                      aria-label="Links"
+                    >
+                      <h2 className="publisher-profile-detail-label">Links</h2>
+                      <div className="publisher-profile-meta-row">
+                        <a
+                          className="publisher-profile-meta-link"
+                          href={`https://github.com/${githubHandle}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <GitHubIcon size={14} />
+                          GitHub · @{githubHandle}
+                          <ArrowUpRight
+                            className="publisher-profile-meta-link-external-icon"
+                            size={12}
+                            aria-hidden="true"
+                          />
+                        </a>
+                      </div>
+                    </section>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -924,13 +949,20 @@ export function PublisherProfilePage({
                 <EmptyState
                   icon={catalogSearch.trim().length > 0 ? Search : undefined}
                   title={
-                    catalogSearch.trim().length > 0
-                      ? "No matching items"
-                      : catalogTab === "stars"
-                        ? "No starred items yet"
-                        : catalogTab === "plugins"
-                          ? "No published plugins yet"
-                          : "No published skills yet"
+                    showCatalogLoadMore
+                      ? "No visible items on this page"
+                      : catalogSearch.trim().length > 0
+                        ? "No matching items"
+                        : catalogTab === "stars"
+                          ? "No bookmarks yet"
+                          : catalogTab === "plugins"
+                            ? "No published plugins yet"
+                            : "No published skills yet"
+                  }
+                  action={
+                    showCatalogLoadMore
+                      ? { label: "Load more", onClick: () => activeLoadMore(12) }
+                      : undefined
                   }
                 />
               )}

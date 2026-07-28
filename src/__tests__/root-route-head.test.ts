@@ -86,7 +86,7 @@ async function loadRootHead() {
 describe("root route head", () => {
   it("uses the versioned default social image for Open Graph and Twitter", async () => {
     const head = await loadRootHead();
-    const expectedImage = "https://clawhub.ai/og.png?v=20260624-1";
+    const expectedImage = "https://clawhub.ai/og.png?v=20260723-1";
 
     expect(metaContent(head ?? {}, "property", "og:image")).toBe(expectedImage);
     expect(metaContent(head ?? {}, "name", "twitter:image")).toBe(expectedImage);

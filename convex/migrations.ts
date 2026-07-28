@@ -10,7 +10,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { syncPackageSearchDigestForPackageId } from "./functions";
-import { derivePluginManifestSummary } from "./lib/packageRegistry";
+import { derivePluginManifestSummary, normalizePackageName } from "./lib/packageRegistry";
 import { adjustPublisherStatsForSkillChange } from "./lib/publisherStats";
 import {
   buildSkillDownloadBackfillPatch,
@@ -35,6 +35,7 @@ const CANONICALIZE_CATALOG_METADATA_CONFIRM = "canonicalize-catalog-metadata";
 const APPLY_SKILL_INSTALL_BACKFILL_CONFIRM = "apply-skill-install-backfill";
 const APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM = "apply-nvidia-github-download-backfill";
 const BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM = "backfill-plugin-manifest-summaries";
+const RECOVER_SUSPICIOUS_PUBLISH_ATTEMPTS_CONFIRM = "recover-suspicious-publish-attempts";
 const SKILL_STAT_EVENTS_CURSOR_KEY = "skill_stat_events";
 const MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL = 1_000;
 const PLUGIN_PACKAGE_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
@@ -79,6 +80,235 @@ const nvidiaGitHubDownloadBackfillPreviewValidator = v.object({
 export const migrations = new Migrations(components.migrations, {
   schema,
   defaultBatchSize: 25,
+});
+
+type SuspiciousPublishAttemptRecoveryClassification =
+  | "replay_missing"
+  | "replay_identical"
+  | "public_conflict"
+  | "ineligible";
+
+type SuspiciousPublishAttemptRecoveryPreview = {
+  blockedScanned: number;
+  replayMissing: number;
+  replayIdentical: number;
+  publicConflict: number;
+  ineligible: number;
+  samples: Array<{
+    attemptId: Id<"publishAttempts">;
+    kind: "skill" | "package";
+    slug: string;
+    version: string;
+    classification: SuspiciousPublishAttemptRecoveryClassification;
+  }>;
+};
+
+export function hasStoredSuspiciousClawscanVerdict(attempt: Doc<"publishAttempts">) {
+  if (
+    attempt.status !== "blocked" ||
+    attempt.checks.trufflehog.status !== "clean" ||
+    attempt.checks.clawscan.status !== "blocked"
+  ) {
+    return false;
+  }
+  const storedReviewText = [
+    attempt.checks.clawscan.summary,
+    ...(attempt.checks.clawscan.redactedFindings ?? []),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+  return (
+    storedReviewText.includes("verdict=suspicious") &&
+    !storedReviewText.includes("verdict=malicious")
+  );
+}
+
+async function classifySuspiciousPublishAttemptPublicState(
+  ctx: Pick<QueryCtx, "db"> | Pick<MutationCtx, "db">,
+  attempt: Doc<"publishAttempts">,
+): Promise<SuspiciousPublishAttemptRecoveryClassification> {
+  if (!hasStoredSuspiciousClawscanVerdict(attempt)) return "ineligible";
+
+  if (attempt.kind === "package") {
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", normalizePackageName(attempt.slug)))
+      .unique();
+    if (!pkg) return "replay_missing";
+    const ownerMatches = attempt.ownerPublisherId
+      ? pkg.ownerPublisherId === attempt.ownerPublisherId
+      : pkg.ownerUserId === attempt.ownerUserId;
+    if (!ownerMatches) return "public_conflict";
+    const release = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_version", (q) =>
+        q.eq("packageId", pkg._id).eq("version", attempt.version),
+      )
+      .unique();
+    if (!release) return "replay_missing";
+    if (release.softDeletedAt || release.integritySha256 !== attempt.artifactFingerprint) {
+      return "public_conflict";
+    }
+    return "replay_identical";
+  }
+
+  let ownerPublisherId = attempt.ownerPublisherId;
+  if (!ownerPublisherId) {
+    const personalPublishers = await ctx.db
+      .query("publishers")
+      .withIndex("by_linked_user", (q) => q.eq("linkedUserId", attempt.userId))
+      .take(5);
+    ownerPublisherId = personalPublishers.find(
+      (publisher) => publisher.kind === "user" && !publisher.deletedAt && !publisher.deactivatedAt,
+    )?._id;
+  }
+  const skill = ownerPublisherId
+    ? await ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher_slug", (q) =>
+          q.eq("ownerPublisherId", ownerPublisherId).eq("slug", attempt.slug),
+        )
+        .unique()
+    : await ctx.db
+        .query("skills")
+        .withIndex("by_owner_slug", (q) =>
+          q.eq("ownerUserId", attempt.userId).eq("slug", attempt.slug),
+        )
+        .unique();
+  if (!skill) return "replay_missing";
+  const version = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", attempt.version))
+    .unique();
+  if (!version) return "replay_missing";
+  if (version.softDeletedAt || version.fingerprint !== attempt.artifactFingerprint) {
+    return "public_conflict";
+  }
+  const embedding = await ctx.db
+    .query("skillEmbeddings")
+    .withIndex("by_version", (q) => q.eq("versionId", version._id))
+    .unique();
+  return embedding ? "replay_identical" : "public_conflict";
+}
+
+function recoveredSuspiciousAnalysis(attempt: Doc<"publishAttempts">) {
+  return {
+    status: "completed",
+    verdict: "suspicious",
+    summary:
+      attempt.checks.clawscan.summary ??
+      "ClawHub security review marked this staged artifact suspicious.",
+    model: "prepublication-recovery",
+    checkedAt: attempt.checks.clawscan.checkedAt ?? Date.now(),
+  };
+}
+
+function withRecoveredSuspiciousAnalysis(insertArgs: unknown, attempt: Doc<"publishAttempts">) {
+  if (!insertArgs || typeof insertArgs !== "object" || Array.isArray(insertArgs)) return insertArgs;
+  return {
+    ...insertArgs,
+    llmAnalysis: recoveredSuspiciousAnalysis(attempt),
+  };
+}
+
+export function buildSuspiciousPublishAttemptRecoveryPatch(
+  attempt: Doc<"publishAttempts">,
+  classification: SuspiciousPublishAttemptRecoveryClassification,
+  now: number,
+): Partial<Doc<"publishAttempts">> | undefined {
+  if (classification === "ineligible") return undefined;
+  if (classification === "public_conflict") {
+    return {
+      status: "failed",
+      checkClaimLastError:
+        "Recovery skipped: this version is already occupied by a different public artifact.",
+      blockedAt: undefined,
+      failedAt: now,
+      updatedAt: now,
+    };
+  }
+  return {
+    status: "ready_to_finalize",
+    checks: {
+      ...attempt.checks,
+      clawscan: {
+        ...attempt.checks.clawscan,
+        status: "clean",
+      },
+    },
+    skillInsertArgs:
+      attempt.kind === "skill"
+        ? withRecoveredSuspiciousAnalysis(attempt.skillInsertArgs, attempt)
+        : attempt.skillInsertArgs,
+    packageInsertArgs:
+      attempt.kind === "package"
+        ? withRecoveredSuspiciousAnalysis(attempt.packageInsertArgs, attempt)
+        : attempt.packageInsertArgs,
+    checkClaimId: undefined,
+    checkClaimedAt: undefined,
+    checkClaimExpiresAt: undefined,
+    checkClaimLastError: undefined,
+    finalizationClaimId: undefined,
+    finalizationClaimedAt: undefined,
+    finalizationClaimExpiresAt: undefined,
+    finalizationLastError: undefined,
+    blockedAt: undefined,
+    failedAt: undefined,
+    updatedAt: now,
+  };
+}
+
+export const recoverSuspiciousBlockedPublishAttempts = migrations.define({
+  table: "publishAttempts",
+  batchSize: 200,
+  customRange: (query) =>
+    query.withIndex("by_status_and_created", (q) => q.eq("status", "blocked")),
+  migrateOne: async (ctx, attempt) => {
+    const classification = await classifySuspiciousPublishAttemptPublicState(ctx, attempt);
+    return buildSuspiciousPublishAttemptRecoveryPatch(attempt, classification, Date.now());
+  },
+});
+
+export const previewSuspiciousPublishAttemptRecoveryInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const attempts = await ctx.db
+      .query("publishAttempts")
+      .withIndex("by_status_and_created", (q) => q.eq("status", "blocked"))
+      .take(1_000);
+    const totals = {
+      blockedScanned: attempts.length,
+      replayMissing: 0,
+      replayIdentical: 0,
+      publicConflict: 0,
+      ineligible: 0,
+    };
+    const samples: Array<{
+      attemptId: Id<"publishAttempts">;
+      kind: "skill" | "package";
+      slug: string;
+      version: string;
+      classification: SuspiciousPublishAttemptRecoveryClassification;
+    }> = [];
+    for (const attempt of attempts) {
+      const classification = await classifySuspiciousPublishAttemptPublicState(ctx, attempt);
+      if (classification === "replay_missing") totals.replayMissing += 1;
+      else if (classification === "replay_identical") totals.replayIdentical += 1;
+      else if (classification === "public_conflict") totals.publicConflict += 1;
+      else totals.ineligible += 1;
+      if (classification !== "ineligible" && samples.length < 20) {
+        samples.push({
+          attemptId: attempt._id,
+          kind: attempt.kind,
+          slug: attempt.slug,
+          version: attempt.version,
+          classification,
+        });
+      }
+    }
+    return { ...totals, samples };
+  },
 });
 
 type CanonicalCatalogMetadataFields = Pick<
@@ -1065,6 +1295,62 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
 });
 
 export const run = migrations.runner();
+
+export const runSuspiciousPublishAttemptRecovery: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      dryRun: v.optional(v.boolean()),
+      confirm: v.optional(v.string()),
+    },
+    handler: async (
+      ctx,
+      args,
+    ): Promise<{
+      ok: true;
+      dryRun: boolean;
+      confirmRequired?: string;
+      before: SuspiciousPublishAttemptRecoveryPreview;
+      after: SuspiciousPublishAttemptRecoveryPreview;
+    }> => {
+      const dryRun = args.dryRun !== false;
+      if (!dryRun && args.confirm !== RECOVER_SUSPICIOUS_PUBLISH_ATTEMPTS_CONFIRM) {
+        throw new ConvexError(
+          `Pass confirm="${RECOVER_SUSPICIOUS_PUBLISH_ATTEMPTS_CONFIRM}" to apply.`,
+        );
+      }
+      const before: SuspiciousPublishAttemptRecoveryPreview = await ctx.runQuery(
+        internal.migrations.previewSuspiciousPublishAttemptRecoveryInternal,
+        {},
+      );
+      if (dryRun) {
+        await ctx.runMutation(internal.migrations.run, {
+          fn: "migrations:recoverSuspiciousBlockedPublishAttempts",
+          dryRun: true,
+          reset: true,
+        });
+      } else {
+        await runToCompletion(
+          ctx,
+          components.migrations,
+          internal.migrations.recoverSuspiciousBlockedPublishAttempts,
+          { cursor: null, batchSize: 200 },
+        );
+      }
+      const after: SuspiciousPublishAttemptRecoveryPreview = dryRun
+        ? before
+        : await ctx.runQuery(
+            internal.migrations.previewSuspiciousPublishAttemptRecoveryInternal,
+            {},
+          );
+      return {
+        ok: true as const,
+        dryRun,
+        confirmRequired: dryRun ? RECOVER_SUSPICIOUS_PUBLISH_ATTEMPTS_CONFIRM : undefined,
+        before,
+        after,
+      };
+    },
+  });
 
 export const runCatalogMetadataCanonicalization = internalAction({
   args: {

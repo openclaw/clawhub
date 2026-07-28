@@ -7,6 +7,16 @@
 - Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.
 - Web/API: make default skill and plugin discovery freshness-aware, add seven-day trending views for both catalogs, and use verified status plus usage as search tie-breakers within direct matches.
 
+### Fixes
+
+- Integrations: truncate publisher-controlled Discord webhook titles to the platform's 256-character embed limit.
+- Security: recover scheduled temporal publisher-abuse scans from strict Convex payload validation failures without leaving zombie running runs (thanks @jesse-merhi).
+- CI: retry transient Convex preview provisioning failures under fresh deployment names during Vercel preview builds.
+- Web: keep CLI device login codes out of the GitHub OAuth code handler — the device page no longer loses its prefilled code, bounces through a surprise GitHub redirect, or drops an active session; device links now use `user_code`.
+- API: keep successful rate-limit checks available when retention metadata writes contend, while preserving fail-closed enforcement for authoritative counter conflicts.
+- CLI: accept npm 12's package-keyed `npm pack --json` output when building ClawPacks while retaining compatibility with earlier npm array output.
+- Web/API: preserve JSON, SSR, and OG responses through the Convex proxy after the H3 response-wrapper update.
+
 ## 0.23.1 - 2026-06-29
 
 ### Changes

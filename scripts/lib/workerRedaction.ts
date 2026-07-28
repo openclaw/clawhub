@@ -48,6 +48,7 @@ export function maskKnownWorkerSecrets(
 ) {
   const secretKeys = [
     "SECURITY_SCAN_WORKER_TOKEN",
+    "CODEX_API_KEY",
     "OPENAI_API_KEY",
     "GH_TOKEN",
     "GITHUB_TOKEN",

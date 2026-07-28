@@ -1,0 +1,47 @@
+{
+  "designSystemVersion": "v0.0.1",
+  "consumerSha": "274c5b71ef2abef87dcf7442a086629a6ea71992",
+  "auditBaseSha": "735e1c4d",
+  "generatedAt": "2026-07-08T23:59:54.797Z",
+  "summary": {
+    "errors": 0,
+    "warnings": 1,
+    "info": 0
+  },
+  "findings": [
+    {
+      "id": "layout/overflow",
+      "severity": "warning",
+      "kind": "mechanical",
+      "file": "src/styles.css",
+      "line": 29470,
+      "message": "Mobile /skills used the shared equal-width browse-tab rule with min-width: 0; in the supplied light/dark mobile screenshots, “Most starred” visually runs into “Featured”.",
+      "remediation": "Fixed by adding a skills-browse-page route class and route-scoped mobile CSS so skills tabs size to their content within the existing horizontal-scroll tab strip.",
+      "reference": "openclaw-design-audit/references/rubric.md layout/overflow; openclaw-marketing-pages/references/page-patterns.md Responsive Checks"
+    }
+  ],
+  "changedFiles": ["src/routes/skills/index.tsx", "src/styles.css"],
+  "validationCommands": [
+    "bun run test:ui-contract",
+    "bun run ci:static",
+    "bun run ci:unit",
+    "bun run ci:types-build",
+    "bun run ci:playwright-smoke"
+  ],
+  "renderedRoutes": ["/", "/skills", "/plugins"],
+  "screenshotPaths": [
+    ".artifacts/design-audit-local/post-fix/screenshots/home-dark-desktop.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/skills-dark-desktop.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/plugins-dark-desktop.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/home-light-desktop.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/skills-light-desktop.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/plugins-light-desktop.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/home-dark-mobile.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/skills-dark-mobile.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/plugins-dark-mobile.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/home-light-mobile.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/skills-light-mobile.png",
+    ".artifacts/design-audit-local/post-fix/screenshots/plugins-light-mobile.png"
+  ],
+  "validationPassed": true
+}

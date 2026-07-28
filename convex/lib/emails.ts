@@ -88,6 +88,12 @@ export type MaliciousArtifactEmailArgs = {
   findingSummary?: string;
 };
 
+export type SecretBlockedPublishEmailArgs = {
+  handle?: string;
+  artifact: NotificationArtifact;
+  version?: string;
+};
+
 export type PackageInspectorEmailFinding = {
   findingKind: "warning" | "error";
   code: string;
@@ -307,6 +313,17 @@ function buildScanDownloadCommand(args: MaliciousArtifactEmailArgs) {
   return `clawhub scan download ${args.artifact.name} --version ${version}${kindFlag}`;
 }
 
+async function renderSecretBlockedPublishTemplate(args: {
+  artifactKind: "skill" | "plugin";
+  artifactName: string;
+  version: string;
+  preheader: string;
+}) {
+  const { renderSecretBlockedPublishEmail } = await import("./emailRendering");
+  const rendered = await renderSecretBlockedPublishEmail(args);
+  return rendered.html;
+}
+
 function buildPluginValidateCommand() {
   return "clawhub package validate <path-to-plugin>";
 }
@@ -475,6 +492,44 @@ export async function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailAr
     subject,
     text: lines.join("\n"),
     html: rendered.html,
+  };
+}
+
+export async function buildSecretBlockedPublishEmail(args: SecretBlockedPublishEmailArgs) {
+  const artifactKind = args.artifact.kind === "skill" ? "skill" : "plugin";
+  const artifactLabelText = artifactLabel(args.artifact);
+  const version = args.version?.trim() || "<version>";
+  const subject = `ClawHub blocked a ${artifactKind} publish`;
+  const lines = [
+    greeting(args.handle),
+    "",
+    `ClawHub blocked a ${artifactKind} publish because TruffleHog found a secret-looking value in the uploaded files.`,
+    artifactLabelText,
+    `Version: ${version}`,
+    "",
+    "What changed:",
+    "- This version was not made public.",
+    "- Uploaded files for this attempt were deleted from ClawHub storage.",
+    "- Your account can still sign in.",
+    "",
+    "What to do next:",
+    "- Rotate the secret if it was real.",
+    `- Remove it from the ${artifactKind}.`,
+    "- Upload a new version.",
+    "",
+    "ClawHub Security",
+  ];
+  const html = await renderSecretBlockedPublishTemplate({
+    artifactKind,
+    artifactName: args.artifact.name,
+    version,
+    preheader: `${args.artifact.name}@${version} was blocked before public listing because a secret was found.`,
+  });
+
+  return {
+    subject,
+    text: lines.join("\n"),
+    html,
   };
 }
 

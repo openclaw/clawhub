@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { stubExternalMediaInVitePreview } from "./helpers/externalMedia";
 import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
+import { routeVercelProtectionBypass } from "./helpers/vercelProtection";
 
 test("public navigation routes render without runtime errors", async ({ browser }) => {
   const routes = [
@@ -10,6 +11,7 @@ test("public navigation routes render without runtime errors", async ({ browser 
 
   for (const route of routes) {
     const page = await browser.newPage();
+    await routeVercelProtectionBypass(page);
     await stubExternalMediaInVitePreview(page);
     const errors = trackRuntimeErrors(page);
 
@@ -21,6 +23,7 @@ test("public navigation routes render without runtime errors", async ({ browser 
 });
 
 test("signed-out publish entry renders", async ({ page }) => {
+  await routeVercelProtectionBypass(page);
   await stubExternalMediaInVitePreview(page);
   const errors = trackRuntimeErrors(page);
 

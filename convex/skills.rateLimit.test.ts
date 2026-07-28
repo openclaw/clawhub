@@ -220,11 +220,11 @@ function emptyOwnerScopedAliasLookup(name: string) {
 }
 
 describe("skills anti-spam guards", () => {
-  it("blocks low-trust users after hourly new-skill cap", async () => {
+  it("blocks users after 200 new skills in 24 hours", async () => {
     const now = Date.now();
-    const ownerSkills = Array.from({ length: 5 }, (_, i) => ({
+    const ownerSkills = Array.from({ length: 200 }, (_, i) => ({
       _id: `skills:${i}`,
-      createdAt: now - i * 10_000,
+      createdAt: now - i * 60_000,
     }));
 
     const db = {
@@ -303,7 +303,7 @@ describe("skills anti-spam guards", () => {
 
     await expect(
       insertVersionHandler({ db } as never, createPublishArgs() as never),
-    ).rejects.toThrow(/max 5 new skills per hour/i);
+    ).rejects.toThrow(/max 200 new skills per 24 hours/i);
   });
 
   it("allows a legacy personal publish when another owner already uses the slug", async () => {

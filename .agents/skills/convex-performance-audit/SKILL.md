@@ -1,6 +1,7 @@
 ---
 name: convex-performance-audit
-description: Audits Convex performance for reads, subscriptions, write contention, and
+description:
+  Audits Convex performance for reads, subscriptions, write contention, and
   function limits. Use for slow features, insights findings, OCC conflicts, or
   read amplification.
 ---
@@ -85,7 +86,7 @@ Examples:
   rollout
 
 When correctness depends on handling old and new states during a rollout,
-consult `skills/convex-migration-helper/SKILL.md` for the migration workflow.
+consult the `convex-migration-helper` skill for the migration workflow.
 
 ## Workflow
 

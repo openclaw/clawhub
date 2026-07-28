@@ -1,6 +1,8 @@
 import { type } from "arktype";
+import { ClawManifestSummarySchema } from "./claws.js";
 import { DocsLinks } from "./docsLinks.js";
 import { CliPublishFileSchema, PublishSourceSchema } from "./schemas.js";
+export const PACKAGE_TRENDING_LEADERBOARD_LIMIT = 200;
 export function normalizePackageOwnerHandle(handle) {
     const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
     return normalized || undefined;
@@ -21,7 +23,8 @@ export function getPackageScopeOwnerMismatch(name, ownerHandle) {
         message: `Package scope "@${scope}" must match selected owner "@${selectedOwner}". Publish as "@${scope}" or rename this package to "@${selectedOwner}/${packageSlug}". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
     };
 }
-export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"');
+export const PackageFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
+export const PackagePublishFamilySchema = type('"skill"|"code-plugin"|"bundle-plugin"|"claw"');
 export const PackageChannelSchema = type('"official"|"community"|"private"');
 export const PackageVerificationTierSchema = type('"structural"|"source-linked"|"provenance-verified"|"rebuild-verified"');
 export const PackageVerificationScopeSchema = type('"artifact-only"|"dependency-graph-aware"');
@@ -33,6 +36,7 @@ export const PackageCompatibilitySchema = type({
 });
 export const PluginManifestSummarySchema = type({
     schemaVersion: "number",
+    icon: "string?",
     compatibility: PackageCompatibilitySchema.optional(),
     manifestIdentity: type({
         name: "string?",
@@ -253,7 +257,7 @@ const PackagePublishMetadataFields = {
     name: "string",
     displayName: "string?",
     ownerHandle: "string?",
-    family: PackageFamilySchema,
+    family: PackagePublishFamilySchema,
     version: "string",
     changelog: "string",
     manualOverrideReason: "string?",
@@ -289,6 +293,7 @@ export const PackageListItemSchema = type({
     latestVersion: "string|null?",
     categories: "string[]?",
     topics: "string[]?",
+    featuredAt: "number?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
 });
@@ -321,6 +326,7 @@ export const ApiV1PackageResponseSchema = type({
         tags: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+        clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -355,6 +361,7 @@ export const ApiV1PackageVersionResponseSchema = type({
         files: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
+        clawManifestSummary: ClawManifestSummarySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),
         artifact: PackageArtifactSummarySchema.or("null").optional(),
         // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
@@ -577,6 +584,23 @@ export const ApiV1PackageTransferResponseSchema = type({
     channel: PackageChannelSchema,
     isOfficial: "boolean",
 });
+export const PackageHardDeleteRequestSchema = type({
+    ownerHandle: "string",
+    reason: "string",
+    dryRun: "boolean?",
+    confirmationToken: "string?",
+});
+export const ApiV1PackageHardDeleteResponseSchema = type({
+    ok: "true",
+    packageId: "string",
+    name: "string",
+    ownerHandle: "string",
+    displayName: "string",
+    runtimeId: "string|null?",
+    dryRun: "boolean",
+    deleted: "boolean",
+    confirmationToken: "string",
+});
 export const PackageRepairNameRequestSchema = type({
     nextName: "string",
     retireTarget: "boolean?",
@@ -704,6 +728,8 @@ export const ApiV1PackagePublishResponseSchema = type({
     ok: "true",
     packageId: "string",
     releaseId: "string",
+    publicationStatus: '"pending"|"published"?',
+    attemptId: "string?",
     inspectorFindings: type({
         findingKind: '"warning"|"error"',
         code: "string",

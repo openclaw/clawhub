@@ -1,4 +1,4 @@
-import { apiRequest, fetchText, registryUrl } from "../../http.js";
+import { apiRequest, fetchBinary, fetchText, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   PLATFORM_SKILL_LICENSE,
@@ -8,9 +8,15 @@ import {
   ApiV1SkillVerifyResponseSchema,
   ApiV1SkillVersionListResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  decodeUtf8Text,
 } from "../../schema/index.js";
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import {
+  parseSkillsShCliReference,
+  SKILLS_SH_SCANNED_LABEL,
+  SKILLS_SH_UNSCANNED_LABEL,
+} from "../skillReference.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError, styleText } from "../ui.js";
 
@@ -162,7 +168,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       );
     }
 
-    let fileContent: string | null = null;
+    let fileBytes: Uint8Array | null = null;
     if (options.file) {
       const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/file`, registry);
       if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
@@ -175,7 +181,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         url.searchParams.set("version", latestVersion);
       }
       spinner.text = `Fetching ${options.file}`;
-      fileContent = await fetchText(registry, { url: url.toString(), token });
+      fileBytes = await fetchBinary(registry, { url: url.toString(), token });
     }
 
     spinner.stop();
@@ -187,7 +193,14 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       moderation: moderationDiagnostics?.moderation ?? skillResult.moderation ?? null,
       version: versionResult?.version ?? null,
       versions: versionsList?.items ?? null,
-      file: options.file ? { path: options.file, content: fileContent } : null,
+      file:
+        options.file && fileBytes
+          ? {
+              path: options.file,
+              content: decodeUtf8Text(fileBytes),
+              contentBase64: Buffer.from(fileBytes).toString("base64"),
+            }
+          : null,
     };
 
     if (options.json) {
@@ -238,10 +251,9 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       }
     }
 
-    if (options.file && fileContent !== null) {
+    if (options.file && fileBytes !== null) {
       if (shouldPrintMeta) console.log(`\n${options.file}:\n`);
-      process.stdout.write(fileContent);
-      if (!fileContent.endsWith("\n")) process.stdout.write("\n");
+      process.stdout.write(fileBytes);
     }
   } catch (error) {
     spinner.fail(formatError(error));
@@ -254,7 +266,11 @@ export async function cmdVerifySkill(
   slug: string,
   options: VerifySkillOptions = {},
 ) {
-  const requested = parseSkillRef(slug);
+  const skillsShRef = parseSkillsShCatalogRef(slug);
+  if (skillsShRef && (options.version || options.tag || options.card)) {
+    fail("skills.sh verification does not support --version, --tag, or --card");
+  }
+  const requested = skillsShRef ? { slug: skillsShRef.slug } : parseSkillRef(slug);
   const trimmed = requested.slug;
   if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
@@ -264,7 +280,11 @@ export async function cmdVerifySkill(
   const spinner = createCrabLoader("Fetching skill verification");
   try {
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
-    if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
+    if (skillsShRef) {
+      url.searchParams.set("reference", skillsShRef.sourceRef);
+    } else if (requested.ownerHandle) {
+      url.searchParams.set("ownerHandle", requested.ownerHandle);
+    }
     if (options.version) {
       url.searchParams.set("version", options.version);
     } else if (options.tag) {
@@ -276,6 +296,7 @@ export async function cmdVerifySkill(
       { method: "GET", url: url.toString(), token },
       ApiV1SkillVerifyResponseSchema,
     );
+    if (skillsShRef) validateSkillsShVerification(result, skillsShRef.sourceRef);
 
     if (options.card) {
       const cardUrl = readSkillCardUrl(result);
@@ -297,6 +318,70 @@ export async function cmdVerifySkill(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function parseSkillsShCatalogRef(raw: string) {
+  return parseSkillsShCliReference(raw);
+}
+
+function validateSkillsShVerification(result: unknown, requestedRef: string) {
+  const record = asRecord(result);
+  const provenance = asRecord(record.provenance);
+  const security = asRecord(record.security);
+  if (provenance.source !== "skills.sh" || provenance.reference !== requestedRef) {
+    fail("skills.sh verification did not preserve the requested external provenance");
+  }
+  const scanState = security.clawhubScan;
+  const label = typeof security.label === "string" ? security.label.trim() : "";
+  if (scanState !== "unscanned" && scanState !== "scanned") {
+    fail("skills.sh verification did not return a ClawHub scan state");
+  }
+  if (!label) fail("skills.sh verification did not return a trust label");
+  if (scanState === "unscanned") {
+    const reasons = Array.isArray(record.reasons) ? record.reasons : [];
+    if (
+      record.ok !== false ||
+      record.decision !== "fail" ||
+      label !== SKILLS_SH_UNSCANNED_LABEL ||
+      !reasons.includes(SKILLS_SH_UNSCANNED_LABEL)
+    ) {
+      fail(`skills.sh verification must report "${SKILLS_SH_UNSCANNED_LABEL}" rather than pass`);
+    }
+  } else {
+    if (label !== SKILLS_SH_SCANNED_LABEL) {
+      fail(`scanned skills.sh verification must report "${SKILLS_SH_SCANNED_LABEL}"`);
+    }
+    if (!isCanonicalNativeSkillRef(record.canonicalRef)) {
+      fail("scanned skills.sh verification must return a canonical native reference");
+    }
+  }
+}
+
+function isCanonicalNativeSkillRef(value: unknown) {
+  if (typeof value !== "string") return false;
+  const canonicalRef = value.trim();
+  if (!canonicalRef.startsWith("@")) return false;
+  try {
+    const parsed = parseSkillRef(canonicalRef);
+    return Boolean(
+      parsed.ownerHandle &&
+      isSafeNativeSkillSegment(parsed.ownerHandle) &&
+      isSafeNativeSkillSegment(parsed.slug) &&
+      canonicalRef === `@${parsed.ownerHandle}/${parsed.slug}`,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isSafeNativeSkillSegment(value: string) {
+  return Boolean(value) && !value.includes("/") && !value.includes("\\") && !value.includes("..");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function parseSkillRef(raw: string) {

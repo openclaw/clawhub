@@ -16,14 +16,14 @@ describe("SkillCard", () => {
     const { container } = render(
       <SkillCard
         skill={makeSkill()}
-        badge="Verified"
+        badge="Official"
         summaryFallback="Fallback summary"
         meta={<span>meta</span>}
       />,
     );
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
@@ -37,7 +37,7 @@ describe("SkillCard", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
@@ -52,6 +52,31 @@ describe("SkillCard", () => {
 
     expect(screen.getByText("#google-calendar")).toBeTruthy();
     expect(screen.getByText("#productivity")).toBeTruthy();
+  });
+
+  it("shows standard-length names in full and previews longer compatibility names", () => {
+    const portableName = "S".repeat(64);
+    const compatibilityName = "L".repeat(71);
+    const { rerender } = render(
+      <SkillCard
+        skill={makeSkill({ displayName: portableName })}
+        summaryFallback="Fallback summary"
+        meta={<span>meta</span>}
+      />,
+    );
+
+    expect(screen.getByText(portableName)).toBeTruthy();
+
+    rerender(
+      <SkillCard
+        skill={makeSkill({ displayName: compatibilityName })}
+        summaryFallback="Fallback summary"
+        meta={<span>meta</span>}
+      />,
+    );
+
+    const preview = `${"L".repeat(69)}…`;
+    expect(screen.getByText(preview).getAttribute("title")).toBe(compatibilityName);
   });
 });
 

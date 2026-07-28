@@ -1,39 +1,65 @@
-## Summary
+<!--
+Optional linked context:
+Add a visible `Closes #<issue-number>` or `Related: #<issue-number>` line
+below this comment.
 
-- What changed:
-- Why:
+Required PR title:
+type: user-facing description
+Use a parenthesized scope only when it adds clarity:
+fix(auth): login redirect loops when session cookie is expired
 
-## Linked Issue
+Types: feat, fix, improve, refactor, docs, chore.
+For fixes, describe the user-visible symptom and trigger:
+fix: task list fails to load when user has no environments
+Avoid implementation details such as:
+fix: add null check to task query
+-->
 
-- Closes #
-- Related #
+<details>
+<summary>Additional instructions</summary>
 
-## Screenshots
+**MUST:** Keep **Allow edits from maintainers** enabled for this PR so maintainers
+can help update the branch when needed.
 
-For website/UI changes, attach screenshots or recordings from the real app. Include mobile/narrow views when layout changes.
+</details>
 
-- [ ] Screenshots/recordings attached, or `N/A`
+## What Problem This Solves
 
-## Behavioural Proof
+<!--
+Describe the concrete user, product, or operational problem.
+For fixes, begin with:
+"Fixes an issue where users <do X> would <experience Y> when <condition>."
+or:
+"Resolves a problem where..."
 
-Describe how you verified the user-facing behavior. For UI changes, include the path tested and what changed on screen. For backend/API changes, include the request, command, or scenario that proves the behavior.
+Name the affected UI surface or workflow. Do not describe the code-level cause here.
+-->
 
-- [ ] Behavioural proof included, or `N/A`
+## Why This Change Was Made
 
-## Security / Trust Impact
+<!--
+In one or two sentences, explain the complete shipped solution, key design
+decisions, and relevant boundaries or non-goals. Include implementation detail
+only when it helps reviewers understand user-visible behavior or risk.
+Avoid file-by-file narration.
+-->
 
-- [ ] No security/trust impact
-- [ ] Security/trust impact explained
+## User Impact
 
-## Data / Deploy Impact
+<!--
+State what users, operators, or developers can now do or expect. Lead with the
+concrete benefit and use user-facing language. If there is no user-visible
+impact, say so plainly.
+-->
 
-- [ ] No data/deploy impact
-- [ ] Data/deploy impact explained
+## Evidence
 
-## Verification
+<!--
+Show the most useful proof that this change works. Screenshots, screencasts,
+terminal output, focused tests, CI results, live observations, redacted logs,
+and artifact links are all useful. Include before/after evidence for visual
+changes when it clarifies the result.
 
-- [ ] `bun run ci:static`
-- [ ] Focused tests for touched behavior:
-- [ ] `bun run ci:unit` or `N/A` for docs/config-only:
-- [ ] Broader gate when required (`ci:types-build`, `ci:packages`, `ci:e2e-http`, `ci:playwright-smoke`, `test:pw:local-auth`, `proof:ui`):
-- [ ] Other:
+Reviewers will inspect the code, tests, and CI. Use this section to make the
+validation easy to understand, not to restate the diff.
+-->

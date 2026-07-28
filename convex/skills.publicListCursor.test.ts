@@ -33,6 +33,7 @@ type WrappedHandler<TArgs, TResult> = {
 type PublicListArgs = {
   cursor?: string;
   numItems?: number;
+  prefix?: string;
   sort?:
     | "default"
     | "recommended"
@@ -44,6 +45,8 @@ type PublicListArgs = {
     | "name";
   dir?: "asc" | "desc";
   highlightedOnly?: boolean;
+  officialOnly?: boolean;
+  createdAfter?: number;
   nonSuspiciousOnly?: boolean;
   capabilityTag?: string;
   topic?: string;
@@ -300,6 +303,81 @@ describe("public skill list deterministic cursors", () => {
     expect((result.page as Array<{ owner?: { official?: boolean } }>)[0]?.owner?.official).toBe(
       true,
     );
+  });
+
+  it("applies Official and New eligibility at the backend cursor boundary", async () => {
+    const officialNew = makeSearchDigest({
+      skillId: "skills:official-new",
+      slug: "official-new",
+      badges: { official: { byUserId: "users:admin", at: 200 } },
+      createdAt: 200,
+    });
+    const communityNew = makeSearchDigest({
+      skillId: "skills:community-new",
+      slug: "community-new",
+      createdAt: 200,
+    });
+    const officialOld = makeSearchDigest({
+      skillId: "skills:official-old",
+      slug: "official-old",
+      badges: { official: { byUserId: "users:admin", at: 50 } },
+      createdAt: 50,
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [officialNew, communityNew, officialOld],
+      hasMore: false,
+      indexKeys: [
+        [undefined, 200, officialNew.updatedAt, officialNew._id],
+        [undefined, 200, communityNew.updatedAt, communityNew._id],
+        [undefined, 50, officialOld.updatedAt, officialOld._id],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler({} as never, {
+      officialOnly: true,
+      createdAfter: 100,
+      sort: "newest",
+      numItems: 10,
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["official-new"]);
+  });
+
+  it("ends descending New pagination when the creation window boundary is reached", async () => {
+    const recent = makeSearchDigest({
+      skillId: "skills:recent",
+      slug: "recent",
+      createdAt: 200,
+    });
+    const old = makeSearchDigest({
+      skillId: "skills:old",
+      slug: "old",
+      createdAt: 99,
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [recent, old],
+      hasMore: true,
+      indexKeys: [
+        [undefined, recent.createdAt, recent.updatedAt, recent._id],
+        [undefined, old.createdAt, old.updatedAt, old._id],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler({} as never, {
+      createdAfter: 100,
+      sort: "newest",
+      dir: "desc",
+      numItems: 10,
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["recent"]);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
+    expect(getPageMock).toHaveBeenCalledTimes(1);
   });
 
   it("uses the topic digest index for topic-filtered recommended browse", async () => {
@@ -712,6 +790,77 @@ describe("public skill list deterministic cursors", () => {
       index: "by_active_updated",
       startIndexKey: [undefined, 200, 201, "skillSearchDigest:alpha"],
       startInclusive: false,
+    });
+  });
+
+  it("paginates a slug prefix through the normalized-slug index", async () => {
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        indexKeys: [[undefined, "aigroup-alpha", 200, "skillSearchDigest:alpha"]],
+      })
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: false,
+        indexKeys: [[undefined, "aigroup-beta", 300, "skillSearchDigest:beta"]],
+      });
+
+    const first = await listPublicApiPageV1Handler({} as never, {
+      prefix: "aigroup-",
+      numItems: 1,
+    });
+
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      index: "by_active_normalized_slug",
+      startIndexKey: [undefined, "aigroup-"],
+      startInclusive: true,
+      endIndexKey: [undefined, "aigroup-\uffff"],
+      endInclusive: false,
+      order: "asc",
+    });
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = await listPublicApiPageV1Handler({} as never, {
+      prefix: "aigroup-",
+      cursor: first.nextCursor!,
+      numItems: 1,
+    });
+
+    expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
+      index: "by_active_normalized_slug",
+      startIndexKey: [undefined, "aigroup-alpha", 200, "skillSearchDigest:alpha"],
+      startInclusive: false,
+    });
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("does not reuse a prefix cursor for a different prefix", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [],
+      hasMore: false,
+      indexKeys: [],
+    });
+    const cursor = `skillprefix:${JSON.stringify({
+      prefix: "aigroup-",
+      cursor: cursorForIndex("by_active_normalized_slug", [
+        { __undef: 1 },
+        "aigroup-alpha",
+        200,
+        "skillSearchDigest:alpha",
+      ]),
+    })}`;
+
+    await listPublicApiPageV1Handler({} as never, {
+      prefix: "ai",
+      cursor,
+      numItems: 1,
+    });
+
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      index: "by_active_normalized_slug",
+      startIndexKey: [undefined, "ai"],
+      startInclusive: true,
     });
   });
 
@@ -1239,6 +1388,49 @@ describe("public skill list deterministic cursors", () => {
             requires: { env: ["HA_TOKEN"] },
           },
         },
+      },
+    });
+  });
+
+  it("loads the approved digest version directly for a pending update", async () => {
+    const get = vi.fn(async (id: string) =>
+      id === "skillVersions:approved"
+        ? {
+            _id: id,
+            skillId: "skills:demo",
+            version: "1.0.0",
+            createdAt: 8,
+            changelog: "approved",
+            softDeletedAt: undefined,
+          }
+        : null,
+    );
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          moderationReason: "pending.scan",
+          stats: { downloads: 0, stars: 0, versions: 2, comments: 0 },
+          latestVersionId: "skillVersions:pending",
+          publicVersion: {
+            status: "available",
+            versionId: "skillVersions:approved",
+          },
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({ db: { get } } as never, {
+      numItems: 10,
+      sort: "updated",
+    });
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("skillVersions:approved");
+    expect(result.items[0]).toMatchObject({
+      latestVersion: {
+        version: "1.0.0",
       },
     });
   });

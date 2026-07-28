@@ -63,7 +63,7 @@ export function SkillReportDialog({
             className="min-h-[120px]"
           />
           {reportError ? (
-            <p className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+            <p className="text-sm font-medium text-status-error-fg" role="alert">
               {reportError}
             </p>
           ) : null}

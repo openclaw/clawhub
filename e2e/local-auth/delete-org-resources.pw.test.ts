@@ -202,7 +202,8 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await signInAsLocalPersona(page, "owner");
   errors.length = 0;
 
-  await gotoUntilVisible(page, `/user/${handle}`, page.getByRole("heading", { name: displayName }));
+  const profileSkillLink = page.locator(`a[href$="/${skillSlug}"]`).first();
+  await gotoUntilVisible(page, `/user/${handle}`, profileSkillLink);
   await expectPublisherProfileSkillLink(page, { headingName: displayName, skillSlug });
 
   await gotoUntilVisible(

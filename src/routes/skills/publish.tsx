@@ -5,7 +5,7 @@ import {
   PLATFORM_SKILL_LICENSE_NAME,
   PLATFORM_SKILL_LICENSE_SUMMARY,
 } from "clawhub-schema/licenseConstants";
-import { normalizeTextContentType } from "clawhub-schema/textFiles";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
   Check,
@@ -53,15 +53,14 @@ import {
 } from "../../lib/skillFrontmatter";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
-import { useAuthStatus } from "../../lib/useAuthStatus";
 import {
   formatBytes,
   formatPublishError,
   hashFile,
-  isTextFile,
   readText,
   uploadFile,
-} from "../upload/-utils";
+} from "../../lib/uploadUtils";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SKILL_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/skill-format";
@@ -154,7 +153,7 @@ export function Upload() {
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const isSubmitting = status !== null;
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | PublisherOwnerMembership[]
@@ -226,10 +225,6 @@ export function Upload() {
         const rightRank = requiredFileSortRank(right.path);
         return leftRank === rightRank ? left.index - right.index : leftRank - rightRank;
       }),
-    [normalizedFileEntries],
-  );
-  const unsupportedFileEntries = useMemo(
-    () => normalizedFileEntries.filter((entry) => !isTextFile(entry.file)),
     [normalizedFileEntries],
   );
   const hasRequiredFile = useMemo(
@@ -499,14 +494,6 @@ export function Upload() {
         `Confirm the ownership move from @${existingOwnerHandle} to @${ownerHandle} to publish.`,
       );
     }
-    if (unsupportedFileEntries.length > 0) {
-      issues.push(
-        `Remove unsupported files: ${unsupportedFileEntries
-          .slice(0, 3)
-          .map((entry) => entry.path)
-          .join(", ")}${unsupportedFileEntries.length > 3 ? ", ..." : ""}`,
-      );
-    }
     if (oversizedFiles.length > 0) {
       issues.push(`Each file must be 10MB or smaller: ${oversizedFileNames.join(", ")}`);
     }
@@ -530,7 +517,6 @@ export function Upload() {
     parsedTags.length,
     acceptedLicenseTerms,
     files,
-    unsupportedFileEntries,
     hasRequiredFile,
     totalBytes,
     oversizedFiles.length,
@@ -585,14 +571,17 @@ export function Upload() {
   const visibleFileIssues = validation.issues.filter((issue) => {
     if (issue.startsWith("Add at least one file")) return hasAttempted;
     if (issue === REQUIRED_FILE_ISSUE) return false;
-    if (issue.startsWith("Remove unsupported files")) return shouldShowFileIssues;
     if (issue.startsWith("Each file")) return shouldShowFileIssues;
     if (issue.startsWith("Total file size")) return shouldShowFileIssues;
     return false;
   });
   const hasFilePanelFooter = Boolean(ignoredLocalMetadataNote || visibleFileIssues.length > 0);
+  const hasPublished =
+    status?.startsWith("Published.") || status?.startsWith("Publish received.") || false;
+  const isPublishDisabled = !validation.ready || isSubmitting || hasPublished;
   const publishBlockerSummary =
     !validation.ready && !isSubmitting ? summarizePublishBlockers(validation.issues) : null;
+  const isNewSkillPublishEmpty = files.length === 0 && !updateSlug;
 
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
@@ -670,15 +659,10 @@ export function Upload() {
     resetFileInput();
   }
 
-  function removeUnsupportedFiles() {
-    setFiles((current) => current.filter((file) => isTextFile(file)));
-    setPendingFileRemovalIndex(null);
-    resetFileInput();
-  }
-
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setHasAttempted(true);
+    if (hasPublished) return;
     if (!validation.ready) {
       const message = validation.issues[0] ?? "Fix validation issues to continue.";
       setError(message);
@@ -715,36 +699,34 @@ export function Upload() {
       toast.error(msg);
       return;
     }
-    setStatus("Uploading files…");
-
-    const uploaded = [] as Array<{
-      path: string;
-      size: number;
-      storageId: string;
-      sha256: string;
-      contentType?: string;
-    }>;
-
-    for (const file of files) {
-      const uploadUrl = await generateUploadUrl();
-      const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
-      const path =
-        stripRoot && rawPath.startsWith(`${stripRoot}/`)
-          ? rawPath.slice(stripRoot.length + 1)
-          : rawPath;
-      const sha256 = await hashFile(file);
-      const storageId = await uploadFile(uploadUrl, file);
-      uploaded.push({
-        path,
-        size: file.size,
-        storageId,
-        sha256,
-        contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
-      });
-    }
-
-    setStatus("Publishing…");
+    setIsSubmitting(true);
     try {
+      const uploaded = [] as Array<{
+        path: string;
+        size: number;
+        storageId: string;
+        sha256: string;
+        contentType?: string;
+      }>;
+
+      for (const file of files) {
+        const uploadUrl = await generateUploadUrl();
+        const rawPath = (file.webkitRelativePath || file.name).replace(/^\.\//, "");
+        const path =
+          stripRoot && rawPath.startsWith(`${stripRoot}/`)
+            ? rawPath.slice(stripRoot.length + 1)
+            : rawPath;
+        const sha256 = await hashFile(file);
+        const storageId = await uploadFile(uploadUrl, file);
+        uploaded.push({
+          path,
+          size: file.size,
+          storageId,
+          sha256,
+          contentType: normalizeContentType(file.type) ?? file.type ?? undefined,
+        });
+      }
+
       const result = await publishVersion({
         ownerHandle: ownerHandle || undefined,
         sourceOwnerHandle:
@@ -773,6 +755,11 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
+        if (typeof result === "object" && "status" in result && result.status === "pending") {
+          toast.success("Publish received. Security checks are running.");
+          void navigate({ to: "/dashboard" });
+          return;
+        }
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
         const didSetPostPublishFlash = setPostPublishFlash(ownerParam, trimmedSlug);
         if (!didSetPostPublishFlash) {
@@ -789,36 +776,64 @@ export function Upload() {
       const message = formatPublishError(publishError);
       setError(message);
       toast.error(message);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
   return (
-    <main className="py-10">
-      <Container size="narrow">
-        <header className="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <main className={isNewSkillPublishEmpty ? "publish-empty-main" : "publish-skill-main"}>
+      <Container
+        size="narrow"
+        className={isNewSkillPublishEmpty ? "publish-empty-container" : undefined}
+      >
+        <header
+          className={isNewSkillPublishEmpty ? "publish-empty-header" : "publish-skill-header"}
+        >
+          <div
+            className={isNewSkillPublishEmpty ? "publish-empty-heading" : "publish-skill-heading"}
+          >
             <h1 className="font-display text-2xl font-bold text-[color:var(--ink)]">
-              Publish a skill
+              {isNewSkillPublishEmpty ? "Publish Skill" : "Publish a skill"}
             </h1>
-            <p className="text-sm text-[color:var(--ink-soft)]">Drop or select a skill folder</p>
+            <p className="text-sm text-[color:var(--ink-soft)]">
+              {isNewSkillPublishEmpty
+                ? "Publish your skill to ClawHub so others can discover and install it."
+                : "Review the detected skill details before publishing."}
+            </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm" className="w-fit">
-              <Link to="/import" search={{ ownerHandle: undefined }}>
-                <GitHubLogo className="h-3.5 w-3.5" />
-                Import from GitHub
-              </Link>
-            </Button>
+          <div
+            className={
+              isNewSkillPublishEmpty
+                ? "publish-empty-actions flex flex-wrap items-center gap-2"
+                : "publish-skill-actions flex flex-wrap items-center gap-2"
+            }
+          >
+            {isNewSkillPublishEmpty ? (
+              <Button asChild variant="outline" size="sm" className="w-fit">
+                <Link to="/import" search={{ ownerHandle: undefined }}>
+                  <GitHubLogo className="h-3.5 w-3.5" />
+                  Import from GitHub
+                </Link>
+              </Button>
+            ) : null}
             <Button asChild variant="outline" size="sm" className="w-fit">
               <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-                Skill publishing guide
+                {isNewSkillPublishEmpty ? "Skill docs" : "Skill publishing guide"}
                 <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
               </a>
             </Button>
           </div>
         </header>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+        <form
+          onSubmit={handleSubmit}
+          className={
+            isNewSkillPublishEmpty
+              ? "publish-empty-skill-form flex flex-col gap-6"
+              : "publish-skill-form flex flex-col gap-6"
+          }
+        >
           {/* File upload panel */}
           <input
             ref={setFileInputRef}
@@ -835,7 +850,7 @@ export function Upload() {
 
           {files.length > 0 ? (
             <div
-              className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
+              className={`publish-skill-files overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
                 isDragging
                   ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
                   : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -847,7 +862,7 @@ export function Upload() {
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleFilesDrop}
             >
-              <div className="flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
+              <div className="publish-skill-files-header flex flex-col gap-4 px-4 pt-4 pb-2 md:flex-row md:items-center md:justify-between">
                 <div className="flex min-w-0 items-center gap-3">
                   <div
                     className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]"
@@ -864,26 +879,9 @@ export function Upload() {
                         {files.length} files · {sizeLabel}
                       </span>
                     </div>
-                    {unsupportedFileEntries.length > 0 ? (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        <Badge variant="warning" size="sm">
-                          {unsupportedFileEntries.length} unsupported
-                        </Badge>
-                      </div>
-                    ) : null}
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-4 md:justify-end">
-                  {unsupportedFileEntries.length > 0 ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      onClick={removeUnsupportedFiles}
-                    >
-                      Remove unsupported
-                    </Button>
-                  ) : null}
                   <Button
                     variant="outline"
                     size="sm"
@@ -901,7 +899,7 @@ export function Upload() {
                   </button>
                 </div>
               </div>
-              <div className="mt-2 overflow-hidden rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)]">
+              <div className="publish-skill-files-body mt-2 overflow-hidden rounded-t-[calc(var(--radius-md)+8px)] border-t border-[color:var(--line)] bg-[color:var(--surface)]">
                 <div className="flex max-h-[300px] flex-col gap-1 overflow-y-auto p-3">
                   {!hasRequiredFile ? (
                     <div className="flex items-center gap-2 rounded-[var(--radius-sm)] border border-status-error-fg/35 bg-status-error-bg px-3 py-1.5 text-sm text-status-error-fg">
@@ -913,25 +911,16 @@ export function Upload() {
                       </Badge>
                     </div>
                   ) : null}
-                  {visibleFileEntries.map(({ file, index, path }) => {
-                    const isUnsupported = !isTextFile(file);
+                  {visibleFileEntries.map(({ index, path }) => {
                     const isConfirmingRemoval = pendingFileRemovalIndex === index;
                     return (
                       <div
                         key={`${index}:${path}`}
-                        className={[
-                          "flex items-center gap-2 rounded-[var(--radius-sm)] px-3 py-1.5 text-sm bg-[color:var(--surface-muted)]",
-                          isUnsupported ? "text-status-error-fg" : "text-[color:var(--ink-soft)]",
-                        ].join(" ")}
+                        className="publish-skill-file-row flex items-center gap-2 rounded-[var(--radius-sm)] bg-[color:var(--surface-muted)] px-3 py-1.5 text-sm text-[color:var(--ink-soft)]"
                       >
                         <span className="min-w-0 flex-1 truncate font-mono" title={path}>
                           {path}
                         </span>
-                        {isUnsupported ? (
-                          <Badge variant="warning" size="sm">
-                            Unsupported
-                          </Badge>
-                        ) : null}
                         {isConfirmingRemoval ? (
                           <div className="flex shrink-0 items-center gap-1">
                             <span className="text-xs font-medium text-status-error-fg">
@@ -981,16 +970,7 @@ export function Upload() {
                     <div className="flex flex-col gap-1">
                       {ignoredLocalMetadataNote ? <p>{ignoredLocalMetadataNote}</p> : null}
                       {visibleFileIssues.map((issue) => (
-                        <p
-                          key={issue}
-                          className={
-                            issue.startsWith("Remove unsupported files")
-                              ? "text-status-error-fg"
-                              : undefined
-                          }
-                        >
-                          {issue}
-                        </p>
+                        <p key={issue}>{issue}</p>
                       ))}
                     </div>
                   </div>
@@ -998,10 +978,15 @@ export function Upload() {
               </div>
             </div>
           ) : (
-            <Card>
-              <CardContent>
+            <Card className={isNewSkillPublishEmpty ? "publish-empty-upload-card" : undefined}>
+              <CardContent
+                className={isNewSkillPublishEmpty ? "publish-empty-upload-content" : undefined}
+              >
                 <div
-                  className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
+                  data-dragging={isDragging ? "true" : undefined}
+                  className={`${
+                    isNewSkillPublishEmpty ? "publish-empty-dropzone text-center" : "p-8"
+                  } relative flex flex-col items-center overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed transition-colors ${
                     isDragging
                       ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
                       : "border-[color:var(--line)] bg-[color:var(--surface-muted)]"
@@ -1014,15 +999,19 @@ export function Upload() {
                   onDrop={handleFilesDrop}
                 >
                   <UploadDropzoneDecor active={isDragging} kind="skill" />
-                  <div className="relative z-[1] flex flex-col items-center gap-2 text-center">
+                  <div className="relative z-[1] flex flex-col items-center gap-3">
                     <div className="flex items-center gap-3">
-                      <UploadIcon className="h-5 w-5 text-[color:var(--ink-soft)]" />
-                      <strong>Drop a skill folder</strong>
+                      <UploadIcon
+                        className="h-4 w-4 text-[color:var(--ink-soft)]"
+                        aria-hidden="true"
+                      />
+                      <strong className="text-[color:var(--ink)]">Upload skill first</strong>
                     </div>
-                    <span className="text-xs text-[color:var(--ink-soft)]">
-                      We keep inner paths and remove the top-level folder automatically.
+                    <span className="max-w-[520px] text-sm text-[color:var(--ink-soft)]">
+                      Drop a skill folder here.
                     </span>
                     <Button
+                      className="mt-2"
                       variant="outline"
                       size="sm"
                       type="button"
@@ -1037,9 +1026,9 @@ export function Upload() {
           )}
 
           {/* Metadata panel */}
-          <Card>
-            <CardContent className="gap-5">
-              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+          <Card className="publish-skill-section publish-skill-metadata">
+            <CardContent className="publish-skill-section-content gap-5">
+              <div className="publish-skill-primary-grid grid gap-x-4 gap-y-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="displayName">Display name</Label>
                   <Input
@@ -1126,6 +1115,7 @@ export function Upload() {
               <div>
                 <CatalogMetadataFields
                   kind="skill"
+                  presentation="publish"
                   categories={categories}
                   suggestedCategories={suggestedCategories}
                   topics={topics}
@@ -1176,8 +1166,8 @@ export function Upload() {
                     <span>
                       Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
                       <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
-                      Versions, tags, stats and stars are preserved; the old URL redirects to the
-                      new one.
+                      Versions, tags, stats and bookmarks are preserved; the old URL redirects to
+                      the new one.
                     </span>
                   </label>
                 ) : null}
@@ -1186,8 +1176,8 @@ export function Upload() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="gap-4">
+          <Card className="publish-skill-section publish-skill-version">
+            <CardContent className="publish-skill-section-content gap-4">
               <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="version">Version</Label>
@@ -1221,10 +1211,16 @@ export function Upload() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="gap-4">
+          <Card className="publish-skill-section publish-skill-license">
+            <CardContent className="publish-skill-section-content gap-4">
               <div>
-                <CardTitle>License</CardTitle>
+                <CardTitle>
+                  License
+                  <span className="text-status-error-fg" aria-hidden="true">
+                    *
+                  </span>
+                  <span className="sr-only"> (required)</span>
+                </CardTitle>
                 <p className="text-sm text-[color:var(--ink-soft)]">
                   {PLATFORM_SKILL_LICENSE} · {PLATFORM_SKILL_LICENSE_NAME}
                 </p>
@@ -1239,9 +1235,11 @@ export function Upload() {
                 </p>
               </div>
               <div className="flex flex-col gap-2">
-                <label className="flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
+                <label className="publish-skill-license-acceptance flex cursor-pointer items-start gap-3 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] p-3 text-sm">
                   <input
                     type="checkbox"
+                    required
+                    aria-required="true"
                     className="mt-0.5 h-4 w-4 accent-[color:var(--accent)]"
                     checked={acceptedLicenseTerms}
                     onChange={(event) => {
@@ -1250,6 +1248,7 @@ export function Upload() {
                   />
                   <span>
                     I have the rights to publish this skill under {PLATFORM_SKILL_LICENSE}.
+                    <span className="sr-only"> (required)</span>
                   </span>
                 </label>
               </div>
@@ -1257,8 +1256,8 @@ export function Upload() {
           </Card>
 
           {showChangelogField ? (
-            <Card>
-              <CardContent>
+            <Card className="publish-skill-section publish-skill-changelog">
+              <CardContent className="publish-skill-section-content">
                 <div>
                   <CardTitle>Changelog</CardTitle>
                   <p className="text-sm text-[color:var(--ink-soft)]">
@@ -1297,10 +1296,10 @@ export function Upload() {
           ) : null}
 
           {/* Submit row */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="publish-skill-submit flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
               {error ? (
-                <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+                <div className="text-sm font-medium text-status-error-fg" role="alert">
                   {error}
                 </div>
               ) : null}
@@ -1315,7 +1314,7 @@ export function Upload() {
               variant="primary"
               size="lg"
               type="submit"
-              disabled={!validation.ready || isSubmitting}
+              disabled={isPublishDisabled}
               loading={isSubmitting}
             >
               {!validation.ready && !isSubmitting ? (
@@ -1333,7 +1332,7 @@ export function Upload() {
 function InlineValidationMessage(props: { id: string; message?: string }) {
   if (!props.message) return null;
   return (
-    <p id={props.id} className="text-sm font-medium text-red-600 dark:text-red-400">
+    <p id={props.id} className="text-sm font-medium text-status-error-fg">
       {props.message}
     </p>
   );

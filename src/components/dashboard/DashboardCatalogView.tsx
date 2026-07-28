@@ -2,6 +2,7 @@ import { Download, EyeOff } from "lucide-react";
 import type { ReactNode } from "react";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginDetailHref } from "../../lib/pluginRoutes";
+import { presentationTitle } from "../../lib/presentationTitle";
 import { timeAgo } from "../../lib/timeAgo";
 import { truncateText } from "../../lib/truncateText";
 import {
@@ -104,12 +105,13 @@ function SkillListRow({
     <CatalogRow
       href={detailHref}
       kindLabel="Skill"
-      title={skill.displayName}
+      title={presentationTitle(skill.displayName, skill.slug)}
       version={skill.latestVersion?.version}
       titleAccessory={visibilityIcon(visibility.label)}
       secondary={packageRowSecondary(skill.updatedAt)}
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
+      downloadTitle={skillMetricSourceLabel(skill)}
       menu={<CatalogRowMenu item={item} ownerHandle={ownerHandle} canManage={canManage} />}
     />
   );
@@ -130,7 +132,7 @@ function PluginListRow({
     <CatalogRow
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
       kindLabel="Plugin"
-      title={pkg.displayName}
+      title={presentationTitle(pkg.displayName, pkg.name)}
       version={pkg.latestVersion ?? pkg.latestRelease?.version}
       secondary={packageRowSecondary(pkg.updatedAt)}
       status={packageArtifactStatus(pkg)}
@@ -149,6 +151,7 @@ function CatalogRow({
   secondary,
   status,
   downloads,
+  downloadTitle,
   menu,
 }: {
   href: string;
@@ -159,6 +162,7 @@ function CatalogRow({
   secondary: string;
   status: ArtifactDisplayStatus;
   downloads: number;
+  downloadTitle?: string;
   menu: ReactNode;
 }) {
   return (
@@ -180,7 +184,10 @@ function CatalogRow({
         <SecurityAuditMiniStatus status={status} />
       </div>
       <div className="skill-list-item-meta">
-        <span className="dashboard-catalog-downloads" title={metricLabel(downloads, "download")}>
+        <span
+          className="dashboard-catalog-downloads"
+          title={downloadTitle ?? metricLabel(downloads, "download")}
+        >
           <Download size={14} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>
           <span className="sr-only">{metricLabel(downloads, "download")}</span>
@@ -216,6 +223,13 @@ function metricLabel(value: number, noun: string) {
   return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
+function skillMetricSourceLabel(skill: DashboardSkill) {
+  const sources = skill.metricSources;
+  const downloads = skill.stats?.downloads ?? 0;
+  if (!sources) return metricLabel(downloads, "download");
+  return `${metricLabel(downloads, "download")}: ${sources.clawHubDownloads} ClawHub downloads + ${sources.skillsShInstalls} skills.sh installs. ${sources.openClawInstallsAllTime} OpenClaw installs; ${sources.githubStars} GitHub stars; ${sources.bookmarks} bookmarks.`;
+}
+
 function visibilityIcon(label: string) {
   if (label !== "Hidden" && label !== "Removed") return undefined;
   return (
@@ -231,13 +245,22 @@ function SkillGridCard({ skill, ownerHandle }: { skill: DashboardSkill; ownerHan
   return (
     <DashboardCatalogGridCard
       href={detailHref}
-      title={skill.displayName}
+      title={presentationTitle(skill.displayName, skill.slug)}
       summary={skill.summary}
       summaryFallback="Agent-ready skill pack."
-      icon={<MarketplaceIcon kind="skill" label={skill.displayName} skill={skill} size="sm" />}
+      icon={
+        <MarketplaceIcon
+          kind="skill"
+          label={presentationTitle(skill.displayName, skill.slug)}
+          imageUrl={skill.icon}
+          skill={skill}
+          size="sm"
+        />
+      }
       kindLabel="Skill"
       status={skillArtifactStatus(skill)}
       downloads={skill.stats?.downloads ?? 0}
+      downloadTitle={skillMetricSourceLabel(skill)}
       updatedAt={skill.updatedAt}
     />
   );
@@ -247,10 +270,17 @@ function PluginGridCard({ pkg, ownerHandle }: { pkg: DashboardPackage; ownerHand
   return (
     <DashboardCatalogGridCard
       href={buildPluginDetailHref(pkg.name, { ownerHandle })}
-      title={pkg.displayName}
+      title={presentationTitle(pkg.displayName, pkg.name)}
       summary={pkg.summary}
       summaryFallback="Gateway plugin for OpenClaw workflows."
-      icon={<MarketplaceIcon kind="plugin" label={pkg.displayName} size="sm" />}
+      icon={
+        <MarketplaceIcon
+          kind="plugin"
+          label={presentationTitle(pkg.displayName, pkg.name)}
+          imageUrl={pkg.icon}
+          size="sm"
+        />
+      }
       kindLabel="Plugin"
       status={packageArtifactStatus(pkg)}
       downloads={pkg.stats.downloads ?? 0}
@@ -268,6 +298,7 @@ function DashboardCatalogGridCard({
   kindLabel,
   status,
   downloads,
+  downloadTitle,
   updatedAt,
 }: {
   href: string;
@@ -278,6 +309,7 @@ function DashboardCatalogGridCard({
   kindLabel: "Skill" | "Plugin";
   status: ArtifactDisplayStatus;
   downloads: number;
+  downloadTitle?: string;
   updatedAt: number;
 }) {
   return (
@@ -304,7 +336,7 @@ function DashboardCatalogGridCard({
         </span>
         <span
           className="dashboard-catalog-grid-card-downloads"
-          title={metricLabel(downloads, "download")}
+          title={downloadTitle ?? metricLabel(downloads, "download")}
         >
           <Download size={13} aria-hidden="true" />
           <span aria-hidden="true">{formatCompactStat(downloads)}</span>

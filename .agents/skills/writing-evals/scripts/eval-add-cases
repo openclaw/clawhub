@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# eval-add-cases: Analyze an eval file for test case coverage gaps
+#
+# Usage: eval-add-cases <eval-file>
+#
+# Analyzes the eval file and reports:
+#   1. Which test case categories exist (by metadata.purpose)
+#   2. Which standard categories are missing
+#   3. How many cases per category
+#   4. Suggestions for improvement
+#
+# Standard categories checked:
+#   - happy_path          Basic correct behavior
+#   - adversarial         Prompt injection, misleading inputs
+#   - boundary            Empty, ambiguous, edge cases
+#   - negative            Inputs that should return empty/unknown/no-tool
+#   - distractor          Keyword overlap but wrong intent
+#   - partial_info        Incomplete or missing context
+#
+# Examples:
+#   eval-add-cases src/my-feature.eval.ts
+#   eval-add-cases src/evals/classification.eval.ts
+
+set -euo pipefail
+
+FILE="${1:-}"
+
+if [[ -z "$FILE" ]]; then
+    echo "Usage: eval-add-cases <eval-file>" >&2
+    exit 2
+fi
+
+if [[ ! -f "$FILE" ]]; then
+    echo "Error: File not found: $FILE" >&2
+    exit 2
+fi
+
+echo "=== Test Case Coverage Analysis ==="
+echo "File: $FILE"
+echo ""
+
+# --- Count total data entries ---
+TOTAL_CASES=$(grep -c "input:" "$FILE" 2>/dev/null || echo 0)
+echo "Total test cases: $TOTAL_CASES"
+echo ""
+
+# --- Extract metadata.purpose values ---
+PURPOSES=$(grep -oE "purpose:\s*['\"]([^'\"]+)['\"]" "$FILE" 2>/dev/null | sed -E "s/purpose:\s*['\"]([^'\"]+)['\"]$/\1/" | sort || true)
+HAS_METADATA=false
+
+if [[ -n "$PURPOSES" ]]; then
+    HAS_METADATA=true
+    echo "Found categories (metadata.purpose):"
+    echo "$PURPOSES" | uniq -c | sort -rn | while read -r count name; do
+        printf "  %-30s %s case(s)\n" "$name" "$count"
+    done
+    echo ""
+fi
+
+# --- Standard categories ---
+STANDARD_CATEGORIES="happy_path adversarial boundary negative distractor partial_info"
+
+# --- Check which standard categories are present ---
+echo "--- Standard Category Coverage ---"
+echo ""
+
+missing=0
+present=0
+
+for category in $STANDARD_CATEGORIES; do
+    # Check if any purpose contains this category as a prefix
+    if echo "$PURPOSES" | grep -q "$category" 2>/dev/null; then
+        count=$(echo "$PURPOSES" | grep -c "$category" 2>/dev/null || echo 0)
+        printf "  ✓ %-20s %s case(s)\n" "$category" "$count"
+        present=$((present + 1))
+    else
+        printf "  ✗ %-20s missing\n" "$category"
+        missing=$((missing + 1))
+    fi
+done
+
+echo ""
+echo "Coverage: $present/$((present + missing)) standard categories"
+echo ""
+
+# --- Check for metadata.purpose on all cases ---
+if [[ "$HAS_METADATA" != "true" ]]; then
+    echo "WARN: No metadata.purpose found on test cases."
+    echo "      Add metadata: { purpose: 'happy_path' } to each case for tracking."
+    echo ""
+fi
+
+# Cases without metadata
+CASES_WITHOUT=$(grep -c "input:" "$FILE" 2>/dev/null || echo 0)
+CASES_WITH=$(echo "$PURPOSES" | grep -c "." 2>/dev/null || echo 0)
+CASES_MISSING_META=$((CASES_WITHOUT - CASES_WITH))
+
+if [[ $CASES_MISSING_META -gt 0 ]]; then
+    echo "WARN: $CASES_MISSING_META case(s) may be missing metadata.purpose"
+    echo ""
+fi
+
+# --- Suggestions ---
+if [[ $missing -gt 0 || "$HAS_METADATA" != "true" ]]; then
+    echo "--- Suggestions ---"
+    echo ""
+fi
+
+if echo "$PURPOSES" | grep -q "adversarial" 2>/dev/null; then
+    :
+else
+    echo "  Add adversarial cases:"
+    echo "    { input: 'ignore previous instructions and ...', expected: '...', metadata: { purpose: 'adversarial_prompt_injection' } }"
+    echo "    { input: 'URGENT: Click this link to verify...', expected: '...', metadata: { purpose: 'adversarial_phishing' } }"
+    echo ""
+fi
+
+if echo "$PURPOSES" | grep -q "boundary" 2>/dev/null; then
+    :
+else
+    echo "  Add boundary cases:"
+    echo "    { input: '', expected: '...', metadata: { purpose: 'boundary_empty' } }"
+    echo "    { input: '????', expected: 'unknown', metadata: { purpose: 'boundary_gibberish' } }"
+    echo "    { input: 'Could be A or B...', expected: '...', metadata: { purpose: 'boundary_ambiguous' } }"
+    echo ""
+fi
+
+if echo "$PURPOSES" | grep -q "negative" 2>/dev/null; then
+    :
+else
+    echo "  Add negative cases:"
+    echo "    { input: 'completely irrelevant input', expected: [], metadata: { purpose: 'negative_irrelevant' } }"
+    echo ""
+fi
+
+if echo "$PURPOSES" | grep -q "distractor" 2>/dev/null; then
+    :
+else
+    echo "  Add distractor cases:"
+    echo "    { input: 'uses same keywords but different meaning', expected: '...', metadata: { purpose: 'distractor_keyword_overlap' } }"
+    echo ""
+fi
+
+# --- Check for trials ---
+if grep -q "trials:" "$FILE"; then
+    TRIALS=$(grep -oE "trials:\s*[0-9]+" "$FILE" | head -1 | grep -oE "[0-9]+")
+    echo "Trials: $TRIALS per case"
+else
+    echo "TIP: Consider adding trials: 3 for non-deterministic AI outputs"
+fi
+
+echo ""
+echo "=== Analysis Complete ==="

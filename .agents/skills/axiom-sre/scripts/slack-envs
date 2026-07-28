@@ -1,0 +1,10 @@
+#!/bin/bash
+# List available Slack workspaces (wrapper for unified config)
+# Usage: slack-envs
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Available Slack workspaces:"
+"$SCRIPT_DIR/config" --list slack | sed 's/^/  /'

@@ -14,16 +14,16 @@ describe("PluginListItem", () => {
   it("renders official list plugins with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} />);
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
   it("renders official plugin cards with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} variant="card" />);
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -70,7 +70,14 @@ describe("PluginListItem", () => {
   });
 
   it("falls back to the default plugin glyph when a manifest icon fails to load", () => {
-    render(<PluginListItem item={makePlugin({ icon: "https://cdn.example.test/broken.svg" })} />);
+    render(
+      <PluginListItem
+        item={makePlugin({
+          categories: ["models"],
+          icon: "https://cdn.example.test/broken.svg",
+        })}
+      />,
+    );
 
     const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
     expect(image).toBeTruthy();
@@ -78,8 +85,29 @@ describe("PluginListItem", () => {
     fireEvent.error(image!);
 
     expect(document.querySelector(".marketplace-icon-image")).toBeNull();
-    expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+    expect(
+      document.querySelector(".marketplace-icon-glyph")?.classList.contains("lucide-brain"),
+    ).toBe(true);
   });
+
+  it.each(["list", "card"] as const)(
+    "previews long plugin names in the %s variant while retaining the full label",
+    (variant) => {
+      const displayName = "P".repeat(71);
+      const { container } = render(
+        <PluginListItem
+          item={makePlugin({ displayName })}
+          variant={variant === "list" ? undefined : variant}
+        />,
+      );
+
+      const name = container.querySelector(
+        variant === "list" ? ".skill-list-item-name" : ".skill-card-title",
+      );
+      expect(name?.textContent).toBe(`${"P".repeat(69)}…`);
+      expect(name?.getAttribute("title")).toBe(displayName);
+    },
+  );
 });
 
 function makePlugin(overrides: Partial<PackageListItem> = {}): PackageListItem {

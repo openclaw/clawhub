@@ -1,12 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  formatBytes,
-  formatPublishError,
-  hashFile,
-  isTextFile,
-  readText,
-  uploadFile,
-} from "./uploadUtils";
+import { formatBytes, formatPublishError, hashFile, readText, uploadFile } from "./uploadUtils";
 
 describe("uploadUtils", () => {
   it("formats byte counts", () => {
@@ -36,12 +29,6 @@ describe("uploadUtils", () => {
     expect(formatPublishError("wat")).toBe("Publish failed. Please try again.");
   });
 
-  it("detects text files via MIME type and extension", () => {
-    expect(isTextFile(new File(["x"], "data.bin", { type: "text/plain" }))).toBe(true);
-    expect(isTextFile(new File(["x"], "README.md", { type: "" }))).toBe(true);
-    expect(isTextFile(new File(["x"], "image.png", { type: "" }))).toBe(false);
-  });
-
   it("reads text from Blobs and string body fallbacks", async () => {
     expect(await readText(new Blob(["hello"]))).toBe("hello");
     expect(await readText("yo" as unknown as Blob)).toBe("yo");
@@ -57,13 +44,13 @@ describe("uploadUtils", () => {
     const id = await uploadFile("https://example.com/upload", new File(["x"], "x.txt"));
     expect(id).toBe("st_123");
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "application/octet-stream" },
     });
 
     vi.unstubAllGlobals();
   });
 
-  it("normalizes misleading upload MIME types for TypeScript files", async () => {
+  it("preserves supplied upload MIME types without extension guessing", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ storageId: "st_123" }),
@@ -75,7 +62,7 @@ describe("uploadUtils", () => {
       new File(["x"], "src/index.ts", { type: "video/mp2t" }),
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
-      headers: { "Content-Type": "application/typescript" },
+      headers: { "Content-Type": "video/mp2t" },
     });
 
     vi.unstubAllGlobals();

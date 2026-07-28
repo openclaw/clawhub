@@ -152,6 +152,7 @@ describe("fetchPackages", () => {
     const url = new URL(requestUrl);
     expect(url.searchParams.get("path")).toBe("README.md");
     expect(url.searchParams.get("version")).toBe("1.0.0");
+    expect(url.searchParams.get("preview")).toBe("1");
   });
 
   it("returns an empty package detail payload on 404", async () => {
@@ -306,6 +307,38 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("officialFirst")).toBe("true");
   });
 
+  it("omits viewer credentials from anonymous plugin catalog requests", async () => {
+    vi.stubEnv("VITE_CONVEX_SITE_URL", "https://app.example");
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    getRequestHeadersMock.mockReturnValue(
+      new Headers({
+        authorization: "Bearer private-token",
+        cookie: "session=private",
+        "x-forwarded-for": "203.0.113.9",
+      }),
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPluginCatalog({ limit: 12, viewerMode: "anonymous" });
+
+    const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+    expect(requestInit).toEqual(
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.objectContaining({
+          Accept: "application/json",
+          "x-forwarded-for": "203.0.113.9",
+        }),
+      }),
+    );
+    expect(requestInit?.headers).not.toHaveProperty("authorization");
+    expect(requestInit?.headers).not.toHaveProperty("cookie");
+  });
+
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
@@ -431,6 +464,7 @@ describe("fetchPackages", () => {
             files: [],
             pluginManifestSummary: {
               schemaVersion: 1,
+              icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
               compatibility: { pluginApiRange: "^2.0.0" },
               configFields: [
                 {
@@ -461,6 +495,7 @@ describe("fetchPackages", () => {
     const result = await fetchPackageVersion("example-ai-plugin", "1.2.3");
 
     expect(result?.version?.pluginManifestSummary).toMatchObject({
+      icon: "https://cdn.example.test/icons/example-ai-plugin.svg",
       compatibility: { pluginApiRange: "^2.0.0" },
       mcpServers: [{ name: "exampleMcp" }],
       bundledSkills: [expect.objectContaining({ skillMdPath: "skills/research/SKILL.md" })],
@@ -481,6 +516,18 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/packages/example-ai-plugin/file");
     expect(url.searchParams.get("path")).toBe("skills/research/SKILL.md");
     expect(url.searchParams.get("version")).toBe("1.2.3");
+    expect(url.searchParams.get("preview")).toBe("1");
+  });
+
+  it("returns null when a package file cannot be previewed as text", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("File cannot be previewed as text", { status: 415 }),
+    );
+
+    await expect(
+      fetchPackageFile("example-ai-plugin", "assets/payload.bin", "1.2.3"),
+    ).resolves.toBeNull();
   });
 
   it("fetches scoped package version history with pagination", async () => {

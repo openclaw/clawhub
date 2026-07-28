@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Setup query-metrics skill
+# Usage: scripts/setup
+#
+# This script:
+#   1. Checks for required tools (curl, jq)
+#   2. Checks for ~/.axiom.toml (shared with axiom-sre)
+#   3. Makes scripts executable
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "=== query-metrics Setup ==="
+echo ""
+
+# --- Check required tools ---
+echo "[1/3] Checking required tools..."
+
+MISSING=()
+for cmd in curl jq; do
+    if command -v "$cmd" &> /dev/null; then
+        echo "✓ $cmd found"
+    else
+        echo "✗ $cmd not found"
+        MISSING+=("$cmd")
+    fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo ""
+    echo "Install missing tools:"
+    for cmd in "${MISSING[@]}"; do
+        case "$cmd" in
+            jq) echo "  brew install jq  # or apt-get install jq" ;;
+            curl) echo "  brew install curl  # or apt-get install curl" ;;
+        esac
+    done
+    exit 1
+fi
+
+# --- Make scripts executable ---
+echo ""
+echo "[2/3] Making scripts executable..."
+chmod +x "$SCRIPT_DIR"/*
+echo "✓ Scripts ready"
+
+# --- Check Axiom config ---
+echo ""
+echo "[3/3] Checking Axiom configuration..."
+
+AXIOM_CONFIG="$HOME/.axiom.toml"
+if [[ -f "$AXIOM_CONFIG" ]]; then
+    DEPLOYMENTS=$(grep -c '[[:space:]]*\[deployments\.' "$AXIOM_CONFIG" 2>/dev/null || echo 0)
+    echo "✓ Found $AXIOM_CONFIG with $DEPLOYMENTS deployment(s)"
+
+    # List deployments
+    echo "  Deployments:"
+    grep '[[:space:]]*\[deployments\.' "$AXIOM_CONFIG" | sed 's/.*\[deployments\.\(.*\)\]/    - \1/'
+else
+    echo "⚠ $AXIOM_CONFIG not found"
+    echo ""
+    echo "Create it to enable metrics queries:"
+    echo ""
+    cat << 'EOF'
+[deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-your-token-here"
+org_id = "your-org-id"
+EOF
+    echo ""
+    echo "Get your org_id from Settings → Organization."
+    echo "For the token, create a scoped API token (Settings → API Tokens) with the permissions your workflow needs."
+fi
+
+echo ""
+echo "=== Setup Complete ==="
+echo ""
+echo "Usage:"
+echo "  scripts/datasets prod                                   # List datasets"
+echo "  scripts/datasets prod --kind otel:metrics:v1            # List metrics datasets"
+echo "  scripts/metrics-spec prod <dataset>                      # Fetch query spec"
+echo "  scripts/metrics-info prod <dataset> metrics              # List metrics"
+echo "  scripts/metrics-info prod <dataset> tags                 # List tags"
+echo "  scripts/metrics-query prod '<mpl>' '<start>' '<end>'    # Run query"
+echo ""

@@ -16,6 +16,7 @@ import {
   Package,
   Palette,
   Plus,
+  RefreshCw,
   Save,
   Send,
   ShieldAlert,
@@ -72,8 +73,8 @@ import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";
+import { uploadFile } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { uploadFile } from "./upload/-utils";
 
 const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
 type SettingsView = (typeof settingsViews)[number];
@@ -88,9 +89,23 @@ export const Route = createFileRoute("/settings")({
   ): {
     view?: SettingsView;
     ownerHandle?: string;
+    repo?: string;
+    sourceRepo?: string;
+    sourceExternalId?: string;
+    sourcePath?: string;
+    sourceCommit?: string;
+    sourceContentHash?: string;
   } => ({
     view: isSettingsView(search.view) ? search.view : undefined,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+    repo: typeof search.repo === "string" ? search.repo : undefined,
+    sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
+    sourceExternalId:
+      typeof search.sourceExternalId === "string" ? search.sourceExternalId : undefined,
+    sourcePath: typeof search.sourcePath === "string" ? search.sourcePath : undefined,
+    sourceCommit: typeof search.sourceCommit === "string" ? search.sourceCommit : undefined,
+    sourceContentHash:
+      typeof search.sourceContentHash === "string" ? search.sourceContentHash : undefined,
   }),
   component: Settings,
 });
@@ -113,6 +128,9 @@ type PublisherMembership = {
     image?: string | null;
     imageStorageId?: Id<"_storage"> | null;
     bio?: string | null;
+    githubHandle?: string | null;
+    githubOrgId?: string | null;
+    githubVerifiedAt?: number | null;
     official?: boolean;
     stats?: {
       skills: number;
@@ -121,13 +139,32 @@ type PublisherMembership = {
       downloads: number;
       stars: number;
     };
-    publishedItems?: Array<{
-      kind: "skill" | "plugin";
-      displayName: string;
-      downloads: number;
-    }>;
   };
   role: "owner" | "admin" | "publisher";
+};
+
+type GitHubOrgMembershipsResult = {
+  syncedAt: number | null;
+  truncated: boolean;
+  memberships: Array<{
+    githubOrgId: string;
+    login: string;
+    avatarUrl: string | null;
+    role: "admin" | "member";
+    syncedAt: number;
+  }>;
+};
+
+type PublisherDeletionInventory = {
+  handle: string;
+  stats: {
+    skills: number;
+    packages: number;
+  };
+  publishedItems: Array<{
+    kind: "skill" | "plugin";
+    displayName: string;
+  }>;
 };
 
 type OrgMembersResult = {
@@ -246,7 +283,7 @@ const themeToggleItemClass =
 
 export function Settings() {
   const navigate = useNavigate();
-  const { signOut } = useAuthActions();
+  const { signIn, signOut } = useAuthActions();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
@@ -260,8 +297,13 @@ export function Settings() {
   const revokeToken = useMutation(api.tokens.revoke);
   const publisherMemberships = useQuery(
     api.publishers.listMine,
-    shouldLoadAccountScopedQueries ? {} : "skip",
+    shouldLoadAccountScopedQueries ? { includePublishedItems: false } : "skip",
   ) as Array<PublisherMembership> | undefined;
+  const githubOrgMemberships = useQuery(
+    api.githubOrgMemberships.listMine,
+    shouldLoadAccountScopedQueries ? {} : "skip",
+  ) as GitHubOrgMembershipsResult | undefined;
+  const rolloutCapabilities = useQuery(api.rolloutCapabilities.getPublicCapabilities, {});
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
@@ -288,6 +330,7 @@ export function Settings() {
   const [selectedOrgImage, setSelectedOrgImage] = useState("");
   const [selectedOrgImageFile, setSelectedOrgImageFile] = useState<File | null>(null);
   const [selectedOrgImagePreview, setSelectedOrgImagePreview] = useState<string | null>(null);
+  const [selectedGitHubOrgId, setSelectedGitHubOrgId] = useState("");
   const [isUploadingOrgImage, setIsUploadingOrgImage] = useState(false);
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
@@ -305,7 +348,17 @@ export function Settings() {
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [revokingInviteId, setRevokingInviteId] = useState<Id<"publisherInvites"> | null>(null);
   const [respondingInvite, setRespondingInvite] = useState<InviteResponseState | null>(null);
-  const { activeView, navigateToView, ownerHandle: requestedOwnerHandle } = useActiveSettingsView();
+  const {
+    activeView,
+    navigateToView,
+    ownerHandle: requestedOwnerHandle,
+    repo: requestedRepo,
+    sourceRepo: requestedSourceRepo,
+    sourceExternalId: requestedSourceExternalId,
+    sourcePath: requestedSourcePath,
+    sourceCommit: requestedSourceCommit,
+    sourceContentHash: requestedSourceContentHash,
+  } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
     (entry) => entry.role !== "publisher",
@@ -314,7 +367,9 @@ export function Settings() {
     (entry) => entry.publisher.official === true,
   );
   const publisherMembershipsLoaded = publisherMemberships !== undefined;
-  const canConfigureGitHubSources = officialGitHubSourcePublishers.length > 0;
+  const canConfigureGitHubSources =
+    rolloutCapabilities?.githubSkillSync.selfServiceEnabled === true &&
+    officialGitHubSourcePublishers.length > 0;
   const effectiveActiveView =
     activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
       ? "account"
@@ -327,10 +382,25 @@ export function Settings() {
     null;
   const selectedOrg =
     orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
+  const githubOrgMembershipsFresh = Boolean(
+    githubOrgMemberships?.syncedAt && Date.now() - githubOrgMemberships.syncedAt <= 15 * 60 * 1000,
+  );
+  const selectedGitHubOrgMembership = githubOrgMemberships?.memberships.find(
+    (membership) => membership.githubOrgId === selectedGitHubOrgId,
+  );
+  const linkedGitHubHandleNeedsRefresh = Boolean(
+    githubOrgMembershipsFresh &&
+    selectedGitHubOrgId &&
+    selectedGitHubOrgId === selectedOrg?.publisher.githubOrgId &&
+    selectedGitHubOrgMembership &&
+    selectedGitHubOrgMembership?.login !== selectedOrg.publisher.githubHandle,
+  );
   const hasOrgProfileChanges = selectedOrg
     ? selectedOrgDisplayName !== (selectedOrg.publisher.displayName ?? "") ||
       selectedOrgBio !== (selectedOrg.publisher.bio ?? "") ||
       selectedOrgImage !== (selectedOrg.publisher.image ?? "") ||
+      selectedGitHubOrgId !== (selectedOrg.publisher.githubOrgId ?? "") ||
+      linkedGitHubHandleNeedsRefresh ||
       selectedOrgImageFile !== null
     : false;
   const hasProfileChanges = me
@@ -368,9 +438,18 @@ export function Settings() {
       ? {}
       : "skip",
   ) as GitHubSkillSource[] | undefined;
-  const deletionPublishers = (publisherMemberships ?? []).filter(
-    (entry) => entry.publisher.kind === "user" || entry.role === "owner",
-  );
+  const deletionInventory = useQuery(
+    api.publishers.getDeletionInventory,
+    shouldLoadAccountScopedQueries && deleteOrgDialogOpen && selectedOrg
+      ? { publisherId: selectedOrg.publisher._id }
+      : shouldLoadAccountScopedQueries && deleteDialogOpen
+        ? {}
+        : "skip",
+  ) as PublisherDeletionInventory[] | undefined;
+
+  useEffect(() => {
+    if (requestedRepo) setGithubRepo(requestedRepo);
+  }, [requestedRepo]);
 
   useEffect(() => {
     if (!me) return;
@@ -415,12 +494,14 @@ export function Settings() {
       setSelectedOrgDisplayName("");
       setSelectedOrgBio("");
       setSelectedOrgImage("");
+      setSelectedGitHubOrgId("");
       setSelectedOrgImageFile(null);
       return;
     }
     setSelectedOrgDisplayName(selectedOrg.publisher.displayName ?? "");
     setSelectedOrgBio(selectedOrg.publisher.bio ?? "");
     setSelectedOrgImage(selectedOrg.publisher.image ?? "");
+    setSelectedGitHubOrgId(selectedOrg.publisher.githubOrgId ?? "");
     setSelectedOrgImageFile(null);
   }, [selectedOrg]);
 
@@ -454,6 +535,7 @@ export function Settings() {
   const activeSectionLoading =
     (activeView === "organizations" &&
       (publisherMemberships === undefined ||
+        githubOrgMemberships === undefined ||
         (selectedOrg && selectedOrg.role !== "publisher" && orgMembers === undefined))) ||
     (activeView === "tokens" && tokens === undefined);
 
@@ -523,6 +605,11 @@ export function Settings() {
     if (!selectedOrg) return;
     setIsUploadingOrgImage(true);
     try {
+      const githubOrgId =
+        selectedGitHubOrgId === (selectedOrg.publisher.githubOrgId ?? "") &&
+        !linkedGitHubHandleNeedsRefresh
+          ? undefined
+          : selectedGitHubOrgId || null;
       if (selectedOrgImageFile) {
         const upload = await createOrgImageUpload({
           publisherId: selectedOrg.publisher._id,
@@ -534,6 +621,7 @@ export function Settings() {
           bio: selectedOrgBio || undefined,
           imageStorageId: imageStorageId as Id<"_storage">,
           imageUploadTicket: upload.uploadTicket,
+          githubOrgId,
         });
       } else {
         await updateOrgProfile({
@@ -544,6 +632,7 @@ export function Settings() {
           imageStorageId: selectedOrgImage
             ? (selectedOrg.publisher.imageStorageId ?? undefined)
             : undefined,
+          githubOrgId,
         });
       }
       setSelectedOrgImageFile(null);
@@ -553,6 +642,13 @@ export function Settings() {
     } finally {
       setIsUploadingOrgImage(false);
     }
+  }
+
+  async function onConnectGitHubOrganizations() {
+    const ownerHandle = selectedOrg?.publisher.handle;
+    const search = new URLSearchParams({ view: "organizations" });
+    if (ownerHandle) search.set("ownerHandle", ownerHandle);
+    await signIn("github", { redirectTo: `/settings?${search.toString()}` });
   }
 
   function onOrgImageFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -670,12 +766,44 @@ export function Settings() {
     if (!selectedSourcePublisher) return;
     const repo = parseGitHubRepoInput(githubRepo);
     if (!repo) return;
+    const requestedSourceFields = [
+      requestedSourceRepo,
+      requestedSourceExternalId,
+      requestedSourcePath,
+      requestedSourceCommit,
+      requestedSourceContentHash,
+    ];
+    const hasRequestedSource = requestedSourceFields.some((value) => value !== undefined);
+    const hasCompleteRequestedSource = requestedSourceFields.every(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+    if (hasRequestedSource && !hasCompleteRequestedSource) {
+      toast.error("This Claim link is incomplete. Return to the skill listing and try again.");
+      return;
+    }
+    const expectedSkillsShSource = hasCompleteRequestedSource
+      ? {
+          repo: requestedSourceRepo as string,
+          externalId: requestedSourceExternalId as string,
+          path: requestedSourcePath as string,
+          commit: requestedSourceCommit as string,
+          contentHash: requestedSourceContentHash as string,
+        }
+      : undefined;
     setIsSyncingSource(true);
     try {
       const result = await configureGitHubSource({
         ownerPublisherId: selectedSourcePublisher.publisher._id,
         repo,
+        ...(expectedSkillsShSource ? { expectedSkillsShSource } : {}),
       });
+      if (expectedSkillsShSource) {
+        await navigate({
+          to: "/settings",
+          search: { view: "githubSources" },
+          replace: true,
+        });
+      }
       setGithubRepo("");
       toast.success(formatGitHubSourceSyncToast(result?.stats));
     } catch (error) {
@@ -831,7 +959,7 @@ export function Settings() {
                     </Field>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                       {hasProfileChanges ? (
-                        <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                        <span className="text-sm font-semibold text-status-error-fg">
                           You have unsaved changes.
                         </span>
                       ) : null}
@@ -975,7 +1103,7 @@ export function Settings() {
                           <DialogHeader>
                             <DialogTitle>Create organization</DialogTitle>
                             <DialogDescription>
-                              Create a publisher profile for a team or project.
+                              Create an organization for your team
                             </DialogDescription>
                           </DialogHeader>
                           <div className="grid gap-4">
@@ -987,7 +1115,7 @@ export function Settings() {
                                   setOrgHandle(event.target.value);
                                   setCreateOrgError(null);
                                 }}
-                                placeholder="example.tools"
+                                placeholder="@openclaw"
                               />
                             </Field>
                             <Field label="Display name" htmlFor="settings-org-display-name">
@@ -1003,10 +1131,7 @@ export function Settings() {
                             </Field>
                           </div>
                           {createOrgError ? (
-                            <p
-                              className="text-sm font-medium text-red-600 dark:text-red-400"
-                              role="alert"
-                            >
+                            <p className="text-sm font-medium text-status-error-fg" role="alert">
                               {createOrgError}
                             </p>
                           ) : null}
@@ -1020,8 +1145,7 @@ export function Settings() {
                               disabled={!orgHandle.trim() || isCreatingOrg}
                               onClick={() => void onCreateOrg()}
                             >
-                              <Building2 size={16} />
-                              {isCreatingOrg ? "Creating..." : "Create org"}
+                              {isCreatingOrg ? "Creating..." : "Create"}
                             </Button>
                           </DialogFooter>
                         </DialogContent>
@@ -1097,6 +1221,105 @@ export function Settings() {
                                 ) : null}
                               </div>
                               <div className="lg:col-span-2">
+                                <Field
+                                  label="GitHub organization"
+                                  htmlFor="settings-selected-org-github"
+                                >
+                                  {githubOrgMemberships?.syncedAt ||
+                                  selectedOrg.publisher.githubOrgId ? (
+                                    <>
+                                      <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                                        <Select
+                                          value={selectedGitHubOrgId || "__none__"}
+                                          onValueChange={(value) =>
+                                            setSelectedGitHubOrgId(
+                                              value === "__none__" ? "" : value,
+                                            )
+                                          }
+                                        >
+                                          <SelectTrigger
+                                            id="settings-selected-org-github"
+                                            className="h-11 min-w-0 flex-1"
+                                          >
+                                            <SelectValue placeholder="Select a GitHub organization" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="__none__">
+                                              No GitHub organization
+                                            </SelectItem>
+                                            {selectedOrg.publisher.githubOrgId &&
+                                            !(githubOrgMemberships?.memberships ?? []).some(
+                                              (membership) =>
+                                                membership.githubOrgId ===
+                                                selectedOrg.publisher.githubOrgId,
+                                            ) ? (
+                                              <SelectItem
+                                                value={selectedOrg.publisher.githubOrgId}
+                                                disabled
+                                              >
+                                                @{selectedOrg.publisher.githubHandle} · unavailable
+                                              </SelectItem>
+                                            ) : null}
+                                            {(githubOrgMemberships?.memberships ?? []).map(
+                                              (membership) => (
+                                                <SelectItem
+                                                  key={membership.githubOrgId}
+                                                  value={membership.githubOrgId}
+                                                  disabled={!githubOrgMembershipsFresh}
+                                                >
+                                                  <span className="flex min-w-0 items-center gap-2">
+                                                    <OrgLogoSmall
+                                                      image={membership.avatarUrl}
+                                                      name={membership.login}
+                                                      handle={membership.login}
+                                                      className="h-6 w-6"
+                                                    />
+                                                    <span className="truncate">
+                                                      @{membership.login} · {membership.role}
+                                                    </span>
+                                                  </span>
+                                                </SelectItem>
+                                              ),
+                                            )}
+                                          </SelectContent>
+                                        </Select>
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          className="h-11 shrink-0"
+                                          onClick={() => void onConnectGitHubOrganizations()}
+                                        >
+                                          <RefreshCw size={16} />
+                                          Refresh
+                                        </Button>
+                                      </div>
+                                      <p className="text-xs text-[color:var(--ink-soft)]">
+                                        {githubOrgMembershipsFresh
+                                          ? "Only organizations where your GitHub account is an active member are shown."
+                                          : "Reconnect GitHub to choose another organization. You can still remove the current link."}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <div className="flex min-w-0 flex-col items-start gap-2">
+                                      <Button
+                                        id="settings-selected-org-github"
+                                        type="button"
+                                        variant="outline"
+                                        aria-label="Connect GitHub organizations"
+                                        onClick={() => void onConnectGitHubOrganizations()}
+                                      >
+                                        <GitHubIcon size={16} />
+                                        Connect GitHub
+                                      </Button>
+                                      <p className="text-xs text-[color:var(--ink-soft)]">
+                                        GitHub will ask for read-only access to your organization
+                                        memberships.
+                                      </p>
+                                    </div>
+                                  )}
+                                </Field>
+                              </div>
+                              <div className="lg:col-span-2">
                                 <Field label="Bio" htmlFor="settings-selected-org-bio">
                                   <Textarea
                                     id="settings-selected-org-bio"
@@ -1109,7 +1332,7 @@ export function Settings() {
                               </div>
                               <div className="flex flex-col gap-3 lg:col-span-2 lg:flex-row lg:items-center lg:justify-end">
                                 {hasOrgProfileChanges ? (
-                                  <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                                  <span className="text-sm font-semibold text-status-error-fg">
                                     You have unsaved changes.
                                   </span>
                                 ) : null}
@@ -1205,7 +1428,7 @@ export function Settings() {
                                 </div>
                                 {inviteError ? (
                                   <p
-                                    className="text-sm font-medium text-red-600 dark:text-red-400"
+                                    className="text-sm font-medium text-status-error-fg"
                                     role="alert"
                                   >
                                     {inviteError}
@@ -1311,11 +1534,11 @@ export function Settings() {
                           <SettingsBlock tone="danger">
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                               <div className="flex min-w-0 items-center gap-3">
-                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
+                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--oc-radius-inset)] border border-status-error-fg/30 bg-status-error-bg text-status-error-fg">
                                   <ShieldAlert size={17} />
                                 </span>
                                 <div className="min-w-0">
-                                  <h3 className="text-sm font-bold text-red-700 dark:text-red-300">
+                                  <h3 className="text-sm font-bold text-status-error-fg">
                                     Delete organization
                                   </h3>
                                   <p className="text-sm text-[color:var(--ink-soft)]">
@@ -1343,7 +1566,7 @@ export function Settings() {
                                     </DialogDescription>
                                   </DialogHeader>
                                   <DeletionResourceSummary
-                                    publishers={[selectedOrg]}
+                                    inventory={deletionInventory}
                                     emptyLabel="This organization has no published skills or plugins."
                                   />
                                   <DialogFooter>
@@ -1355,6 +1578,7 @@ export function Settings() {
                                     </Button>
                                     <Button
                                       variant="destructive"
+                                      disabled={deletionInventory === undefined}
                                       onClick={() => void onDeleteOrg()}
                                     >
                                       Permanently delete organization
@@ -1387,7 +1611,7 @@ export function Settings() {
                             Create organization
                           </h3>
                           <p className="text-sm text-[color:var(--ink-soft)]">
-                            Add a publisher profile for a team or project.
+                            Create an organization for your team
                           </p>
                         </div>
                       </div>
@@ -1408,7 +1632,7 @@ export function Settings() {
                           <DialogHeader>
                             <DialogTitle>Create organization</DialogTitle>
                             <DialogDescription>
-                              Create a publisher profile for a team or project.
+                              Create an organization for your team
                             </DialogDescription>
                           </DialogHeader>
                           <div className="grid gap-4">
@@ -1420,7 +1644,7 @@ export function Settings() {
                                   setOrgHandle(event.target.value);
                                   setCreateOrgError(null);
                                 }}
-                                placeholder="example.tools"
+                                placeholder="@openclaw"
                               />
                             </Field>
                             <Field label="Display name" htmlFor="settings-org-display-name-empty">
@@ -1436,10 +1660,7 @@ export function Settings() {
                             </Field>
                           </div>
                           {createOrgError ? (
-                            <p
-                              className="text-sm font-medium text-red-600 dark:text-red-400"
-                              role="alert"
-                            >
+                            <p className="text-sm font-medium text-status-error-fg" role="alert">
                               {createOrgError}
                             </p>
                           ) : null}
@@ -1453,8 +1674,7 @@ export function Settings() {
                               disabled={!orgHandle.trim() || isCreatingOrg}
                               onClick={() => void onCreateOrg()}
                             >
-                              <Building2 size={16} />
-                              {isCreatingOrg ? "Creating..." : "Create org"}
+                              {isCreatingOrg ? "Creating..." : "Create"}
                             </Button>
                           </DialogFooter>
                         </DialogContent>
@@ -1499,10 +1719,11 @@ export function Settings() {
                         onGithubRepoChange={setGithubRepo}
                         onConfigure={onConfigureGitHubSource}
                         isSyncing={isSyncingSource}
+                        requestedSourcePath={requestedSourcePath}
                       />
                     ) : (
                       <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
-                        You need a verified publisher profile before adding GitHub skill sync.
+                        You need an official publisher profile before adding GitHub skill sync.
                       </p>
                     )}
                   </div>
@@ -1570,8 +1791,8 @@ export function Settings() {
                 </SettingsBlock>
 
                 {newToken ? (
-                  <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-amber-300/30 bg-amber-500/[0.06] p-4 dark:border-amber-500/25 dark:bg-amber-500/[0.08]">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                  <div className="flex flex-col gap-3 rounded-[var(--oc-radius-surface)] border border-status-warning-fg/30 bg-status-warning-bg p-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-status-warning-fg">
                       <ShieldAlert size={16} />
                       Copy this token now — it will not be shown again.
                     </div>
@@ -1701,14 +1922,18 @@ export function Settings() {
                           </DialogDescription>
                         </DialogHeader>
                         <DeletionResourceSummary
-                          publishers={deletionPublishers}
+                          inventory={deletionInventory}
                           emptyLabel="No published skills or plugins are attached to your account."
                         />
                         <DialogFooter>
                           <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
                             Cancel
                           </Button>
-                          <Button variant="destructive" onClick={() => void onDelete()}>
+                          <Button
+                            variant="destructive"
+                            disabled={deletionInventory === undefined}
+                            onClick={() => void onDelete()}
+                          >
                             Permanently delete account
                           </Button>
                         </DialogFooter>
@@ -1716,13 +1941,10 @@ export function Settings() {
                     </Dialog>
                   </div>
 
-                  <div className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-red-300/20 bg-red-500/[0.04] p-4 dark:border-red-500/20 dark:bg-red-500/[0.06]">
-                    <ShieldAlert
-                      size={18}
-                      className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
-                    />
+                  <div className="flex items-start gap-3 rounded-[var(--oc-radius-control)] border border-status-error-fg/25 bg-status-error-bg p-4">
+                    <ShieldAlert size={18} className="mt-0.5 shrink-0 text-status-error-fg" />
                     <div className="flex flex-col gap-1">
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                      <p className="text-sm font-semibold text-status-error-fg">
                         This will permanently delete your account
                       </p>
                       <p className="text-sm text-[color:var(--ink-soft)]">
@@ -1767,24 +1989,32 @@ function formatGitHubSourceSyncToast(
 }
 
 function DeletionResourceSummary({
-  publishers,
+  inventory,
   emptyLabel,
 }: {
-  publishers: PublisherMembership[];
+  inventory: PublisherDeletionInventory[] | undefined;
   emptyLabel: string;
 }) {
-  const totals = publishers.reduce(
+  if (inventory === undefined) {
+    return (
+      <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-3 text-sm text-[color:var(--ink-soft)]">
+        Loading published resources...
+      </div>
+    );
+  }
+
+  const totals = inventory.reduce(
     (acc, entry) => {
-      acc.skills += entry.publisher.stats?.skills ?? 0;
-      acc.plugins += entry.publisher.stats?.packages ?? 0;
+      acc.skills += entry.stats.skills;
+      acc.plugins += entry.stats.packages;
       return acc;
     },
     { skills: 0, plugins: 0 },
   );
-  const resources = publishers.flatMap((entry) =>
-    (entry.publisher.publishedItems ?? []).map((item) => ({
+  const resources = inventory.flatMap((entry) =>
+    entry.publishedItems.map((item) => ({
       ...item,
-      publisherHandle: entry.publisher.handle,
+      publisherHandle: entry.handle,
     })),
   );
   const totalResources = totals.skills + totals.plugins;
@@ -1796,11 +2026,9 @@ function DeletionResourceSummary({
       : emptyLabel;
 
   return (
-    <div className="overflow-hidden rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/5 text-sm dark:border-red-500/30">
-      <div className="border-b border-red-300/30 px-3 py-2 dark:border-red-500/25">
-        <p className="font-semibold text-red-700 dark:text-red-300">
-          Resources permanently deleted
-        </p>
+    <div className="overflow-hidden rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg text-sm">
+      <div className="border-b border-status-error-fg/25 px-3 py-2">
+        <p className="font-semibold text-status-error-fg">Resources permanently deleted</p>
         <p className="mt-1 text-[color:var(--ink-soft)]">{summary}</p>
       </div>
       {resources.length ? (
@@ -2057,8 +2285,8 @@ function SettingsSection({
               <span
                 className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border ${
                   tone === "danger"
-                    ? "border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300"
-                    : "border-[color:var(--line)] bg-[color:var(--surface-muted)] text-[color:var(--ink)]"
+                    ? "border-status-error-fg/30 bg-status-error-bg text-status-error-fg"
+                    : "border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-surface)] text-[color:var(--oc-text-primary)]"
                 }`}
               >
                 {icon}
@@ -2066,7 +2294,9 @@ function SettingsSection({
               <div className="min-w-0">
                 <h2
                   className={`font-display text-2xl font-black leading-none ${
-                    tone === "danger" ? "text-red-700 dark:text-red-300" : "text-[color:var(--ink)]"
+                    tone === "danger"
+                      ? "text-status-error-fg"
+                      : "text-[color:var(--oc-text-primary)]"
                   }`}
                 >
                   {title}
@@ -2095,7 +2325,7 @@ function SettingsBlock({
     <div
       className={`flex min-w-0 flex-col gap-4 rounded-[var(--radius-md)] border p-4 sm:p-5 ${
         tone === "danger"
-          ? "border-red-300/50 bg-red-500/[0.035] dark:border-red-500/35 dark:bg-red-500/[0.045]"
+          ? "border-status-error-fg/30 bg-status-error-bg"
           : "border-[color:var(--line)] bg-[color:var(--surface)]"
       } ${className}`}
     >
@@ -2258,9 +2488,9 @@ function GitHubSourceList({
                   </div>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="destructive"
                     loading={deletingSourceId === source._id}
-                    className="shrink-0 border-red-500/45 text-red-700 hover:not-disabled:border-red-500 hover:not-disabled:bg-red-500/10 dark:border-red-500/35 dark:text-red-300"
+                    className="shrink-0"
                     onClick={() => onDeleteSource(source)}
                   >
                     Delete
@@ -2400,7 +2630,7 @@ function GitHubSourceHealth({ source }: { source: GitHubSkillSource }) {
         </GitHubSourceOverviewRow>
       </div>
       {needsAttention && latestError ? (
-        <p className="border-t border-[color:var(--line)] px-3 py-2 text-sm text-red-700 dark:text-red-300">
+        <p className="border-t border-[color:var(--oc-border-subtle)] px-3 py-2 text-sm text-status-error-fg">
           <span className="font-semibold">Latest error:</span> {latestError}
         </p>
       ) : null}
@@ -2418,7 +2648,7 @@ function GitHubSourceSyncIssues({ source }: { source: GitHubSkillSource }) {
         <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[color:var(--ink-soft)]">
           Sync issues
         </span>
-        <span className="inline-flex h-5 items-center rounded-full border border-red-500/35 bg-red-500/10 px-2 text-[11px] font-semibold text-red-700 dark:text-red-300">
+        <span className="inline-flex h-5 items-center rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-2 text-[11px] font-semibold text-status-error-fg">
           {issues.length}
         </span>
       </div>
@@ -2437,7 +2667,7 @@ function GitHubSourceSyncIssues({ source }: { source: GitHubSkillSource }) {
                 {formatGitHubSourceIssueKind(skill.kind)}
               </div>
             </div>
-            <div className="shrink-0 text-left text-xs font-semibold text-red-700 dark:text-red-300 sm:max-w-[40%] sm:text-right">
+            <div className="shrink-0 text-left text-xs font-semibold text-status-error-fg sm:max-w-[40%] sm:text-right">
               {skill.message}
             </div>
           </div>
@@ -2491,10 +2721,10 @@ function GitHubSourceOverviewRow({ label, children }: { label: string; children:
 function GitHubSourceStatusPill({ needsAttention }: { needsAttention: boolean }) {
   return (
     <span
-      className={`inline-flex h-6 items-center rounded-full border px-2.5 text-xs font-semibold ${
+      className={`inline-flex h-6 items-center rounded-[var(--oc-radius-control)] border px-2.5 text-xs font-semibold ${
         needsAttention
-          ? "border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-300"
-          : "border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+          ? "border-status-error-fg/30 bg-status-error-bg text-status-error-fg"
+          : "border-status-success-fg/30 bg-status-success-bg text-status-success-fg"
       }`}
     >
       {needsAttention ? "Needs attention" : "Healthy"}
@@ -2510,6 +2740,7 @@ function GitHubSourceForm({
   onGithubRepoChange,
   onConfigure,
   isSyncing,
+  requestedSourcePath,
 }: {
   publisherOptions: PublisherMembership[];
   selectedPublisherId: string;
@@ -2518,6 +2749,7 @@ function GitHubSourceForm({
   onGithubRepoChange: (repo: string) => void;
   onConfigure: (event: FormEvent) => void;
   isSyncing: boolean;
+  requestedSourcePath?: string;
 }) {
   return (
     <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onConfigure}>
@@ -2553,6 +2785,11 @@ function GitHubSourceForm({
           {isSyncing ? "Adding..." : "Add repo"}
         </Button>
       </div>
+      {requestedSourcePath ? (
+        <p className="text-xs text-[color:var(--ink-soft)] sm:basis-full">
+          Requested skill path: <code>{requestedSourcePath}</code>
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -2631,7 +2868,11 @@ function TokenList({
                 <td className="py-4 align-middle">
                   <div className="flex min-w-0 items-center gap-3">
                     {token.revokedAt ? (
-                      <CircleX size={16} aria-hidden="true" className="shrink-0 text-red-500" />
+                      <CircleX
+                        size={16}
+                        aria-hidden="true"
+                        className="shrink-0 text-status-error-fg"
+                      />
                     ) : (
                       <Code
                         size={16}
@@ -2674,7 +2915,7 @@ function TokenList({
                       size="sm"
                       type="button"
                       onClick={() => onRevoke?.(token._id)}
-                      className="h-8 gap-2 px-0 text-xs text-red-700 hover:bg-transparent hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                      className="h-8 gap-2 px-0 text-xs text-status-error-fg hover:bg-transparent hover:opacity-80"
                     >
                       <Trash2 size={14} />
                       Revoke
@@ -2695,7 +2936,7 @@ function TokenList({
           >
             <div className="flex min-w-0 items-center gap-2">
               {token.revokedAt ? (
-                <CircleX size={16} aria-hidden="true" className="shrink-0 text-red-500" />
+                <CircleX size={16} aria-hidden="true" className="shrink-0 text-status-error-fg" />
               ) : (
                 <Code
                   size={16}
@@ -2748,7 +2989,7 @@ function TokenList({
                   size="sm"
                   type="button"
                   onClick={() => onRevoke?.(token._id)}
-                  className="h-8 gap-2 px-0 text-xs text-red-700 hover:bg-transparent hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                  className="h-8 gap-2 px-0 text-xs text-status-error-fg hover:bg-transparent hover:opacity-80"
                 >
                   <Trash2 size={14} />
                   Revoke
@@ -2784,6 +3025,14 @@ function Field({
   );
 }
 
+function GitHubIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 .7a11.5 11.5 0 0 0-3.64 22.4c.58.1.79-.25.79-.56v-2.02c-3.22.7-3.9-1.37-3.9-1.37-.52-1.34-1.29-1.7-1.29-1.7-1.05-.72.08-.7.08-.7 1.16.08 1.78 1.2 1.78 1.2 1.04 1.77 2.72 1.26 3.39.96.1-.75.4-1.26.74-1.55-2.57-.3-5.28-1.29-5.28-5.73 0-1.27.45-2.3 1.2-3.12-.12-.3-.52-1.48.11-3.08 0 0 .98-.31 3.16 1.19a10.9 10.9 0 0 1 5.75 0c2.18-1.5 3.16-1.19 3.16-1.19.63 1.6.23 2.78.11 3.08.75.82 1.2 1.85 1.2 3.12 0 4.46-2.71 5.43-5.3 5.72.42.36.79 1.07.79 2.16v3.02c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .7Z" />
+    </svg>
+  );
+}
+
 function useActiveSettingsView() {
   const navigate = useNavigate({ from: "/settings" });
   const search = useSearch({ from: "/settings" });
@@ -2809,6 +3058,14 @@ function useActiveSettingsView() {
     activeView,
     navigateToView,
     ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+    repo: typeof search.repo === "string" ? search.repo : undefined,
+    sourceRepo: typeof search.sourceRepo === "string" ? search.sourceRepo : undefined,
+    sourceExternalId:
+      typeof search.sourceExternalId === "string" ? search.sourceExternalId : undefined,
+    sourcePath: typeof search.sourcePath === "string" ? search.sourcePath : undefined,
+    sourceCommit: typeof search.sourceCommit === "string" ? search.sourceCommit : undefined,
+    sourceContentHash:
+      typeof search.sourceContentHash === "string" ? search.sourceContentHash : undefined,
   };
 }
 

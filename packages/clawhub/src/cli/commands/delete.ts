@@ -106,37 +106,47 @@ export async function cmdDeleteSkill(
 export async function cmdUndeleteSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillActionOptions,
+  options: SkillDeleteOptions,
   inputAllowed: boolean,
   labels: SkillActionLabels = undeleteLabels,
 ) {
   const ref = parseSkillRef(slugArg);
   const slug = ref.slug;
   const reason = normalizeReason(options);
+  const version = normalizeVersion(options.version);
+  if (version && reason) fail("--reason/--note apply only to whole-skill restoration");
   const allowPrompt = isInteractive() && inputAllowed !== false;
 
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(formatPrompt(labels, formatSkillRef(ref)));
+    const ok = await promptConfirm(
+      version
+        ? `Restore ${formatSkillRef(ref)} version ${version}? (restores the exact retained artifact; does not make it latest or restore tags)`
+        : formatPrompt(labels, formatSkillRef(ref)),
+    );
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createCrabLoader(`${labels.progress} ${formatSkillRef(ref)}`);
+  const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
+  const spinner = createCrabLoader(`${labels.progress} ${target}`);
   try {
-    const body = buildBody(reason, ref.ownerHandle);
+    const body = buildBody(reason, ref.ownerHandle, version);
     const result = await apiRequest(
       registry,
       {
         method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/undelete`,
+        path: version
+          ? `${ApiRoutes.skills}/${encodeURIComponent(slug)}/versions/${encodeURIComponent(version)}/restore`
+          : `${ApiRoutes.skills}/${encodeURIComponent(slug)}/undelete`,
         token,
         body,
+        ...(version ? { retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. ${labels.past} ${formatSkillRef(ref)}`);
+    spinner.succeed(`OK. ${labels.past} ${target}`);
     return parseArk(ApiV1DeleteResponseSchema, result, "Undelete response");
   } catch (error) {
     spinner.fail(formatError(error));
@@ -225,7 +235,7 @@ function normalizeVersion(value: string | undefined) {
 
 function formatPrompt(labels: SkillActionLabels, slug: string, version?: string) {
   if (version) {
-    return `${labels.verb} ${slug} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`;
+    return `${labels.verb} ${slug} version ${version}? (withdraws public access; the exact retained artifact can be restored, but the version number remains reserved; publish a replacement first if deleting the current latest version)`;
   }
   const suffix = labels.promptSuffix ? ` (${labels.promptSuffix})` : "";
   return `${labels.verb} ${slug}?${suffix}`;

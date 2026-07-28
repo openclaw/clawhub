@@ -25,6 +25,7 @@ export const LockfileSchema = type({
       version: "string|null",
       installedAt: "number",
       ownerHandle: "string?",
+      sourceRef: "string?",
       pinned: "boolean?",
       pinReason: "string?",
     },
@@ -109,6 +110,11 @@ export const ApiCliPublishResponseSchema = type({
   ok: "true",
   skillId: "string",
   versionId: "string",
+  status: '"pending"|"published"?',
+  slug: "string?",
+  version: "string?",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
 });
 
 export const CliSkillDeleteRequestSchema = type({
@@ -159,24 +165,75 @@ export const ApiV1SkillInstallResolveResponseSchema = type({
 export type ApiV1SkillInstallResolveResponse =
   (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 
+export const ApiV1SkillsShCatalogEntrySchema = type({
+  ref: "string",
+  route: "string",
+  displayName: "string",
+  summary: "string",
+  owner: {
+    handle: "string",
+    githubUrl: "string",
+  },
+  repository: "string",
+  githubPath: "string",
+  githubCommit: "string",
+  githubContentHash: "string",
+  sourceUrl: "string",
+  installs: "number",
+  security: {
+    verdict: '"clean"|"suspicious"',
+    source: '"clawhub"',
+    attemptId: "string",
+    scannedAt: "number",
+  },
+  install: {
+    ok: "true",
+    slug: "string",
+    installKind: '"github"',
+    github: {
+      repo: "string",
+      path: "string",
+      commit: "string",
+      contentHash: "string",
+      sourceUrl: "string",
+    },
+  },
+});
+export type ApiV1SkillsShCatalogEntry = (typeof ApiV1SkillsShCatalogEntrySchema)[inferred];
+
 export const CliTelemetryInstallRequestSchema = type({
   event: '"install"',
   slug: "string",
+  ownerHandle: "string?",
+  sourceRef: "string?",
+  sourceKind: '"skills-sh"?',
+  sourceRepository: "string?",
+  sourcePath: "string?",
+  sourceUrl: "string?",
+  canonicalRef: "string?",
+  clawhubScan: '"unscanned"|"scanned"?',
+  trustLabel: "string?",
   version: "string?",
   // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",
   rootLabel: "string?",
-}).or({
-  // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
-  roots: type({
-    rootId: "string",
-    label: "string",
-    skills: type({
-      slug: "string",
-      version: "string|null?",
+})
+  .or({
+    event: '"plugin_install"',
+    packageName: "string",
+    version: "string?",
+  })
+  .or({
+    // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
+    roots: type({
+      rootId: "string",
+      label: "string",
+      skills: type({
+        slug: "string",
+        version: "string|null?",
+      }).array(),
     }).array(),
-  }).array(),
-});
+  });
 export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 
 export const ApiCliTelemetryInstallResponseSchema = type({
@@ -372,6 +429,26 @@ export const ApiV1SkillModerationResponseSchema = type({
   }).or("null"),
 });
 
+export const SkillVersionRevokeRequestSchema = type({
+  state: '"revoked"',
+  reason: "string",
+  ownerHandle: "string?",
+});
+export type SkillVersionRevokeRequest = (typeof SkillVersionRevokeRequestSchema)[inferred];
+
+export const ApiV1SkillVersionRevokeResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  versionId: "string",
+  alreadyRevoked: "boolean",
+  replacementVersion: "string|null",
+  skillHidden: "boolean",
+});
+export type ApiV1SkillVersionRevokeResponse =
+  (typeof ApiV1SkillVersionRevokeResponseSchema)[inferred];
+
 export const SkillReportStatusSchema = type('"open"|"confirmed"|"dismissed"');
 export type SkillReportStatus = (typeof SkillReportStatusSchema)[inferred];
 export const SkillReportFinalActionSchema = type('"none"|"hide"');
@@ -520,6 +597,26 @@ export const ApiV1SkillRescanResponseSchema = type({
   alreadyQueued: "boolean",
 });
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
+
+export const ApiV1SkillHardDeleteRequestSchema = type({
+  ownerHandle: "string",
+  reason: "string",
+  dryRun: "boolean?",
+  confirmationToken: "string?",
+});
+export type ApiV1SkillHardDeleteRequest = (typeof ApiV1SkillHardDeleteRequestSchema)[inferred];
+
+export const ApiV1SkillHardDeleteResponseSchema = type({
+  ok: "true",
+  skillId: "string",
+  slug: "string",
+  ownerHandle: "string",
+  displayName: "string",
+  dryRun: "boolean",
+  scheduled: "boolean",
+  confirmationToken: "string",
+});
+export type ApiV1SkillHardDeleteResponse = (typeof ApiV1SkillHardDeleteResponseSchema)[inferred];
 
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
 export type ApiV1SkillScanStatus = (typeof ApiV1SkillScanStatusSchema)[inferred];
@@ -772,6 +869,11 @@ export const ApiV1PublishResponseSchema = type({
   ok: "true",
   skillId: "string",
   versionId: "string",
+  status: '"pending"|"published"?',
+  slug: "string?",
+  version: "string?",
+  publicationStatus: '"pending"|"published"?',
+  attemptId: "string?",
 });
 
 export const ApiV1DeleteResponseSchema = type({

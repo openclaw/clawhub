@@ -94,13 +94,9 @@ export function Dashboard() {
   const canManage = selectedPublisher?.role !== "publisher";
 
   const skillsQueryArgs =
-    selectedPublisher?.publisher?.kind === "user" && me?._id
-      ? { ownerUserId: me._id }
-      : activePublisherId
-        ? { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"] }
-        : me?._id
-          ? { ownerUserId: me._id }
-          : "skip";
+    publishers === undefined || !activePublisherId
+      ? "skip"
+      : { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"] };
   const {
     results: paginatedSkills,
     status: skillsStatus,
@@ -188,6 +184,12 @@ export function Dashboard() {
     const timer = window.setTimeout(() => setLoadTimedOut(true), DASHBOARD_LOAD_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
   }, [isLoading]);
+
+  useEffect(() => {
+    if (!skillsQuerySkipped && skills.length === 0 && skillsStatus === "CanLoadMore") {
+      loadMore(50);
+    }
+  }, [loadMore, skills.length, skillsQuerySkipped, skillsStatus]);
 
   if (isAuthLoading) {
     return <DashboardSkeleton />;

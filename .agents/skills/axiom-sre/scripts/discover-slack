@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Gilfoyle Slack Discovery
+# Usage: ./scripts/discover-slack [env ...]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_SCRIPT="$SCRIPT_DIR/config"
+
+# Colors for output
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+if [[ ! -f "$CONFIG_SCRIPT" ]]; then
+    exit 1
+fi
+
+if [[ $# -gt 0 ]]; then
+    workspaces="$*"
+else
+    workspaces=$("$CONFIG_SCRIPT" --list slack)
+    if [[ "$workspaces" == "(none configured)" ]]; then
+        exit 0
+    fi
+fi
+
+echo -e "${BLUE}=== Slack Workspaces ===${NC}"
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+current_time_ms() {
+    local t=${EPOCHREALTIME:-$(date +%s).000}
+    local s=${t%.*}
+    local us=${t#*.}
+    us=$(printf "%-06s" "$us" | cut -c1-6)
+    echo $(( s * 1000 + 10#${us%???} ))
+}
+
+discover_ws() {
+    local ws="$1"
+    local out="$TMP_DIR/$ws"
+    
+    {
+        START_TIME=$(current_time_ms)
+        echo -e "workspace: ${BOLD}$ws${NC}"
+        
+        # List public channels
+        response=$("$SCRIPT_DIR/slack" "$ws" conversations.list types=public_channel exclude_archived=true limit=20 2>/dev/null || echo "")
+        
+        END_TIME=$(current_time_ms)
+        DURATION=$(( END_TIME - START_TIME ))
+        
+        # slack-fmt usually returns a clean list. If raw, we'd need jq.
+        # But script usage defaults to fmt. Let's check if it worked.
+        
+        # slack-fmt outputs "# N channels" summary then "ID name" per channel
+        # Extract count from summary line
+        summary=$(echo "$response" | grep "^# " | head -n1)
+        count=$(echo "$summary" | sed -n 's/^# \([0-9]*\) channels.*/\1/p')
+        count="${count:-0}"
+        
+        if [[ "$count" -gt 0 ]]; then
+            echo -e "  ${GREEN}$count channels found${NC} (${DURATION}ms)"
+            # Show channel lines (not the summary)
+            echo "$response" | grep -v "^#" | head -n 10 | sed 's/^/  - /'
+            if [[ "$count" -gt 10 ]]; then
+                echo "  - ... (and $((count - 10)) more)"
+            fi
+        else
+            echo -e "  ${RED}No channels found or auth failed${NC} (${DURATION}ms)"
+        fi
+    } > "$out" 2>&1
+}
+
+for ws in $workspaces; do
+    discover_ws "$ws" &
+done
+wait
+
+for ws in $workspaces; do
+    [[ -f "$TMP_DIR/$ws" ]] && cat "$TMP_DIR/$ws"
+done

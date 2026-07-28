@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ClipboardList,
   GitBranch,
+  Megaphone,
   PackageSearch,
   Plug,
   UserRound,
@@ -52,12 +53,16 @@ import {
   type PublisherAbuseReviewItem,
   type PublisherAbuseSignalStatus,
   type PublisherAbuseTab,
+  type PromotionEntry,
+  type PromotionInput,
+  type PromotionStatus,
   type RecentVersionEntry,
   type ReportedSkillEntry,
   type SkillBySlugResult,
   USER_BAN_REASON_MAX_LENGTH,
 } from "./-management/managementShared";
 import { PluginsPage } from "./-management/PluginsPage";
+import { PromotionsPage } from "./-management/PromotionsPage";
 import { RecentPushesPage } from "./-management/RecentPushesPage";
 import { ReportsPage } from "./-management/ReportsPage";
 import { SkillsPage } from "./-management/SkillsPage";
@@ -71,6 +76,7 @@ const MANAGEMENT_VIEWS = new Set<string>([
   "publishers",
   "skills",
   "plugins",
+  "promotions",
   "duplicates",
   "recent",
   "audit",
@@ -243,6 +249,20 @@ export function Management() {
     staff && abuseViewActive ? {} : "skip",
   );
 
+  const {
+    results: promotionResults,
+    status: promotionPageStatus,
+    loadMore: loadMorePromotions,
+  } = usePaginatedQuery(
+    api.promotions.listForStaff,
+    admin && activeView === "promotions" ? {} : "skip",
+    { initialNumItems: 25 },
+  );
+  const promotions =
+    promotionPageStatus === "LoadingFirstPage" ? undefined : (promotionResults as PromotionEntry[]);
+  const createPromotion = useMutation(api.promotions.create);
+  const updatePromotion = useMutation(api.promotions.update);
+  const setPromotionStatus = useMutation(api.promotions.setStatus);
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
   const unbanUser = useMutation(api.users.unbanUser);
@@ -257,13 +277,22 @@ export function Management() {
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
   const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
+  const markPublisherAbuseNominationReviewed = useMutation(
+    api.publisherAbuse.markPublisherAbuseNominationReviewed,
+  );
   const setPublisherAbuseAutobanEnabled = useMutation(
     api.publisherAbuse.setPublisherAbuseAutobanEnabled,
   );
   const snoozePublisherAbuseSignal = useMutation(api.publisherAbuse.snoozePublisherAbuseSignal);
   const dismissPublisherAbuseSignal = useMutation(api.publisherAbuse.dismissPublisherAbuseSignal);
+  const reviewPublisherAbuseSignalsBatch = useMutation(
+    api.publisherAbuse.reviewPublisherAbuseSignalsBatch,
+  );
   const reopenPublisherAbuseSignal = useMutation(api.publisherAbuse.reopenPublisherAbuseSignal);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
+  const startPublisherAbuseSignalScan = useAction(
+    api.publisherAbuseTemporalScan.startPublisherAbuseSignalScan,
+  );
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
   const [selectedOwner, setSelectedOwner] = useState<Id<"users"> | "">("");
@@ -642,7 +671,7 @@ export function Management() {
   const requestSnoozePublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Snooze ${item.signal.skillDisplayName}?`,
-      body: "Hides this signal from the default review queue for 14 days. If it reappears after that, it will reopen and notify Hermit again.",
+      body: "Hides this signal for at least 14 days and acknowledges the evidence shown now. It reopens only if fresh activity crosses the lower repeat threshold.",
       confirmLabel: "Snooze 14 days",
       reason: {
         label: "Note (optional)",
@@ -651,6 +680,30 @@ export function Management() {
       onConfirm: (note) => {
         void snoozePublisherAbuseSignal({ signalId: item.signal._id, note, days: 14 })
           .then(() => toast.success("Signal snoozed."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestMarkPublisherAbuseNominationReviewed = (item: PublisherAbuseReviewItem) => {
+    const label = item.nomination.handleSnapshot;
+    const note = publisherAbuseNotes.trim() || undefined;
+    setConfirmRequest({
+      title: `Mark ${label} reviewed?`,
+      body: "Removes this nomination from the active abuse queue without banning the user. The score and review note stay in the resolved history.",
+      confirmLabel: "Mark reviewed",
+      onConfirm: () => {
+        void markPublisherAbuseNominationReviewed({
+          nominationId: item.nomination._id,
+          expectedLatestScoreId: item.nomination.latestScoreId,
+          expectedUpdatedAt: item.nomination.updatedAt,
+          note,
+        })
+          .then(() => {
+            toast.success("Nomination marked reviewed.");
+            setPublisherAbuseNotes("");
+            setSelectedPublisherAbuseNominationId(null);
+          })
           .catch((error) => toast.error(formatMutationError(error)));
       },
     });
@@ -674,6 +727,52 @@ export function Management() {
     });
   };
 
+  const requestSnoozePublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
+    const count = signalIds.length;
+    if (count === 0) return;
+    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
+    setConfirmRequest({
+      title: `Snooze ${label}?`,
+      body: "Hides the selected signals for 14 days and acknowledges the evidence shown now. Each signal reopens only if fresh activity crosses the repeat threshold.",
+      confirmLabel: `Snooze ${label}`,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you snoozing these signals?",
+      },
+      onConfirm: (note) => {
+        void reviewPublisherAbuseSignalsBatch({
+          signalIds,
+          status: "snoozed",
+          note,
+          days: 14,
+        })
+          .then((result) => toast.success(`${result.updated} signals snoozed.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestDismissPublisherAbuseSignals = (signalIds: Id<"publisherAbuseSignals">[]) => {
+    const count = signalIds.length;
+    if (count === 0) return;
+    const label = `${count} ${count === 1 ? "signal" : "signals"}`;
+    setConfirmRequest({
+      title: `Dismiss ${label}?`,
+      body: "Archives the selected signals and removes them from the Open queue. They will not notify Hermit unless a moderator reopens them.",
+      confirmLabel: `Dismiss ${label}`,
+      destructive: true,
+      reason: {
+        label: "Note (optional)",
+        placeholder: "Why are you dismissing these signals?",
+      },
+      onConfirm: (note) => {
+        void reviewPublisherAbuseSignalsBatch({ signalIds, status: "dismissed", note })
+          .then((result) => toast.success(`${result.updated} signals dismissed.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
   const requestReopenPublisherAbuseSignal = (item: PublisherAbuseSignalEntry) => {
     setConfirmRequest({
       title: `Reopen ${item.signal.skillDisplayName}?`,
@@ -689,6 +788,46 @@ export function Management() {
           .catch((error) => toast.error(formatMutationError(error)));
       },
     });
+  };
+
+  const handleCreatePromotion = (input: PromotionInput) =>
+    createPromotion(input)
+      .then(() => {
+        toast.success("Promotion created as draft.");
+        return true;
+      })
+      .catch((error) => {
+        toast.error(formatMutationError(error));
+        return false;
+      });
+
+  const handleUpdatePromotion = (targetSlug: string, input: PromotionInput) =>
+    updatePromotion({ targetSlug, ...input })
+      .then(() => {
+        toast.success("Promotion updated.");
+        return true;
+      })
+      .catch((error) => {
+        toast.error(formatMutationError(error));
+        return false;
+      });
+
+  const handleSetPromotionStatus = (slug: string, status: PromotionStatus) => {
+    const apply = () => {
+      void setPromotionStatus({ slug, status })
+        .then(() => toast.success(`Promotion "${slug}" is now ${status}.`))
+        .catch((error) => toast.error(formatMutationError(error)));
+    };
+    if (status === "active") {
+      setConfirmRequest({
+        title: `Activate "${slug}"?`,
+        body: "Active promotions inside their window are served publicly to every OpenClaw CLI.",
+        confirmLabel: "Activate promotion",
+        onConfirm: apply,
+      });
+      return;
+    }
+    apply();
   };
 
   const requestTogglePublisherAbuseAutoban = () => {
@@ -773,6 +912,8 @@ export function Management() {
             }}
             onToggleAutoban={requestTogglePublisherAbuseAutoban}
             onDismissSignal={requestDismissPublisherAbuseSignal}
+            onDismissSignals={requestDismissPublisherAbuseSignals}
+            onMarkReviewed={requestMarkPublisherAbuseNominationReviewed}
             onLoadMore={() => {
               if (publisherAbuseTab === "signals") {
                 loadMorePublisherAbuseSignals(25);
@@ -781,6 +922,25 @@ export function Management() {
               }
             }}
             onRefresh={() => {
+              if (publisherAbuseTab === "signals") {
+                setConfirmRequest({
+                  title: "Rescan publisher abuse signals?",
+                  body: "Re-checks every active skill for all download/install signal types and refreshes the Signals tab. This can take a while.",
+                  confirmLabel: "Run signal scan",
+                  onConfirm: () => {
+                    void startPublisherAbuseSignalScan({})
+                      .then((result) =>
+                        toast.success(
+                          "alreadyRunning" in result && result.alreadyRunning
+                            ? "Signal scan is already running."
+                            : "Signal scan started.",
+                        ),
+                      )
+                      .catch((error) => toast.error(formatMutationError(error)));
+                  },
+                });
+                return;
+              }
               setConfirmRequest({
                 title: "Run a new abuse scan?",
                 body: "Re-scores every publisher in the catalog against the latest model. This normally runs automatically every few days; a manual run can take a while.",
@@ -802,6 +962,7 @@ export function Management() {
               setSelectedPublisherAbuseNominationId(nominationId);
             }}
             onSnoozeSignal={requestSnoozePublisherAbuseSignal}
+            onSnoozeSignals={requestSnoozePublisherAbuseSignals}
           />
         ) : null}
 
@@ -907,6 +1068,22 @@ export function Management() {
           <ManagementPlaceholder
             title="Users"
             description="User administration is available to admins."
+          />
+        ) : null}
+        {admin && activeView === "promotions" ? (
+          <PromotionsPage
+            promotions={promotions}
+            pageStatus={promotionPageStatus}
+            onCreate={handleCreatePromotion}
+            onLoadMore={() => loadMorePromotions(25)}
+            onUpdate={handleUpdatePromotion}
+            onSetStatus={handleSetPromotionStatus}
+          />
+        ) : null}
+        {!admin && activeView === "promotions" ? (
+          <ManagementPlaceholder
+            title="Promotions"
+            description="Promotion administration is available to admins."
           />
         ) : null}
         {activeView === "overview" ? (
@@ -1034,6 +1211,14 @@ function ManagementSidebar({
             label="Plugins"
             view="plugins"
           />
+          {admin ? (
+            <ManagementSidebarLink
+              active={activeView === "promotions"}
+              icon={<Megaphone size={15} />}
+              label="Promotions"
+              view="promotions"
+            />
+          ) : null}
         </div>
       </nav>
     </aside>
@@ -1084,6 +1269,7 @@ const MANAGEMENT_VIEW_LABELS: Record<ManagementView, string> = {
   publishers: "Publishers",
   skills: "Skills",
   plugins: "Plugins",
+  promotions: "Promotions",
   duplicates: "Duplicate candidates",
   recent: "Recent pushes",
   audit: "Audit log",

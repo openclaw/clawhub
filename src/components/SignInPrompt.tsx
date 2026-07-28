@@ -77,7 +77,7 @@ export function SignInPrompt({
         }}
       />
       <section className="relative z-10 mx-auto w-full max-w-[980px]">
-        <div className="relative isolate flex min-w-0 flex-col gap-6 overflow-hidden rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] px-5 pb-10 pt-7 shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-8 sm:pb-10">
+        <div className="relative isolate flex min-w-0 flex-col gap-6 overflow-hidden rounded-[var(--oc-radius-surface)] border border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)] px-5 pb-10 pt-7 shadow-[var(--oc-shadow-lg)] sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-8 sm:pb-10">
           <div className="min-w-0">
             <span className="mb-4 inline-flex h-11 w-11 items-center justify-center rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] text-[color:var(--ink-soft)] sm:h-12 sm:w-12">
               <Icon size={21} />
@@ -92,7 +92,7 @@ export function SignInPrompt({
             ) : null}
             {visibleError ? (
               <p
-                className="mt-3 rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300"
+                className="mt-3 rounded-[var(--oc-radius-control)] border border-[color:color-mix(in_srgb,var(--oc-status-error-fg)_30%,var(--oc-border-subtle))] bg-[color:var(--oc-status-error-bg)] px-3 py-2 text-sm text-[color:var(--oc-status-error-fg)]"
                 role="alert"
               >
                 <AuthErrorMessage message={visibleError} />{" "}

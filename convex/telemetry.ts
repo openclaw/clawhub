@@ -4,7 +4,14 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
+import { normalizePackageName } from "./lib/packageRegistry";
+import { insertPackageInstallStatEvent } from "./lib/packageStatEvents";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
+import {
+  getSkillBySlugForPublisher,
+  getSkillSlugAliasBySlugForPublisher,
+  resolvePublisherByOwnerHandle,
+} from "./lib/skills/slugResolution";
 import { insertStatEvent } from "./skillStatEvents";
 
 const DAY_MS = 86_400_000;
@@ -12,14 +19,34 @@ const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
 const PRUNE_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
 const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
+const INSTALL_TELEMETRY_SLUG_MATCH_LIMIT = 25;
 
 export const reportCliInstallInternal = internalMutation({
   args: {
     userId: v.id("users"),
     slug: v.string(),
+    ownerHandle: v.optional(v.string()),
+    sourceRef: v.optional(v.string()),
+    sourceKind: v.optional(v.literal("skills-sh")),
+    sourceRepository: v.optional(v.string()),
+    sourcePath: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    canonicalRef: v.optional(v.string()),
+    clawhubScan: v.optional(v.union(v.literal("unscanned"), v.literal("scanned"))),
+    trustLabel: v.optional(v.string()),
     version: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // Unclaimed catalog installs have no native skill row yet. Keep the source
+    // identity in the request without guessing from a same-slug native skill.
+    const sourceRef = args.sourceRef?.trim().toLowerCase();
+    if (
+      args.sourceKind === "skills-sh" ||
+      sourceRef?.startsWith("skills-sh:") ||
+      sourceRef?.startsWith("skills-sh/")
+    ) {
+      return;
+    }
     await upsertUserSkillInstall(ctx, args);
   },
 });
@@ -46,6 +73,68 @@ export const reportCliLegacyInstallBatchInternal = internalMutation({
         version: entry.version,
       });
     }
+  },
+});
+
+export const reportCliPluginInstallInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    packageName: v.string(),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const packageName = normalizePackageName(args.packageName);
+    if (!packageName) return;
+    const pkg = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", packageName))
+      .unique();
+    if (!pkg || pkg.softDeletedAt) return;
+
+    const now = Date.now();
+    const version = args.version?.trim() || undefined;
+    const existing = await ctx.db
+      .query("userPackageInstalls")
+      .withIndex("by_user_package", (q) => q.eq("userId", args.userId).eq("packageId", pkg._id))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        lastSeenAt: now,
+        lastVersion: version ?? existing.lastVersion,
+      });
+      if (existing.metricRecordedAt === undefined) {
+        try {
+          await insertPackageInstallStatEvent(ctx, {
+            packageId: pkg._id,
+            occurredAt: now,
+          });
+        } catch {
+          // A later successful report retries the aggregate metric.
+          return;
+        }
+        await ctx.db.patch(existing._id, { metricRecordedAt: now });
+      }
+      return;
+    }
+
+    const installId = await ctx.db.insert("userPackageInstalls", {
+      userId: args.userId,
+      packageId: pkg._id,
+      firstSeenAt: now,
+      lastSeenAt: now,
+      lastVersion: version,
+    });
+    try {
+      await insertPackageInstallStatEvent(ctx, {
+        packageId: pkg._id,
+        occurredAt: now,
+      });
+    } catch {
+      // The durable install relationship is authoritative; aggregate metric
+      // processing is best-effort and will retry on a later successful report.
+      return;
+    }
+    await ctx.db.patch(installId, { metricRecordedAt: now });
   },
 });
 
@@ -91,16 +180,16 @@ export const clearUserTelemetryInternal = internalMutation({
 
 async function upsertUserSkillInstall(
   ctx: MutationCtx,
-  params: { userId: Id<"users">; slug: string; version?: string },
+  params: { userId: Id<"users">; slug: string; ownerHandle?: string; version?: string },
 ) {
   const slug = params.slug.trim().toLowerCase();
   if (!slug) return;
 
-  const skill = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
-    .unique();
-  if (!skill || skill.softDeletedAt) return;
+  const skill = await resolveInstallTelemetrySkill(ctx, {
+    slug,
+    ownerHandle: params.ownerHandle,
+  });
+  if (!skill) return;
 
   const now = Date.now();
   const duplicate = await markInstallTelemetrySeen(ctx, {
@@ -134,6 +223,32 @@ async function upsertUserSkillInstall(
   await insertStatEvent(ctx, { skillId: skill._id, kind: "install_new" });
 }
 
+async function resolveInstallTelemetrySkill(
+  ctx: MutationCtx,
+  params: { slug: string; ownerHandle?: string },
+) {
+  if (params.ownerHandle) {
+    const { publisher } = await resolvePublisherByOwnerHandle(ctx, params.ownerHandle);
+    if (!publisher) return null;
+    let skill = await getSkillBySlugForPublisher(ctx, params.slug, publisher);
+    if (!skill) {
+      const alias = await getSkillSlugAliasBySlugForPublisher(ctx, params.slug, publisher);
+      skill = alias ? await ctx.db.get(alias.skillId) : null;
+    }
+    return skill && !skill.softDeletedAt ? skill : null;
+  }
+
+  // Older clients only report a bare slug. Once slugs are owner-scoped,
+  // telemetry must not guess which publisher should receive the install.
+  const candidates = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", params.slug))
+    .take(INSTALL_TELEMETRY_SLUG_MATCH_LIMIT + 1);
+  if (candidates.length > INSTALL_TELEMETRY_SLUG_MATCH_LIMIT) return null;
+  const activeSkills = candidates.filter((candidate) => !candidate.softDeletedAt);
+  return activeSkills.length === 1 ? activeSkills[0] : null;
+}
+
 async function clearTelemetryForUser(
   ctx: MutationCtx,
   params: { userId: Id<"users">; clearStartedAt: number },
@@ -162,6 +277,27 @@ async function clearTelemetryForUser(
     await ctx.db.delete(entry._id);
   }
   if (installs.length === CLEAR_INSTALLS_BATCH_SIZE) {
+    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
+    return;
+  }
+
+  const packageInstalls = await ctx.db
+    .query("userPackageInstalls")
+    .withIndex("by_user_lastSeenAt", (q) =>
+      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
+    )
+    .take(CLEAR_INSTALLS_BATCH_SIZE);
+  for (const entry of packageInstalls) {
+    if (entry.metricRecordedAt !== undefined) {
+      await insertPackageInstallStatEvent(ctx, {
+        packageId: entry.packageId,
+        kind: "install_clear",
+        occurredAt: entry.metricRecordedAt,
+      });
+    }
+    await ctx.db.delete(entry._id);
+  }
+  if (packageInstalls.length === CLEAR_INSTALLS_BATCH_SIZE) {
     await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
     return;
   }

@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
 import {
   Ban,
   Clock3,
@@ -13,7 +14,9 @@ import {
   XCircle,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
+import { MetricTrendCard, MetricTrendCardSkeleton } from "../../components/MetricTrendCard";
 import { Badge, type BadgeProps } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card } from "../../components/ui/card";
@@ -25,6 +28,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Textarea } from "../../components/ui/textarea";
+import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { buildPublisherProfileHref, buildSkillDetailHref } from "../../lib/ownerRoute";
 import {
   formatPercent,
@@ -41,6 +45,8 @@ import {
   type PublisherAbuseTab,
   USER_BAN_REASON_MAX_LENGTH,
 } from "./managementShared";
+
+const MAX_BULK_SIGNAL_SELECTION = 50;
 
 export function AbusePage({
   admin,
@@ -66,11 +72,14 @@ export function AbusePage({
   onChangeTab,
   onClose,
   onDismissSignal,
+  onDismissSignals,
+  onMarkReviewed,
   onLoadMore,
   onRefresh,
   onReopenSignal,
   onSelect,
   onSnoozeSignal,
+  onSnoozeSignals,
   onToggleAutoban,
 }: {
   admin: boolean;
@@ -102,15 +111,21 @@ export function AbusePage({
   onChangeTab: (value: PublisherAbuseTab) => void;
   onClose: () => void;
   onDismissSignal: (item: PublisherAbuseSignalEntry) => void;
+  onDismissSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
+  onMarkReviewed: (item: PublisherAbuseReviewItem) => void;
   onLoadMore: () => void;
   onRefresh: () => void;
   onReopenSignal: (item: PublisherAbuseSignalEntry) => void;
   onSelect: (value: Id<"publisherAbuseReviewNominations">) => void;
   onSnoozeSignal: (item: PublisherAbuseSignalEntry) => void;
+  onSnoozeSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onToggleAutoban: () => void;
 }) {
   const [selectedSignalItem, setSelectedSignalItem] = useState<PublisherAbuseSignalEntry | null>(
     null,
+  );
+  const [selectedSignalIds, setSelectedSignalIds] = useState<Set<Id<"publisherAbuseSignals">>>(
+    new Set(),
   );
   const selectedSignalId = selectedSignalItem?.signal._id ?? null;
   useEffect(() => {
@@ -128,21 +143,43 @@ export function AbusePage({
       setSelectedSignalItem(null);
     }
   }, [selectedSignalId, signalItems, signalPageStatus, tab]);
+  useEffect(() => {
+    setSelectedSignalIds(new Set());
+  }, [signalStatus, tab]);
+  useEffect(() => {
+    const visibleSignalIds = new Set(signalItems.map((item) => item.signal._id));
+    setSelectedSignalIds((current) => {
+      const next = new Set([...current].filter((signalId) => visibleSignalIds.has(signalId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [signalItems]);
   const latestRun = dashboard?.latestRun ?? null;
+  const latestSignalRun = dashboard?.latestSignalRun ?? null;
+  const displayedRun = tab === "signals" ? latestSignalRun : latestRun;
+  const displayedScannedCount =
+    tab === "signals"
+      ? (latestSignalRun?.temporalSampleSize ?? latestSignalRun?.scannedPublishers)
+      : displayedRun?.scannedPublishers;
+  const signalFailureCount = latestSignalRun?.transientErrorCount ?? 0;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
   const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId);
   const visiblePending = dashboard ? getPublisherAbuseVisiblePendingItems(dashboard) : [];
-  const potentialBan = Math.max(
-    dashboard?.latestRun?.potentialBanCandidateCount ?? 0,
-    visiblePending.filter((item) => item.nomination.label === "potential_ban_candidate").length,
-  );
-  const review = Math.max(
-    dashboard?.latestRun?.reviewCount ?? 0,
-    visiblePending.filter((item) => item.nomination.label === "review").length,
-  );
-  const totalPending = Math.max(potentialBan + review, visiblePending.length);
-  const resolved = tab === "resolved" ? items.length : (dashboard?.recentResolvedItems.length ?? 0);
+  const visiblePotentialBan = visiblePending.filter(
+    (item) => item.nomination.label === "potential_ban_candidate",
+  ).length;
+  const visibleReview = visiblePending.filter((item) => item.nomination.label === "review").length;
+  const potentialBan =
+    dashboard?.pendingPotentialBanCandidateCount ??
+    Math.max(dashboard?.latestRun?.potentialBanCandidateCount ?? 0, visiblePotentialBan);
+  const review =
+    dashboard?.pendingReviewCount ??
+    Math.max(dashboard?.latestRun?.reviewCount ?? 0, visibleReview);
+  const totalPending =
+    dashboard?.pendingCount ?? Math.max(potentialBan + review, visiblePending.length);
+  const resolvedVisibleCount = dashboard?.recentResolvedItems.length ?? 0;
+  const resolved =
+    tab === "resolved" ? Math.max(items.length, resolvedVisibleCount) : resolvedVisibleCount;
   const dashboardLoaded = dashboard !== undefined;
   const nominationPageLoaded = pageStatus !== "LoadingFirstPage";
   const loaded = dashboardLoaded && nominationPageLoaded;
@@ -160,16 +197,30 @@ export function AbusePage({
             : totalPending;
   const totalForTab = loaded ? Math.max(latestRunTotalForTab, items.length) : latestRunTotalForTab;
   const currentPageTotalForTab = loaded ? totalForTab : 0;
+  const canLoadMore = pageStatus === "CanLoadMore";
+  const loadingMore = pageStatus === "LoadingMore";
+  const nominationPageHasMore = canLoadMore || loadingMore;
   const potentialBanTabCount = Math.max(
     potentialBan,
     tab === "potential_ban_candidate" ? currentPageTotalForTab : 0,
   );
+  const potentialBanTabHasMore =
+    dashboard?.pendingPotentialBanCandidateCountHasMore ||
+    (tab === "potential_ban_candidate" && nominationPageHasMore);
   const reviewTabCount = Math.max(review, tab === "review" ? currentPageTotalForTab : 0);
+  const reviewTabHasMore =
+    dashboard?.pendingReviewCountHasMore || (tab === "review" && nominationPageHasMore);
   const allPendingTabCount = Math.max(
     totalPending,
     tab === "all_pending" ? currentPageTotalForTab : 0,
     potentialBanTabCount + reviewTabCount,
   );
+  const allPendingTabHasMore =
+    dashboard?.pendingCountHasMore ||
+    potentialBanTabHasMore ||
+    reviewTabHasMore ||
+    (tab === "all_pending" && nominationPageHasMore);
+  const resolvedTabHasMore = tab === "resolved" && nominationPageHasMore;
   const signalTabCount = Math.max(
     signalDashboardCount,
     tab === "signals" && signalsLoaded ? signalLoadedCount : 0,
@@ -182,13 +233,29 @@ export function AbusePage({
     signalTabHasMore && signalTabCount > 0
       ? `${formatWholeNumber(signalTabCount)}+`
       : formatWholeNumber(signalTabCount);
-  const canLoadMore = pageStatus === "CanLoadMore";
-  const loadingMore = pageStatus === "LoadingMore";
+  const potentialBanTabCountLabel = formatAbuseTabCountLabel(
+    potentialBanTabCount,
+    potentialBanTabHasMore,
+  );
+  const reviewTabCountLabel = formatAbuseTabCountLabel(reviewTabCount, reviewTabHasMore);
+  const allPendingTabCountLabel = formatAbuseTabCountLabel(
+    allPendingTabCount,
+    allPendingTabHasMore,
+  );
+  const resolvedTabCountLabel = formatAbuseTabCountLabel(resolved, resolvedTabHasMore);
   const signalsCanLoadMore = signalPageStatus === "CanLoadMore";
   const signalsLoadingMore = signalPageStatus === "LoadingMore";
+  const activeNominationHasMore =
+    tab === "potential_ban_candidate"
+      ? potentialBanTabHasMore
+      : tab === "review"
+        ? reviewTabHasMore
+        : tab === "resolved"
+          ? resolvedTabHasMore
+          : allPendingTabHasMore;
   const nominationCountLabel =
-    loaded && (canLoadMore || loadingMore)
-      ? `Showing ${formatWholeNumber(items.length)}+ nominations`
+    loaded && (nominationPageHasMore || activeNominationHasMore)
+      ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)}+ nominations`
       : loaded
         ? `Showing ${formatWholeNumber(items.length)} of ${formatWholeNumber(totalForTab)} nominations`
         : "Loading…";
@@ -212,11 +279,20 @@ export function AbusePage({
     : "Auto-ban loading";
   const autobanToggleLabel = autobanEnabled ? "Turn off auto-ban" : "Turn on auto-ban";
   const AutobanStatusIcon = autobanEnabled ? ShieldCheck : ShieldOff;
+  const scanRunning = displayedRun?.status === "running";
+  const scanStatusClass =
+    displayedRun?.status === "completed"
+      ? "is-complete"
+      : displayedRun?.status === "failed"
+        ? "is-failed"
+        : displayedRun?.status === "running"
+          ? "is-running"
+          : "is-idle";
 
   return (
     <section className="pa" aria-labelledby="pa-title">
       <header className="pa-head">
-        <div>
+        <div className="pa-head-copy">
           <h2 id="pa-title" className="section-title pa-title">
             Publisher abuse review
           </h2>
@@ -224,65 +300,111 @@ export function AbusePage({
             Statistical publisher abuse signals from the latest scoring run.
           </p>
         </div>
-        <div className="pa-run">
+        <div
+          className="pa-run"
+          aria-label={tab === "signals" ? "Signal scan status" : "Publisher scan status"}
+        >
+          <div className="pa-run-state">
+            <span className="pa-run-eyebrow">
+              {tab === "signals" ? "Latest signal scan" : "Latest publisher scan"}
+            </span>
+            <strong className={`pa-run-status ${scanStatusClass}`}>
+              <span className="pa-run-status-dot" aria-hidden="true" />
+              {displayedRun
+                ? formatPublisherAbuseRunStatus(displayedRun.status)
+                : dashboardLoaded
+                  ? "No scans yet"
+                  : "Loading"}
+            </strong>
+          </div>
           <dl className="pa-run-meta">
             <div>
-              <dt>Last scan</dt>
-              <dd
-                className={
-                  latestRun?.status === "completed"
-                    ? "pa-run-ok"
-                    : latestRun?.status === "failed"
-                      ? "pa-run-bad"
-                      : undefined
-                }
-              >
-                {latestRun
-                  ? formatPublisherAbuseRunStatus(latestRun.status)
-                  : dashboardLoaded
-                    ? "No scans yet"
-                    : "Loading"}
+              <dt>{tab === "signals" ? "Coverage" : "Scanned"}</dt>
+              <dd>
+                {formatWholeNumber(displayedScannedCount)}
+                {tab === "signals" ? " skills checked" : " publishers"}
               </dd>
             </div>
-            <div>
-              <dt>Scanned</dt>
-              <dd>{formatWholeNumber(latestRun?.scannedPublishers)}</dd>
-            </div>
-            <div>
-              <dt>Scored</dt>
-              <dd>{formatWholeNumber(latestRun?.scoredPublishers)}</dd>
-            </div>
+            {tab !== "signals" ? (
+              <div>
+                <dt>Scored</dt>
+                <dd>{formatWholeNumber(displayedRun?.scoredPublishers)}</dd>
+              </div>
+            ) : null}
           </dl>
+          {tab === "signals" ? (
+            <div className="pa-scan-policy">
+              <strong>Manual review only</strong>
+              <span>Signals never auto-ban publishers.</span>
+            </div>
+          ) : (
+            <div className="pa-autoban" aria-label="Publisher abuse auto-ban">
+              <span className={autobanEnabled ? "pa-autoban-status is-on" : "pa-autoban-status"}>
+                <AutobanStatusIcon size={14} />
+                {autobanStatusLabel}
+              </span>
+              <Button
+                type="button"
+                variant={autobanEnabled ? "destructive" : "primary"}
+                size="sm"
+                disabled={!admin || !autobanLoaded}
+                onClick={onToggleAutoban}
+              >
+                <Power size={14} />
+                {admin ? autobanToggleLabel : "Admins only"}
+              </Button>
+            </div>
+          )}
           <div className="pa-rescan">
-            <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
-              <RefreshCcw size={14} />
-              Run new scan
-            </Button>
-            <span className="pa-rescan-hint">Re-scores every publisher</span>
-          </div>
-          <div className="pa-autoban" aria-label="Publisher abuse auto-ban">
-            <span className={autobanEnabled ? "pa-autoban-status is-on" : "pa-autoban-status"}>
-              <AutobanStatusIcon size={14} />
-              {autobanStatusLabel}
-            </span>
             <Button
               type="button"
-              variant={autobanEnabled ? "destructive" : "primary"}
+              variant="outline"
               size="sm"
-              disabled={!admin || !autobanLoaded}
-              onClick={onToggleAutoban}
+              disabled={scanRunning}
+              aria-label={tab === "signals" && scanRunning ? "Scanning signals" : undefined}
+              onClick={onRefresh}
             >
-              <Power size={14} />
-              {admin ? autobanToggleLabel : "Admins only"}
+              <RefreshCcw className={scanRunning ? "pa-scan-spin" : undefined} size={14} />
+              {scanRunning ? "Scanning…" : tab === "signals" ? "Rescan signals" : "Run new scan"}
             </Button>
+            <span className="pa-rescan-hint">
+              {tab === "signals" ? "Checks every active skill" : "Re-scores every publisher"}
+            </span>
           </div>
         </div>
       </header>
+
+      {tab === "signals" && latestSignalRun?.status === "failed" ? (
+        <div className="pa-scan-failure" role="alert">
+          <XCircle aria-hidden="true" size={18} />
+          <div>
+            <strong>
+              {signalFailureCount > 0
+                ? `Stopped after ${signalFailureCount} failed attempts`
+                : "Signal scan failed"}
+            </strong>
+            <span>
+              {latestSignalRun.errorMessage ?? "The signal scan failed without an error."}
+            </span>
+          </div>
+        </div>
+      ) : tab === "signals" && latestSignalRun?.status === "running" && signalFailureCount > 0 ? (
+        <div className="pa-scan-retrying" role="status">
+          <RefreshCcw aria-hidden="true" size={18} />
+          <div>
+            <strong>Retrying after {signalFailureCount} of 5 failed attempts</strong>
+            <span>
+              {latestSignalRun?.lastTransientError ?? "The previous signal scan attempt failed."}
+            </span>
+          </div>
+        </div>
+      ) : null}
 
       <div className="pa-tabs" role="tablist" aria-label="Publisher abuse queue">
         <PublisherAbuseTabButton
           active={tab === "potential_ban_candidate"}
           count={dashboardLoaded ? potentialBanTabCount : undefined}
+          countLabel={dashboardLoaded ? potentialBanTabCountLabel : undefined}
           label="Potential ban"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("potential_ban_candidate")}
@@ -290,6 +412,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "review"}
           count={dashboardLoaded ? reviewTabCount : undefined}
+          countLabel={dashboardLoaded ? reviewTabCountLabel : undefined}
           label="On the brink"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("review")}
@@ -297,6 +420,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "all_pending"}
           count={dashboardLoaded ? allPendingTabCount : undefined}
+          countLabel={dashboardLoaded ? allPendingTabCountLabel : undefined}
           label="All flagged"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("all_pending")}
@@ -304,6 +428,7 @@ export function AbusePage({
         <PublisherAbuseTabButton
           active={tab === "resolved"}
           count={dashboardLoaded ? resolved : undefined}
+          countLabel={dashboardLoaded ? resolvedTabCountLabel : undefined}
           label="Resolved"
           loading={!dashboardLoaded}
           onClick={() => onChangeTab("resolved")}
@@ -353,9 +478,32 @@ export function AbusePage({
             items={signalItems}
             loaded={signalsLoaded}
             selectedSignalId={selectedSignalItem?.signal._id ?? null}
+            selectedSignalIds={selectedSignalIds}
             status={signalStatus}
             searchActive={search.trim().length > 0}
+            onClearSignalSelection={() => setSelectedSignalIds(new Set())}
+            onDismissSignals={onDismissSignals}
             onSelectSignal={setSelectedSignalItem}
+            onSnoozeSignals={onSnoozeSignals}
+            onToggleAllSignals={(checked) => {
+              setSelectedSignalIds(
+                checked
+                  ? new Set(
+                      signalItems
+                        .slice(0, MAX_BULK_SIGNAL_SELECTION)
+                        .map((item) => item.signal._id),
+                    )
+                  : new Set(),
+              );
+            }}
+            onToggleSignal={(signalId, checked) => {
+              setSelectedSignalIds((current) => {
+                const next = new Set(current);
+                if (checked && next.size < MAX_BULK_SIGNAL_SELECTION) next.add(signalId);
+                else next.delete(signalId);
+                return next;
+              });
+            }}
           />
         ) : (
           <div className="pa-table-wrap">
@@ -637,6 +785,15 @@ export function AbusePage({
                     <div className="pa-actions">
                       <Button
                         type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onMarkReviewed(selectedItem)}
+                      >
+                        <XCircle size={14} />
+                        Mark reviewed
+                      </Button>
+                      <Button
+                        type="button"
                         variant="destructive"
                         size="sm"
                         className="pa-ban"
@@ -717,6 +874,10 @@ function PublisherAbuseTabButton({
   );
 }
 
+function formatAbuseTabCountLabel(count: number, hasMore: boolean | undefined) {
+  return hasMore && count > 0 ? `${formatWholeNumber(count)}+` : formatWholeNumber(count);
+}
+
 function PublisherAbuseTableSkeletonRows({
   columns,
   label,
@@ -766,104 +927,208 @@ function PublisherAbuseSignalsTable({
   items,
   loaded,
   selectedSignalId,
+  selectedSignalIds,
   status,
   searchActive,
+  onClearSignalSelection,
+  onDismissSignals,
   onSelectSignal,
+  onSnoozeSignals,
+  onToggleAllSignals,
+  onToggleSignal,
 }: {
   canLoadMore: boolean;
   items: PublisherAbuseSignalEntry[];
   loaded: boolean;
   selectedSignalId: Id<"publisherAbuseSignals"> | null;
+  selectedSignalIds: Set<Id<"publisherAbuseSignals">>;
   status: PublisherAbuseSignalStatus;
   searchActive: boolean;
+  onClearSignalSelection: () => void;
+  onDismissSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
   onSelectSignal: (item: PublisherAbuseSignalEntry) => void;
+  onSnoozeSignals: (signalIds: Id<"publisherAbuseSignals">[]) => void;
+  onToggleAllSignals: (checked: boolean) => void;
+  onToggleSignal: (signalId: Id<"publisherAbuseSignals">, checked: boolean) => void;
 }) {
   const emptyState = publisherAbuseSignalEmptyState(searchActive, canLoadMore, status);
+  const bulkSelectionEnabled = status === "open" && loaded && items.length > 0;
+  const selectedIds = [...selectedSignalIds];
+  const selectedCount = selectedIds.length;
+  const selectionAtLimit = selectedCount >= MAX_BULK_SIGNAL_SELECTION;
+  const selectableItems = items.slice(0, MAX_BULK_SIGNAL_SELECTION);
+  const allLoadedSelected =
+    bulkSelectionEnabled &&
+    selectableItems.length > 0 &&
+    selectableItems.every((item) => selectedSignalIds.has(item.signal._id));
   return (
-    <div className="pa-table-wrap">
-      <table className="pa-table pa-signals-table">
-        <thead>
-          <tr>
-            <th>Severity</th>
-            <th>Signal</th>
-            <th>Subject</th>
-            <th className="pa-num">Evidence</th>
-            <th>Last seen</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!loaded ? (
-            <PublisherAbuseTableSkeletonRows columns={5} label="Loading publisher abuse signals" />
-          ) : items.length === 0 ? (
-            <tr className="pa-empty-row">
-              <td colSpan={5}>
-                <strong>{emptyState.title}</strong>
-                {emptyState.body}
-              </td>
-            </tr>
-          ) : (
-            items.map((item) => {
-              const selected = item.signal._id === selectedSignalId;
-              return (
-                <tr
-                  key={item.signal._id}
-                  className={selected ? "is-selected" : undefined}
-                  onClick={() => onSelectSignal(item)}
-                >
-                  <td>
-                    <Badge
-                      variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)}
-                      size="sm"
-                    >
-                      {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
-                    </Badge>
-                  </td>
-                  <td>
-                    <button
-                      type="button"
-                      className="pa-signal-summary pa-row-button"
-                      aria-label={`Open details for ${item.signal.skillDisplayName}`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onSelectSignal(item);
-                      }}
-                    >
-                      <strong className="pa-signal-name">
-                        {formatPublisherAbuseSignalType(item.signal.signalType)}
-                      </strong>
-                      <span>
-                        {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
-                        {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
-                      </span>
-                    </button>
-                    {item.signal.snoozedUntil ? (
-                      <div className="pa-signal-repeat">
-                        until {formatShortTimestamp(item.signal.snoozedUntil)}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td>
-                    <div className="pa-signal-subject">
-                      <strong>{item.signal.skillDisplayName}</strong>
-                      <span>
-                        @{item.signal.handleSnapshot} / {item.signal.skillSlug}
-                      </span>
-                    </div>
-                  </td>
-                  <PublisherAbuseSignalRatioCell
-                    downloads={item.signal.recent30Downloads}
-                    installs={item.signal.recent30Installs}
-                    ratio={item.signal.recent30InstallDownloadRatio}
+    <>
+      {bulkSelectionEnabled ? (
+        <div className="pa-signal-bulk-bar" aria-label="Bulk signal actions">
+          <span className="pa-signal-bulk-count" aria-live="polite">
+            {formatWholeNumber(selectedCount)} selected
+            {selectionAtLimit ? ` · ${MAX_BULK_SIGNAL_SELECTION} maximum` : null}
+          </span>
+          <div className="pa-signal-bulk-actions">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={selectedCount === 0}
+              onClick={() => onSnoozeSignals(selectedIds)}
+            >
+              <Clock3 size={14} aria-hidden="true" />
+              {bulkSignalActionLabel("Snooze", selectedCount)}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              disabled={selectedCount === 0}
+              onClick={() => onDismissSignals(selectedIds)}
+            >
+              <XCircle size={14} aria-hidden="true" />
+              {bulkSignalActionLabel("Dismiss", selectedCount)}
+            </Button>
+            {selectedCount > 0 ? (
+              <Button type="button" variant="ghost" size="xs" onClick={onClearSignalSelection}>
+                Clear
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+      <div className="pa-table-wrap">
+        <table className="pa-table pa-signals-table">
+          <thead>
+            <tr>
+              {bulkSelectionEnabled ? (
+                <th className="pa-signal-select-cell">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all loaded signals"
+                    checked={allLoadedSelected}
+                    onChange={(event) => onToggleAllSignals(event.target.checked)}
                   />
-                  <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
-    </div>
+                </th>
+              ) : null}
+              <th>Severity</th>
+              <th>Signal</th>
+              <th>Subject</th>
+              <th className="pa-num">Evidence</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {!loaded ? (
+              <PublisherAbuseTableSkeletonRows
+                columns={5}
+                label="Loading publisher abuse signals"
+              />
+            ) : items.length === 0 ? (
+              <tr className="pa-empty-row">
+                <td colSpan={bulkSelectionEnabled ? 6 : 5}>
+                  <strong>{emptyState.title}</strong>
+                  {emptyState.body}
+                </td>
+              </tr>
+            ) : (
+              items.map((item) => {
+                const selected = item.signal._id === selectedSignalId;
+                const bulkSelected = selectedSignalIds.has(item.signal._id);
+                const recurrenceCount = item.signal.recurrenceCount ?? 0;
+                return (
+                  <tr
+                    key={item.signal._id}
+                    className={
+                      [selected ? "is-selected" : "", bulkSelected ? "is-bulk-selected" : ""]
+                        .filter(Boolean)
+                        .join(" ") || undefined
+                    }
+                    onClick={() => onSelectSignal(item)}
+                  >
+                    {bulkSelectionEnabled ? (
+                      <td className="pa-signal-select-cell">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${item.signal.skillDisplayName}`}
+                          checked={bulkSelected}
+                          disabled={selectionAtLimit && !bulkSelected}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) =>
+                            onToggleSignal(item.signal._id, event.target.checked)
+                          }
+                        />
+                      </td>
+                    ) : null}
+                    <td>
+                      <Badge
+                        variant={publisherAbuseSignalSeverityVariant(
+                          item.signal.signalType,
+                          recurrenceCount,
+                        )}
+                        size="sm"
+                      >
+                        {formatPublisherAbuseSignalSeverity(
+                          item.signal.signalType,
+                          recurrenceCount,
+                        )}
+                      </Badge>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="pa-signal-summary pa-row-button"
+                        aria-label={`Open details for ${item.signal.skillDisplayName}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSelectSignal(item);
+                        }}
+                      >
+                        <strong className="pa-signal-name">
+                          {formatPublisherAbuseSignalType(item.signal.signalType)}
+                        </strong>
+                        <span>
+                          {formatPublisherAbuseSignalStatus(signalReviewStatus(item))}
+                          {" · "}Seen {formatWholeNumber(item.signal.seenCount)}x
+                        </span>
+                      </button>
+                      {recurrenceCount > 0 ? (
+                        <div className="pa-signal-repeat is-recurring">Repeat after snooze</div>
+                      ) : item.signal.snoozedUntil ? (
+                        <div className="pa-signal-repeat">
+                          {formatPublisherAbuseSnoozeState(item.signal.snoozedUntil)}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <div className="pa-signal-subject">
+                        <strong>{item.signal.skillDisplayName}</strong>
+                        <span>
+                          @{item.signal.handleSnapshot} / {item.signal.skillSlug}
+                        </span>
+                      </div>
+                    </td>
+                    <PublisherAbuseSignalRatioCell
+                      downloads={item.signal.recent30Downloads}
+                      installs={item.signal.recent30Installs}
+                      ratio={item.signal.recent30InstallDownloadRatio}
+                    />
+                    <td className="pa-muted">{formatShortTimestamp(item.signal.lastSeenAt)}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
+}
+
+function bulkSignalActionLabel(action: "Snooze" | "Dismiss", count: number) {
+  if (count <= 0) return `${action} selected`;
+  return `${action} ${formatWholeNumber(count)} ${count === 1 ? "signal" : "signals"}`;
 }
 
 function PublisherAbuseSignalInspector({
@@ -879,6 +1144,14 @@ function PublisherAbuseSignalInspector({
 }) {
   const status = signalReviewStatus(item);
   const publisherHandle = signalPublisherHandle(item);
+  const recurrenceCount = item.signal.recurrenceCount ?? 0;
+  const activityTrend = useQuery(api.publisherAbuse.getSignalActivityTrend, {
+    signalId: item.signal._id,
+    endDay: getActivityTrendEndDay(item.signal.lastSeenAt),
+  });
+  const hasFreshEvidence =
+    typeof item.signal.freshDownloadsSinceSnooze === "number" &&
+    typeof item.signal.freshInstallsSinceSnooze === "number";
   return (
     <>
       <SheetHeader className="pa-sheet-head">
@@ -890,10 +1163,14 @@ function PublisherAbuseSignalInspector({
           <Badge variant="default" size="sm">
             {formatPublisherAbuseSignalStatus(status)}
           </Badge>
-          <Badge variant={publisherAbuseSignalSeverityVariant(item.signal.signalType)} size="sm">
-            {formatPublisherAbuseSignalSeverity(item.signal.signalType)}
+          <Badge
+            variant={publisherAbuseSignalSeverityVariant(item.signal.signalType, recurrenceCount)}
+            size="sm"
+          >
+            {formatPublisherAbuseSignalSeverity(item.signal.signalType, recurrenceCount)}
           </Badge>
           <Badge variant="compact">Seen {formatWholeNumber(item.signal.seenCount)}x</Badge>
+          {recurrenceCount > 0 ? <Badge variant="warning">Repeat signal</Badge> : null}
         </div>
         <div className="pa-idline">
           <a
@@ -920,6 +1197,44 @@ function PublisherAbuseSignalInspector({
       </SheetHeader>
 
       <div className="pa-sheet-body">
+        <section className="pa-zone pa-signal-trends-zone">
+          <div className="pa-section-label">30-day activity</div>
+          <div className="pa-signal-trends" aria-label="30-day activity trends">
+            <div className="pa-signal-trend">
+              <div className="pa-signal-trend-label">Downloads</div>
+              {activityTrend ? (
+                <MetricTrendCard
+                  trend={activityTrend.downloads}
+                  ariaLabel="Daily downloads over the last 30 days"
+                  periodLabel="30 days"
+                  unitLabel="download"
+                  hideIdlePeriodLabel
+                />
+              ) : activityTrend === undefined ? (
+                <MetricTrendCardSkeleton />
+              ) : (
+                <span className="pa-hint">Trend unavailable</span>
+              )}
+            </div>
+            <div className="pa-signal-trend pa-signal-trend-installs">
+              <div className="pa-signal-trend-label">Installs</div>
+              {activityTrend ? (
+                <MetricTrendCard
+                  trend={activityTrend.installs}
+                  ariaLabel="Daily installs over the last 30 days"
+                  periodLabel="30 days"
+                  unitLabel="install"
+                  hideIdlePeriodLabel
+                />
+              ) : activityTrend === undefined ? (
+                <MetricTrendCardSkeleton />
+              ) : (
+                <span className="pa-hint">Trend unavailable</span>
+              )}
+            </div>
+          </div>
+        </section>
+
         <section className="pa-zone">
           <div className="pa-section-label">Signal</div>
           <div className="pa-reason-list">
@@ -967,7 +1282,26 @@ function PublisherAbuseSignalInspector({
               installs={item.signal.allTimeInstalls}
               ratio={item.signal.allTimeInstallDownloadRatio}
             />
+            {hasFreshEvidence ? (
+              <PublisherAbuseSignalEvidenceMetric
+                label="Since snooze"
+                downloads={item.signal.freshDownloadsSinceSnooze ?? 0}
+                installs={item.signal.freshInstallsSinceSnooze ?? 0}
+                ratio={installDownloadRatioForDisplay({
+                  downloads: item.signal.freshDownloadsSinceSnooze ?? 0,
+                  installs: item.signal.freshInstallsSinceSnooze ?? 0,
+                })}
+              />
+            ) : null}
           </div>
+          {item.signal.temporalBenchmark?.scope === "all_active_skills" ? (
+            <p className="pa-hint">
+              Platform 30d downloads across all{" "}
+              {formatWholeNumber(item.signal.temporalBenchmark.sampleSize)} active skills: P95{" "}
+              {formatWholeNumber(item.signal.temporalBenchmark.downloads30dP95)}, P99{" "}
+              {formatWholeNumber(item.signal.temporalBenchmark.downloads30dP99)}.
+            </p>
+          ) : null}
         </section>
 
         <section className="pa-zone">
@@ -993,6 +1327,17 @@ function PublisherAbuseSignalInspector({
             />
           </div>
           {item.signal.reviewNote ? <p className="pa-hint">{item.signal.reviewNote}</p> : null}
+          {recurrenceCount > 0 ? (
+            <p className="pa-hint">
+              Reopened because fresh activity crossed the lower repeat threshold after the prior
+              evidence was acknowledged.
+            </p>
+          ) : status === "snoozed" ? (
+            <p className="pa-hint">
+              The evidence shown at snooze time is acknowledged. After the quiet period, only fresh
+              suspicious activity can reopen this signal.
+            </p>
+          ) : null}
         </section>
 
         <section className="pa-zone pa-review">
@@ -1168,12 +1513,14 @@ function PublisherTemporalEvidence({ score }: { score: PublisherAbuseReviewScore
   if (!evidence.length) return null;
 
   const benchmark = score?.temporalBenchmark;
+  const isPlatformBenchmark = benchmark?.scope === "all_active_skills";
   return (
     <div className="pa-activity-evidence">
       <div className="pa-subsection-label">Temporal signal</div>
       {benchmark ? (
         <p className="pa-hint">
-          Compared with {formatWholeNumber(benchmark.sampleSize)} scanned skills: 30d download P95{" "}
+          Compared with {isPlatformBenchmark ? "all" : "a legacy cohort of"}{" "}
+          {formatWholeNumber(benchmark.sampleSize)} active skills: 30d download P95{" "}
           {formatWholeNumber(benchmark.downloads30dP95)}, P99{" "}
           {formatWholeNumber(benchmark.downloads30dP99)}.
         </p>
@@ -1200,16 +1547,22 @@ function PublisherTemporalEvidence({ score }: { score: PublisherAbuseReviewScore
             <div className="pa-temporal-metrics">
               <PublisherAbuseMetric label="30d downloads" value={item.recent30Downloads} />
               {benchmark ? (
-                <PublisherAbuseMetric label="Peer 30d P95" value={benchmark.downloads30dP95} />
+                <PublisherAbuseMetric
+                  label={`${isPlatformBenchmark ? "Platform" : "Legacy cohort"} 30d P95`}
+                  value={benchmark.downloads30dP95}
+                />
               ) : null}
               {benchmark ? (
-                <PublisherAbuseMetric label="Peer 30d P99" value={benchmark.downloads30dP99} />
+                <PublisherAbuseMetric
+                  label={`${isPlatformBenchmark ? "Platform" : "Legacy cohort"} 30d P99`}
+                  value={benchmark.downloads30dP99}
+                />
               ) : null}
               <PublisherAbuseMetric label="30d vs P95" value={item.downloads30dVsPeerP95} ratio />
               <PublisherAbuseMetric label="7d spike multiple" value={item.spikeMultiplier} ratio />
               {benchmark ? (
                 <PublisherAbuseMetric
-                  label="Peer spike P95"
+                  label={`${isPlatformBenchmark ? "Platform" : "Legacy cohort"} spike P95`}
                   value={benchmark.spikeMultiplier7dP95}
                   ratio
                 />
@@ -1387,7 +1740,8 @@ function describePublisherAbuseSignalType(signalType: string) {
   return "Archived publisher abuse signal for manual review.";
 }
 
-function formatPublisherAbuseSignalSeverity(signalType: string) {
+function formatPublisherAbuseSignalSeverity(signalType: string, recurrenceCount = 0) {
+  if (recurrenceCount > 0) return "High";
   if (signalType === "high_install_download_ratio") return "High";
   if (signalType === "sustained_downloads_flat_installs") return "Review";
   return "Review";
@@ -1395,9 +1749,21 @@ function formatPublisherAbuseSignalSeverity(signalType: string) {
 
 function publisherAbuseSignalSeverityVariant(
   signalType: string,
+  recurrenceCount = 0,
 ): NonNullable<BadgeProps["variant"]> {
+  if (recurrenceCount > 0) return "warning";
   if (signalType === "high_install_download_ratio") return "warning";
   return "review";
+}
+
+function formatPublisherAbuseSnoozeState(snoozedUntil: number) {
+  if (snoozedUntil > Date.now()) return `quiet until ${formatShortTimestamp(snoozedUntil)}`;
+  return "Old evidence acknowledged · watching fresh activity";
+}
+
+function installDownloadRatioForDisplay(input: { downloads: number; installs: number }) {
+  if (input.downloads <= 0) return input.installs > 0 ? 1 : 0;
+  return input.installs / input.downloads;
 }
 
 function formatPublisherAbuseStatus(status: string) {

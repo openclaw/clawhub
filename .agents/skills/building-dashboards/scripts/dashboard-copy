@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# dashboard-copy: Clone an existing dashboard
+#
+# Usage: dashboard-copy <deployment> <id> [new-name]
+#
+# Examples:
+#   dashboard-copy prod abc123                    # Creates "Original Name (copy)"
+#   dashboard-copy prod abc123 "My New Dashboard" # Creates with custom name
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+DEPLOYMENT="${1:-}"
+ID="${2:-}"
+NEW_NAME="${3:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$ID" ]]; then
+    echo "Usage: dashboard-copy <deployment> <id> [new-name]" >&2
+    exit 1
+fi
+
+# Fetch original
+ORIGINAL=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "/dashboards/uid/$ID")
+
+# Get original name if new name not provided
+if [[ -z "$NEW_NAME" ]]; then
+    ORIG_NAME=$(echo "$ORIGINAL" | jq -r '.dashboard.name')
+    NEW_NAME="${ORIG_NAME} (copy)"
+fi
+
+# Strip server fields and set new name on the dashboard subobject
+BODY=$(echo "$ORIGINAL" | jq --arg name "$NEW_NAME" '
+    .dashboard |
+    del(.id, .uid, .version, .createdAt, .updatedAt, .createdBy, .updatedBy) |
+    .name = $name
+' | jq '{dashboard: .}')
+
+RESPONSE=$("$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" POST "/dashboards" "$BODY")
+
+# Print new UID and name
+ID=$(echo "$RESPONSE" | jq -r '.dashboard.uid // empty')
+NAME=$(echo "$RESPONSE" | jq -r '.dashboard.dashboard.name // empty')
+
+if [[ -n "$ID" ]]; then
+    echo -e "${ID}\t${NAME}"
+else
+    echo "Error copying dashboard:" >&2
+    echo "$RESPONSE" | jq . >&2
+    exit 1
+fi

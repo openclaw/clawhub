@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { DocsLinks, getPackageScopeOwnerMismatch, isPluginCategorySlug } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
@@ -18,6 +18,10 @@ import {
   PackageSourceChooser,
   type PackagePickSource,
 } from "../../components/PackageSourceChooser";
+import {
+  PluginPublishSubmittedDialog,
+  type SubmittedPlugin,
+} from "../../components/PluginPublishSubmittedDialog";
 import {
   PublisherOwnerSelect,
   type PublisherOwnerMembership,
@@ -41,10 +45,11 @@ import {
   normalizePackageUploadFiles,
 } from "../../lib/packageUpload";
 import { derivePluginPrefill, listPrefilledFields } from "../../lib/pluginPublishPrefill";
+import { buildPluginDetailHref, displayPluginPackageName } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { expandFilesWithReport } from "../../lib/uploadFiles";
+import { formatPublishError, hashFile, uploadFile } from "../../lib/uploadUtils";
 import { useAuthStatus } from "../../lib/useAuthStatus";
-import { formatPublishError, hashFile, uploadFile } from "../upload/-utils";
 
 export const Route = createFileRoute("/plugins/publish")({
   validateSearch: (search) => ({
@@ -63,12 +68,36 @@ export const Route = createFileRoute("/plugins/publish")({
 
 const apiRefs = api as unknown as {
   packages: {
+    generateChangelogPreview: unknown;
     publishRelease: unknown;
   };
 };
 
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
 const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
+
+function normalizePublisherHandle(handle: string) {
+  return handle.trim().replace(/^@+/, "").toLowerCase();
+}
+
+function findPublisherMembership(
+  publishers: PublisherOwnerMembership[] | undefined,
+  handle: string,
+) {
+  const normalizedHandle = normalizePublisherHandle(handle);
+  if (!normalizedHandle) return null;
+  return (
+    publishers?.find(
+      (membership) => normalizePublisherHandle(membership.publisher.handle) === normalizedHandle,
+    ) ?? null
+  );
+}
+
+function normalizePluginPackageName(name: string) {
+  const normalized = name.trim().toLowerCase();
+  if (normalized === "publish") return null;
+  return /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : null;
+}
 
 function findReadmeFile(files: File[]): File | null {
   // Match the same lookup the publish backend uses (readme.md / readme.mdx)
@@ -117,6 +146,24 @@ type ParsedInspectorPublishError = {
   summary: string;
   findings: Array<{ code: string; message: string }>;
 };
+
+type PluginPublishResult = {
+  isPending: boolean;
+  hasPluginPage: boolean;
+  packageName: string | null;
+};
+
+function parsePluginPublishResult(result: unknown): PluginPublishResult {
+  if (result === null || typeof result !== "object") {
+    return { isPending: false, hasPluginPage: false, packageName: null };
+  }
+  return {
+    isPending: "status" in result && result.status === "pending",
+    hasPluginPage: "packageId" in result && typeof result.packageId === "string",
+    packageName:
+      "packageName" in result && typeof result.packageName === "string" ? result.packageName : null,
+  };
+}
 
 const PLUGIN_INSPECTOR_BLOCKED_PREFIX = "Plugin Inspector blocked publish:";
 
@@ -189,6 +236,7 @@ function PluginPublishError({ message }: { message: string }) {
 
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
+  const navigate = useNavigate();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
@@ -201,6 +249,15 @@ export function PublishPluginRoute() {
   const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
     payload: unknown;
   }) => Promise<unknown>;
+  const generateChangelogPreview = useAction(
+    apiRefs.packages.generateChangelogPreview as never,
+  ) as unknown as (args: {
+    name: string;
+    family: "code-plugin" | "bundle-plugin";
+    version: string;
+    readmeText: string;
+    filePaths?: string[];
+  }) => Promise<{ changelog: string }>;
   const [family, setFamily] = useState<"code-plugin" | "bundle-plugin">(
     search.family === "bundle-plugin" ? "bundle-plugin" : "code-plugin",
   );
@@ -209,6 +266,9 @@ export function PublishPluginRoute() {
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
+  const changelogTouchedRef = useRef(false);
+  const changelogRequestRef = useRef(0);
+  const changelogKeyRef = useRef<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [suggestedCategories, setSuggestedCategories] = useState<string[]>();
   const [topics, setTopics] = useState("");
@@ -230,7 +290,18 @@ export function PublishPluginRoute() {
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submittedPlugin, setSubmittedPlugin] = useState<SubmittedPlugin | null>(null);
   const showChangelogField = Boolean(search.name);
+
+  const canonicalDraftName = useMemo(() => normalizePluginPackageName(name), [name]);
+  const existingPluginPage = useQuery(
+    api.packages.getByName,
+    me && canonicalDraftName ? { name: canonicalDraftName } : "skip",
+  );
+
+  const selectedPublisher = useMemo(() => {
+    return findPublisherMembership(publishers, ownerHandle)?.publisher ?? null;
+  }, [ownerHandle, publishers]);
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const normalizedPaths = useMemo(
@@ -256,26 +327,41 @@ export function PublishPluginRoute() {
         ? "Total file size exceeds 50MB."
         : null;
   const isMetadataLocked = files.length === 0;
+  const isNewPluginPublishEmpty = files.length === 0 && !search.name;
   const metadataDisabled = isMetadataLocked || isSubmitting;
+  const sourceFieldsRequired = family === "code-plugin";
   const ownerScopeError = useMemo(() => {
-    return getPackageScopeOwnerMismatch(name, ownerHandle)?.message ?? null;
-  }, [name, ownerHandle]);
+    return (
+      getPackageScopeOwnerMismatch(name, selectedPublisher?.handle ?? ownerHandle)?.message ?? null
+    );
+  }, [name, ownerHandle, selectedPublisher]);
   const submitBlockers = useMemo(() => {
     if (isMetadataLocked) return [];
     const blockers: string[] = [];
     if (!name.trim()) blockers.push("Plugin name is required.");
     if (!version.trim()) blockers.push("Version is required.");
-    if (family === "code-plugin") {
+    if (sourceFieldsRequired) {
       if (!sourceRepo.trim()) blockers.push("GitHub repository is required.");
       if (!sourceCommit.trim()) blockers.push("Commit SHA is required.");
     }
     return blockers;
-  }, [family, isMetadataLocked, name, sourceCommit, sourceRepo, version]);
+  }, [isMetadataLocked, name, sourceCommit, sourceFieldsRequired, sourceRepo, version]);
   const hasPackageBlocker =
     Boolean(validationError) || Boolean(ownerScopeError) || codePluginFieldIssues.length > 0;
-  const hasPublished = status?.startsWith("Published.") ?? false;
+  const hasPublished =
+    status?.startsWith("Published.") || status?.startsWith("Publish received.") || false;
+  const isPublisherLoading = me !== null && me !== undefined && publishers === undefined;
+  const isExistingContextLoading = Boolean(me && search.name && existing === undefined);
+  const isPluginPageLookupLoading = Boolean(
+    me && files.length > 0 && canonicalDraftName && existingPluginPage === undefined,
+  );
   const isPublishDisabled =
     !isAuthenticated ||
+    isPublisherLoading ||
+    isExistingContextLoading ||
+    isPluginPageLookupLoading ||
+    !ownerHandle ||
+    !selectedPublisher ||
     isMetadataLocked ||
     hasPackageBlocker ||
     submitBlockers.length > 0 ||
@@ -284,6 +370,11 @@ export function PublishPluginRoute() {
   const publishBlockerSummary = useMemo(() => {
     if (isSubmitting) return null;
     if (!isAuthenticated) return "Sign in to publish.";
+    if (isPublisherLoading) return "Loading publishing identities…";
+    if (isExistingContextLoading) return "Loading plugin details…";
+    if (isPluginPageLookupLoading) return "Checking plugin page…";
+    if (!ownerHandle) return "Select a publisher to publish.";
+    if (!selectedPublisher) return "Select an available publisher to publish.";
     if (isMetadataLocked) return "Complete plugin files to publish.";
     if (validationError) return `Fix: ${validationError}`;
     if (ownerScopeError) return `Fix: ${ownerScopeError}`;
@@ -299,9 +390,14 @@ export function PublishPluginRoute() {
   }, [
     codePluginFieldIssues,
     isAuthenticated,
+    isExistingContextLoading,
     isMetadataLocked,
+    isPluginPageLookupLoading,
+    isPublisherLoading,
     isSubmitting,
+    ownerHandle,
     ownerScopeError,
+    selectedPublisher,
     submitBlockers,
     validationError,
   ]);
@@ -344,9 +440,7 @@ export function PublishPluginRoute() {
   }, [readmeAssetReport, sourceRepo, sourceCommit, sourcePath]);
 
   const onPickFiles = async (selected: File[], sourceKind: PackagePickSource) => {
-    const expanded = await expandFilesWithReport(selected, {
-      includeBinaryArchiveFiles: true,
-    });
+    const expanded = await expandFilesWithReport(selected);
     const filtered = await filterIgnoredPackageFiles(expanded.files);
     const normalized = normalizePackageUploadFiles(filtered.files);
     const nextIgnoredPaths = [
@@ -355,8 +449,12 @@ export function PublishPluginRoute() {
     setFiles(filtered.files);
     setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
+    changelogRequestRef.current += 1;
+    changelogKeyRef.current = null;
+    if (!changelogTouchedRef.current) setChangelog("");
     setError(null);
     setStatus(null);
+    setSubmittedPlugin(null);
     setReadmeAssetReport(await scanReadmeRelativeAssets(filtered.files));
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
@@ -378,6 +476,9 @@ export function PublishPluginRoute() {
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
     setSuggestedCategories(undefined);
+    changelogRequestRef.current += 1;
+    changelogKeyRef.current = null;
+    if (!changelogTouchedRef.current) setChangelog("");
     // Without this reset the README warning Badge keeps showing the previous
     // package's relative-asset findings until the next pick's async scan
     // finishes — which is misleading both while no package is selected and
@@ -386,14 +487,16 @@ export function PublishPluginRoute() {
     setReadmeAssetReport(EMPTY_README_ASSET_REPORT);
     setError(null);
     setStatus(null);
+    setSubmittedPlugin(null);
   };
 
   useEffect(() => {
-    if (ownerHandle) return;
-    const personal =
-      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
-    if (personal?.publisher.handle) {
-      setOwnerHandle(personal.publisher.handle);
+    const matchingMembership = ownerHandle
+      ? findPublisherMembership(publishers, ownerHandle)
+      : (publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0]);
+    const canonicalHandle = matchingMembership?.publisher.handle;
+    if (canonicalHandle && ownerHandle !== canonicalHandle) {
+      setOwnerHandle(canonicalHandle);
     }
   }, [ownerHandle, publishers]);
 
@@ -413,6 +516,66 @@ export function PublishPluginRoute() {
       setTopics((current) => (current === nextTopics ? current : nextTopics));
     }
   }, [existing]);
+
+  useEffect(() => {
+    changelogRequestRef.current += 1;
+    changelogKeyRef.current = null;
+    if (!changelogTouchedRef.current) setChangelog("");
+  }, [family, name, normalizedPaths, version]);
+
+  useEffect(() => {
+    if (!showChangelogField) return;
+    if (isMetadataLocked) return;
+    if (changelogTouchedRef.current) return;
+    if (changelog.trim()) return;
+    const packageName = name.trim();
+    const packageVersion = version.trim();
+    if (!packageName || !semver.valid(packageVersion)) return;
+    const readmeFile = findReadmeFile(files);
+    if (!readmeFile) return;
+
+    const key = [
+      packageName,
+      family,
+      packageVersion,
+      readmeFile.name,
+      readmeFile.size,
+      readmeFile.lastModified,
+      normalizedPaths.join("\0"),
+    ].join(":");
+    if (changelogKeyRef.current === key) return;
+    changelogKeyRef.current = key;
+
+    const requestId = ++changelogRequestRef.current;
+    void readmeFile
+      .text()
+      .then((text) => {
+        if (changelogRequestRef.current !== requestId) return null;
+        return generateChangelogPreview({
+          name: packageName,
+          family,
+          version: packageVersion,
+          readmeText: text.slice(0, 20_000),
+          filePaths: normalizedPaths,
+        });
+      })
+      .then((result) => {
+        if (!result) return;
+        if (changelogRequestRef.current !== requestId || changelogTouchedRef.current) return;
+        setChangelog(result.changelog);
+      })
+      .catch(() => {});
+  }, [
+    changelog,
+    family,
+    files,
+    generateChangelogPreview,
+    isMetadataLocked,
+    name,
+    normalizedPaths,
+    showChangelogField,
+    version,
+  ]);
 
   if (isAuthLoading) {
     return <PublishFormSkeleton />;
@@ -434,15 +597,26 @@ export function PublishPluginRoute() {
   }
 
   return (
-    <main className="py-10">
-      <Container size="narrow">
-        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
+    <main className={isNewPluginPublishEmpty ? "publish-empty-main" : "py-10"}>
+      <Container
+        size="narrow"
+        className={isNewPluginPublishEmpty ? "publish-empty-container" : undefined}
+      >
+        <header
+          className={
+            isNewPluginPublishEmpty
+              ? "publish-empty-header"
+              : "mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"
+          }
+        >
+          <div className={isNewPluginPublishEmpty ? "publish-empty-heading" : undefined}>
             <h1 className="mb-2 font-display text-2xl font-bold text-[color:var(--ink)]">
               {search.name ? "Publish Plugin Release" : "Publish Plugin"}
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">
-              Drop or select a plugin folder, .zip, or .tgz
+              {isNewPluginPublishEmpty
+                ? "Publish your plugin to ClawHub so others can discover and install it."
+                : "Review the detected plugin details before publishing."}
             </p>
             {search.name ? (
               <p className="text-sm text-[color:var(--ink-soft)]">
@@ -453,12 +627,20 @@ export function PublishPluginRoute() {
               </p>
             ) : null}
           </div>
-          <Button asChild variant="outline" size="sm" className="w-fit">
-            <a href={PLUGIN_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-              Plugin publishing guide
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            </a>
-          </Button>
+          <div
+            className={
+              isNewPluginPublishEmpty
+                ? "publish-empty-actions flex flex-wrap items-center gap-2"
+                : "flex flex-wrap items-center gap-2"
+            }
+          >
+            <Button asChild variant="outline" size="sm" className="w-fit">
+              <a href={PLUGIN_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
+                Plugin docs
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+            </Button>
+          </div>
         </header>
 
         {SHOW_CLAWPACK_ONBOARDING_BANNER ? (
@@ -486,415 +668,487 @@ export function PublishPluginRoute() {
           codePluginFieldIssues={codePluginFieldIssues}
           onPickFiles={onPickFiles}
           onClearFiles={clearSelectedFiles}
+          emptyStateLayout={isNewPluginPublishEmpty}
         />
 
-        <div
-          className={
-            isMetadataLocked
-              ? "relative max-h-[540px] overflow-hidden md:max-h-[600px]"
-              : "contents"
-          }
-        >
-          <Card
-            className={isMetadataLocked ? "pointer-events-none opacity-60" : ""}
-            aria-disabled={isMetadataLocked}
-          >
-            <div className="flex flex-col gap-5">
-              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="pluginName">Plugin name</Label>
-                  <Input
-                    id="pluginName"
-                    placeholder="Plugin name"
-                    value={name}
-                    disabled={metadataDisabled}
-                    onChange={(event) => setName(event.target.value)}
-                  />
-                </div>
-                {ownerScopeError ? (
-                  <Badge variant="warning" className="md:col-span-2">
-                    <span>{ownerScopeError}</span>
-                    <a
-                      href={DocsLinks.clawhub.packageScopeFaq}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline underline-offset-2"
-                    >
-                      Learn how publishing works
-                    </a>
-                  </Badge>
-                ) : null}
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="pluginDisplayName">Display name</Label>
-                  <Input
-                    id="pluginDisplayName"
-                    placeholder="Display name"
-                    value={displayName}
-                    disabled={metadataDisabled}
-                    onChange={(event) => setDisplayName(event.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="pluginFamily">Package type</Label>
-                  <div
-                    id="pluginFamily"
-                    className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
-                  >
-                    {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
+        {!isNewPluginPublishEmpty ? (
+          <div className="contents">
+            <Card
+              className={`publish-skill-metadata ${
+                isMetadataLocked ? "pointer-events-none opacity-60" : ""
+              }`}
+              aria-disabled={isMetadataLocked}
+            >
+              <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
+                Details
+              </h2>
+              <div className="flex flex-col gap-5">
+                <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="pluginName">
+                      Plugin name
+                      <RequiredIndicator />
+                    </Label>
+                    <Input
+                      id="pluginName"
+                      placeholder="Plugin name"
+                      value={name}
+                      disabled={metadataDisabled}
+                      onChange={(event) => setName(event.target.value)}
+                    />
                   </div>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="pluginOwner">Owner</Label>
-                  <PublisherOwnerSelect
-                    id="pluginOwner"
-                    value={ownerHandle}
-                    memberships={publishers}
-                    disabled={metadataDisabled}
-                    onValueChange={setOwnerHandle}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="pluginVersion">Version</Label>
-                  <VersionInput
-                    id="pluginVersion"
-                    placeholder="Version"
-                    value={version}
-                    disabled={metadataDisabled}
-                    onValueChange={setVersion}
-                  />
-                </div>
-                <CatalogMetadataFields
-                  kind="plugin"
-                  categories={categories}
-                  suggestedCategories={suggestedCategories}
-                  topics={topics}
-                  disabled={metadataDisabled}
-                  onCategoriesChange={(nextCategories) => {
-                    categoriesTouchedRef.current = true;
-                    setCategories(nextCategories);
-                  }}
-                  onTopicsChange={(nextTopics) => {
-                    topicsTouchedRef.current = true;
-                    setTopics(nextTopics);
-                  }}
-                />
-                {family === "bundle-plugin" ? (
-                  <>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="pluginBundleFormat">Bundle format</Label>
-                      <Input
-                        id="pluginBundleFormat"
-                        placeholder="Bundle format"
-                        value={bundleFormat}
-                        disabled={metadataDisabled}
-                        onChange={(event) => setBundleFormat(event.target.value)}
-                      />
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="pluginDisplayName">Display name</Label>
+                    <Input
+                      id="pluginDisplayName"
+                      placeholder="Display name"
+                      value={displayName}
+                      disabled={metadataDisabled}
+                      onChange={(event) => setDisplayName(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="pluginVersion">
+                      Version
+                      <RequiredIndicator />
+                    </Label>
+                    <VersionInput
+                      id="pluginVersion"
+                      placeholder="Version"
+                      value={version}
+                      disabled={metadataDisabled}
+                      onValueChange={setVersion}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <Label htmlFor="pluginFamily">Package type</Label>
+                    <div
+                      id="pluginFamily"
+                      className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
+                    >
+                      {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
                     </div>
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor="pluginHostTargets">Host targets</Label>
-                      <Input
-                        id="pluginHostTargets"
-                        placeholder="Host targets (comma separated)"
-                        value={hostTargets}
-                        disabled={metadataDisabled}
-                        onChange={(event) => setHostTargets(event.target.value)}
-                      />
-                    </div>
-                  </>
-                ) : null}
-              </div>
-            </div>
-          </Card>
-
-          <Card
-            className={`mt-5 ${isMetadataLocked ? "pointer-events-none opacity-60" : ""}`}
-            aria-disabled={isMetadataLocked}
-          >
-            <div className="flex flex-col gap-5">
-              <div>
-                <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
-                  Source
-                </h2>
-              </div>
-              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <FieldLabelWithHelp
-                    htmlFor="pluginSourceRepo"
-                    help="Use owner/repo, for example openclaw/demo-plugin."
-                  >
-                    GitHub repository
-                  </FieldLabelWithHelp>
-                  <Input
-                    id="pluginSourceRepo"
-                    placeholder="owner/repo"
-                    value={sourceRepo}
+                  </div>
+                  <CatalogMetadataFields
+                    kind="plugin"
+                    presentation="publish"
+                    categories={categories}
+                    suggestedCategories={suggestedCategories}
+                    topics={topics}
                     disabled={metadataDisabled}
-                    onChange={(event) => setSourceRepo(event.target.value)}
+                    onCategoriesChange={(nextCategories) => {
+                      categoriesTouchedRef.current = true;
+                      setCategories(nextCategories);
+                    }}
+                    onTopicsChange={(nextTopics) => {
+                      topicsTouchedRef.current = true;
+                      setTopics(nextTopics);
+                    }}
                   />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <FieldLabelWithHelp
-                    htmlFor="pluginSourceCommit"
-                    help="Use the exact Git commit SHA for this release, preferably the full hash."
-                  >
-                    Commit SHA
-                  </FieldLabelWithHelp>
-                  <Input
-                    id="pluginSourceCommit"
-                    placeholder="Full commit SHA"
-                    value={sourceCommit}
-                    disabled={metadataDisabled}
-                    onChange={(event) => setSourceCommit(event.target.value)}
-                  />
-                  {readmeAssetWarning ? (
-                    <Badge variant="accent">
-                      <span>
-                        {readmeAssetWarning.showResolvableMissingSource ? (
-                          <>
-                            Your README references{" "}
-                            {readmeAssetWarning.resolvableTotal === 1
-                              ? "a package-relative image path"
-                              : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
-                            ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
-                            {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
-                            Without Source repo + Commit SHA the plugin detail page can't resolve
-                            them to your source host, so they will 404. Fill in GitHub repository +
-                            Commit SHA (and Package path if the package isn't at the repo root) to
-                            serve them from raw.githubusercontent.com, or rewrite them to absolute
-                            URLs in the README.
-                          </>
-                        ) : null}
-                        {readmeAssetWarning.showSourcePathReminder &&
-                        readmeAssetWarning.resolvedBaseUrl ? (
-                          <>
-                            Your README references{" "}
-                            {readmeAssetWarning.resolvableTotal === 1
-                              ? "a package-relative image path"
-                              : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
-                            ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
-                            {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
-                            They will be served from {readmeAssetWarning.resolvedBaseUrl} — make
-                            sure Package path matches where this package lives in the repo, or the
-                            images will 404.
-                          </>
-                        ) : null}
-                        {(readmeAssetWarning.showResolvableMissingSource ||
-                          readmeAssetWarning.showSourcePathReminder) &&
-                        readmeAssetWarning.showUnresolvable
-                          ? " "
-                          : null}
-                        {readmeAssetWarning.showUnresolvable ? (
-                          <>
-                            Your README also references{" "}
-                            {readmeAssetWarning.unresolvableTotal === 1
-                              ? "a root-absolute image path"
-                              : `${readmeAssetWarning.unresolvableTotal} root-absolute image paths`}{" "}
-                            ({readmeAssetWarning.unresolvableSamples.slice(0, 3).join(", ")}
-                            {readmeAssetWarning.unresolvableSamples.length > 3 ? ", \u2026" : ""}).
-                            These start with "/" and are resolved against the page origin, not the
-                            package, so Source repo + Commit SHA cannot rewrite them — please
-                            replace them with absolute URLs or package-relative paths in the README.
-                          </>
-                        ) : null}
-                      </span>
+                  {family === "bundle-plugin" ? (
+                    <>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="pluginBundleFormat">Bundle format</Label>
+                        <Input
+                          id="pluginBundleFormat"
+                          placeholder="Bundle format"
+                          value={bundleFormat}
+                          disabled={metadataDisabled}
+                          onChange={(event) => setBundleFormat(event.target.value)}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="pluginHostTargets">Host targets</Label>
+                        <Input
+                          id="pluginHostTargets"
+                          placeholder="Host targets (comma separated)"
+                          value={hostTargets}
+                          disabled={metadataDisabled}
+                          onChange={(event) => setHostTargets(event.target.value)}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+                  {ownerScopeError ? (
+                    <Badge variant="warning" className="md:col-span-2">
+                      <span>{ownerScopeError}</span>
+                      <a
+                        href={DocsLinks.clawhub.packageScopeFaq}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-2"
+                      >
+                        Learn how publishing works
+                      </a>
                     </Badge>
                   ) : null}
-                </div>
-                <div className="flex flex-col gap-2">
-                  <FieldLabelWithHelp
-                    htmlFor="pluginSourceRef"
-                    help="Optional tag or branch that points at the release source."
-                  >
-                    Tag or branch
-                  </FieldLabelWithHelp>
-                  <Input
-                    id="pluginSourceRef"
-                    placeholder="v1.0.0 or main"
-                    value={sourceRef}
-                    disabled={metadataDisabled}
-                    onChange={(event) => setSourceRef(event.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <FieldLabelWithHelp
-                    htmlFor="pluginSourcePath"
-                    help="Use . when the package is at the repo root; otherwise use its subfolder path."
-                  >
-                    Package path
-                  </FieldLabelWithHelp>
-                  <Input
-                    id="pluginSourcePath"
-                    placeholder="."
-                    value={sourcePath}
-                    disabled={metadataDisabled}
-                    onChange={(event) => setSourcePath(event.target.value)}
-                  />
+                  <div className="flex flex-col gap-2 md:col-span-2">
+                    <Label htmlFor="pluginOwner">Publishing as</Label>
+                    <PublisherOwnerSelect
+                      id="pluginOwner"
+                      value={ownerHandle}
+                      memberships={publishers}
+                      disabled={metadataDisabled}
+                      onValueChange={setOwnerHandle}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-          </Card>
+            </Card>
 
-          {showChangelogField ? (
             <Card
               className={`mt-5 ${isMetadataLocked ? "pointer-events-none opacity-60" : ""}`}
               aria-disabled={isMetadataLocked}
             >
-              <div>
-                <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
-                  Changelog
-                </h2>
-                <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
-                  Summarize what changed in this release.
-                </p>
+              <div className="flex flex-col gap-5">
+                <div>
+                  <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
+                    Source
+                  </h2>
+                </div>
+                <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+                  <div className="flex flex-col gap-2">
+                    <FieldLabelWithHelp
+                      htmlFor="pluginSourceRepo"
+                      help="Use owner/repo, for example openclaw/demo-plugin."
+                      required={sourceFieldsRequired}
+                    >
+                      GitHub repository
+                    </FieldLabelWithHelp>
+                    <Input
+                      id="pluginSourceRepo"
+                      placeholder="owner/repo"
+                      value={sourceRepo}
+                      disabled={metadataDisabled}
+                      required={sourceFieldsRequired}
+                      onChange={(event) => setSourceRepo(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <FieldLabelWithHelp
+                      htmlFor="pluginSourceCommit"
+                      help="Use the exact Git commit SHA for this release, preferably the full hash."
+                      required={sourceFieldsRequired}
+                    >
+                      Commit SHA
+                    </FieldLabelWithHelp>
+                    <Input
+                      id="pluginSourceCommit"
+                      placeholder="Full commit SHA"
+                      value={sourceCommit}
+                      disabled={metadataDisabled}
+                      required={sourceFieldsRequired}
+                      onChange={(event) => setSourceCommit(event.target.value)}
+                    />
+                    {readmeAssetWarning ? (
+                      <Badge variant="accent">
+                        <span>
+                          {readmeAssetWarning.showResolvableMissingSource ? (
+                            <>
+                              Your README references{" "}
+                              {readmeAssetWarning.resolvableTotal === 1
+                                ? "a package-relative image path"
+                                : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
+                              ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
+                              {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
+                              Without Source repo + Commit SHA the plugin detail page can't resolve
+                              them to your source host, so they will 404. Fill in GitHub repository
+                              + Commit SHA (and Package path if the package isn't at the repo root)
+                              to serve them from raw.githubusercontent.com, or rewrite them to
+                              absolute URLs in the README.
+                            </>
+                          ) : null}
+                          {readmeAssetWarning.showSourcePathReminder &&
+                          readmeAssetWarning.resolvedBaseUrl ? (
+                            <>
+                              Your README references{" "}
+                              {readmeAssetWarning.resolvableTotal === 1
+                                ? "a package-relative image path"
+                                : `${readmeAssetWarning.resolvableTotal} package-relative image paths`}{" "}
+                              ({readmeAssetWarning.resolvableSamples.slice(0, 3).join(", ")}
+                              {readmeAssetWarning.resolvableSamples.length > 3 ? ", \u2026" : ""}).
+                              They will be served from {readmeAssetWarning.resolvedBaseUrl} — make
+                              sure Package path matches where this package lives in the repo, or the
+                              images will 404.
+                            </>
+                          ) : null}
+                          {(readmeAssetWarning.showResolvableMissingSource ||
+                            readmeAssetWarning.showSourcePathReminder) &&
+                          readmeAssetWarning.showUnresolvable
+                            ? " "
+                            : null}
+                          {readmeAssetWarning.showUnresolvable ? (
+                            <>
+                              Your README also references{" "}
+                              {readmeAssetWarning.unresolvableTotal === 1
+                                ? "a root-absolute image path"
+                                : `${readmeAssetWarning.unresolvableTotal} root-absolute image paths`}{" "}
+                              ({readmeAssetWarning.unresolvableSamples.slice(0, 3).join(", ")}
+                              {readmeAssetWarning.unresolvableSamples.length > 3 ? ", \u2026" : ""}
+                              ). These start with "/" and are resolved against the page origin, not
+                              the package, so Source repo + Commit SHA cannot rewrite them — please
+                              replace them with absolute URLs or package-relative paths in the
+                              README.
+                            </>
+                          ) : null}
+                        </span>
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <FieldLabelWithHelp
+                      htmlFor="pluginSourceRef"
+                      help="Optional tag or branch that points at the release source."
+                    >
+                      Tag or branch
+                    </FieldLabelWithHelp>
+                    <Input
+                      id="pluginSourceRef"
+                      placeholder="v1.0.0 or main"
+                      value={sourceRef}
+                      disabled={metadataDisabled}
+                      onChange={(event) => setSourceRef(event.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <FieldLabelWithHelp
+                      htmlFor="pluginSourcePath"
+                      help="Use . when the package is at the repo root; otherwise use its subfolder path."
+                    >
+                      Package path
+                    </FieldLabelWithHelp>
+                    <Input
+                      id="pluginSourcePath"
+                      placeholder="."
+                      value={sourcePath}
+                      disabled={metadataDisabled}
+                      onChange={(event) => setSourcePath(event.target.value)}
+                    />
+                  </div>
+                </div>
               </div>
-              <Label htmlFor="pluginChangelog" className="sr-only">
-                Changelog
-              </Label>
-              <Textarea
-                id="pluginChangelog"
-                placeholder="Describe what changed in this release..."
-                rows={4}
-                value={changelog}
-                disabled={metadataDisabled}
-                onChange={(event) => setChangelog(event.target.value)}
-              />
             </Card>
-          ) : null}
 
-          <div className="mt-5 flex items-center justify-between gap-4">
-            <div className="flex flex-col gap-2">
-              {error ? <PluginPublishError message={error} /> : null}
-              {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
-              {!status ? (
-                <div className="text-sm text-[color:var(--ink-soft)]">
-                  New releases stay private until automated security checks and verification finish.
+            {showChangelogField ? (
+              <Card
+                className={`mt-5 ${isMetadataLocked ? "pointer-events-none opacity-60" : ""}`}
+                aria-disabled={isMetadataLocked}
+              >
+                <div>
+                  <h2 className="font-display text-lg font-bold leading-tight text-[color:var(--ink)]">
+                    Changelog
+                  </h2>
+                  <p className="mt-1 text-sm text-[color:var(--ink-soft)]">
+                    Summarize what changed in this release.
+                  </p>
                 </div>
-              ) : null}
-              {publishBlockerSummary ? (
-                <div className="text-sm font-medium text-status-error-fg">
-                  {publishBlockerSummary}
-                </div>
-              ) : null}
-            </div>
-            <Button
-              variant="primary"
-              size="lg"
-              type="button"
-              disabled={isPublishDisabled}
-              loading={isSubmitting}
-              onClick={() => {
-                startTransition(() => {
-                  void (async () => {
-                    try {
-                      if (validationError) {
-                        toast.error(validationError);
-                        return;
-                      }
-                      if (ownerScopeError) {
-                        toast.error(ownerScopeError);
-                        return;
-                      }
-                      if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
-                        toast.error(
-                          `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
+                <Label htmlFor="pluginChangelog" className="sr-only">
+                  Changelog
+                </Label>
+                <Textarea
+                  id="pluginChangelog"
+                  placeholder="Describe what changed in this release..."
+                  rows={4}
+                  value={changelog}
+                  disabled={metadataDisabled}
+                  onChange={(event) => {
+                    changelogTouchedRef.current = true;
+                    changelogRequestRef.current += 1;
+                    setChangelog(event.target.value);
+                  }}
+                />
+              </Card>
+            ) : null}
+
+            <div className="mt-5 flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-2">
+                {error ? <PluginPublishError message={error} /> : null}
+                {status ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">{status}</div>
+                ) : null}
+                {!status ? (
+                  <div className="text-sm text-[color:var(--ink-soft)]">
+                    New releases stay private until automated security checks and verification
+                    finish.
+                  </div>
+                ) : null}
+                {publishBlockerSummary ? (
+                  <div className="text-sm font-medium text-status-error-fg">
+                    {publishBlockerSummary}
+                  </div>
+                ) : null}
+              </div>
+              <Button
+                variant="primary"
+                size="lg"
+                type="button"
+                disabled={isPublishDisabled}
+                loading={isSubmitting}
+                onClick={() => {
+                  startTransition(() => {
+                    void (async () => {
+                      try {
+                        if (validationError) {
+                          toast.error(validationError);
+                          return;
+                        }
+                        if (!selectedPublisher) {
+                          toast.error("Select an available publisher to publish.");
+                          return;
+                        }
+                        if (ownerScopeError) {
+                          toast.error(ownerScopeError);
+                          return;
+                        }
+                        if (family === "code-plugin" && codePluginFieldIssues.length > 0) {
+                          toast.error(
+                            `Missing required OpenClaw package metadata: ${codePluginFieldIssues.join(", ")}`,
+                          );
+                          return;
+                        }
+                        setIsSubmitting(true);
+                        setError(null);
+                        const uploaded = await buildPackageUploadEntries(files, {
+                          generateUploadUrl,
+                          hashFile,
+                          uploadFile,
+                        });
+                        const result = await publishRelease({
+                          payload: {
+                            name: name.trim(),
+                            displayName: displayName.trim() || undefined,
+                            ownerHandle: selectedPublisher.handle,
+                            family,
+                            version: version.trim(),
+                            changelog: changelog.trim(),
+                            ...(categories.length || categoriesTouchedRef.current
+                              ? { categories }
+                              : {}),
+                            ...(topics.trim() || topicsTouchedRef.current
+                              ? { topics: parseCatalogTopicsInput(topics) }
+                              : {}),
+                            ...(sourceRepo.trim() && sourceCommit.trim()
+                              ? {
+                                  source: {
+                                    kind: "github" as const,
+                                    repo: sourceRepo.trim(),
+                                    url: sourceRepo.trim().startsWith("http")
+                                      ? sourceRepo.trim()
+                                      : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
+                                    ref: sourceRef.trim() || sourceCommit.trim(),
+                                    commit: sourceCommit.trim(),
+                                    path: sourcePath.trim() || ".",
+                                    importedAt: Date.now(),
+                                  },
+                                }
+                              : {}),
+                            ...(family === "bundle-plugin"
+                              ? {
+                                  bundle: {
+                                    format: bundleFormat.trim() || undefined,
+                                    hostTargets: hostTargets
+                                      .split(",")
+                                      .map((entry) => entry.trim())
+                                      .filter(Boolean),
+                                  },
+                                }
+                              : {}),
+                            files: uploaded,
+                          },
+                        });
+                        const publishResult = parsePluginPublishResult(result);
+                        const submittedPackageName =
+                          publishResult.packageName ?? canonicalDraftName;
+                        const existingPluginHasPage = Boolean(
+                          submittedPackageName &&
+                          (existingPluginPage?.package?.name === submittedPackageName ||
+                            existing?.package?.name === submittedPackageName),
                         );
-                        return;
+                        const hasSubmittedPluginPage =
+                          publishResult.hasPluginPage || existingPluginHasPage;
+                        if (publishResult.isPending) {
+                          if (hasSubmittedPluginPage) {
+                            setStatus("Publish received. Security checks are running.");
+                          } else {
+                            setStatus(null);
+                            void navigate({ to: "/dashboard" });
+                          }
+                        } else {
+                          setStatus(
+                            "Published. Pending security checks and verification before public listing.",
+                          );
+                        }
+                        if (hasSubmittedPluginPage) {
+                          setSubmittedPlugin({
+                            name:
+                              displayName.trim() ||
+                              displayPluginPackageName(submittedPackageName ?? name.trim()),
+                            path: buildPluginDetailHref(submittedPackageName ?? name.trim(), {
+                              ownerHandle: selectedPublisher.handle,
+                            }),
+                            publisher: {
+                              displayName: selectedPublisher.displayName,
+                              handle: selectedPublisher.handle,
+                            },
+                          });
+                        }
+                      } catch (publishError) {
+                        const message = formatPublishError(publishError);
+                        setError(message);
+                        if (!isPluginInspectorPublishError(message)) {
+                          toast.error(message);
+                        }
+                        setStatus(null);
+                      } finally {
+                        setIsSubmitting(false);
                       }
-                      setIsSubmitting(true);
-                      setStatus("Uploading files...");
-                      setError(null);
-                      const uploaded = await buildPackageUploadEntries(files, {
-                        generateUploadUrl,
-                        hashFile,
-                        uploadFile,
-                      });
-                      setStatus("Publishing release...");
-                      await publishRelease({
-                        payload: {
-                          name: name.trim(),
-                          displayName: displayName.trim() || undefined,
-                          ownerHandle: ownerHandle || undefined,
-                          family,
-                          version: version.trim(),
-                          changelog: changelog.trim(),
-                          ...(categories.length || categoriesTouchedRef.current
-                            ? { categories }
-                            : {}),
-                          ...(topics.trim() || topicsTouchedRef.current
-                            ? { topics: parseCatalogTopicsInput(topics) }
-                            : {}),
-                          ...(sourceRepo.trim() && sourceCommit.trim()
-                            ? {
-                                source: {
-                                  kind: "github" as const,
-                                  repo: sourceRepo.trim(),
-                                  url: sourceRepo.trim().startsWith("http")
-                                    ? sourceRepo.trim()
-                                    : `https://github.com/${sourceRepo.trim().replace(/^\/+|\/+$/g, "")}`,
-                                  ref: sourceRef.trim() || sourceCommit.trim(),
-                                  commit: sourceCommit.trim(),
-                                  path: sourcePath.trim() || ".",
-                                  importedAt: Date.now(),
-                                },
-                              }
-                            : {}),
-                          ...(family === "bundle-plugin"
-                            ? {
-                                bundle: {
-                                  format: bundleFormat.trim() || undefined,
-                                  hostTargets: hostTargets
-                                    .split(",")
-                                    .map((entry) => entry.trim())
-                                    .filter(Boolean),
-                                },
-                              }
-                            : {}),
-                          files: uploaded,
-                        },
-                      });
-                      setStatus(
-                        "Published. Pending security checks and verification before public listing.",
-                      );
-                    } catch (publishError) {
-                      const message = formatPublishError(publishError);
-                      setError(message);
-                      if (!isPluginInspectorPublishError(message)) {
-                        toast.error(message);
-                      }
-                      setStatus(null);
-                    } finally {
-                      setIsSubmitting(false);
-                    }
-                  })();
-                });
-              }}
-            >
-              {isPublishDisabled && !isSubmitting ? (
-                <Lock className="h-4 w-4" aria-hidden="true" />
-              ) : null}
-              Publish plugin
-            </Button>
+                    })();
+                  });
+                }}
+              >
+                {isPublishDisabled && !isSubmitting ? (
+                  <Lock className="h-4 w-4" aria-hidden="true" />
+                ) : null}
+                Publish plugin
+              </Button>
+            </div>
           </div>
-
-          {isMetadataLocked ? (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-x-0 bottom-0 h-44"
-              style={{
-                background: "linear-gradient(to bottom, transparent, var(--bg) 88%)",
-              }}
-            />
-          ) : null}
-        </div>
+        ) : null}
       </Container>
+      {submittedPlugin ? (
+        <PluginPublishSubmittedDialog
+          isOpen
+          plugin={submittedPlugin}
+          onDismiss={() => setSubmittedPlugin(null)}
+        />
+      ) : null}
     </main>
   );
 }
 
-function FieldLabelWithHelp(props: { htmlFor: string; help: string; children: ReactNode }) {
+function RequiredIndicator() {
+  return (
+    <>
+      <span className="text-status-error-fg" aria-hidden="true">
+        *
+      </span>
+      <span className="sr-only"> (required)</span>
+    </>
+  );
+}
+
+function FieldLabelWithHelp(props: {
+  htmlFor: string;
+  help: string;
+  children: ReactNode;
+  required?: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5">
-      <Label htmlFor={props.htmlFor}>{props.children}</Label>
+      <Label htmlFor={props.htmlFor}>
+        {props.children}
+        {props.required ? <RequiredIndicator /> : null}
+      </Label>
       <span
         tabIndex={0}
         role="img"

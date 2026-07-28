@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# metrics-query: Execute a metrics query against Axiom MetricsDB
+#
+# Usage: metrics-query [-p name=value]... <deployment> <mpl> <startTime> <endTime>
+#
+# Times: RFC3339 (e.g. 2025-01-01T00:00:00Z) or relative (e.g. now-1h, now-1d).
+#
+# Parameter values (-p / --param name=value, repeatable):
+#   For each MPL parameter declared in the query (e.g. `param $svc: string;`),
+#   pass the variable name without the leading `$` and an MPL literal as the
+#   value. The script applies the `param__` prefix to the key and forwards the
+#   value verbatim under the request body's `params` object — i.e. `-p svc=...`
+#   becomes `params.param__svc`. Callers are responsible for formatting the
+#   value as a valid MPL literal (per the metrics spec) and for any quoting
+#   the literal requires; the server parses it according to the variable's
+#   declared type. Parameters declared optional in the MPL (see metrics-spec)
+#   may be omitted; required parameters must be supplied or the server returns
+#   HTTP 400.
+#
+# Examples:
+#   metrics-query prod '`otel-metrics`:`http.server.duration` | align to 5m using avg | group by `endpoint` using sum' \
+#     '2025-06-01T00:00:00Z' '2025-06-02T00:00:00Z'
+#   metrics-query prod '`otel-metrics`:`http.server.duration` | align to 5m using avg' now-1h now
+#   # With parameters $svc: string and $window: Duration:
+#   metrics-query -p svc='"frontend"' -p window='5m' prod \
+#     'param $svc: string; param $window: Duration; `otel-metrics`:`http.server.duration` | where `service.name` == $svc | align to $window using avg' \
+#     now-1h now
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+PARAMS=()
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -p|--param)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $1 requires an argument of the form name=value" >&2
+                exit 1
+            fi
+            PARAMS+=("$2")
+            shift 2
+            ;;
+        --param=*)
+            PARAMS+=("${1#--param=}")
+            shift
+            ;;
+        --)
+            shift
+            while [[ $# -gt 0 ]]; do POSITIONAL+=("$1"); shift; done
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+
+DEPLOYMENT="${POSITIONAL[0]:-}"
+MPL="${POSITIONAL[1]:-}"
+START_TIME="${POSITIONAL[2]:-}"
+END_TIME="${POSITIONAL[3]:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$MPL" || -z "$START_TIME" || -z "$END_TIME" ]]; then
+    echo "Usage: metrics-query [-p name=value]... <deployment> <mpl> <startTime> <endTime>" >&2
+    echo "" >&2
+    echo "Times: RFC3339 (e.g. 2025-01-01T00:00:00Z) or relative (e.g. now-1h, now-1d)." >&2
+    echo "" >&2
+    echo "-p / --param name=value (repeatable): supply an MPL parameter value." >&2
+    echo "  name  - variable name without the leading \$ (e.g. 'svc' for \$svc)." >&2
+    echo "  value - MPL literal, forwarded verbatim under params.param__<name>." >&2
+    exit 1
+fi
+
+# Validate and split params into parallel name/value arrays.
+PARAM_NAMES=()
+PARAM_VALUES=()
+if [[ ${#PARAMS[@]} -gt 0 ]]; then
+    for entry in "${PARAMS[@]}"; do
+        if [[ "$entry" != *"="* ]]; then
+            echo "Error: -p expects name=value, got: $entry" >&2
+            exit 1
+        fi
+        name="${entry%%=*}"
+        value="${entry#*=}"
+        if [[ -z "$name" ]]; then
+            echo "Error: -p name is empty in: $entry" >&2
+            exit 1
+        fi
+        if [[ "${name:0:1}" == "\$" ]]; then
+            echo "Error: -p name must not include the leading \$ (got: $name); pass the bare variable name" >&2
+            exit 1
+        fi
+        PARAM_NAMES+=("$name")
+        PARAM_VALUES+=("$value")
+    done
+fi
+
+# Extract dataset name from MPL: `dataset`:`metric` ... or dataset:`metric` ...
+# Strip leading `param <name>: <type>;` declarations first so their `:` doesn't
+# get mistaken for the dataset:metric separator.
+PIPELINE="$MPL"
+while [[ "$PIPELINE" =~ ^[[:space:]]*[Pp]aram[[:space:]] ]]; do
+    if [[ "$PIPELINE" != *";"* ]]; then break; fi
+    PIPELINE="${PIPELINE#*;}"
+done
+DATASET=$(echo "$PIPELINE" | sed 's/`//g' | cut -d: -f1 | tr -d '[:space:]')
+
+QUERY_EDGE_DEPLOYMENT=""
+if [[ -n "$DATASET" ]]; then
+    RESOLVED_URL=$("$SCRIPT_DIR/resolve-url" "$DEPLOYMENT" "$DATASET" 2>/dev/null || true)
+    if [[ -n "$RESOLVED_URL" ]]; then
+        export AXIOM_URL_OVERRIDE="$RESOLVED_URL"
+        # Derive queryEdgeDeployment from edge URL: https://eu-central-1.aws.edge.axiom.co → cloud.eu-central-1.aws
+        if [[ "$RESOLVED_URL" == *".edge.axiom.co" ]]; then
+            QUERY_EDGE_DEPLOYMENT="cloud.$(echo "$RESOLVED_URL" | sed 's|https://||;s|\.edge\.axiom\.co||')"
+        fi
+    fi
+fi
+
+JQ_ARGS=(
+    --arg apl "$MPL"
+    --arg startT "$START_TIME"
+    --arg endT "$END_TIME"
+)
+JQ_EXPR='{apl: $apl, startTime: $startT, endTime: $endT}'
+
+if [[ -n "$QUERY_EDGE_DEPLOYMENT" ]]; then
+    JQ_ARGS+=(--arg edgeDeployment "$QUERY_EDGE_DEPLOYMENT")
+    JQ_EXPR="$JQ_EXPR + {queryEdgeDeployment: \$edgeDeployment}"
+fi
+
+if [[ ${#PARAM_NAMES[@]} -gt 0 ]]; then
+    PARAMS_EXPR=""
+    for i in "${!PARAM_NAMES[@]}"; do
+        JQ_ARGS+=(--arg "pn$i" "${PARAM_NAMES[$i]}" --arg "pv$i" "${PARAM_VALUES[$i]}")
+        if [[ -n "$PARAMS_EXPR" ]]; then PARAMS_EXPR+=" + "; fi
+        PARAMS_EXPR+="{(\"param__\" + \$pn$i): \$pv$i}"
+    done
+    JQ_EXPR="$JQ_EXPR + {params: ($PARAMS_EXPR)}"
+fi
+
+BODY=$(jq -n "${JQ_ARGS[@]}" "$JQ_EXPR")
+
+AXIOM_ACCEPT="application/json+metrics.v2" "$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" POST "/v1/query/_mpl" "$BODY"

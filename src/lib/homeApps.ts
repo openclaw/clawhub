@@ -528,26 +528,6 @@ export function simpleIconUrl(slug: string) {
   return `${SIMPLE_ICON_BASE_URL}/${slug}.svg`;
 }
 
-const HOME_APP_POPULAR_SIMPLE_ICON_IDS = [
-  "github",
-  "vscode",
-  "notion",
-  "slack",
-  "gmail",
-  "google-drive",
-  "google-sheets",
-  "google-calendar",
-  "linear",
-  "figma",
-  "trello",
-  "whatsapp",
-] as const satisfies readonly (keyof typeof HOME_APP_SIMPLE_ICONS)[];
-
-export const HOME_APP_ICON_PRELOAD_HREFS = [
-  ...HOME_APP_POPULAR_SIMPLE_ICON_IDS.map((id) => simpleIconUrl(HOME_APP_SIMPLE_ICONS[id])),
-  ...Object.values(HOME_APP_IMAGE_ICONS),
-];
-
 function homeAppIcon({ id, iconDomain }: { id: string; iconDomain?: string }): HomeAppIcon {
   if (id in HOME_APP_IMAGE_ICONS) {
     return {

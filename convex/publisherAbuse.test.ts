@@ -50,6 +50,9 @@ vi.mock("./_generated/api", () => ({
       notifyPublisherAbuseSignalChangesInternal: Symbol(
         "notifyPublisherAbuseSignalChangesInternal",
       ),
+      notifyPublisherAbuseSignalScanFailureInternal: Symbol(
+        "notifyPublisherAbuseSignalScanFailureInternal",
+      ),
       persistTemporalPublisherAbuseCandidatesInternal: Symbol(
         "persistTemporalPublisherAbuseCandidatesInternal",
       ),
@@ -288,6 +291,16 @@ const listSignalsPageHandler = (
   >
 )._handler;
 
+const getSignalActivityTrendHandler = (
+  publisherAbuse.getSignalActivityTrend as unknown as Wrapped<
+    { signalId: string; endDay: number },
+    {
+      downloads: { total: number; points: Array<{ day: number; value: number }> };
+      installs: { total: number; points: Array<{ day: number; value: number }> };
+    } | null
+  >
+)._handler;
+
 const archiveTemporalPublisherAbuseSignalsPageHandler = (
   publisherAbuse.archiveTemporalPublisherAbuseSignalsPageInternal as unknown as Wrapped<
     {
@@ -364,6 +377,18 @@ const dismissPublisherAbuseSignalHandler = (
   >
 )._handler;
 
+const reviewPublisherAbuseSignalsBatchHandler = (
+  publisherAbuse.reviewPublisherAbuseSignalsBatch as unknown as Wrapped<
+    {
+      signalIds: string[];
+      status: "snoozed" | "dismissed";
+      note?: string;
+      days?: number;
+    },
+    { ok: true; status: "snoozed" | "dismissed"; updated: number }
+  >
+)._handler;
+
 const reopenPublisherAbuseSignalHandler = (
   publisherAbuse.reopenPublisherAbuseSignal as unknown as Wrapped<
     { signalId: string; note?: string },
@@ -399,6 +424,19 @@ const notifyPublisherAbuseSignalChangesHandler = (
   >
 )._handler;
 
+const notifyPublisherAbuseSignalScanFailureHandler = (
+  publisherAbuse.notifyPublisherAbuseSignalScanFailureInternal as unknown as Wrapped<
+    {
+      runId: string;
+      failureCount: number;
+      errorMessage: string;
+      failedAt: number;
+      deliveryAttempt?: number;
+    },
+    { ok: boolean; sent: boolean; skipped?: boolean; error?: string }
+  >
+)._handler;
+
 const banPublisherAbuseOwnerHandler = (
   publisherAbuse.banPublisherAbuseOwner as unknown as Wrapped<
     {
@@ -408,6 +446,18 @@ const banPublisherAbuseOwnerHandler = (
       reason?: string;
     },
     { ok: true; status: "banned" }
+  >
+)._handler;
+
+const markPublisherAbuseNominationReviewedHandler = (
+  publisherAbuse.markPublisherAbuseNominationReviewed as unknown as Wrapped<
+    {
+      nominationId: string;
+      expectedLatestScoreId: string;
+      expectedUpdatedAt: number;
+      note?: string;
+    },
+    { ok: true; status: "reviewed_no_action" }
   >
 )._handler;
 
@@ -626,13 +676,15 @@ function makePublisherAbuseSignalCountQuery(signals: unknown[]) {
   };
 }
 
-function makeEmptyPublisherAbuseScoreRunsQuery() {
+function makePublisherAbuseNominationCountQuery(nominations: unknown[] = []) {
   return {
     withIndex: (
       indexName: string,
       build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
     ) => {
-      expect(indexName).toBe("by_model_version_and_started_at");
+      expect(["by_status_and_label_and_last_scored_at", "by_status_and_reviewed_at"]).toContain(
+        indexName,
+      );
       const constraints: Record<string, unknown> = {};
       const q = {
         eq(field: string, value: unknown) {
@@ -641,7 +693,56 @@ function makeEmptyPublisherAbuseScoreRunsQuery() {
         },
       };
       build(q);
-      expect(constraints.modelVersion).toBeTypeOf("string");
+      expect(constraints.status).toBeDefined();
+      return {
+        order: (direction: "asc" | "desc") => {
+          expect(direction).toBe("desc");
+          return {
+            take: async (limit: number) =>
+              nominations
+                .filter((nomination) => {
+                  if (!nomination || typeof nomination !== "object") return false;
+                  const fields = nomination as Record<string, unknown>;
+                  return Object.entries(constraints).every(
+                    ([field, value]) => fields[field] === value,
+                  );
+                })
+                .slice(0, limit),
+          };
+        },
+      };
+    },
+  };
+}
+
+function makeEmptyPublisherAbuseScoreRunsQuery() {
+  return {
+    withIndex: (
+      indexName: string,
+      build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+    ) => {
+      expect([
+        "by_model_version_and_started_at",
+        "by_temporal_pipeline_kind_and_started_at",
+        "by_model_version_and_temporal_pipeline_kind_and_phase_started_at",
+      ]).toContain(indexName);
+      const constraints: Record<string, unknown> = {};
+      const q = {
+        eq(field: string, value: unknown) {
+          constraints[field] = value;
+          return q;
+        },
+      };
+      build(q);
+      if (indexName === "by_model_version_and_started_at") {
+        expect(constraints.modelVersion).toBeTypeOf("string");
+      } else if (indexName === "by_model_version_and_temporal_pipeline_kind_and_phase_started_at") {
+        expect(constraints.modelVersion).toBeTypeOf("string");
+        expect(constraints.temporalPipelineKind).toBeUndefined();
+        expect(constraints.temporalPipelinePhase).toBeTypeOf("string");
+      } else {
+        expect(constraints).toEqual({ temporalPipelineKind: "signals" });
+      }
       return {
         order: (direction: "asc" | "desc") => {
           expect(direction).toBe("desc");
@@ -756,10 +857,19 @@ describe("publisher abuse dry-run persistence", () => {
         listDashboardHandler({ db: { get: dbGet, query: dbQuery } }, {}),
       ).resolves.toEqual({
         latestRun: null,
+        latestSignalRun: null,
         pendingItems: [],
         pendingPotentialBanCandidateItems: [],
         pendingReviewItems: [],
         recentResolvedItems: [],
+        pendingPotentialBanCandidateCount: 0,
+        pendingReviewCount: 0,
+        pendingCount: 0,
+        recentResolvedCount: 0,
+        pendingPotentialBanCandidateCountHasMore: false,
+        pendingReviewCountHasMore: false,
+        pendingCountHasMore: false,
+        recentResolvedCountHasMore: false,
         signalCount: 0,
         signalCountHasMore: false,
       });
@@ -813,10 +923,19 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
+      latestSignalRun: null,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
       recentResolvedItems: [],
+      pendingPotentialBanCandidateCount: 0,
+      pendingReviewCount: 0,
+      pendingCount: 0,
+      recentResolvedCount: 0,
+      pendingPotentialBanCandidateCountHasMore: false,
+      pendingReviewCountHasMore: false,
+      pendingCountHasMore: false,
+      recentResolvedCountHasMore: false,
       signalCount: 0,
       signalCountHasMore: false,
     });
@@ -848,6 +967,54 @@ describe("publisher abuse dry-run persistence", () => {
     expect(assertModerator).not.toHaveBeenCalled();
     expect(db.get).not.toHaveBeenCalled();
     expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it("returns bounded 30-day download and install trends for a signal", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const rows = [
+      { day: 98, downloads: 120, installs: 9 },
+      { day: 100, downloads: 180, installs: 12 },
+    ];
+    const take = vi.fn(async () => rows);
+    const indexBuilder = {
+      eq: vi.fn().mockReturnThis(),
+      gte: vi.fn().mockReturnThis(),
+      lte: vi.fn().mockReturnThis(),
+    };
+    const db = {
+      get: vi.fn(async (id: string) =>
+        id === "publisherAbuseSignals:ratio" ? { _id: id, skillId: "skills:ratio" } : null,
+      ),
+      query: vi.fn((table: string) => {
+        expect(table).toBe("skillDailyStats");
+        return {
+          withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+            expect(indexName).toBe("by_skill_day");
+            callback(indexBuilder);
+            return { take };
+          },
+        };
+      }),
+    };
+
+    const result = await getSignalActivityTrendHandler(
+      { db },
+      { signalId: "publisherAbuseSignals:ratio", endDay: 100 },
+    );
+
+    expect(result?.downloads.total).toBe(300);
+    expect(result?.installs.total).toBe(21);
+    expect(result?.downloads.points).toHaveLength(30);
+    expect(result?.installs.points).toHaveLength(30);
+    expect(result?.downloads.points.at(-1)).toEqual({ day: 100, value: 180 });
+    expect(result?.installs.points.at(-1)).toEqual({ day: 100, value: 12 });
+    expect(take).toHaveBeenCalledWith(30);
+    expect(indexBuilder.eq).toHaveBeenCalledWith("skillId", "skills:ratio");
+    expect(indexBuilder.gte).toHaveBeenCalledWith("day", 71);
+    expect(indexBuilder.lte).toHaveBeenCalledWith("day", 100);
   });
 
   it("lets moderators snooze, dismiss, and reopen archived signals with audit rows", async () => {
@@ -924,6 +1091,12 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         reviewStatus: "snoozed",
         reviewNote: "looks crawler-ish",
+        evidenceAcknowledgedAt: expect.any(Number),
+        evidenceBaselineDownloads: 10_000,
+        evidenceBaselineInstalls: 1_200,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        snoozeCount: 1,
         needsNotification: false,
       }),
     );
@@ -971,6 +1144,123 @@ describe("publisher abuse dry-run persistence", () => {
       }),
     );
     expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
+  });
+
+  it("lets moderators snooze a batch of signals with one audited transition per signal", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signals = new Map(
+      ["first", "second"].map((suffix, index) => [
+        `publisherAbuseSignals:${suffix}`,
+        {
+          _id: `publisherAbuseSignals:${suffix}`,
+          signalType: "sustained_downloads_flat_installs",
+          ownerKey: `publisher:publishers:${suffix}`,
+          ownerPublisherId: `publishers:${suffix}`,
+          ownerUserId: `users:${suffix}`,
+          handleSnapshot: suffix,
+          skillId: `skills:${suffix}`,
+          skillSlug: suffix,
+          skillDisplayName: suffix,
+          firstSeenAt: 10,
+          lastSeenAt: 20,
+          seenCount: index + 1,
+          recent7Downloads: 1_000,
+          recent7Installs: 0,
+          recent7InstallDownloadRatio: 0,
+          recent30Downloads: 5_000,
+          recent30Installs: 0,
+          recent30InstallDownloadRatio: 0,
+          allTimeDownloads: 10_000 + index,
+          allTimeInstalls: 0,
+          allTimeInstallDownloadRatio: 0,
+          reviewStatus: "open",
+          lastChangedAt: 20,
+          needsNotification: false,
+        },
+      ]),
+    );
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async () => "publisherAbuseSignalReviewEvents:event");
+    const now = 1_800_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+
+    await expect(
+      reviewPublisherAbuseSignalsBatchHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => signals.get(id) ?? null),
+            patch,
+            insert,
+          },
+        },
+        {
+          signalIds: ["publisherAbuseSignals:first", "publisherAbuseSignals:second"],
+          status: "snoozed",
+          note: "Likely crawler traffic",
+          days: 30,
+        },
+      ),
+    ).resolves.toEqual({ ok: true, status: "snoozed", updated: 2 });
+
+    expect(patch).toHaveBeenCalledTimes(2);
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:first",
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        reviewNote: "Likely crawler traffic",
+        snoozedUntil: now + 30 * 24 * 60 * 60 * 1_000,
+        evidenceBaselineDownloads: 10_000,
+        needsNotification: false,
+      }),
+    );
+    expect(insert).toHaveBeenCalledTimes(2);
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseSignalReviewEvents",
+      expect.objectContaining({
+        actorUserId: "users:moderator",
+        eventType: "snoozed",
+        previousStatus: "open",
+        nextStatus: "snoozed",
+      }),
+    );
+  });
+
+  it("rejects a bulk review atomically when a selected signal is no longer open", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const signals = new Map([
+      ["publisherAbuseSignals:open", { _id: "publisherAbuseSignals:open", reviewStatus: "open" }],
+      [
+        "publisherAbuseSignals:reviewed",
+        { _id: "publisherAbuseSignals:reviewed", reviewStatus: "snoozed" },
+      ],
+    ]);
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async () => "publisherAbuseSignalReviewEvents:event");
+
+    await expect(
+      reviewPublisherAbuseSignalsBatchHandler(
+        {
+          db: {
+            get: vi.fn(async (id: string) => signals.get(id) ?? null),
+            patch,
+            insert,
+          },
+        },
+        {
+          signalIds: ["publisherAbuseSignals:open", "publisherAbuseSignals:reviewed"],
+          status: "dismissed",
+        },
+      ),
+    ).rejects.toThrow("One or more selected signals are no longer open; refresh and try again");
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("does not reopen or notify already-open publisher abuse signals", async () => {
@@ -1034,7 +1324,7 @@ describe("publisher abuse dry-run persistence", () => {
     globalThis.fetch = fetchMock as typeof fetch;
     const signal = {
       _id: "publisherAbuseSignals:ratio",
-      signalType: "high_install_download_ratio",
+      signalType: "sustained_downloads_flat_installs",
       ownerKey: "publisher:publishers:ratio-owner",
       ownerPublisherId: "publishers:ratio-owner",
       ownerUserId: "users:ratio-owner",
@@ -1054,6 +1344,9 @@ describe("publisher abuse dry-run persistence", () => {
       allTimeDownloads: 10_000,
       allTimeInstalls: 1_200,
       allTimeInstallDownloadRatio: 0.12,
+      recurrenceCount: 1,
+      freshDownloadsSinceSnooze: 2_000,
+      freshInstallsSinceSnooze: 0,
       reviewStatus: "open",
       needsNotification: false,
     };
@@ -1099,6 +1392,9 @@ describe("publisher abuse dry-run persistence", () => {
               publisher: "ratio-owner",
               skillSlug: "ratio-skill",
               severity: "high",
+              recurrenceCount: 1,
+              freshDownloadsSinceSnooze: 2_000,
+              freshInstallsSinceSnooze: 0,
               seenCount: 3,
               skillUrl: "https://clawhub.example.test/ratio-owner/skills/ratio-skill",
             }),
@@ -1113,6 +1409,57 @@ describe("publisher abuse dry-run persistence", () => {
           now: expect.any(Number),
         }),
       );
+      expect(scheduler.runAfter).not.toHaveBeenCalled();
+    } finally {
+      process.env = previousEnv;
+      globalThis.fetch = previousFetch;
+    }
+  });
+
+  it("sends terminal signal scan failures through the Hermit publisher abuse endpoint", async () => {
+    const previousEnv = { ...process.env };
+    const previousFetch = globalThis.fetch;
+    process.env.CLAWHUB_HERMIT_TOKEN = "test-token-placeholder";
+    process.env.HERMIT_PUBLISHER_ABUSE_BASE_URL = "https://forms.example.test";
+    process.env.SITE_URL = "https://clawhub.example.test";
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response("ok", { status: 200 }));
+    globalThis.fetch = fetchMock as typeof fetch;
+    const scheduler = { runAfter: vi.fn(async () => null) };
+
+    try {
+      await expect(
+        notifyPublisherAbuseSignalScanFailureHandler(
+          { scheduler },
+          {
+            runId: "publisherAbuseScoreRuns:failed-run",
+            failureCount: 5,
+            errorMessage: "Query exceeded the document read limit.",
+            failedAt: 1716000000000,
+          },
+        ),
+      ).resolves.toEqual({ ok: true, sent: true });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://forms.example.test/api/clawhub-publisher-abuse/signals/digest",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: `Bearer ${process.env.CLAWHUB_HERMIT_TOKEN}`,
+            "Content-Type": "application/json",
+          }),
+        }),
+      );
+      const [, requestInit] = fetchMock.mock.calls[0] ?? [];
+      const requestBody = (requestInit as RequestInit | undefined)?.body;
+      if (typeof requestBody !== "string") throw new Error("Expected Hermit request body");
+      expect(JSON.parse(requestBody)).toEqual({
+        kind: "publisher_abuse_signal_scan_failed",
+        runId: "publisherAbuseScoreRuns:failed-run",
+        failureCount: 5,
+        errorMessage: "Query exceeded the document read limit.",
+        failedAt: 1716000000000,
+        dashboardUrl: "https://clawhub.example.test/management?view=abuse&tab=signals",
+      });
       expect(scheduler.runAfter).not.toHaveBeenCalled();
     } finally {
       process.env = previousEnv;
@@ -1544,6 +1891,9 @@ describe("publisher abuse dry-run persistence", () => {
       get: vi.fn(async () => null),
       query: vi.fn((table: string) => {
         if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery();
+        }
         if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
         if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
         throw new Error(`unexpected table ${table}`);
@@ -1552,15 +1902,256 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
+      latestSignalRun: null,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
       recentResolvedItems: [],
+      pendingPotentialBanCandidateCount: 0,
+      pendingReviewCount: 0,
+      pendingCount: 0,
+      recentResolvedCount: 0,
+      pendingPotentialBanCandidateCountHasMore: false,
+      pendingReviewCountHasMore: false,
+      pendingCountHasMore: false,
+      recentResolvedCountHasMore: false,
       signalCount: 25,
       signalCountHasMore: true,
     });
 
     expect(db.query).toHaveBeenCalledWith("publisherAbuseSignals");
+  });
+
+  it("returns pending publisher abuse nomination counts on the dashboard", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nominations = [
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:ban",
+        latestScoreId: "publisherAbuseScores:ban",
+        label: "potential_ban_candidate",
+        status: "pending",
+      }),
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:review",
+        latestScoreId: "publisherAbuseScores:review",
+        label: "review",
+        status: "pending",
+      }),
+    ];
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id.startsWith("publisherAbuseScores:")) {
+          throw new Error("dashboard count should not hydrate score rows");
+        }
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery(nominations);
+        }
+        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery([]);
+        if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      expect.objectContaining({
+        pendingPotentialBanCandidateCount: 1,
+        pendingReviewCount: 1,
+        pendingCount: 2,
+        recentResolvedCount: 0,
+      }),
+    );
+    expect(db.get).not.toHaveBeenCalled();
+  });
+
+  it("keeps a resumable legacy signal scan visible behind a newer diagnostic run", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const legacySignalRun = {
+      _id: "publisherAbuseScoreRuns:legacy-signal",
+      modelVersion: "publisher-abuse-temporal.v1",
+      status: "running",
+      phase: "collecting",
+      trigger: "cron",
+      startedAt: 200,
+      updatedAt: 200,
+      temporalPipelinePhase: "collecting",
+    };
+    const newerDiagnosticRun = {
+      ...legacySignalRun,
+      _id: "publisherAbuseScoreRuns:newer-diagnostic",
+      startedAt: 300,
+      updatedAt: 300,
+      temporalPipelinePhase: undefined,
+    };
+    const db = {
+      get: vi.fn(async () => null),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") {
+          return {
+            withIndex: (
+              indexName: string,
+              build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              const constraints: Record<string, unknown> = {};
+              const q = {
+                eq(field: string, value: unknown) {
+                  constraints[field] = value;
+                  return q;
+                },
+              };
+              build(q);
+              return {
+                order: () => ({
+                  first: async () => {
+                    if (indexName === "by_temporal_pipeline_kind_and_started_at") return null;
+                    if (
+                      indexName ===
+                      "by_model_version_and_temporal_pipeline_kind_and_phase_started_at"
+                    ) {
+                      return constraints.modelVersion === "publisher-abuse-temporal.v1" &&
+                        constraints.temporalPipelineKind === undefined &&
+                        constraints.temporalPipelinePhase === "collecting"
+                        ? legacySignalRun
+                        : null;
+                    }
+                    return constraints.modelVersion === "publisher-abuse-temporal.v1"
+                      ? newerDiagnosticRun
+                      : null;
+                  },
+                }),
+              };
+            },
+          };
+        }
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery([]);
+        }
+        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery([]);
+        if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      expect.objectContaining({
+        latestRun: expect.objectContaining({ _id: legacySignalRun._id }),
+        latestSignalRun: expect.objectContaining({ _id: legacySignalRun._id }),
+      }),
+    );
+  });
+
+  it("counts only visible publisher abuse nominations on the dashboard", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const visiblePotentialBans = Array.from({ length: 26 }, (_, index) =>
+      makeNomination({
+        _id: `publisherAbuseReviewNominations:visible-ban-${index}`,
+        latestScoreId: `publisherAbuseScores:visible-ban-${index}`,
+        label: "potential_ban_candidate",
+        status: "pending",
+      }),
+    );
+    const nominations = [
+      ...visiblePotentialBans,
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:inactive-pending",
+        latestScoreId: "publisherAbuseScores:inactive-pending",
+        ownerUserId: "users:inactive",
+        label: "potential_ban_candidate",
+        status: "pending",
+      }),
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:official-pending",
+        latestScoreId: "publisherAbuseScores:official-pending",
+        ownerPublisherId: "publishers:official",
+        label: "review",
+        status: "pending",
+      }),
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:visible-review",
+        latestScoreId: "publisherAbuseScores:visible-review",
+        label: "review",
+        status: "pending",
+      }),
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:inactive-resolved",
+        latestScoreId: "publisherAbuseScores:inactive-resolved",
+        ownerUserId: "users:inactive",
+        label: "potential_ban_candidate",
+        status: "reviewed_no_action",
+      }),
+      makeNomination({
+        _id: "publisherAbuseReviewNominations:official-resolved",
+        latestScoreId: "publisherAbuseScores:official-resolved",
+        ownerPublisherId: "publishers:official",
+        label: "potential_ban_candidate",
+        status: "reviewed_no_action",
+      }),
+    ];
+    const db = {
+      get: vi.fn(async (id: string) => {
+        if (id.startsWith("publisherAbuseScores:")) {
+          throw new Error("dashboard count should not hydrate score rows");
+        }
+        if (id === "users:inactive") {
+          return { _id: "users:inactive", role: "user", deactivatedAt: 100 };
+        }
+        if (id === "publishers:official") {
+          return {
+            _id: "publishers:official",
+            kind: "user",
+            handle: "official",
+            linkedUserId: "users:official-owner",
+          };
+        }
+        if (id === "users:official-owner") {
+          return { _id: "users:official-owner", role: "user" };
+        }
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery(nominations);
+        }
+        if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery([]);
+        if (table === "officialPublishers") {
+          return {
+            withIndex: (indexName: string) => {
+              expect(indexName).toBe("by_publisher");
+              return {
+                unique: async () => ({ publisherId: "publishers:official" }),
+              };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+    };
+
+    await expect(listDashboardHandler({ db }, {})).resolves.toEqual(
+      expect.objectContaining({
+        pendingPotentialBanCandidateCount: 25,
+        pendingReviewCount: 1,
+        pendingCount: 26,
+        recentResolvedCount: 1,
+        pendingPotentialBanCandidateCountHasMore: true,
+        pendingReviewCountHasMore: false,
+        pendingCountHasMore: true,
+        recentResolvedCountHasMore: false,
+      }),
+    );
   });
 
   it("does not mark the signal count as approximate at the exact scan limit", async () => {
@@ -1588,6 +2179,9 @@ describe("publisher abuse dry-run persistence", () => {
       }),
       query: vi.fn((table: string) => {
         if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery();
+        }
         if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
         if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
         throw new Error(`unexpected table ${table}`);
@@ -1596,10 +2190,19 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
+      latestSignalRun: null,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
       recentResolvedItems: [],
+      pendingPotentialBanCandidateCount: 0,
+      pendingReviewCount: 0,
+      pendingCount: 0,
+      recentResolvedCount: 0,
+      pendingPotentialBanCandidateCountHasMore: false,
+      pendingReviewCountHasMore: false,
+      pendingCountHasMore: false,
+      recentResolvedCountHasMore: false,
       signalCount: 1,
       signalCountHasMore: false,
     });
@@ -1645,6 +2248,9 @@ describe("publisher abuse dry-run persistence", () => {
       }),
       query: vi.fn((table: string) => {
         if (table === "publisherAbuseScoreRuns") return makeEmptyPublisherAbuseScoreRunsQuery();
+        if (table === "publisherAbuseReviewNominations") {
+          return makePublisherAbuseNominationCountQuery();
+        }
         if (table === "publisherAbuseSignals") return makePublisherAbuseSignalCountQuery(signals);
         if (table === "officialPublishers") {
           return {
@@ -1676,10 +2282,19 @@ describe("publisher abuse dry-run persistence", () => {
 
     await expect(listDashboardHandler({ db }, {})).resolves.toEqual({
       latestRun: null,
+      latestSignalRun: null,
       pendingItems: [],
       pendingPotentialBanCandidateItems: [],
       pendingReviewItems: [],
       recentResolvedItems: [],
+      pendingPotentialBanCandidateCount: 0,
+      pendingReviewCount: 0,
+      pendingCount: 0,
+      recentResolvedCount: 0,
+      pendingPotentialBanCandidateCountHasMore: false,
+      pendingReviewCountHasMore: false,
+      pendingCountHasMore: false,
+      recentResolvedCountHasMore: false,
       signalCount: 1,
       signalCountHasMore: false,
     });
@@ -2334,6 +2949,220 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("marks a pending publisher abuse nomination reviewed without banning", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:review",
+      ownerKey: "publisher:owner",
+      latestScoreId: "publisherAbuseScores:latest",
+      updatedAt: 123,
+    });
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === nomination._id ? nomination : null)),
+        insert,
+        patch,
+      },
+    };
+
+    await expect(
+      markPublisherAbuseNominationReviewedHandler(ctx, {
+        nominationId: nomination._id,
+        expectedLatestScoreId: nomination.latestScoreId,
+        expectedUpdatedAt: nomination.updatedAt,
+        note: " moved to signals ",
+      }),
+    ).resolves.toEqual({ ok: true, status: "reviewed_no_action" });
+
+    expect(assertModerator).toHaveBeenCalledWith(
+      expect.objectContaining({ _id: "users:moderator" }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      nomination._id,
+      expect.objectContaining({
+        status: "reviewed_no_action",
+        reviewedByUserId: "users:moderator",
+        reviewedAt: expect.any(Number),
+        notes: "moved to signals",
+        warningSentAt: undefined,
+        warningPendingAt: undefined,
+        updatedAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: nomination._id,
+        ownerKey: nomination.ownerKey,
+        actorUserId: "users:moderator",
+        scoreId: nomination.latestScoreId,
+        eventType: "triage_status_changed",
+        previousStatus: "pending",
+        nextStatus: "reviewed_no_action",
+        notes: "moved to signals",
+      }),
+    );
+  });
+
+  it("rejects stale publisher abuse nomination review actions", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:stale",
+      latestScoreId: "publisherAbuseScores:newer",
+      updatedAt: 456,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async () => nomination),
+        insert: vi.fn(),
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      markPublisherAbuseNominationReviewedHandler(ctx, {
+        nominationId: nomination._id,
+        expectedLatestScoreId: "publisherAbuseScores:older",
+        expectedUpdatedAt: nomination.updatedAt,
+      }),
+    ).rejects.toThrow("Publisher abuse nomination changed; refresh and try again");
+
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects marking review-only calibration nominations reviewed", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:calibration",
+      latestScoreId: "publisherAbuseScores:latest",
+      label: "review",
+      status: "pending",
+      updatedAt: 123,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async () => nomination),
+        insert: vi.fn(),
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      markPublisherAbuseNominationReviewedHandler(ctx, {
+        nominationId: nomination._id,
+        expectedLatestScoreId: nomination.latestScoreId,
+        expectedUpdatedAt: nomination.updatedAt,
+      }),
+    ).rejects.toThrow(/calibration/i);
+
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects marking non-pending potential-ban nominations reviewed", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:already-reviewed",
+      latestScoreId: "publisherAbuseScores:latest",
+      label: "potential_ban_candidate",
+      status: "reviewed_no_action",
+      updatedAt: 123,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async () => nomination),
+        insert: vi.fn(),
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      markPublisherAbuseNominationReviewedHandler(ctx, {
+        nominationId: nomination._id,
+        expectedLatestScoreId: nomination.latestScoreId,
+        expectedUpdatedAt: nomination.updatedAt,
+      }),
+    ).rejects.toThrow("Only pending publisher abuse nominations can be marked reviewed");
+
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects marking excluded publisher abuse nominations reviewed", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:official",
+      ownerKey: "publisher:publishers:official",
+      ownerPublisherId: "publishers:official",
+      ownerUserId: "users:owner",
+      latestScoreId: "publisherAbuseScores:latest",
+      label: "potential_ban_candidate",
+      status: "pending",
+      updatedAt: 123,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === nomination._id) return nomination;
+          if (id === "publishers:official") {
+            return {
+              _id: "publishers:official",
+              kind: "user",
+              handle: "official",
+              linkedUserId: "users:owner",
+            };
+          }
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
+          return null;
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "officialPublishers") {
+            return {
+              withIndex: () => ({
+                unique: async () => ({
+                  _id: "officialPublishers:official",
+                  publisherId: "publishers:official",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      markPublisherAbuseNominationReviewedHandler(ctx, {
+        nominationId: nomination._id,
+        expectedLatestScoreId: nomination.latestScoreId,
+        expectedUpdatedAt: nomination.updatedAt,
+      }),
+    ).rejects.toThrow("Excluded publisher abuse nominations cannot be acted on");
+
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
   it.each(["admin", "moderator"] as const)(
     "rejects direct ban actions for %s owners without a publisher row",
     async (role) => {
@@ -2865,6 +3694,87 @@ describe("publisher abuse dry-run persistence", () => {
         warningPendingRunId: undefined,
       }),
     );
+  });
+
+  it("preserves sent warning state when deferring candidates from failed score runs", async () => {
+    const nomination = {
+      ...makeNomination({
+        _id: "publisherAbuseReviewNominations:candidate",
+        ownerKey: "publisher:publishers:candidate",
+        ownerPublisherId: "publishers:candidate",
+        ownerUserId: "users:candidate",
+        latestScoreId: "publisherAbuseScores:candidate",
+        label: "potential_ban_candidate",
+        status: "pending",
+      }),
+      warningSentAt: 10,
+      warningExpiresAt: 20,
+      warningScoreId: "publisherAbuseScores:warned",
+      warningRunId: "publisherAbuseScoreRuns:warned",
+    };
+    const score = makeScore({
+      _id: "publisherAbuseScores:candidate",
+      ownerKey: nomination.ownerKey,
+      ownerPublisherId: "publishers:candidate",
+    });
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseScores:candidate") return score;
+          if (id === score.runId) return { ...makeCompletedPressureScoreRun(), status: "failed" };
+          return null;
+        }),
+        patch,
+        insert,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseReviewNominations") {
+            return makeAutoBanNominationQuery([nomination]);
+          }
+          if (table === "systemSettings") {
+            return makePublisherAbuseAutobanSettingQuery({
+              key: "publisherAbuseAutobanEnabled",
+              enabled: true,
+              updatedAt: 1,
+              updatedByUserId: "users:admin",
+            });
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(autoBanPublisherAbuseCandidatesPageHandler(ctx, {})).resolves.toEqual({
+      ok: true,
+      processed: 1,
+      warned: 0,
+      banned: 0,
+      alreadyBanned: 0,
+      skipped: 1,
+      isDone: true,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      nomination._id,
+      expect.objectContaining({
+        status: "candidate_for_future_action",
+        notes: "Autoban skipped: score run failed before completion; manual review required.",
+        warningSentAt: 10,
+        warningExpiresAt: 20,
+        warningScoreId: "publisherAbuseScores:warned",
+        warningRunId: "publisherAbuseScoreRuns:warned",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: nomination._id,
+        nextStatus: "candidate_for_future_action",
+      }),
+    );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -8233,6 +9143,7 @@ describe("publisher abuse dry-run persistence", () => {
       nominations: 0,
       candidates: [],
       benchmark: {
+        scope: "all_active_skills",
         sampleSize: 1,
         downloads30dAverage: 2_000,
         downloads30dMedian: 2_000,
@@ -8245,6 +9156,145 @@ describe("publisher abuse dry-run persistence", () => {
 
     expect(ctx.runQuery).toHaveBeenCalledTimes(1);
     expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
+  it("benchmarks review candidates against every scanned active skill", async () => {
+    const candidate = temporalCandidate("skills:anysearch", {
+      slug: "anysearch",
+      displayName: "AnySearch",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.sustained = false;
+    candidate.temporalScore.recent30Downloads = 3_370;
+    candidate.temporalScore.recent30Installs = 4;
+    candidate.temporalScore.reasonCodes = [];
+    const ordinaryScore = {
+      ...candidate.temporalScore,
+      recent30Downloads: 100,
+      recent30Installs: 1,
+      spikeMultiplier: 1,
+    };
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 100,
+        benchmarkScores: [
+          ...Array.from({ length: 99 }, () => ({ ...ordinaryScore })),
+          candidate.temporalScore,
+        ],
+        candidates: [candidate],
+      })),
+      runMutation: vi.fn(),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: true,
+        candidateLimit: 100,
+        batchSize: 100,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      scannedSkills: 100,
+      highTemporalSkills: 1,
+      benchmark: {
+        sampleSize: 100,
+        downloads30dP95: 100,
+        downloads30dP99: 100,
+      },
+      candidates: [
+        expect.objectContaining({
+          slug: "anysearch",
+          temporalScore: expect.objectContaining({
+            sustained: true,
+            downloads30dCohortBand: "p99",
+          }),
+        }),
+      ],
+    });
+  });
+
+  it("persists the full active-skill benchmark for completed current scans", async () => {
+    const candidate = temporalCandidate("skills:anysearch", {
+      slug: "anysearch",
+      displayName: "AnySearch",
+    });
+    candidate.temporalScore.spike = false;
+    candidate.temporalScore.sustained = false;
+    candidate.temporalScore.recent30Downloads = 3_370;
+    candidate.temporalScore.recent30Installs = 4;
+    candidate.temporalScore.reasonCodes = [];
+    const ordinaryScore = {
+      ...candidate.temporalScore,
+      recent30Downloads: 100,
+      recent30Installs: 1,
+      spikeMultiplier: 1,
+    };
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        runId: "publisherAbuseScoreRuns:temporal",
+        flaggedPublishers: 1,
+        nominations: 0,
+      })
+      .mockResolvedValueOnce({
+        archivedCandidates: 1,
+        archivedSignals: 1,
+        changedSignals: 1,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        processed: 0,
+        warned: 0,
+        banned: 0,
+        alreadyBanned: 0,
+        skipped: 0,
+        isDone: true,
+      });
+    const ctx = {
+      scheduler: { runAfter: vi.fn(async () => null) },
+      runQuery: vi.fn(async () => ({
+        cursor: undefined,
+        isDone: true,
+        scannedSkills: 100,
+        benchmarkScores: [
+          ...Array.from({ length: 99 }, () => ({ ...ordinaryScore })),
+          candidate.temporalScore,
+        ],
+        candidates: [candidate],
+      })),
+      runMutation,
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        mode: "current",
+        dryRun: false,
+        candidateLimit: 100,
+        batchSize: 100,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      scannedSkills: 100,
+      highTemporalSkills: 1,
+      flaggedPublishers: 1,
+    });
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        benchmark: expect.objectContaining({
+          sampleSize: 100,
+          downloads30dP95: 100,
+          downloads30dP99: 100,
+        }),
+      }),
+    );
   });
 
   it("keeps current temporal dry-runs read-only unless archival is requested", async () => {
@@ -8363,7 +9413,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.any(Symbol), {});
   });
 
-  it("archives bounded current temporal dry-run signals before scan completion when requested", async () => {
+  it("does not archive temporal dry-run signals before the full benchmark scan completes", async () => {
     const candidate = temporalCandidate("skills:bounded-ratio", {
       slug: "bounded-ratio",
       displayName: "Bounded Ratio",
@@ -8415,24 +9465,62 @@ describe("publisher abuse dry-run persistence", () => {
       nominations: 0,
     });
 
-    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
-    expect(ctx.runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        candidates: [expect.objectContaining({ skillId: "skills:bounded-ratio" })],
-      }),
-    );
+    expect(ctx.runMutation).not.toHaveBeenCalled();
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("caps temporal scan candidate limits below Convex array limits", async () => {
+  it("does not present percentile signals or a benchmark for partial dry runs", async () => {
+    const candidate = temporalCandidate("skills:partial-spike", {
+      slug: "partial-spike",
+      displayName: "Partial Spike",
+    });
     const ctx = {
-      runQuery: vi.fn(async (_query: unknown, args: { batchSize: number }) => ({
-        cursor: "next",
+      runQuery: vi.fn(async () => ({
+        cursor: "next-page",
         isDone: false,
-        scannedSkills: args.batchSize,
-        candidates: [],
+        scannedSkills: 1,
+        benchmarkScores: [candidate.temporalScore],
+        candidates: [candidate],
       })),
+      runMutation: vi.fn(),
+    };
+
+    const result = await temporalRunHandler(ctx, {
+      mode: "current",
+      dryRun: true,
+      candidateLimit: 1,
+      batchSize: 1,
+      maxPages: 1,
+      todayDay: 100,
+    });
+
+    expect(result).toMatchObject({
+      scannedSkills: 1,
+      highTemporalSkills: 0,
+      candidates: [],
+    });
+    expect(result).not.toHaveProperty("benchmark");
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy manual scan bounded and omits a partial benchmark", async () => {
+    const score = temporalCandidate("skills:benchmark", {
+      slug: "benchmark",
+      displayName: "Benchmark",
+    }).temporalScore;
+    let pageNumber = 0;
+    const ctx = {
+      runQuery: vi.fn(async (_query: unknown, args: { batchSize: number }) => {
+        pageNumber += 1;
+        const isDone = pageNumber === 81;
+        return {
+          cursor: isDone ? undefined : `page-${pageNumber + 1}`,
+          isDone,
+          scannedSkills: args.batchSize,
+          benchmarkScores: Array.from({ length: args.batchSize }, () => score),
+          candidates: [],
+        };
+      }),
       runMutation: vi.fn(),
     };
 
@@ -8440,9 +9528,7 @@ describe("publisher abuse dry-run persistence", () => {
       temporalRunHandler(ctx, {
         mode: "current",
         dryRun: true,
-        candidateLimit: 10_000,
         batchSize: 100,
-        maxPages: 100,
         todayDay: 100,
       }),
     ).resolves.toMatchObject({
@@ -8798,7 +9884,14 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
-          if (table === "skillDailyStats") throw new Error("official publisher was scanned");
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (_indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                callback(indexBuilder);
+                return { take: async () => [] };
+              },
+            };
+          }
           if (table === "officialPublishers") {
             return {
               withIndex: (indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
@@ -8828,6 +9921,7 @@ describe("publisher abuse dry-run persistence", () => {
       cursor: undefined,
       isDone: true,
       scannedSkills: 1,
+      benchmarkScores: [expect.objectContaining({ recent30Downloads: 0 })],
       candidates: [],
     });
   });
@@ -8908,7 +10002,14 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
-          if (table === "skillDailyStats") throw new Error("staff org publisher was scanned");
+          if (table === "skillDailyStats") {
+            return {
+              withIndex: (_indexName: string, callback: (q: typeof indexBuilder) => unknown) => {
+                callback(indexBuilder);
+                return { take: async () => [] };
+              },
+            };
+          }
           if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
@@ -8925,6 +10026,7 @@ describe("publisher abuse dry-run persistence", () => {
       cursor: undefined,
       isDone: true,
       scannedSkills: 1,
+      benchmarkScores: [expect.objectContaining({ recent30Downloads: 0 })],
       candidates: [],
     });
   });
@@ -9095,6 +10197,8 @@ describe("publisher abuse dry-run persistence", () => {
       allTimeDownloads: 10_000,
       allTimeInstalls: 1_000,
       allTimeInstallDownloadRatio: 0.1,
+      lastChangedAt: 20,
+      needsNotification: true,
     };
     const signalLookups: Array<Record<string, unknown>> = [];
     const insertedSignals: unknown[] = [];
@@ -9200,7 +10304,7 @@ describe("publisher abuse dry-run persistence", () => {
     ).resolves.toEqual({
       archivedCandidates: 3,
       archivedSignals: 2,
-      changedSignals: 2,
+      changedSignals: 1,
     });
 
     expect(signalLookups).toEqual([
@@ -9224,7 +10328,9 @@ describe("publisher abuse dry-run persistence", () => {
         recent7InstallDownloadRatio: 0.12,
         lastSeenAt: 1_234,
         seenCount: 6,
-        lastChangedAt: 1_234,
+        notificationBaselineDownloads: 10_000,
+        notificationBaselineInstalls: 1_000,
+        lastChangedAt: 20,
         needsNotification: true,
       }),
     );
@@ -9238,26 +10344,68 @@ describe("publisher abuse dry-run persistence", () => {
         lastSeenAt: 1_234,
         seenCount: 1,
         reviewStatus: "open",
+        notificationBaselineDownloads: 10_000,
+        notificationBaselineInstalls: 0,
         lastChangedAt: 1_234,
         needsNotification: true,
       }),
     ]);
+
+    patch.mockClear();
+    highRatio.totalDownloads = 10_500;
+    highRatio.totalInstalls = 1_050;
+
+    await expect(
+      archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:temporal",
+        candidates: [highRatio],
+        now: 2_345,
+      }),
+    ).resolves.toEqual({
+      archivedCandidates: 1,
+      archivedSignals: 1,
+      changedSignals: 1,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:existing-ratio",
+      expect.objectContaining({
+        notificationBaselineDownloads: 10_500,
+        notificationBaselineInstalls: 1_050,
+        lastChangedAt: 2_345,
+        needsNotification: true,
+      }),
+    );
   });
 
-  it("keeps active snoozed signals quiet and reopens expired snoozes when archiving", async () => {
+  it("keeps acknowledged evidence quiet and reopens only for fresh post-snooze activity", async () => {
     const activeSnooze = temporalCandidate("skills:active-snooze", {
       slug: "active-snooze",
       displayName: "Active Snooze",
     });
     activeSnooze.temporalScore.spike = false;
-    activeSnooze.temporalScore.nearConversion = true;
+    activeSnooze.temporalScore.sustained = true;
 
-    const expiredSnooze = temporalCandidate("skills:expired-snooze", {
-      slug: "expired-snooze",
-      displayName: "Expired Snooze",
+    const acknowledgedSnooze = temporalCandidate("skills:acknowledged-snooze", {
+      slug: "acknowledged-snooze",
+      displayName: "Acknowledged Snooze",
     });
-    expiredSnooze.temporalScore.spike = false;
-    expiredSnooze.temporalScore.nearConversion = true;
+    acknowledgedSnooze.temporalScore.spike = false;
+    acknowledgedSnooze.temporalScore.sustained = true;
+
+    const recurringSnooze = temporalCandidate("skills:recurring-snooze", {
+      slug: "recurring-snooze",
+      displayName: "Recurring Snooze",
+    });
+    recurringSnooze.temporalScore.spike = false;
+    recurringSnooze.temporalScore.sustained = true;
+    recurringSnooze.totalDownloads = 12_000;
+
+    const legacySnooze = temporalCandidate("skills:legacy-snooze", {
+      slug: "legacy-snooze",
+      displayName: "Legacy Snooze",
+    });
+    legacySnooze.temporalScore.spike = false;
+    legacySnooze.temporalScore.sustained = true;
 
     const patch = vi.fn(async () => null);
     const ctx = {
@@ -9284,27 +10432,15 @@ describe("publisher abuse dry-run persistence", () => {
               build(q);
               return {
                 first: async () => ({
-                  _id:
-                    constraints.skillId === activeSnooze.skillId
-                      ? "publisherAbuseSignals:active-snooze"
-                      : "publisherAbuseSignals:expired-snooze",
-                  signalType: "high_install_download_ratio",
-                  ownerKey:
-                    constraints.skillId === activeSnooze.skillId
-                      ? activeSnooze.ownerKey
-                      : expiredSnooze.ownerKey,
+                  _id: `publisherAbuseSignals:${String(constraints.skillId).replace("skills:", "")}`,
+                  signalType: "sustained_downloads_flat_installs",
+                  ownerKey: activeSnooze.ownerKey,
                   ownerPublisherId: null,
                   ownerUserId: null,
                   handleSnapshot: "ratio-owner",
                   skillId: constraints.skillId,
-                  skillSlug:
-                    constraints.skillId === activeSnooze.skillId
-                      ? activeSnooze.slug
-                      : expiredSnooze.slug,
-                  skillDisplayName:
-                    constraints.skillId === activeSnooze.skillId
-                      ? activeSnooze.displayName
-                      : expiredSnooze.displayName,
+                  skillSlug: String(constraints.skillId).replace("skills:", ""),
+                  skillDisplayName: "Snoozed skill",
                   firstSeenAt: 10,
                   lastSeenAt: 20,
                   seenCount: 2,
@@ -9319,6 +10455,15 @@ describe("publisher abuse dry-run persistence", () => {
                   allTimeInstallDownloadRatio: 0.1,
                   reviewStatus: "snoozed",
                   snoozedUntil: constraints.skillId === activeSnooze.skillId ? 2_000 : 1_000,
+                  ...(constraints.skillId === legacySnooze.skillId
+                    ? {}
+                    : {
+                        evidenceAcknowledgedAt: 900,
+                        evidenceBaselineDownloads: 10_000,
+                        evidenceBaselineInstalls: 0,
+                      }),
+                  snoozeCount: 1,
+                  recurrenceCount: 0,
                   lastChangedAt: 100,
                   needsNotification: false,
                 }),
@@ -9332,12 +10477,12 @@ describe("publisher abuse dry-run persistence", () => {
     await expect(
       archiveTemporalPublisherAbuseSignalsPageHandler(ctx, {
         runId: "publisherAbuseScoreRuns:temporal",
-        candidates: [activeSnooze, expiredSnooze],
+        candidates: [activeSnooze, acknowledgedSnooze, recurringSnooze, legacySnooze],
         now: 1_234,
       }),
     ).resolves.toEqual({
-      archivedCandidates: 2,
-      archivedSignals: 2,
+      archivedCandidates: 4,
+      archivedSignals: 4,
       changedSignals: 1,
     });
 
@@ -9346,17 +10491,46 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({
         reviewStatus: "snoozed",
         snoozedUntil: 2_000,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
         lastChangedAt: 100,
         needsNotification: false,
       }),
     );
     expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseSignals:expired-snooze",
+      "publisherAbuseSignals:acknowledged-snooze",
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        snoozedUntil: 1_000,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        lastChangedAt: 100,
+        needsNotification: false,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:recurring-snooze",
       expect.objectContaining({
         reviewStatus: "open",
         snoozedUntil: undefined,
+        freshDownloadsSinceSnooze: 2_000,
+        freshInstallsSinceSnooze: 0,
+        recurrenceCount: 1,
         lastChangedAt: 1_234,
         needsNotification: true,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseSignals:legacy-snooze",
+      expect.objectContaining({
+        reviewStatus: "snoozed",
+        snoozedUntil: 1_000,
+        evidenceAcknowledgedAt: 1_234,
+        evidenceBaselineDownloads: 10_000,
+        evidenceBaselineInstalls: 0,
+        freshDownloadsSinceSnooze: 0,
+        freshInstallsSinceSnooze: 0,
+        needsNotification: false,
       }),
     );
   });

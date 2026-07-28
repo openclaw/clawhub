@@ -1,0 +1,204 @@
+#!/bin/bash
+# Get baseline usage statistics and build Analysis Queue for cost optimization
+# Usage: baseline-stats -d <deployment> -a <audit-dataset>
+
+set -euo pipefail
+
+AXIOM_QUERY="${AXIOM_QUERY:-$HOME/.config/agents/skills/sre/scripts/axiom-query}"
+
+DEPLOYMENT=""
+AUDIT_DATASET=""
+
+usage() {
+    cat << 'EOF'
+Usage: baseline-stats -d <deployment> -a <audit-dataset>
+
+Get 30-day baseline usage statistics and build Analysis Queue.
+
+Required:
+  -d, --deployment NAME    Axiom deployment name
+  -a, --audit-dataset NAME Audit dataset name (e.g., axiom-audit, axiom-audit-logs-view)
+
+Example:
+  baseline-stats -d prod -a axiom-audit-logs-view
+EOF
+    exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -d|--deployment) DEPLOYMENT="$2"; shift 2 ;;
+        -a|--audit-dataset) AUDIT_DATASET="$2"; shift 2 ;;
+        -h|--help) usage ;;
+        *) echo "Error: Unknown option $1" >&2; usage ;;
+    esac
+done
+
+[[ -z "$DEPLOYMENT" ]] && { echo "Error: -d/--deployment required" >&2; usage; }
+[[ -z "$AUDIT_DATASET" ]] && { echo "Error: -a/--audit-dataset required" >&2; usage; }
+[[ -x "$AXIOM_QUERY" ]] || { echo "Error: axiom-query not found at $AXIOM_QUERY" >&2; exit 1; }
+command -v jq >/dev/null 2>&1 || { echo "Error: jq required" >&2; exit 1; }
+
+# Convert Axiom tabular API response to JSON array of objects
+tabular_to_json() {
+    jq '
+        .tables[0] as $t |
+        ($t.fields | map(.name)) as $fields |
+        ($t.columns // []) as $cols |
+        (if ($cols | length) > 0 then ($cols[0] | length) else 0 end) as $n |
+        [range($n) as $i |
+            [range($fields | length) as $j | {($fields[$j]): $cols[$j][$i]}] | add
+        ]
+    '
+}
+
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo "  AXIOM COST CONTROL: BASELINE STATS"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo ""
+echo "Deployment:    $DEPLOYMENT"
+echo "Audit dataset: $AUDIT_DATASET"
+echo ""
+
+# Daily stats summary (human readable, no jq needed)
+echo "── Daily Ingest Statistics (30d) ────────────────────────────────────────────"
+$AXIOM_QUERY "$DEPLOYMENT" "
+['$AUDIT_DATASET']
+| where action == 'usageCalculated'
+| where _time > ago(30d)
+| summarize daily_bytes = sum(toreal(['properties.hourly_ingest_bytes'])) by bin(_time, 1d)
+| extend daily_tb = daily_bytes / 1000000000000
+| summarize 
+    avg_tb = round(avg(daily_tb), 2),
+    p50_tb = round(percentile(daily_tb, 50), 2),
+    p90_tb = round(percentile(daily_tb, 90), 2),
+    p95_tb = round(percentile(daily_tb, 95), 2),
+    max_tb = round(max(daily_tb), 2),
+    total_tb = round(sum(daily_tb), 2),
+    days = count()
+"
+echo ""
+
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo "  ANALYSIS QUEUE"
+echo "═══════════════════════════════════════════════════════════════════════════════"
+echo ""
+
+# Get all datasets (unfiltered first to compute global total for share%)
+QUEUE=$($AXIOM_QUERY "$DEPLOYMENT" "
+['$AUDIT_DATASET']
+| where action == 'usageCalculated'
+| where _time > ago(30d)
+| summarize 
+    ingest_bytes = sum(toreal(['properties.hourly_ingest_bytes'])),
+    query_gbms = sum(toreal(['properties.hourly_billable_query_gbms']))
+  by dataset = tostring(['properties.dataset'])
+| order by ingest_bytes desc
+" --raw | tabular_to_json | jq '
+# Handle empty response
+if length == 0 then [] else
+
+# Compute GLOBAL total (before filtering) for accurate share%
+(map(.ingest_bytes // 0) | add | if . == 0 or . == null then 1 else . end) as $global_total |
+
+# Add computed fields, filter, and rank
+map(
+  (.ingest_bytes // 0) as $ib |
+  (.query_gbms // 0) as $qg |
+  . + {
+    ingest_tb: (($ib / 1000000000000 * 10 | floor) / 10),
+    work_per_gb: (if $ib > 0 then (($qg / ($ib / 1000000000)) | floor) else 0 end),
+    share_pct: (($ib / $global_total * 1000 | floor) / 10),
+    query_gbms_raw: $qg
+  }
+) |
+# Filter to datasets > 10 GB
+map(select(.ingest_bytes > 10000000000)) |
+# Assign rank after filtering (by ingest order)
+to_entries | map(.value + { rank: (.key + 1) }) |
+
+# Assign priority and reasons
+map(
+  # Use query_gbms_raw == 0 for "never queried" (not floored work_per_gb)
+  (
+    (if .rank <= 3 then ["top3_ingest"] else [] end) +
+    (if .share_pct > 10 then [">10%_share"] else [] end) +
+    (if .query_gbms_raw == 0 then ["never_queried"] else [] end) +
+    (if .query_gbms_raw > 0 and .work_per_gb < 100 then ["low_work_gb"] else [] end) +
+    (if .rank > 3 and .rank <= 10 then ["top10_ingest"] else [] end) +
+    (if .rank <= 5 then ["top5_ingest"] else [] end)
+  ) as $reasons |
+  
+  (
+    if (.rank <= 3) or (.share_pct > 10) then 0
+    elif .query_gbms_raw == 0 then 1
+    elif .work_per_gb < 100 then 2
+    elif .rank <= 10 then 3
+    else 99
+    end
+  ) as $pri |
+  
+  . + { priority: $pri, reasons: $reasons }
+) |
+
+# Filter and sort
+map(select(.priority < 99)) |
+sort_by([.priority, -.ingest_bytes]) |
+
+# Add position
+length as $len | to_entries | map(.value + { pos: (.key + 1), total: $len })
+
+end
+')
+
+# Calculate stats
+QUEUE_COUNT=$(echo "$QUEUE" | jq 'length')
+
+# Handle empty queue
+if [[ "$QUEUE_COUNT" -eq 0 ]]; then
+    echo "⚠️  No datasets found in analysis queue."
+    echo ""
+    echo "Possible causes:"
+    echo "  - No datasets with >10 GB ingest in the last 30 days"
+    echo "  - Audit dataset '$AUDIT_DATASET' has no usageCalculated events"
+    echo "  - Wrong deployment or audit dataset name"
+    exit 0
+fi
+
+P0_COUNT=$(echo "$QUEUE" | jq '[.[] | select(.priority == 0)] | length')
+P1_COUNT=$(echo "$QUEUE" | jq '[.[] | select(.priority == 1)] | length')
+P2_COUNT=$(echo "$QUEUE" | jq '[.[] | select(.priority == 2)] | length')
+P3_COUNT=$(echo "$QUEUE" | jq '[.[] | select(.priority == 3)] | length')
+QUEUE_TB=$(echo "$QUEUE" | jq '[.[].ingest_tb] | add // 0 | . * 10 | floor / 10')
+
+echo "Datasets to analyze: $QUEUE_COUNT (P0⛔:$P0_COUNT  P1:$P1_COUNT  P2:$P2_COUNT  P3:$P3_COUNT)"
+echo "Queue coverage: ${QUEUE_TB} TB"
+echo ""
+echo "Priority: P0⛔=mandatory (top3 or >10% share), P1=never queried, P2=rarely queried, P3=top10"
+echo ""
+
+# Print table header
+printf "%-8s %-6s %-32s %12s %12s %8s  %s\n" "#" "Pri" "Dataset" "Ingest(TB)" "Work/GB" "Share%" "Reasons"
+echo "───────────────────────────────────────────────────────────────────────────────────────────────────────────"
+
+# Print rows using printf for safe formatting (no jq padding issues)
+echo "$QUEUE" | jq -r '.[] | [
+  "[\(.pos)/\(.total)]",
+  (if .priority == 0 then "P0⛔" elif .priority == 1 then "P1" elif .priority == 2 then "P2" else "P3" end),
+  (.dataset | .[0:32]),
+  (.ingest_tb | tostring),
+  (.work_per_gb | tostring),
+  (.share_pct | tostring),
+  (.reasons | join(", "))
+] | @tsv' | while IFS=$'\t' read -r pos pri dataset ingest work share reasons; do
+    printf "%-8s %-6s %-32s %12s %12s %8s  %s\n" "$pos" "$pri" "$dataset" "$ingest" "$work" "$share" "$reasons"
+done
+
+echo ""
+echo "───────────────────────────────────────────────────────────────────────────────────────────────────────────"
+echo "⛔ = MANDATORY. Do not skip."
+echo ""
+echo "MINIMUM REQUIREMENT: Analyze ALL P0 + ALL P1 + top 5 by ingest (look for 'top5_ingest' in Reasons)."
+echo ""
+echo "For each dataset, run:"
+echo "  scripts/analyze-query-coverage -d $DEPLOYMENT -D <dataset> -a $AUDIT_DATASET"

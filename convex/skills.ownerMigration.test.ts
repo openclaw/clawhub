@@ -61,10 +61,12 @@ type OrgMigrationFixture = {
     get: ReturnType<typeof vi.fn>;
     query: ReturnType<typeof vi.fn>;
     patch: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
     insert: ReturnType<typeof vi.fn>;
     normalizeId: ReturnType<typeof vi.fn>;
   };
   patchCalls: Array<{ id: string; value: Record<string, unknown> }>;
+  deleteCalls: string[];
   insertCalls: Array<{ table: string; value: Record<string, unknown> }>;
 };
 
@@ -87,10 +89,12 @@ function createMigrationFixture(params: {
   sourcePersonalLinkedUserId?: string | null;
   duplicateGlobalSlug?: boolean;
   destinationDuplicateSkill?: boolean;
+  destinationRedirect?: boolean;
   skillOverrides?: Record<string, unknown>;
 }): OrgMigrationFixture {
   const now = Date.now();
   const patchCalls: Array<{ id: string; value: Record<string, unknown> }> = [];
+  const deleteCalls: string[] = [];
   const insertCalls: Array<{ table: string; value: Record<string, unknown> }> = [];
 
   const db = {
@@ -328,7 +332,18 @@ function createMigrationFixture(params: {
       }
       if (table === "skillSlugAliases") {
         return {
-          withIndex: (name: string) => {
+          withIndex: (
+            name: string,
+            build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            const constraints: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                constraints[field] = value;
+                return q;
+              },
+            };
+            build?.(q);
             if (name === "by_skill") {
               return { collect: async () => [] };
             }
@@ -336,7 +351,20 @@ function createMigrationFixture(params: {
               return { unique: async () => null, take: async () => [] };
             }
             if (name === "by_owner_publisher_slug" || name === "by_owner_slug") {
-              return { unique: async () => null };
+              return {
+                unique: async () =>
+                  params.destinationRedirect &&
+                  constraints.ownerPublisherId === "publishers:org" &&
+                  constraints.slug === "nano"
+                    ? {
+                        _id: "skillSlugAliases:destination-redirect",
+                        slug: "nano",
+                        skillId: "skills:renamed-destination",
+                        ownerUserId: "users:caller",
+                        ownerPublisherId: "publishers:org",
+                      }
+                    : null,
+              };
             }
             throw new Error(`unexpected skillSlugAliases index ${name}`);
           },
@@ -382,6 +410,9 @@ function createMigrationFixture(params: {
     patch: vi.fn(async (id: string, value: Record<string, unknown>) => {
       patchCalls.push({ id, value });
     }),
+    delete: vi.fn(async (id: string) => {
+      deleteCalls.push(id);
+    }),
     insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
       insertCalls.push({ table, value });
       return `${table}:inserted`;
@@ -389,7 +420,7 @@ function createMigrationFixture(params: {
     normalizeId: vi.fn(),
   };
 
-  return { db, patchCalls, insertCalls };
+  return { db, patchCalls, deleteCalls, insertCalls };
 }
 
 describe("skills.insertVersion owner migration", () => {
@@ -756,6 +787,41 @@ describe("skills.insertVersion owner migration", () => {
         table: "skillVersions",
       }),
     );
+  });
+
+  it("replaces a destination-owned redirect during explicit owner migration", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "caller-personal",
+      destinationRedirect: true,
+      sourceMemberships: [
+        {
+          _id: "publisherMembers:orgAdminCaller",
+          publisherId: "publishers:org",
+          userId: "users:caller",
+          role: "admin",
+        },
+      ],
+    });
+
+    await expect(
+      insertVersionHandler(
+        { db: fixture.db } as never,
+        buildPublishArgs({
+          migrateOwner: true,
+          sourceOwnerPublisherId: "publishers:personalCaller",
+        }) as never,
+      ),
+    ).rejects.toThrow(SENTINEL_BAIL_MESSAGE);
+
+    expect(fixture.deleteCalls).toEqual(["skillSlugAliases:destination-redirect"]);
+    expect(fixture.patchCalls.filter((p) => p.id === "skills:1")).toHaveLength(1);
+    const migrationAudit = fixture.insertCalls.find(
+      (call) => call.table === "auditLogs" && call.value.action === "skill.ownership.migrate",
+    );
+    expect(migrationAudit?.value.metadata).toMatchObject({
+      replacedDestinationAliasId: "skillSlugAliases:destination-redirect",
+      replacedDestinationAliasSkillId: "skills:renamed-destination",
+    });
   });
 
   it("classifies explicit migrations as blocked when preflight sees a destination slug collision", async () => {

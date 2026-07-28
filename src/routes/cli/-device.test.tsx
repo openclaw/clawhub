@@ -1,16 +1,19 @@
 /* @vitest-environment jsdom */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const approveMock = vi.fn();
 const denyMock = vi.fn();
 const useMutationMock = vi.fn();
+const { useSearchMock } = vi.hoisted(() => ({
+  useSearchMock: vi.fn(),
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown }) => ({
     ...config,
-    useSearch: () => ({ code: "device-code" }),
+    useSearch: useSearchMock,
   }),
 }));
 
@@ -76,6 +79,39 @@ vi.mock("../../components/ui/label", () => ({
 const { CliDeviceAuth } = await import("./device");
 
 describe("CliDeviceAuth", () => {
+  beforeEach(() => {
+    approveMock.mockReset();
+    denyMock.mockReset();
+    useMutationMock.mockReset();
+    useSearchMock.mockReturnValue({ user_code: "ABCD-2345" });
+  });
+
+  it("prefills the code from user_code", () => {
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
+  });
+
+  it("prefills the code from a legacy device-shaped code param", () => {
+    useSearchMock.mockReturnValue({ code: "ABCD-2345" });
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "ABCD-2345");
+  });
+
+  it("does not prefill an OAuth completion code from the legacy param", () => {
+    useSearchMock.mockReturnValue({ code: "long-random-oauth-completion-code-1234567890" });
+    useMutationMock.mockReturnValue(vi.fn());
+
+    render(<CliDeviceAuth />);
+
+    expect(screen.getByLabelText("Code")).toHaveProperty("value", "");
+  });
+
   it("allows only one device decision while the mutation is pending", async () => {
     let resolveApprove!: () => void;
     approveMock.mockImplementation(
@@ -111,5 +147,24 @@ describe("CliDeviceAuth", () => {
     expect(screen.getByText("Authorized. You can return to your terminal.")).toBeTruthy();
     expect(authorize).toHaveProperty("disabled", true);
     expect(deny).toHaveProperty("disabled", true);
+  });
+
+  it("shows a clean message when a device code was already used", async () => {
+    approveMock.mockRejectedValue(
+      new Error(
+        "[CONVEX M(cliDeviceAuth:approve)] [Request ID: test] Server Error Called by client ConvexError: Device code already used",
+      ),
+    );
+    denyMock.mockResolvedValue(undefined);
+    useMutationMock.mockImplementation((mutation: string) =>
+      mutation === "approve" ? approveMock : denyMock,
+    );
+
+    render(<CliDeviceAuth />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Authorize" }));
+
+    expect(await screen.findByText("Device code already used")).toBeTruthy();
+    expect(screen.queryByText(/Server Error Called by client/)).toBeNull();
   });
 });

@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { isPluginCategorySlug, isSkillCategorySlug } from "clawhub-schema";
 import {
-  BadgeCheck,
   Binoculars,
   CloudOff,
   Download,
@@ -27,29 +26,28 @@ import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib/categories";
 import {
-  filterHomePluginsByTab as filterPluginsByTab,
-  filterHomeSkillsByTab as filterSkillsByTab,
   fetchHomePluginListing as fetchPluginListing,
   fetchHomeSkillListing as fetchSkillListing,
   HOME_LISTING_PAGE_SIZE,
   homeListingCacheKey as listingCacheKey,
-  isNewHomeSkillEligible as isNewSkillEligible,
+  isHomeTrendingSkillEntry,
   itemMatchesAnyHomeCategory as itemMatchesAnyCategory,
   skillMatchesAnyHomeCategory as skillMatchesAnyCategory,
-  sortHomeSkillEntries as sortSkillEntries,
   uniqueHomePlugins as uniquePlugins,
   uniqueHomeSkillEntries as uniqueSkillEntries,
   type HomeListingCacheEntry,
   type HomeListingInitialData,
   type HomeListingKind as ListingKind,
+  type HomeNativeSkillListingEntry,
   type HomeListingTab as ListingTab,
   type HomeSkillListingEntry as SkillPageEntry,
 } from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
+import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
-import { truncateText } from "../lib/truncateText";
+import { PUBLIC_CATALOG_NAME_PREVIEW_LENGTH, truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -58,15 +56,19 @@ import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
 type ListingView = "list" | "grid";
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
-  { id: "popular", label: "Top" },
   { id: "trending", label: "Trending" },
   { id: "new", label: "New" },
+  { id: "featured", label: "Featured" },
+  { id: "official", label: "Official" },
 ];
 
-const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
-  { id: "officials", label: "Verified" },
-  { id: "popular", label: "Top" },
+const PLUGIN_LISTING_TABS: Array<{
+  id: Exclude<ListingTab, "trending">;
+  label: string;
+}> = [
   { id: "new", label: "New" },
+  { id: "featured", label: "Featured" },
+  { id: "official", label: "Official" },
 ];
 
 const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
@@ -175,7 +177,7 @@ function HomeListingResults({
   );
 }
 
-function skillLink(entry: SkillPageEntry) {
+function skillLink(entry: HomeNativeSkillListingEntry) {
   const owner =
     entry.ownerHandle?.trim() ||
     entry.owner?.handle?.trim() ||
@@ -184,8 +186,38 @@ function skillLink(entry: SkillPageEntry) {
 }
 
 function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
+  if (isHomeTrendingSkillEntry(entry)) {
+    const item = entry.trending;
+    const owner = item.publisher?.handle;
+    return (
+      <Link to={item.canonicalUrl} className="home-v2-listing-row">
+        <span className="home-v2-listing-row-icon" aria-hidden="true">
+          <MarketplaceIcon kind="skill" label={item.displayName} size="sm" />
+        </span>
+        <div className="home-v2-listing-row-body">
+          <div className="home-v2-listing-row-title">
+            <span className="home-v2-listing-row-name" title={item.displayName}>
+              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </span>
+            {owner ? <span className="home-v2-listing-row-by">@{owner}</span> : null}
+          </div>
+          <p className="home-v2-listing-row-summary">
+            {truncateText(item.summary || "Agent-ready skill pack.", 80)}
+          </p>
+        </div>
+        {typeof item.metrics.trending24hInstalls === "number" ? (
+          <div className="home-v2-listing-row-stats" aria-label="24-hour installs">
+            <span>
+              <Download size={13} aria-hidden="true" />
+              {formatCompactStat(item.metrics.trending24hInstalls)}
+            </span>
+          </div>
+        ) : null}
+      </Link>
+    );
+  }
   const handle = entry.ownerHandle || entry.owner?.handle;
-  const name = entry.skill.displayName || entry.skill.slug;
+  const name = presentationTitle(entry.skill.displayName, entry.skill.slug);
 
   return (
     <Link
@@ -193,11 +225,19 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
       className={`home-v2-listing-row${showStats ? "" : " has-no-stats"}`}
     >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
+        <MarketplaceIcon
+          kind="skill"
+          label={name}
+          imageUrl={entry.skill.icon}
+          skill={entry.skill}
+          size="sm"
+        />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
-          <span className="home-v2-listing-row-name">{name}</span>
+          <span className="home-v2-listing-row-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {handle ? <span className="home-v2-listing-row-by">@{handle}</span> : null}
         </div>
         <p className="home-v2-listing-row-summary">
@@ -221,17 +261,25 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
 }
 
 function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
-  const name = plugin.displayName || plugin.name;
+  const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
     <Link to={pluginHref} className="home-v2-listing-row">
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon kind="plugin" label={name} size="sm" />
+        <MarketplaceIcon
+          kind="plugin"
+          label={name}
+          imageUrl={plugin.icon}
+          categorySlug={plugin.categories?.[0]}
+          size="sm"
+        />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
-          <span className="home-v2-listing-row-name">{name}</span>
+          <span className="home-v2-listing-row-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {plugin.ownerHandle ? (
             <span className="home-v2-listing-row-by">@{plugin.ownerHandle}</span>
           ) : null}
@@ -252,20 +300,60 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
 }
 
 function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
+  if (isHomeTrendingSkillEntry(entry)) {
+    const item = entry.trending;
+    const owner = item.publisher?.handle;
+    return (
+      <Link to={item.canonicalUrl} className="home-v2-listing-card oc-card oc-card-interactive">
+        <div className="home-v2-listing-card-head">
+          <span className="home-v2-listing-card-icon" aria-hidden="true">
+            <MarketplaceIcon kind="skill" label={item.displayName} size="sm" />
+          </span>
+          <div className="home-v2-listing-card-id">
+            <span className="home-v2-listing-card-name" title={item.displayName}>
+              {truncateText(item.displayName, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+            </span>
+            {owner ? <span className="home-v2-listing-card-by">@{owner}</span> : null}
+          </div>
+        </div>
+        <p className="home-v2-listing-card-summary">
+          {truncateText(item.summary || "Agent-ready skill pack.", 80)}
+        </p>
+        {typeof item.metrics.trending24hInstalls === "number" ? (
+          <div className="home-v2-listing-card-stats" aria-label="24-hour installs">
+            <span>
+              <Download size={13} aria-hidden="true" />
+              {formatCompactStat(item.metrics.trending24hInstalls)}
+            </span>
+          </div>
+        ) : null}
+      </Link>
+    );
+  }
   const handle = entry.ownerHandle || entry.owner?.handle;
-  const name = entry.skill.displayName || entry.skill.slug;
+  const name = presentationTitle(entry.skill.displayName, entry.skill.slug);
 
   return (
     <Link
       to={skillLink(entry)}
-      className={`home-v2-listing-card${showStats ? "" : " has-no-stats"}`}
+      className={`home-v2-listing-card oc-card oc-card-interactive${
+        showStats ? "" : " has-no-stats"
+      }`}
     >
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
+          <MarketplaceIcon
+            kind="skill"
+            label={name}
+            imageUrl={entry.skill.icon}
+            skill={entry.skill}
+            size="sm"
+          />
         </span>
         <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name">{name}</span>
+          <span className="home-v2-listing-card-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           {handle ? <span className="home-v2-listing-card-by">@{handle}</span> : null}
         </div>
       </div>
@@ -289,17 +377,25 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
 }
 
 function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
-  const name = plugin.displayName || plugin.name;
+  const name = presentationTitle(plugin.displayName, plugin.name);
   const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to={pluginHref} className="home-v2-listing-card">
+    <Link to={pluginHref} className="home-v2-listing-card oc-card oc-card-interactive">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon kind="plugin" label={name} size="sm" />
+          <MarketplaceIcon
+            kind="plugin"
+            label={name}
+            imageUrl={plugin.icon}
+            categorySlug={plugin.categories?.[0]}
+            size="sm"
+          />
         </span>
         <div className="home-v2-listing-card-id">
-          <span className="home-v2-listing-card-name">{name}</span>
+          <span className="home-v2-listing-card-name" title={name}>
+            {truncateText(name, PUBLIC_CATALOG_NAME_PREVIEW_LENGTH)}
+          </span>
           <span className="home-v2-listing-card-by-row">
             {plugin.ownerHandle ? (
               <span className="home-v2-listing-card-by">@{plugin.ownerHandle}</span>
@@ -335,11 +431,17 @@ function createInitialListingCache(initialListing: HomeListingInitialData | null
       categorySlugs: initialListing.categorySlugs,
       fetchLimit: initialListing.fetchLimit,
     }),
-    {
-      kind: "skills",
-      items: initialListing.items,
-      hasMore: initialListing.hasMore,
-    },
+    initialListing.kind === "skills"
+      ? {
+          kind: "skills",
+          items: initialListing.items,
+          hasMore: initialListing.hasMore,
+        }
+      : {
+          kind: "plugins",
+          items: initialListing.items,
+          hasMore: initialListing.hasMore,
+        },
   );
   return cache;
 }
@@ -351,14 +453,18 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   listingCacheRef.current ??= createInitialListingCache(initialListing);
   const listingCache = listingCacheRef.current;
 
-  const [kind, setKind] = useState<ListingKind>("skills");
-  const [tab, setTab] = useState<ListingTab>("popular");
+  const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "skills");
+  const [tab, setTab] = useState<ListingTab>(initialListing?.tab ?? "trending");
   const [view, setView] = useState<ListingView>("list");
   const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);
-  const [skills, setSkills] = useState<SkillPageEntry[]>(initialListing?.items ?? []);
-  const [plugins, setPlugins] = useState<PackageListItem[]>([]);
+  const [skills, setSkills] = useState<SkillPageEntry[]>(
+    initialListing?.kind === "skills" ? initialListing.items : [],
+  );
+  const [plugins, setPlugins] = useState<PackageListItem[]>(
+    initialListing?.kind === "plugins" ? initialListing.items : [],
+  );
   const [status, setStatus] = useState<"loading" | "idle" | "error">(
     initialListing ? "idle" : "loading",
   );
@@ -382,26 +488,18 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     [categorySlugs, listingCategories],
   );
 
-  const filteredSearchSkills = useMemo(
-    () => filterSkillsByTab(searchSkills, tab),
-    [searchSkills, tab],
-  );
-  const filteredSearchPlugins = useMemo(
-    () => filterPluginsByTab(searchPlugins, tab),
-    [searchPlugins, tab],
-  );
   const visibleTabs = kind === "skills" ? SKILL_LISTING_TABS : PLUGIN_LISTING_TABS;
 
   const activeItems = isSearchMode
     ? kind === "skills"
-      ? filteredSearchSkills
-      : filteredSearchPlugins
+      ? searchSkills
+      : searchPlugins
     : kind === "skills"
       ? skills
       : plugins;
   const activeStatus = isSearchMode ? searchStatus : status;
   const isEmpty = activeStatus === "idle" && activeItems.length === 0;
-  const showSkillStats = !(kind === "skills" && tab === "trending" && !isSearchMode);
+  const showSkillStats = true;
   const showListingMore =
     activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
@@ -465,7 +563,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
     const load =
       kind === "skills"
-        ? fetchSkillListing(tab, categorySlugs, fetchLimit).then((result) => {
+        ? fetchSkillListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
             if (controller.signal.aborted) return;
             listingCache.set(cacheKey, {
               kind: "skills",
@@ -476,7 +574,12 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             setListingHasMore(result.hasMore);
             setStatus("idle");
           })
-        : fetchPluginListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
+        : fetchPluginListing(
+            tab === "trending" ? "new" : tab,
+            categorySlugs,
+            fetchLimit,
+            controller.signal,
+          ).then((result) => {
             if (controller.signal.aborted) return;
             listingCache.set(cacheKey, {
               kind: "plugins",
@@ -533,10 +636,10 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
         kind === "skills"
           ? Promise.all(
               (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
-                convexHttp.action(api.search.searchSkills, {
+                convexHttp.action(api.search.searchNativeSkills, {
                   query: trimmedSearch,
                   limit: fetchLimit,
-                  ...(tab === "new" ? { nonSuspiciousOnly: true, excludePendingScan: true } : {}),
+                  highlightedOnly: tab === "featured" ? true : undefined,
                   ...(categorySlug ? { categorySlug } : {}),
                 }),
               ),
@@ -550,17 +653,12 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                       ownerHandle: hit.ownerHandle,
                       owner: hit.owner,
                     }))
-                    .filter(
-                      (entry) =>
-                        skillMatchesAnyCategory(entry.skill, categorySlugs) &&
-                        (tab !== "new" || isNewSkillEligible(entry.skill)),
-                    ),
+                    .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs)),
                 ),
               );
-              const sortedRows = tab === "new" ? sortSkillEntries(rows, tab) : rows;
-              const items = sortedRows.slice(0, fetchLimit);
+              const items = rows.slice(0, fetchLimit);
               const hasMore =
-                sortedRows.length > fetchLimit ||
+                rows.length > fetchLimit ||
                 results.some((hits) => (hits as SkillSearchHit[]).length >= fetchLimit);
               setSearchSkills(items);
               setListingHasMore(hasMore);
@@ -571,9 +669,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 fetchPluginCatalog({
                   q: trimmedSearch,
                   category: categorySlug ?? undefined,
-                  isOfficial: tab === "officials" ? true : undefined,
-                  excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
-                  sort: tab === "new" ? "updated" : "downloads",
+                  featured: tab === "featured" ? true : undefined,
+                  sort: "updated",
+                  isOfficial: tab === "official" ? true : undefined,
                   limit: fetchLimit,
                   signal: controller.signal,
                 }),
@@ -585,12 +683,10 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                   result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
                 ),
               );
-              const sortedItems =
-                tab === "new" ? [...items].sort((a, b) => b.updatedAt - a.updatedAt) : items;
               const hasMore = results.some(
                 (result) => result.nextCursor != null || result.items.length >= fetchLimit,
               );
-              setSearchPlugins(sortedItems);
+              setSearchPlugins(items);
               setListingHasMore(hasMore);
               setSearchStatus("idle");
             });
@@ -629,8 +725,8 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     setFetchLimit(LISTING_PAGE_SIZE);
   }, [categorySlugs, isSearchMode, kind, tab, trimmedSearch, view]);
 
-  const visibleSkills = (isSearchMode ? filteredSearchSkills : skills).slice(0, visibleCount);
-  const visiblePlugins = (isSearchMode ? filteredSearchPlugins : plugins).slice(0, visibleCount);
+  const visibleSkills = (isSearchMode ? searchSkills : skills).slice(0, visibleCount);
+  const visiblePlugins = (isSearchMode ? searchPlugins : plugins).slice(0, visibleCount);
 
   const handleSeeMore = () => {
     setVisibleCount((count) => count + LISTING_PAGE_SIZE);
@@ -651,8 +747,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     if (nextKind === kind) return;
     setKind(nextKind);
     setCategorySlugs([]);
-    if (nextKind === "plugins") setTab("officials");
-    else if (tab === "officials") setTab("popular");
+    setTab(nextKind === "skills" ? "trending" : "new");
   };
 
   const removeCategory = (slug: string) => {
@@ -660,25 +755,37 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   };
 
   return (
-    <section id="home-v2-listing" className="home-v2-listing" aria-label="Browse catalog">
+    <section
+      id="home-v2-listing"
+      className="home-v2-listing oc-section"
+      aria-label="Browse catalog"
+    >
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
-          <div className="home-v2-listing-kind" role="group" aria-label="Content type">
+          <div
+            className="home-v2-listing-kind clawhub-segmented oc-segmented"
+            role="group"
+            aria-label="Content type"
+          >
             <button
               type="button"
-              className={`home-v2-listing-kind-btn${kind === "skills" ? " is-active" : ""}`}
-              aria-pressed={kind === "skills"}
-              onClick={() => handleKindChange("skills")}
-            >
-              Skills
-            </button>
-            <button
-              type="button"
-              className={`home-v2-listing-kind-btn${kind === "plugins" ? " is-active" : ""}`}
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
+                kind === "plugins" ? " is-active" : ""
+              }`}
               aria-pressed={kind === "plugins"}
               onClick={() => handleKindChange("plugins")}
             >
               Plugins
+            </button>
+            <button
+              type="button"
+              className={`home-v2-listing-kind-btn clawhub-segmented-btn oc-segmented-item${
+                kind === "skills" ? " is-active" : ""
+              }`}
+              aria-pressed={kind === "skills"}
+              onClick={() => handleKindChange("skills")}
+            >
+              Skills
             </button>
           </div>
 
@@ -693,16 +800,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                   role="tab"
                   aria-selected={tab === item.id}
                   className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
-                  onClick={() => setTab(item.id)}
+                  onClick={() => {
+                    setTab(item.id);
+                    if (item.id === "trending") setCategorySlugs([]);
+                  }}
                 >
-                  {item.id === "officials" ? (
-                    <BadgeCheck
-                      size={14}
-                      strokeWidth={2.25}
-                      className="home-v2-listing-tab-icon"
-                      aria-hidden="true"
-                    />
-                  ) : null}
                   {item.label}
                 </button>
               ))}
@@ -713,7 +815,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             <div className="home-v2-listing-actions-rail has-category">
               <button
                 type="button"
-                className={`home-v2-listing-search-trigger${searchOpen ? " is-active" : ""}`}
+                className={`home-v2-listing-search-trigger oc-action oc-action-ghost oc-action-icon${
+                  searchOpen ? " is-active" : ""
+                }`}
                 aria-label="Search catalog"
                 aria-expanded={searchOpen}
                 aria-controls="home-v2-listing-search-panel"
@@ -723,16 +827,24 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 <Search size={16} aria-hidden="true" />
               </button>
 
-              <HomeListingCategorySelect
-                categories={listingCategories}
-                value={categorySlugs}
-                onChange={setCategorySlugs}
-              />
+              {kind === "skills" && tab === "trending" ? null : (
+                <HomeListingCategorySelect
+                  categories={listingCategories}
+                  value={categorySlugs}
+                  onChange={setCategorySlugs}
+                />
+              )}
 
-              <div className="home-v2-listing-view" role="group" aria-label="Layout">
+              <div
+                className="home-v2-listing-view clawhub-segmented oc-segmented"
+                role="group"
+                aria-label="Layout"
+              >
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn${view === "list" ? " is-active" : ""}`}
+                  className={`home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item${
+                    view === "list" ? " is-active" : ""
+                  }`}
                   aria-pressed={view === "list"}
                   aria-label="List view"
                   onClick={() => setView("list")}
@@ -741,7 +853,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 </button>
                 <button
                   type="button"
-                  className={`home-v2-listing-view-btn${view === "grid" ? " is-active" : ""}`}
+                  className={`home-v2-listing-view-btn clawhub-segmented-btn oc-segmented-item${
+                    view === "grid" ? " is-active" : ""
+                  }`}
                   aria-pressed={view === "grid"}
                   aria-label="Grid view"
                   onClick={() => setView("grid")}
@@ -790,7 +904,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
                 <button
                   key={category.slug}
                   type="button"
-                  className="home-v2-listing-filter-chip"
+                  className="home-v2-listing-filter-chip oc-pill"
                   onClick={() => removeCategory(category.slug)}
                   aria-label={`Remove ${category.label} category filter`}
                 >
@@ -800,7 +914,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               ))
             ) : (
               <>
-                <span className="home-v2-listing-filter-chip is-summary">
+                <span className="home-v2-listing-filter-chip oc-pill is-summary">
                   {selectedCategories.length} categories
                 </span>
                 <button
@@ -825,7 +939,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
           <span className="home-v2-listing-head-label">
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>
-          {showSkillStats ? <span className="home-v2-listing-head-stat">Popularity</span> : null}
+          {kind === "skills" && tab === "trending" ? (
+            <span className="home-v2-listing-head-stat">24h installs</span>
+          ) : showSkillStats ? (
+            <span className="home-v2-listing-head-stat">Popularity</span>
+          ) : null}
         </div>
       ) : null}
 
@@ -854,13 +972,17 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             {visibleSkills.map((entry) =>
               view === "grid" ? (
                 <HomeListingSkillCard
-                  key={entry.skill._id}
+                  key={
+                    isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)
+                  }
                   entry={entry}
                   showStats={showSkillStats}
                 />
               ) : (
                 <HomeListingSkillRow
-                  key={entry.skill._id}
+                  key={
+                    isHomeTrendingSkillEntry(entry) ? entry.trending.id : String(entry.skill._id)
+                  }
                   entry={entry}
                   showStats={showSkillStats}
                 />

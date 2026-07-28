@@ -768,13 +768,13 @@ export function ImportGitHub() {
               ) : null}
 
               {repoListError ? (
-                <div className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
+                <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-2 text-sm text-status-error-fg">
                   {repoListError}
                 </div>
               ) : null}
 
               {error ? (
-                <div className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
+                <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-2 text-sm text-status-error-fg">
                   {error}
                 </div>
               ) : null}
@@ -873,7 +873,7 @@ export function ImportGitHub() {
           ) : isReviewing && !isReviewLoading ? (
             <section className="flex flex-col gap-4">
               {error ? (
-                <div className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
+                <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-2 text-sm text-status-error-fg">
                   {error}
                 </div>
               ) : null}
@@ -1390,7 +1390,7 @@ function ReviewSkillCard({
         </div>
 
         {issues.length > 0 ? (
-          <div className="rounded-[var(--radius-sm)] border border-red-300/40 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-950/50 dark:text-red-300">
+          <div className="rounded-[var(--oc-radius-control)] border border-status-error-fg/30 bg-status-error-bg px-3 py-2 text-sm text-status-error-fg">
             {issues[0]}
             {slugCollision?.url ? (
               <>

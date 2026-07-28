@@ -154,7 +154,7 @@ describe("security dataset normalizer", () => {
       public_slug: "suspicious-demo",
       public_qualified_slug: "openclaw/suspicious-demo",
       skill_md_content_redacted:
-        "# Suspicious Demo Use this skill to inspect shell scripts. Contact [REDACTED_SECRET] with [REDACTED_SECRET]",
+        "# Suspicious Demo\nUse this skill to inspect shell scripts.\nContact [REDACTED_SECRET] with [REDACTED_SECRET]",
       created_month: "2026-04",
       file_count: 2,
       total_bytes: 300,
@@ -239,6 +239,7 @@ describe("security dataset normalizer", () => {
     ]);
 
     expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("Run static analysis");
+    expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("\n");
     expect(rows.artifacts[0]?.skill_md_content_redacted).toContain("[REDACTED_SECRET]");
     expect(rows.artifacts[0]?.skill_md_content_redacted).not.toContain(
       "abcdefghijklmnopqrstuvwxyz123456",

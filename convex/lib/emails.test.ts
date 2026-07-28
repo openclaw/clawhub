@@ -8,6 +8,7 @@ import {
   buildPackageInspectorFindingsEmail,
   buildPublisherAbuseWarningEmail,
   buildRestoredAccountEmail,
+  buildSecretBlockedPublishEmail,
 } from "./emails";
 
 function expectFooterLinksUnderlined(html: string) {
@@ -252,6 +253,27 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain("Plugin: @scope/demo");
     expect(email.text).toContain("clawhub scan download @scope/demo --version 2.0.0 --kind plugin");
     expect(email.text).toContain("Increment the version number before uploading the fixed plugin.");
+  });
+
+  it("builds secret-blocked publish copy without raw findings", async () => {
+    const email = await buildSecretBlockedPublishEmail({
+      handle: "publisher",
+      artifact: { kind: "skill", name: "secret-skill" },
+      version: "1.0.0",
+    });
+
+    expect(email.subject).toBe("ClawHub blocked a skill publish");
+    expect(email.text).toContain("Hi publisher,");
+    expect(email.text).toContain("TruffleHog found a secret-looking value");
+    expect(email.text).toContain("Skill: secret-skill");
+    expect(email.text).toContain("Version: 1.0.0");
+    expect(email.text).toContain("Rotate the secret if it was real.");
+    expect(email.text).toContain("Uploaded files for this attempt were deleted");
+    expect(email.text).not.toContain("sk-local-e2e-redacted-secret-not-real");
+    expect(email.html).toContain("ClawHub blocked a skill publish");
+    expect(email.html).toContain("TruffleHog");
+    expect(email.html).not.toContain("Repeated malicious rejections");
+    expect(email.html).not.toContain("appeal this decision");
   });
 
   it("builds plugin inspector warning copy with local validation guidance", async () => {

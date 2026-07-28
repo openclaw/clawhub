@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# axiom-api: Make authenticated requests to Axiom API
+#
+# Usage: axiom-api <deployment> <method> <path> [json-body]
+#
+# Reads credentials from ~/.axiom.toml (shared with axiom-sre)
+# Set AXIOM_URL_OVERRIDE to route requests to a specific edge deployment endpoint.
+#
+# Examples:
+#   axiom-api prod GET /v1/datasets
+#   axiom-api prod POST /v1/query/_mpl '{"mpl":"..."}'
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+METHOD="${2:-}"
+PATH_="${3:-}"
+BODY="${4:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$METHOD" || -z "$PATH_" ]]; then
+    echo "Usage: axiom-api <deployment> <method> <path> [json-body]" >&2
+    exit 1
+fi
+
+CONFIG_FILE="$HOME/.axiom.toml"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "Error: $CONFIG_FILE not found. Run scripts/setup for help." >&2
+    exit 1
+fi
+
+# Parse TOML for deployment config
+extract_value() {
+    local key="$1"
+    awk -v deployment="$DEPLOYMENT" -v key="$key" '
+        /^[[:space:]]*\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+        in_deployment && $1 == key { gsub(/[" ]/, "", $3); print $3; exit }
+    ' "$CONFIG_FILE"
+}
+
+URL="${AXIOM_URL_OVERRIDE:-$(extract_value "url")}"
+TOKEN=$(extract_value "token")
+ORG_ID=$(extract_value "org_id")
+
+if [[ -z "$URL" || -z "$TOKEN" || -z "$ORG_ID" ]]; then
+    echo "Error: Could not find deployment '$DEPLOYMENT' in $CONFIG_FILE" >&2
+    echo "" >&2
+    echo "Available deployments:" >&2
+    grep '[[:space:]]*\[deployments\.' "$CONFIG_FILE" | sed 's/.*\[deployments\.\(.*\)\]/  - \1/' >&2
+    exit 1
+fi
+
+CURL_ARGS=(
+    -s
+    -w '\n%{http_code}'
+    -X "$METHOD"
+    -H "Authorization: Bearer $TOKEN"
+    -H "X-Axiom-Org-Id: $ORG_ID"
+    -H "Content-Type: application/json"
+    -H "Accept: ${AXIOM_ACCEPT:-application/json}"
+    -H "User-Agent: axiom-skills/1.0 (agent)"
+)
+
+if [[ -n "$BODY" ]]; then
+    CURL_ARGS+=(-d "$BODY")
+fi
+
+RESPONSE=$(curl "${CURL_ARGS[@]}" "${URL}${PATH_}")
+
+HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+BODY_CONTENT=$(echo "$RESPONSE" | sed '$d')
+
+if [[ "$HTTP_CODE" -ge 200 && "$HTTP_CODE" -lt 300 ]]; then
+    echo "$BODY_CONTENT"
+else
+    echo "Error: HTTP $HTTP_CODE from $METHOD ${URL}${PATH_}" >&2
+    echo "$BODY_CONTENT" >&2
+    exit 1
+fi

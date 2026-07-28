@@ -3,11 +3,13 @@ import { readCanonicalStat, type SkillStatReadable } from "../../convex/lib/skil
 type SkillApiPayload = SkillStatReadable & {
   displayName?: string;
   summary?: string | null;
+  icon?: string | null;
 };
 
 export type SkillOgMeta = {
   displayName: string | null;
   summary: string | null;
+  icon: string | null;
   owner: string | null;
   ownerImage: string | null;
   version: string | null;
@@ -20,6 +22,17 @@ export type SkillOgMeta = {
     isMalwareBlocked: boolean;
   } | null;
 };
+
+function resolveSkillIconUrl(value: unknown, apiBase: string) {
+  if (typeof value !== "string") return null;
+  const icon = value.trim();
+  if (!icon.startsWith("https://") && !icon.startsWith("/api/v1/skill-icons/")) return null;
+  try {
+    return new URL(icon, `${apiBase.replace(/\/+$/, "")}/`).toString();
+  } catch {
+    return null;
+  }
+}
 
 export async function fetchSkillOgMeta(
   slug: string,
@@ -45,6 +58,7 @@ export async function fetchSkillOgMeta(
     return {
       displayName: payload.skill?.displayName ?? null,
       summary: payload.skill?.summary ?? null,
+      icon: resolveSkillIconUrl(payload.skill?.icon, apiBase),
       owner: payload.owner?.handle ?? null,
       ownerImage: payload.owner?.image ?? null,
       version: payload.latestVersion?.version ?? null,

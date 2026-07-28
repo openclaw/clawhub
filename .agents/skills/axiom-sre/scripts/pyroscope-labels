@@ -1,0 +1,83 @@
+#!/bin/bash
+# List available labels and optionally their values
+# Usage: pyroscope-labels <deployment> [label_name] [--range duration]
+#
+# Examples:
+#   pyroscope-labels dev                    # List all label names
+#   pyroscope-labels dev service_name       # List values for service_name
+#   pyroscope-labels dev request_label --range 24h  # Values in last 24h
+
+set -euo pipefail
+
+# Defaults
+DEPLOYMENT=""
+label_name=""
+range_duration="2h"
+
+# Parse all arguments - collect positional args during option parsing
+positional_args=()
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --range)
+            range_duration="$2"
+            shift 2
+            ;;
+        --help|-h)
+            DEPLOYMENT=""  # Trigger usage
+            break
+            ;;
+        -*)
+            echo "Unknown option: $1" >&2
+            exit 1
+            ;;
+        *)
+            positional_args+=("$1")
+            shift
+            ;;
+    esac
+done
+
+# Assign positional args
+DEPLOYMENT="${positional_args[0]:-}"
+label_name="${positional_args[1]:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: pyroscope-labels <deployment> [label_name] [--range duration]" >&2
+    echo "" >&2
+    echo "Examples:" >&2
+    echo "  pyroscope-labels dev                         # List all label names" >&2
+    echo "  pyroscope-labels dev service_name            # List values for service_name" >&2
+    echo "  pyroscope-labels dev request_label --range 24h  # Values in last 24h" >&2
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+# Parse duration to milliseconds
+parse_duration() {
+    local dur="$1"
+    local num="${dur%[smhd]*}"
+    local unit="${dur#$num}"
+    case "$unit" in
+        s) echo $((num * 1000)) ;;
+        m) echo $((num * 60 * 1000)) ;;
+        h) echo $((num * 3600 * 1000)) ;;
+        d) echo $((num * 86400 * 1000)) ;;
+        *) echo $((num * 60 * 1000)) ;;
+    esac
+}
+
+now_ms=$(($(date +%s) * 1000))
+duration_ms=$(parse_duration "$range_duration")
+start_ms=$((now_ms - duration_ms))
+
+if [[ -z "$label_name" ]]; then
+    "$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST \
+        -d "{\"start\": $start_ms, \"end\": $now_ms}" \
+        "${PYROSCOPE_URL}/querier.v1.QuerierService/LabelNames" | jq -r '.names[]' | sort
+else
+    "$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST \
+        -d "{\"name\": \"$label_name\", \"start\": $start_ms, \"end\": $now_ms}" \
+        "${PYROSCOPE_URL}/querier.v1.QuerierService/LabelValues" | jq -r '.names[]' | sort
+fi

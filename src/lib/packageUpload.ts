@@ -1,4 +1,4 @@
-import { normalizeTextContentType } from "clawhub-schema/textFiles";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import ignore from "ignore";
 
 type NormalizePackageUploadPathOptions = {
@@ -140,7 +140,7 @@ export async function buildPackageUploadEntries<TFile extends UploadablePackageF
       size: file.size,
       storageId,
       sha256,
-      contentType: normalizeTextContentType(path, file.type) ?? file.type ?? undefined,
+      contentType: normalizeContentType(file.type),
     });
   }
 

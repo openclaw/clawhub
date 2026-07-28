@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-const tscBin = require.resolve("typescript/bin/tsc");
+const tscBin = resolve(dirname(require.resolve("@typescript/native/package.json")), "bin/tsc");
 const result = spawnSync(process.execPath, [tscBin, "-p", "tsconfig.json", "--noEmit"], {
   cwd: packageRoot,
   stdio: "inherit",

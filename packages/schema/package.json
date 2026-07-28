@@ -30,9 +30,13 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "arktype": "2.2.1"
+    "arktype": "2.2.3",
+    "croner": "10.0.1",
+    "unicode-case-folding": "1.1.1",
+    "yaml": "2.9.0"
   },
   "devDependencies": {
+    "@typescript/native": "npm:typescript@7.0.2",
     "typescript": "6.0.3"
   }
 }

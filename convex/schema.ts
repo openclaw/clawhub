@@ -1,6 +1,11 @@
 import { authTables } from "@convex-dev/auth/server";
+import { createClawManifestSummarySchema } from "clawhub-schema";
 import { defineSchema, defineTable } from "convex/server";
-import { v } from "convex/values";
+import { type GenericValidator, v } from "convex/values";
+import {
+  canonicalTrendingCardValidator,
+  canonicalTrendingSourceRefValidator,
+} from "./lib/canonicalTrending";
 import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -173,6 +178,8 @@ const users = defineTable({
   githubCreatedAt: v.optional(v.number()),
   githubFetchedAt: v.optional(v.number()),
   githubProfileSyncedAt: v.optional(v.number()),
+  githubOrgMembershipsSyncedAt: v.optional(v.number()),
+  githubOrgMembershipsTruncated: v.optional(v.boolean()),
   trustedPublisher: v.optional(v.boolean()),
   publishedSkills: v.optional(v.number()),
   totalStars: v.optional(v.number()),
@@ -218,6 +225,10 @@ const publishers = defineTable({
   bio: v.optional(v.string()),
   image: v.optional(v.string()),
   imageStorageId: v.optional(v.id("_storage")),
+  githubHandle: v.optional(v.string()),
+  githubOrgId: v.optional(v.string()),
+  githubVerifiedAt: v.optional(v.number()),
+  githubVerifiedByUserId: v.optional(v.id("users")),
   linkedUserId: v.optional(v.id("users")),
   trustedPublisher: v.optional(v.boolean()),
   publishedSkills: v.optional(v.number()),
@@ -253,6 +264,17 @@ const publishers = defineTable({
     "totalInstalls",
     "updatedAt",
   ]);
+
+const githubOrgMemberships = defineTable({
+  userId: v.id("users"),
+  githubOrgId: v.string(),
+  login: v.string(),
+  avatarUrl: v.optional(v.string()),
+  role: v.union(v.literal("admin"), v.literal("member")),
+  syncedAt: v.number(),
+})
+  .index("by_user", ["userId"])
+  .index("by_user_and_github_org", ["userId", "githubOrgId"]);
 
 const publisherMembers = defineTable({
   publisherId: v.id("publishers"),
@@ -362,6 +384,11 @@ const githubSkillSourceIssueValidator = v.object({
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
+  githubRepositoryId: v.optional(v.string()),
+  githubOwnerId: v.optional(v.string()),
+  authorizationStatus: v.optional(v.union(v.literal("active"), v.literal("revoked"))),
+  authorizationCheckedAt: v.optional(v.number()),
+  authorizationError: v.optional(v.string()),
   defaultBranch: v.optional(v.string()),
   lastSyncStatus: v.optional(v.union(v.literal("ok"), v.literal("failed"), v.literal("skipped"))),
   lastSyncError: v.optional(v.string()),
@@ -379,6 +406,7 @@ const githubSkillSources = defineTable({
   updatedAt: v.number(),
 })
   .index("by_repo", ["repo"])
+  .index("by_github_repository_id", ["githubRepositoryId"])
   .index("by_owner_publisher", ["ownerPublisherId"])
   .index("by_owner_publisher_and_repo", ["ownerPublisherId", "repo"])
   .index("by_created", ["createdAt"])
@@ -448,6 +476,16 @@ const moderationStatusValidator = v.optional(
   v.union(v.literal("active"), v.literal("hidden"), v.literal("removed")),
 );
 
+const publicBrowseVersionStateValidator = v.union(
+  v.object({
+    status: v.literal("available"),
+    versionId: v.id("skillVersions"),
+  }),
+  v.object({
+    status: v.literal("unavailable"),
+  }),
+);
+
 const githubSkillScanStatusValidator = v.union(
   v.literal("clean"),
   v.literal("suspicious"),
@@ -461,6 +499,29 @@ const githubSkillCurrentStatusValidator = v.union(
   v.literal("missing"),
   v.literal("unknown"),
 );
+
+const githubSkillCandidates = defineTable({
+  skillId: v.id("skills"),
+  githubSourceId: v.id("githubSkillSources"),
+  githubPath: v.string(),
+  githubHasSkillCard: v.boolean(),
+  githubCommit: v.string(),
+  githubContentHash: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
+  upstreamVersion: v.optional(v.string()),
+  skillMarkdownPath: v.optional(v.string()),
+  skillMarkdown: v.optional(v.string()),
+  skillCardMarkdownPath: v.optional(v.string()),
+  skillCardMarkdown: v.optional(v.string()),
+  scanStatus: githubSkillScanStatusValidator,
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_skill_and_content_hash", ["skillId", "githubContentHash"])
+  .index("by_github_source", ["githubSourceId"]);
 
 const githubSkillScans = defineTable({
   skillId: v.id("skills"),
@@ -486,6 +547,7 @@ const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
+  v.literal("claw"),
 );
 
 const packageChannelValidator = v.union(
@@ -572,6 +634,7 @@ const packageCompatibilityValidator = v.optional(
 
 const pluginManifestSummaryValidator = v.object({
   schemaVersion: v.literal(1),
+  icon: v.optional(v.string()),
   compatibility: v.optional(
     v.object({
       pluginApiRange: v.optional(v.string()),
@@ -611,6 +674,17 @@ const pluginManifestSummaryValidator = v.object({
       size: v.number(),
     }),
   ),
+});
+
+const clawManifestSummaryValidator = createClawManifestSummarySchema<GenericValidator>({
+  literalOne: v.literal(1),
+  string: v.string(),
+  number: v.number(),
+  stringArray: v.array(v.string()),
+  // Convex validators cannot express string lengths; publication must validate with the shared schema.
+  boundedString: () => v.string(),
+  optional: (validator) => v.optional(validator),
+  object: (fields) => v.object(fields),
 });
 
 const packageVerificationValidator = v.optional(
@@ -687,6 +761,7 @@ const securityScanJobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
+  v.literal("skills-sh-catalog-test"),
 );
 const skillCardGenerationJobStatusValidator = v.union(
   v.literal("queued"),
@@ -752,6 +827,7 @@ const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
   v.literal("published"),
   v.literal("github"),
+  v.literal("skills-sh-catalog"),
 );
 
 const skills = defineTable({
@@ -774,6 +850,7 @@ const skills = defineTable({
   githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
   githubRemovedAt: v.optional(v.number()),
+  githubPendingCandidateId: v.optional(v.id("githubSkillCandidates")),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(
     v.object({
@@ -862,6 +939,8 @@ const skills = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
   installBackfill: v.optional(
     v.object({
       modelVersion: v.string(),
@@ -980,6 +1059,11 @@ const skillSlugAliases = defineTable({
 const skillVersions = defineTable({
   skillId: v.id("skills"),
   version: v.string(),
+  publicationStatus: v.optional(
+    v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
+  ),
+  publishAttemptId: v.optional(v.id("publishAttempts")),
+  pendingPublication: v.optional(v.any()),
   fingerprint: v.optional(v.string()),
   sourceProvenance: v.optional(
     v.object({
@@ -1010,12 +1094,42 @@ const skillVersions = defineTable({
     clawdis: v.optional(v.any()),
     moltbot: v.optional(v.any()),
     license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+    presentation: v.optional(
+      v.object({
+        displayName: v.string(),
+        displayNameSource: v.optional(
+          v.union(
+            v.literal("publisher"),
+            v.literal("openai"),
+            v.literal("skill"),
+            v.literal("slug"),
+          ),
+        ),
+        summary: v.optional(v.string()),
+        summarySource: v.optional(
+          v.union(
+            v.literal("publisher"),
+            v.literal("openai"),
+            v.literal("skill"),
+            v.literal("generated"),
+          ),
+        ),
+        icon: v.optional(v.string()),
+      }),
+    ),
   }),
   createdBy: v.id("users"),
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
   ownerDeletedAt: v.optional(v.number()),
   ownerDeletedBy: v.optional(v.id("users")),
+  manualRevocation: v.optional(
+    v.object({
+      reason: v.string(),
+      reviewerUserId: v.id("users"),
+      revokedAt: v.number(),
+    }),
+  ),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -1074,10 +1188,103 @@ const skillVersions = defineTable({
   .index("by_skill", ["skillId"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_skill_active_created", ["skillId", "softDeletedAt", "createdAt"])
+  .index("by_skill_owner_deleted_created", ["skillId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
+
+const publishAttemptStatusValidator = v.union(
+  v.literal("pending_checks"),
+  v.literal("ready_to_finalize"),
+  v.literal("finalizing"),
+  v.literal("finalized"),
+  v.literal("blocked"),
+  v.literal("failed"),
+  v.literal("expired"),
+);
+
+const skillPresentationAssets = defineTable({
+  sha256: v.string(),
+  storageId: v.id("_storage"),
+  contentType: v.union(
+    v.literal("image/png"),
+    v.literal("image/jpeg"),
+    v.literal("image/webp"),
+    v.literal("image/svg+xml"),
+  ),
+  size: v.number(),
+  createdAt: v.number(),
+}).index("by_sha256", ["sha256"]);
+
+const publishAttemptCheckStateValidator = v.object({
+  status: v.union(
+    v.literal("pending"),
+    v.literal("clean"),
+    v.literal("blocked"),
+    v.literal("failed"),
+  ),
+  checkedAt: v.optional(v.number()),
+  summary: v.optional(v.string()),
+  redactedFindings: v.optional(v.array(v.string())),
+});
+
+const publishAttempts = defineTable({
+  kind: v.union(v.literal("skill"), v.literal("package")),
+  status: publishAttemptStatusValidator,
+  userId: v.id("users"),
+  ownerUserId: v.optional(v.id("users")),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  sourceOwnerPublisherId: v.optional(v.id("publishers")),
+  skillId: v.optional(v.id("skills")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageId: v.optional(v.id("packages")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  createdNewParent: v.optional(v.boolean()),
+  clawpackStorageId: v.optional(v.id("_storage")),
+  slug: v.string(),
+  displayName: v.string(),
+  version: v.string(),
+  idempotencyKey: v.string(),
+  artifactFingerprint: v.string(),
+  files: packageFilesValidator,
+  checks: v.object({
+    trufflehog: publishAttemptCheckStateValidator,
+    clawscan: publishAttemptCheckStateValidator,
+  }),
+  skillInsertArgs: v.optional(v.any()),
+  packageInsertArgs: v.optional(v.any()),
+  scanContext: v.optional(v.any()),
+  followup: v.optional(
+    v.object({
+      skipWebhook: v.optional(v.boolean()),
+      ownerHandle: v.optional(v.string()),
+    }),
+  ),
+  packageFollowup: v.optional(v.any()),
+  checkClaimId: v.optional(v.string()),
+  checkClaimedAt: v.optional(v.number()),
+  checkClaimExpiresAt: v.optional(v.number()),
+  checkClaimLastError: v.optional(v.string()),
+  finalizationClaimId: v.optional(v.string()),
+  finalizationClaimedAt: v.optional(v.number()),
+  finalizationClaimExpiresAt: v.optional(v.number()),
+  finalizationLastError: v.optional(v.string()),
+  result: v.optional(v.any()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+  finalizedAt: v.optional(v.number()),
+  blockedAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+})
+  .index("by_idempotency_key", ["idempotencyKey"])
+  .index("by_status_and_created", ["status", "createdAt"])
+  .index("by_status_check_claim_expires_at_created", ["status", "checkClaimExpiresAt", "createdAt"])
+  .index("by_expires_at", ["expiresAt"])
+  .index("by_kind_status_slug_version_created", ["kind", "status", "slug", "version", "createdAt"])
+  .index("by_user_status_created", ["userId", "status", "createdAt"])
+  .index("by_owner_publisher_status_created", ["ownerPublisherId", "status", "createdAt"]);
 
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
@@ -1170,6 +1377,9 @@ const skillSearchDigest = defineTable({
   forkOf: forkOfValidator,
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSkillId: v.optional(v.id("skills")),
+  // Missing means the rollout backfill has not reached this row. New writes
+  // always store an explicit available or unavailable public-version state.
+  publicVersion: v.optional(publicBrowseVersionStateValidator),
   installKind: v.optional(v.literal("github")),
   githubHasSkillCard: v.optional(v.boolean()),
   githubCurrentStatus: v.optional(githubSkillCurrentStatusValidator),
@@ -1193,6 +1403,8 @@ const skillSearchDigest = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  statsSkillsShInstalls: v.optional(v.number()),
+  statsGithubStars: v.optional(v.number()),
   recommendedScore: v.optional(v.number()),
   recommendedScoreVersion: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
@@ -1545,6 +1757,11 @@ const packages = defineTable({
 const packageReleases = defineTable({
   packageId: v.id("packages"),
   version: v.string(),
+  publicationStatus: v.optional(
+    v.union(v.literal("pending"), v.literal("published"), v.literal("blocked")),
+  ),
+  publishAttemptId: v.optional(v.id("publishAttempts")),
+  pendingPublication: v.optional(v.any()),
   changelog: v.string(),
   summary: v.optional(v.string()),
   icon: v.optional(v.string()),
@@ -1564,7 +1781,9 @@ const packageReleases = defineTable({
   extractedPackageJson: v.optional(v.any()),
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),
+  manifestSearchTerms: v.optional(v.array(v.string())),
   pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
+  clawManifestSummary: v.optional(clawManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
@@ -1633,6 +1852,7 @@ const packageReleases = defineTable({
 })
   .index("by_package", ["packageId"])
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])
+  .index("by_package_owner_deleted_created", ["packageId", "ownerDeletedBy", "createdAt"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
@@ -1731,6 +1951,7 @@ const securityScanJobs = defineTable({
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
   skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  rolloutGate: v.optional(v.literal("github-skill-sync")),
   status: securityScanJobStatusValidator,
   source: securityScanJobSourceValidator,
   priority: v.number(),
@@ -1748,6 +1969,7 @@ const securityScanJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_and_next_run_at", ["status", "nextRunAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_status_source_created_at", ["status", "source", "createdAt"])
   .index("by_status_source_next_run_at", ["status", "source", "nextRunAt"])
   .index("by_status_source_target_kind_created_at", ["status", "source", "targetKind", "createdAt"])
@@ -1756,6 +1978,20 @@ const securityScanJobs = defineTable({
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
   .index("by_skill_scan_request", ["skillScanRequestId"]);
+
+const securityScanDispatchState = defineTable({
+  key: v.string(),
+  scheduledToken: v.optional(v.string()),
+  scheduledAt: v.optional(v.number()),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  lastDispatchAt: v.optional(v.number()),
+  lastDispatchStatus: v.optional(
+    v.union(v.literal("succeeded"), v.literal("failed"), v.literal("unknown")),
+  ),
+  lastError: v.optional(v.string()),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
 
 const skillScanRequests = defineTable({
   actorUserId: v.id("users"),
@@ -1772,6 +2008,7 @@ const skillScanRequests = defineTable({
   skillId: v.optional(v.id("skills")),
   skillVersionId: v.optional(v.id("skillVersions")),
   githubSkillScanId: v.optional(v.id("githubSkillScans")),
+  skillsShCatalogAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
   files: packageFilesValidator,
   fileChunkCount: v.optional(v.number()),
   fileManifestBytes: v.optional(v.number()),
@@ -1782,6 +2019,29 @@ const skillScanRequests = defineTable({
       clawdis: v.optional(v.any()),
       moltbot: v.optional(v.any()),
       license: v.optional(v.literal(PLATFORM_SKILL_LICENSE)),
+      presentation: v.optional(
+        v.object({
+          displayName: v.string(),
+          displayNameSource: v.optional(
+            v.union(
+              v.literal("publisher"),
+              v.literal("openai"),
+              v.literal("skill"),
+              v.literal("slug"),
+            ),
+          ),
+          summary: v.optional(v.string()),
+          summarySource: v.optional(
+            v.union(
+              v.literal("publisher"),
+              v.literal("openai"),
+              v.literal("skill"),
+              v.literal("generated"),
+            ),
+          ),
+          icon: v.optional(v.string()),
+        }),
+      ),
     }),
   ),
   sha256hash: v.optional(v.string()),
@@ -1833,7 +2093,7 @@ const skillCardGenerationJobs = defineTable({
 
 const packageStatEvents = defineTable({
   packageId: v.id("packages"),
-  kind: v.union(v.literal("download"), v.literal("install")),
+  kind: v.union(v.literal("download"), v.literal("install"), v.literal("install_clear")),
   occurredAt: v.number(),
   processedAt: v.optional(v.number()),
 })
@@ -1845,6 +2105,9 @@ const packageDailyStats = defineTable({
   day: v.number(),
   downloads: v.number(),
   installs: v.number(),
+  bookmarks: v.optional(v.number()),
+  rankingDatasetVersion: v.optional(v.string()),
+  rankingImportedAt: v.optional(v.number()),
   updatedAt: v.number(),
 })
   .index("by_package_day", ["packageId", "day"])
@@ -1939,6 +2202,7 @@ const packageSearchDigest = defineTable({
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
+  manifestSearchTerms: v.optional(v.array(v.string())),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
   recommendedScore: v.optional(v.number()),
@@ -1959,6 +2223,7 @@ const packageSearchDigest = defineTable({
     "updatedAt",
   ])
   .index("by_active_family_updated", ["softDeletedAt", "family", "updatedAt"])
+  .index("by_active_family_created", ["softDeletedAt", "family", "createdAt"])
   .index("by_active_family_channel_updated", ["softDeletedAt", "family", "channel", "updatedAt"])
   .index("by_active_family_official_updated", [
     "softDeletedAt",
@@ -1967,12 +2232,20 @@ const packageSearchDigest = defineTable({
     "updatedAt",
   ])
   .index("by_active_normalized_name", ["softDeletedAt", "normalizedName", "updatedAt"])
+  .index("by_active_family_normalized_name", [
+    "softDeletedAt",
+    "family",
+    "normalizedName",
+    "updatedAt",
+  ])
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
+  .index("by_active_family_runtime_id", ["softDeletedAt", "family", "runtimeId", "updatedAt"])
   .index("by_active_owner_handle", ["softDeletedAt", "ownerHandle", "updatedAt"])
+  .index("by_active_family_owner_handle", ["softDeletedAt", "family", "ownerHandle", "updatedAt"])
   .index("by_active_name", ["softDeletedAt", "displayName"])
   .searchIndex("search_by_display_name", {
     searchField: "displayName",
-    filterFields: ["softDeletedAt"],
+    filterFields: ["softDeletedAt", "family"],
   });
 
 const packageTopicSearchDigest = defineTable({
@@ -2299,6 +2572,9 @@ const skillDailyStats = defineTable({
   day: v.number(),
   downloads: v.number(),
   installs: v.number(),
+  bookmarks: v.optional(v.number()),
+  rankingDatasetVersion: v.optional(v.string()),
+  rankingImportedAt: v.optional(v.number()),
   updatedAt: v.number(),
 })
   .index("by_skill_day", ["skillId", "day"])
@@ -2329,9 +2605,77 @@ const skillStatBackfillState = defineTable({
 const globalStats = defineTable({
   key: v.string(),
   activeSkillsCount: v.number(),
+  activeExternalSkillsCount: v.optional(v.number()),
   activePluginsCount: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
+
+const rankingMetricImports = defineTable({
+  datasetVersion: v.string(),
+  checksum: v.string(),
+  generatedAt: v.string(),
+  importedAt: v.number(),
+  startDay: v.number(),
+  endDay: v.number(),
+  targetCount: v.number(),
+  skillTargetCount: v.number(),
+  packageTargetCount: v.number(),
+  dailyRowCount: v.number(),
+  importedSkillRows: v.number(),
+  importedPackageRows: v.number(),
+  unresolvedTargets: v.number(),
+  skippedOverlayRows: v.number(),
+})
+  .index("by_dataset_version", ["datasetVersion"])
+  .index("by_imported_at", ["importedAt"]);
+
+const canonicalTrendingSnapshots = defineTable({
+  snapshotId: v.string(),
+  kind: v.literal("skills"),
+  status: v.union(v.literal("building"), v.literal("ready"), v.literal("failed")),
+  rankingVersion: v.string(),
+  generatedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  expiresAt: v.number(),
+  windowHours: v.number(),
+  windowStartDay: v.number(),
+  windowEndDay: v.number(),
+  writtenItems: v.number(),
+  totalItems: v.optional(v.number()),
+  sourceCounts: v.optional(
+    v.object({
+      clawhubTrending: v.number(),
+      clawhubRising: v.number(),
+      skillsShTrending: v.number(),
+    }),
+  ),
+  operations: v.optional(
+    v.object({
+      documentsRead: v.number(),
+      documentsWritten: v.number(),
+      functionCalls: v.number(),
+    }),
+  ),
+  error: v.optional(v.string()),
+})
+  .index("by_snapshot_id", ["snapshotId"])
+  .index("by_kind_and_status_and_expires_at", ["kind", "status", "expiresAt"])
+  .index("by_expires_at", ["expiresAt"]);
+
+const canonicalTrendingItems = defineTable({
+  snapshotId: v.string(),
+  position: v.number(),
+  lane: v.union(
+    v.literal("clawhub-trending"),
+    v.literal("clawhub-rising"),
+    v.literal("skills-sh-trending"),
+  ),
+  sourceRef: canonicalTrendingSourceRefValidator,
+  card: canonicalTrendingCardValidator,
+  expiresAt: v.number(),
+})
+  .index("by_snapshot_id_and_position", ["snapshotId", "position"])
+  .index("by_expires_at", ["expiresAt"]);
 
 const skillStatEvents = defineTable({
   skillId: v.id("skills"),
@@ -2546,6 +2890,45 @@ const stars = defineTable({
   .index("by_user", ["userId"])
   .index("by_skill_user", ["skillId", "userId"]);
 
+const promotionStatusValidator = v.union(
+  v.literal("draft"),
+  v.literal("active"),
+  v.literal("ended"),
+);
+
+// Declarative activation payload consumed by the OpenClaw CLI. The CLI
+// validates authChoiceId/pluginNames against its local provider catalog and
+// never executes anything from these records.
+const promotionModelValidator = v.object({
+  modelRef: v.string(),
+  alias: v.optional(v.string()),
+  suggestedDefault: v.optional(v.boolean()),
+});
+
+const promotions = defineTable({
+  slug: v.string(),
+  title: v.string(),
+  blurb: v.string(),
+  sponsor: v.optional(v.string()),
+  status: promotionStatusValidator,
+  startsAt: v.number(),
+  endsAt: v.number(),
+  provider: v.optional(v.string()),
+  authChoiceId: v.optional(v.string()),
+  pluginNames: v.optional(v.array(v.string())),
+  models: v.array(promotionModelValidator),
+  signupUrl: v.optional(v.string()),
+  docsUrl: v.optional(v.string()),
+  launchPageUrl: v.optional(v.string()),
+  launchedAt: v.optional(v.number()),
+  createdByUserId: v.id("users"),
+  updatedByUserId: v.optional(v.id("users")),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_slug", ["slug"])
+  .index("by_status_endsAt", ["status", "endsAt"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -2565,6 +2948,528 @@ const systemSettings = defineTable({
   updatedAt: v.number(),
   updatedByUserId: v.optional(v.id("users")),
 }).index("by_key_and_updated_at", ["key", "updatedAt"]);
+
+const skillsShCatalogControls = defineTable({
+  key: v.literal("global"),
+  mode: v.union(v.literal("off"), v.literal("fixture"), v.literal("staging-live")),
+  discoveryEnabled: v.boolean(),
+  writesEnabled: v.boolean(),
+  scanPlanningEnabled: v.boolean(),
+  scanAdmissionEnabled: v.boolean(),
+  publicVisibilityEnabled: v.boolean(),
+  paused: v.boolean(),
+  maxEntriesPerRun: v.number(),
+  maxEntriesPerBatch: v.number(),
+  maxWritesPerBatch: v.number(),
+  maxPlannedScans: v.number(),
+  maxScanAdmissionsPerBatch: v.number(),
+  maxScanAdmissionsPerRun: v.number(),
+  maxScanAdmissionsPerDay: v.number(),
+  maxCatalogQueued: v.number(),
+  maxCatalogInFlight: v.number(),
+  maxNativeQueued: v.number(),
+  maxNativeInFlight: v.number(),
+  realScanAllowlist: v.array(v.string()),
+  updatedBy: v.string(),
+  reason: v.string(),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
+const skillsShCatalogRunCountsValidator = v.object({
+  observed: v.number(),
+  wouldInsert: v.number(),
+  wouldUpdate: v.number(),
+  inserted: v.number(),
+  updated: v.number(),
+  unchanged: v.number(),
+  rejected: v.number(),
+  newExternal: v.optional(v.number()),
+  exactNativeMatches: v.optional(v.number()),
+  routeCollisions: v.optional(v.number()),
+  claimOpportunities: v.optional(v.number()),
+  scansPlanned: v.number(),
+  scansAdmitted: v.number(),
+  scansCompleted: v.number(),
+  scansCanceled: v.number(),
+});
+
+const skillsShCatalogRuns = defineTable({
+  fixtureId: v.union(
+    v.literal("patrick-html-canary-v1"),
+    v.literal("nvidia-small-v1"),
+    v.literal("nvidia-small-v2"),
+    v.literal("skills-sh-500-2026-07-21"),
+    v.literal("skills-sh-500-2026-07-21-v2"),
+    v.literal("synthetic-20000-v1"),
+    v.literal("skills-sh-test-live-500"),
+  ),
+  snapshotId: v.string(),
+  sourceKind: v.union(
+    v.literal("fixture"),
+    v.literal("frozen-snapshot"),
+    v.literal("staging-live"),
+  ),
+  sourceCapturedAt: v.optional(v.string()),
+  snapshotCaptureFetches: v.number(),
+  githubVerification: v.optional(
+    v.object({
+      ownerId: v.number(),
+      commit: v.string(),
+      contentHash: v.string(),
+      checkedAt: v.string(),
+      fetches: v.number(),
+    }),
+  ),
+  dryRun: v.boolean(),
+  status: v.union(
+    v.literal("running"),
+    v.literal("paused"),
+    v.literal("completed"),
+    v.literal("budget-exhausted"),
+    v.literal("failed"),
+    v.literal("canceling"),
+    v.literal("canceled"),
+  ),
+  cursor: v.number(),
+  scanCursor: v.number(),
+  fixtureLength: v.number(),
+  counts: skillsShCatalogRunCountsValidator,
+  budgets: v.object({
+    maxEntriesPerRun: v.number(),
+    maxEntriesPerBatch: v.number(),
+    maxWritesPerBatch: v.number(),
+    maxPlannedScans: v.number(),
+    maxScanAdmissionsPerBatch: v.number(),
+    maxScanAdmissionsPerRun: v.number(),
+    maxScanAdmissionsPerDay: v.number(),
+  }),
+  operations: v.object({
+    functionCalls: v.number(),
+    dbReads: v.number(),
+    dbWrites: v.number(),
+  }),
+  actor: v.string(),
+  reason: v.string(),
+  lastError: v.optional(v.string()),
+  batchesProcessed: v.number(),
+  scanAdmissionBatches: v.number(),
+  lastBatchWrites: v.number(),
+  lastBatchReads: v.number(),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+})
+  .index("by_started_at", ["startedAt"])
+  .index("by_status_and_updated_at", ["status", "updatedAt"]);
+
+const skillsShCatalogEntries = defineTable({
+  externalId: v.string(),
+  sourceKind: v.union(
+    v.literal("fixture"),
+    v.literal("frozen-snapshot"),
+    v.literal("staging-live"),
+  ),
+  githubOwnerId: v.number(),
+  owner: v.string(),
+  repo: v.string(),
+  slug: v.string(),
+  displayName: v.string(),
+  sourceUrl: v.string(),
+  githubRepoUrl: v.string(),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  githubContentHash: v.optional(v.string()),
+  sourceContentHash: v.string(),
+  installs: v.number(),
+  githubStars: v.optional(v.number()),
+  sourceSnapshotId: v.string(),
+  reconciliation: v.optional(
+    v.object({
+      kind: v.union(v.literal("new"), v.literal("exact-native"), v.literal("route-collision")),
+      nativeSkillId: v.optional(v.id("skills")),
+      nativeSlug: v.optional(v.string()),
+      nativeStatsDownloads: v.optional(v.number()),
+      claimOpportunity: v.boolean(),
+      claimPublisherHandle: v.optional(v.string()),
+      observedAt: v.number(),
+    }),
+  ),
+  publicVisible: v.boolean(),
+  publishedScanAttemptId: v.optional(v.id("skillsShCatalogScanAttempts")),
+  scanStatus: v.union(
+    v.literal("not-planned"),
+    v.literal("planned"),
+    v.literal("queued"),
+    v.literal("clean"),
+    v.literal("suspicious"),
+    v.literal("malicious"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  firstObservedAt: v.number(),
+  lastObservedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_owner_and_source_kind_and_github_owner_id", ["owner", "sourceKind", "githubOwnerId"])
+  .index("by_source_kind_and_github_owner_id_and_owner", ["sourceKind", "githubOwnerId", "owner"])
+  .index("by_scan_status_and_updated_at", ["scanStatus", "updatedAt"]);
+
+const skillsShCatalogScanAttempts = defineTable({
+  entryId: v.id("skillsShCatalogEntries"),
+  runId: v.id("skillsShCatalogRuns"),
+  externalId: v.string(),
+  githubOwnerId: v.optional(v.number()),
+  owner: v.optional(v.string()),
+  repo: v.optional(v.string()),
+  slug: v.optional(v.string()),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  githubContentHash: v.optional(v.string()),
+  sourceContentHash: v.string(),
+  artifactContentHash: v.optional(v.string()),
+  skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  securityScanJobId: v.optional(v.id("securityScanJobs")),
+  source: v.union(v.literal("skills-sh-catalog-fixture"), v.literal("skills-sh-catalog-test")),
+  dispatchKind: v.union(v.literal("deterministic"), v.literal("real")),
+  priority: v.literal("low"),
+  status: v.union(
+    v.literal("queued"),
+    v.literal("running"),
+    v.literal("succeeded"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  verdict: v.optional(
+    v.union(
+      v.literal("clean"),
+      v.literal("suspicious"),
+      v.literal("malicious"),
+      v.literal("failed"),
+    ),
+  ),
+  publicationRolledBackAt: v.optional(v.number()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_entry_and_source_content_hash", ["entryId", "sourceContentHash"])
+  .index("by_run", ["runId"])
+  .index("by_run_and_status", ["runId", "status"])
+  .index("by_run_dispatch_kind_status_created_at", ["runId", "dispatchKind", "status", "createdAt"])
+  .index("by_created_at", ["createdAt"])
+  .index("by_status_and_created_at", ["status", "createdAt"])
+  .index("by_dispatch_kind_and_status_and_created_at", ["dispatchKind", "status", "createdAt"]);
+
+const skillsShMirrorControls = defineTable({
+  key: v.literal("global"),
+  enabled: v.boolean(),
+  paused: v.boolean(),
+  maxRowsPerRun: v.number(),
+  maxRowsPerBatch: v.number(),
+  maxDetailBytes: v.number(),
+  latestCompletedLeaderboardRunId: v.optional(v.id("skillsShMirrorRuns")),
+  updatedBy: v.string(),
+  reason: v.string(),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
+const skillsShMirrorRunCountsValidator = v.object({
+  observed: v.number(),
+  inserted: v.number(),
+  updated: v.number(),
+  unchanged: v.number(),
+  rejected: v.number(),
+  quarantined: v.optional(v.number()),
+  quarantinedPreserved: v.optional(v.number()),
+  conflicts: v.number(),
+  detailsInserted: v.number(),
+  detailsUpdated: v.number(),
+  detailsUnchanged: v.number(),
+  detailsMissing: v.number(),
+  detailsTruncated: v.number(),
+  tombstoned: v.number(),
+  reactivated: v.number(),
+  trendingJoined: v.optional(v.number()),
+  trendingUpdated: v.optional(v.number()),
+  trendingUnchanged: v.optional(v.number()),
+  trendingMissing: v.optional(v.number()),
+  trendingStaleRejected: v.optional(v.number()),
+  trendingHydrationAttempts: v.optional(v.number()),
+  trendingHydrated: v.optional(v.number()),
+  trendingHydrationFailed: v.optional(v.number()),
+  scansPlanned: v.literal(0),
+  scansAdmitted: v.literal(0),
+});
+
+const skillsShMirrorRuns = defineTable({
+  snapshotId: v.string(),
+  sourceView: v.optional(v.union(v.literal("leaderboard"), v.literal("trending"))),
+  sourceSnapshotHash: v.optional(v.string()),
+  sourceCaptureWrites: v.optional(v.number()),
+  status: v.union(
+    v.literal("running"),
+    v.literal("paused"),
+    v.literal("reconciling"),
+    v.literal("completed"),
+    v.literal("failed"),
+    v.literal("canceled"),
+  ),
+  sourceTotal: v.number(),
+  sourcePageSize: v.number(),
+  sourceMeasuredAt: v.string(),
+  sourceDurationMs: v.optional(v.number()),
+  page: v.number(),
+  offset: v.number(),
+  batchLeaseToken: v.optional(v.string()),
+  batchLeaseExpiresAt: v.optional(v.number()),
+  reconcileCursor: v.optional(v.string()),
+  counts: skillsShMirrorRunCountsValidator,
+  operations: v.object({
+    functionCalls: v.number(),
+    dbReads: v.number(),
+    dbWrites: v.number(),
+    sourceRequests: v.number(),
+    sourceBytes: v.number(),
+  }),
+  actor: v.string(),
+  reason: v.string(),
+  startedAt: v.number(),
+  completedAt: v.optional(v.number()),
+  updatedAt: v.number(),
+})
+  .index("by_started_at", ["startedAt"])
+  .index("by_source_view_and_status_and_source_snapshot_hash", [
+    "sourceView",
+    "status",
+    "sourceSnapshotHash",
+  ])
+  .index("by_status_and_updated_at", {
+    fields: ["status", "updatedAt"],
+  });
+
+const skillsShMirrorSourcePages = defineTable({
+  snapshotHash: v.string(),
+  sourceView: v.optional(v.union(v.literal("leaderboard"), v.literal("trending"))),
+  page: v.number(),
+  sourceTotal: v.number(),
+  pageLength: v.number(),
+  hasMore: v.boolean(),
+  identityHash: v.string(),
+  contentHash: v.string(),
+  sourceBytes: v.number(),
+  serializedBytes: v.number(),
+  rows: v.array(
+    v.object({
+      id: v.string(),
+      installUrl: v.union(v.string(), v.null()),
+      installs: v.number(),
+      name: v.string(),
+      slug: v.string(),
+      source: v.string(),
+      sourceType: v.string(),
+      url: v.string(),
+    }),
+  ),
+  createdAt: v.number(),
+})
+  .index("by_snapshot_hash_and_page", ["snapshotHash", "page"])
+  .index("by_source_view_and_page_and_created_at", ["sourceView", "page", "createdAt"]);
+
+const skillsShMirrorUpstreamScannerValidator = v.object({
+  status: v.string(),
+  sourceCheckedAt: v.optional(v.string()),
+  sourceUrl: v.optional(v.string()),
+});
+
+const skillsShMirrorClassificationConfidenceValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
+const skillsShMirrorDigests = defineTable({
+  externalId: v.string(),
+  sourceType: v.union(v.literal("github"), v.literal("well-known")),
+  upstreamSourceType: v.optional(v.string()),
+  owner: v.optional(v.string()),
+  repo: v.optional(v.string()),
+  sourceHost: v.optional(v.string()),
+  slug: v.string(),
+  normalizedSlug: v.string(),
+  normalizedSlugFirstToken: v.string(),
+  displayName: v.string(),
+  normalizedDisplayName: v.string(),
+  normalizedDisplayNameFirstToken: v.string(),
+  searchSummary: v.optional(v.string()),
+  searchText: v.string(),
+  sourceUrl: v.string(),
+  canonicalRepoUrl: v.optional(v.string()),
+  githubPath: v.optional(v.string()),
+  githubCommit: v.optional(v.string()),
+  sourceContentHash: v.optional(v.string()),
+  upstreamInstalls: v.number(),
+  trendingRank: v.optional(v.number()),
+  trendingLifetimeInstalls: v.optional(v.number()),
+  trendingObservedAt: v.optional(v.number()),
+  trendingSnapshotId: v.optional(v.string()),
+  trendingObservedRunId: v.optional(v.id("skillsShMirrorRuns")),
+  upstreamScanners: v.object({
+    genAgentTrustHub: skillsShMirrorUpstreamScannerValidator,
+    socket: skillsShMirrorUpstreamScannerValidator,
+    snyk: skillsShMirrorUpstreamScannerValidator,
+  }),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredCategoryConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(skillsShMirrorClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
+  sourceFreshnessStatus: v.union(v.literal("observed-only"), v.literal("stale")),
+  staleQuarantineReason: v.optional(v.string()),
+  detailStatus: v.union(v.literal("available"), v.literal("missing")),
+  observationFingerprint: v.string(),
+  sourceSnapshotId: v.string(),
+  lastObservedRunId: v.id("skillsShMirrorRuns"),
+  active: v.boolean(),
+  // Mirror ingestion always writes both flags false. Separately accepted
+  // activation work may opt an exact row into public search/install surfaces.
+  publicVisible: v.boolean(),
+  installable: v.boolean(),
+  tombstonedAt: v.optional(v.number()),
+  firstObservedAt: v.number(),
+  lastObservedAt: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_active_visible_installable_fresh_slug", {
+    fields: ["active", "publicVisible", "installable", "sourceFreshnessStatus", "normalizedSlug"],
+  })
+  .index("by_active_visible_installable_fresh_display", {
+    fields: [
+      "active",
+      "publicVisible",
+      "installable",
+      "sourceFreshnessStatus",
+      "normalizedDisplayName",
+    ],
+  })
+  .index("by_active_visible_installable_fresh_slug_token", {
+    fields: [
+      "active",
+      "publicVisible",
+      "installable",
+      "sourceFreshnessStatus",
+      "normalizedSlugFirstToken",
+    ],
+  })
+  .index("by_active_visible_installable_fresh_display_token", {
+    fields: [
+      "active",
+      "publicVisible",
+      "installable",
+      "sourceFreshnessStatus",
+      "normalizedDisplayNameFirstToken",
+    ],
+  })
+  .index("by_active_and_normalized_slug", {
+    fields: ["active", "normalizedSlug"],
+  })
+  .index("by_active_and_normalized_display_name", {
+    fields: ["active", "normalizedDisplayName"],
+  })
+  .index("by_active_and_normalized_slug_first_token", {
+    fields: ["active", "normalizedSlugFirstToken"],
+  })
+  .index("by_active_and_normalized_display_name_first_token", {
+    fields: ["active", "normalizedDisplayNameFirstToken"],
+  })
+  .index("by_active_and_source_type_and_owner_and_repo_and_external_id", {
+    fields: ["active", "sourceType", "owner", "repo", "externalId"],
+  })
+  .index("by_active_and_upstream_installs", {
+    fields: ["active", "upstreamInstalls"],
+  })
+  .index("by_source_type_and_external_id", {
+    fields: ["sourceType", "externalId"],
+  })
+  .index("by_last_observed_at", {
+    fields: ["lastObservedAt"],
+  })
+  .searchIndex("search_by_search_text", {
+    searchField: "searchText",
+    filterFields: ["active", "publicVisible", "installable", "sourceFreshnessStatus"],
+  });
+
+const skillsShMirrorDetails = defineTable({
+  externalId: v.string(),
+  digestId: v.id("skillsShMirrorDigests"),
+  contentKind: v.union(v.literal("skill-md"), v.literal("readme")),
+  path: v.string(),
+  content: v.string(),
+  contentBytes: v.number(),
+  sourceBytes: v.number(),
+  sourceFileCount: v.number(),
+  truncated: v.boolean(),
+  sourceContentHash: v.optional(v.string()),
+  sourceSnapshotId: v.string(),
+  lastObservedRunId: v.id("skillsShMirrorRuns"),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_external_id", ["externalId"])
+  .index("by_digest_id", {
+    fields: ["digestId"],
+  });
+
+const skillsShMirrorFacets = defineTable({
+  digestId: v.id("skillsShMirrorDigests"),
+  externalId: v.string(),
+  kind: v.union(v.literal("category"), v.literal("topic")),
+  term: v.string(),
+  active: v.boolean(),
+  installs: v.number(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_digest_id_and_kind_and_term", ["digestId", "kind", "term"])
+  .index("by_active_and_kind_and_term_and_installs_and_external_id", [
+    "active",
+    "kind",
+    "term",
+    "installs",
+    "externalId",
+  ]);
+
+const skillsShMirrorConflicts = defineTable({
+  runId: v.id("skillsShMirrorRuns"),
+  externalId: v.string(),
+  kind: v.union(
+    v.literal("same-run-drift"),
+    v.literal("trending-same-observation-drift"),
+    v.literal("identity-mismatch"),
+    v.literal("source-quarantine"),
+  ),
+  reason: v.optional(v.string()),
+  upstreamSourceType: v.optional(v.string()),
+  previousFingerprint: v.optional(v.string()),
+  observedFingerprint: v.string(),
+  page: v.number(),
+  offset: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_run_id", ["runId"])
+  .index("by_external_id_and_created_at", {
+    fields: ["externalId", "createdAt"],
+  })
+  .index("by_run_id_and_external_id_and_kind", {
+    fields: ["runId", "externalId", "kind"],
+  });
 
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),
@@ -2589,10 +3494,35 @@ const publisherAbuseScoreRuns = defineTable({
   sumSquaredLogPressure: v.number(),
   meanLogPressure: v.optional(v.number()),
   stdDevLogPressure: v.optional(v.number()),
+  temporalPipelineKind: v.optional(v.literal("signals")),
   temporalMode: v.optional(v.union(v.literal("current"), v.literal("backfill"))),
   temporalScanComplete: v.optional(v.boolean()),
+  temporalPipelinePhase: v.optional(
+    v.union(
+      v.literal("collecting"),
+      v.literal("downloads_percentiles"),
+      v.literal("spike_percentiles"),
+      v.literal("classifying"),
+      v.literal("completed"),
+    ),
+  ),
+  temporalTodayDay: v.optional(v.number()),
+  temporalSourceCursor: v.optional(v.string()),
+  temporalDownloadsCursor: v.optional(v.string()),
+  temporalSpikeCursor: v.optional(v.string()),
+  temporalCandidateCursor: v.optional(v.string()),
+  temporalSampleSize: v.optional(v.number()),
+  temporalDownloadsSum: v.optional(v.number()),
+  temporalDownloadsProcessed: v.optional(v.number()),
+  temporalSpikeProcessed: v.optional(v.number()),
+  temporalDownloadsMedian: v.optional(v.number()),
+  temporalDownloadsP95: v.optional(v.number()),
+  temporalDownloadsP99: v.optional(v.number()),
+  temporalSpikeP95: v.optional(v.number()),
+  temporalSpikeP99: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
+      scope: v.optional(v.literal("all_active_skills")),
       sampleSize: v.number(),
       downloads30dAverage: v.number(),
       downloads30dMedian: v.number(),
@@ -2611,6 +3541,24 @@ const publisherAbuseScoreRuns = defineTable({
   .index("by_status_and_updated_at", ["status", "updatedAt"])
   .index("by_model_version_and_started_at", ["modelVersion", "startedAt"])
   .index("by_model_version_and_status_and_updated_at", ["modelVersion", "status", "updatedAt"])
+  .index("by_model_version_and_status_and_trigger_and_updated_at", [
+    "modelVersion",
+    "status",
+    "trigger",
+    "updatedAt",
+  ])
+  .index("by_temporal_pipeline_kind_and_status_and_updated_at", [
+    "temporalPipelineKind",
+    "status",
+    "updatedAt",
+  ])
+  .index("by_temporal_pipeline_kind_and_started_at", ["temporalPipelineKind", "startedAt"])
+  .index("by_model_version_and_temporal_pipeline_kind_and_phase_started_at", [
+    "modelVersion",
+    "temporalPipelineKind",
+    "temporalPipelinePhase",
+    "startedAt",
+  ])
   .index("by_model_status_phase_temporal_complete_started_at", [
     "modelVersion",
     "status",
@@ -2620,6 +3568,63 @@ const publisherAbuseScoreRuns = defineTable({
     "startedAt",
   ])
   .index("by_started_at", ["startedAt"]);
+
+const publisherAbuseTemporalScanSamples = defineTable({
+  runId: v.id("publisherAbuseScoreRuns"),
+  recent30Downloads: v.number(),
+  spikeMultiplier: v.number(),
+  expirationTime: v.number(),
+})
+  .index("by_run_id_and_recent30_downloads", ["runId", "recent30Downloads"])
+  .index("by_run_id_and_spike_multiplier", ["runId", "spikeMultiplier"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const publisherAbuseTemporalScanScoreValidator = v.object({
+  spike: v.boolean(),
+  sustained: v.boolean(),
+  nearConversion: v.boolean(),
+  pressure: v.number(),
+  recent7Downloads: v.number(),
+  recent7Installs: v.number(),
+  previous30Downloads: v.number(),
+  baseline7Downloads: v.number(),
+  spikeMultiplier: v.number(),
+  recent30Downloads: v.number(),
+  recent30Installs: v.number(),
+  downloadInstallRatio30: v.number(),
+  downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+  spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
+  downloads30dVsPeerP95: v.optional(v.number()),
+  spikeMultiplierVsPeerP95: v.optional(v.number()),
+  installDownloadRatio7: v.number(),
+  installDownloadRatio30: v.number(),
+  installDownloadExcessZScore7: v.number(),
+  installDownloadExcessZScore30: v.number(),
+  spikeWindowStartDay: v.optional(v.number()),
+  spikeWindowEndDay: v.optional(v.number()),
+  sustainedWindowStartDay: v.optional(v.number()),
+  sustainedWindowEndDay: v.optional(v.number()),
+  nearConversionWindowStartDay: v.optional(v.number()),
+  nearConversionWindowEndDay: v.optional(v.number()),
+  reasonCodes: v.array(v.string()),
+});
+
+const publisherAbuseTemporalScanCandidates = defineTable({
+  runId: v.id("publisherAbuseScoreRuns"),
+  ownerKey: v.string(),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerUserId: v.optional(v.id("users")),
+  handleSnapshot: v.string(),
+  skillId: v.id("skills"),
+  slug: v.string(),
+  displayName: v.string(),
+  totalDownloads: v.number(),
+  totalInstalls: v.number(),
+  temporalScore: publisherAbuseTemporalScanScoreValidator,
+  expirationTime: v.number(),
+})
+  .index("by_run_id", ["runId"])
+  .index("by_expiration_time", ["expirationTime"]);
 
 const publisherAbuseScores = defineTable({
   runId: v.id("publisherAbuseScoreRuns"),
@@ -2648,6 +3653,7 @@ const publisherAbuseScores = defineTable({
   temporalMaxPressure: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
+      scope: v.optional(v.literal("all_active_skills")),
       sampleSize: v.number(),
       downloads30dAverage: v.number(),
       downloads30dMedian: v.number(),
@@ -2798,8 +3804,29 @@ const publisherAbuseSignals = defineTable({
   allTimeDownloads: v.number(),
   allTimeInstalls: v.number(),
   allTimeInstallDownloadRatio: v.number(),
+  temporalBenchmark: v.optional(
+    v.object({
+      scope: v.optional(v.literal("all_active_skills")),
+      sampleSize: v.number(),
+      downloads30dAverage: v.number(),
+      downloads30dMedian: v.number(),
+      downloads30dP95: v.number(),
+      downloads30dP99: v.number(),
+      spikeMultiplier7dP95: v.number(),
+      spikeMultiplier7dP99: v.number(),
+    }),
+  ),
   reviewStatus: publisherAbuseSignalReviewStatusValidator,
   snoozedUntil: v.optional(v.number()),
+  evidenceAcknowledgedAt: v.optional(v.number()),
+  evidenceBaselineDownloads: v.optional(v.number()),
+  evidenceBaselineInstalls: v.optional(v.number()),
+  freshDownloadsSinceSnooze: v.optional(v.number()),
+  freshInstallsSinceSnooze: v.optional(v.number()),
+  snoozeCount: v.optional(v.number()),
+  recurrenceCount: v.optional(v.number()),
+  notificationBaselineDownloads: v.optional(v.number()),
+  notificationBaselineInstalls: v.optional(v.number()),
   reviewedByUserId: v.optional(v.id("users")),
   reviewedAt: v.optional(v.number()),
   reviewNote: v.optional(v.string()),
@@ -3034,6 +4061,19 @@ const userSkillInstalls = defineTable({
   .index("by_user_skill", ["userId", "skillId"])
   .index("by_skill", ["skillId"]);
 
+const userPackageInstalls = defineTable({
+  userId: v.id("users"),
+  packageId: v.id("packages"),
+  firstSeenAt: v.number(),
+  lastSeenAt: v.number(),
+  lastVersion: v.optional(v.string()),
+  metricRecordedAt: v.optional(v.number()),
+})
+  .index("by_user", ["userId"])
+  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
+  .index("by_user_package", ["userId", "packageId"])
+  .index("by_package", ["packageId"]);
+
 const skillOwnershipTransfers = defineTable({
   skillId: v.id("skills"),
   fromUserId: v.id("users"),
@@ -3063,12 +4103,14 @@ export default defineSchema({
   authRefreshTokens,
   users,
   publishers,
+  githubOrgMemberships,
   publisherMembers,
   publisherInvites,
   publisherImageUploadTickets,
   officialPublishers,
   githubSkillSources,
   githubSkillContents,
+  githubSkillCandidates,
   githubSkillScans,
   skills,
   skillSlugAliases,
@@ -3079,6 +4121,7 @@ export default defineSchema({
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
   securityScanJobs,
+  securityScanDispatchState,
   skillScanRequests,
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
@@ -3093,6 +4136,8 @@ export default defineSchema({
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
+  skillPresentationAssets,
+  publishAttempts,
   skillVersionFingerprints,
   skillBadges,
   skillEmbeddings,
@@ -3104,6 +4149,9 @@ export default defineSchema({
   skillLeaderboards,
   skillStatBackfillState,
   globalStats,
+  rankingMetricImports,
+  canonicalTrendingSnapshots,
+  canonicalTrendingItems,
   skillStatEvents,
   skillStatUpdateCursors,
   skillStatDocSyncLeases,
@@ -3116,9 +4164,23 @@ export default defineSchema({
   officialPluginMigrations,
   catalogFeedPublications,
   stars,
+  promotions,
   auditLogs,
   systemSettings,
+  skillsShCatalogControls,
+  skillsShCatalogRuns,
+  skillsShCatalogEntries,
+  skillsShCatalogScanAttempts,
+  skillsShMirrorControls,
+  skillsShMirrorRuns,
+  skillsShMirrorSourcePages,
+  skillsShMirrorDigests,
+  skillsShMirrorDetails,
+  skillsShMirrorFacets,
+  skillsShMirrorConflicts,
   publisherAbuseScoreRuns,
+  publisherAbuseTemporalScanSamples,
+  publisherAbuseTemporalScanCandidates,
   publisherAbuseScores,
   publisherAbuseReviewNominations,
   publisherAbuseReviewEvents,
@@ -3136,5 +4198,6 @@ export default defineSchema({
   registryArtifactBackupSyncState,
   registryArtifactBackupJobs,
   userSkillInstalls,
+  userPackageInstalls,
   skillOwnershipTransfers,
 });

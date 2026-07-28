@@ -32,6 +32,9 @@ When `DISCORD_WEBHOOK_HIGHLIGHTED_ONLY=true`:
 
 Discord receives a JSON payload with a single embed:
 
+Publisher-controlled embed content must stay within Discord's documented limits. Titles are
+truncated to 256 characters, including the `Highlighted: ` prefix when present.
+
 ```json
 {
   "embeds": [

@@ -201,6 +201,10 @@ const config = defineConfig({
     devtools(),
     nitro({
       serverDir: "server",
+      handlers: [
+        { route: "/api/**", handler: "./server/handlers/convexProxy.ts" },
+        { route: "/v1/feeds/**", handler: "./server/handlers/convexProxy.ts" },
+      ],
       rollupConfig: {
         onwarn: handleRollupWarning,
       },

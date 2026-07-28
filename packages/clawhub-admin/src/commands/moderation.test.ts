@@ -21,9 +21,11 @@ vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdBanUser,
+  cmdLiftModerationHold,
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
+  cmdRevokeSkillVersion,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -194,6 +196,94 @@ describe("cmdRescanSkill", () => {
         body: {
           source: { kind: "published", slug: "markdown2doc", version: "1.0.4" },
           update: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("cmdRevokeSkillVersion", () => {
+  it("requires --yes when input is disabled", async () => {
+    await expect(
+      cmdRevokeSkillVersion(
+        makeGlobalOpts(),
+        "demo",
+        { version: "1.0.0", reason: "confirmed unsafe artifact" },
+        false,
+      ),
+    ).rejects.toThrow(/--yes/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("posts an exact-version revocation request", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "demo",
+      version: "1.0.0",
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      alreadyRevoked: false,
+      replacementVersion: null,
+      skillHidden: true,
+    });
+
+    const result = await cmdRevokeSkillVersion(
+      makeGlobalOpts(),
+      "Demo",
+      { version: "1.0.0", reason: "confirmed unsafe artifact", yes: true },
+      false,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      slug: "demo",
+      version: "1.0.0",
+      skillHidden: true,
+    });
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/skills/demo/versions/1.0.0/moderation",
+        token: "tkn",
+        body: { state: "revoked", reason: "confirmed unsafe artifact" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("passes an owner qualifier for duplicate slugs", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      slug: "demo",
+      version: "1.0.0",
+      skillId: "skills:1",
+      versionId: "skillVersions:1",
+      alreadyRevoked: false,
+      replacementVersion: null,
+      skillHidden: true,
+    });
+
+    await cmdRevokeSkillVersion(
+      makeGlobalOpts(),
+      "demo",
+      {
+        version: "1.0.0",
+        reason: "confirmed unsafe artifact",
+        owner: "@publisher",
+        yes: true,
+      },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        body: {
+          state: "revoked",
+          reason: "confirmed unsafe artifact",
+          ownerHandle: "publisher",
         },
       }),
       expect.anything(),
@@ -844,6 +934,52 @@ describe("cmdUnbanUser", () => {
         method: "POST",
         path: "/api/v1/users/unban",
         body: { userId: "users_123" },
+      }),
+      expect.anything(),
+    );
+  });
+});
+
+describe("cmdLiftModerationHold", () => {
+  it("requires an audit reason", async () => {
+    await expect(
+      cmdLiftModerationHold(makeGlobalOpts(), "demo", { yes: true }, false),
+    ).rejects.toThrow(/--reason required/i);
+  });
+
+  it("requires --yes when input is disabled", async () => {
+    await expect(
+      cmdLiftModerationHold(makeGlobalOpts(), "demo", { reason: "false positive" }, false),
+    ).rejects.toThrow(/--yes/i);
+  });
+
+  it("posts user id and reason", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      alreadyCleared: false,
+      restoredSkills: 1,
+      scheduledSkills: false,
+    });
+    await cmdLiftModerationHold(
+      makeGlobalOpts(),
+      "users_123",
+      {
+        id: true,
+        reason: "Issue #3008 false positive",
+        yes: true,
+        json: true,
+      },
+      false,
+    );
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/lift-moderation-hold",
+        body: {
+          userId: "users_123",
+          reason: "Issue #3008 false positive",
+        },
       }),
       expect.anything(),
     );

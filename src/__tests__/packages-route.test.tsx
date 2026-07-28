@@ -48,7 +48,13 @@ let loaderDataMock:
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute:
-    () => (config: { loader?: unknown; component?: unknown; validateSearch?: unknown }) => ({
+    () =>
+    (config: {
+      loader?: unknown;
+      loaderDeps?: unknown;
+      component?: unknown;
+      validateSearch?: unknown;
+    }) => ({
       __config: config,
       useNavigate: () => navigateMock,
       useSearch: () => searchMock,
@@ -84,6 +90,7 @@ async function loadRoute() {
   return (await import("../routes/plugins/index")).Route as unknown as {
     __config: {
       loader?: unknown;
+      loaderDeps?: (args: { search: Record<string, unknown> }) => Record<string, unknown>;
       component?: ComponentType;
       pendingComponent?: ComponentType;
       validateSearch?: (search: Record<string, unknown>) => Record<string, unknown>;
@@ -416,6 +423,213 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
+  it("loads the initial catalog from route search and forwards navigation aborts", async () => {
+    const route = await loadRoute();
+    const loaderDeps = route.__config.loaderDeps as NonNullable<
+      (typeof route.__config)["loaderDeps"]
+    >;
+    const loader = route.__config.loader as (args: {
+      deps: Record<string, unknown>;
+      abortController: AbortController;
+    }) => Promise<unknown>;
+    const controller = new AbortController();
+    const deps = loaderDeps({
+      search: {
+        q: "security",
+        category: "tools",
+        topic: "oauth",
+        cursor: "ignored-for-search",
+        official: true,
+        sort: "updated",
+        view: "grid",
+      },
+    });
+
+    await loader({ deps, abortController: controller });
+
+    expect(deps).not.toHaveProperty("view");
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(1);
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        q: "security",
+        category: "tools",
+        topic: "oauth",
+        cursor: undefined,
+        isOfficial: true,
+        signal: expect.any(AbortSignal),
+        viewerMode: "anonymous",
+      }),
+    );
+  });
+
+  it("does not invalidate search results for client-only cursor, sort, or view changes", async () => {
+    const route = await loadRoute();
+    const loaderDeps = route.__config.loaderDeps as NonNullable<
+      (typeof route.__config)["loaderDeps"]
+    >;
+
+    const initialDeps = loaderDeps({
+      search: {
+        q: "security",
+        cursor: "stale-cursor",
+        sort: "updated",
+        view: "list",
+      },
+    });
+    const clientOnlyChangeDeps = loaderDeps({
+      search: {
+        q: "security",
+        cursor: "another-stale-cursor",
+        sort: "downloads",
+        view: "grid",
+      },
+    });
+
+    expect(clientOnlyChangeDeps).toEqual(initialDeps);
+    expect(initialDeps).toEqual(
+      expect.objectContaining({
+        q: "security",
+        cursor: undefined,
+        sort: undefined,
+      }),
+    );
+  });
+
+  it("invalidates browse results for cursor and sort changes but not view changes", async () => {
+    const route = await loadRoute();
+    const loaderDeps = route.__config.loaderDeps as NonNullable<
+      (typeof route.__config)["loaderDeps"]
+    >;
+    const initialDeps = loaderDeps({
+      search: {
+        category: "security",
+        cursor: "cursor:first",
+        sort: "downloads",
+        view: "list",
+      },
+    });
+
+    expect(
+      loaderDeps({
+        search: {
+          category: "security",
+          cursor: "cursor:first",
+          sort: "downloads",
+          view: "grid",
+        },
+      }),
+    ).toEqual(initialDeps);
+    expect(
+      loaderDeps({
+        search: {
+          category: "security",
+          cursor: "cursor:second",
+          sort: "downloads",
+          view: "list",
+        },
+      }),
+    ).toEqual(expect.objectContaining({ cursor: "cursor:second", sort: "downloads" }));
+    expect(
+      loaderDeps({
+        search: {
+          category: "security",
+          cursor: "cursor:first",
+          sort: "updated",
+          view: "list",
+        },
+      }),
+    ).toEqual(expect.objectContaining({ cursor: "cursor:first", sort: "updated" }));
+  });
+
+  it("cancels a pending route loader request when navigation aborts", async () => {
+    fetchPluginCatalogMock.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            { once: true },
+          );
+        }),
+    );
+    const route = await loadRoute();
+    const loader = route.__config.loader as (args: {
+      deps: Record<string, unknown>;
+      abortController: AbortController;
+    }) => Promise<unknown>;
+    const controller = new AbortController();
+
+    const pendingLoader = loader({ deps: {}, abortController: controller });
+    controller.abort();
+
+    await expect(pendingLoader).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("returns an API error when the catalog request exceeds the loader timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchPluginCatalogMock.mockImplementation(
+        ({ signal }: { signal?: AbortSignal }) =>
+          new Promise((_resolve, reject) => {
+            signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+          }),
+      );
+      const { loadPluginsPageData } = await import("../routes/plugins/index");
+
+      const pendingLoader = loadPluginsPageData({});
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await expect(pendingLoader).resolves.toEqual(
+        expect.objectContaining({
+          items: [],
+          isLoading: false,
+          apiError: true,
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not refetch loader-backed catalog data after mount", async () => {
+    loaderDataMock = {
+      items: [
+        {
+          name: "server-plugin",
+          displayName: "Server Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+      isLoading: false,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(await screen.findByText("Server Plugin")).toBeTruthy();
+    expect(fetchPluginCatalogMock).not.toHaveBeenCalled();
+  });
+
+  it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const categorySidebar = screen.getByLabelText("Plugin categories");
+    expect(categorySidebar.querySelectorAll("button")).toHaveLength(13);
+    expect(categorySidebar.textContent).toContain("Channels");
+    expect(screen.getByRole("combobox", { name: "Category" })).toBeTruthy();
+  });
+
   it("uses recommendation ranking as the plugin browse default", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
@@ -550,6 +764,94 @@ describe("plugins route", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
+  it("aborts stale pagination when route loader data changes", async () => {
+    let paginationSignal: AbortSignal | undefined;
+    let resolvePagination: (value: {
+      items: Array<{
+        name: string;
+        displayName: string;
+        family: "code-plugin";
+        channel: "community";
+        isOfficial: false;
+        createdAt: number;
+        updatedAt: number;
+      }>;
+      nextCursor: null;
+    }) => void = () => {};
+    fetchPluginCatalogMock.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((resolve) => {
+          paginationSignal = signal;
+          resolvePagination = resolve;
+        }),
+    );
+    loaderDataMock = {
+      items: [
+        {
+          name: "old-plugin",
+          displayName: "Old Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      nextCursor: "cursor:old-next",
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    const rendered = render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(paginationSignal?.aborted).toBe(false);
+
+    searchMock = { category: "tools" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "new-plugin",
+          displayName: "New Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+
+    await act(async () => {
+      rendered.rerender(<Component />);
+    });
+
+    expect(paginationSignal?.aborted).toBe(true);
+    await act(async () => {
+      resolvePagination({
+        items: [
+          {
+            name: "stale-plugin",
+            displayName: "Stale Plugin",
+            family: "code-plugin",
+            channel: "community",
+            isOfficial: false,
+            createdAt: 3,
+            updatedAt: 3,
+          },
+        ],
+        nextCursor: null,
+      });
+    });
+    expect(screen.getByText("New Plugin")).toBeTruthy();
+    expect(screen.queryByText("Old Plugin")).toBeNull();
+    expect(screen.queryByText("Stale Plugin")).toBeNull();
+  });
+
   it("keeps downloads sort in filtered load-more requests", async () => {
     searchMock = { category: "security" };
     loaderDataMock = {
@@ -612,41 +914,20 @@ describe("plugins route", () => {
     expect(screen.getByText("1.2k")).toBeTruthy();
   });
 
-  it("renders the browse shell immediately while catalog data loads", async () => {
-    const item = {
-      name: "demo-plugin",
-      displayName: "Demo Plugin",
-      family: "code-plugin" as const,
-      channel: "community" as const,
-      isOfficial: false,
-      createdAt: 1,
-      updatedAt: 1,
-    };
-    let resolveCatalog: (value: {
-      items: (typeof item)[];
-      nextCursor: string | null;
-      totalCount: number;
-    }) => void = () => {};
-    fetchPluginCatalogMock.mockReturnValue(
-      new Promise((resolve) => {
-        resolveCatalog = resolve;
-      }),
-    );
+  it("renders the browse shell while the route loader is pending", async () => {
     const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
+    const PendingComponent = route.__config.pendingComponent as ComponentType;
 
-    render(<Component />);
+    render(<PendingComponent />);
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
-    resolveCatalog({ items: [item], nextCursor: null, totalCount: 321 });
-
-    expect(await screen.findByText("Demo Plugin")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Plugins 321" })).toBeTruthy();
+    expect(screen.queryByText("Loading results")).toBeNull();
   });
 
   it("keeps plugin count copy hidden on non-first browse pages", async () => {
     searchMock = { cursor: "cursor:current" };
+    convexReactMocks.useQuery.mockReturnValue(333);
     loaderDataMock = {
       items: [
         {
@@ -671,6 +952,8 @@ describe("plugins route", () => {
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.queryByText("1 shown")).toBeNull();
     expect(screen.queryByText("1 result shown")).toBeNull();
+    expect(screen.queryByText("333")).toBeNull();
+    expect(convexReactMocks.useQuery).toHaveBeenCalledWith("packages:countPublicPlugins", "skip");
   });
 
   it("renders the total plugin count in the unfiltered page title", async () => {
@@ -697,6 +980,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("heading", { name: "Plugins 321" })).toBeTruthy();
+    expect(convexReactMocks.useQuery).toHaveBeenCalledWith("packages:countPublicPlugins", "skip");
   });
 
   it("falls back to the Convex plugin count when catalog data has no total", async () => {
@@ -848,6 +1132,7 @@ describe("plugins route", () => {
     render(<PendingComponent />);
 
     expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Loading results")).toBeNull();
     expect(screen.queryByText("Unable to load plugins")).toBeNull();
   });
 
@@ -1299,7 +1584,7 @@ describe("plugins route", () => {
     render(<Component />);
 
     expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Verified" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Updated" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
@@ -1445,7 +1730,7 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Trending", "Verified", "Updated"]);
+    expect(sortOptions).toEqual(["All", "Trending", "Official", "Updated"]);
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();

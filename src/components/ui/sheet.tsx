@@ -41,7 +41,7 @@ const SheetContent = React.forwardRef<
       data-slot="sheet-content"
       data-side={side}
       className={cn(
-        "fixed z-80 flex flex-col gap-4 border-[color:var(--line)] bg-[color:var(--bg)] p-6 shadow-[var(--shadow)] transition-transform duration-300 ease-out",
+        "fixed z-80 flex flex-col gap-4 border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-page)] p-6 shadow-[var(--oc-shadow-lg)] transition-transform duration-[var(--oc-duration-ui)] ease-[var(--oc-ease-out)]",
         side === "right" &&
           "inset-y-0 right-0 h-full w-3/4 max-w-sm border-l data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right",
         side === "left" &&

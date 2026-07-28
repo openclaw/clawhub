@@ -52,7 +52,19 @@ read_when:
 - `moderationFlags`: `string[]` (automatic detection)
 - `moderationNotes`, `moderationReason`
 - `hiddenAt`, `hiddenBy`, `lastReviewedAt`, `reportCount`
-- `stats`: `{ downloads, stars, versions, comments }` (`comments` is retained as a historical stat field; skill comments are retired)
+- `stats`: legacy nested compatibility counters; canonical migrated counters live
+  in top-level fields.
+- `statsDownloads`: native ClawHub downloads.
+- `statsSkillsShInstalls`: upstream skills.sh installs, stored separately.
+- `statsInstallsCurrent`, `statsInstallsAllTime`: OpenClaw install telemetry.
+- `statsGithubStars`: upstream GitHub popularity.
+- `statsStars`: ClawHub Bookmarks; existing `stars` rows and API names remain for
+  compatibility.
+- Public Downloads are `statsDownloads` for native-only skills and
+  `statsDownloads + statsSkillsShInstalls` for skills.sh-indexed skills.
+- Canonical mixed skill search never ranks by this combined presentation value.
+  It uses lexical/semantic relevance first, then ClawHub-observed rolling
+  60-day installs, rolling Bookmarks, and freshness for comparable matches.
 - `createdAt`, `updatedAt`
 
 ### SkillVersion
@@ -80,9 +92,26 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
   - Nix plugins are different from regular skills; they bundle the skill pack, the CLI binary, and config flags/requirements together.
   - `metadata` in frontmatter is YAML (object) preferred; legacy JSON-string accepted.
 
-### Star
+### Skill name compatibility
+
+- The Agent Skills `name` field is a portable identifier: 1–64 lowercase
+  alphanumeric or hyphen characters, matching the parent directory.
+- ClawHub routes skills by `slug` and stores `displayName` as the user-facing
+  catalog label. Publishing, importing, and GitHub sync must preserve that label
+  instead of applying a catalog-preview limit as write validation.
+- Clients should tolerate non-conforming legacy names when they can load them
+  safely. ClawHub follows that compatibility model rather than blocking or
+  silently renaming existing ecosystem content.
+- Public catalog cards and rows may preview normalized names up to 70 characters
+  and then show an ellipsis. The full stored label remains available on the
+  detail page and as hover text; 70 is a presentation rule, not a storage,
+  publish, API, or sync constraint.
+
+### Bookmark
 
 - `skillId`, `userId`, `createdAt`
+- Stored in the legacy `stars` table and exposed through compatibility API
+  routes named `stars`; user-facing product language is Bookmark.
 
 ### AuditLog
 
@@ -103,11 +132,11 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 ## Upload flow (50MB per version)
 
 1. Client requests upload session.
-2. Client uploads each file via Convex upload URLs (no binaries, text only).
+2. Client uploads each bounded regular file via Convex upload URLs.
 3. Client submits metadata + file list + changelog + version + tags.
 4. Server validates:
    - total size ≤ 50MB
-   - file extensions/text content
+   - path and size limits
    - SKILL.md exists and frontmatter parseable
    - version uniqueness
    - GitHub account age ≥ 14 days

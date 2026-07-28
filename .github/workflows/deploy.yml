@@ -104,7 +104,7 @@ jobs:
           echo "Deploy target: ${{ needs.validate-deploy-request.outputs.target }}"
           echo "Allow deleting large Convex indexes: ${{ inputs.allow_deleting_large_indexes }}"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
@@ -112,6 +112,32 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile
+
+      - name: Require dark rollout modes
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          for name in \
+            CLAWHUB_SKILLS_SH_ROLLOUT_MODE \
+            CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE
+          do
+            value="$(bunx convex env get "$name" --prod 2>/dev/null || true)"
+            case "$value" in
+              ""|off) ;;
+              *)
+                echo "::error::$name must be missing or off before an ordinary production deploy"
+                exit 1
+                ;;
+            esac
+          done
+
+      - name: Stamp Convex runtime environment
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex env set CLAWHUB_ENV production --prod
 
       - name: Stamp Convex build SHA
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
@@ -137,11 +163,35 @@ jobs:
             bun run convex:deploy
           fi
 
+      - name: Publish promotions feed snapshot
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex run promotionsFeed:publishInternal --prod
+
       - name: Verify Convex contract
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bun run verify:convex-contract -- --prod
+
+      - name: Verify dark rollout capabilities
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          capabilities="$(bunx convex run rolloutCapabilities:getPublicCapabilities --prod)"
+          jq -e '
+            .environment == "production" and
+            .skillsSh.mode == "off" and
+            .skillsSh.runtimeEnabled == false and
+            .skillsSh.publicCatalogEnabled == false and
+            .skillsSh.scanPlanningEnabled == false and
+            .skillsSh.scanAdmissionEnabled == false and
+            .githubSkillSync.mode == "off" and
+            .githubSkillSync.selfServiceEnabled == false
+          ' <<< "$capabilities"
 
       - name: Wait for Vercel production deployment
         id: vercel
@@ -228,7 +278,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 

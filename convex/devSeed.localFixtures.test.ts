@@ -4,6 +4,8 @@ import {
   backfillExistingPublicCorpusBatchRows,
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
+  seedCatalogPresentationFixtures,
+  seedCanonicalSearchFixture,
   seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
@@ -22,6 +24,12 @@ const seedSkillMutationHandler = (
 )._handler;
 const seedFeaturedPluginPackagesHandler = (
   seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedCatalogPresentationFixturesHandler = (
+  seedCatalogPresentationFixtures as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedCanonicalSearchFixtureHandler = (
+  seedCanonicalSearchFixture as unknown as WrappedHandler<Record<string, never>>
 )._handler;
 const seedGitHubBackedSkillSourceHandler = (
   seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
@@ -56,6 +64,7 @@ function createDb() {
   const tables: Record<string, Array<Record<string, unknown> & { _id: string }>> = {};
   const counters: Record<string, number> = {};
   const operations: Array<{ type: "delete"; table: string; id: string }> = [];
+  const queries: Array<{ table: string; constraints: Record<string, unknown> }> = [];
 
   const list = (table: string) => {
     tables[table] ??= [];
@@ -114,6 +123,7 @@ function createDb() {
       withIndex: (_name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
         build(chainEq(constraints));
+        queries.push({ table, constraints });
         const matched = () =>
           list(table).filter((doc) => matches(doc as Record<string, unknown>, constraints));
         return {
@@ -137,7 +147,7 @@ function createDb() {
     }),
   };
 
-  return { db, tables, operations };
+  return { db, tables, operations, queries };
 }
 
 function createMutationCtx(db: ReturnType<typeof createDb>["db"]) {
@@ -166,16 +176,45 @@ function seedSkillArgs(storageId: string) {
 }
 
 describe("devSeed local fixtures", () => {
+  it("idempotently seeds an activated external row for local canonical search proof", async () => {
+    const { db, tables } = createDb();
+
+    await seedCanonicalSearchFixtureHandler(createMutationCtx(db) as never, {});
+    await seedCanonicalSearchFixtureHandler(createMutationCtx(db) as never, {});
+
+    expect(tables.skillsShMirrorRuns).toHaveLength(1);
+    expect(tables.skillsShMirrorDigests).toHaveLength(1);
+    expect(tables.skillsShMirrorDigests?.[0]).toEqual(
+      expect.objectContaining({
+        externalId: "acme/skills/risk-auditor",
+        searchSummary: "Audit agent workflows for security and operational risk.",
+        active: true,
+        publicVisible: true,
+        installable: true,
+        sourceFreshnessStatus: "observed-only",
+      }),
+    );
+  });
+
   it("does not preconfigure GitHub-backed source fixtures in the local seed action", async () => {
     const mutationCalls: Array<{ args: Record<string, unknown> }> = [];
+    const deletedStorageIds: string[] = [];
     let storageCounter = 0;
     const ctx = {
       storage: {
         store: async () => `storage:${++storageCounter}`,
+        delete: async (storageId: string) => {
+          deletedStorageIds.push(storageId);
+        },
       },
       runMutation: async (_ref: unknown, args: Record<string, unknown>) => {
         mutationCalls.push({ args });
-        return { ok: true, seeded: ["local-moderation-fixtures"], skipped: [] };
+        return {
+          ok: true,
+          seeded: ["local-moderation-fixtures"],
+          skipped: [],
+          storageIdsToDelete: ["storage:old"],
+        };
       },
     };
 
@@ -191,6 +230,8 @@ describe("devSeed local fixtures", () => {
         results: [expect.objectContaining({ slug: "local-moderation-fixtures" })],
       }),
     );
+    expect((result as { results: unknown[] }).results[0]).not.toHaveProperty("storageIdsToDelete");
+    expect(deletedStorageIds).toEqual(["storage:old"]);
   });
 
   it("seeds core skill fixtures for an explicit local user without creating @local", async () => {
@@ -275,6 +316,49 @@ describe("devSeed local fixtures", () => {
     expect((tables.skillDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0)).toBe(
       tables.skills?.[0]?.statsInstallsAllTime,
     );
+  });
+
+  it("resolves a shared public corpus owner once per mutation batch", async () => {
+    const { db, queries } = createDb();
+    const dummyOwner = {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      image: "https://example.invalid/avatar.png",
+    };
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-one",
+            displayName: "Corpus One",
+            version: "0.1.0",
+            skillMd: "# Corpus one",
+            storageId: "storage:corpus-one",
+            embedding: [0, 1, 2],
+            dummyOwner,
+          },
+          {
+            kind: "skill",
+            slug: "corpus-two",
+            displayName: "Corpus Two",
+            version: "0.1.0",
+            skillMd: "# Corpus two",
+            storageId: "storage:corpus-two",
+            embedding: [0, 1, 2],
+            dummyOwner,
+          },
+        ],
+      } as never,
+    );
+
+    expect(
+      queries.filter(
+        (query) => query.table === "users" && query.constraints.handle === dummyOwner.handle,
+      ),
+    ).toHaveLength(1);
   });
 
   it("backfills daily activity for existing public corpus skills", async () => {
@@ -1088,6 +1172,22 @@ describe("devSeed local fixtures", () => {
 
   it("seeds moderation and plugin fixtures for an explicit local user with scoped identifiers", async () => {
     const { db, tables } = createDb();
+    const staleProofPublisherId = (await db.insert("publishers", {
+      handle: "patrick-erichsen",
+      kind: "user",
+      displayName: "Patrick Erichsen",
+    })) as Id<"publishers">;
+    const staleProofSkillId = (await db.insert("skills", {
+      ownerPublisherId: staleProofPublisherId,
+      slug: "test",
+      summary:
+        "CLAW-526 Clean Preview Skill validates staged publishing through the hosted ClawHub Test UI.",
+      moderationStatus: "active",
+    })) as Id<"skills">;
+    await db.insert("skillSearchDigest", {
+      skillId: staleProofSkillId,
+      moderationStatus: "active",
+    });
     const userId = (await db.insert("users", {
       handle: "fuller-stack-dev",
       displayName: "Fuller Stack Dev",
@@ -1116,8 +1216,85 @@ describe("devSeed local fixtures", () => {
         flaggedPluginReadme: "# Flagged plugin",
         scannedPluginStorageId: "storage:scanned-plugin",
         scannedPluginReadme: "# Scanned plugin",
+        excludeFromPublicCatalog: true,
+        staleProofSkill: {
+          ownerHandle: "patrick-erichsen",
+          slug: "test",
+          summary:
+            "CLAW-526 Clean Preview Skill validates staged publishing through the hosted ClawHub Test UI.",
+        },
       } as never,
     );
+    const reseedResult = (await seedLocalModerationFixturesHandler(
+      createMutationCtx(db) as never,
+      {
+        ownerUserId: userId,
+        flaggedSkillSlug,
+        scannedSkillSlug,
+        flaggedPluginName,
+        scannedPluginName,
+        flaggedSkillStorageId: "storage:skill-next",
+        flaggedSkillMd: `---\nname: ${flaggedSkillSlug}\n---\n# Flagged skill`,
+        scannedSkillStorageId: "storage:scanned-skill-next",
+        scannedSkillMd: `---\nname: ${scannedSkillSlug}\n---\n# Scanned skill`,
+        flaggedPluginStorageId: "storage:plugin-unused",
+        flaggedPluginReadme: "# Flagged plugin",
+        scannedPluginStorageId: "storage:scanned-plugin-unused",
+        scannedPluginReadme: "# Scanned plugin",
+      } as never,
+    )) as { storageIdsToDelete?: string[] };
+    expect(reseedResult.storageIdsToDelete).toEqual(
+      expect.arrayContaining([
+        "storage:skill",
+        "storage:scanned-skill",
+        "storage:plugin-unused",
+        "storage:scanned-plugin-unused",
+      ]),
+    );
+    const fixtureStorageId = (slug: string) => {
+      const skill = tables.skills?.find((row) => row.slug === slug);
+      const version = tables.skillVersions?.find((row) => row._id === skill?.latestVersionId);
+      return (version?.files as Array<{ storageId: string }> | undefined)?.[0]?.storageId;
+    };
+    expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
+    expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
+    expect(
+      tables.skills
+        ?.filter((skill) =>
+          [scannedSkillSlug, "local-truncation-plugin-runtime-integration-skill"].includes(
+            String(skill.slug),
+          ),
+        )
+        .every((skill) => skill.moderationStatus === "hidden"),
+    ).toBe(true);
+    expect(tables.skills?.find((skill) => skill._id === staleProofSkillId)).toMatchObject({
+      moderationStatus: "hidden",
+      moderationReason: "test.fixture",
+    });
+    expect(
+      tables.skillSearchDigest?.find((digest) => digest.skillId === staleProofSkillId),
+    ).toMatchObject({ moderationStatus: "hidden", moderationReason: "test.fixture" });
+    const deduplicatedReseedResult = (await seedLocalModerationFixturesHandler(
+      createMutationCtx(db) as never,
+      {
+        ownerUserId: userId,
+        flaggedSkillSlug,
+        scannedSkillSlug,
+        flaggedPluginName,
+        scannedPluginName,
+        flaggedSkillStorageId: "storage:skill-next",
+        flaggedSkillMd: `---\nname: ${flaggedSkillSlug}\n---\n# Flagged skill`,
+        scannedSkillStorageId: "storage:scanned-skill-next",
+        scannedSkillMd: `---\nname: ${scannedSkillSlug}\n---\n# Scanned skill`,
+        flaggedPluginStorageId: "storage:plugin",
+        flaggedPluginReadme: "# Flagged plugin",
+        scannedPluginStorageId: "storage:scanned-plugin",
+        scannedPluginReadme: "# Scanned plugin",
+      } as never,
+    )) as { storageIdsToDelete?: string[] };
+    expect(deduplicatedReseedResult.storageIdsToDelete).toEqual([]);
+    expect(fixtureStorageId(flaggedSkillSlug)).toBe("storage:skill-next");
+    expect(fixtureStorageId(scannedSkillSlug)).toBe("storage:scanned-skill-next");
     await seedFeaturedPluginPackagesHandler(
       createMutationCtx(db) as never,
       {
@@ -1142,16 +1319,22 @@ describe("devSeed local fixtures", () => {
 
     expect(tables.users).toHaveLength(1);
     expect(tables.users?.[0]).toEqual(expect.objectContaining({ handle: "fuller-stack-dev" }));
+    const seededSkills = tables.skills?.filter((skill) => skill._id !== staleProofSkillId);
     expect(
-      tables.skills?.map((skill) => String(skill.slug)).sort((a, b) => a.localeCompare(b)),
-    ).toEqual([scannedSkillSlug, flaggedSkillSlug]);
-    expect(tables.skills?.every((skill) => skill.ownerUserId === userId)).toBe(true);
+      seededSkills?.map((skill) => String(skill.slug)).sort((a, b) => a.localeCompare(b)),
+    ).toEqual([
+      scannedSkillSlug,
+      flaggedSkillSlug,
+      "local-truncation-plugin-runtime-integration-skill",
+    ]);
+    expect(seededSkills?.every((skill) => skill.ownerUserId === userId)).toBe(true);
     expect(
       tables.packages?.map((pkg) => String(pkg.name)).sort((a, b) => a.localeCompare(b)),
     ).toEqual([
       flaggedPluginName,
       currentUserSeedPackageName(userId, "local-merge-notes-plugin"),
       scannedPluginName,
+      "local-truncation-runtime-plugin",
     ]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
     expect(tables.packages).toEqual(
@@ -1387,5 +1570,130 @@ describe("devSeed local fixtures", () => {
     );
     expect(oldPackageDeleteIndex).toBeGreaterThanOrEqual(0);
     expect(oldReleaseDeleteIndex).toBeGreaterThan(oldPackageDeleteIndex);
+  });
+
+  it("seeds repeatable official creator fixtures with featured skills and plugins", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "local-corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const sourcePublisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "local-corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      publishedSkills: 1,
+      publishedPackages: 1,
+      totalInstalls: 12,
+      totalDownloads: 24,
+      totalStars: 6,
+      skillTotalInstalls: 5,
+      skillTotalDownloads: 10,
+      skillTotalStars: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+    const skillId = (await db.insert("skills", {
+      slug: "presentation-skill",
+      displayName: "Presentation Skill",
+      ownerUserId: userId,
+      ownerPublisherId: sourcePublisherId,
+      latestVersionId: undefined,
+      tags: {},
+      badges: { highlighted: undefined, redactionApproved: undefined },
+      softDeletedAt: undefined,
+      statsDownloads: 10,
+      statsStars: 2,
+      statsInstallsCurrent: 3,
+      statsInstallsAllTime: 5,
+      stats: {
+        downloads: 10,
+        installsCurrent: 3,
+        installsAllTime: 5,
+        stars: 2,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"skills">;
+    const skillVersionId = (await db.insert("skillVersions", {
+      skillId,
+      version: "1.0.0",
+      changelog: "Presentation fixture.",
+      files: [],
+      parsed: { frontmatter: {}, metadata: {} },
+      createdBy: userId,
+      createdAt: 1,
+      softDeletedAt: undefined,
+    })) as Id<"skillVersions">;
+    await db.patch(skillId, {
+      latestVersionId: skillVersionId,
+      tags: { latest: skillVersionId },
+      stats: {
+        downloads: 10,
+        installsCurrent: 3,
+        installsAllTime: 5,
+        stars: 2,
+        versions: 1,
+        comments: 0,
+      },
+    });
+    const packageId = (await db.insert("packages", {
+      name: "presentation-plugin",
+      normalizedName: "presentation-plugin",
+      displayName: "Presentation Plugin",
+      ownerUserId: userId,
+      ownerPublisherId: sourcePublisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: "presentation-plugin",
+      tags: {},
+      stats: { downloads: 14, installs: 7, stars: 4, versions: 1 },
+      softDeletedAt: undefined,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"packages">;
+    const args = {
+      orgs: [
+        {
+          sourceOwnerHandle: "local-corpus-owner",
+          handle: "catalog-atlas",
+          displayName: "Atlas Automation",
+          bio: "Synthetic official creator.",
+          image: "https://example.invalid/atlas.svg",
+          skillSlug: "presentation-skill",
+          packageName: "presentation-plugin",
+          featured: true,
+        },
+      ],
+    };
+
+    await seedCatalogPresentationFixturesHandler(createMutationCtx(db) as never, args as never);
+    await seedCatalogPresentationFixturesHandler(createMutationCtx(db) as never, args as never);
+
+    const org = tables.publishers?.find((publisher) => publisher.handle === "catalog-atlas");
+    expect(org).toEqual(
+      expect.objectContaining({
+        kind: "org",
+        displayName: "Atlas Automation",
+        publishedSkills: 1,
+        publishedPackages: 1,
+        totalInstalls: 12,
+      }),
+    );
+    expect(tables.officialPublishers).toHaveLength(1);
+    expect(tables.publisherMembers).toHaveLength(1);
+    expect(tables.skills?.find((skill) => skill._id === skillId)?.ownerPublisherId).toBe(org?._id);
+    expect(tables.packages?.find((pkg) => pkg._id === packageId)?.ownerPublisherId).toBe(org?._id);
+    expect(tables.skillBadges).toEqual([expect.objectContaining({ skillId, kind: "highlighted" })]);
+    expect(tables.packageBadges).toEqual([
+      expect.objectContaining({ packageId, kind: "highlighted" }),
+    ]);
   });
 });

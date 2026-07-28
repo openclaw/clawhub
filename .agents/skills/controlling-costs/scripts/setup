@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Setup axiom-cost-control skill
+# Usage: scripts/setup
+#
+# This script:
+#   1. Checks for required tools (curl, jq, bc)
+#   2. Checks for ~/.axiom.toml configuration
+#   3. Checks for dependent skills (axiom-sre, building-dashboards)
+#   4. Makes scripts executable
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo "=== axiom-cost-control Setup ==="
+echo ""
+
+# --- Check required tools ---
+echo "[1/4] Checking required tools..."
+
+MISSING=()
+for cmd in curl jq bc; do
+    if command -v "$cmd" &> /dev/null; then
+        echo "✓ $cmd found"
+    else
+        echo "✗ $cmd not found"
+        MISSING+=("$cmd")
+    fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo ""
+    echo "Install missing tools:"
+    for cmd in "${MISSING[@]}"; do
+        case "$cmd" in
+            jq) echo "  brew install jq  # or apt-get install jq" ;;
+            bc) echo "  brew install bc  # or apt-get install bc" ;;
+            curl) echo "  brew install curl  # or apt-get install curl" ;;
+        esac
+    done
+    exit 1
+fi
+
+# --- Make scripts executable ---
+echo ""
+echo "[2/4] Making scripts executable..."
+chmod +x "$SCRIPT_DIR"/*
+echo "✓ Scripts ready"
+
+# --- Check dependent skills ---
+echo ""
+echo "[3/4] Checking dependent skills..."
+
+AXIOM_SRE="$HOME/.config/agents/skills/axiom-sre"
+BUILDING_DASHBOARDS="$HOME/.config/agents/skills/building-dashboards"
+
+if [[ -d "$AXIOM_SRE" && -x "$AXIOM_SRE/scripts/axiom-query" ]]; then
+    echo "✓ axiom-sre skill found"
+else
+    echo "✗ axiom-sre skill not found"
+    echo "  Install: amp skill install axiom-sre"
+    exit 1
+fi
+
+if [[ -d "$BUILDING_DASHBOARDS" && -x "$BUILDING_DASHBOARDS/scripts/dashboard-create" ]]; then
+    echo "✓ building-dashboards skill found"
+else
+    echo "⚠ building-dashboards skill not found (optional, needed for deploy-dashboard)"
+    echo "  Install: amp skill install building-dashboards"
+fi
+
+# --- Check Axiom config ---
+echo ""
+echo "[4/4] Checking Axiom configuration..."
+
+AXIOM_CONFIG="$HOME/.axiom.toml"
+if [[ -f "$AXIOM_CONFIG" ]]; then
+    DEPLOYMENTS=$(grep -c '^\[deployments\.' "$AXIOM_CONFIG" 2>/dev/null || echo 0)
+    echo "✓ Found $AXIOM_CONFIG with $DEPLOYMENTS deployment(s)"
+    
+    echo "  Deployments:"
+    grep '^\[deployments\.' "$AXIOM_CONFIG" | sed 's/\[deployments\.\(.*\)\]/    - \1/'
+else
+    echo "✗ $AXIOM_CONFIG not found"
+    echo ""
+    echo "Create it with your Axiom credentials:"
+    echo ""
+    cat << 'EOF'
+[deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-your-token-here"
+org_id = "your-org-id"
+EOF
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo "=== Setup Complete ==="
+echo ""
+echo "Workflow:"
+echo "  1. Discover baseline usage:"
+echo "     scripts/baseline-stats <deployment>"
+echo ""
+echo "  2. Deploy cost control dashboard:"
+echo "     scripts/deploy-dashboard <deployment> [name]"
+echo ""
+echo "  3. Create monitors (adjust contract_tb for your usage):"
+echo "     scripts/create-monitors <deployment> [notifier_id] [contract_tb] [glidepath_tb]"
+echo ""
+echo "  4. Update glidepath weekly:"
+echo "     scripts/update-glidepath <deployment> <new_threshold_tb>"
+echo ""
+echo "Examples:"
+echo "  # Small org (~10 GB/day ≈ 0.01 TB/day)"
+echo "  scripts/create-monitors prod '' 0.01"
+echo ""
+echo "  # Medium org (~100 GB/day ≈ 0.1 TB/day)"
+echo "  scripts/create-monitors prod '' 0.1"
+echo ""
+echo "  # Large org (~5 PB/month = 167 TB/day)"
+echo "  scripts/create-monitors prod '' 167"
+echo ""

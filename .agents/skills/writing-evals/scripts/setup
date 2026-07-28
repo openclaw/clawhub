@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Setup writing-evals skill
+# Usage: scripts/setup
+#
+# This script:
+#   1. Checks for required tools (node, npx)
+#   2. Checks for axiom CLI availability
+#   3. Checks for vitest
+#   4. Makes scripts executable
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "=== writing-evals Setup ==="
+echo ""
+
+# --- Check required tools ---
+echo "[1/4] Checking required tools..."
+
+MISSING=()
+for cmd in node npx; do
+    if command -v "$cmd" &> /dev/null; then
+        echo "✓ $cmd found ($(command -v "$cmd"))"
+    else
+        echo "✗ $cmd not found"
+        MISSING+=("$cmd")
+    fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+    echo ""
+    echo "Install missing tools:"
+    echo "  https://nodejs.org/ (includes node and npx)"
+    exit 1
+fi
+
+# --- Check Node version ---
+echo ""
+echo "[2/4] Checking Node.js version..."
+NODE_VERSION=$(node -v | sed 's/v//')
+NODE_MAJOR=$(echo "$NODE_VERSION" | cut -d. -f1)
+if [[ "$NODE_MAJOR" -ge 18 ]]; then
+    echo "✓ Node.js v$NODE_VERSION (>= 18 required)"
+else
+    echo "✗ Node.js v$NODE_VERSION is too old (>= 18 required)"
+    exit 1
+fi
+
+# --- Check axiom CLI ---
+echo ""
+echo "[3/4] Checking Axiom CLI..."
+if npx axiom --help &> /dev/null 2>&1; then
+    echo "✓ axiom CLI available via npx"
+else
+    echo "⚠ axiom CLI not found"
+    echo "  Install the Axiom AI SDK: npm install axiom"
+    echo "  The 'axiom eval' command requires the SDK to be installed in your project."
+fi
+
+# --- Make scripts executable ---
+echo ""
+echo "[4/4] Making scripts executable..."
+chmod +x "$SCRIPT_DIR"/*
+echo "✓ Scripts ready"
+
+echo ""
+echo "=== Setup Complete ==="
+echo ""
+echo "Quick start:"
+echo "  1. Install SDK:    npm install axiom"
+echo "  2. Set env vars:   export AXIOM_TOKEN=xaat-... AXIOM_DATASET=my-dataset"
+echo "  3. Create eval:    scripts/eval-scaffold classification my-capability my-step"
+echo "  4. Run evals:      npx axiom eval --debug"
+echo ""

@@ -2,6 +2,7 @@ import { Download, Star } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
+import { presentationTitle } from "../lib/presentationTitle";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { buildSkillHref } from "./skillDetailUtils";
@@ -79,20 +80,22 @@ export function SkillRelatedSection({
                 ownerId,
                 entry.skill.slug,
               );
+              const displayName = presentationTitle(entry.skill.displayName, entry.skill.slug);
 
               return (
                 <a key={entry.skill._id} href={href} className="related-skill-row">
                   <span className="related-skill-icon" aria-hidden="true">
                     <MarketplaceIcon
                       kind="skill"
-                      label={entry.skill.displayName}
+                      label={displayName}
+                      imageUrl={entry.skill.icon}
                       skill={entry.skill}
                       size="sm"
                     />
                   </span>
                   <span className="related-skill-copy">
                     <span className="related-skill-title-line">
-                      <span className="related-skill-name">{entry.skill.displayName}</span>
+                      <span className="related-skill-name">{displayName}</span>
                       {isCompact ? (
                         <span className="related-skill-owner-inline">@{owner}</span>
                       ) : null}

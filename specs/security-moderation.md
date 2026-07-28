@@ -26,6 +26,25 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Restore pages only clear the exact `softDeletedAt` timestamp from the ban
   being lifted and only for skills hidden with `moderationReason = "user.banned"`.
 
+## Exact-version revocation
+
+- Staff can permanently revoke one hosted skill version without deleting the
+  publisher account or preventing a later corrected version.
+- Revocation soft-deletes the `skillVersions` row and records
+  `manualRevocation` evidence with the reason, reviewer, and timestamp. Revoked
+  versions must remain unavailable from exact-version metadata, raw-file, and
+  ZIP download paths.
+- If the revoked version is current, `latestVersionId`, `latest` tags, card
+  metadata, embeddings, and search state move to the highest remaining
+  non-revoked, non-malicious version.
+- If no usable version remains, the skill gets its own
+  `moderationReason = "manual.version_revoked"` hold and no latest pointer.
+  This hold is intentionally independent from `user.banned`, so account unban
+  cannot re-expose the revoked skill history.
+- Publishing a new version may make that corrected version current and clear
+  the skill-level hold. It must never clear `manualRevocation` or
+  `softDeletedAt` from older revoked versions.
+
 ## Account and publisher deletion
 
 - User and org deletion are soft-delete flows. They must not hard-delete users,
@@ -45,15 +64,40 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse scoring classifies bulk-publishing abuse for staff review and
   warning-first automatic enforcement. Scheduled pressure scoring runs daily.
   Plain temporal dry runs are read-only. The scheduled temporal scan explicitly
-  opts into archived dry-run signal rows for the staff Signals tab until it has
-  persisted aggregation/cursor state. The `review` label remains a
-  calibration/manual-review signal. The `potential_ban_candidate` label is an
+  opts into archived dry-run signal rows for the staff Signals tab. It persists
+  bounded source pages, exact percentile samples, and review candidates, then
+  resumes through percentile and classification phases. Temporary scan rows
+  expire after seven days. A failed step retries from the last persisted cursor
+  with bounded backoff; any successfully persisted page resets the consecutive
+  failure count. A watchdog treats fifteen minutes without persisted progress as
+  a failed attempt. After five consecutive failed attempts, the run becomes
+  terminal, retains the last error for the staff UI, emits the structured
+  `publisher_temporal_abuse_scan_failed` operator event, and sends a Hermit
+  alert to the configured ClawHub review channel.
+  Moderators can start this same full signal pipeline from the staff Signals tab.
+  New manual starts record the actor; requests made while a temporal scan is
+  already active return that run without starting a competing worker. Stale
+  recovery continues the same durable run instead of replacing it, and
+  cursor-guarded writes prevent overlapping late workers from duplicating work.
+  Explicitly bounded manual scans remain diagnostic-only.
+  The `review` label remains a calibration/manual-review signal. The
+  `potential_ban_candidate` label is an
   enforcement signal only for pressure-score nominations: the first eligible
   enforcement sweep must warn the linked non-staff user by email and persist the
   warning score/run/deadline on the nomination. A later sweep may automatically
   ban only after the warning deadline has passed and a newer pressure score
   still places the publisher in `potential_ban_candidate`. A stale warning by
   itself is not enough to ban.
+- Temporal download percentiles use the full active-skill population, including
+  zero-download, official, staff-owned, and personal skills. Publisher
+  exclusions apply only to review candidates, not to the platform benchmark.
+  Partial scans must not archive signals or present their top-download slice as
+  a platform percentile.
+- Flat-install temporal review signals are deliberately high-confidence:
+  sustained volume must exceed six times the platform 30-day download P99 and
+  have at most 5 installs; a spike must exceed the platform P99, reach at least
+  2,000 downloads in 7 days, and have at most 2 installs. These signals indicate
+  anomalous traffic for manual review, not publisher attribution.
 - Publisher abuse scoring must skip staff-linked and official publishers before
   nominations are created. Publisher abuse autoban must process pending
   `potential_ban_candidate` pressure nominations without waiting for the score
@@ -69,13 +113,28 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse Signals are manual-review telemetry only. They must not feed
   automatic ban pressure. Staff can keep a signal `open`, `snoozed`, or
   `dismissed`; there is no separate escalation state. Active snoozed and
-  dismissed signals stay out of the default Signals queue. A snoozed signal
-  reopens only when the same signal is seen again after its snooze deadline.
+  dismissed signals stay out of the default Signals queue. Snoozing acknowledges
+  the current all-time download/install counters and starts a minimum quiet
+  period. The same rolling-window evidence must not reopen the signal after the
+  deadline. A snoozed signal reopens only when fresh post-snooze activity crosses
+  the lower repeat threshold: at least 1,500 downloads with at most 5 installs
+  for flat-install volume, or at least 500 downloads and 50 installs at a 10%
+  install/download ratio. Reopened repeat signals are elevated to high severity.
+  Staff may snooze or dismiss up to 50 selected open signals in one atomic
+  action. Bulk review must apply the same evidence checkpoint and write the same
+  per-signal review event as the corresponding single-signal action. The signal
+  inspector must show the selected skill's daily downloads and installs across
+  the same trailing 30-day window, loaded on demand from the bounded daily-stat
+  index so staff can judge whether the evidence is sustained or spiky.
 - Hermit owns Discord notification delivery for publisher abuse Signals.
   ClawHub queues Hermit digests only for changed open signals: newly archived
-  signals, repeated open signals with a higher seen count, manual reopens, and
-  expired snoozes that are seen again. Active snoozed or dismissed signals must
-  update their metric snapshot without notifying Hermit.
+  signals, manual reopens, expired snoozes with qualifying fresh evidence, and
+  open signals whose evidence has materially increased since the previous
+  notification. A higher seen count alone is not a change. Material increases
+  use the same lower repeat thresholds as post-snooze recurrence, and the
+  notification checkpoint advances only when a notification is queued so
+  smaller changes accumulate across scans. Active snoozed or dismissed signals
+  must update their metric snapshot without notifying Hermit.
 - Aggregate publisher spam-abuse labels start at the 200-skill pivot. Below
   that pivot, publishers can contribute to the population baseline, but they
   cannot receive aggregate spam reason codes or be nominated by this score path.
@@ -239,11 +298,55 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   This is a product-facing model only; scanner storage, moderation decisions,
   and worker behavior remain separate internally.
 - ClawScan verdicts come from a GitHub Actions Codex worker, not a single
-  hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
-  for VirusTotal telemetry, then Codex reviews the materialized artifact
-  workspace with static and VT signals as context.
+  hosted LLM call. Codex reviews the materialized artifact workspace with
+  SkillSpector and static scan evidence as context.
 - Current skill and plugin scans are queued through `securityScanJobs` and
   completed by the external Codex worker.
+- VirusTotal telemetry remains a separate Security audit signal and is not an
+  input to the production ClawScan profile or judge.
+- The worker's explicit artifact-only OSS ClawScan route accepts every claimed
+  target kind and source through the same completion/failure contract. Skill
+  versions and scan requests use the isolated `artifact` root; extracted
+  ClawPack releases use `artifact/package`.
+- OSS ClawScan is the only security-scan implementation. Every claimed target
+  kind and source runs through the same ClawScan profile and completion/failure
+  contract. ClawScan failures use the existing failure/retry lifecycle; there
+  is no per-job fallback or alternate legacy route.
+- On Unix runners, ClawScan commands run in isolated process groups. A timeout
+  must terminate the full process group so surviving scanner or judge
+  descendants cannot hold a worker slot after the timeout is recorded.
+- The production scan-worker timeout defaults to 15 minutes. Package-release
+  SkillSpector runs can validly exceed four minutes, so a lower timeout must not
+  be used as the normal capacity control.
+- A ClawScan judge result is complete only when ClawScan verifies
+  a workspace-only inspection challenge and the SHA-256 of a required artifact
+  file. Missing or mismatched inspection receipts fail the judge and use the
+  normal scan failure/retry lifecycle; a low-confidence verdict cannot replace
+  successful artifact inspection.
+- Every worker run publishes a GitHub Actions summary and uploads a structured
+  summary with its secret-scanned diagnostics. The summary reports ClawScan
+  completions, failures, timeouts, scanner-stage and judge-stage failures,
+  duration, throughput, queue health, and verdict totals. Queue-health lookup
+  failures are diagnostic-only and must not change persistence, retries, or the
+  worker exit result.
+- Retained worker diagnostics preserve complete redacted ClawScan artifacts and
+  per-scanner outputs without per-file or aggregate-size truncation. Bounded
+  metadata/error fields may remain capped. Artifact upload still requires the
+  existing verified-secret scan to pass.
+- Claimable queue work edge-triggers a coalesced GitHub Actions worker dispatch.
+  Successful completion requests another dispatch while queued work remains; a
+  five-minute Convex cron is only a recovery watchdog for lost dispatch signals.
+  Convex emits the narrowly typed `clawhub-security-scan`
+  `repository_dispatch` event using the production GitHub App. Event-driven
+  dispatch stays disabled until that installation is verified to have Contents
+  write permission. GitHub Actions concurrency is scoped per worker shard so a
+  delayed runner allocation cannot block every shard; each shard still keeps at
+  most one running and one pending drain wave.
+- Queue source priority is `manual`, `backfill`, `publish`, `vt-update`, then
+  `bulk-rescan`. A later VirusTotal update may make a waiting publish job
+  claimable immediately, but it must not demote that job from publish priority.
+- Bulk rescans stay lowest priority and use the bounded operator campaign flow,
+  which enqueues one page at a time and waits for that page before continuing.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
@@ -276,6 +379,12 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hold applies. Codex malicious verdicts block the candidate version. On updates,
   the previous clean/current public version remains live; on first versions,
   nothing public is promoted.
+- `skillSearchDigest.publicVersion` is a derived public-browse cache, not a
+  moderation source of truth. `available` points to the exact approved public
+  `skillVersions` row and `unavailable` fails closed; a missing value exists only
+  during rollout/backfill and uses the legacy resolver. Skill visibility changes
+  and version scan-status changes must refresh the cache so hot browse/search
+  queries never need to walk version history.
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.

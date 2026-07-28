@@ -146,6 +146,84 @@ describe("catalog feed schema", () => {
     expect(parseCatalogFeed(feed).entries[0]?.type).toBe("skill");
   });
 
+  it("rejects Claw entries from the stable v1 catalog contract", () => {
+    expect(() =>
+      parseCatalogFeed({
+        ...makeFeed(),
+        entries: [
+          {
+            ...makeFeed().entries[0],
+            type: "claw",
+            clawManifestSummary: {
+              schemaVersion: 1,
+              agent: { id: "demo" },
+              workspace: { bootstrapFiles: [], fileCount: 0 },
+              packages: { skillCount: 0, pluginCount: 0 },
+              mcpServerCount: 0,
+              cronJobCount: 0,
+            },
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("round-trips optional featured state without changing schema version 1", () => {
+    const feed = makeFeed({
+      entries: makeFeed().entries.map((entry, index) => ({
+        ...entry,
+        featured: index === 0,
+        ...(index === 0 ? { featuredAt: 1_784_280_000_000 } : {}),
+      })),
+    });
+
+    const parsed = parseCatalogFeed(JSON.parse(serializeCatalogFeed(feed)));
+
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.entries.find((entry) => entry.id === "zeta")?.featured).toBe(true);
+    expect(parsed.entries.find((entry) => entry.id === "zeta")?.featuredAt).toBe(1_784_280_000_000);
+    expect(parsed.entries.find((entry) => entry.id === "alpha")?.featured).toBe(false);
+    expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("featured");
+    expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("featuredAt");
+  });
+
+  it("rejects featured timestamps on entries that are not featured", () => {
+    expect(() =>
+      parseCatalogFeed({
+        ...makeFeed(),
+        entries: [
+          {
+            ...makeFeed().entries[0],
+            featured: false,
+            featuredAt: 1_784_280_000_000,
+          },
+        ],
+      }),
+    ).toThrow("featuredAt");
+  });
+
+  it("round-trips optional listing metadata without changing schema version 1", () => {
+    const feed = makeFeed({
+      entries: [
+        {
+          ...makeFeed().entries[0],
+          description: "Search flights, stays, and travel options.",
+          icon: "https://cdn.example.test/expedia.png",
+        },
+      ],
+    });
+
+    const parsed = parseCatalogFeed(JSON.parse(serializeCatalogFeed(feed)));
+
+    expect(parsed.schemaVersion).toBe(1);
+    expect(parsed.entries[0]).toMatchObject({
+      description: "Search flights, stays, and travel options.",
+      icon: "https://cdn.example.test/expedia.png",
+    });
+    expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("description");
+    expect(parseCatalogFeed(makeFeed()).entries[0]).not.toHaveProperty("icon");
+  });
+
   it("preserves public GitHub source identity on skill candidates", () => {
     const feed = makeFeed({
       id: CATALOG_SKILLS_FEED_ID,

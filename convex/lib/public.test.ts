@@ -51,18 +51,34 @@ describe("public skill mapping", () => {
       statsStars: 3,
       statsInstallsCurrent: 5,
       statsInstallsAllTime: 7,
+      statsSkillsShInstalls: 8,
+      statsGithubStars: 99,
     });
 
     const mapped = toPublicSkill(legacySkill);
 
     expect(mapped).not.toBeNull();
     expect(mapped?.stats).toEqual({
-      downloads: 12,
+      downloads: 20,
       stars: 3,
       installs: 7,
       versions: 0,
       comments: 0,
     });
+  });
+
+  it("does not expose source breakdowns on the ordinary public skill shape", () => {
+    const mapped = toPublicSkill(
+      makeSkill({
+        statsDownloads: 12,
+        statsSkillsShInstalls: 8,
+        statsGithubStars: 99,
+      }),
+    );
+
+    expect(mapped?.stats.downloads).toBe(20);
+    expect(mapped).not.toHaveProperty("statsSkillsShInstalls");
+    expect(mapped).not.toHaveProperty("statsGithubStars");
   });
 
   it("exposes GitHub-backed skill source fields", () => {
@@ -132,5 +148,30 @@ describe("public publisher mapping", () => {
 
     expect(toPublicPublisher(publisher)).not.toHaveProperty("official");
     expect(toPublicPublisher(publisher, { official: true })?.official).toBe(true);
+  });
+
+  it("exposes a verified GitHub profile without exposing verification internals", () => {
+    const publisher = {
+      _id: "publishers:cua",
+      _creationTime: 1,
+      kind: "org",
+      handle: "cua",
+      displayName: "Cua",
+      githubHandle: "trycua",
+      githubOrgId: "42",
+      githubVerifiedAt: 123,
+      githubVerifiedByUserId: "users:admin",
+      createdAt: 1,
+      updatedAt: 1,
+    } as Doc<"publishers">;
+
+    expect(toPublicPublisher(publisher)).toEqual(
+      expect.objectContaining({
+        githubHandle: "trycua",
+        githubVerifiedAt: 123,
+      }),
+    );
+    expect(toPublicPublisher(publisher)).not.toHaveProperty("githubOrgId");
+    expect(toPublicPublisher(publisher)).not.toHaveProperty("githubVerifiedByUserId");
   });
 });

@@ -10,4 +10,15 @@ runs:
 
     - name: Install dependencies
       shell: bash
-      run: bun install --frozen-lockfile
+      run: |
+        for attempt in 1 2 3; do
+          if bun install --frozen-lockfile; then
+            exit 0
+          fi
+          if [[ "$attempt" -eq 3 ]]; then
+            exit 1
+          fi
+          delay=$((attempt * 5))
+          echo "::warning::bun install failed; retrying in ${delay}s (attempt $((attempt + 1))/3)"
+          sleep "$delay"
+        done

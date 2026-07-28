@@ -9,6 +9,7 @@ import {
   normalizeAuthErrorMessage,
   routeToBannedAccountPage as navigateToBannedAccountPage,
 } from "../lib/authErrorMessage";
+import { isCliDeviceUserCode } from "../lib/cliDeviceCode";
 import { clearAuthError, setAuthError, useAuthError } from "../lib/useAuthError";
 import { AuthErrorMessage } from "./AuthErrorMessage";
 import { ClientOnly } from "./ClientOnly";
@@ -21,6 +22,8 @@ function getPendingAuthCode() {
   const url = new URL(window.location.href);
   const code = url.searchParams.get("code");
   if (!code) return null;
+  // Preserve legacy CLI device links; this code is not an OAuth completion.
+  if (isCliDeviceUserCode(code)) return null;
   const isRetry = url.searchParams.get("auth_retry") === "1";
   const retryUrl = new URL(window.location.href);
   retryUrl.searchParams.delete("code");

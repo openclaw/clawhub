@@ -50,6 +50,63 @@ skills:
 This table is not an install artifact store. OpenClaw must not install from
 `githubSkillContents`.
 
+`githubSkillCandidates` stores an exact pending replacement for a canonical
+skill while its currently allowed source remains active:
+
+- canonical `skillId`
+- immutable source repository, path, commit, and folder content hash
+- bounded display Markdown fetched from that exact commit
+- the ClawHub scan state for that exact content
+
+Candidates do not create `skillVersions`. A clean or suspicious exact verdict
+promotes the candidate onto the existing skill row and then deletes the
+candidate. Failed, malicious, stale, removed, or disconnected candidates never
+replace the active source.
+
+## Dark skills.sh discovery metadata
+
+The skills.sh discovery pipeline has a separate hidden metadata table and does
+not create or mutate `skills` rows during its planning gates.
+
+- A discovery row keeps the immutable GitHub owner ID plus exact repository,
+  path, commit, folder content hash, source URL, and source snapshot.
+- Native reconciliation is advisory metadata only. It classifies an observation
+  as new, an exact native GitHub-source match, or a slug/route collision.
+- Exact matches may record the native download count for readback, but discovery
+  must not patch that count or any other native field.
+- A verified GitHub owner may create a claim opportunity marker. That marker is
+  not publisher attachment, ownership, profile content, or claim execution.
+- Hidden discovery rows are never installable and cannot become public through
+  the discovery control plane.
+- The permanent Test canary uses one committed skills.sh observation fixture,
+  while GitHub owner, repository, commit, path, and content verification remain
+  live and authenticated.
+- Canary rollback may delete only the controlled hidden fixture row. It must
+  leave native skills, download history, scan jobs, publishers, and aliases
+  unchanged.
+
+## Claiming mirrored skills.sh listings
+
+Claim is a preselected entry into GitHub Skill Sync, not a separate adoption or
+scan state machine. The handoff carries the mirror's external identity plus its
+canonical GitHub repository, exact skill path, commit, and content hash.
+GitHub Skill Sync re-fetches the repository, revalidates immutable repository
+and owner IDs, and rejects the request before writes unless the selected skill
+still matches every frozen source field.
+
+After that check, the normal GitHub Skill Sync lifecycle owns creation,
+controlled replacement, scanning, and promotion. New destinations remain
+hidden while pending. Existing allowed Hosted or GitHub content remains active
+while its candidate is pending or rejected. Promotion reuses the existing
+`skills` row, so routes, metrics, bookmarks, official state, prior versions,
+and audit history stay attached to the canonical identity.
+
+The skills.sh route and `skills-sh:` install reference resolve their canonical
+GitHub repository from the stored redirect target. They remain external until
+the matching GitHub-backed skill has an allowed ClawHub verdict, then resolve
+dynamically by canonical repository plus exact path. No hosted archive or
+duplicated alias/adoption row is created for GitHub-backed content.
+
 `skills` stores the public catalog row and install state:
 
 - `installKind: "github"`
@@ -63,17 +120,74 @@ This table is not an install artifact store. OpenClaw must not install from
 - `githubScanStatus`: `pending`, `clean`, `suspicious`, `malicious`, or `failed`
 - `githubRemovedAt`
 
+## Permanent external skills.sh mirror
+
+The full authenticated skills.sh mirror is separate from both native `skills`
+and the controlled scan-admission catalog. It stores source observations in
+`skillsShMirrorDigests` and bounded detail content in `skillsShMirrorDetails`;
+controls, durable run cursors, and conflicts remain in their own mirror tables.
+
+- GitHub identities are exact `owner/repo/slug` values. Well-known identities
+  are exact `sourceHost/slug` values and must not invent a repository owner.
+- Mirror ingestion always writes `publicVisible: false` and `installable: false`.
+  A separately accepted activation flow may opt an exact row into public search
+  and install surfaces; canonical search requires both flags and fails closed
+  when either is absent. Mirror ingestion never creates native skills,
+  publisher attachment, claims, scan plans, or scan jobs.
+- The digest stores normalized slug/display-name fields, a bounded content
+  summary, and lean `searchText`. Exact, prefix, first-token, freshness, and
+  full-text indexes feed canonical relevance-first search. Upstream popularity
+  is presentation metadata only and has zero search-ranking weight.
+- Gen Agent Trust Hub, Socket, and Snyk observations are stored independently
+  with a bounded status plus optional source timestamp and source link. These
+  are upstream claims only and must never be serialized as a ClawHub verdict.
+- Detail storage retains at most one preferred `SKILL.md` or `README.md`,
+  capped at 64 KiB. The complete upstream file tree is never persisted for an
+  unclaimed mirror row.
+- Snapshot ingestion uses bounded page/offset cursors. Pause is checked before
+  another source batch is fetched; resume continues at the exact stored cursor.
+  Reconciliation tombstones disappeared rows and reactivates later
+  observations without deleting or changing native skills.
+- The authenticated `view=trending` feed is an ordering overlay on these same
+  digest identities. It records `trendingRank`, the separately labeled lifetime
+  install count observed in that response, and `trendingObservedAt`; it never
+  creates a second mirror row or tombstones identities absent from one Trending
+  batch.
+- skills.sh does not expose an exact rolling-24-hour count in this response.
+  `trending24hInstalls` therefore remains unavailable; lifetime totals,
+  snapshot deltas, and weekly sparklines must not be relabeled as that metric.
+- Trending pages are exhausted and captured immutably before application.
+  Older observations cannot overwrite newer fields, identical replays are
+  idempotent, and a same-timestamp payload drift is rejected. At most ten IDs
+  missing because of pagination drift may hydrate through the existing mirror
+  normalizer in one run; exceeding that bound fails closed.
+- The mirror has no scheduler in this stage. Production activation, public
+  search/detail/install behavior, claims, and publisher attachment require
+  separately accepted work.
+
 ## Publisher Gate
 
-GitHub-backed source sync is official-publisher-only for now.
+The legacy `NVIDIA/skills` source keeps its existing production behavior.
+Generic GitHub Skill Sync remains dark unless the GitHub Skill Sync rollout
+capability is enabled.
 
-Official means an exact row exists in `officialPublishers` for the publisher.
-It is not inherited from org membership, GitHub identity, OIDC, or
-`trustedPublisher`.
+Automation must identify its runtime explicitly. The scheduled live canary runs
+the generic sync path against an in-memory database with `CLAWHUB_ENV=test` and
+the GitHub Skill Sync rollout in `test` mode. Production deploys stamp
+`CLAWHUB_ENV=production` before deploying Convex, while ordinary production
+deploys still require both external-skill rollout modes to remain `off`.
 
-Default official publishers are not seeded from deploy. Maintainers should mark
-official publishers explicitly using the moderation/admin CLI before enabling
-their source sync.
+When enabled, repository enrollment requires:
+
+- publisher-admin access
+- a public GitHub repository
+- immutable GitHub repository and owner IDs
+- the publisher's matching immutable GitHub user ID, or a verified GitHub
+  organization ID plus fresh organization-admin membership
+
+Repository names, redirects, display handles, and skills.sh owner strings do not
+authorize enrollment. The repository identity is checked again after snapshot
+fetch so a transfer cannot race source activation.
 
 ## Sync
 
@@ -102,6 +216,12 @@ mutation. The intended split is:
 2. Fetch small target rows for changed/current skills.
 3. Persist `SKILL.md` / `skill-card.md` content per skill.
 
+Source discovery treats the repo's `skills/` tree as the canonical catalog area.
+If package directories also contain copied skill folders that normalize to the
+same slug, and exactly one matching `SKILL.md` path lives under `skills/`, sync
+uses that catalog path. If two or more catalog paths normalize to the same slug,
+sync rejects the repo with a client-visible validation error.
+
 ## Manifest Rendering
 
 The only supported display manifest today is `skills.sh.json`.
@@ -124,8 +244,7 @@ uploads:
 > A normal install/update may only install content whose exact current content
 > hash has a completed, non-blocked ClawHub scan result.
 
-When a new source-backed skill appears or an existing skill's content hash
-changes:
+When a new source-backed skill appears:
 
 - set `githubScanStatus: "pending"`
 - keep the catalog entry visible with `moderationReason: "pending.scan"`, while
@@ -143,6 +262,14 @@ changes:
 - do not schedule another heavy verification action while that content hash
   already has an active queued/running scan job or a recently prepared request
 - enqueue explicit owner/moderator rescans in the high-priority manual queue
+
+When an already allowed GitHub-backed skill changes, or a Hosted Skill owned by
+the same publisher occupies the destination, ClawHub creates an exact pending
+candidate instead of overwriting the active source. The prior verified GitHub
+commit or hosted version remains active until the candidate's own exact scan is
+allowed. Promotion patches the existing canonical skill row in place, preserving
+its slug, routes, ClawHub metrics, bookmarks, prior hosted versions, and audit
+relationships.
 
 When verification succeeds cleanly:
 
@@ -194,6 +321,13 @@ If the upstream path disappears:
 The row may remain for audit/history, but users must not silently install an old
 ClawHub-cached revision after upstream removed or changed it.
 
+Removing a selected repository also removes its pending candidates before
+deleting the source, so an in-flight callback cannot promote disconnected
+content. Active source-backed skills become missing and hidden. Re-enrollment or
+upstream reappearance may revive the same canonical skill row, but the
+reappeared exact content returns to pending and must pass scanning before
+installation.
+
 ## Install Resolver
 
 Normal install/update resolves through ClawHub:
@@ -221,6 +355,28 @@ returns:
 
 OpenClaw downloads the GitHub archive for that commit and extracts only the skill
 path. The local lock/origin version is the commit SHA.
+
+Controlled unclaimed skills.sh catalog entries use the repository-qualified
+reference `skills-sh/<owner>/<repo>/<slug>`. The colon form
+`skills-sh:<owner>/<repo>/<slug>` is invalid and must be rejected by clients and
+HTTP handlers.
+
+In Local and the permanent Test environment, an unclaimed catalog entry remains
+hidden and non-installable until a real low-priority ClawHub scan completes for
+the exact catalog identity, immutable GitHub owner ID, repository, path, commit,
+folder content hash, source content hash, and scan attempt. Clean and suspicious
+verdicts may publish only that exact attempt. Malicious, failed, canceled, or
+stale callbacks cannot publish it.
+
+The public Test route is `/skills-sh/<owner>/<repo>/<slug>`. Its install resolver
+returns the same commit-pinned GitHub descriptor used by native GitHub-backed
+skills. Catalog pause, kill, publication disable, and exact-attempt rollback
+must fail closed without disabling or mutating native scan work.
+
+Permanent-Test proof workers may claim explicit security job IDs only when the
+runtime is the permanent Test environment, GitHub Skill Sync is in `test` mode,
+and every selected job carries the `github-skill-sync` rollout gate. Production
+and broad queue claims must not accept this proof-only targeting path.
 
 Pending verification keeps the skill visible in ClawHub search and detail UI,
 but normal install/update returns a structured block:
@@ -281,15 +437,18 @@ resolver and current scan/upstream state, not by stale cached UI metadata.
 
 Keep coverage for:
 
-- configuring only official publishers
+- immutable publisher/repository authorization and transfer-race rejection
 - parsing `skills.sh.json`
 - 15-minute cron registration
 - new skill -> pending scan -> blocked install
-- changed content hash -> pending scan -> no stale commit served
+- changed content hash -> pending candidate -> prior verified commit remains served
+- Hosted Skill -> pending candidate -> in-place GitHub promotion with history preserved
+- reusable exact verdict -> promotion only after exact display content is cached
 - clean verification -> pinned GitHub install descriptor
 - suspicious verification -> pinned GitHub install descriptor with suspicious review metadata
 - failed/malicious scan -> blocked install
-- removed upstream path -> hidden/blocked install
+- removed upstream path -> hidden/blocked install -> scan-gated reappearance
+- repository removal -> pending candidates canceled and active source blocked
 - cached `SKILL.md` and `skill-card.md` display content
 - no `skillVersions` for GitHub-backed skills
 - OpenClaw installing the pinned GitHub commit/path rather than ClawHub bytes

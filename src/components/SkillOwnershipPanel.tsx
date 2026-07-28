@@ -313,14 +313,14 @@ export function SkillOwnershipPanel({
         </SettingsActionRow>
 
         {canDeleteSkill ? (
-          <div className="mt-8 rounded-[var(--radius-md)] border border-red-300/50 bg-red-500/[0.035] p-4 dark:border-red-500/35 dark:bg-red-500/[0.045] sm:p-5">
+          <div className="mt-8 rounded-[var(--oc-radius-surface)] border border-status-error-fg/30 bg-status-error-bg p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--oc-radius-inset)] border border-status-error-fg/30 bg-status-error-bg text-status-error-fg">
                   <ShieldAlert size={17} aria-hidden="true" />
                 </span>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-red-700 dark:text-red-300">Delete skill</h3>
+                  <h3 className="text-sm font-bold text-status-error-fg">Delete skill</h3>
                   <p className="text-sm text-[color:var(--ink-soft)]">
                     Hide this skill from search, browse, and public install surfaces.
                   </p>
@@ -340,9 +340,7 @@ export function SkillOwnershipPanel({
           </div>
         ) : null}
 
-        {error ? (
-          <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
-        ) : null}
+        {error ? <p className="text-sm font-medium text-status-error-fg">{error}</p> : null}
       </div>
 
       {/* Rename confirmation dialog */}

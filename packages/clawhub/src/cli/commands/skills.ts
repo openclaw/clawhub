@@ -14,16 +14,18 @@ import {
   ApiV1SkillResponseSchema,
   ApiV1SkillVersionResponseSchema,
   type ApiV1SkillInstallResolveResponse,
+  type Lockfile,
   type SkillReportFinalAction,
   type SkillReportListStatus,
   type SkillReportStatus,
 } from "../../schema/index.js";
 import {
+  buildGitHubFolderContentHash,
   extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,
   listManualSkills,
-  listTextFiles,
+  listSkillFiles,
   readLockfile,
   readSkillOrigin,
   writeLockfile,
@@ -31,6 +33,13 @@ import {
 } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
+import {
+  parseSkillsShCliReference,
+  parseStoredSkillsShReference,
+  SKILLS_SH_SCANNED_LABEL,
+  SKILLS_SH_UNSCANNED_LABEL,
+  type SkillsShReference,
+} from "../skillReference.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import {
   createCrabLoader,
@@ -69,11 +78,14 @@ type SkillSearchOptions = {
   limit?: number;
   prefix?: boolean;
   exact?: boolean;
+  cursor?: string;
 };
 
 type SkillRef = {
   slug: string;
   ownerHandle?: string;
+  sourceRef?: string;
+  skillsSh?: SkillsShReference;
 };
 
 function normalizeOwnerHandle(raw: string | null | undefined) {
@@ -89,6 +101,18 @@ type GitHubInstallResolution = Extract<
   ApiV1SkillInstallResolveResponse,
   { ok: true; installKind: "github" }
 >;
+type SuccessfulInstallResolution = Extract<ApiV1SkillInstallResolveResponse, { ok: true }>;
+
+type SkillsShState = {
+  sourceRef: string;
+  sourceKind: "skills-sh";
+  sourceRepository?: string;
+  sourcePath?: string;
+  sourceUrl?: string;
+  canonicalRef?: string;
+  clawhubScan: "unscanned" | "scanned";
+  trustLabel: string;
+};
 
 function normalizeSkillSlugOrFail(raw: string) {
   const slug = raw.trim();
@@ -110,6 +134,8 @@ function normalizeSkillSlugForRemote(raw: unknown) {
 function parseSkillRefOrFail(raw: string): SkillRef {
   const ref = raw.trim();
   if (!ref) fail("Slug required");
+  const skillsSh = parseSkillsShCliReference(ref);
+  if (skillsSh) return { slug: skillsSh.slug, sourceRef: skillsSh.sourceRef, skillsSh };
   const slashIndex = ref.indexOf("/");
   if (slashIndex < 0) {
     return { slug: normalizeSkillSlugOrFail(ref) };
@@ -127,19 +153,32 @@ function parseSkillRefOrFail(raw: string): SkillRef {
   return { slug, ownerHandle };
 }
 
+function parseStoredSkillRefOrFail(raw: string): SkillRef {
+  const skillsSh = parseStoredSkillsShReference(raw);
+  if (skillsSh) return { slug: skillsSh.slug, sourceRef: skillsSh.sourceRef, skillsSh };
+  return parseSkillRefOrFail(raw);
+}
+
 function isSafeSkillSlug(slug: string) {
   return Boolean(slug) && !slug.includes("/") && !slug.includes("\\") && !slug.includes("..");
 }
 
 function skillIdentity(ref: SkillRef) {
+  if (ref.sourceRef) return ref.sourceRef;
   return ref.ownerHandle ? `@${ref.ownerHandle}/${ref.slug}` : ref.slug;
 }
 
 function skillTarget(dir: string, ref: SkillRef) {
+  if (ref.sourceRef) return join(dir, ref.slug);
   return ref.ownerHandle ? join(dir, `@${ref.ownerHandle}`, ref.slug) : join(dir, ref.slug);
 }
 
 function isSafeSkillIdentity(value: string) {
+  try {
+    if (parseStoredSkillsShReference(value)) return true;
+  } catch {
+    return false;
+  }
   const slashIndex = value.indexOf("/");
   if (slashIndex < 0) return isSafeSkillSlug(value);
   if (value.indexOf("/", slashIndex + 1) >= 0) return false;
@@ -149,11 +188,24 @@ function isSafeSkillIdentity(value: string) {
 }
 
 function findExistingLockKey(
-  lock: { skills: Record<string, { ownerHandle?: string }> },
+  lock: { skills: Record<string, { ownerHandle?: string; sourceRef?: string }> },
   ref: SkillRef,
 ) {
   const key = skillIdentity(ref);
   if (lock.skills[key]) return key;
+  if (ref.sourceRef) {
+    for (const [candidateKey, entry] of Object.entries(lock.skills)) {
+      const candidate = entry.sourceRef ?? candidateKey;
+      try {
+        if (parseStoredSkillsShReference(candidate)?.sourceRef === ref.sourceRef) {
+          return candidateKey;
+        }
+      } catch {
+        continue;
+      }
+    }
+    return key;
+  }
   if (ref.ownerHandle) {
     const legacyEntry = lock.skills[ref.slug];
     if (legacyEntry && normalizeOwnerHandle(legacyEntry.ownerHandle) === ref.ownerHandle) {
@@ -161,6 +213,16 @@ function findExistingLockKey(
     }
   }
   return key;
+}
+
+function replaceLockEntry(
+  lock: Lockfile,
+  previousKey: string,
+  canonicalKey: string,
+  entry: Lockfile["skills"][string],
+) {
+  if (previousKey !== canonicalKey) delete lock.skills[previousKey];
+  lock.skills[canonicalKey] = entry;
 }
 
 function ownerScopedUrl(registry: string, path: string, ownerHandle?: string) {
@@ -231,10 +293,17 @@ function formatPinnedDetails(entry?: { pinReason?: string }) {
 function formatSearchOwner(entry: {
   ownerHandle?: string | null;
   owner?: { handle?: string | null; displayName?: string | null } | null;
+  publisher?: { handle?: string | null; displayName?: string | null } | null;
+  sourceIdentity?: { owner?: string | null; host?: string | null };
 }) {
-  const handle = entry.ownerHandle ?? entry.owner?.handle;
+  const handle =
+    entry.publisher?.handle ??
+    entry.ownerHandle ??
+    entry.owner?.handle ??
+    entry.sourceIdentity?.owner ??
+    entry.sourceIdentity?.host;
   if (handle) return `@${handle}`;
-  return entry.owner?.displayName ?? "unknown owner";
+  return entry.publisher?.displayName ?? entry.owner?.displayName ?? "unknown owner";
 }
 
 export async function cmdSearch(
@@ -247,19 +316,39 @@ export async function cmdSearch(
   if (searchOptions.prefix && searchOptions.exact) {
     fail("Choose either --prefix or --exact, not both");
   }
+  if (searchOptions.cursor && !searchOptions.prefix) {
+    fail("--cursor requires --prefix");
+  }
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
   const spinner = createCrabLoader("Searching");
   try {
-    const url = registryUrl(ApiRoutes.search, registry);
-    url.searchParams.set("q", query);
     const effectiveLimit =
       typeof searchOptions.limit === "number" && Number.isFinite(searchOptions.limit)
         ? searchOptions.limit
         : 25;
+    if (searchOptions.prefix) {
+      const url = registryUrl(ApiRoutes.skills, registry);
+      url.searchParams.set("prefix", query);
+      url.searchParams.set("limit", String(effectiveLimit));
+      if (searchOptions.cursor?.trim()) url.searchParams.set("cursor", searchOptions.cursor.trim());
+      const result = await apiRequest(
+        registry,
+        { method: "GET", url: url.toString(), token },
+        ApiV1SkillListResponseSchema,
+      );
+
+      spinner.stop();
+      if (result.items.length === 0) console.log("No skills found.");
+      for (const item of result.items) console.log(formatExploreLine(item));
+      if (result.nextCursor) console.log(`Next cursor: ${result.nextCursor}`);
+      return;
+    }
+
+    const url = registryUrl(ApiRoutes.search, registry);
+    url.searchParams.set("q", query);
     url.searchParams.set("limit", String(effectiveLimit));
-    if (searchOptions.prefix) url.searchParams.set("mode", "prefix");
     if (searchOptions.exact) url.searchParams.set("mode", "exact");
     const result = await apiRequest(
       registry,
@@ -271,7 +360,12 @@ export async function cmdSearch(
     const rows = result.results.map((entry) => {
       const slug = entry.slug ?? "unknown";
       return {
-        slug: entry.version ? `${slug} v${entry.version}` : slug,
+        slug:
+          entry.source === "skills-sh" && entry.install?.reference
+            ? entry.install.reference
+            : entry.version
+              ? `${slug} v${entry.version}`
+              : slug,
         owner: formatSearchOwner(entry),
         name: entry.displayName ?? slug,
         metric: formatSearchMetric(entry),
@@ -298,7 +392,20 @@ function maxColumnWidth(values: string[]) {
   return values.reduce((max, value) => Math.max(max, value.length), 0);
 }
 
-function formatSearchMetric(entry: { downloads?: number; score: number }) {
+function formatSearchMetric(entry: {
+  downloads?: number;
+  score: number;
+  metrics?: { rolling60DayInstalls?: number | null };
+  sourceIdentity?: { lifetimeInstalls?: number | null };
+}) {
+  if (typeof entry.metrics?.rolling60DayInstalls === "number") {
+    const value = new Intl.NumberFormat("en-US").format(entry.metrics.rolling60DayInstalls);
+    return `${value} installs / 60d`;
+  }
+  if (typeof entry.sourceIdentity?.lifetimeInstalls === "number") {
+    const value = new Intl.NumberFormat("en-US").format(entry.sourceIdentity.lifetimeInstalls);
+    return `${value} skills.sh lifetime installs`;
+  }
   if (typeof entry.downloads === "number") {
     const value = new Intl.NumberFormat("en-US").format(entry.downloads);
     return `${value} ${entry.downloads === 1 ? "download" : "downloads"}`;
@@ -315,6 +422,9 @@ export async function cmdInstall(
 ) {
   const requested = parseSkillRefOrFail(slug);
   const trimmed = requested.slug;
+  if (requested.sourceRef && versionFlag) {
+    fail("--version is not supported for skills.sh catalog references");
+  }
 
   const token = await getOptionalAuthToken();
 
@@ -322,9 +432,24 @@ export async function cmdInstall(
   await mkdir(opts.dir, { recursive: true });
   const lock = await readLockfile(opts.workdir);
   const lockKey = findExistingLockKey(lock, requested);
-  const localRef = lockKey === skillIdentity(requested) ? requested : parseSkillRefOrFail(lockKey);
+  const localRef =
+    requested.sourceRef || lockKey === skillIdentity(requested)
+      ? requested
+      : parseStoredSkillRefOrFail(lockKey);
   const target = skillTarget(opts.dir, localRef);
   const targetExists = await fileExists(target);
+  const existingOrigin = requested.sourceRef && targetExists ? await readSkillOrigin(target) : null;
+  if (requested.sourceRef) {
+    assertSkillsShTargetOwnership({
+      dir: opts.dir,
+      lock,
+      lockKey,
+      requested,
+      target,
+      targetExists,
+      existingOrigin,
+    });
+  }
   if (!force && targetExists) {
     fail(`Already installed: ${target} (use --force)`);
   }
@@ -338,6 +463,65 @@ export async function cmdInstall(
 
   const spinner = createCrabLoader(`Resolving ${trimmed}`);
   try {
+    if (requested.sourceRef && requested.skillsSh) {
+      const { resolution: resolvedInstall, state } = await resolveSkillsShCatalogInstall(
+        registry,
+        requested,
+        token,
+      );
+      const resolvedVersion = getInstallResolutionVersion(resolvedInstall);
+      const artifactIdentity = getInstallResolutionArtifactIdentity(
+        resolvedInstall,
+        state.canonicalRef,
+      );
+      spinner.text = `Downloading ${trimmed} ${formatInstallResolutionVersion(resolvedInstall)}`;
+      await installSkillWithOptionalStaging(target, targetExists, (installTarget) =>
+        installSkillsShResolution(
+          registry,
+          resolvedInstall,
+          state.canonicalRef,
+          installTarget,
+          token,
+        ),
+      );
+      const installedFiles = await listSkillFiles(target);
+      const installedFingerprint =
+        installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
+      const installedAt = Date.now();
+      await writeSkillOrigin(target, {
+        version: 1,
+        registry,
+        slug: trimmed,
+        ...state,
+        artifactIdentity,
+        installedVersion: resolvedVersion,
+        installedAt,
+        fingerprint: installedFingerprint,
+      });
+      replaceLockEntry(lock, lockKey, requested.sourceRef, {
+        ...withPinnedMetadata(resolvedVersion, installedAt, existingEntry),
+        ...state,
+      });
+      await writeLockfile(opts.workdir, lock);
+      await reportInstalledSkillsTelemetryIfEnabled({
+        token,
+        registry,
+        slug: trimmed,
+        ...state,
+        version: resolvedVersion,
+      });
+      spinner.succeed(
+        `${styleText("Installed", "brand")} ${styleText(
+          requested.sourceRef,
+          "strong",
+        )} ${styleText(formatInstallResolutionVersion(resolvedInstall), "muted")} -> ${styleText(
+          target,
+          "muted",
+        )} (${state.trustLabel})`,
+      );
+      return;
+    }
+
     // Fetch skill metadata including moderation status
     const skillMeta = await apiRequest(
       registry,
@@ -347,6 +531,8 @@ export async function cmdInstall(
     const resolvedOwnerHandle = normalizeOwnerHandle(
       requested.ownerHandle ?? skillMeta.owner?.handle,
     );
+    const canonicalOwnerHandle =
+      normalizeOwnerHandle(skillMeta.owner?.handle) ?? resolvedOwnerHandle;
     const resolvedSlug = normalizeSkillSlugForRemote(skillMeta.skill?.slug) ?? trimmed;
     const remoteSlug = requested.ownerHandle ? trimmed : resolvedSlug;
 
@@ -419,7 +605,7 @@ export async function cmdInstall(
         await extractZipToDir(zip, installTarget);
       });
     }
-    const installedFiles = await listTextFiles(target);
+    const installedFiles = await listSkillFiles(target);
     const installedFingerprint =
       installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
@@ -445,6 +631,7 @@ export async function cmdInstall(
       token,
       registry,
       slug: skillMeta.skill?.slug ?? trimmed,
+      ownerHandle: canonicalOwnerHandle,
       version: resolvedVersion,
     });
     spinner.succeed(
@@ -472,6 +659,9 @@ export async function cmdUpdate(
   if (slug && all) fail("Use either <skill> or --all");
   if (options.version && !slug) fail("--version requires a single <skill>");
   if (options.version && !semver.valid(options.version)) fail("--version must be valid semver");
+  if (requestedRef?.sourceRef && options.version) {
+    fail("--version is not supported for skills.sh catalog references");
+  }
   const lock = await readLockfile(opts.workdir);
   const requestedLockKey = requestedRef ? findExistingLockKey(lock, requestedRef) : undefined;
   if (requestedLockKey && isPinnedSkillEntry(lock.skills[requestedLockKey])) {
@@ -516,13 +706,170 @@ export async function cmdUpdate(
   };
 
   for (const entry of slugs) {
-    const entryRef = parseSkillRefOrFail(entry);
     const entryLock = lock.skills[entry];
+    const entryRef = parseStoredSkillRefOrFail(entryLock?.sourceRef ?? entry);
     const spinner = createCrabLoader(`Checking ${entry}`);
     try {
       const target = skillTarget(opts.dir, entryRef);
       const exists = await fileExists(target);
       const existingOrigin = exists ? await readSkillOrigin(target) : null;
+      if (entryRef.sourceRef && entryRef.skillsSh) {
+        assertSkillsShTargetOwnership({
+          dir: opts.dir,
+          lock,
+          lockKey: entry,
+          requested: entryRef,
+          target,
+          targetExists: exists,
+          existingOrigin,
+        });
+        const filesOnDisk = exists ? await listSkillFiles(target) : [];
+        const localFingerprint =
+          filesOnDisk.length > 0 ? hashSkillFiles(filesOnDisk).fingerprint : null;
+        const { resolution: latestInstall, state } = await resolveSkillsShCatalogInstall(
+          registry,
+          entryRef,
+          token,
+        );
+        const targetVersion = getInstallResolutionVersion(latestInstall);
+        const targetArtifactIdentity = getInstallResolutionArtifactIdentity(
+          latestInstall,
+          state.canonicalRef,
+        );
+        const originFingerprint = sameSkillsShSource(existingOrigin?.sourceRef, entryRef.sourceRef)
+          ? existingOrigin?.fingerprint
+          : undefined;
+        const hasLocalChanges = Boolean(
+          exists &&
+          localFingerprint &&
+          (!originFingerprint || originFingerprint !== localFingerprint),
+        );
+        const matched =
+          sameSkillsShSource(existingOrigin?.sourceRef, entryRef.sourceRef) &&
+          originFingerprint &&
+          localFingerprint &&
+          originFingerprint === localFingerprint
+            ? existingOrigin?.installedVersion
+            : null;
+
+        if (hasLocalChanges && !options.force) {
+          spinner.stop();
+          if (!allowPrompt) {
+            console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
+            continue;
+          }
+          const confirm = await promptConfirm(
+            `${entry}: local changes (no match). Overwrite with ${formatInstallResolutionVersion(
+              latestInstall,
+            )}?`,
+          );
+          if (!confirm) {
+            console.log(`${entry}: skipped`);
+            continue;
+          }
+          spinner.start(`Updating ${entry} -> ${formatInstallResolutionVersion(latestInstall)}`);
+        }
+
+        if (
+          matched === targetVersion &&
+          existingOrigin?.artifactIdentity === targetArtifactIdentity &&
+          !options.force &&
+          !hasLocalChanges
+        ) {
+          const installedAt = existingOrigin?.installedAt ?? lock.skills[entry]?.installedAt;
+          if (
+            exists &&
+            installedAt &&
+            (!existingOrigin ||
+              !sameSkillsShSource(existingOrigin.sourceRef, state.sourceRef) ||
+              existingOrigin.sourceRepository !== state.sourceRepository ||
+              existingOrigin.sourcePath !== state.sourcePath ||
+              existingOrigin.sourceUrl !== state.sourceUrl ||
+              existingOrigin.canonicalRef !== state.canonicalRef ||
+              existingOrigin.clawhubScan !== state.clawhubScan ||
+              existingOrigin.trustLabel !== state.trustLabel)
+          ) {
+            await writeSkillOrigin(target, {
+              version: 1,
+              registry: existingOrigin?.registry ?? registry,
+              slug: entryRef.slug,
+              ...state,
+              artifactIdentity: targetArtifactIdentity,
+              installedVersion: targetVersion,
+              installedAt,
+              fingerprint: localFingerprint ?? existingOrigin?.fingerprint,
+            });
+          }
+          if (
+            lock.skills[entry]?.version !== targetVersion ||
+            lock.skills[entry]?.sourceRef !== entryRef.sourceRef ||
+            lock.skills[entry]?.sourceRepository !== state.sourceRepository ||
+            lock.skills[entry]?.sourcePath !== state.sourcePath ||
+            lock.skills[entry]?.sourceUrl !== state.sourceUrl ||
+            lock.skills[entry]?.canonicalRef !== state.canonicalRef ||
+            lock.skills[entry]?.clawhubScan !== state.clawhubScan ||
+            lock.skills[entry]?.trustLabel !== state.trustLabel
+          ) {
+            replaceLockEntry(lock, entry, entryRef.sourceRef, {
+              ...withPinnedMetadata(
+                targetVersion,
+                lock.skills[entry]?.installedAt ?? Date.now(),
+                lock.skills[entry],
+              ),
+              ...state,
+            });
+            markLockDirty();
+            await flushLockfile();
+          }
+          spinner.succeed(
+            `${entry}: up to date (${formatInstallResolutionVersion(latestInstall)})`,
+          );
+          continue;
+        }
+
+        spinner.text = `Updating ${entry} -> ${formatInstallResolutionVersion(latestInstall)}`;
+        await installSkillWithOptionalStaging(target, exists, (installTarget) =>
+          installSkillsShResolution(
+            registry,
+            latestInstall,
+            state.canonicalRef,
+            installTarget,
+            token,
+          ),
+        );
+        const installedFiles = await listSkillFiles(target);
+        const installedFingerprint =
+          installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
+        const installedAt = existingOrigin?.installedAt ?? Date.now();
+        await writeSkillOrigin(target, {
+          version: 1,
+          registry: existingOrigin?.registry ?? registry,
+          slug: entryRef.slug,
+          ...state,
+          artifactIdentity: targetArtifactIdentity,
+          installedVersion: targetVersion,
+          installedAt,
+          fingerprint: installedFingerprint,
+        });
+        replaceLockEntry(lock, entry, entryRef.sourceRef, {
+          ...withPinnedMetadata(targetVersion, installedAt, lock.skills[entry]),
+          ...state,
+        });
+        markLockDirty();
+        await flushLockfile();
+        await reportInstalledSkillsTelemetryIfEnabled({
+          token,
+          registry,
+          slug: entryRef.slug,
+          ...state,
+          version: targetVersion,
+        });
+        spinner.succeed(
+          `${entry}: updated -> ${formatInstallResolutionVersion(latestInstall)} (${state.trustLabel})`,
+        );
+        continue;
+      }
+
       const requestedOwnerHandle = normalizeOwnerHandle(
         requestedRef?.ownerHandle ??
           entryRef.ownerHandle ??
@@ -571,7 +918,7 @@ export async function cmdUpdate(
 
       let localFingerprint: string | null = null;
       if (exists) {
-        const filesOnDisk = await listTextFiles(target);
+        const filesOnDisk = await listSkillFiles(target);
         if (filesOnDisk.length > 0) {
           const hashed = hashSkillFiles(filesOnDisk);
           localFingerprint = hashed.fingerprint;
@@ -649,7 +996,7 @@ export async function cmdUpdate(
           await installSkillWithOptionalStaging(target, exists, (installTarget) =>
             installGitHubSkill(registry, githubResolution, installTarget),
           );
-          const installedFiles = await listTextFiles(target);
+          const installedFiles = await listSkillFiles(target);
           const installedFingerprint =
             installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
@@ -781,7 +1128,7 @@ export async function cmdUpdate(
         });
         await extractZipToDir(zip, installTarget);
       });
-      const installedFiles = await listTextFiles(target);
+      const installedFiles = await listSkillFiles(target);
       const installedFingerprint =
         installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
@@ -828,14 +1175,23 @@ export async function cmdUpdate(
 export async function cmdList(opts: GlobalOpts) {
   const lock = await readLockfile(opts.workdir);
   const entries = Object.entries(lock.skills);
-  const manualSkills = await listManualSkills(opts.dir, new Set(Object.keys(lock.skills)));
+  const trackedTargets = new Set(
+    Object.keys(lock.skills).map((entry) => {
+      const ref = parseStoredSkillRefOrFail(lock.skills[entry]?.sourceRef ?? entry);
+      return ref.sourceRef ? ref.slug : entry;
+    }),
+  );
+  const manualSkills = await listManualSkills(opts.dir, trackedTargets);
   if (entries.length === 0 && manualSkills.length === 0) {
     console.log("No installed skills.");
     return;
   }
   for (const [slug, entry] of entries) {
+    const storedRef = parseStoredSkillsShReference(entry.sourceRef ?? slug);
+    const displaySlug = storedRef?.sourceRef ?? slug;
     const pinned = isPinnedSkillEntry(entry) ? `  pinned${formatPinnedDetails(entry)}` : "";
-    console.log(`${slug}  ${entry.version ?? "latest"}${pinned}`);
+    const trust = entry.clawhubScan === "unscanned" ? `  ${entry.trustLabel}` : "";
+    console.log(`${displaySlug}  ${entry.version ?? "latest"}${pinned}${trust}`);
   }
   if (manualSkills.length > 0) {
     if (entries.length > 0) console.log();
@@ -878,11 +1234,8 @@ export async function cmdUnpin(opts: GlobalOpts, slug: string) {
   if (!existing) fail(`Not installed: ${label}`);
   if (!isPinnedSkillEntry(existing)) fail(`Skill "${label}" is not pinned`);
 
-  lock.skills[lockKey] = {
-    version: existing.version,
-    installedAt: existing.installedAt,
-    ...(existing.ownerHandle ? { ownerHandle: existing.ownerHandle } : {}),
-  };
+  const { pinned: _pinned, pinReason: _pinReason, ...unpinned } = existing;
+  lock.skills[lockKey] = unpinned;
   await writeLockfile(opts.workdir, lock);
   console.log(`Unpinned ${label}`);
 }
@@ -911,7 +1264,8 @@ export async function cmdUninstall(
     }
   }
 
-  const localRef = lockKey === skillIdentity(requested) ? requested : parseSkillRefOrFail(lockKey);
+  const localRef =
+    lockKey === skillIdentity(requested) ? requested : parseStoredSkillRefOrFail(lockKey);
   const spinner = createCrabLoader(`Uninstalling ${skillIdentity(localRef)}`);
   try {
     const target = skillTarget(opts.dir, localRef);
@@ -1231,15 +1585,239 @@ async function resolveLatestSkillInstall(
   );
 }
 
+async function resolveSkillsShCatalogInstall(registry: string, ref: SkillRef, token?: string) {
+  if (!ref.sourceRef || !ref.skillsSh) {
+    fail("Invalid skills.sh ref: use skills-sh:owner/repo/slug");
+  }
+  const path = `${ApiRoutes.skillsSh}/${encodeURIComponent(
+    ref.skillsSh.owner,
+  )}/${encodeURIComponent(ref.skillsSh.repo)}/${encodeURIComponent(ref.slug)}/install`;
+  const resolution = await apiRequest(
+    registry,
+    { method: "GET", path, token },
+    ApiV1SkillInstallResolveResponseSchema,
+  );
+  if (!resolution.ok) fail(resolution.message);
+  const metadata = readSkillsShResolverMetadata(resolution, ref.sourceRef);
+  if (metadata.clawhubScan === "unscanned") {
+    if (resolution.installKind !== "github") {
+      fail("unscanned skills.sh catalog entries must resolve to an exact GitHub install");
+    }
+  } else {
+    if (!metadata.canonicalRef) {
+      fail("adopted skills.sh aliases must return their canonical native reference");
+    }
+    validateCanonicalSkillsShAliasRef(metadata.canonicalRef);
+  }
+  return {
+    resolution,
+    state: {
+      sourceRef: ref.sourceRef,
+      sourceKind: "skills-sh",
+      ...(resolution.installKind === "github"
+        ? {
+            sourceRepository: resolution.github.repo,
+            sourcePath: resolution.github.path,
+            sourceUrl: resolution.github.sourceUrl,
+          }
+        : {
+            ...(metadata.sourceRepository ? { sourceRepository: metadata.sourceRepository } : {}),
+            ...(metadata.sourcePath ? { sourcePath: metadata.sourcePath } : {}),
+            ...(metadata.sourceUrl ? { sourceUrl: metadata.sourceUrl } : {}),
+          }),
+      ...(metadata.canonicalRef ? { canonicalRef: metadata.canonicalRef } : {}),
+      clawhubScan: metadata.clawhubScan,
+      trustLabel: metadata.trustLabel,
+    } satisfies SkillsShState,
+  };
+}
+
+function readSkillsShResolverMetadata(
+  resolution: ApiV1SkillInstallResolveResponse,
+  requestedRef: string,
+): {
+  clawhubScan: "unscanned" | "scanned";
+  trustLabel: string;
+  canonicalRef?: string;
+  sourceRepository?: string;
+  sourcePath?: string;
+  sourceUrl?: string;
+} {
+  const record = asRecord(resolution);
+  const provenance = asRecord(record.provenance);
+  const trust = asRecord(record.trust);
+  if (provenance.source !== "skills.sh" || provenance.reference !== requestedRef) {
+    fail("skills.sh catalog resolver did not preserve the requested external provenance");
+  }
+  const clawhubScan = trust.clawhubScan;
+  const trustLabel = typeof trust.label === "string" ? trust.label.trim() : "";
+  if (clawhubScan !== "unscanned" && clawhubScan !== "scanned") {
+    fail("skills.sh catalog resolver did not return a ClawHub scan state");
+  }
+  if (!trustLabel) {
+    fail("skills.sh catalog resolver did not return a trust label");
+  }
+  if (clawhubScan === "unscanned" && trustLabel !== SKILLS_SH_UNSCANNED_LABEL) {
+    fail(`skills.sh catalog resolver must label unscanned sources "${SKILLS_SH_UNSCANNED_LABEL}"`);
+  }
+  if (clawhubScan === "scanned" && trustLabel !== SKILLS_SH_SCANNED_LABEL) {
+    fail(`skills.sh catalog resolver must label scanned sources "${SKILLS_SH_SCANNED_LABEL}"`);
+  }
+  const canonicalRef =
+    record.canonicalRef === null || record.canonicalRef === undefined
+      ? undefined
+      : typeof record.canonicalRef === "string"
+        ? record.canonicalRef.trim()
+        : fail("skills.sh catalog resolver returned an invalid canonical reference");
+  const sourceRepository =
+    typeof provenance.repository === "string" ? provenance.repository.trim() : undefined;
+  const sourcePath = typeof provenance.path === "string" ? provenance.path.trim() : undefined;
+  const sourceUrl =
+    typeof provenance.sourceUrl === "string" ? provenance.sourceUrl.trim() : undefined;
+  return {
+    clawhubScan,
+    trustLabel,
+    canonicalRef,
+    sourceRepository,
+    sourcePath,
+    sourceUrl,
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function sameSkillsShSource(left: string | undefined, right: string | undefined) {
+  if (!left || !right) return false;
+  try {
+    return parseStoredSkillsShReference(left)?.sourceRef === right;
+  } catch {
+    return false;
+  }
+}
+
+function validateCanonicalSkillsShAliasRef(canonicalRef: string) {
+  const canonical = parseSkillRefOrFail(canonicalRef);
+  if (!canonical.ownerHandle || canonical.sourceRef) {
+    fail("adopted skills.sh alias returned an invalid canonical native reference");
+  }
+  return canonical;
+}
+
+function getInstallResolutionVersion(resolution: SuccessfulInstallResolution) {
+  return resolution.installKind === "github"
+    ? resolution.github.commit
+    : resolution.archive.version;
+}
+
+function getInstallResolutionArtifactIdentity(
+  resolution: SuccessfulInstallResolution,
+  canonicalRef: string | undefined,
+) {
+  return resolution.installKind === "github"
+    ? JSON.stringify({
+        installKind: resolution.installKind,
+        repo: resolution.github.repo,
+        path: resolution.github.path,
+        commit: resolution.github.commit,
+        contentHash: resolution.github.contentHash,
+      })
+    : JSON.stringify({
+        installKind: resolution.installKind,
+        canonicalRef,
+        version: resolution.archive.version,
+      });
+}
+
+function formatInstallResolutionVersion(resolution: SuccessfulInstallResolution) {
+  return resolution.installKind === "github"
+    ? formatGitHubVersion(resolution.github.commit)
+    : `v${resolution.archive.version}`;
+}
+
+async function installSkillsShResolution(
+  registry: string,
+  resolution: SuccessfulInstallResolution,
+  canonicalRef: string | undefined,
+  target: string,
+  token: string | undefined,
+) {
+  if (resolution.installKind === "github") {
+    await installGitHubSkill(registry, resolution, target, {
+      expectedContentHash: resolution.github.contentHash,
+    });
+    return;
+  }
+  if (!canonicalRef) fail("adopted skills.sh alias did not return a canonical native reference");
+  const canonical = validateCanonicalSkillsShAliasRef(canonicalRef);
+  const zip = await downloadZip(registry, {
+    slug: canonical.slug,
+    ownerHandle: canonical.ownerHandle,
+    version: resolution.archive.version,
+    token,
+  });
+  await extractZipToDir(zip, target);
+}
+
 async function installGitHubSkill(
   registry: string,
   resolution: GitHubInstallResolution,
   target: string,
+  options: { expectedContentHash?: string } = {},
 ) {
   const zip = await fetchBinary(registry, {
     url: gitHubZipUrl(resolution.github.repo, resolution.github.commit),
   });
   await extractGitHubZipPathToDir(zip, target, resolution.github.path);
+  if (options.expectedContentHash) {
+    const installed = hashSkillFiles(await listSkillFiles(target));
+    const actualContentHash = buildGitHubFolderContentHash(installed.files);
+    if (actualContentHash !== options.expectedContentHash.toLowerCase()) {
+      await rm(target, { recursive: true, force: true });
+      fail("Downloaded skills.sh folder hash does not match the approved ClawHub resolver");
+    }
+  }
+}
+
+function assertSkillsShTargetOwnership(args: {
+  dir: string;
+  lock: { skills: Record<string, { sourceRef?: string }> };
+  lockKey: string;
+  requested: SkillRef;
+  target: string;
+  targetExists: boolean;
+  existingOrigin: Awaited<ReturnType<typeof readSkillOrigin>>;
+}) {
+  if (!args.requested.sourceRef) return;
+  for (const [key, entry] of Object.entries(args.lock.skills)) {
+    if (key === args.lockKey) continue;
+    const identity = entry.sourceRef ?? key;
+    if (!isSafeSkillIdentity(identity)) continue;
+    const ref = parseSkillRefOrFail(identity);
+    if (skillTarget(args.dir, ref) === args.target) {
+      fail(`Install target collision: ${args.target} is owned by ${identity}`);
+    }
+  }
+  if (!args.targetExists) return;
+  const lockedSource = args.lock.skills[args.lockKey]?.sourceRef;
+  if (
+    args.existingOrigin?.sourceRef &&
+    !sameSkillsShSource(args.existingOrigin.sourceRef, args.requested.sourceRef)
+  ) {
+    fail(`Install target collision: ${args.target} is owned by ${args.existingOrigin.sourceRef}`);
+  }
+  if (
+    !args.existingOrigin?.sourceRef &&
+    !sameSkillsShSource(lockedSource, args.requested.sourceRef)
+  ) {
+    const owner = args.existingOrigin?.ownerHandle
+      ? `@${args.existingOrigin.ownerHandle}/${args.existingOrigin.slug}`
+      : (args.existingOrigin?.slug ?? "another local skill");
+    fail(`Install target collision: ${args.target} is owned by ${owner}`);
+  }
 }
 
 async function installSkillWithOptionalStaging(

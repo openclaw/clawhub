@@ -7,6 +7,8 @@ type CatalogTopicInputProps = {
   id: string;
   value: string;
   disabled?: boolean;
+  describedBy?: string;
+  vocabulary?: "topics" | "keywords";
   onChange: (value: string) => void;
 };
 
@@ -50,12 +52,21 @@ export function formatCatalogTopicsInput(values: readonly string[]) {
     .join(", ");
 }
 
-export function CatalogTopicInput({ id, value, disabled, onChange }: CatalogTopicInputProps) {
+export function CatalogTopicInput({
+  id,
+  value,
+  disabled,
+  describedBy,
+  vocabulary = "topics",
+  onChange,
+}: CatalogTopicInputProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState("");
   const topics = parseCatalogTopicsInput(value);
   const limitReached = topics.length >= CATALOG_TOPIC_LIMIT;
+  const usesKeywordVocabulary = vocabulary === "keywords";
+  const itemLabel = usesKeywordVocabulary ? "keyword" : "topic";
 
   function commitDraft() {
     const topic = draft.trim();
@@ -104,7 +115,7 @@ export function CatalogTopicInput({ id, value, disabled, onChange }: CatalogTopi
             type="button"
             className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--radius-pill)] text-ink-soft transition-colors hover:bg-active-bg hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)]/35 disabled:cursor-not-allowed disabled:opacity-60"
             disabled={disabled}
-            aria-label={`Remove ${topic} topic`}
+            aria-label={`Remove ${topic} ${itemLabel}`}
             title={`Remove ${topic}`}
             onClick={(event) => {
               event.stopPropagation();
@@ -121,11 +132,18 @@ export function CatalogTopicInput({ id, value, disabled, onChange }: CatalogTopi
         className="catalog-topic-input min-w-[9rem] flex-1 bg-transparent py-1 text-[color:var(--ink)] outline-none placeholder:text-input-placeholder disabled:cursor-not-allowed disabled:opacity-60"
         value={draft}
         disabled={disabled}
-        aria-label="Topics"
+        aria-label={usesKeywordVocabulary ? "Search keywords" : "Topics"}
+        aria-describedby={describedBy}
         autoCapitalize="none"
         autoCorrect="off"
         spellCheck={false}
-        placeholder={limitReached ? "Maximum 5 topics" : "Add a topic"}
+        placeholder={
+          limitReached
+            ? `Maximum 5 ${usesKeywordVocabulary ? "keywords" : "topics"}`
+            : usesKeywordVocabulary
+              ? "Add keywords"
+              : "Add a topic"
+        }
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;

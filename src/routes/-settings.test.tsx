@@ -65,6 +65,8 @@ const orgMembership = {
     kind: "org",
     image: null,
     bio: "OpenClaw publisher",
+    githubHandle: null as string | null,
+    githubOrgId: null as string | null,
     official: true,
   },
   role: "owner",
@@ -78,6 +80,8 @@ const personalMembership = {
     kind: "user",
     image: null,
     bio: null,
+    githubHandle: null as string | null,
+    githubOrgId: null as string | null,
     official: false,
   },
   role: "owner",
@@ -134,16 +138,35 @@ function mockSignedInSettings({
   memberships = [orgMembership],
   members = orgMembers,
   githubSources = [],
+  githubSkillSyncEnabled = true,
   pendingInvites = [],
   myInvites = [],
+  githubOrgMemberships = {
+    syncedAt: null,
+    truncated: false,
+    memberships: [],
+  },
   membersLoading = false,
+  deletionInventoryLoading = false,
 }: {
   search?: Record<string, unknown>;
   memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
   membersLoading?: boolean;
+  deletionInventoryLoading?: boolean;
   pendingInvites?: PublisherInviteFixture[];
   myInvites?: PublisherInviteFixture[];
+  githubOrgMemberships?: {
+    syncedAt: number | null;
+    truncated: boolean;
+    memberships: Array<{
+      githubOrgId: string;
+      login: string;
+      avatarUrl: string | null;
+      role: "admin" | "member";
+      syncedAt: number;
+    }>;
+  };
   githubSources?: Array<{
     _id: string;
     repo: string;
@@ -183,6 +206,7 @@ function mockSignedInSettings({
     }>;
     updatedAt: number;
   }>;
+  githubSkillSyncEnabled?: boolean;
 } = {}) {
   useAuthStatusMock.mockReturnValue({
     isAuthenticated: true,
@@ -196,6 +220,28 @@ function mockSignedInSettings({
     if (args === "skip") return undefined;
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
+    if (queryName === "githubOrgMemberships:listMine") return githubOrgMemberships;
+    if (queryName === "rolloutCapabilities:getPublicCapabilities") {
+      return {
+        environment: "test",
+        skillsSh: {
+          mode: "test",
+          runtimeEnabled: true,
+          discoveryEnabled: false,
+          writesEnabled: false,
+          publicCatalogEnabled: false,
+          scanPlanningEnabled: false,
+          scanAdmissionEnabled: false,
+        },
+        githubSkillSync: {
+          mode: githubSkillSyncEnabled ? "test" : "off",
+          selfServiceEnabled: githubSkillSyncEnabled,
+        },
+      };
+    }
+    if (queryName === "publishers:getDeletionInventory") {
+      return deletionInventoryLoading ? undefined : [];
+    }
     if (queryName === "publishers:listMembers" && membersLoading) return undefined;
     if (queryName === "publishers:listMembers") return members;
     if (queryName === "publishers:listInvitesForPublisher") return pendingInvites;
@@ -218,6 +264,7 @@ function getLastQueryArgs(functionName: string) {
 
 describe("Settings", () => {
   beforeEach(() => {
+    Element.prototype.scrollIntoView = vi.fn();
     window.history.replaceState(null, "", "/settings");
     useQueryMock.mockReset();
     useMutationMock.mockReset();
@@ -311,6 +358,199 @@ describe("Settings", () => {
     });
   });
 
+  it("connects GitHub from organization settings when memberships are unavailable", () => {
+    const signIn = vi.fn().mockResolvedValue(undefined);
+    useAuthActionsMock.mockReturnValue({
+      signIn,
+      signOut: vi.fn().mockResolvedValue(undefined),
+    });
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Connect GitHub organizations" }));
+
+    expect(signIn).toHaveBeenCalledWith("github", {
+      redirectTo: "/settings?view=organizations&ownerHandle=openclaw",
+    });
+  });
+
+  it("selects a verified GitHub organization and saves its immutable id", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    const syncedAt = Date.now();
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      githubOrgMemberships: {
+        syncedAt,
+        truncated: false,
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: null,
+            role: "member",
+            syncedAt,
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByLabelText("GitHub organization"));
+    fireEvent.click(await screen.findByText("@trycua · member"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          publisherId: "publisher_openclaw",
+          githubOrgId: "42",
+        }),
+      );
+    });
+  });
+
+  it("refreshes a linked GitHub organization handle after a rename", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    const syncedAt = Date.now();
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [
+        {
+          ...orgMembership,
+          publisher: {
+            ...orgMembership.publisher,
+            githubHandle: "old-cua",
+            githubOrgId: "42",
+          },
+        },
+      ],
+      githubOrgMemberships: {
+        syncedAt,
+        truncated: false,
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: null,
+            role: "member",
+            syncedAt,
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          publisherId: "publisher_openclaw",
+          githubOrgId: "42",
+        }),
+      );
+    });
+  });
+
+  it("saves unrelated profile changes when the linked GitHub organization is unavailable", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [
+        {
+          ...orgMembership,
+          publisher: {
+            ...orgMembership.publisher,
+            githubHandle: "trycua",
+            githubOrgId: "42",
+          },
+        },
+      ],
+      githubOrgMemberships: {
+        syncedAt: Date.now(),
+        truncated: false,
+        memberships: [],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.change(screen.getByLabelText("Display name"), {
+      target: { value: "Renamed publisher" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          displayName: "Renamed publisher",
+          githubOrgId: undefined,
+        }),
+      );
+    });
+  });
+
+  it("allows removing a GitHub organization after membership verification expires", async () => {
+    const updateOrgProfile = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:updateProfile" ? updateOrgProfile : vi.fn(),
+    );
+    const staleSyncedAt = Date.now() - 16 * 60 * 1000;
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [
+        {
+          ...orgMembership,
+          publisher: {
+            ...orgMembership.publisher,
+            githubHandle: "trycua",
+            githubOrgId: "42",
+          },
+        },
+      ],
+      githubOrgMemberships: {
+        syncedAt: staleSyncedAt,
+        truncated: false,
+        memberships: [
+          {
+            githubOrgId: "42",
+            login: "trycua",
+            avatarUrl: null,
+            role: "member",
+            syncedAt: staleSyncedAt,
+          },
+        ],
+      },
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByLabelText("GitHub organization"));
+    fireEvent.click(await screen.findByText("No GitHub organization"));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(updateOrgProfile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          publisherId: "publisher_openclaw",
+          githubOrgId: null,
+        }),
+      );
+    });
+  });
+
   it("lets organization owners confirm org deletion", async () => {
     const deleteOrg = vi.fn().mockResolvedValue({ deleted: true });
     useMutationMock.mockReturnValue(deleteOrg);
@@ -321,11 +561,30 @@ describe("Settings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
 
     expect(await screen.findByText(/Permanently delete @openclaw/)).toBeTruthy();
+    expect(getLastQueryArgs("publishers:getDeletionInventory")).toEqual({
+      publisherId: "publisher_openclaw",
+    });
     fireEvent.click(screen.getByRole("button", { name: "Permanently delete organization" }));
 
     await waitFor(() =>
       expect(deleteOrg).toHaveBeenCalledWith({ publisherId: "publisher_openclaw" }),
     );
+  });
+
+  it("blocks organization deletion until its inventory loads", async () => {
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      deletionInventoryLoading: true,
+    });
+
+    render(<Settings />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+
+    expect(
+      (await screen.findByRole("button", { name: "Permanently delete organization" })).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
   });
 
   it("stops account-scoped queries before deleting the signed-in account", async () => {
@@ -341,9 +600,11 @@ describe("Settings", () => {
     render(<Settings />);
 
     expect(getLastQueryArgs("tokens:listMine")).toEqual({});
-    expect(getLastQueryArgs("publishers:listMine")).toEqual({});
+    expect(getLastQueryArgs("publishers:listMine")).toEqual({ includePublishedItems: false });
+    expect(getLastQueryArgs("publishers:getDeletionInventory")).toBe("skip");
     useQueryMock.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(getLastQueryArgs("publishers:getDeletionInventory")).toEqual({});
     fireEvent.click(await screen.findByRole("button", { name: "Permanently delete account" }));
 
     await waitFor(() => expect(deleteAccount).toHaveBeenCalled());
@@ -351,6 +612,23 @@ describe("Settings", () => {
       expect(getLastQueryArgs("tokens:listMine")).toBe("skip");
       expect(getLastQueryArgs("publishers:listMine")).toBe("skip");
     });
+  });
+
+  it("blocks account deletion until its inventory loads", async () => {
+    mockSignedInSettings({
+      search: { view: "danger" },
+      memberships: [personalMembership],
+      deletionInventoryLoading: true,
+    });
+
+    render(<Settings />);
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+
+    expect(
+      (await screen.findByRole("button", { name: "Permanently delete account" })).hasAttribute(
+        "disabled",
+      ),
+    ).toBe(true);
   });
 
   it("clears auth state and leaves settings after account deletion succeeds", async () => {
@@ -408,6 +686,93 @@ describe("Settings", () => {
       });
     });
     expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
+  });
+
+  it("passes the exact external selection from Claim into GitHub Skill Sync", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    useActionMock.mockReturnValue(configureSource);
+    mockSignedInSettings({
+      search: {
+        view: "githubSources",
+        ownerHandle: "openclaw",
+        repo: "patrick-erichsen/skills",
+        sourceRepo: "patrick-erichsen/skills",
+        sourceExternalId: "patrick-erichsen/skills/html",
+        sourcePath: "skills/html",
+        sourceCommit: "1".repeat(40),
+        sourceContentHash: "2".repeat(64),
+      },
+      memberships: [orgMembership],
+    });
+
+    const view = render(<Settings />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("GitHub repo URL") as HTMLInputElement).value).toBe(
+        "patrick-erichsen/skills",
+      );
+    });
+    expect(screen.getByText("skills/html")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        repo: "patrick-erichsen/skills",
+        expectedSkillsShSource: {
+          repo: "patrick-erichsen/skills",
+          externalId: "patrick-erichsen/skills/html",
+          path: "skills/html",
+          commit: "1".repeat(40),
+          contentHash: "2".repeat(64),
+        },
+      });
+    });
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/settings",
+      search: { view: "githubSources" },
+      replace: true,
+    });
+
+    searchMock.mockReturnValue({ view: "githubSources" });
+    view.rerender(<Settings />);
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "NVIDIA/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenNthCalledWith(2, {
+        ownerPublisherId: "publisher_openclaw",
+        repo: "NVIDIA/skills",
+      });
+    });
+  });
+
+  it("rejects a partial external Claim selection before GitHub Skill Sync", async () => {
+    const configureSource = vi.fn();
+    useActionMock.mockReturnValue(configureSource);
+    mockSignedInSettings({
+      search: {
+        view: "githubSources",
+        repo: "patrick-erichsen/skills",
+        sourceExternalId: "patrick-erichsen/skills/html",
+        sourcePath: "",
+      },
+      memberships: [orgMembership],
+    });
+
+    render(<Settings />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("GitHub repo URL") as HTMLInputElement).value).toBe(
+        "patrick-erichsen/skills",
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    expect(configureSource).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Claim link is incomplete/i));
   });
 
   it("shows synced repos as separate cards and lets owners delete a source", async () => {
@@ -501,7 +866,8 @@ describe("Settings", () => {
     expect(screen.getByRole("heading", { name: "Delete synced repo & skills" })).toBeTruthy();
     expect(screen.getByText(/This will delete the sync job for this repo/i)).toBeTruthy();
     const deleteButton = screen.getByRole("button", { name: "Delete" });
-    expect(deleteButton.className).toMatch(/border-red/);
+    expect(deleteButton.className).toContain("bg-status-error-bg");
+    expect(deleteButton.className).toContain("text-status-error-fg");
 
     fireEvent.click(deleteButton);
 
@@ -537,6 +903,22 @@ describe("Settings", () => {
     expect(screen.queryByPlaceholderText("Enter a public repo")).toBeNull();
   });
 
+  it("does not expose GitHub Skill Sync when the backend capability is disabled", () => {
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [orgMembership],
+      githubSkillSyncEnabled: false,
+    });
+
+    render(<Settings />);
+
+    expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Account & Preferences" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(screen.queryByRole("heading", { name: "GitHub Skill Sync" })).toBeNull();
+  });
+
   it("shows create organization mutation errors to the user", async () => {
     const createOrg = vi
       .fn()
@@ -551,11 +933,14 @@ describe("Settings", () => {
     render(<Settings />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create org" }));
+    expect(screen.getAllByText("Create an organization for your team").length).toBeGreaterThan(0);
+    expect(screen.getByPlaceholderText("@openclaw")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Handle"), { target: { value: "romneyda" } });
     fireEvent.change(screen.getByLabelText("Display name"), {
       target: { value: "Dallin Romney @ OpenClaw" },
     });
-    const createOrgButtons = screen.getAllByRole("button", { name: "Create org" });
+    const createOrgButtons = screen.getAllByRole("button", { name: "Create" });
+    expect(createOrgButtons[createOrgButtons.length - 1]?.querySelector("svg")).toBeNull();
     fireEvent.click(createOrgButtons[createOrgButtons.length - 1]);
 
     await waitFor(() => {

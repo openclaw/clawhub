@@ -49,6 +49,11 @@ type SizeWarning = {
   path: string;
 };
 
+type PreviewWarning = {
+  side: FileSide;
+  path: string;
+};
+
 const EMPTY_DIFF_TEXT = "";
 const COMPACT_DIFF_THRESHOLD = 768;
 const EMPTY_DIFF_STATS = { additions: 0, deletions: 0, hunks: 0 };
@@ -140,7 +145,7 @@ function DiffViewerLoading() {
 }
 
 export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCardProps) {
-  const getFileText = useAction(api.skills.getFileText);
+  const getFilePreview = useAction(api.skills.getFilePreview);
   const monaco = useMonaco();
   const { ref: containerRef, isCompact } = useCompactDiffLayout();
   const [viewMode, setViewMode] = useState<"split" | "inline">(getDefaultViewMode);
@@ -154,7 +159,8 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const [monacoReady, setMonacoReady] = useState(false);
   const [monacoError, setMonacoError] = useState<string | null>(null);
   const [sizeWarning, setSizeWarning] = useState<SizeWarning | null>(null);
-  const cacheRef = useRef(new Map<string, string>());
+  const [previewWarning, setPreviewWarning] = useState<PreviewWarning | null>(null);
+  const cacheRef = useRef(new Map<string, string | null>());
   const userSelectedViewModeRef = useRef(false);
   const diffEditorRef = useRef<MonacoDiffEditor | null>(null);
   const diffUpdateDisposableRef = useRef<{ dispose: () => void } | null>(null);
@@ -319,11 +325,11 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
 
   useEffect(() => {
     let cancelled = false;
-    async function loadText(versionId: Id<"skillVersions">, path: string) {
+    async function loadPreview(versionId: Id<"skillVersions">, path: string) {
       const cacheKey = `${versionId}:${path}`;
       const cached = cacheRef.current.get(cacheKey);
       if (cached !== undefined) return cached;
-      const result = await getFileText({ versionId, path });
+      const result = await getFilePreview({ versionId, path });
       cacheRef.current.set(cacheKey, result.text);
       return result.text;
     }
@@ -332,12 +338,17 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
       if (!selectedItem || !leftVersionId || !rightVersionId) {
         setLeftText(EMPTY_DIFF_TEXT);
         setRightText(EMPTY_DIFF_TEXT);
+        setError(null);
+        setSizeWarning(null);
+        setPreviewWarning(null);
+        setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
       setError(null);
       setSizeWarning(null);
+      setPreviewWarning(null);
 
       const leftFile = selectedItem.left;
       const rightFile = selectedItem.right;
@@ -362,10 +373,22 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
 
       try {
         const [nextLeft, nextRight] = await Promise.all([
-          leftFile ? loadText(leftVersionId, leftFile.path) : Promise.resolve(""),
-          rightFile ? loadText(rightVersionId, rightFile.path) : Promise.resolve(""),
+          leftFile ? loadPreview(leftVersionId, leftFile.path) : Promise.resolve(""),
+          rightFile ? loadPreview(rightVersionId, rightFile.path) : Promise.resolve(""),
         ]);
         if (cancelled) return;
+        const unavailable =
+          leftFile && nextLeft === null
+            ? { side: "left" as const, path: leftFile.path }
+            : rightFile && nextRight === null
+              ? { side: "right" as const, path: rightFile.path }
+              : null;
+        if (unavailable) {
+          setPreviewWarning(unavailable);
+          setLeftText(EMPTY_DIFF_TEXT);
+          setRightText(EMPTY_DIFF_TEXT);
+          return;
+        }
         setLeftText(nextLeft ?? EMPTY_DIFF_TEXT);
         setRightText(nextRight ?? EMPTY_DIFF_TEXT);
       } catch (err) {
@@ -381,7 +404,7 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
     return () => {
       cancelled = true;
     };
-  }, [getFileText, leftVersionId, rightVersionId, selectedItem]);
+  }, [getFilePreview, leftVersionId, rightVersionId, selectedItem]);
 
   useEffect(() => {
     let cancelled = false;
@@ -632,6 +655,11 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
         <div className="diff-view">
           {error ? (
             <div className="diff-empty">{error}</div>
+          ) : previewWarning ? (
+            <div className="diff-empty">
+              {previewWarning.side === "left" ? "Base" : "Target"} file is download-only and cannot
+              be compared as text: {previewWarning.path}
+            </div>
           ) : sizeWarning ? (
             <div className="diff-empty">
               {sizeWarning.side === "left" ? "Left" : "Right"} file exceeds 200KB:{" "}
@@ -716,17 +744,17 @@ function buildDiffOptions(
 
 function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const styles = getComputedStyle(document.documentElement);
-  const surface = normalizeHex(styles.getPropertyValue("--surface").trim() || "#ffffff");
-  const surfaceMuted = styles.getPropertyValue("--surface-muted").trim() || "#f6f1ec";
-  const ink = styles.getPropertyValue("--ink").trim() || "#1d1a17";
-  const inkSoft = styles.getPropertyValue("--ink-soft").trim() || "#4c463f";
-  const line = styles.getPropertyValue("--line").trim() || "rgba(29, 26, 23, 0.12)";
-  const accent = styles.getPropertyValue("--accent").trim() || "#e65c46";
-  const seafoam = styles.getPropertyValue("--seafoam").trim() || "#2bc6a4";
-  const diffAdded = styles.getPropertyValue("--diff-added").trim() || "#9bb955";
-  const diffAddedStrong = styles.getPropertyValue("--diff-added-strong").trim() || seafoam;
-  const diffRemoved = styles.getPropertyValue("--diff-removed").trim() || "#e47866";
-  const diffRemovedStrong = styles.getPropertyValue("--diff-removed-strong").trim() || accent;
+  const surface = normalizeHex(styles.getPropertyValue("--oc-bg-elevated").trim() || "#ffffff");
+  const surfaceMuted = styles.getPropertyValue("--oc-bg-surface").trim() || "#f6f1ec";
+  const ink = styles.getPropertyValue("--oc-text-primary").trim() || "#1d1a17";
+  const inkSoft = styles.getPropertyValue("--oc-text-secondary").trim() || "#4c463f";
+  const line = styles.getPropertyValue("--oc-border-subtle").trim() || "rgba(29, 26, 23, 0.12)";
+  const accent = styles.getPropertyValue("--oc-accent-primary").trim() || "#e65c46";
+  const seafoam = styles.getPropertyValue("--oc-accent-secondary").trim() || "#2bc6a4";
+  const diffAdded = styles.getPropertyValue("--oc-diff-added").trim() || "#9bb955";
+  const diffAddedStrong = styles.getPropertyValue("--oc-diff-added-strong").trim() || seafoam;
+  const diffRemoved = styles.getPropertyValue("--oc-diff-removed").trim() || "#e47866";
+  const diffRemovedStrong = styles.getPropertyValue("--oc-diff-removed-strong").trim() || accent;
   const diffDiagonal = toMonacoColor(
     styles.getPropertyValue("--diff-diagonal").trim() || "#22222233",
   );

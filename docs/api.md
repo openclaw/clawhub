@@ -85,12 +85,12 @@ Public read:
 
 - `GET /api/v1/search?q=...`
   - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
-  - Optional mode: `mode=prefix` for deterministic skill slug-prefix matches, or `mode=exact` for deterministic exact-slug matches
-  - `mode=prefix` and `mode=exact` bypass semantic/vector recall and are capped at 200 results
+  - Optional mode: `mode=exact` for deterministic exact-slug matches
   - Invalid `mode` values return `400 Invalid search mode`
   - Legacy alias: `nonSuspicious=true`
 - `GET /api/v1/skills?limit=&cursor=&sort=`
-  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `downloads`, `stars` (`rating`), legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
+  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `downloads`, `stars` (`rating`), `name`, legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
+  - `prefix`: deterministic slug-prefix listing in ascending slug order; continue with `nextCursor`
   - Invalid `sort` values return `400`
   - `cursor` applies to non-`trending` sorts
   - Optional filter: `nonSuspiciousOnly=true`

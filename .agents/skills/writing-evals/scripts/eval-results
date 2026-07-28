@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# eval-results: Query eval results from Axiom
+#
+# Usage: eval-results <deployment> <dataset> [options]
+#
+# Queries eval spans from Axiom and displays results. Requires the sre skill's
+# axiom-query script and a configured Axiom deployment (~/.config/axiom-sre/config.toml).
+#
+# Arguments:
+#   deployment    Axiom deployment name (e.g., prod, staging, dev)
+#   dataset       Axiom dataset containing eval spans (e.g., mcp-agent, my-evals)
+#
+# Options:
+#   -c, --capability NAME   Filter by capability name
+#   -s, --step NAME         Filter by step name
+#   -e, --eval NAME         Filter by eval name
+#   -n, --limit N           Max results (default: 20)
+#   -t, --timeframe RANGE   Time range (default: 24h)
+#   --scores                Show per-case scores (queries eval.case spans)
+#   --scorers               Show per-scorer breakdown (queries eval.score spans)
+#   --ndjson                Output as NDJSON for piping to jq
+#   --raw                   Output raw API response
+#
+# Examples:
+#   eval-results prod my-evals                                  # Recent evals (last 24h)
+#   eval-results prod my-evals -c support-agent                 # Filter by capability
+#   eval-results prod my-evals -c support-agent --scores        # Show case-level scores
+#   eval-results prod my-evals -e categorize-messages --scorers # Show scorer breakdown
+#   eval-results prod my-evals -t 7d                            # Last 7 days
+#   eval-results prod my-evals -c qa -n 50 --ndjson | jq '.score' # Pipe to jq
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Locate axiom-query from the sre skill
+AXIOM_QUERY=""
+for candidate in \
+    "$HOME/.config/agents/skills/axiom-sre/scripts/axiom-query" \
+    "$HOME/.agents/skills/axiom-sre/scripts/axiom-query" \
+    "$SCRIPT_DIR/../../sre/scripts/axiom-query"; do
+    if [[ -x "$candidate" ]]; then
+        AXIOM_QUERY="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$AXIOM_QUERY" ]]; then
+    echo "Error: axiom-query not found. Install the sre skill first:" >&2
+    echo "  npx skills add axiomhq/skills" >&2
+    exit 1
+fi
+
+usage() {
+    echo "Usage: eval-results <deployment> <dataset> [options]" >&2
+    echo "" >&2
+    echo "Arguments:" >&2
+    echo "  deployment              Axiom deployment name (e.g., dev, staging, prod)" >&2
+    echo "  dataset                 Axiom dataset with eval spans (e.g., mcp-agent)" >&2
+    echo "" >&2
+    echo "Options:" >&2
+    echo "  -c, --capability NAME   Filter by capability" >&2
+    echo "  -s, --step NAME         Filter by step" >&2
+    echo "  -e, --eval NAME         Filter by eval name" >&2
+    echo "  -n, --limit N           Max results (default: 20)" >&2
+    echo "  -t, --timeframe RANGE   Time range (default: 24h)" >&2
+    echo "  --scores                Show per-case scores" >&2
+    echo "  --scorers               Show per-scorer breakdown" >&2
+    echo "  --ndjson                Output as NDJSON" >&2
+    echo "  --raw                   Output raw API response" >&2
+    exit 1
+}
+
+if [[ $# -lt 2 ]]; then
+    usage
+fi
+
+DEPLOYMENT="$1"
+DATASET="$2"
+shift 2
+
+CAPABILITY=""
+STEP=""
+EVAL_NAME=""
+LIMIT=20
+TIMEFRAME="24h"
+MODE="summary"
+FMT_ARGS=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -c|--capability) CAPABILITY="$2"; shift 2 ;;
+        -s|--step)       STEP="$2"; shift 2 ;;
+        -e|--eval)       EVAL_NAME="$2"; shift 2 ;;
+        -n|--limit)      LIMIT="$2"; shift 2 ;;
+        -t|--timeframe)  TIMEFRAME="$2"; shift 2 ;;
+        --scores)        MODE="scores"; shift ;;
+        --scorers)       MODE="scorers"; shift ;;
+        --ndjson)        FMT_ARGS="--ndjson"; shift ;;
+        --raw)           FMT_ARGS="--raw"; shift ;;
+        *)               echo "Error: Unknown option '$1'" >&2; usage ;;
+    esac
+done
+
+# Build WHERE clauses
+FILTERS="| where _time between (ago($TIMEFRAME) .. now())"
+
+if [[ -n "$CAPABILITY" ]]; then
+    FILTERS="$FILTERS | where ['attributes.eval.capability.name'] == '$CAPABILITY'"
+fi
+
+if [[ -n "$STEP" ]]; then
+    FILTERS="$FILTERS | where ['attributes.eval.step.name'] == '$STEP'"
+fi
+
+if [[ -n "$EVAL_NAME" ]]; then
+    FILTERS="$FILTERS | where ['attributes.eval.name'] == '$EVAL_NAME'"
+fi
+
+# Build query based on mode
+case "$MODE" in
+    summary)
+        QUERY="['$DATASET']
+| where ['attributes.gen_ai.operation.name'] == 'eval'
+$FILTERS
+| extend startTime = _time
+| project startTime, ['attributes.eval.name'], ['attributes.eval.version'], ['attributes.eval.capability.name'], ['attributes.eval.step.name'], ['attributes.eval.collection.size'], ['attributes.eval.user.name'], ['attributes.eval.baseline.name'], duration
+| sort by startTime desc
+| take $LIMIT"
+        ;;
+
+    scores)
+        QUERY="['$DATASET']
+| where ['attributes.gen_ai.operation.name'] == 'eval.case'
+$FILTERS
+| extend startTime = _time
+| project startTime, ['attributes.eval.name'], ['attributes.eval.case.index'], ['attributes.eval.case.input'], ['attributes.eval.case.expected'], ['attributes.eval.case.output'], ['attributes.eval.case.scores'], ['attributes.eval.case.metadata']
+| sort by startTime desc
+| take $LIMIT"
+        ;;
+
+    scorers)
+        QUERY="['$DATASET']
+| where ['attributes.gen_ai.operation.name'] == 'eval.score'
+$FILTERS
+| extend startTime = _time
+| project startTime, ['attributes.eval.name'], ['attributes.eval.score.name'], ['attributes.eval.score.value'], ['attributes.eval.score.metadata']
+| sort by startTime desc
+| take $LIMIT"
+        ;;
+esac
+
+# Execute query
+echo "$QUERY" | "$AXIOM_QUERY" "$DEPLOYMENT" - $FMT_ARGS

@@ -838,7 +838,9 @@ describe("clawhub e2e", () => {
         "clawhub",
         "package",
         "publish",
-        "pwrdrvr/openclaw-codex-app-server",
+        "openclaw/openclaw",
+        "--source-path",
+        "extensions/cohere",
         "--dry-run",
         "--site",
         site,
@@ -854,41 +856,51 @@ describe("clawhub e2e", () => {
 
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(result.stdout).toMatch(/Dry run/i);
-    expect(result.stdout).toMatch(/openclaw-codex-app-server/);
+    expect(result.stdout).toMatch(/@openclaw\/cohere-provider/);
     expect(result.stdout).toMatch(/code-plugin/i);
     expect(result.stdout).toMatch(/openclaw\.plugin\.json/);
   }, 30_000);
 
-  it("package publish --dry-run --json from GitHub outputs valid JSON", async () => {
+  it("package publish --dry-run --json outputs valid JSON", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-dry-run-json-"));
     const registry = getRegistry();
     const site = getSite();
-    const result = spawnSync(
-      "bun",
-      [
-        "clawhub",
-        "package",
-        "publish",
-        "pwrdrvr/openclaw-codex-app-server",
-        "--dry-run",
-        "--json",
-        "--site",
-        site,
-        "--registry",
-        registry,
-      ],
-      {
-        cwd: process.cwd(),
-        env: { ...process.env, CLAWHUB_DISABLE_TELEMETRY: "1" },
-        encoding: "utf8",
-      },
-    );
+    try {
+      const plugin = await writeCodePluginFixture(root, "clawhub-json-dry-run");
+      const result = spawnSync(
+        "bun",
+        [
+          "clawhub",
+          "package",
+          "publish",
+          plugin,
+          "--dry-run",
+          "--json",
+          "--source-repo",
+          "openclaw/clawhub",
+          "--source-commit",
+          "0000000000000000000000000000000000000000",
+          "--site",
+          site,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, CLAWHUB_DISABLE_TELEMETRY: "1" },
+          encoding: "utf8",
+        },
+      );
 
-    expect(result.status).toBe(0);
-    const output = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
-    expect(String(output.name)).toMatch(/openclaw-codex-app-server/);
-    expect(output.family).toBe("code-plugin");
-    expect(Number(output.files)).toBeGreaterThan(0);
-    expect(output).not.toHaveProperty("releaseId");
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      const output = JSON.parse(result.stdout.trim()) as Record<string, unknown>;
+      expect(output.name).toBe("clawhub-json-dry-run");
+      expect(output.family).toBe("code-plugin");
+      expect(Number(output.files)).toBeGreaterThan(0);
+      expect(output).not.toHaveProperty("releaseId");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   }, 30_000);
 
   it("package publish exits non-zero when Plugin Inspector hard errors block publish", async () => {

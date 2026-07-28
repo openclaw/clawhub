@@ -27,11 +27,14 @@ import {
   cmdRecordContentRightsCorrespondence,
 } from "./commands/contentRights.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
+import { cmdSetPackageFeatured, cmdSetSkillFeatured } from "./commands/featured.js";
 import {
   cmdBanUser,
+  cmdLiftModerationHold,
   cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
+  cmdRevokeSkillVersion,
   cmdRescanAllSkills,
   cmdRescanSkill,
   cmdSetRole,
@@ -49,6 +52,7 @@ import {
 } from "./commands/orgs.js";
 import {
   cmdDeletePackageTrustedPublisher,
+  cmdHardDeletePackage,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
@@ -60,6 +64,13 @@ import {
   cmdTransferPackageOwner,
   cmdUpsertPackageMigration,
 } from "./commands/packages.js";
+import {
+  cmdCreatePromotion,
+  cmdListPromotions,
+  cmdSetPromotionStatus,
+  cmdUpdatePromotion,
+} from "./commands/promotions.js";
+import { cmdHardDeleteSkill } from "./commands/skills.js";
 
 const program = new Command()
   .name("clawhub-admin")
@@ -239,6 +250,20 @@ users
   });
 
 users
+  .command("lift-moderation-hold")
+  .description("Lift an account moderation hold and restore eligible skills")
+  .argument("<handleOrId>", "User handle (default) or user id")
+  .option("--id", "Treat argument as user id")
+  .option("--fuzzy", "Resolve handle via fuzzy user search")
+  .requiredOption("--reason <reason>", "Audit reason")
+  .option("--yes", "Skip confirmation")
+  .option("--json", "Output JSON")
+  .action(async (handleOrId, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdLiftModerationHold(opts, handleOrId, options, isInputAllowed());
+  });
+
+users
   .command("set-role")
   .description("Change a user role")
   .argument("<handleOrId>", "User handle (default) or user id")
@@ -331,6 +356,13 @@ const skills = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const promotions = program
+  .command("promotions")
+  .alias("promotion")
+  .description("Platform promotion records (admin only)")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 registerPluginOperations(plugins);
 registerPluginModerationCommands(plugins);
 registerPluginGovernanceCommands(plugins);
@@ -342,6 +374,51 @@ registerOrgCommands(org);
 registerEmailCommands(email);
 registerContentRightsCommands(contentRights);
 registerSkillModerationCommands(skills);
+registerPromotionCommands(promotions);
+
+function registerPromotionCommands(command: Command) {
+  command
+    .command("list")
+    .description("List promotions (active by default)")
+    .option("--all", "Include drafts and ended promotions (admin token required)")
+    .option("--json", "Output JSON")
+    .action(async (options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdListPromotions(opts, options);
+    });
+
+  command
+    .command("create")
+    .description("Create a promotion (starts as draft) from a JSON file")
+    .argument("<file>", "JSON file with the promotion payload")
+    .option("--json", "Output JSON")
+    .action(async (file, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdCreatePromotion(opts, file, options);
+    });
+
+  command
+    .command("update")
+    .description("Replace a promotion's fields from a JSON file (status unchanged)")
+    .argument("<slug>", "Promotion slug")
+    .argument("<file>", "JSON file with the promotion payload")
+    .option("--json", "Output JSON")
+    .action(async (slug, file, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdUpdatePromotion(opts, slug, file, options);
+    });
+
+  command
+    .command("set-status")
+    .description("Set a promotion's status (draft|active|ended)")
+    .argument("<slug>", "Promotion slug")
+    .argument("<status>", "draft, active, or ended")
+    .option("--json", "Output JSON")
+    .action(async (slug, status, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdSetPromotionStatus(opts, slug, status, options);
+    });
+}
 
 function collectOption(value: string, previous: string[]) {
   return [...previous, value];
@@ -519,6 +596,21 @@ function registerOrgCommands(command: Command) {
 
 function registerPluginGovernanceCommands(command: Command) {
   command
+    .command("hard-delete")
+    .description("Permanently delete one soft-deleted plugin package and all related history")
+    .argument("<name>", "Plugin package name")
+    .requiredOption("--owner <handle>", "Current owner publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Delete permanently; defaults to dry-run")
+    .option("--confirm <token>", "Confirmation token returned by the dry-run")
+    .option("--yes", "Skip confirmation for --apply")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdHardDeletePackage(opts, name, options, isInputAllowed());
+    });
+
+  command
     .command("transfer")
     .description("Transfer a plugin package to another publisher without changing package stats")
     .argument("<name>", "Plugin package name")
@@ -643,6 +735,8 @@ function registerPluginGovernanceCommands(command: Command) {
 }
 
 function registerPluginModerationCommands(command: Command) {
+  registerFeaturedCommands(command, "plugin");
+
   command
     .command("reports")
     .description("List plugin reports for moderator review")
@@ -714,6 +808,36 @@ function registerPluginOperations(command: Command) {
 }
 
 function registerSkillModerationCommands(command: Command) {
+  registerFeaturedCommands(command, "skill");
+
+  command
+    .command("hard-delete")
+    .description("Permanently delete one owner-qualified skill and all related history")
+    .argument("<skill>", "Owner-qualified skill ref: @owner/slug")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Schedule deletion; defaults to dry-run")
+    .option("--confirm <token>", "Confirmation token returned by the dry-run")
+    .option("--yes", "Skip confirmation for --apply")
+    .option("--json", "Output JSON")
+    .action(async (skill, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdHardDeleteSkill(opts, skill, options, isInputAllowed());
+    });
+
+  command
+    .command("revoke-version")
+    .description("Permanently remove one skill version from public access")
+    .argument("<slug>", "Skill slug")
+    .requiredOption("--version <version>", "Exact version to revoke")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--owner <handle>", "Owner handle when the slug is shared")
+    .option("--yes", "Skip confirmation")
+    .option("--json", "Output JSON")
+    .action(async (slug, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRevokeSkillVersion(opts, slug, options, isInputAllowed());
+    });
+
   command
     .command("unhide")
     .description("Manually restore a hidden skill after moderator review")
@@ -818,6 +942,30 @@ function registerSkillModerationCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdTriageSkillReport(opts, reportId, options);
     });
+}
+
+function registerFeaturedCommands(command: Command, kind: "plugin" | "skill") {
+  const label = kind === "plugin" ? "plugin" : "skill";
+  const argument = kind === "plugin" ? "Plugin package name" : "Skill ref, optionally @owner/slug";
+
+  for (const [name, featured] of [
+    ["feature", true],
+    ["unfeature", false],
+  ] as const) {
+    command
+      .command(name)
+      .description(`${featured ? "Add" : "Remove"} a ${label} from the Featured catalog`)
+      .argument(`<${kind}>`, argument)
+      .option("--json", "Output JSON")
+      .action(async (value, options) => {
+        const opts = await resolveGlobalOpts();
+        if (kind === "plugin") {
+          await cmdSetPackageFeatured(opts, value, featured, options);
+        } else {
+          await cmdSetSkillFeatured(opts, value, featured, options);
+        }
+      });
+  }
 }
 
 program.action(() => {

@@ -1,0 +1,47 @@
+#!/bin/bash
+# List available services in Pyroscope
+# Usage: pyroscope-services <deployment> [duration]
+#
+# Examples:
+#   pyroscope-services prod
+#   pyroscope-services prod 24h
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+duration="${2:-1h}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: pyroscope-services <deployment> [duration]" >&2
+    echo "" >&2
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "$SCRIPT_DIR/pyroscope-config" 2>&1 | tail -n +3
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+# Parse duration to milliseconds
+parse_duration() {
+    local dur="$1"
+    local num="${dur%[smhd]*}"
+    local unit="${dur#$num}"
+    case "$unit" in
+        s) echo $((num * 1000)) ;;
+        m) echo $((num * 60 * 1000)) ;;
+        h) echo $((num * 3600 * 1000)) ;;
+        d) echo $((num * 86400 * 1000)) ;;
+        *) echo $((num * 60 * 1000)) ;;
+    esac
+}
+
+now_ms=$(($(date +%s) * 1000))
+duration_ms=$(parse_duration "$duration")
+start_ms=$((now_ms - duration_ms))
+
+api_url="${PYROSCOPE_URL}/querier.v1.QuerierService/LabelValues"
+body="{\"name\": \"service_name\", \"start\": $start_ms, \"end\": $now_ms}"
+result=$("$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST -d "$body" "$api_url")
+
+echo "$result" | jq -r '.names[]' 2>/dev/null | sort

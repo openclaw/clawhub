@@ -1,0 +1,358 @@
+#!/usr/bin/env python3
+"""
+Self-test for Gilfoyle memory system.
+
+Validates:
+1. Template structure is correct
+2. Entry format is parseable
+3. All required files exist
+4. Sample workflow produces valid output
+
+Usage:
+    memory-test [--verbose]
+"""
+
+import os
+import re
+import sys
+import json
+import tempfile
+import shutil
+from pathlib import Path
+from datetime import datetime
+
+SKILL_DIR = Path(__file__).parent.parent
+TEMPLATES_DIR = SKILL_DIR / "templates"
+
+# Required structure
+REQUIRED_DIRS = ["journal", "kb", "archive"]
+REQUIRED_KB_FILES = ["facts.md", "integrations.md", "patterns.md", "queries.md", "incidents.md"]
+REQUIRED_FILES = ["README.memory.md"]
+
+# Entry format regex
+ENTRY_HEADER_PATTERN = re.compile(r'^## M-\d{4}-\d{2}-\d{2}T[\d:]+Z\s+.+$', re.MULTILINE)
+METADATA_PATTERN = re.compile(r'^- (type|tags|status|usefulness|used|last_used|origin|outcome):\s*(.+)$', re.MULTILINE)
+
+class TestResult:
+    def __init__(self):
+        self.passed = 0
+        self.failed = 0
+        self.errors = []
+    
+    def ok(self, name: str, verbose: bool = False):
+        self.passed += 1
+        if verbose:
+            print(f"  ✓ {name}")
+    
+    def fail(self, name: str, msg: str = ""):
+        self.failed += 1
+        self.errors.append(f"{name}: {msg}")
+        print(f"  ✗ {name}: {msg}")
+    
+    def test(self, name: str, condition: bool, msg: str = "", verbose: bool = False):
+        if condition:
+            self.ok(name, verbose)
+        else:
+            self.fail(name, msg)
+        return condition
+
+
+def test_structure(result: TestResult, verbose: bool) -> bool:
+    """Test that template directory structure is correct."""
+    print("\n[Structure]")
+    
+    result.test("Templates dir exists", 
+                TEMPLATES_DIR.exists(), 
+                f"Missing: {TEMPLATES_DIR}", verbose)
+    
+    for dir_name in REQUIRED_DIRS:
+        path = TEMPLATES_DIR / dir_name
+        result.test(f"Dir: {dir_name}/", path.is_dir(), f"Missing: {path}", verbose)
+    
+    for file_name in REQUIRED_FILES:
+        path = TEMPLATES_DIR / file_name
+        result.test(f"File: {file_name}", path.is_file(), f"Missing: {path}", verbose)
+    
+    for file_name in REQUIRED_KB_FILES:
+        path = TEMPLATES_DIR / "kb" / file_name
+        result.test(f"KB: {file_name}", path.is_file(), f"Missing: {path}", verbose)
+    
+    return result.failed == 0
+
+
+def parse_entry(content: str) -> dict:
+    """Parse a memory entry and extract metadata."""
+    entry = {"raw": content, "metadata": {}}
+    
+    # Find header
+    header_match = ENTRY_HEADER_PATTERN.search(content)
+    if header_match:
+        entry["header"] = header_match.group(0)
+        entry["id"] = header_match.group(0).split(" ", 1)[1] if " " in header_match.group(0) else None
+    
+    # Find metadata
+    for match in METADATA_PATTERN.finditer(content):
+        key, value = match.groups()
+        entry["metadata"][key] = value.strip()
+    
+    return entry
+
+
+def test_entry_format(result: TestResult, verbose: bool) -> bool:
+    """Test that entry format is parseable."""
+    print("\n[Entry Format]")
+    
+    # Test parsing sample entries
+    sample_entries = [
+        """## M-2025-01-05T14:32:10Z test-pattern
+
+- type: pattern
+- tags: test, example
+- status: active
+- usefulness: 0.8
+- used: 3
+
+**Summary**
+
+This is a test pattern.
+""",
+        """## M-2025-01-05T10:00:00Z test-query
+
+- type: query
+- tags: test
+- status: active
+- outcome: root_cause
+
+**Query**
+
+```apl
+['logs'] | take 10
+```
+""",
+    ]
+    
+    for i, sample in enumerate(sample_entries):
+        entry = parse_entry(sample)
+        result.test(f"Parse entry {i+1} header", 
+                    "header" in entry and entry["header"], 
+                    "No header found", verbose)
+        result.test(f"Parse entry {i+1} type", 
+                    entry["metadata"].get("type") in ["pattern", "query", "incident", "fact", "integration", "note"],
+                    f"Invalid type: {entry['metadata'].get('type')}", verbose)
+        result.test(f"Parse entry {i+1} tags", 
+                    "tags" in entry["metadata"],
+                    "No tags found", verbose)
+    
+    return result.failed == 0
+
+
+def test_kb_files_parseable(result: TestResult, verbose: bool) -> bool:
+    """Test that KB template files contain valid format examples."""
+    print("\n[KB Templates]")
+    
+    for file_name in REQUIRED_KB_FILES:
+        path = TEMPLATES_DIR / "kb" / file_name
+        if not path.exists():
+            continue
+        
+        content = path.read_text()
+        
+        # Should have a title
+        result.test(f"{file_name} has title", 
+                    content.startswith("# "), 
+                    "Missing title", verbose)
+        
+        # Should have example entries in comments
+        result.test(f"{file_name} has examples", 
+                    "<!-- Example:" in content or "## M-" in content,
+                    "No examples found", verbose)
+    
+    return result.failed == 0
+
+
+def test_readme_instructions(result: TestResult, verbose: bool) -> bool:
+    """Test that README.memory.md has required sections."""
+    print("\n[README.memory.md]")
+    
+    readme_path = TEMPLATES_DIR / "README.memory.md"
+    if not readme_path.exists():
+        result.fail("README exists", "File not found")
+        return False
+    
+    content = readme_path.read_text()
+    
+    required_sections = [
+        "Directory Structure",
+        "Entry Format",
+        "During Investigations",
+        "Retrieval",
+        "Consolidation",
+    ]
+    
+    for section in required_sections:
+        result.test(f"Section: {section}", 
+                    section in content,
+                    "Missing section", verbose)
+    
+    # Check for required field documentation
+    result.test("Documents 'type' field", "type" in content and "pattern" in content, "", verbose)
+    result.test("Documents 'tags' field", "tags" in content, "", verbose)
+    result.test("Documents 'status' field", "status" in content and "active" in content, "", verbose)
+    
+    return result.failed == 0
+
+
+def test_workflow_simulation(result: TestResult, verbose: bool) -> bool:
+    """Simulate a memory workflow and validate output structure."""
+    print("\n[Workflow Simulation]")
+    
+    # Create temp directory
+    test_dir = Path(tempfile.mkdtemp(prefix="axiom-memory-test-"))
+    
+    try:
+        # Copy templates
+        shutil.copytree(TEMPLATES_DIR, test_dir, dirs_exist_ok=True)
+        
+        result.test("Setup: copy templates", 
+                    (test_dir / "kb" / "patterns.md").exists(),
+                    "Failed to copy", verbose)
+        
+        # Create a journal entry
+        journal_dir = test_dir / "journal"
+        journal_file = journal_dir / "journal-2025-01.md"
+        
+        journal_content = """# Journal - January 2025
+
+---
+
+## M-2025-01-05T10:00:00Z test-observation
+
+- type: note
+- tags: test, simulation
+
+This is a test observation during a simulated incident.
+
+---
+
+## M-2025-01-05T10:15:00Z test-query-worked
+
+- type: query
+- tags: test, database
+- outcome: helpful
+
+**Query**
+```apl
+['test-logs'] | where status >= 500 | take 10
+```
+
+Found the issue in test dataset.
+"""
+        journal_file.write_text(journal_content)
+        
+        result.test("Create journal entry", 
+                    journal_file.exists(),
+                    "Failed to create", verbose)
+        
+        # Validate journal is parseable
+        entries = ENTRY_HEADER_PATTERN.findall(journal_content)
+        result.test("Journal entries parseable", 
+                    len(entries) == 2,
+                    f"Expected 2 entries, found {len(entries)}", verbose)
+        
+        # Simulate promoting to KB (just validate file is writable)
+        patterns_file = test_dir / "kb" / "patterns.md"
+        original_content = patterns_file.read_text()
+        
+        new_pattern = """
+## M-2025-01-05T10:30:00Z simulated-pattern
+
+- type: pattern
+- tags: test, simulation
+- status: active
+- usefulness: 0.5
+- used: 1
+
+**Summary**
+
+Test pattern from workflow simulation.
+
+---
+"""
+        patterns_file.write_text(original_content.replace("---\n\n<!--", f"---\n{new_pattern}\n<!--", 1))
+        
+        updated_content = patterns_file.read_text()
+        result.test("KB writable and updatable", 
+                    "simulated-pattern" in updated_content,
+                    "Failed to update", verbose)
+        
+        # Validate the update is parseable
+        entries = ENTRY_HEADER_PATTERN.findall(updated_content)
+        result.test("Updated KB parseable", 
+                    len(entries) >= 1,
+                    f"No entries found after update", verbose)
+        
+    finally:
+        shutil.rmtree(test_dir)
+    
+    return result.failed == 0
+
+
+def test_timestamp_format(result: TestResult, verbose: bool) -> bool:
+    """Test that timestamp format is consistent and valid."""
+    print("\n[Timestamp Format]")
+    
+    # Valid timestamps
+    valid = [
+        "M-2025-01-05T14:32:10Z",
+        "M-2025-12-31T23:59:59Z",
+        "M-2026-01-01T00:00:00Z",
+    ]
+    
+    for ts in valid:
+        header = f"## {ts} test-entry"
+        match = ENTRY_HEADER_PATTERN.match(header)
+        result.test(f"Valid: {ts}", match is not None, "Regex didn't match", verbose)
+    
+    # Invalid timestamps
+    invalid = [
+        "M-2025-1-5T14:32:10Z",  # Missing leading zeros
+        "M-25-01-05T14:32:10Z",  # 2-digit year
+        "2025-01-05T14:32:10Z",  # Missing M- prefix
+    ]
+    
+    for ts in invalid:
+        header = f"## {ts} test-entry"
+        match = ENTRY_HEADER_PATTERN.match(header)
+        result.test(f"Reject invalid: {ts}", match is None, "Should not match", verbose)
+    
+    return result.failed == 0
+
+
+def main():
+    verbose = "--verbose" in sys.argv
+    result = TestResult()
+    
+    print("Memory System Self-Test")
+    print("=" * 40)
+    
+    test_structure(result, verbose)
+    test_entry_format(result, verbose)
+    test_kb_files_parseable(result, verbose)
+    test_readme_instructions(result, verbose)
+    test_workflow_simulation(result, verbose)
+    test_timestamp_format(result, verbose)
+    
+    print("\n" + "=" * 40)
+    print(f"Tests: {result.passed + result.failed} | Passed: {result.passed} | Failed: {result.failed}")
+    
+    if result.errors:
+        print("\nErrors:")
+        for error in result.errors:
+            print(f"  - {error}")
+    
+    return result.failed == 0
+
+
+if __name__ == "__main__":
+    success = main()
+    sys.exit(0 if success else 1)

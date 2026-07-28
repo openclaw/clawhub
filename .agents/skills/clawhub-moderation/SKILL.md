@@ -55,7 +55,9 @@ skills|skill
 `bun run admin -- skills --help` exposes:
 
 ```text
+hard-delete <skill>
 unhide <slug>
+revoke-version <slug>
 rescan <slug>
 reports
 triage-report <report-id>
@@ -64,11 +66,20 @@ triage-report <report-id>
 Examples:
 
 ```sh
+bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>"                    # dry-run
+bun run admin -- skills hard-delete @owner/<slug> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- skills unhide <slug> --reason "<reason>" --yes
+bun run admin -- skills revoke-version <slug> --version <version> --reason "<reason>" --yes
 bun run admin -- skills rescan <slug> --reason "<reason>" --yes
 bun run admin -- skills reports --status open
 bun run admin -- skills triage-report <report-id> --status confirmed --action hide --note "<note>" --yes
 ```
+
+`hard-delete` requires an owner-qualified ref and defaults to a dry-run. Apply
+only with the exact confirmation token returned by that dry-run.
+
+Pass `--owner <handle>` to `revoke-version` when more than one publisher uses
+the same slug.
 
 ### Users
 
@@ -77,6 +88,7 @@ bun run admin -- skills triage-report <report-id> --status confirmed --action hi
 ```text
 ban <handleOrId>
 unban <handleOrId>
+lift-moderation-hold <handleOrId>
 set-role <handleOrId> <role>
 reclassify-ban <handleOrId>
 remediate-autobans
@@ -87,6 +99,7 @@ Examples:
 ```sh
 bun run admin -- users ban <handleOrId> --reason "<reason>" --yes
 bun run admin -- users unban <handleOrId> --reason "<reason>" --yes
+bun run admin -- users lift-moderation-hold <handleOrId> --reason "<reason>" --yes
 bun run admin -- users set-role <handleOrId> <user|moderator|admin> --yes
 bun run admin -- users reclassify-ban <handleOrId> --reason "<reason>" --apply --yes
 bun run admin -- users remediate-autobans --apply --reason "<reason>"
@@ -135,6 +148,7 @@ status|moderation-status <name>
 queue|moderation-queue
 reports
 triage-report <report-id>
+hard-delete <name>
 transfer <name>
 repair-name <name>
 migrations
@@ -146,6 +160,8 @@ Examples:
 
 ```sh
 bun run admin -- packages status <name>
+bun run admin -- packages hard-delete <name> --owner <handle> --reason "<reason>" # dry-run
+bun run admin -- packages hard-delete <name> --owner <handle> --reason "<reason>" --apply --confirm "<token>" --yes
 bun run admin -- packages transfer <name> --to <owner> --reason "<reason>"       # dry-run
 bun run admin -- packages transfer <name> --to <owner> --reason "<reason>" --apply
 bun run admin -- packages repair-name <name> --next-name <name> --reason "<reason>"
@@ -187,6 +203,7 @@ only after admin auth succeeds.
 ## Verification
 
 - For skills, inspect the page/API status after `skills unhide`.
+- For `skills hard-delete`, verify owner-scoped page/API reads return not found.
 - For users, prefer user search/admin surfaces for target accounts where
   available.
 - For orgs and packages, use the public publisher/plugin pages and the relevant
@@ -201,13 +218,21 @@ only after admin auth succeeds.
 - `skills unhide` is a moderator manual restore. It clears skill hidden state,
   applies a clean manual override to top-level moderation fields, preserves
   version-level scanner records, updates public stats, and writes audit logs.
+- `skills revoke-version` permanently removes one exact version, records staff
+  evidence, advances latest pointers to a safe survivor when one exists, and
+  keeps the skill independently hidden when no usable version remains.
 - There is no standalone `skills hide` command in `clawhub-admin`; use report
   triage with `--action hide` when resolving a report that should hide a skill.
 - `users ban` is disruptive: it revokes API tokens, marks the user deleted,
   hides owned skills, soft-deletes comments, and writes audit logs.
 - `users unban` is admin-only. It clears ban state and restores skills that were
   hidden by the matching ban flow; revoked API tokens stay revoked.
+- `users lift-moderation-hold` is admin-only. It clears the account-level
+  moderation hold, restores skills hidden by that hold, and writes an audit log.
 - `packages transfer` preserves the package row, stats, releases, and history;
   it changes the owner publisher.
+- `packages hard-delete` is admin-only, requires an already-soft-deleted package,
+  exact owner handle, reason, and dry-run token, and permanently removes all
+  package releases and related history.
 - `org delete` soft-deletes an empty org publisher and retains member rows for
   history; it refuses orgs with active skills or packages.

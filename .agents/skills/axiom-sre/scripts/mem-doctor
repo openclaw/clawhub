@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Memory system health check
+# Usage: scripts/mem-doctor
+
+set -euo pipefail
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+MEMORY_DIR="$CONFIG_DIR/memory"
+KB_DIR="$MEMORY_DIR/kb"
+ORGS_DIR="$MEMORY_DIR/orgs"
+
+echo "=== Memory Doctor ==="
+echo ""
+
+ISSUES=0
+WARNINGS=0
+
+check_ok() {
+  echo "✓ $1"
+}
+
+check_warn() {
+  echo "⚠️  $1"
+  WARNINGS=$((WARNINGS + 1))
+}
+
+check_fail() {
+  echo "✗ $1"
+  ISSUES=$((ISSUES + 1))
+}
+
+count_entries() {
+  local dir="$1"
+  local count=0
+  # Find all kb/*.md files in the directory, following symlinks if necessary
+  while IFS= read -r f; do
+    local c
+    c=$(grep -c "^## M-" "$f" 2>/dev/null | tr -d '[:space:]' || echo "0")
+    if [[ "$c" =~ ^[0-9]+$ ]]; then
+      count=$((count + c))
+    fi
+  done < <(find "$dir" -path "*/kb/*.md" -type f)
+  echo "$count"
+}
+
+# --- Check memory tier ---
+echo "Memory:"
+if [[ -d "$KB_DIR" ]]; then
+  entries=$(count_entries "$MEMORY_DIR")
+  check_ok "Exists at $MEMORY_DIR ($entries entries)"
+else
+  check_fail "Not found at $KB_DIR"
+  echo "   Run: scripts/init"
+fi
+
+echo ""
+
+# --- Check org tiers ---
+echo "Org Tiers:"
+if [[ -d "$ORGS_DIR" ]]; then
+  org_count=0
+  for org_dir in "$ORGS_DIR"/*/; do
+    [[ -d "$org_dir" ]] || continue
+    org_name=$(basename "$org_dir")
+    org_count=$((org_count + 1))
+    
+    if [[ -d "$org_dir/.git" ]]; then
+      # Check for uncommitted changes
+      uncommitted=$(cd "$org_dir" && git status --porcelain | wc -l | tr -d ' ')
+      entries=$(count_entries "$org_dir")
+      if [[ "$uncommitted" -gt 0 ]]; then
+        check_warn "$org_name: $entries entries, $uncommitted uncommitted changes"
+        echo "   Run: scripts/mem-write --org $org_name to auto-share, or scripts/mem-share $org_name \"message\""
+      else
+        check_ok "$org_name: $entries entries (synced)"
+      fi
+    else
+      entries=$(count_entries "$org_dir")
+      check_warn "$org_name: local-only, no git ($entries entries)"
+    fi
+  done
+
+  if [[ $org_count -eq 0 ]]; then
+    check_warn "No orgs configured"
+    echo "   Run: scripts/org-add <name> <git-repo-url>"
+  fi
+else
+  check_warn "Orgs directory not found"
+fi
+
+echo ""
+
+# --- Summary ---
+echo "=== Summary ==="
+if [[ $ISSUES -eq 0 && $WARNINGS -eq 0 ]]; then
+  echo "✓ Memory system healthy"
+  exit 0
+elif [[ $ISSUES -eq 0 ]]; then
+  echo "⚠️  $WARNINGS warning(s)"
+  exit 0
+else
+  echo "✗ $ISSUES issue(s), $WARNINGS warning(s)"
+  exit 1
+fi

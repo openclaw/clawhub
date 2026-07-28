@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
+import type { SkillPageInitialData } from "../lib/skillPage";
 
 const navigateMock = vi.fn();
 const routerInvalidateMock = vi.fn();
@@ -51,6 +52,11 @@ vi.mock("convex/react", () => ({
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  usePaginatedQuery: () => ({
+    results: [],
+    status: "Exhausted",
+    loadMore: vi.fn(),
+  }),
   useAction: () => getReadmeMock,
 }));
 
@@ -78,6 +84,47 @@ describe("SkillDetailPage", () => {
   const ownerPublisherId = "publishers:steipete" as Id<"publishers">;
   const versionId = "skillVersions:1" as Id<"skillVersions">;
   const storageId = "storage:1" as Id<"_storage">;
+
+  function makeInitialData(githubBacked = false): SkillPageInitialData {
+    return {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: githubBacked ? "github-skill" : "weather",
+          displayName: githubBacked ? "GitHub Skill" : "Weather",
+          summary: githubBacked ? "Loaded from GitHub." : "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          ...(githubBacked ? { installKind: "github" as const } : {}),
+          tags: {},
+          badges: {},
+          stats: { stars: 0, downloads: 0, installs: 0, versions: 2, comments: 0 },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: null,
+        latestVersion: githubBacked
+          ? null
+          : {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "2.0.0",
+              fingerprint: "abc",
+              changelog: "Current release",
+              parsed: { frontmatter: {} },
+              files: [],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: githubBacked ? null : "# Weather",
+      readmeError: null,
+    };
+  }
 
   beforeEach(() => {
     window.location.hash = "";
@@ -191,6 +238,73 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
+  });
+
+  it("bounds version eligibility reads and loads full history only in Versions", async () => {
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        getFunctionName(query as never) === "skills:listVersions" &&
+        args &&
+        typeof args === "object" &&
+        "limit" in args &&
+        args.limit === 2
+      ) {
+        return [
+          { _id: "skillVersions:1", version: "2.0.0", files: [] },
+          { _id: "skillVersions:2", version: "1.0.0", files: [] },
+        ];
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" initialData={makeInitialData()} />);
+
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query as never) === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 2,
+      ),
+    ).toBe(true);
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query, args]) =>
+          getFunctionName(query as never) === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 50,
+      ),
+    ).toBe(false);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+    await waitFor(() =>
+      expect(
+        useQueryMock.mock.calls.some(
+          ([query, args]) =>
+            getFunctionName(query as never) === "skills:listVersions" &&
+            args &&
+            typeof args === "object" &&
+            "limit" in args &&
+            args.limit === 50,
+        ),
+      ).toBe(true),
+    );
+  });
+
+  it("skips archive version reads for GitHub-backed skills", () => {
+    render(<SkillDetailPage slug="github-skill" initialData={makeInitialData(true)} />);
+
+    const versionCalls = useQueryMock.mock.calls.filter(
+      ([query]) => getFunctionName(query as never) === "skills:listVersions",
+    );
+    expect(versionCalls.length).toBeGreaterThan(0);
+    expect(versionCalls.every(([, args]) => args === "skip")).toBe(true);
   });
 
   it("keeps loader-backed skill content visible while staff live query resolves", async () => {
@@ -1104,7 +1218,14 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    const skillsCliButton = screen.getByRole("button", { name: "npx skills" });
+    expect(skillsCliButton).toBeTruthy();
     expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
+    fireEvent.click(skillsCliButton);
+    expect(
+      screen.getByText("npx skills add https://clawhub.ai/steipete/skills/weather"),
+    ).toBeTruthy();
+    expect(skillsCliButton.getAttribute("aria-pressed")).toBe("true");
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
     expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
@@ -1668,20 +1789,20 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
 
-    const starButton = await screen.findByRole("button", { name: "Star skill" });
+    const starButton = await screen.findByRole("button", { name: "Bookmark skill" });
     expect(starButton.textContent).toContain("8");
 
     fireEvent.click(starButton);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Unstar skill" }).textContent).toContain("9");
+      expect(screen.getByRole("button", { name: "Remove bookmark" }).textContent).toContain("9");
     });
     expect(toggleStarMock).toHaveBeenCalledWith({ skillId });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unstar skill" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove bookmark" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Star skill" }).textContent).toContain("8");
+      expect(screen.getByRole("button", { name: "Bookmark skill" }).textContent).toContain("8");
     });
     expect(toggleStarMock).toHaveBeenCalledTimes(2);
     expect(routerInvalidateMock).toHaveBeenCalledTimes(2);
@@ -1748,7 +1869,7 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
 
-    expect((await screen.findByRole("button", { name: "Unstar skill" })).textContent).toContain(
+    expect((await screen.findByRole("button", { name: "Remove bookmark" })).textContent).toContain(
       "1",
     );
   });

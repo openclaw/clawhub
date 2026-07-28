@@ -1,29 +1,40 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   appendGitHubSkillScanRequestFilesInternal,
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
+  claimCodexScanJobLeases,
   clearQueuedBackfillJobsForLocalDev,
   claimQueuedJobsInternal,
   completeCodexScanJob,
   enqueueBulkSkillRescanBatchForAdminInternal,
+  enqueuePackageReleaseScanInternal,
   enqueueSkillVersionScanInternal,
   failCodexScanJob,
   failJobInternal,
   finalizeGitHubSkillScanRequestInternal,
+  getCodexScanQueueHealth,
+  getCodexScanQueueHealthInternal,
   getJobTargetInternal,
   getBulkSkillRescanBatchStatusForAdminInternal,
   getSkillScanRequestForUserInternal,
   getStoredScanReportForUserInternal,
+  logCodexScanQueueHealthInternal,
   prepareGitHubSkillScanRequestInternal,
   pruneExpiredSkillScanRequestsInternal,
+  requeueCodexScanJobLease,
+  requeueExpiredCodexScanJobsInternal,
+  requeueFailedSecurityScanJobsInternal,
+  requeueJobLeaseInternal,
   recordGitHubSkillScanResultInternal,
   recordSkillScanRequestFailedInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
   requestSkillRescanForUserInternal,
   requestSkillRescan,
+  hydrateCodexScanJob,
+  listReadySourceJobsForClaimHandler,
 } from "./securityScan";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -42,10 +53,75 @@ const claimCodexScanJobsHandler = (
   >
 )._handler;
 
+const claimCodexScanJobLeasesHandler = (
+  claimCodexScanJobLeases as unknown as WrappedHandler<
+    {
+      token: string;
+      workerId: string;
+      lane?: "priority" | "shared" | "catalog";
+      limit?: number;
+      leaseMs?: number;
+      targetedJobIds?: string[];
+    },
+    Array<ScanJob & { leaseToken: string; workerId: string }>
+  >
+)._handler;
+
+const hydrateCodexScanJobHandler = (
+  hydrateCodexScanJob as unknown as WrappedHandler<{
+    token: string;
+    workerId: string;
+    jobId: string;
+    leaseToken: string;
+  }>
+)._handler;
+
 const claimQueuedJobsInternalHandler = (
   claimQueuedJobsInternal as unknown as WrappedHandler<
-    { workerId: string; limit: number; leaseMs?: number },
+    {
+      workerId: string;
+      lane?: "priority" | "shared" | "catalog";
+      limit: number;
+      leaseMs?: number;
+      targetedJobIds?: string[];
+    },
     Array<ScanJob & { leaseToken: string; workerId: string }>
+  >
+)._handler;
+
+const requeueExpiredCodexScanJobsInternalHandler = (
+  requeueExpiredCodexScanJobsInternal as unknown as WrappedHandler<
+    { limit?: number },
+    { requeued: number }
+  >
+)._handler;
+
+const requeueFailedSecurityScanJobsInternalHandler = (
+  requeueFailedSecurityScanJobsInternal as unknown as WrappedHandler<
+    { failedAfter: number; failedBefore: number; dryRun: boolean; limit?: number },
+    {
+      dryRun: boolean;
+      matched: number;
+      requeued: number;
+      hasMore: boolean;
+      bySource: Record<string, number>;
+      byTargetKind: Record<string, number>;
+      sampleJobIds: string[];
+    }
+  >
+)._handler;
+
+const requeueJobLeaseInternalHandler = (
+  requeueJobLeaseInternal as unknown as WrappedHandler<
+    { jobId: string; leaseToken: string; workerId: string },
+    { ok: true; nextRunAt: number }
+  >
+)._handler;
+
+const requeueCodexScanJobLeaseHandler = (
+  requeueCodexScanJobLease as unknown as WrappedHandler<
+    { token: string; jobId: string; leaseToken: string; workerId: string },
+    { ok: true; nextRunAt: number }
   >
 )._handler;
 
@@ -60,6 +136,51 @@ const failJobInternalHandler = (
   failJobInternal as unknown as WrappedHandler<
     { jobId: string; leaseToken: string; error: string },
     { ok: true; retry: boolean }
+  >
+)._handler;
+
+const getCodexScanQueueHealthInternalHandler = (
+  getCodexScanQueueHealthInternal as unknown as WrappedHandler<
+    Record<string, never>,
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
+  >
+)._handler;
+
+const getCodexScanQueueHealthHandler = (
+  getCodexScanQueueHealth as unknown as WrappedHandler<
+    { token: string },
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
+  >
+)._handler;
+
+const logCodexScanQueueHealthInternalHandler = (
+  logCodexScanQueueHealthInternal as unknown as WrappedHandler<
+    Record<string, never>,
+    {
+      snapshotAt: number;
+      queueDepth: number;
+      queueDepthIsEstimate: boolean;
+      readyQueueDepth: number;
+      readyQueueDepthIsEstimate: boolean;
+      oldestReadyJobAgeSeconds: number;
+      oldestReadyJobNextRunAt: number | null;
+    }
   >
 )._handler;
 
@@ -262,6 +383,7 @@ type ScanJob = {
   skillVersionId?: string;
   packageReleaseId?: string;
   skillScanRequestId?: string;
+  rolloutGate?: "github-skill-sync";
   source: string;
   priority: number;
   hasMaliciousSignal: boolean;
@@ -330,11 +452,23 @@ const enqueueSkillVersionScanInternalHandler = (
   enqueueSkillVersionScanInternal as unknown as WrappedHandler<
     {
       versionId: string;
-      source: "publish";
+      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
       priority?: number;
       waitForVtMs?: number;
       preserveActiveJob?: boolean;
       preserveExistingJob?: boolean;
+    },
+    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
+  >
+)._handler;
+
+const enqueuePackageReleaseScanInternalHandler = (
+  enqueuePackageReleaseScanInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      source: "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+      priority?: number;
+      waitForVtMs?: number;
     },
     { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
   >
@@ -457,6 +591,174 @@ function makeScanJob(overrides: Partial<ScanJob> = {}): ScanJob {
   };
 }
 
+function makeQueueHealthCtx(jobs: ScanJob[]) {
+  const query = vi.fn((table: string) => {
+    expect(table).toBe("securityScanJobs");
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+        ) => {
+          expect(indexName).toBe("by_status_and_next_run_at");
+          const equals = new Map<string, unknown>();
+          const range = {
+            eq(field: string, value: unknown) {
+              equals.set(field, value);
+              return range;
+            },
+          };
+          buildRange(range);
+          const matched = [...jobs]
+            .filter((job) =>
+              Array.from(equals.entries()).every(([field, value]) => {
+                return job[field as keyof ScanJob] === value;
+              }),
+            )
+            .sort(
+              (a, b) =>
+                a.nextRunAt - b.nextRunAt ||
+                a._creationTime - b._creationTime ||
+                a._id.localeCompare(b._id),
+            );
+          return {
+            order: vi.fn((direction: string) => {
+              expect(direction).toBe("asc");
+              return {
+                take: vi.fn(async (limit: number) => matched.slice(0, limit)),
+              };
+            }),
+          };
+        },
+      ),
+    };
+  });
+
+  return { db: { query } };
+}
+
+function makeFailedScanRecoveryCtx(
+  jobs: ScanJob[],
+  docs: Record<string, Record<string, unknown>> = {},
+) {
+  const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+  const patch = vi.fn(
+    async (
+      tableOrId: string,
+      idOrValue: string | Record<string, unknown>,
+      maybeValue?: Record<string, unknown>,
+    ) => {
+      const id = maybeValue ? (idOrValue as string) : tableOrId;
+      const value = maybeValue ?? (idOrValue as Record<string, unknown>);
+      patches.push({ id, patch: value });
+      docs[id] = { ...docs[id], ...value };
+    },
+  );
+  const query = vi.fn((table: string) => {
+    if (table !== "securityScanJobs") {
+      return {
+        withIndex: vi.fn(() => ({
+          collect: vi.fn(async () => []),
+          order: vi.fn(() => ({ take: vi.fn(async () => []) })),
+          take: vi.fn(async () => []),
+          unique: vi.fn(async () => null),
+        })),
+      };
+    }
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: {
+            eq: (field: string, value: unknown) => unknown;
+            gte: (field: string, value: number) => unknown;
+            lt: (field: string, value: number) => unknown;
+          }) => unknown,
+        ) => {
+          expect(indexName).toBe("by_status_and_updated_at");
+          const equals = new Map<string, unknown>();
+          let updatedAfter = Number.NEGATIVE_INFINITY;
+          let updatedBefore = Number.POSITIVE_INFINITY;
+          const range = {
+            eq(field: string, value: unknown) {
+              equals.set(field, value);
+              return range;
+            },
+            gte(field: string, value: number) {
+              expect(field).toBe("updatedAt");
+              updatedAfter = value;
+              return range;
+            },
+            lt(field: string, value: number) {
+              expect(field).toBe("updatedAt");
+              updatedBefore = value;
+              return range;
+            },
+          };
+          buildRange(range);
+          const matched = jobs
+            .filter(
+              (job) =>
+                Array.from(equals.entries()).every(
+                  ([field, value]) => job[field as keyof ScanJob] === value,
+                ) &&
+                job.updatedAt >= updatedAfter &&
+                job.updatedAt < updatedBefore,
+            )
+            .sort((a, b) => a.updatedAt - b.updatedAt || a._id.localeCompare(b._id));
+          let filtered = matched;
+          const builder = {
+            filter: vi.fn(
+              (
+                predicate: (q: {
+                  field: (field: string) => { field: string };
+                  neq: (left: { field: string }, right: unknown) => unknown;
+                }) => unknown,
+              ) => {
+                predicate({
+                  field: (field) => ({ field }),
+                  neq: (left, right) => {
+                    filtered = filtered.filter((job) => job[left.field as keyof ScanJob] !== right);
+                    return true;
+                  },
+                });
+                return builder;
+              },
+            ),
+            order: vi.fn((direction: string) => {
+              expect(direction).toBe("asc");
+              return {
+                take: vi.fn(async (limit: number) => filtered.slice(0, limit)),
+              };
+            }),
+          };
+          return builder;
+        },
+      ),
+    };
+  });
+  return {
+    ctx: {
+      db: {
+        delete: vi.fn(),
+        get: vi.fn(async (id: string) => docs[id] ?? null),
+        insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
+          inserts.push({ table, doc });
+          return `${table}:inserted`;
+        }),
+        normalizeId: vi.fn((_table: string, id: string) => id),
+        patch,
+        query,
+        replace: vi.fn(),
+        system: {},
+      },
+    },
+    patches,
+    inserts,
+  };
+}
+
 function makeTarget(llmStatus?: string) {
   if (!llmStatus) return {};
   return {
@@ -482,6 +784,7 @@ function makeRescanCtx(options: {
         role: options.actorRole ?? "user",
       },
       ...options.docs,
+      ...Object.fromEntries((options.activeJobs ?? []).map((job) => [String(job._id), job])),
     }),
   );
   const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
@@ -490,6 +793,7 @@ function makeRescanCtx(options: {
   const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
     const id = `${table}:${inserts.length + 1}`;
     inserts.push({ table, doc });
+    docs.set(id, { _id: id, _creationTime: Date.now(), ...doc });
     return id;
   });
   const patch = vi.fn(async (id: string, doc: Record<string, unknown>) => {
@@ -505,9 +809,31 @@ function makeRescanCtx(options: {
       buildRange({ eq });
       return {
         collect: vi.fn(async () => {
-          if (table === "securityScanJobs") return options.activeJobs ?? [];
+          if (table === "securityScanJobs") {
+            return Array.from(docs.values()).filter((doc) =>
+              String(doc._id).startsWith("securityScanJobs:"),
+            );
+          }
           return [];
         }),
+        order: vi.fn(() => ({
+          first: vi.fn(async () => {
+            if (table !== "securityScanJobs") return null;
+            return (
+              Array.from(docs.values())
+                .filter(
+                  (doc) =>
+                    String(doc._id).startsWith("securityScanJobs:") &&
+                    (!equals.has("status") || doc.status === equals.get("status")),
+                )
+                .sort(
+                  (a, b) =>
+                    Number(a.nextRunAt ?? 0) - Number(b.nextRunAt ?? 0) ||
+                    Number(a._creationTime ?? 0) - Number(b._creationTime ?? 0),
+                )[0] ?? null
+            );
+          }),
+        })),
         take: vi.fn(async () => {
           if (table === "skills") {
             return Array.from(docs.values()).filter((doc) => {
@@ -585,7 +911,10 @@ function makeRescanCtx(options: {
       };
     }),
   }));
-  const scheduler = { runAfter: vi.fn(async () => undefined) };
+  const scheduler = {
+    runAfter: vi.fn(async () => undefined),
+    runAt: vi.fn(async () => "_scheduled_functions:1"),
+  };
 
   return {
     ctx: {
@@ -765,12 +1094,52 @@ function makeCancelCtx(jobs: ScanJob[], targets: Map<string, unknown> = new Map(
   };
 }
 
-function makeClaimCtx(jobs: ScanJob[]) {
+function makeClaimCtx(
+  jobs: ScanJob[],
+  docs: Record<string, Record<string, unknown>> = {},
+  catalogControl: Record<string, unknown> | null = null,
+) {
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const patch = vi.fn(async (id: string, doc: Record<string, unknown>) => {
     patches.push({ id, patch: doc });
+    docs[id] = { ...docs[id], ...doc };
   });
   const query = vi.fn((tableName: string) => {
+    if (tableName === "skillsShCatalogControls") {
+      return {
+        withIndex: vi.fn(() => ({
+          unique: vi.fn(async () => catalogControl),
+        })),
+      };
+    }
+    if (tableName === "skillsShCatalogScanAttempts") {
+      return {
+        withIndex: vi.fn(
+          (
+            _indexName: string,
+            buildRange: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const equals = new Map<string, unknown>();
+            const range = {
+              eq(field: string, value: unknown) {
+                equals.set(field, value);
+                return range;
+              },
+            };
+            buildRange(range);
+            const attempts = Object.values(docs).filter(
+              (doc) =>
+                typeof doc._id === "string" &&
+                doc._id.startsWith("skillsShCatalogScanAttempts:") &&
+                Array.from(equals.entries()).every(([field, value]) => doc[field] === value),
+            );
+            return {
+              take: vi.fn(async (limit: number) => attempts.slice(0, limit)),
+            };
+          },
+        ),
+      };
+    }
     expect(tableName).toBe("securityScanJobs");
     return {
       withIndex: vi.fn(
@@ -816,29 +1185,74 @@ function makeClaimCtx(jobs: ScanJob[]) {
                 }
                 return a.createdAt - b.createdAt;
               });
+          let rowFilter = (_job: ScanJob) => true;
           const take = vi.fn(async (limit: number) => select().slice(0, limit));
-          return {
+          const filteredRows = () => select().filter(rowFilter);
+          const builder = {
+            filter: vi.fn(
+              (
+                predicate: (q: {
+                  field: (field: string) => { field: string };
+                  neq: (
+                    left: { field: string },
+                    right: unknown,
+                  ) => {
+                    field: string;
+                    right: unknown;
+                  };
+                }) => { field: string; right: unknown },
+              ) => {
+                const expression = predicate({
+                  field: (field) => ({ field }),
+                  neq: (left, right) => ({ field: left.field, right }),
+                });
+                rowFilter = (job) =>
+                  (job as unknown as Record<string, unknown>)[expression.field] !==
+                  expression.right;
+                return builder;
+              },
+            ),
             take,
-            order: vi.fn(() => ({ take })),
+            order: vi.fn(() => ({
+              paginate: vi.fn(
+                async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+                  const offset = cursor ? Number.parseInt(cursor, 10) : 0;
+                  const rows = filteredRows();
+                  const nextOffset = Math.min(offset + numItems, rows.length);
+                  return {
+                    page: rows.slice(offset, nextOffset),
+                    isDone: nextOffset >= rows.length,
+                    continueCursor: String(nextOffset),
+                  };
+                },
+              ),
+              take: vi.fn(async (limit: number) => filteredRows().slice(0, limit)),
+            })),
           };
+          return builder;
         },
       ),
     };
   });
 
-  return {
-    ctx: {
-      db: {
-        query,
-        patch,
-        get: vi.fn(),
-        insert: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        normalizeId: vi.fn(() => null),
-        system: {},
-      },
+  const ctx = {
+    db: {
+      query,
+      patch,
+      get: vi.fn(async (id: string) => docs[id] ?? jobs.find((job) => job._id === id) ?? null),
+      insert: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(() => null),
+      system: {},
     },
+    runQuery: vi.fn(async (_ref: unknown, args: unknown) =>
+      listReadySourceJobsForClaimHandler(ctx as never, args as never),
+    ),
+  };
+
+  return {
+    ctx,
     patches,
     patch,
     query,
@@ -994,9 +1408,126 @@ function makeStoredScanReportCtx(options: {
 }
 
 describe("securityScan", () => {
+  beforeEach(() => {
+    vi.stubEnv("CLAWHUB_ENV", "local");
+    vi.stubEnv("CONVEX_DEPLOYMENT", "local:clawhub-test");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("reports claimable queue depth and oldest overdue age", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const ctx = makeQueueHealthCtx([
+      makeScanJob({
+        _id: "securityScanJobs:oldest-ready",
+        nextRunAt: 100_000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:ready",
+        nextRunAt: 900_000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:future",
+        nextRunAt: 1_100_000,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:running",
+        status: "running",
+        nextRunAt: 1,
+      }),
+    ]);
+
+    const result = await getCodexScanQueueHealthInternalHandler(ctx, {});
+
+    expect(result).toEqual({
+      snapshotAt: 1_000_000,
+      queueDepth: 3,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 900,
+      oldestReadyJobNextRunAt: 100_000,
+    });
+  });
+
+  it("marks capped queue health counts as estimates", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const ctx = makeQueueHealthCtx(
+      Array.from({ length: 513 }, (_, index) =>
+        makeScanJob({
+          _id: `securityScanJobs:queued-${index}`,
+          _creationTime: index,
+          nextRunAt: index,
+        }),
+      ),
+    );
+
+    const result = await getCodexScanQueueHealthInternalHandler(ctx, {});
+
+    expect(result).toMatchObject({
+      queueDepth: 512,
+      queueDepthIsEstimate: true,
+      readyQueueDepth: 512,
+      readyQueueDepthIsEstimate: true,
+    });
+  });
+
+  it("logs the queue health snapshot as a structured observability event", async () => {
+    const snapshot = {
+      snapshotAt: 1_000_000,
+      queueDepth: 4,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 901,
+      oldestReadyJobNextRunAt: 99_000,
+    };
+    const runQuery = vi.fn(async () => snapshot);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const result = await logCodexScanQueueHealthInternalHandler({ runQuery }, {});
+
+    expect(result).toEqual(snapshot);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {});
+    expect(log).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: "security_scan_queue.snapshot",
+        ...snapshot,
+      }),
+    );
+    log.mockRestore();
+  });
+
+  it("exposes queue health to the authenticated security worker", async () => {
+    const workerAuth = "fixture";
+    const rejectedAuth = "rejected-fixture";
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", workerAuth);
+    const snapshot = {
+      snapshotAt: 1_000_000,
+      queueDepth: 4,
+      queueDepthIsEstimate: false,
+      readyQueueDepth: 2,
+      readyQueueDepthIsEstimate: false,
+      oldestReadyJobAgeSeconds: 901,
+      oldestReadyJobNextRunAt: 99_000,
+    };
+    const runQuery = vi.fn(async () => snapshot);
+
+    await expect(
+      getCodexScanQueueHealthHandler({ runQuery }, { token: workerAuth }),
+    ).resolves.toEqual(snapshot);
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {});
+    await expect(
+      getCodexScanQueueHealthHandler({ runQuery }, { ["token"]: rejectedAuth }),
+    ).rejects.toThrow("Unauthorized");
   });
 
   it("does not enqueue a duplicate publish scan after the backup delay if the first scan already finished", async () => {
@@ -1030,6 +1561,113 @@ describe("securityScan", () => {
     });
     expect(inserts.filter((entry) => entry.table === "securityScanJobs")).toEqual([]);
     expect(patches).toEqual([]);
+  });
+
+  it("keeps an unscanned skill publish at publish priority when VirusTotal finishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const existingJob = makeScanJob({
+      _id: "securityScanJobs:skill-publish",
+      source: "publish",
+      skillVersionId: "skillVersions:skill-publish",
+      waitForVtUntil: 1_500_000,
+      nextRunAt: 1_500_000,
+    });
+    const { ctx, patches } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skillVersions:skill-publish": {
+          _id: "skillVersions:skill-publish",
+          skillId: "skills:skill-publish",
+          version: "1.0.0",
+          vtAnalysis: { status: "clean", checkedAt: 1_000_000 },
+        },
+      },
+      activeJobs: [existingJob],
+    });
+
+    await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:skill-publish",
+      source: "vt-update",
+      waitForVtMs: 0,
+    });
+
+    expect(patches).toContainEqual({
+      id: "securityScanJobs:skill-publish",
+      patch: expect.objectContaining({
+        source: "publish",
+        nextRunAt: 1_000_000,
+      }),
+    });
+  });
+
+  it("keeps an unscanned package publish at publish priority when VirusTotal finishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2_000_000);
+    const existingJob = makeScanJob({
+      _id: "securityScanJobs:package-publish",
+      targetKind: "packageRelease",
+      skillVersionId: undefined,
+      packageReleaseId: "packageReleases:package-publish",
+      source: "publish",
+      waitForVtUntil: 2_500_000,
+      nextRunAt: 2_500_000,
+    });
+    const { ctx, patches } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "packageReleases:package-publish": {
+          _id: "packageReleases:package-publish",
+          packageId: "packages:package-publish",
+          version: "1.0.0",
+          vtAnalysis: { status: "clean", checkedAt: 2_000_000 },
+        },
+      },
+      activeJobs: [existingJob],
+    });
+
+    await enqueuePackageReleaseScanInternalHandler(ctx, {
+      releaseId: "packageReleases:package-publish",
+      source: "vt-update",
+      waitForVtMs: 0,
+    });
+
+    expect(patches).toContainEqual({
+      id: "securityScanJobs:package-publish",
+      patch: expect.objectContaining({
+        source: "publish",
+        nextRunAt: 2_000_000,
+      }),
+    });
+  });
+
+  it("requests an immediate worker dispatch when a publish scan becomes claimable", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(3_000_000);
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "1");
+    vi.stubEnv("GITHUB_APP_ID", "configured");
+    vi.stubEnv("GITHUB_APP_INSTALLATION_ID", "configured");
+    vi.stubEnv("GITHUB_APP_PRIVATE_KEY", "configured");
+    const { ctx, scheduler } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skillVersions:dispatch": {
+          _id: "skillVersions:dispatch",
+          skillId: "skills:dispatch",
+          version: "1.0.0",
+          vtAnalysis: { status: "clean", checkedAt: 3_000_000 },
+        },
+      },
+    });
+
+    await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:dispatch",
+      source: "publish",
+    });
+
+    expect(scheduler.runAt).toHaveBeenCalledWith(3_000_000, expect.anything(), {
+      scheduleToken: expect.any(String),
+    });
   });
 
   it("lets platform moderators request skill rescans", async () => {
@@ -1131,6 +1769,40 @@ describe("securityScan", () => {
         }),
       }),
     );
+  });
+
+  it("rejects generic GitHub-backed rescans before scheduling or writing when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const { ctx, inserts, scheduler } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:github": {
+          _id: "skills:github",
+          slug: "github-demo",
+          ownerUserId: "users:owner",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+        },
+        "githubSkillSources:github": {
+          _id: "githubSkillSources:github",
+          repo: "acme/skills",
+        },
+      },
+    });
+
+    await expect(
+      requestSkillRescanHandler(ctx, {
+        skillId: "skills:github",
+      }),
+    ).rejects.toThrow("GitHub Skill Sync rollout is disabled");
+
+    expect(inserts).toEqual([]);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("does not schedule another GitHub verification action while the content scan is active", async () => {
@@ -1899,6 +2571,308 @@ describe("securityScan", () => {
     });
   });
 
+  it("dry-runs failed security scan recovery without changing jobs", async () => {
+    const { ctx, patches } = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:before-window",
+        status: "failed",
+        updatedAt: 99,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish-failed",
+        status: "failed",
+        source: "publish",
+        updatedAt: 100,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual-failed",
+        status: "failed",
+        source: "manual",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:manual",
+        updatedAt: 101,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:succeeded",
+        status: "succeeded",
+        updatedAt: 102,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:after-window",
+        status: "failed",
+        updatedAt: 103,
+      }),
+    ]);
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx, {
+      dryRun: true,
+      failedAfter: 100,
+      failedBefore: 103,
+      limit: 10,
+    });
+
+    expect(result).toEqual({
+      dryRun: true,
+      matched: 2,
+      requeued: 0,
+      hasMore: false,
+      bySource: { manual: 1, publish: 1 },
+      byTargetKind: { skillScanRequest: 1, skillVersion: 1 },
+      sampleJobIds: ["securityScanJobs:publish-failed", "securityScanJobs:manual-failed"],
+    });
+    expect(patches).toEqual([]);
+  });
+
+  it("requeues failed jobs and resets uploaded scan-request state", async () => {
+    const firstCtx = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:publish-failed",
+        status: "failed",
+        source: "publish",
+        attempts: 3,
+        updatedAt: 100,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual-failed",
+        status: "failed",
+        source: "manual",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:manual",
+        attempts: 3,
+        updatedAt: 101,
+      }),
+    ]);
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(firstCtx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+      limit: 1,
+    });
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      matched: 1,
+      requeued: 1,
+      hasMore: true,
+      sampleJobIds: ["securityScanJobs:publish-failed"],
+    });
+    expect(firstCtx.patches).toHaveLength(1);
+    expect(firstCtx.patches[0]).toMatchObject({
+      id: "securityScanJobs:publish-failed",
+      patch: {
+        status: "queued",
+        attempts: 0,
+        lastError: undefined,
+        completedAt: undefined,
+      },
+    });
+
+    const secondCtx = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:manual-failed",
+        status: "failed",
+        source: "manual",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:manual",
+        attempts: 3,
+        updatedAt: 101,
+      }),
+    ]);
+    const second = await requeueFailedSecurityScanJobsInternalHandler(secondCtx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+    });
+
+    expect(second).toMatchObject({ matched: 1, requeued: 1, hasMore: false });
+    expect(secondCtx.patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "securityScanJobs:manual-failed",
+          patch: expect.objectContaining({
+            status: "queued",
+            attempts: 0,
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skillScanRequests:manual",
+          patch: expect.objectContaining({
+            status: "queued",
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("does not revive catalog attempts through generic failed-job recovery", async () => {
+    const ctx = makeFailedScanRecoveryCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:catalog-failed",
+          status: "failed",
+          source: "skills-sh-catalog-test",
+          targetKind: "skillScanRequest",
+          skillVersionId: undefined,
+          skillScanRequestId: "skillScanRequests:catalog",
+          attempts: 3,
+          updatedAt: 150,
+        }),
+      ],
+      {
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+          status: "failed",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          status: "failed",
+        },
+      },
+    );
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+    });
+
+    expect(result).toMatchObject({
+      matched: 0,
+      requeued: 0,
+      hasMore: false,
+    });
+    expect(ctx.patches).toEqual([]);
+  });
+
+  it("does not let catalog failures hide native recovery candidates", async () => {
+    const ctx = makeFailedScanRecoveryCtx([
+      makeScanJob({
+        _id: "securityScanJobs:catalog-failed",
+        status: "failed",
+        source: "skills-sh-catalog-test",
+        updatedAt: 100,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:native-failed",
+        status: "failed",
+        source: "manual",
+        updatedAt: 101,
+      }),
+    ]);
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+      limit: 1,
+    });
+
+    expect(result).toMatchObject({
+      matched: 1,
+      requeued: 1,
+      hasMore: false,
+      sampleJobIds: ["securityScanJobs:native-failed"],
+    });
+    expect(ctx.patches).toEqual([
+      expect.objectContaining({
+        id: "securityScanJobs:native-failed",
+        patch: expect.objectContaining({ status: "queued" }),
+      }),
+    ]);
+  });
+
+  it("restores failed GitHub-backed scans to pending while requeueing", async () => {
+    const ctx = makeFailedScanRecoveryCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:github-failed",
+          status: "failed",
+          source: "github",
+          targetKind: "skillScanRequest",
+          skillVersionId: undefined,
+          skillScanRequestId: "skillScanRequests:github",
+          attempts: 3,
+          updatedAt: 150,
+        }),
+      ],
+      {
+        "skillScanRequests:github": {
+          _id: "skillScanRequests:github",
+          githubSkillScanId: "githubSkillScans:github",
+          status: "failed",
+        },
+        "githubSkillScans:github": {
+          _id: "githubSkillScans:github",
+          skillId: "skills:github",
+          contentHash: "content-hash",
+          status: "failed",
+        },
+        "skills:github": {
+          _id: "skills:github",
+          installKind: "github",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+          slug: "github-skill",
+          displayName: "GitHub Skill",
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            comments: 0,
+            versions: 0,
+          },
+          moderationStatus: "hidden",
+          moderationReason: "scanner.failed",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 150,
+        },
+      },
+    );
+
+    const result = await requeueFailedSecurityScanJobsInternalHandler(ctx.ctx, {
+      dryRun: false,
+      failedAfter: 100,
+      failedBefore: 200,
+    });
+
+    expect(result).toMatchObject({ matched: 1, requeued: 1, hasMore: false });
+    expect(ctx.patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "githubSkillScans:github",
+          patch: expect.objectContaining({
+            status: "pending",
+            lastError: undefined,
+            completedAt: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skills:github",
+          patch: expect.objectContaining({
+            githubScanStatus: "pending",
+            moderationStatus: "active",
+            moderationReason: "pending.scan",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("lets platform moderators request package rescans", async () => {
     const { ctx, inserts } = makeRescanCtx({
       actorId: "users:moderator",
@@ -2223,19 +3197,114 @@ describe("securityScan", () => {
     expect(getUrl).toHaveBeenCalledWith("storage:skill");
   });
 
-  it("claims one hydrated scan job at a time to bound signed URL response size", async () => {
+  it("claims several lightweight leases in one mutation without hydrating signed URLs", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
-    const runMutation = vi.fn(async () => []);
+    const leases = Array.from({ length: 4 }, (_, index) => ({
+      ...claimedJob,
+      _id: `securityScanJobs:${index}`,
+      leaseToken: `lease-${index}`,
+    }));
+    const runMutation = vi.fn(async () => leases);
+    const runQuery = vi.fn();
+    const getUrl = vi.fn();
 
-    await claimCodexScanJobsHandler(
-      { runMutation, runQuery: vi.fn(), storage: { getUrl: vi.fn() } },
-      { token: "worker-secret", workerId: "worker-1", limit: 10 },
+    const result = await claimCodexScanJobLeasesHandler(
+      { runMutation, runQuery, storage: { getUrl } },
+      {
+        token: "worker-secret",
+        workerId: "worker-1",
+        lane: "shared",
+        limit: 4,
+      },
     );
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ workerId: "worker-1", limit: 1 }),
+      expect.objectContaining({
+        workerId: "worker-1",
+        lane: "shared",
+        limit: 4,
+      }),
     );
+    expect(result).toEqual(leases);
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("forwards exact Test GitHub Skill Sync job IDs to the lease mutation", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const leases = [
+      {
+        ...claimedJob,
+        _id: "securityScanJobs:github-sync",
+        leaseToken: "lease-github-sync",
+      },
+    ];
+    const runMutation = vi.fn(async () => leases);
+
+    const result = await claimCodexScanJobLeasesHandler(
+      { runMutation, runQuery: vi.fn(), storage: { getUrl: vi.fn() } },
+      {
+        token: "worker-secret",
+        workerId: "worker-1",
+        limit: 1,
+        targetedJobIds: ["securityScanJobs:github-sync"],
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        targetedJobIds: ["securityScanJobs:github-sync"],
+      }),
+    );
+    expect(result).toEqual(leases);
+  });
+
+  it("refuses to hydrate a lease owned by a different worker", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        ...claimedJob,
+        workerId: "worker-2",
+      },
+    }));
+    const getUrl = vi.fn();
+
+    await expect(
+      hydrateCodexScanJobHandler(
+        { runMutation: vi.fn(), runQuery, storage: { getUrl } },
+        {
+          token: "worker-secret",
+          workerId: "worker-1",
+          jobId: "securityScanJobs:1",
+          leaseToken: "lease-token",
+        },
+      ),
+    ).rejects.toThrow("Lease mismatch");
+    expect(getUrl).not.toHaveBeenCalled();
+  });
+
+  it("exposes a worker-authenticated retry-safe lease requeue action", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runMutation = vi.fn(async () => ({ ok: true, nextRunAt: 1234 }));
+
+    await expect(
+      requeueCodexScanJobLeaseHandler(
+        { runMutation },
+        {
+          token: "worker-secret",
+          workerId: "worker-1",
+          jobId: "securityScanJobs:1",
+          leaseToken: "lease-token",
+        },
+      ),
+    ).resolves.toEqual({ ok: true, nextRunAt: 1234 });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      workerId: "worker-1",
+      jobId: "securityScanJobs:1",
+      leaseToken: "lease-token",
+    });
   });
 
   it("hydrates only the declared bounded GitHub file chunks", async () => {
@@ -2423,6 +3492,13 @@ describe("securityScan", () => {
         securityScanJobId: "securityScanJobs:github",
         files: [{ storageId: "storage:github-1" }],
       },
+      {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        securityScanJobId: "securityScanJobs:catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        files: [{ storageId: "storage:catalog-1" }],
+      },
     ];
     const githubFileChunk = {
       _id: "skillScanRequestFileChunks:github",
@@ -2443,6 +3519,33 @@ describe("securityScan", () => {
         return { take };
       },
     );
+    const docs: Record<string, Record<string, unknown>> = {
+      "skillsShCatalogScanAttempts:catalog": {
+        _id: "skillsShCatalogScanAttempts:catalog",
+        entryId: "skillsShCatalogEntries:catalog",
+        runId: "skillsShCatalogRuns:catalog",
+        sourceContentHash: "source-hash",
+        status: "queued",
+      },
+      "skillsShCatalogEntries:catalog": {
+        _id: "skillsShCatalogEntries:catalog",
+        sourceContentHash: "source-hash",
+        scanStatus: "queued",
+      },
+      "skillsShCatalogRuns:catalog": {
+        _id: "skillsShCatalogRuns:catalog",
+        status: "completed",
+        counts: {
+          scansCompleted: 0,
+          scansCanceled: 0,
+        },
+        operations: {
+          functionCalls: 0,
+          dbReads: 0,
+          dbWrites: 0,
+        },
+      },
+    };
     const ctx = {
       db: {
         query: vi.fn((tableName: string) => {
@@ -2455,12 +3558,17 @@ describe("securityScan", () => {
           };
         }),
         insert: vi.fn(async () => "noop"),
-        patch: vi.fn(async () => undefined),
+        patch: vi.fn(async (id: string, value: Record<string, unknown>) => {
+          docs[id] = { ...docs[id], ...value };
+        }),
         replace: vi.fn(async () => undefined),
-        get: vi.fn(async (id: string) => ({
-          _id: id,
-          targetKind: "skillScanRequest",
-        })),
+        get: vi.fn(
+          async (id: string) =>
+            docs[id] ?? {
+              _id: id,
+              targetKind: "skillScanRequest",
+            },
+        ),
         delete: vi.fn(async (id: string) => {
           deletedDocs.push(id);
         }),
@@ -2480,10 +3588,10 @@ describe("securityScan", () => {
 
     expect(result).toEqual({
       ok: true,
-      deletedRequests: 3,
+      deletedRequests: 4,
       deferredRequests: 0,
-      deletedJobs: 3,
-      deletedFiles: 4,
+      deletedJobs: 4,
+      deletedFiles: 5,
       done: true,
     });
     expect(deletedStorage).toEqual([
@@ -2491,6 +3599,7 @@ describe("securityScan", () => {
       "storage:upload-2",
       "storage:github-1",
       "storage:github-2",
+      "storage:catalog-1",
     ]);
     expect(deletedDocs).toEqual([
       "securityScanJobs:upload",
@@ -2500,7 +3609,23 @@ describe("securityScan", () => {
       "securityScanJobs:github",
       "skillScanRequestFileChunks:github",
       "skillScanRequests:github",
+      "securityScanJobs:catalog",
+      "skillScanRequests:catalog",
     ]);
+    expect(docs["skillsShCatalogScanAttempts:catalog"]).toMatchObject({
+      status: "failed",
+      verdict: "failed",
+      completedAt: expect.any(Number),
+    });
+    expect(docs["skillsShCatalogEntries:catalog"]).toMatchObject({
+      scanStatus: "failed",
+    });
+    expect(docs["skillsShCatalogRuns:catalog"]).toMatchObject({
+      counts: {
+        scansCompleted: 1,
+        scansCanceled: 0,
+      },
+    });
   });
 
   it("prunes one bounded GitHub file chunk before deleting the parent request", async () => {
@@ -2658,10 +3783,88 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
       "securityScanJobs:malicious-publish",
-      "securityScanJobs:backfill",
       "securityScanJobs:old-publish",
+      "securityScanJobs:backfill",
     ]);
     expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
+  });
+
+  it("claims only requested GitHub Skill Sync jobs in the permanent Test environment", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:unrelated",
+        source: "publish",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:github-sync",
+        source: "publish",
+        rolloutGate: "github-skill-sync",
+        createdAt: 2,
+        nextRunAt: 2,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "targeted-test-worker",
+      limit: 1,
+      targetedJobIds: ["securityScanJobs:github-sync"],
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:github-sync"]);
+    expect(patches.map((entry) => entry.id)).toEqual(["securityScanJobs:github-sync"]);
+  });
+
+  it("does not turn an empty exact claim into a broad queue claim", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:unrelated",
+        source: "publish",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "targeted-test-worker",
+      limit: 1,
+      targetedJobIds: [],
+    });
+
+    expect(claimed).toEqual([]);
+    expect(patches).toEqual([]);
+  });
+
+  it("rejects exact GitHub Skill Sync job claims outside the permanent Test rollout", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://wry-manatee-359.convex.cloud");
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:github-sync",
+        source: "publish",
+        rolloutGate: "github-skill-sync",
+        nextRunAt: 1,
+      }),
+    ]);
+
+    await expect(
+      claimQueuedJobsInternalHandler(ctx, {
+        workerId: "targeted-test-worker",
+        limit: 1,
+        targetedJobIds: ["securityScanJobs:github-sync"],
+      }),
+    ).rejects.toThrow("Exact GitHub Skill Sync job claims are Test-only");
   });
 
   it("claims bulk rescans after every supported source", async () => {
@@ -2707,11 +3910,528 @@ describe("securityScan", () => {
 
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
-      "securityScanJobs:backfill",
       "securityScanJobs:publish",
+      "securityScanJobs:backfill",
       "securityScanJobs:vt-update",
       "securityScanJobs:bulk-rescan",
     ]);
+  });
+
+  it("reserves the priority lane for manual, malicious, and publish work", async () => {
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:vt-update",
+        source: "vt-update",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish",
+        source: "publish",
+        createdAt: 2,
+        nextRunAt: 2,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:manual",
+        source: "manual",
+        createdAt: 3,
+        nextRunAt: 3,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "priority-worker",
+      lane: "priority",
+      limit: 4,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual([
+      "securityScanJobs:manual",
+      "securityScanJobs:publish",
+    ]);
+  });
+
+  it("lets shared workers help priority work before consuming bulk backlog", async () => {
+    const { ctx } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:vt-update",
+        source: "vt-update",
+        createdAt: 1,
+        nextRunAt: 1,
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:publish",
+        source: "publish",
+        createdAt: 2,
+        nextRunAt: 2,
+      }),
+    ]);
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "shared-worker",
+      lane: "shared",
+      limit: 1,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:publish"]);
+  });
+
+  it("skips queued generic GitHub scans while still claiming NVIDIA scans when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const genericJobs = Array.from({ length: 513 }, (_, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:generic-${index}`,
+        source: "publish",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:generic",
+        createdAt: index + 1,
+        nextRunAt: index + 1,
+      }),
+    );
+    const { ctx, patches } = makeClaimCtx(
+      [
+        ...genericJobs,
+        makeScanJob({
+          _id: "securityScanJobs:nvidia",
+          source: "publish",
+          targetKind: "skillScanRequest",
+          skillVersionId: undefined,
+          skillScanRequestId: "skillScanRequests:nvidia",
+          createdAt: 514,
+          nextRunAt: 514,
+        }),
+      ],
+      {
+        "skillScanRequests:generic": {
+          _id: "skillScanRequests:generic",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:generic",
+        },
+        "githubSkillScans:generic": {
+          _id: "githubSkillScans:generic",
+          githubSourceId: "githubSkillSources:generic",
+        },
+        "githubSkillSources:generic": {
+          _id: "githubSkillSources:generic",
+          repo: "acme/skills",
+        },
+        "skillScanRequests:nvidia": {
+          _id: "skillScanRequests:nvidia",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:nvidia",
+        },
+        "githubSkillScans:nvidia": {
+          _id: "githubSkillScans:nvidia",
+          githubSourceId: "githubSkillSources:nvidia",
+        },
+        "githubSkillSources:nvidia": {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+        },
+      },
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "worker-1",
+      limit: 1,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:nvidia"]);
+    expect(patches.map((entry) => entry.id)).toEqual([
+      "securityScanJobs:nvidia",
+      "skillScanRequests:nvidia",
+    ]);
+  });
+
+  it("lets the catalog lane claim only the lowest-priority catalog source", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const { ctx } = makeClaimCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:manual",
+          source: "manual",
+          priority: 100,
+          createdAt: 1,
+          nextRunAt: 1,
+        }),
+        makeScanJob({
+          _id: "securityScanJobs:publish",
+          source: "publish",
+          priority: 0,
+          createdAt: 2,
+          nextRunAt: 2,
+        }),
+        makeScanJob({
+          _id: "securityScanJobs:catalog",
+          source: "skills-sh-catalog-test",
+          skillScanRequestId: "skillScanRequests:catalog",
+          priority: -100,
+          createdAt: 3,
+          nextRunAt: 3,
+        }),
+      ],
+      {
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          skillScanRequestId: "skillScanRequests:catalog",
+          securityScanJobId: "securityScanJobs:catalog",
+          status: "queued",
+        },
+        "skillsShCatalogRuns:catalog": {
+          _id: "skillsShCatalogRuns:catalog",
+          status: "completed",
+        },
+      },
+      {
+        key: "global",
+        mode: "staging-live",
+        paused: false,
+        scanAdmissionEnabled: true,
+        maxNativeQueued: 10,
+        maxNativeInFlight: 10,
+        maxCatalogQueued: 10,
+        maxCatalogInFlight: 1,
+      },
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 3,
+      leaseMs: 60_000,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:catalog"]);
+  });
+
+  it("skips paused catalog runs without starving later runnable jobs", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const jobs = ["paused", "active"].map((kind, index) =>
+      makeScanJob({
+        _id: `securityScanJobs:${kind}`,
+        source: "skills-sh-catalog-test",
+        targetKind: "skillScanRequest",
+        skillScanRequestId: `skillScanRequests:${kind}`,
+        createdAt: index,
+        nextRunAt: index,
+      }),
+    );
+    const docs = Object.fromEntries(
+      jobs.flatMap((job, index) => {
+        const kind = index === 0 ? "paused" : "active";
+        return [
+          [
+            `skillScanRequests:${kind}`,
+            {
+              _id: `skillScanRequests:${kind}`,
+              sourceKind: "skills-sh-catalog",
+              skillsShCatalogAttemptId: `skillsShCatalogScanAttempts:${kind}`,
+            },
+          ],
+          [
+            `skillsShCatalogScanAttempts:${kind}`,
+            {
+              _id: `skillsShCatalogScanAttempts:${kind}`,
+              runId: `skillsShCatalogRuns:${kind}`,
+              skillScanRequestId: `skillScanRequests:${kind}`,
+              securityScanJobId: job._id,
+              status: "queued",
+            },
+          ],
+          [
+            `skillsShCatalogRuns:${kind}`,
+            {
+              _id: `skillsShCatalogRuns:${kind}`,
+              status: kind === "paused" ? "paused" : "completed",
+            },
+          ],
+        ];
+      }),
+    );
+    const { ctx } = makeClaimCtx(jobs, docs, {
+      key: "global",
+      mode: "staging-live",
+      paused: false,
+      scanAdmissionEnabled: true,
+      maxNativeQueued: 10,
+      maxNativeInFlight: 10,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+    });
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 1,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:active"]);
+  });
+
+  it("stops catalog claims when the native queue is unhealthy", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const { ctx } = makeClaimCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:native",
+          source: "manual",
+          status: "queued",
+        }),
+        makeScanJob({
+          _id: "securityScanJobs:catalog",
+          source: "skills-sh-catalog-test",
+          targetKind: "skillScanRequest",
+          skillScanRequestId: "skillScanRequests:catalog",
+        }),
+      ],
+      {
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          skillScanRequestId: "skillScanRequests:catalog",
+          securityScanJobId: "securityScanJobs:catalog",
+          status: "queued",
+        },
+        "skillsShCatalogRuns:catalog": {
+          _id: "skillsShCatalogRuns:catalog",
+          status: "completed",
+        },
+      },
+      {
+        key: "global",
+        mode: "staging-live",
+        paused: false,
+        scanAdmissionEnabled: true,
+        maxNativeQueued: 0,
+        maxNativeInFlight: 10,
+        maxCatalogQueued: 10,
+        maxCatalogInFlight: 1,
+      },
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 1,
+    });
+
+    expect(claimed).toEqual([]);
+  });
+
+  it("ignores deterministic attempts when checking real catalog claim capacity", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const catalogJob = makeScanJob({
+      _id: "securityScanJobs:catalog",
+      source: "skills-sh-catalog-test",
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:catalog",
+    });
+    const { ctx } = makeClaimCtx(
+      [catalogJob],
+      {
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          dispatchKind: "real",
+          skillScanRequestId: "skillScanRequests:catalog",
+          securityScanJobId: catalogJob._id,
+          status: "queued",
+        },
+        "skillsShCatalogScanAttempts:deterministic-queued": {
+          _id: "skillsShCatalogScanAttempts:deterministic-queued",
+          dispatchKind: "deterministic",
+          status: "queued",
+        },
+        "skillsShCatalogScanAttempts:deterministic-running": {
+          _id: "skillsShCatalogScanAttempts:deterministic-running",
+          dispatchKind: "deterministic",
+          status: "running",
+        },
+        "skillsShCatalogRuns:catalog": {
+          _id: "skillsShCatalogRuns:catalog",
+          status: "completed",
+        },
+      },
+      {
+        key: "global",
+        mode: "staging-live",
+        paused: false,
+        scanAdmissionEnabled: true,
+        maxNativeQueued: 10,
+        maxNativeInFlight: 10,
+        maxCatalogQueued: 1,
+        maxCatalogInFlight: 1,
+      },
+    );
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 1,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:catalog"]);
+  });
+
+  it("drains an admitted catalog backlog above a lowered queue cap", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const jobs = [0, 1].map((index) =>
+      makeScanJob({
+        _id: `securityScanJobs:catalog-${index}`,
+        source: "skills-sh-catalog-test",
+        targetKind: "skillScanRequest",
+        skillScanRequestId: `skillScanRequests:catalog-${index}`,
+        createdAt: index,
+        nextRunAt: index,
+      }),
+    );
+    const docs = Object.fromEntries(
+      jobs.flatMap((job, index) => [
+        [
+          `skillScanRequests:catalog-${index}`,
+          {
+            _id: `skillScanRequests:catalog-${index}`,
+            sourceKind: "skills-sh-catalog",
+            skillsShCatalogAttemptId: `skillsShCatalogScanAttempts:catalog-${index}`,
+          },
+        ],
+        [
+          `skillsShCatalogScanAttempts:catalog-${index}`,
+          {
+            _id: `skillsShCatalogScanAttempts:catalog-${index}`,
+            runId: "skillsShCatalogRuns:catalog",
+            dispatchKind: "real",
+            skillScanRequestId: `skillScanRequests:catalog-${index}`,
+            securityScanJobId: job._id,
+            status: "queued",
+          },
+        ],
+      ]),
+    );
+    docs["skillsShCatalogRuns:catalog"] = {
+      _id: "skillsShCatalogRuns:catalog",
+      status: "completed",
+    };
+    const { ctx } = makeClaimCtx(jobs, docs, {
+      key: "global",
+      mode: "staging-live",
+      paused: false,
+      scanAdmissionEnabled: true,
+      maxNativeQueued: 10,
+      maxNativeInFlight: 10,
+      maxCatalogQueued: 1,
+      maxCatalogInFlight: 1,
+    });
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 2,
+    });
+
+    expect(claimed.map((job) => job._id)).toEqual(["securityScanJobs:catalog-0"]);
+    expect(docs["skillsShCatalogScanAttempts:catalog-0"]).toMatchObject({
+      status: "running",
+    });
+    expect(docs["skillsShCatalogScanAttempts:catalog-1"]).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  it("caps catalog claims at the configured in-flight capacity", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_DISABLE_CRONS", "1");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "academic-chihuahua-392");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://academic-chihuahua-392.convex.cloud");
+    const jobs = [0, 1].map((index) =>
+      makeScanJob({
+        _id: `securityScanJobs:catalog-${index}`,
+        source: "skills-sh-catalog-test",
+        targetKind: "skillScanRequest",
+        skillScanRequestId: `skillScanRequests:catalog-${index}`,
+        createdAt: index,
+        nextRunAt: index,
+      }),
+    );
+    const docs = Object.fromEntries(
+      jobs.flatMap((job, index) => [
+        [
+          `skillScanRequests:catalog-${index}`,
+          {
+            _id: `skillScanRequests:catalog-${index}`,
+            sourceKind: "skills-sh-catalog",
+            skillsShCatalogAttemptId: `skillsShCatalogScanAttempts:catalog-${index}`,
+          },
+        ],
+        [
+          `skillsShCatalogScanAttempts:catalog-${index}`,
+          {
+            _id: `skillsShCatalogScanAttempts:catalog-${index}`,
+            runId: "skillsShCatalogRuns:catalog",
+            skillScanRequestId: `skillScanRequests:catalog-${index}`,
+            securityScanJobId: job._id,
+            status: "queued",
+          },
+        ],
+      ]),
+    );
+    docs["skillsShCatalogRuns:catalog"] = {
+      _id: "skillsShCatalogRuns:catalog",
+      status: "completed",
+    };
+    const { ctx } = makeClaimCtx(jobs, docs, {
+      key: "global",
+      mode: "staging-live",
+      paused: false,
+      scanAdmissionEnabled: true,
+      maxNativeQueued: 10,
+      maxNativeInFlight: 10,
+      maxCatalogQueued: 10,
+      maxCatalogInFlight: 1,
+    });
+
+    const claimed = await claimQueuedJobsInternalHandler(ctx, {
+      workerId: "catalog-worker",
+      lane: "catalog",
+      limit: 2,
+    });
+
+    expect(claimed).toHaveLength(1);
   });
 
   it("caps each Codex scan claim request", async () => {
@@ -2767,6 +4487,331 @@ describe("securityScan", () => {
       "securityScanJobs:manual-1",
       "securityScanJobs:manual-2",
     ]);
+  });
+
+  it("recovers expired leases separately from normal claim transactions", async () => {
+    const { ctx, patches } = makeClaimCtx([
+      makeScanJob({
+        _id: "securityScanJobs:expired",
+        status: "running",
+        leaseToken: "expired-lease",
+        leaseExpiresAt: Date.now() - 1,
+        workerId: "stale-worker",
+      }),
+      makeScanJob({
+        _id: "securityScanJobs:active",
+        status: "running",
+        leaseToken: "active-lease",
+        leaseExpiresAt: Date.now() + 60_000,
+        workerId: "active-worker",
+      }),
+    ]);
+
+    await expect(requeueExpiredCodexScanJobsInternalHandler(ctx, {})).resolves.toEqual({
+      requeued: 1,
+    });
+    expect(patches).toEqual([
+      expect.objectContaining({
+        id: "securityScanJobs:expired",
+        patch: expect.objectContaining({
+          status: "queued",
+          leaseToken: undefined,
+          workerId: undefined,
+        }),
+      }),
+    ]);
+  });
+
+  it("requeues the existing catalog attempt when its worker lease expires", async () => {
+    const { ctx, patches } = makeClaimCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:catalog-expired",
+          status: "running",
+          source: "skills-sh-catalog-test",
+          targetKind: "skillScanRequest",
+          skillScanRequestId: "skillScanRequests:catalog",
+          leaseToken: "expired",
+          leaseExpiresAt: Date.now() - 1,
+          workerId: "stale-worker",
+        }),
+      ],
+      {
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+          status: "running",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          skillScanRequestId: "skillScanRequests:catalog",
+          securityScanJobId: "securityScanJobs:catalog-expired",
+          status: "running",
+        },
+        "skillsShCatalogRuns:catalog": {
+          _id: "skillsShCatalogRuns:catalog",
+          status: "completed",
+        },
+      },
+    );
+
+    await expect(requeueExpiredCodexScanJobsInternalHandler(ctx, {})).resolves.toEqual({
+      requeued: 1,
+    });
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "skillScanRequests:catalog",
+          patch: expect.objectContaining({ status: "queued" }),
+        }),
+        expect.objectContaining({
+          id: "skillsShCatalogScanAttempts:catalog",
+          patch: expect.objectContaining({ status: "queued" }),
+        }),
+      ]),
+    );
+  });
+
+  it("terminalizes an active catalog attempt when an expired lease belongs to a canceled run", async () => {
+    const { ctx, patches } = makeClaimCtx(
+      [
+        makeScanJob({
+          _id: "securityScanJobs:catalog-expired-canceled",
+          status: "running",
+          source: "skills-sh-catalog-test",
+          targetKind: "skillScanRequest",
+          skillScanRequestId: "skillScanRequests:catalog",
+          leaseToken: "expired",
+          leaseExpiresAt: Date.now() - 1,
+          workerId: "stale-worker",
+        }),
+      ],
+      {
+        "skillsShCatalogEntries:catalog": {
+          _id: "skillsShCatalogEntries:catalog",
+          sourceContentHash: "source-hash",
+          scanStatus: "queued",
+          publicVisible: false,
+        },
+        "skillScanRequests:catalog": {
+          _id: "skillScanRequests:catalog",
+          sourceKind: "skills-sh-catalog",
+          skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+          status: "running",
+        },
+        "skillsShCatalogScanAttempts:catalog": {
+          _id: "skillsShCatalogScanAttempts:catalog",
+          entryId: "skillsShCatalogEntries:catalog",
+          runId: "skillsShCatalogRuns:catalog",
+          sourceContentHash: "source-hash",
+          skillScanRequestId: "skillScanRequests:catalog",
+          securityScanJobId: "securityScanJobs:catalog-expired-canceled",
+          status: "running",
+        },
+        "skillsShCatalogRuns:catalog": {
+          _id: "skillsShCatalogRuns:catalog",
+          status: "canceled",
+          counts: {
+            scansCompleted: 0,
+            scansCanceled: 0,
+          },
+          operations: {
+            functionCalls: 0,
+            dbReads: 0,
+            dbWrites: 0,
+          },
+        },
+      },
+    );
+
+    await expect(requeueExpiredCodexScanJobsInternalHandler(ctx, {})).resolves.toEqual({
+      requeued: 0,
+    });
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "skillsShCatalogScanAttempts:catalog",
+          patch: expect.objectContaining({
+            status: "canceled",
+            completedAt: expect.any(Number),
+          }),
+        }),
+        expect.objectContaining({
+          id: "skillsShCatalogEntries:catalog",
+          patch: expect.objectContaining({
+            scanStatus: "canceled",
+            publicVisible: false,
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("requeues hydration failures without consuming a scanner attempt", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    const { ctx, patches } = makeFailurePersistenceCtx({
+      "securityScanJobs:1": {
+        ...claimedJob,
+        workerId: "worker-1",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:1",
+        attempts: 2,
+      },
+      "skillScanRequests:1": {
+        _id: "skillScanRequests:1",
+        status: "running",
+      },
+    });
+
+    await expect(
+      requeueJobLeaseInternalHandler(ctx, {
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        workerId: "worker-1",
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "securityScanJobs:1",
+          patch: expect.objectContaining({
+            status: "queued",
+            attempts: 1,
+            leaseToken: undefined,
+            workerId: undefined,
+          }),
+        }),
+        expect.objectContaining({
+          id: "skillScanRequests:1",
+          patch: expect.objectContaining({ status: "queued" }),
+        }),
+      ]),
+    );
+  });
+
+  it("requeues hydration failures on the existing catalog attempt", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    const { ctx, patches } = makeFailurePersistenceCtx({
+      "securityScanJobs:catalog": {
+        ...claimedJob,
+        _id: "securityScanJobs:catalog",
+        source: "skills-sh-catalog-test",
+        leaseToken: "lease",
+        workerId: "worker-1",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:catalog",
+        attempts: 2,
+      },
+      "skillScanRequests:catalog": {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        status: "running",
+      },
+      "skillsShCatalogScanAttempts:catalog": {
+        _id: "skillsShCatalogScanAttempts:catalog",
+        runId: "skillsShCatalogRuns:catalog",
+        skillScanRequestId: "skillScanRequests:catalog",
+        securityScanJobId: "securityScanJobs:catalog",
+        status: "running",
+      },
+      "skillsShCatalogRuns:catalog": {
+        _id: "skillsShCatalogRuns:catalog",
+        status: "completed",
+      },
+    });
+
+    await expect(
+      requeueJobLeaseInternalHandler(ctx, {
+        jobId: "securityScanJobs:catalog",
+        leaseToken: "lease",
+        workerId: "worker-1",
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(patches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "skillScanRequests:catalog",
+          patch: expect.objectContaining({ status: "queued" }),
+        }),
+        expect.objectContaining({
+          id: "skillsShCatalogScanAttempts:catalog",
+          patch: expect.objectContaining({ status: "queued" }),
+        }),
+      ]),
+    );
+  });
+
+  it("terminalizes an active catalog attempt when hydration retry is denied by cancellation", async () => {
+    vi.stubEnv("SECURITY_SCAN_EVENT_DISPATCH_ENABLED", "0");
+    const { ctx, records } = makeFailurePersistenceCtx({
+      "securityScanJobs:catalog": {
+        ...claimedJob,
+        _id: "securityScanJobs:catalog",
+        source: "skills-sh-catalog-test",
+        leaseToken: "lease",
+        workerId: "worker-1",
+        targetKind: "skillScanRequest",
+        skillVersionId: undefined,
+        skillScanRequestId: "skillScanRequests:catalog",
+        attempts: 2,
+      },
+      "skillsShCatalogEntries:catalog": {
+        _id: "skillsShCatalogEntries:catalog",
+        sourceContentHash: "source-hash",
+        scanStatus: "queued",
+        publicVisible: false,
+      },
+      "skillScanRequests:catalog": {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        status: "running",
+      },
+      "skillsShCatalogScanAttempts:catalog": {
+        _id: "skillsShCatalogScanAttempts:catalog",
+        entryId: "skillsShCatalogEntries:catalog",
+        runId: "skillsShCatalogRuns:catalog",
+        sourceContentHash: "source-hash",
+        skillScanRequestId: "skillScanRequests:catalog",
+        securityScanJobId: "securityScanJobs:catalog",
+        status: "running",
+      },
+      "skillsShCatalogRuns:catalog": {
+        _id: "skillsShCatalogRuns:catalog",
+        status: "canceled",
+        counts: {
+          scansCompleted: 0,
+          scansCanceled: 0,
+        },
+        operations: {
+          functionCalls: 0,
+          dbReads: 0,
+          dbWrites: 0,
+        },
+      },
+    });
+
+    await expect(
+      requeueJobLeaseInternalHandler(ctx, {
+        jobId: "securityScanJobs:catalog",
+        leaseToken: "lease",
+        workerId: "worker-1",
+      }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(records.get("securityScanJobs:catalog")).toMatchObject({ status: "failed" });
+    expect(records.get("skillsShCatalogScanAttempts:catalog")).toMatchObject({
+      status: "canceled",
+      completedAt: expect.any(Number),
+    });
+    expect(records.get("skillsShCatalogEntries:catalog")).toMatchObject({
+      scanStatus: "canceled",
+      publicVisible: false,
+    });
   });
 
   it("reports queued scan position for manual scan requests", async () => {
@@ -2997,6 +5042,167 @@ describe("securityScan", () => {
     expect(stored.issues[0]?.finding?.length).toBeLessThan(longSnippet.length);
   });
 
+  it("keeps the scan request and job retryable when catalog result persistence fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:catalog",
+        targetKind: "skillScanRequest",
+        leaseToken: "placeholder",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        sha256hash: "artifact-hash",
+      },
+    }));
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("attemptId" in args) throw new Error("catalog result unavailable");
+      return { ok: true };
+    });
+
+    await expect(
+      completeCodexScanJobHandler(
+        { runMutation, runQuery },
+        {
+          token: "placeholder",
+          jobId: "securityScanJobs:catalog",
+          leaseToken: "placeholder",
+          llmAnalysis: { status: "clean", checkedAt: 123 },
+        },
+      ),
+    ).rejects.toThrow("catalog result unavailable");
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        attemptId: "skillsShCatalogScanAttempts:catalog",
+        artifactContentHash: "artifact-hash",
+        verdict: "clean",
+      }),
+    );
+  });
+
+  it("terminalizes a catalog attempt, request, and job through one mutation", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:catalog",
+        targetKind: "skillScanRequest",
+        leaseToken: "lease-token",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        sha256hash: "artifact-hash",
+      },
+    }));
+    const runMutation = vi.fn(async () => ({ ok: true }));
+
+    await completeCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "placeholder",
+        jobId: "securityScanJobs:catalog",
+        leaseToken: "lease-token",
+        runId: "clawscan-run",
+        llmAnalysis: { status: "clean", checkedAt: 123 },
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({
+        attemptId: "skillsShCatalogScanAttempts:catalog",
+        scanId: "skillScanRequests:catalog",
+        jobId: "securityScanJobs:catalog",
+        leaseToken: "lease-token",
+        artifactContentHash: "artifact-hash",
+        verdict: "clean",
+        runId: "clawscan-run",
+        llmAnalysis: { status: "clean", checkedAt: 123 },
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(2, expect.anything(), {});
+  });
+
+  it("acknowledges a committed catalog completion when queue refill fails", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:catalog",
+        targetKind: "skillScanRequest",
+        leaseToken: "lease-token",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        sha256hash: "artifact-hash",
+      },
+    }));
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, applied: true })
+      .mockRejectedValueOnce(new Error("dispatch unavailable"));
+
+    await expect(
+      completeCodexScanJobHandler(
+        { runMutation, runQuery },
+        {
+          token: "placeholder",
+          jobId: "securityScanJobs:catalog",
+          leaseToken: "lease-token",
+          runId: "clawscan-run",
+          llmAnalysis: { status: "clean", checkedAt: 123 },
+        },
+      ),
+    ).resolves.toEqual({ ok: true, applied: true });
+
+    expect(runMutation).toHaveBeenCalledTimes(2);
+  });
+
+  it("routes a repeated terminal catalog callback to idempotent completion", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:catalog",
+        targetKind: "skillScanRequest",
+        status: "succeeded",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        sha256hash: "artifact-hash",
+      },
+    }));
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, applied: true, publicVisible: false })
+      .mockResolvedValueOnce({ ok: true });
+
+    await expect(
+      completeCodexScanJobHandler(
+        { runMutation, runQuery },
+        {
+          token: "placeholder",
+          jobId: "securityScanJobs:catalog",
+          leaseToken: "expired-lease-token",
+          runId: "clawscan-run",
+          llmAnalysis: { status: "clean", checkedAt: 123 },
+        },
+      ),
+    ).resolves.toEqual({ ok: true, applied: true, publicVisible: false });
+
+    expect(runMutation).toHaveBeenCalledTimes(2);
+  });
+
   it("clears legacy plugin SkillSpector results when no new analysis is produced", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
     const runQuery = vi.fn(async () => ({
@@ -3113,7 +5319,7 @@ describe("securityScan", () => {
       },
     );
 
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(3);
     expect(runMutation).toHaveBeenNthCalledWith(
       1,
       expect.anything(),
@@ -3130,6 +5336,7 @@ describe("securityScan", () => {
         leaseToken: "lease-token",
       }),
     );
+    expect(runMutation).toHaveBeenNthCalledWith(3, expect.anything(), {});
   });
 
   it.each([
@@ -3316,6 +5523,264 @@ describe("securityScan", () => {
       });
     },
   );
+
+  it("prepares and finalizes only the skill's exact pending GitHub candidate", async () => {
+    const candidateCommit = "b".repeat(40);
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skills:1",
+        {
+          _id: "skills:1",
+          installKind: "hosted",
+          latestVersionId: "skillVersions:1",
+          githubPendingCandidateId: "githubSkillCandidates:1",
+          ownerUserId: "users:1",
+          slug: "demo",
+          displayName: "Demo",
+        },
+      ],
+      [
+        "githubSkillCandidates:1",
+        {
+          _id: "githubSkillCandidates:1",
+          skillId: "skills:1",
+          githubSourceId: "githubSkillSources:generic",
+          githubPath: "skills/demo",
+          githubCommit: candidateCommit,
+          githubContentHash: "candidate-hash",
+        },
+      ],
+    ]);
+    const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+    const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+      const id = `${table}:new-${inserts.length + 1}`;
+      docs.set(id, { _id: id, ...doc });
+      inserts.push({ table, doc });
+      return id;
+    });
+    const patch = vi.fn(async (id: string, next: Record<string, unknown>) => {
+      const doc = docs.get(id);
+      if (!doc) return;
+      for (const [key, value] of Object.entries(next)) {
+        if (value === undefined) delete doc[key];
+        else doc[key] = value;
+      }
+    });
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () =>
+          table === "githubSkillScans"
+            ? (Array.from(docs.values()).find((doc) =>
+                String(doc._id).startsWith("githubSkillScans:"),
+              ) ?? null)
+            : null,
+        ),
+        take: vi.fn(async () =>
+          table === "skillScanRequestFileChunks"
+            ? Array.from(docs.values())
+                .filter((doc) => String(doc._id).startsWith("skillScanRequestFileChunks:"))
+                .slice(0, 1)
+            : [],
+        ),
+      })),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query,
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+    const args = {
+      skillId: "skills:1",
+      contentHash: "candidate-hash",
+      commit: candidateCommit,
+      parsed: { frontmatter: {} },
+      staticScan: {
+        status: "clean" as const,
+        reasonCodes: [],
+        findings: [] as [],
+        summary: "No static findings.",
+        engineVersion: "test",
+        checkedAt: 2,
+      },
+    };
+
+    const prepared = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, args);
+
+    expect(prepared).toMatchObject({
+      ok: true,
+      prepared: true,
+      scanId: expect.stringMatching(/^githubSkillScans:/),
+      requestId: expect.stringMatching(/^skillScanRequests:/),
+    });
+    const scan = Array.from(docs.values()).find((doc) =>
+      String(doc._id).startsWith("githubSkillScans:"),
+    );
+    expect(scan).toMatchObject({
+      githubSourceId: "githubSkillSources:generic",
+      commit: candidateCommit,
+      path: "skills/demo",
+      contentHash: "candidate-hash",
+    });
+    if (!prepared.requestId) throw new Error("missing prepared request");
+    await appendGitHubSkillScanRequestFilesInternalHandler(ctx as never, {
+      requestId: prepared.requestId,
+      chunkIndex: 0,
+      files: [{ path: "SKILL.md", size: 10, storageId: "storage:1", sha256: "sha256" }],
+    });
+
+    await expect(
+      finalizeGitHubSkillScanRequestInternalHandler(ctx as never, {
+        requestId: prepared.requestId,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      queued: true,
+      scanId: scan?._id,
+    });
+    expect(inserts.map((entry) => entry.table)).toEqual([
+      "githubSkillScans",
+      "skillScanRequests",
+      "skillScanRequestFileChunks",
+      "securityScanJobs",
+    ]);
+
+    await expect(
+      prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
+        ...args,
+        contentHash: "stale-hash",
+      }),
+    ).resolves.toEqual({ ok: true, skipped: "stale-or-missing" });
+  });
+
+  it("does not prepare generic GitHub scan state when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "skills:1") {
+            return {
+              _id: "skills:1",
+              installKind: "github",
+              githubSourceId: "githubSkillSources:generic",
+              githubPath: "skills/demo",
+              githubCurrentStatus: "present",
+              githubCurrentCommit: "a".repeat(40),
+              githubCurrentContentHash: "content-hash",
+              ownerUserId: "users:1",
+              slug: "demo",
+              displayName: "Demo",
+            };
+          }
+          if (id === "githubSkillSources:generic") {
+            return { _id: id, repo: "acme/skills" };
+          }
+          return null;
+        }),
+        query: vi.fn(),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    await expect(
+      prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
+        skillId: "skills:1",
+        contentHash: "content-hash",
+        commit: "a".repeat(40),
+        parsed: { frontmatter: {} },
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "No static findings.",
+          engineVersion: "test",
+          checkedAt: 2,
+        },
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      skipped: "rollout-disabled",
+    });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects appending and finalizing stale generic GitHub requests when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skillScanRequests:github",
+        {
+          _id: "skillScanRequests:github",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:github",
+          status: "queued",
+          files: [],
+        },
+      ],
+      [
+        "githubSkillScans:github",
+        {
+          _id: "githubSkillScans:github",
+          githubSourceId: "githubSkillSources:generic",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:github",
+        },
+      ],
+      [
+        "githubSkillSources:generic",
+        {
+          _id: "githubSkillSources:generic",
+          repo: "acme/skills",
+        },
+      ],
+    ]);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    await expect(
+      appendGitHubSkillScanRequestFilesInternalHandler(ctx as never, {
+        requestId: "skillScanRequests:github",
+        chunkIndex: 0,
+        files: [
+          {
+            path: "SKILL.md",
+            size: 10,
+            storageId: "storage:1",
+            sha256: "sha256",
+          },
+        ],
+      }),
+    ).rejects.toThrow("GitHub Skill Sync rollout is disabled");
+    await expect(
+      finalizeGitHubSkillScanRequestInternalHandler(ctx as never, {
+        requestId: "skillScanRequests:github",
+      }),
+    ).rejects.toThrow("GitHub Skill Sync rollout is disabled");
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
 
   it("lets forced GitHub-backed rescans recover incomplete pending requests without jobs", async () => {
     const now = 1_781_570_600_000;
@@ -3635,6 +6100,209 @@ describe("securityScan", () => {
     const requestError = String(records.get("skillScanRequests:1")?.lastError);
     expectNoLeakedWorkerErrorSecrets(jobError);
     expectNoLeakedWorkerErrorSecrets(requestError);
+  });
+
+  it("retries catalog worker failures on the same admitted attempt", async () => {
+    const { ctx, records } = makeFailurePersistenceCtx({
+      "securityScanJobs:catalog": {
+        _id: "securityScanJobs:catalog",
+        attempts: 1,
+        leaseToken: "lease",
+        nextRunAt: 123,
+        source: "skills-sh-catalog-test",
+        skillScanRequestId: "skillScanRequests:catalog",
+        status: "running",
+        targetKind: "skillScanRequest",
+      },
+      "skillScanRequests:catalog": {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        status: "running",
+      },
+      "skillsShCatalogScanAttempts:catalog": {
+        _id: "skillsShCatalogScanAttempts:catalog",
+        runId: "skillsShCatalogRuns:catalog",
+        skillScanRequestId: "skillScanRequests:catalog",
+        securityScanJobId: "securityScanJobs:catalog",
+        status: "running",
+      },
+      "skillsShCatalogRuns:catalog": {
+        _id: "skillsShCatalogRuns:catalog",
+        status: "completed",
+      },
+    });
+
+    const result = await failJobInternalHandler(ctx, {
+      jobId: "securityScanJobs:catalog",
+      leaseToken: "lease",
+      error: "transient worker failure",
+    });
+
+    expect(result).toEqual({ ok: true, retry: true });
+    expect(records.get("skillsShCatalogScanAttempts:catalog")).toMatchObject({
+      status: "queued",
+    });
+    expect(records.get("skillScanRequests:catalog")).toMatchObject({
+      status: "queued",
+    });
+  });
+
+  it("does not apply a second catalog terminal transition after retry exhaustion", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "placeholder");
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("jobId" in args && "leaseToken" in args && "error" in args) {
+        return { ok: true, retry: false };
+      }
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:catalog",
+        targetKind: "skillScanRequest",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        sha256hash: "artifact-hash",
+      },
+    }));
+
+    await failCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "placeholder",
+        jobId: "securityScanJobs:catalog",
+        leaseToken: "placeholder",
+        error: "terminal worker failure",
+      },
+    );
+
+    expect(
+      runMutation.mock.calls.some(([, args]) => "attemptId" in (args as Record<string, unknown>)),
+    ).toBe(false);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        scanId: "skillScanRequests:catalog",
+        error: "terminal worker failure",
+      }),
+    );
+  });
+
+  it("terminalizes the linked catalog attempt when the worker retry budget is exhausted", async () => {
+    const { ctx, records } = makeFailurePersistenceCtx({
+      "securityScanJobs:catalog": {
+        _id: "securityScanJobs:catalog",
+        attempts: 3,
+        leaseToken: "lease",
+        nextRunAt: 123,
+        source: "skills-sh-catalog-test",
+        skillScanRequestId: "skillScanRequests:catalog",
+        status: "running",
+        targetKind: "skillScanRequest",
+      },
+      "skillsShCatalogEntries:catalog": {
+        _id: "skillsShCatalogEntries:catalog",
+        sourceContentHash: "source-hash",
+        scanStatus: "queued",
+        publicVisible: false,
+      },
+      "skillScanRequests:catalog": {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        status: "running",
+      },
+      "skillsShCatalogScanAttempts:catalog": {
+        _id: "skillsShCatalogScanAttempts:catalog",
+        entryId: "skillsShCatalogEntries:catalog",
+        runId: "skillsShCatalogRuns:catalog",
+        sourceContentHash: "source-hash",
+        skillScanRequestId: "skillScanRequests:catalog",
+        securityScanJobId: "securityScanJobs:catalog",
+        status: "running",
+      },
+      "skillsShCatalogRuns:catalog": {
+        _id: "skillsShCatalogRuns:catalog",
+        status: "completed",
+        counts: {
+          scansCompleted: 0,
+          scansCanceled: 0,
+        },
+        operations: {
+          functionCalls: 0,
+          dbReads: 0,
+          dbWrites: 0,
+        },
+      },
+    });
+
+    const result = await failJobInternalHandler(ctx, {
+      jobId: "securityScanJobs:catalog",
+      leaseToken: "lease",
+      error: "terminal worker failure",
+    });
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(records.get("skillsShCatalogScanAttempts:catalog")).toMatchObject({
+      status: "failed",
+      verdict: "failed",
+      completedAt: expect.any(Number),
+    });
+    expect(records.get("skillsShCatalogEntries:catalog")).toMatchObject({
+      scanStatus: "failed",
+      publicVisible: false,
+    });
+    expect(records.get("skillsShCatalogRuns:catalog")).toMatchObject({
+      counts: expect.objectContaining({ scansCompleted: 1 }),
+    });
+  });
+
+  it("does not retry catalog work after its run is canceled", async () => {
+    const { ctx, records } = makeFailurePersistenceCtx({
+      "securityScanJobs:catalog": {
+        _id: "securityScanJobs:catalog",
+        attempts: 1,
+        leaseToken: "lease",
+        nextRunAt: 123,
+        source: "skills-sh-catalog-test",
+        skillScanRequestId: "skillScanRequests:catalog",
+        status: "running",
+        targetKind: "skillScanRequest",
+      },
+      "skillScanRequests:catalog": {
+        _id: "skillScanRequests:catalog",
+        sourceKind: "skills-sh-catalog",
+        skillsShCatalogAttemptId: "skillsShCatalogScanAttempts:catalog",
+        status: "running",
+      },
+      "skillsShCatalogScanAttempts:catalog": {
+        _id: "skillsShCatalogScanAttempts:catalog",
+        runId: "skillsShCatalogRuns:catalog",
+        skillScanRequestId: "skillScanRequests:catalog",
+        securityScanJobId: "securityScanJobs:catalog",
+        status: "canceled",
+      },
+      "skillsShCatalogRuns:catalog": {
+        _id: "skillsShCatalogRuns:catalog",
+        status: "canceled",
+      },
+    });
+
+    const result = await failJobInternalHandler(ctx, {
+      jobId: "securityScanJobs:catalog",
+      leaseToken: "lease",
+      error: "worker stopped after cancellation",
+    });
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(records.get("securityScanJobs:catalog")).toMatchObject({ status: "failed" });
+    expect(records.get("skillScanRequests:catalog")).toMatchObject({ status: "failed" });
+    expect(records.get("skillsShCatalogScanAttempts:catalog")).toMatchObject({
+      status: "canceled",
+    });
   });
 
   it("sanitizes worker errors before patching failed scan result records", async () => {

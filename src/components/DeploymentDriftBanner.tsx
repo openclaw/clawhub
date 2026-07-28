@@ -69,7 +69,7 @@ function DeploymentDriftBannerContent() {
   return (
     <div
       role="alert"
-      className="mx-auto mt-4 w-[min(1100px,calc(100vw-32px))] rounded-[14px] border border-status-warning-fg/40 bg-status-warning-bg px-4 py-3 text-[0.95rem] leading-[1.4] text-status-warning-fg"
+      className="mx-auto mt-4 w-[min(1100px,calc(100vw-32px))] rounded-[var(--oc-radius-surface)] border border-status-warning-fg/40 bg-status-warning-bg px-4 py-3 text-[var(--oc-font-size-md)] leading-[1.4] text-status-warning-fg"
     >
       Deploy mismatch detected. Frontend expects backend build <code>{drift.expectedBuildSha}</code>{" "}
       but Convex reports <code>{drift.actualBuildSha}</code>.

@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# Write an entry to memory (personal or org tier)
+# Usage: mem-write [--org <name>] <file> <id> "<content>"
+#        mem-write facts "dataset-discovery" "Description of the finding"
+#        mem-write --org axiom patterns "timeout-pattern" "How to detect timeouts"
+#        echo "multi-line content" | mem-write facts "my-entry" -
+#
+# Options:
+#   --org <name>    Write to org tier instead of personal
+#   --type <type>   Entry type: fact, pattern, query, incident, note (default: fact)
+#   --tags <tags>   Comma-separated tags (default: none)
+#   --pin           Mark entry as pinned (won't be auto-archived)
+#
+# Files: facts, patterns, queries, incidents, integrations
+#
+# Examples:
+#   mem-write facts "hidden-dataset" "axiomdb-dataset-metrics is queryable but hidden"
+#   mem-write --org axiom --type pattern --tags "db,timeout" patterns "conn-pool" "Pattern description"
+#   mem-write --type query --tags "cs-reporting" queries "top-ingesters" "['dataset'] | summarize..."
+
+set -euo pipefail
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+MEMORY_DIR="$CONFIG_DIR/memory"
+KB_DIR="$MEMORY_DIR/kb"
+ORGS_DIR="$MEMORY_DIR/orgs"
+
+# Defaults
+ORG="${MEMORY_ORG_NAME:-}"
+TYPE="fact"
+TAGS=""
+PINNED="false"
+
+# Parse flags
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --org)
+      ORG="$2"
+      shift 2
+      ;;
+    --type)
+      TYPE="$2"
+      shift 2
+      ;;
+    --tags)
+      TAGS="$2"
+      shift 2
+      ;;
+    --pin)
+      PINNED="true"
+      shift
+      ;;
+    -*)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+if [[ $# -lt 3 ]]; then
+  echo "Usage: mem-write [options] <file> <id> <content|->"
+  echo ""
+  echo "Options:"
+  echo "  --org <name>    Write to org tier (default: \$MEMORY_ORG_NAME or personal)"
+  echo "  --type <type>   fact, pattern, query, incident, note (default: fact)"
+  echo "  --tags <tags>   Comma-separated tags"
+  echo "  --pin           Mark as pinned"
+  echo ""
+  echo "Files: facts, patterns, queries, incidents, integrations"
+  echo ""
+  echo "Examples:"
+  echo "  mem-write facts \"discovery\" \"Found hidden dataset\""
+  echo "  mem-write --org axiom --tags \"prod,cs\" facts \"finding\" \"Details\""
+  exit 1
+fi
+
+FILE="$1"
+ID="$2"
+CONTENT="$3"
+
+# Validate file
+case "$FILE" in
+  facts|patterns|queries|incidents|integrations) ;;
+  *)
+    echo "Error: Invalid file '$FILE'"
+    echo "Use: facts, patterns, queries, incidents, integrations"
+    exit 1
+    ;;
+esac
+
+# Validate type
+case "$TYPE" in
+  fact|pattern|query|incident|note) ;;
+  *)
+    echo "Error: Invalid type '$TYPE'"
+    echo "Use: fact, pattern, query, incident, note"
+    exit 1
+    ;;
+esac
+
+# Determine target directory
+if [[ -n "$ORG" ]]; then
+  TARGET_DIR="$ORGS_DIR/$ORG"
+  if [[ ! -d "$TARGET_DIR/kb" ]]; then
+    echo "Error: Org memory not found at $TARGET_DIR"
+    echo ""
+    echo "Available orgs:"
+    for d in "$ORGS_DIR"/*/; do
+      [[ -d "$d/kb" ]] && echo "  - $(basename "$d")"
+    done
+    exit 1
+  fi
+  TIER="org:$ORG"
+else
+  TARGET_DIR="$MEMORY_DIR"
+  if [[ ! -d "$KB_DIR" ]]; then
+    echo "Error: Memory not found at $KB_DIR"
+    echo "Run: scripts/init"
+    exit 1
+  fi
+  TIER="personal"
+fi
+
+TARGET_FILE="$TARGET_DIR/kb/${FILE}.md"
+
+# Handle stdin content
+if [[ "$CONTENT" == "-" ]]; then
+  CONTENT=$(cat)
+fi
+
+# Generate timestamps
+TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+TODAY=$(date +%Y-%m-%d)
+
+# Write entry
+cat >> "$TARGET_FILE" << EOF
+
+## M-${TIMESTAMP} ${ID}
+
+- type: ${TYPE}
+- tags: ${TAGS}
+- used: 0
+- last_used: ${TODAY}
+- pinned: ${PINNED}
+- schema_version: 1
+
+${CONTENT}
+EOF
+
+echo "✓ Written to [$TIER] kb/${FILE}.md"
+echo "  Entry: ${ID}"
+echo "  Path: ${TARGET_FILE}"
+
+if [[ -n "$ORG" ]] && [[ -d "$TARGET_DIR/.git" ]]; then
+  echo ""
+  cd "$TARGET_DIR"
+  if [[ -n $(git status --porcelain) ]]; then
+    git add -A
+    git commit -m "Added: $ID" >/dev/null 2>&1
+    if git push >/dev/null 2>&1; then
+      echo "✓ Shared with team (committed + pushed)"
+    else
+      echo "⚠️  Committed locally but push failed. Retry: cd $TARGET_DIR && git push"
+    fi
+  fi
+fi

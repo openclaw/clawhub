@@ -3,9 +3,16 @@
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
 import { DocsLinks, openClawDocsUrl } from "./docsLinks";
-import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages";
+import {
+  ApiV1PackageHardDeleteResponseSchema,
+  ApiV1PackageVersionResponseSchema,
+  ApiV1PackagePublishResponseSchema,
+  getPackageScopeOwnerMismatch,
+  inferPackageNameScope,
+} from "./packages";
 import {
   ApiSearchResponseSchema,
+  ApiV1SkillHardDeleteResponseSchema,
   ApiV1SkillInstallResolveResponseSchema,
   ApiV1SkillRescanResponseSchema,
   ApiV1SearchResponseSchema,
@@ -18,6 +25,47 @@ import {
 } from "./schemas";
 
 describe("clawhub-schema", () => {
+  it("parses package hard-delete responses", () => {
+    const result = parseArk(
+      ApiV1PackageHardDeleteResponseSchema,
+      {
+        ok: true,
+        packageId: "packages:tencent",
+        name: "openclaw-tencent-provider",
+        ownerHandle: "hxy91819",
+        displayName: "Tencent Cloud",
+        runtimeId: "tencent",
+        dryRun: true,
+        deleted: false,
+        confirmationToken:
+          "hard-delete-package:@hxy91819/openclaw-tencent-provider:packages:tencent",
+      },
+      "Package hard-delete response",
+    );
+    expect(result.deleted).toBe(false);
+  });
+
+  it("parses skill hard-delete responses", () => {
+    const generated_token_reference = "hard-delete-skill:@openclaw/demo:skills:demo";
+    const response = parseArk(
+      ApiV1SkillHardDeleteResponseSchema,
+      {
+        ok: true,
+        skillId: "skills:demo",
+        slug: "demo",
+        ownerHandle: "openclaw",
+        displayName: "Demo",
+        dryRun: true,
+        scheduled: false,
+        confirmationToken: generated_token_reference,
+      },
+      "Skill hard-delete response",
+    );
+
+    expect(response.ownerHandle).toBe("openclaw");
+    expect(response.scheduled).toBe(false);
+  });
+
   it("parses lockfile records", () => {
     const lock = parseArk(
       LockfileSchema,
@@ -73,6 +121,55 @@ describe("clawhub-schema", () => {
     );
     expect(payload.ownerHandle).toBeUndefined();
     expect(payload.acceptLicenseTerms).toBe(true);
+  });
+
+  it("accepts pending package publish responses with legacy IDs", () => {
+    const response = parseArk(
+      ApiV1PackagePublishResponseSchema,
+      {
+        ok: true,
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        publicationStatus: "pending",
+        attemptId: "publishAttempts:demo",
+      },
+      "Package publish response",
+    );
+
+    expect(response.releaseId).toBe("packageReleases:demo");
+    expect(response.publicationStatus).toBe("pending");
+    expect(response.attemptId).toBe("publishAttempts:demo");
+  });
+
+  it("preserves plugin manifest icons in package version responses", () => {
+    const response = parseArk(
+      ApiV1PackageVersionResponseSchema,
+      {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Adds a manifest icon",
+          files: [],
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            icon: "https://cdn.example.test/icons/demo-plugin.svg",
+            configFields: [],
+            mcpServers: [],
+            bundledSkills: [],
+          },
+        },
+      },
+      "Package version response",
+    );
+
+    expect(response.version?.pluginManifestSummary?.icon).toBe(
+      "https://cdn.example.test/icons/demo-plugin.svg",
+    );
   });
 
   it("accepts publish payload with github source", () => {
@@ -152,10 +249,32 @@ describe("clawhub-schema", () => {
     expect(blocked.ok).toBe(false);
   });
 
-  it("accepts current and legacy install telemetry payloads", () => {
+  it("accepts skill, plugin, and legacy install telemetry payloads", () => {
     const current = parseArk(
       CliTelemetryInstallRequestSchema,
-      { event: "install", slug: "demo", version: "1.0.0" },
+      {
+        event: "install",
+        slug: "demo",
+        ownerHandle: "alice",
+        sourceRef: "skills-sh:alice/skills/demo",
+        sourceKind: "skills-sh",
+        sourceRepository: "alice/skills",
+        sourcePath: "skills/demo",
+        sourceUrl: "https://github.com/alice/skills/tree/abc/skills/demo",
+        canonicalRef: "@alice/demo",
+        clawhubScan: "scanned",
+        trustLabel: "Scanned by ClawHub",
+        version: "1.0.0",
+      },
+      "Install telemetry",
+    );
+    const plugin = parseArk(
+      CliTelemetryInstallRequestSchema,
+      {
+        event: "plugin_install",
+        packageName: "@openclaw/voice-call",
+        version: "2026.7.23",
+      },
       "Install telemetry",
     );
     const legacy = parseArk(
@@ -172,7 +291,24 @@ describe("clawhub-schema", () => {
       "Install telemetry",
     );
 
-    expect(current).toMatchObject({ event: "install", slug: "demo" });
+    expect(current).toMatchObject({
+      event: "install",
+      slug: "demo",
+      ownerHandle: "alice",
+      sourceRef: "skills-sh:alice/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "alice/skills",
+      sourcePath: "skills/demo",
+      sourceUrl: "https://github.com/alice/skills/tree/abc/skills/demo",
+      canonicalRef: "@alice/demo",
+      clawhubScan: "scanned",
+      trustLabel: "Scanned by ClawHub",
+    });
+    expect(plugin).toEqual({
+      event: "plugin_install",
+      packageName: "@openclaw/voice-call",
+      version: "2026.7.23",
+    });
     expect(legacy).toMatchObject({ roots: [{ rootId: "root" }] });
   });
 

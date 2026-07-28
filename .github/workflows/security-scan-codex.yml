@@ -1,6 +1,8 @@
 name: Security Scan Codex Worker
 
 on:
+  repository_dispatch:
+    types: [clawhub-security-scan]
   workflow_dispatch:
     inputs:
       limit:
@@ -16,47 +18,64 @@ on:
         required: false
         default: ""
       max-runtime-minutes:
-        description: "Stop claiming new batches after this many minutes"
+        description: "Stop claiming new jobs after this many minutes"
         required: true
-        default: "8"
-  schedule:
-    - cron: "*/5 * * * *"
-
+        default: "12"
 permissions:
   contents: read
 
-concurrency:
-  group: clawhub-security-scan
-  cancel-in-progress: false
-
 jobs:
   codex-security-scan:
-    name: Codex security scan shard ${{ matrix.shard }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 20
+    name: Codex security scan ${{ matrix.lane }} shard ${{ matrix.shard }}
+    runs-on: blacksmith-16vcpu-ubuntu-2404
+    timeout-minutes: 40
     environment: Production
+    concurrency:
+      group: clawhub-security-scan-${{ matrix.shard }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 10
       matrix:
-        shard: [0, 1, 2, 3]
+        include:
+          - lane: priority
+            shard: priority-0
+          - lane: shared
+            shard: shared-0
+          - lane: shared
+            shard: shared-1
+          - lane: shared
+            shard: shared-2
+          - lane: shared
+            shard: shared-3
+          - lane: shared
+            shard: shared-4
+          - lane: shared
+            shard: shared-5
+          - lane: shared
+            shard: shared-6
+          - lane: shared
+            shard: shared-7
+          - lane: shared
+            shard: shared-8
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '4' }}
-      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
-      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '8' }}
-      CODEX_SECURITY_SCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ github.event.client_payload.batch_limit || inputs.limit || inputs['batch-limit'] || '4' }}
+      CODEX_SECURITY_SCAN_MAX_JOBS: ${{ github.event.client_payload.max_jobs || inputs['max-jobs'] || '' }}
+      CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ github.event.client_payload.max_runtime_minutes || inputs['max-runtime-minutes'] || '12' }}
+      CODEX_SECURITY_SCAN_LANE: ${{ matrix.lane }}
+      CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS: ${{ vars.CODEX_SECURITY_SCAN_CLAWSCAN_TIMEOUT_MS || '900000' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
       CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR: codex-security-scan-diagnostics-${{ matrix.shard }}
       CODEX_SECURITY_SCAN_SHARD: ${{ matrix.shard }}
       CODEX_SECURITY_SCAN_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       SKILLSPECTOR_PROVIDER: openai
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
 
       - uses: ./.github/actions/setup-bun
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -67,6 +86,12 @@ jobs:
             npm install -g @openai/codex@0.142.3
           fi
           codex --version
+
+      - name: Install ClawScan CLI
+        run: |
+          set -euo pipefail
+          npm install -g @openclaw/clawscan@0.1.6
+          clawscan --version
 
       - name: Install SkillSpector
         run: |
@@ -85,11 +110,13 @@ jobs:
 
       - name: Run Codex security worker
         env:
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY || secrets.OPENAI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
         run: |
           bun scripts/security/run-codex-scan-worker.ts \
             --batch-limit "$CODEX_SECURITY_SCAN_LIMIT" \
+            --lane "$CODEX_SECURITY_SCAN_LANE" \
             --max-jobs "$CODEX_SECURITY_SCAN_MAX_JOBS" \
             --max-runtime-minutes "$CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES" \
             --lease-minutes "$CODEX_SECURITY_SCAN_LEASE_MINUTES"

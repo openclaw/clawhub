@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+DEPLOYMENT="${1:-}"
+ID="${2:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "$DEPLOYMENT" || -z "$ID" ]]; then
+  echo "Usage: monitor-get <deployment> <id>" >&2
+  exit 1
+fi
+"$SCRIPT_DIR/axiom-api" "$DEPLOYMENT" GET "/monitors/$ID"

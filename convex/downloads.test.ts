@@ -152,6 +152,60 @@ describe("downloads helpers", () => {
     });
   });
 
+  it("returns 410 for an explicitly requested revoked version", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: undefined,
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+          softDeletedAt: 123,
+          manualRevocation: {
+            reason: "confirmed unsafe artifact",
+            reviewerUserId: "users:moderator",
+            revokedAt: 123,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const runAfter = vi.fn();
+    const storageGet = vi.fn();
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0"),
+    );
+
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe("Version not available");
+    expect(storageGet).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
   it("threads owner handle through the skill lookup", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {

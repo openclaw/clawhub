@@ -34,12 +34,14 @@ export default defineConfig({
     hookTimeout: 15_000,
     exclude: [
       "**/node_modules/**",
+      "**/.artifacts/**",
       "**/.vercel/output/**",
       "**/.output/**",
       "**/.nitro/**",
       "**/dist/**",
       "**/coverage/**",
       "**/convex/_generated/**",
+      ".github/scripts/catalog-feed-schema-version-guard.test.cjs",
       "packages/clawhub/**",
       "packages/clawhub-admin/test-artifact/**",
       "e2e/**",
@@ -64,6 +66,7 @@ export default defineConfig({
       ],
       exclude: [
         "node_modules/",
+        ".artifacts/",
         ".vercel/output/",
         ".output/",
         ".nitro/",

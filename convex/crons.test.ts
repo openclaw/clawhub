@@ -6,27 +6,43 @@ const mocks = vi.hoisted(() => {
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
+  const publisherAbuseSignalNotificationsRef = Symbol("publisher-abuse-signal-notifications");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
+  const publisherTemporalAbuseScanPruneRef = Symbol("publisher-temporal-abuse-scan-prune");
   const httpRateLimitKeysPruneRef = Symbol("http-rate-limit-keys-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   const publisherInvitesPruneRef = Symbol("publisher-invites-prune");
+  const promotionsFeedPublishRef = Symbol("promotions-feed-publish");
+  const canonicalTrendingMaterializeRef = Symbol("canonical-trending-materialize");
+  const canonicalTrendingPruneRef = Symbol("canonical-trending-prune");
+  const prepublicationQueueHealthRef = Symbol("prepublication-queue-health");
+  const securityScanExpiredLeaseRecoveryRef = Symbol("security-scan-expired-lease-recovery");
+  const securityScanDispatchWatchdogRef = Symbol("security-scan-dispatch-watchdog");
   return {
     interval,
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
+    publisherAbuseSignalNotificationsRef,
     publisherAbuseScoreRefreshRef,
     publisherTemporalAbuseScanRef,
+    publisherTemporalAbuseScanPruneRef,
     httpRateLimitKeysPruneRef,
     skillStatEventPruneRef,
     packageStatEventPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
     publisherInvitesPruneRef,
+    promotionsFeedPublishRef,
+    canonicalTrendingMaterializeRef,
+    canonicalTrendingPruneRef,
+    prepublicationQueueHealthRef,
+    securityScanExpiredLeaseRecoveryRef,
+    securityScanDispatchWatchdogRef,
   };
 });
 
@@ -38,6 +54,10 @@ vi.mock("convex/server", () => ({
 
 vi.mock("./_generated/api", () => ({
   internal: {
+    canonicalTrending: {
+      materializeInternal: mocks.canonicalTrendingMaterializeRef,
+      pruneExpiredActionInternal: mocks.canonicalTrendingPruneRef,
+    },
     githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
     packageLeaderboards: {
@@ -60,8 +80,18 @@ vi.mock("./_generated/api", () => ({
     },
     publisherAbuse: {
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
-      runTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
+      notifyPublisherAbuseSignalChangesInternal: mocks.publisherAbuseSignalNotificationsRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
+    },
+    publisherAbuseTemporalScan: {
+      runScheduledTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
+      pruneExpiredTemporalScanRowsInternal: mocks.publisherTemporalAbuseScanPruneRef,
+    },
+    promotionsFeed: {
+      publishInternal: mocks.promotionsFeedPublishRef,
+    },
+    prepublicationObservability: {
+      logPrePublicationQueueHealthInternal: mocks.prepublicationQueueHealthRef,
     },
     vt: {
       pollPendingScans: Symbol("vt-pending-scans"),
@@ -69,6 +99,10 @@ vi.mock("./_generated/api", () => ({
     },
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
+      requeueExpiredCodexScanJobsInternal: mocks.securityScanExpiredLeaseRecoveryRef,
+    },
+    securityScanDispatch: {
+      requestSecurityScanDispatchInternal: mocks.securityScanDispatchWatchdogRef,
     },
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
@@ -92,14 +126,24 @@ describe("crons", () => {
     vi.resetModules();
     mocks.interval.mockReset();
     delete process.env.CLAWHUB_DISABLE_CRONS;
+    delete process.env.CLAWHUB_PREVIEW;
   });
 
   afterEach(() => {
     delete process.env.CLAWHUB_DISABLE_CRONS;
+    delete process.env.CLAWHUB_PREVIEW;
   });
 
   it("does not register production cron work when explicitly disabled", async () => {
     process.env.CLAWHUB_DISABLE_CRONS = "1";
+
+    await import("./crons");
+
+    expect(mocks.interval).not.toHaveBeenCalled();
+  });
+
+  it("does not register side-effecting cron work in disposable previews", async () => {
+    process.env.CLAWHUB_PREVIEW = "1";
 
     await import("./crons");
 
@@ -117,6 +161,39 @@ describe("crons", () => {
     );
   });
 
+  it("refreshes the promotions feed before its publication expires", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "promotions-feed-refresh",
+      { hours: 6 },
+      mocks.promotionsFeedPublishRef,
+      {},
+    );
+  });
+
+  it("materializes the canonical Trending snapshot hourly", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "canonical-trending-snapshot",
+      { hours: 1 },
+      mocks.canonicalTrendingMaterializeRef,
+      {},
+    );
+  });
+
+  it("prunes canonical Trending snapshots independently each hour", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "canonical-trending-prune",
+      { hours: 1 },
+      mocks.canonicalTrendingPruneRef,
+      {},
+    );
+  });
+
   it("prunes expired skill scan requests in bounded continuation batches", async () => {
     await import("./crons");
 
@@ -125,6 +202,39 @@ describe("crons", () => {
       { hours: 6 },
       expect.anything(),
       { batchSize: 10 },
+    );
+  });
+
+  it("runs the security scan dispatch recovery watchdog every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "codex-scan-dispatch-watchdog",
+      { minutes: 5 },
+      mocks.securityScanDispatchWatchdogRef,
+      {},
+    );
+  });
+
+  it("logs pre-publication queue health every five minutes", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "prepublication-queue-health",
+      { minutes: 5 },
+      mocks.prepublicationQueueHealthRef,
+      {},
+    );
+  });
+
+  it("recovers expired security scan leases outside the claim hot path", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "codex-scan-expired-lease-recovery",
+      { minutes: 5 },
+      mocks.securityScanExpiredLeaseRecoveryRef,
+      {},
     );
   });
 
@@ -156,15 +266,13 @@ describe("crons", () => {
       "publisher-temporal-abuse-scan",
       { hours: 24 },
       mocks.publisherTemporalAbuseScanRef,
-      {
-        mode: "current",
-        dryRun: true,
-        archiveDryRunSignals: true,
-        candidateLimit: 1_000,
-        batchSize: 50,
-        maxPages: 20,
-        trigger: "cron",
-      },
+      {},
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-temporal-abuse-scan-row-prune",
+      { hours: 24 },
+      mocks.publisherTemporalAbuseScanPruneRef,
+      { batchSize: 500 },
     );
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-abuse-autobans",
@@ -174,6 +282,12 @@ describe("crons", () => {
         batchSize: 1,
         maxPages: 50,
       },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "publisher-abuse-signal-notifications",
+      { hours: 1 },
+      mocks.publisherAbuseSignalNotificationsRef,
+      {},
     );
   });
 

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+METHOD="${2:-}"
+PATH_="${3:-}"
+BODY="${4:-}"
+
+if [[ -z "$DEPLOYMENT" || -z "$METHOD" || -z "$PATH_" ]]; then
+  echo "Usage: axiom-api <deployment> <method> <path> [json-body]" >&2
+  exit 1
+fi
+
+CONFIG_FILE="$HOME/.axiom.toml"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+  echo "Error: $CONFIG_FILE not found" >&2
+  exit 1
+fi
+
+extract_value() {
+  local key="$1"
+  awk -v deployment="$DEPLOYMENT" -v key="$key" '
+    /^[[:space:]]*\[deployments\./ { in_deployment = ($0 ~ "\\[deployments\\." deployment "\\]") }
+    in_deployment {
+      gsub(/^[[:space:]]+/, "")
+      if ($1 == key) {
+        sub(/^[^=]*=[[:space:]]*/, "")
+        if (match($0, /^"[^"]*"/)) {
+          $0 = substr($0, RSTART+1, RLENGTH-2)
+        } else {
+          sub(/[[:space:]]*#.*$/, "")
+        }
+        print
+        exit
+      }
+    }
+  ' "$CONFIG_FILE"
+}
+
+URL=$(extract_value "url")
+TOKEN=$(extract_value "token")
+ORG_ID=$(extract_value "org_id")
+
+if [[ -z "$URL" || -z "$TOKEN" || -z "$ORG_ID" ]]; then
+  echo "Error: Could not find deployment '$DEPLOYMENT' in $CONFIG_FILE" >&2
+  exit 1
+fi
+
+API_URL="${URL%/}/v2"
+
+CURL_ARGS=(
+  -s
+  -X "$METHOD"
+  -H "Authorization: Bearer $TOKEN"
+  -H "X-Axiom-Org-Id: $ORG_ID"
+  -H "Content-Type: application/json"
+  -H "Accept: application/json"
+)
+
+if [[ -n "$BODY" ]]; then
+  CURL_ARGS+=(-d "$BODY")
+fi
+
+curl "${CURL_ARGS[@]}" "${API_URL}${PATH_}"

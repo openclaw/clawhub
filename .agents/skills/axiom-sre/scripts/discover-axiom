@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# Gilfoyle Axiom Discovery
+# Usage: ./scripts/discover-axiom [env ...]
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_SCRIPT="$SCRIPT_DIR/config"
+
+# Colors for output
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+if [[ ! -f "$CONFIG_SCRIPT" ]]; then
+    exit 1
+fi
+
+if [[ $# -gt 0 ]]; then
+    deployments="$*"
+else
+    deployments=$("$CONFIG_SCRIPT" --list axiom)
+    if [[ "$deployments" == "(none configured)" ]]; then
+        exit 0
+    fi
+fi
+
+echo -e "${BLUE}=== Axiom Deployments ===${NC}"
+
+# Temp dir for parallel results
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+# Cache config
+CACHE_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}/cache/axiom"
+CACHE_TTL=600  # 10 minutes
+mkdir -p "$CACHE_DIR"
+
+# Get file mtime as epoch seconds (Linux first, then macOS)
+# GNU stat -f means --file-system, not format — must try GNU form first
+file_mtime() {
+    local f="$1"
+    stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null
+}
+
+# Fetch /v1/datasets with per-deployment caching
+get_catalog() {
+    local dep="$1"
+    local cache_file="$CACHE_DIR/$dep/datasets.json"
+
+    if [[ "${SRE_NO_CACHE:-}" != "1" && -f "$cache_file" ]]; then
+        local now mtime age
+        now=$(date +%s)
+        mtime=$(file_mtime "$cache_file")
+        age=$(( now - mtime ))
+        if [[ "$age" -lt "$CACHE_TTL" ]]; then
+            cat "$cache_file"
+            return
+        fi
+    fi
+
+    local data
+    data=$("$SCRIPT_DIR/axiom-api" "$dep" GET "/v1/datasets" 2>/dev/null || echo "")
+
+    # Only cache valid JSON arrays. Error payloads (objects or plain text)
+    # must not poison the cache and mask a healthy org for the full TTL.
+    if [[ -n "$data" ]] && printf '%s' "$data" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        mkdir -p "$CACHE_DIR/$dep"
+        local tmp_file="$cache_file.tmp.$$"
+        printf '%s' "$data" > "$tmp_file"
+        chmod 600 "$tmp_file"
+        mv "$tmp_file" "$cache_file"
+    fi
+
+    printf '%s' "$data"
+}
+
+# Helper for millisecond timestamp using Bash built-in
+current_time_ms() {
+    # EPOCHREALTIME is available in Bash 5.0+
+    local t=${EPOCHREALTIME:-$(date +%s).000}
+    # Convert seconds.microseconds to milliseconds
+    local s=${t%.*}
+    local us=${t#*.}
+    # Ensure us is 6 digits for padding, then take first 3 for ms
+    us=$(printf "% -06s" "$us" | cut -c1-6)
+    echo $(( s * 1000 + 10#${us%???} ))
+}
+
+discover_dep() {
+    local dep="$1"
+    local out="$TMP_DIR/$dep"
+    
+    {
+        START_TIME=$(current_time_ms)
+        echo -e "deployment: ${BOLD}$dep${NC}"
+        
+        # Strategy 1: Popularity (Top queried datasets in last 2 years)
+        POPULARITY_QUERY="['axiom-history'] | summarize count() by dataset | top 20 by count_"
+
+        POPULAR_DATASETS=$(echo "$POPULARITY_QUERY" | "$SCRIPT_DIR/axiom-query" "$dep" --since 730d --raw 2>/dev/null | jq -r '.tables[0].columns[0][] // empty' 2>/dev/null || echo "")
+        
+        END_QUERY=$(current_time_ms)
+        DURATION_QUERY=$(( END_QUERY - START_TIME ))
+        
+        if [[ -n "$POPULAR_DATASETS" ]]; then
+            count=$(echo "$POPULAR_DATASETS" | grep -c .)
+
+            # Fetch dataset catalog to identify MetricsDB datasets
+            catalog=$(get_catalog "$dep")
+            metrics_set=$(echo "$catalog" | jq -r '.[] | select(.kind == "otel:metrics:v1") | .name' 2>/dev/null || echo "")
+
+            END_CATALOG=$(current_time_ms)
+            DURATION_CATALOG=$(( END_CATALOG - END_QUERY ))
+
+            echo -e "  ${GREEN}Top datasets found ($count)${NC} (query: ${DURATION_QUERY}ms, catalog: ${DURATION_CATALOG}ms)"
+
+            # Tag popular datasets: [MPL] for MetricsDB, plain for EventDB
+            while IFS= read -r ds; do
+                if echo "$metrics_set" | grep -qxF "$ds"; then
+                    echo "  - [MPL] $ds"
+                else
+                    echo "  - $ds"
+                fi
+            done <<< "$POPULAR_DATASETS"
+
+            # Surface MetricsDB datasets not in the popular list
+            if [[ -n "$metrics_set" ]]; then
+                unlisted=""
+                while IFS= read -r mds; do
+                    if ! echo "$POPULAR_DATASETS" | grep -qxF "$mds"; then
+                        unlisted="${unlisted:+$unlisted
+}$mds"
+                    fi
+                done <<< "$metrics_set"
+
+                metrics_total=$(echo "$metrics_set" | grep -c .)
+                if [[ -n "$unlisted" ]]; then
+                    unlisted_count=$(echo "$unlisted" | grep -c .)
+                    echo -e "  ${GREEN}MetricsDB datasets ($metrics_total total, $unlisted_count not in top):${NC}"
+                    echo "$unlisted" | sort | head -n 10 | sed 's/^/  - [MPL] /' || true
+                else
+                    echo -e "  ${GREEN}MetricsDB datasets ($metrics_total total, all in top list)${NC}"
+                fi
+            fi
+        else
+            # Strategy 2: Fallback
+            response=$(get_catalog "$dep")
+            END_FALLBACK=$(current_time_ms)
+            DURATION_FALLBACK=$(( END_FALLBACK - END_QUERY ))
+            
+            count=$(echo "$response" | jq -r 'if type == "array" then length else 0 end' 2>/dev/null || echo "0")
+            
+            if [[ "$count" -gt 0 ]]; then
+                echo -e "  ${GREEN}$count datasets found${NC} (query: ${DURATION_QUERY}ms, fallback: ${DURATION_FALLBACK}ms)"
+
+                # Identify MetricsDB datasets (otel-metrics-v1)
+                metrics_datasets=$(echo "$response" | jq -r '.[] | select(.kind == "otel:metrics:v1") | .name' 2>/dev/null || echo "")
+
+                # Tag MetricsDB datasets inline, consistent with Strategy 1
+                echo "$response" | jq -r '.[] | .name' | sort | while IFS= read -r ds; do
+                    if [[ -n "$metrics_datasets" ]] && echo "$metrics_datasets" | grep -qxF "$ds"; then
+                        echo "  - [MPL] $ds"
+                    else
+                        echo "  - $ds"
+                    fi
+                done | head -n 10 || true
+                if [[ "$count" -gt 10 ]]; then
+                    echo "  - ... (and $((count - 10)) more)"
+                    echo -e "  ${BOLD}To search:${NC} scripts/axiom-api $dep GET \"/v1/datasets\" | jq -r '.[].name' | grep \"pattern\""
+                fi
+
+                if [[ -n "$metrics_datasets" ]]; then
+                    metrics_count=$(echo "$metrics_datasets" | grep -c .)
+                    echo -e "  ${GREEN}MetricsDB datasets ($metrics_count total)${NC}"
+                fi
+            else
+                echo -e "  ${RED}No datasets found or auth failed${NC} (total: $((DURATION_QUERY + DURATION_FALLBACK))ms)"
+            fi
+        fi
+    } > "$out" 2>&1
+}
+
+# Launch all in parallel
+for dep in $deployments; do
+    discover_dep "$dep" &
+done
+
+wait
+
+# Output in order
+for dep in $deployments; do
+    if [[ -f "$TMP_DIR/$dep" ]]; then
+        cat "$TMP_DIR/$dep"
+    fi
+done

@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Gilfoyle Kubernetes Discovery
+# Usage: ./scripts/discover-k8s
+
+set -euo pipefail
+
+# Colors for output
+BOLD='\033[1m'
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+echo -e "${BLUE}=== Kubernetes ===${NC}"
+
+if ! command -v kubectl &>/dev/null; then
+    echo "kubectl not found in PATH."
+    exit 0
+fi
+
+# Check connection by getting current context
+current_context=$(kubectl config current-context 2>/dev/null || echo "")
+
+if [[ -z "$current_context" ]]; then
+    echo -e "${RED}No active kubernetes context${NC}"
+    exit 0
+fi
+
+echo -e "context: ${BOLD}$current_context${NC}"
+
+# List namespaces
+echo -n "  Listing namespaces... "
+namespaces=$(kubectl get ns -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || echo "")
+
+if [[ -z "$namespaces" ]]; then
+     echo -e "${RED}Failed to list namespaces${NC}"
+else
+    count=$(echo "$namespaces" | wc -w)
+    echo -e "${GREEN}$count found${NC}"
+    
+    # Print formatted list
+    for ns in $namespaces; do
+        echo "  - $ns"
+    done | sort | head -n 10
+    
+    if [[ "$count" -gt 10 ]]; then
+        echo "  - ... (and $((count - 10)) more)"
+    fi
+fi

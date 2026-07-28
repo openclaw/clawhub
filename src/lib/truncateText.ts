@@ -1,3 +1,5 @@
+export const PUBLIC_CATALOG_NAME_PREVIEW_LENGTH = 70;
+
 export function truncateText(value: string, maxLength: number) {
   const normalized = value.trim().replace(/\s+/g, " ");
   if (normalized.length <= maxLength) return normalized;

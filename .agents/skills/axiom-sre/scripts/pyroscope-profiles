@@ -1,0 +1,23 @@
+#!/bin/bash
+# List available profile types in Pyroscope
+# Usage: pyroscope-profiles <deployment>
+
+set -euo pipefail
+
+DEPLOYMENT="${1:-}"
+
+if [[ -z "$DEPLOYMENT" ]]; then
+    echo "Usage: pyroscope-profiles <deployment>" >&2
+    echo "" >&2
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    "$SCRIPT_DIR/pyroscope-config" 2>&1 | tail -n +3
+    exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+eval "$("$SCRIPT_DIR/config" pyroscope "$DEPLOYMENT")"
+
+api_url="${PYROSCOPE_URL}/querier.v1.QuerierService/ProfileTypes"
+result=$("$SCRIPT_DIR/curl-auth" pyroscope "$DEPLOYMENT" -X POST -d '{}' "$api_url")
+
+echo "$result" | jq -r '.profileTypes[] | "\(.ID)\t\(.name)/\(.sampleType)"' 2>/dev/null | column -t -s $'\t'

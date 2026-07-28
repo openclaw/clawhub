@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
+import { ApiV1PackagePublishResponseSchema } from "./packages";
 import {
   ApiV1SearchResponseSchema,
   ApiV1SkillRescanResponseSchema,
@@ -56,6 +57,88 @@ describe("packages/clawhub skill metadata schema", () => {
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
     expect(parsed.results[0]?.downloads).toBe(42);
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
+  });
+
+  it("preserves canonical mixed search order and source/trust metadata", () => {
+    const parsed = parseArk(
+      ApiV1SearchResponseSchema,
+      {
+        results: [
+          {
+            id: "skills-sh:acme/skills/calendar",
+            source: "skills-sh",
+            slug: "calendar",
+            displayName: "Calendar",
+            summary: "Calendar workflows",
+            score: 6_110,
+            canonicalUrl: "/skills-sh/acme/skills/calendar",
+            official: false,
+            featured: false,
+            links: {
+              canonical: "/skills-sh/acme/skills/calendar",
+              source: "https://skills.sh/acme/skills/calendar",
+            },
+            publisher: null,
+            install: {
+              kind: "skills-sh",
+              reference: "skills-sh:acme/skills/calendar",
+              sourceUrl: "https://skills.sh/acme/skills/calendar",
+            },
+            sourceIdentity: {
+              id: "acme/skills/calendar",
+              owner: "acme",
+              repo: "skills",
+              host: null,
+              lifetimeInstalls: 99_000,
+            },
+            trust: {
+              visibility: "public",
+              installability: "installable",
+              clawHubVerdict: null,
+              upstreamScanners: { socket: { status: "pass" } },
+              sourceFreshness: "observed-only",
+            },
+            metrics: {
+              rolling60DayInstalls: null,
+              bookmarks: null,
+              updatedAt: 10,
+            },
+          },
+          {
+            id: "clawhub:skills:calendar",
+            source: "clawhub",
+            slug: "calendar-native",
+            score: 5_095,
+          },
+        ],
+      },
+      "Search",
+    );
+
+    expect(parsed.results.map((result) => result.id)).toEqual([
+      "skills-sh:acme/skills/calendar",
+      "clawhub:skills:calendar",
+    ]);
+    expect(parsed.results[0]?.install?.reference).toBe("skills-sh:acme/skills/calendar");
+    expect(parsed.results[0]?.trust?.sourceFreshness).toBe("observed-only");
+  });
+
+  it("parses pending package publish responses with legacy IDs", () => {
+    const parsed = parseArk(
+      ApiV1PackagePublishResponseSchema,
+      {
+        ok: true,
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo",
+        publicationStatus: "pending",
+        attemptId: "publishAttempts:demo",
+      },
+      "Package publish response",
+    );
+
+    expect(parsed.releaseId).toBe("packageReleases:demo");
+    expect(parsed.publicationStatus).toBe("pending");
+    expect(parsed.attemptId).toBe("publishAttempts:demo");
   });
 
   it("parses flattened skill verification envelopes", () => {

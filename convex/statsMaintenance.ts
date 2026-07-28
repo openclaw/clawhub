@@ -6,6 +6,7 @@ import { internalAction, internalMutation, internalQuery } from "./functions";
 import {
   isPublicPluginDoc,
   isPublicSkillDoc,
+  setGlobalPublicExternalSkillsCount,
   setGlobalPublicPluginsCount,
   setGlobalPublicSkillsCount,
 } from "./lib/globalStats";
@@ -13,6 +14,7 @@ import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 1000;
@@ -567,10 +569,63 @@ export const countPublicDigestPageInternal = internalQuery({
       .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
 
     let count = 0;
+    const nativeSkillIds: string[] = [];
     for (const digest of page) {
-      if (isPublicSkillDoc(digest)) count++;
+      if (isPublicSkillDoc(digest) && !digest.canonicalSkillId) {
+        count++;
+        nativeSkillIds.push(digest.skillId);
+      }
     }
-    return { count, isDone, cursor: continueCursor };
+    return { count, nativeSkillIds, isDone, cursor: continueCursor };
+  },
+});
+
+export const listPublicExternalSkillIdsPageInternal = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const pageSize = clampInt(args.pageSize ?? 500, 100, 1000);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skillsShMirrorDigests")
+      .withIndex("by_active_visible_installable_fresh_slug", (q) =>
+        q
+          .eq("active", true)
+          .eq("publicVisible", true)
+          .eq("installable", true)
+          .eq("sourceFreshnessStatus", "observed-only"),
+      )
+      .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
+    return {
+      externalIds: page
+        .filter((digest) => isPublicSkillsShMirrorDigest(digest))
+        .map((digest) => digest.externalId),
+      isDone,
+      cursor: continueCursor,
+    };
+  },
+});
+
+export const listExactNativeExternalIdsPageInternal = internalQuery({
+  args: { cursor: v.optional(v.string()), pageSize: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const pageSize = clampInt(args.pageSize ?? 500, 100, 1000);
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skillsShCatalogEntries")
+      .withIndex("by_external_id")
+      .paginate({ cursor: args.cursor ?? null, numItems: pageSize });
+    return {
+      matches: page.flatMap((entry) =>
+        entry.reconciliation?.kind === "exact-native" && entry.reconciliation.nativeSkillId
+          ? [
+              {
+                externalId: entry.externalId,
+                nativeSkillId: entry.reconciliation.nativeSkillId,
+              },
+            ]
+          : [],
+      ),
+      isDone,
+      cursor: continueCursor,
+    };
   },
 });
 
@@ -595,6 +650,7 @@ export const writeGlobalStatsInternal = internalMutation({
   args: {
     count: v.optional(v.number()),
     activeSkillsCount: v.optional(v.number()),
+    activeExternalSkillsCount: v.optional(v.number()),
     activePluginsCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -602,6 +658,9 @@ export const writeGlobalStatsInternal = internalMutation({
       await setGlobalPublicSkillsCount(ctx, args.activeSkillsCount);
     } else if (args.count !== undefined) {
       await setGlobalPublicSkillsCount(ctx, args.count);
+    }
+    if (args.activeExternalSkillsCount !== undefined) {
+      await setGlobalPublicExternalSkillsCount(ctx, args.activeExternalSkillsCount);
     }
     if (args.activePluginsCount !== undefined) {
       await setGlobalPublicPluginsCount(ctx, args.activePluginsCount);
@@ -618,6 +677,7 @@ export const updateGlobalStatsAction = internalAction({
   args: {},
   handler: async (ctx) => {
     let activeSkillsCount = 0;
+    const countedNativeSkillIds = new Set<string>();
     let skillCursor: string | undefined;
 
     // eslint-disable-next-line no-constant-condition
@@ -625,12 +685,55 @@ export const updateGlobalStatsAction = internalAction({
       const result = (await ctx.runQuery(internal.statsMaintenance.countPublicDigestPageInternal, {
         cursor: skillCursor,
         pageSize: 1000,
-      })) as { count: number; isDone: boolean; cursor: string };
+      })) as { count: number; nativeSkillIds: string[]; isDone: boolean; cursor: string };
 
       activeSkillsCount += result.count;
+      for (const skillId of result.nativeSkillIds) countedNativeSkillIds.add(skillId);
       if (result.isDone) break;
       skillCursor = result.cursor;
     }
+
+    const exactNativeExternalIds = new Set<string>();
+    let reconciliationCursor: string | undefined;
+    // Load the persisted reconciliation boundary in pages so mirror rows that
+    // resolve to a native skill are counted only once without per-row lookups.
+    // A route collision remains a distinct public skills.sh identity and is not
+    // a duplicate; exact-native is the only reconciliation that aliases a row.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = (await ctx.runQuery(
+        internal.statsMaintenance.listExactNativeExternalIdsPageInternal,
+        { cursor: reconciliationCursor, pageSize: 500 },
+      )) as {
+        matches: Array<{ externalId: string; nativeSkillId: string }>;
+        isDone: boolean;
+        cursor: string;
+      };
+      for (const match of result.matches) {
+        if (countedNativeSkillIds.has(match.nativeSkillId)) {
+          exactNativeExternalIds.add(match.externalId);
+        }
+      }
+      if (result.isDone) break;
+      reconciliationCursor = result.cursor;
+    }
+
+    const publicExternalSkillIds = new Set<string>();
+    let externalSkillCursor: string | undefined;
+    // Deduplicate by the permanent skills.sh identity, not by page position.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const result = (await ctx.runQuery(
+        internal.statsMaintenance.listPublicExternalSkillIdsPageInternal,
+        { cursor: externalSkillCursor, pageSize: 500 },
+      )) as { externalIds: string[]; isDone: boolean; cursor: string };
+      for (const externalId of result.externalIds) {
+        if (!exactNativeExternalIds.has(externalId)) publicExternalSkillIds.add(externalId);
+      }
+      if (result.isDone) break;
+      externalSkillCursor = result.cursor;
+    }
+    const activeExternalSkillsCount = publicExternalSkillIds.size;
 
     let activePluginsCount = 0;
     let pluginCursor: string | undefined;
@@ -652,8 +755,9 @@ export const updateGlobalStatsAction = internalAction({
 
     await ctx.runMutation(internal.statsMaintenance.writeGlobalStatsInternal, {
       activeSkillsCount,
+      activeExternalSkillsCount,
       activePluginsCount,
     });
-    return { activeSkillsCount, activePluginsCount };
+    return { activeSkillsCount, activeExternalSkillsCount, activePluginsCount };
   },
 });

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Add an org for shared memory
+# Usage: scripts/org-add <name> <git-repo-url>
+#
+# Example:
+#   scripts/org-add axiom git@github.com:axiomhq/sre-memory.git
+
+set -euo pipefail
+
+CONFIG_DIR="${SRE_CONFIG_DIR:-$HOME/.config/axiom-sre}"
+ORGS_DIR="$CONFIG_DIR/memory/orgs"
+
+if [[ $# -lt 1 ]]; then
+  echo "Usage: scripts/org-add <name> [git-repo-url]"
+  echo ""
+  echo "Examples:"
+  echo "  scripts/org-add axiom git@github.com:axiomhq/sre-memory.git"
+  echo "  scripts/org-add axiom  # local-only, no git"
+  exit 1
+fi
+
+ORG_NAME="$1"
+REPO_URL="${2:-}"
+ORG_DIR="$ORGS_DIR/$ORG_NAME"
+
+mkdir -p "$ORGS_DIR"
+
+if [[ -n "$REPO_URL" ]]; then
+  if [[ -d "$ORG_DIR/.git" ]]; then
+    echo "Org '$ORG_NAME' already exists at $ORG_DIR"
+    echo "To update, run: scripts/mem-sync $ORG_NAME"
+  else
+    echo "Cloning $REPO_URL → $ORG_DIR"
+    git clone "$REPO_URL" "$ORG_DIR"
+    echo "✓ Cloned"
+  fi
+elif [[ ! -d "$ORG_DIR" ]]; then
+  echo "Creating local-only org at $ORG_DIR"
+  mkdir -p "$ORG_DIR/kb"
+  echo "✓ Created (no git repo)"
+else
+  echo "Org '$ORG_NAME' already exists at $ORG_DIR"
+fi

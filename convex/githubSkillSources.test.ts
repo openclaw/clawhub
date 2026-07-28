@@ -1,5 +1,5 @@
 import { ConvexError } from "convex/values";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./lib/access", () => ({
   requireUser: vi.fn(),
@@ -18,9 +18,19 @@ const { requirePublisherRole } = await import("./lib/publishers");
 const {
   cleanupDeletedSourceScansHandler,
   deleteForPublisherHandler,
+  getSkillsShAliasTargetInternal,
   listForManageableOfficialPublishers,
 } = await import("./githubSkillSources");
 const { buildSkillInstallResolution } = await import("./lib/installResolver");
+
+beforeEach(() => {
+  vi.stubEnv("CONVEX_DEPLOYMENT", "local:clawhub");
+  vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 type Row = Record<string, unknown> & { _id: string };
 type WrappedHandler<TArgs, TResult = unknown> = {
@@ -31,6 +41,13 @@ const listForManageableOfficialPublishersHandler = (
   listForManageableOfficialPublishers as unknown as WrappedHandler<
     Record<string, never>,
     Array<{ _id: string; repo: string; ownerPublisher: { handle: string } | null }>
+  >
+)._handler;
+
+const getSkillsShAliasTargetHandler = (
+  getSkillsShAliasTargetInternal as unknown as WrappedHandler<
+    { repo: string; path: string },
+    { canonicalRef: string; canonicalRoute: string } | null
   >
 )._handler;
 
@@ -98,10 +115,129 @@ function createDb(initial: Record<string, Row[]> = {}) {
   return { db, tables };
 }
 
+describe("githubSkillSources.getSkillsShAliasTargetInternal", () => {
+  it("returns one public scan-complete GitHub skill at the exact repository path", async () => {
+    const { db } = createDb(makeSkillsShAliasRows([makeAliasSkill("skills:html")]));
+
+    await expect(
+      getSkillsShAliasTargetHandler(
+        { db },
+        { repo: " Patrick-Erichsen/Skills ", path: "/skills/html/" },
+      ),
+    ).resolves.toMatchObject({
+      canonicalRef: "@openclaw/html",
+      canonicalRoute: "/openclaw/skills/html",
+      source: { repo: "patrick-erichsen/skills" },
+      skill: { slug: "html", installKind: "github", githubPath: "skills/html" },
+      publisher: { handle: "openclaw", displayName: "OpenClaw" },
+    });
+  });
+
+  it("fails closed for ambiguous path matches or an oversized repository", async () => {
+    const ambiguous = createDb(
+      makeSkillsShAliasRows([makeAliasSkill("skills:html-1"), makeAliasSkill("skills:html-2")]),
+    );
+    await expect(
+      getSkillsShAliasTargetHandler(ambiguous, {
+        repo: "patrick-erichsen/skills",
+        path: "skills/html",
+      }),
+    ).resolves.toBeNull();
+
+    const oversized = createDb(
+      makeSkillsShAliasRows(
+        Array.from({ length: 501 }, (_, index) =>
+          makeAliasSkill(`skills:row-${index}`, `skills/row-${index}`),
+        ),
+      ),
+    );
+    await expect(
+      getSkillsShAliasTargetHandler(oversized, {
+        repo: "patrick-erichsen/skills",
+        path: "skills/row-0",
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
+function makeSkillsShAliasRows(skills: Row[]) {
+  return {
+    githubSkillSources: [
+      {
+        _id: "githubSkillSources:patrick",
+        repo: "patrick-erichsen/skills",
+        defaultBranch: "main",
+      },
+    ],
+    skills,
+    publishers: [
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 1,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ],
+  };
+}
+
+function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
+  return {
+    _id: id,
+    _creationTime: 1,
+    slug: "html",
+    displayName: "HTML Artifact Chooser",
+    ownerUserId: "users:owner",
+    ownerPublisherId: "publishers:openclaw",
+    githubSourceId: "githubSkillSources:patrick",
+    installKind: "github",
+    githubPath,
+    githubCurrentCommit: "1".repeat(40),
+    githubCurrentContentHash: "c".repeat(64),
+    githubCurrentStatus: "present",
+    githubScanStatus: "clean",
+    moderationStatus: "active",
+    tags: {},
+    badges: {},
+    stats: {},
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
 describe("githubSkillSources.deleteForPublisherHandler", () => {
   beforeEach(() => {
     vi.mocked(requireUser).mockResolvedValue({ userId: "users:owner" } as never);
     vi.mocked(requirePublisherRole).mockResolvedValue(undefined as never);
+  });
+
+  it("rejects generic source removal without writes when rollout is off", async () => {
+    vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "off");
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:generic",
+          repo: "openclaw/agent-skills",
+          ownerPublisherId: "publishers:openclaw",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await expect(
+      deleteForPublisherHandler({ db, scheduler } as never, {
+        ownerPublisherId: "publishers:openclaw" as never,
+        sourceId: "githubSkillSources:generic" as never,
+      }),
+    ).rejects.toThrow(/rollout is disabled/i);
+
+    expect(tables.githubSkillSources).toHaveLength(1);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("deletes a source and removes only GitHub-backed skills from that source", async () => {
@@ -134,6 +270,17 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           skillId: "skills:other-source",
           githubSourceId: "githubSkillSources:other",
           contentHash: "hash-other-source",
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:hosted",
+          skillId: "skills:hosted-candidate",
+          githubSourceId: "githubSkillSources:matt",
+          githubPath: "skills/hosted-candidate",
+          githubCommit: "c".repeat(40),
+          githubContentHash: "hash-hosted-candidate",
+          scanStatus: "pending",
         },
       ],
       skills: [
@@ -177,6 +324,16 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           softDeletedAt: undefined,
         },
         {
+          _id: "skills:hosted-candidate",
+          slug: "hosted-candidate",
+          displayName: "Hosted Candidate",
+          ownerPublisherId: "publishers:openclaw",
+          latestVersionId: "skillVersions:hosted",
+          githubPendingCandidateId: "githubSkillCandidates:hosted",
+          softDeletedAt: undefined,
+          updatedAt: 2,
+        },
+        {
           _id: "skills:other-source",
           slug: "other-source",
           displayName: "Other Source",
@@ -212,6 +369,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     );
     expect(tables.githubSkillSources).toHaveLength(0);
     expect(tables.githubSkillContents).toHaveLength(0);
+    expect(tables.githubSkillCandidates).toHaveLength(0);
     expect(tables.githubSkillScans).toHaveLength(2);
     expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
       sourceId: "githubSkillSources:matt",
@@ -245,6 +403,14 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     expect(tables.skills.find((skill) => skill._id === "skills:direct")).toMatchObject({
       softDeletedAt: undefined,
     });
+    expect(tables.skills.find((skill) => skill._id === "skills:hosted-candidate")).toMatchObject({
+      latestVersionId: "skillVersions:hosted",
+      softDeletedAt: undefined,
+      updatedAt: 123,
+    });
+    expect(
+      tables.skills.find((skill) => skill._id === "skills:hosted-candidate"),
+    ).not.toHaveProperty("githubPendingCandidateId");
     expect(tables.skills.find((skill) => skill._id === "skills:other-source")).toMatchObject({
       githubCurrentStatus: "present",
       softDeletedAt: undefined,

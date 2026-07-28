@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# dashboard-from-template: Instantiate a dashboard template with substitutions
+#
+# Usage: dashboard-from-template <template> <service> <dataset> [output-file]
+#
+# Arguments:
+#   template    - Template name: service-overview, api-health, blank
+#   service     - Service name
+#   dataset     - Dataset name
+#   output-file - Output path (default: stdout)
+#
+# Examples:
+#   dashboard-from-template service-overview "api-gateway" "http-logs"
+#   dashboard-from-template api-health "payment-api" "payment-logs" ./payment.json
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TEMPLATE_DIR="$SCRIPT_DIR/../reference/templates"
+
+if [[ $# -lt 3 ]]; then
+    echo "Usage: dashboard-from-template <template> <service> <dataset> [output-file]" >&2
+    echo "" >&2
+    echo "Available templates:" >&2
+    for f in "$TEMPLATE_DIR"/*.json; do
+        basename "$f" .json >&2
+    done
+    exit 1
+fi
+
+TEMPLATE_NAME="$1"
+SERVICE="$2"
+DATASET="$3"
+OUTPUT="${4:-/dev/stdout}"
+
+TEMPLATE="$TEMPLATE_DIR/$TEMPLATE_NAME.json"
+
+if [[ ! -f "$TEMPLATE" ]]; then
+    echo "Error: Template '$TEMPLATE_NAME' not found" >&2
+    echo "" >&2
+    echo "Available templates:" >&2
+    for f in "$TEMPLATE_DIR"/*.json; do
+        basename "$f" .json >&2
+    done
+    exit 1
+fi
+
+# Replace placeholders
+sed -e "s/{{service}}/$SERVICE/g" \
+    -e "s/{{dataset}}/$DATASET/g" \
+    -e "s/{{name}}/$SERVICE/g" \
+    -e "s/{{description}}/Dashboard for $SERVICE/g" \
+    "$TEMPLATE" > "$OUTPUT"
+
+if [[ "$OUTPUT" != "/dev/stdout" ]]; then
+    echo "Created: $OUTPUT" >&2
+fi

@@ -1,6 +1,6 @@
 import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 /* @vitest-environment node */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import http from "./http";
@@ -21,6 +21,9 @@ function makeDeniedRateLimitCtx() {
       const config = args.config as { period: number };
       return { ok: false, retryAfter: config.period };
     }
+    if ("name" in args && "key" in args && "ttlMs" in args) {
+      return { action: "retained" };
+    }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
   return {
@@ -40,6 +43,9 @@ function makeAllowedRateLimitCtx() {
   const runMutation = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
     if ("name" in args && "config" in args) {
       return { ok: true };
+    }
+    if ("name" in args && "key" in args && "ttlMs" in args) {
+      return { action: "retained" };
     }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
@@ -87,6 +93,28 @@ async function expectRouteUsesIpBucket({
 }
 
 describe("HTTP route rate limit defaults", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps the dark canonical Trending route ahead of rate limiting", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
+    const route = http.lookup(ApiRoutes.trending, "GET");
+    if (!route) throw new Error("Expected canonical Trending route");
+    const [action] = route;
+    const { ctx, runMutation } = makeDeniedRateLimitCtx();
+
+    const response = await (action as unknown as WrappedHttpAction)._handler(
+      ctx,
+      new Request(`https://example.com${ApiRoutes.trending}`),
+    );
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("registers package version downloads behind the download limit", async () => {
     await expectRouteUsesIpBucket({
       path: "/api/v1/packages/demo/versions/1.0.0/download",
@@ -198,7 +226,7 @@ describe("HTTP route rate limit defaults", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Setup axiom-alerting skill
+# Usage: scripts/setup
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "=== axiom-alerting Setup ==="
+echo ""
+
+echo "[1/3] Checking required tools..."
+MISSING=()
+for cmd in curl jq; do
+  if command -v "$cmd" >/dev/null 2>&1; then
+    echo "✓ $cmd found"
+  else
+    echo "✗ $cmd not found"
+    MISSING+=("$cmd")
+  fi
+done
+
+if [[ ${#MISSING[@]} -gt 0 ]]; then
+  echo ""
+  echo "Install missing tools:"
+  for cmd in "${MISSING[@]}"; do
+    case "$cmd" in
+      jq) echo "  brew install jq  # or apt-get install jq" ;;
+      curl) echo "  brew install curl  # or apt-get install curl" ;;
+    esac
+  done
+  exit 1
+fi
+
+echo ""
+echo "[2/3] Making scripts executable..."
+chmod +x "$SCRIPT_DIR"/*
+echo "✓ Scripts ready"
+
+echo ""
+echo "[3/3] Checking Axiom configuration..."
+AXIOM_CONFIG="$HOME/.axiom.toml"
+if [[ -f "$AXIOM_CONFIG" ]]; then
+  DEPLOYMENTS=$(grep -cE '^\s*\[deployments\.' "$AXIOM_CONFIG" 2>/dev/null || echo 0)
+  echo "✓ Found $AXIOM_CONFIG with $DEPLOYMENTS deployment(s)"
+  echo "  Deployments:"
+  grep -E '^\s*\[deployments\.' "$AXIOM_CONFIG" | sed 's/^[[:space:]]*//' | sed 's/\[deployments\.\(.*\)\]/    - \1/'
+else
+  echo "⚠ $AXIOM_CONFIG not found"
+  echo ""
+  cat << 'EOT'
+[deployments.prod]
+url = "https://api.axiom.co"
+token = "xaat-your-token"
+org_id = "your-org-id"
+EOT
+fi
+
+echo ""
+echo "=== Setup Complete ==="
+echo ""
+echo "Usage:"
+echo "  scripts/notifier-list prod"
+echo "  scripts/monitor-list prod"
+echo "  scripts/monitor-history prod <id> <startTime> <endTime>"

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# List eval cases without running them
+# Usage: eval-list [target]
+#
+# Arguments:
+#   target    File, directory, glob, or eval name (default: current directory)
+#
+# Examples:
+#   eval-list                            # List all cases
+#   eval-list src/my-feature.eval.ts     # List cases in file
+
+set -euo pipefail
+
+npx axiom eval "${1:-.}" --list

@@ -1,0 +1,87 @@
+#!/bin/bash
+# List available notifiers for a deployment
+# Used by agents to present options before creating monitors
+#
+# Usage: list-notifiers -d <deployment>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AXIOM_API="${AXIOM_API:-$HOME/.config/agents/skills/sre/scripts/axiom-api}"
+
+DEPLOYMENT=""
+
+usage() {
+    cat << 'EOF'
+Usage: list-notifiers -d <deployment>
+
+List available notifiers for cost control monitor alerts.
+
+Required:
+  -d, --deployment NAME    Axiom deployment name
+
+Example:
+  list-notifiers -d prod
+  list-notifiers -d staging
+EOF
+    exit 1
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -d|--deployment)
+            DEPLOYMENT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            ;;
+        *)
+            echo "Error: Unknown option $1" >&2
+            usage
+            ;;
+    esac
+done
+
+# Validate
+[[ -z "$DEPLOYMENT" ]] && { echo "Error: -d/--deployment required" >&2; usage; }
+[[ -x "$AXIOM_API" ]] || { echo "Error: axiom-api not found at $AXIOM_API" >&2; exit 1; }
+
+# Fetch notifiers
+NOTIFIERS_RAW=$($AXIOM_API "$DEPLOYMENT" GET "/v2/notifiers" 2>/dev/null || echo "[]")
+NOTIFIER_COUNT=$(echo "$NOTIFIERS_RAW" | jq 'length')
+
+if [[ "$NOTIFIER_COUNT" -eq 0 ]]; then
+    echo "No notifiers found in deployment '$DEPLOYMENT'."
+    echo ""
+    echo "Create a notifier in Axiom first, then run this script again."
+    exit 0
+fi
+
+# Format and display notifiers
+# Priority: slack > pagerDuty > email > webhook > others
+echo "Available notifiers in '$DEPLOYMENT':"
+echo ""
+
+echo "$NOTIFIERS_RAW" | jq -r '
+    map({
+        id: .id,
+        name: .name,
+        type: (.properties | keys | first // "unknown")
+    })
+    | sort_by(
+        if .type == "slack" then "0" + .name
+        elif .type == "pagerDuty" then "1" + .name
+        elif .type == "email" then "2" + .name
+        elif .type == "webhook" then "3" + .name
+        else "4" + .name end
+    )
+    | to_entries
+    | .[]
+    | "  \(.key + 1). [\(.value.type)] \(.value.name)\n     ID: \(.value.id)"
+'
+
+echo ""
+echo "To create monitors with a notifier:"
+echo "  create-monitors -d $DEPLOYMENT -a <audit-dataset> -c <contract> -n <notifier-id>"

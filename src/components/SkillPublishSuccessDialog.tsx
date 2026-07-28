@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getClawHubSiteUrl } from "../lib/site";
+import { getPublicClawHubSiteUrl } from "../lib/site";
 import { cn } from "../lib/utils";
 import { copyText } from "./InstallCopyButton";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -19,9 +19,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dial
 
 export const OPENCLAW_SKILLS_DISCORD_URL =
   "https://discord.com/channels/1456350064065904867/1456891440897724637";
-const PUBLIC_CLAWHUB_SITE_URL = "https://clawhub.ai";
-const LOCAL_SHARE_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
-
 type CopyState = "idle" | "copied" | "failed";
 
 type SkillPublishSuccessDialogProps = {
@@ -47,17 +44,6 @@ type SkillPublishSuccessDialogProps = {
   categoryLabel?: string | null;
   onDismiss: () => void;
 };
-
-function getPublicClawHubSiteUrl() {
-  const configured = getClawHubSiteUrl();
-  try {
-    const hostname = new URL(configured).hostname;
-    if (LOCAL_SHARE_HOSTS.has(hostname)) return PUBLIC_CLAWHUB_SITE_URL;
-  } catch {
-    return PUBLIC_CLAWHUB_SITE_URL;
-  }
-  return configured;
-}
 
 function buildAbsoluteSkillUrl(skillPath: string) {
   return new URL(skillPath, getPublicClawHubSiteUrl()).toString();
@@ -142,7 +128,7 @@ export function SkillPublishSuccessDialog({
         onInteractOutside={() => {
           dismiss();
         }}
-        className="[--discord-accent:#5865F2] [--publish-accent:var(--status-success-fg)] [display:block] w-[min(calc(100vw-2rem),620px)] overflow-hidden rounded-[calc(var(--radius-md)+8px)] border-[color:color-mix(in_srgb,var(--line)_88%,transparent)] bg-[color:var(--surface)] p-0 shadow-[0_34px_90px_-36px_rgba(0,0,0,0.62),0_0_0_1px_color-mix(in_srgb,var(--ink)_7%,transparent)] focus:outline-none sm:p-0"
+        className="[--discord-accent:#5865F2] [--publish-accent:var(--oc-status-success-fg)] [display:block] w-[min(calc(100vw-2rem),620px)] overflow-hidden rounded-[var(--oc-radius-surface)] border-[color:var(--oc-border-subtle)] bg-[color:var(--oc-bg-elevated)] p-0 shadow-[var(--oc-shadow-lg)] focus:outline-none sm:p-0"
         style={{ display: "block" }}
       >
         <div className="relative w-full overflow-hidden">
@@ -197,8 +183,9 @@ export function SkillPublishSuccessDialog({
                   <MarketplaceIcon
                     kind="skill"
                     label={displayName}
-                    icon={skill?.icon}
+                    imageUrl={skill?.icon}
                     skill={skill}
+                    tone="muted"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center justify-between gap-3">
@@ -234,7 +221,7 @@ export function SkillPublishSuccessDialog({
                   </div>
                 </div>
               </div>
-              <div className="-mt-2 flex min-w-0 items-center gap-2 rounded-b-[var(--radius-md)] border border-t-0 border-[color:color-mix(in_srgb,var(--line)_74%,transparent)] bg-[color:color-mix(in_srgb,var(--surface)_82%,black)] px-3.5 pb-2 pt-4">
+              <div className="-mt-2 flex min-w-0 items-center gap-2 rounded-b-[var(--oc-radius-surface)] border border-t-0 border-[color:color-mix(in_srgb,var(--oc-border-subtle)_74%,transparent)] bg-[color:var(--oc-bg-surface)] px-3.5 pb-2 pt-4">
                 <div
                   className="h-2 w-2 shrink-0 rounded-full bg-[color:color-mix(in_srgb,var(--publish-accent)_42%,transparent)]"
                   aria-hidden="true"

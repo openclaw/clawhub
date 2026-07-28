@@ -1,0 +1,7 @@
+schemaVersion: 1
+agent:
+  tools:
+    profile: coding
+    fs:
+      workspaceOnly: true
+  humanDelay: { mode: natural }

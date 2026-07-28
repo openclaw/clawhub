@@ -64,6 +64,12 @@ function componentRateLimitCalls(runMutation: ReturnType<typeof vi.fn>) {
   }) as [unknown, Record<string, unknown>][];
 }
 
+function metadataTouchCalls(runMutation: ReturnType<typeof vi.fn>) {
+  return runMutation.mock.calls.filter(([, args]) => {
+    return Boolean(args && typeof args === "object" && "ttlMs" in args && !("config" in args));
+  }) as [unknown, Record<string, unknown>][];
+}
+
 describe("getClientIp", () => {
   let prev: string | undefined;
   beforeEach(() => {
@@ -223,7 +229,8 @@ describe("applyRateLimit headers", () => {
     const ctx = {
       runMutation: vi
         .fn()
-        .mockRejectedValue(
+        .mockResolvedValueOnce({ action: "updated", expiresAt: 88_900_000 })
+        .mockRejectedValueOnce(
           new Error('Document in table "rateLimits" changed while this mutation was being run'),
         ),
     } as unknown as Parameters<typeof applyRateLimit>[0];
@@ -240,16 +247,19 @@ describe("applyRateLimit headers", () => {
     await expect(result.response.text()).resolves.toBe("Rate limit temporarily unavailable");
   });
 
-  it("returns retryable unavailable response when metadata key writes conflict", async () => {
+  it("keeps successful checks available when metadata key writes conflict", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_550_000);
-    const ctx = {
-      runMutation: vi
-        .fn()
-        .mockRejectedValue(
-          new Error(
-            'Document in table "httpRateLimitKeys" changed while this mutation was being run',
-          ),
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runMutation = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          'Document in table "httpRateLimitKeys" changed while this mutation was being run',
         ),
+      )
+      .mockResolvedValueOnce({ ok: true });
+    const ctx = {
+      runMutation,
     } as unknown as Parameters<typeof applyRateLimit>[0];
 
     const result = await applyRateLimit(
@@ -258,11 +268,14 @@ describe("applyRateLimit headers", () => {
       "read",
     );
 
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.response.status).toBe(503);
-    expect(result.response.headers.get("Retry-After")).toBe("1");
-    await expect(result.response.text()).resolves.toBe("Rate limit temporarily unavailable");
+    expect(result.ok).toBe(true);
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(
+      runMutation.mock.calls.map(([, args]) => ("config" in args ? "counter" : "metadata")),
+    ).toEqual(["metadata", "counter"]);
+    expect(warn).toHaveBeenCalledWith("rate_limit_metadata_write_contention", {
+      name: "readIp",
+    });
   });
 
   it("configures component-backed HTTP limits with 16 shards", async () => {
@@ -297,7 +310,7 @@ describe("applyRateLimit headers", () => {
     });
   });
 
-  it("passes component key metadata after an allowed limiter check", async () => {
+  it("records component key metadata before an allowed limiter check", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_650_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -316,9 +329,11 @@ describe("applyRateLimit headers", () => {
 
     expect(result.ok).toBe(true);
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
-    expect(componentRateLimitCalls(runMutation).map(([, args]) => args)).toContainEqual(
+    expect(
+      runMutation.mock.calls.map(([, args]) => ("config" in args ? "counter" : "metadata")),
+    ).toEqual(["metadata", "counter"]);
+    expect(metadataTouchCalls(runMutation).map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
-        config: expect.any(Object),
         name: "downloadIp",
         key: "ip:unknown:download",
         now: 2_650_000,
@@ -327,7 +342,7 @@ describe("applyRateLimit headers", () => {
     );
   });
 
-  it("passes component key metadata after a denied limiter check", async () => {
+  it("records component key metadata before a denied limiter check", async () => {
     vi.spyOn(Date, "now").mockReturnValue(2_660_000);
     const ctx = makeRateLimitCtx({
       ip: {
@@ -346,9 +361,11 @@ describe("applyRateLimit headers", () => {
 
     expect(result.ok).toBe(false);
     const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
-    expect(componentRateLimitCalls(runMutation).map(([, args]) => args)).toContainEqual(
+    expect(
+      runMutation.mock.calls.map(([, args]) => ("config" in args ? "counter" : "metadata")),
+    ).toEqual(["metadata", "counter"]);
+    expect(metadataTouchCalls(runMutation).map(([, args]) => args)).toContainEqual(
       expect.objectContaining({
-        config: expect.any(Object),
         name: "downloadIp",
         key: "ip:unknown:download",
         now: 2_660_000,

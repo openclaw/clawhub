@@ -5,10 +5,17 @@ import {
 } from "../../../clawhub/src/cli/commands/moderationPlan.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import {
+  createCrabLoader,
+  fail,
+  formatError,
+  isInteractive,
+  promptConfirm,
+} from "../../../clawhub/src/cli/ui.js";
 import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
+  ApiV1PackageHardDeleteResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
@@ -113,6 +120,74 @@ type PackageTransferOwnerOptions = {
   apply?: boolean;
   json?: boolean;
 };
+
+type PackageHardDeleteOptions = {
+  owner?: string;
+  reason?: string;
+  apply?: boolean;
+  confirm?: string;
+  json?: boolean;
+  yes?: boolean;
+};
+
+export async function cmdHardDeletePackage(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageHardDeleteOptions,
+  inputAllowed: boolean,
+) {
+  const name = normalizePackageNameOrFail(packageName).toLowerCase();
+  const ownerHandle = options.owner?.trim().replace(/^@+/, "").toLowerCase();
+  const reason = options.reason?.trim();
+  if (!ownerHandle) fail("--owner required");
+  if (!reason) fail("--reason required");
+  const dryRun = options.apply !== true;
+  const confirmationToken = options.confirm?.trim();
+  if (!dryRun && !confirmationToken) fail("--confirm required when using --apply");
+
+  if (!dryRun && !options.yes) {
+    const allowPrompt = isInteractive() && inputAllowed !== false;
+    if (!allowPrompt) fail("Pass --yes (no input)");
+    const confirmed = await promptConfirm(
+      `Permanently hard-delete @${ownerHandle}/${name} and all related history? (cannot be undone)`,
+    );
+    if (!confirmed) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createCrabLoader(`${dryRun ? "Planning hard delete for" : "Hard-deleting"} ${name}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}/hard-delete`,
+        token,
+        ...(dryRun ? {} : { retryCount: 0 }),
+        body: {
+          ownerHandle,
+          reason,
+          dryRun,
+          ...(confirmationToken ? { confirmationToken } : {}),
+        },
+      },
+      ApiV1PackageHardDeleteResponseSchema,
+    );
+    spinner?.succeed(
+      result.deleted
+        ? `Hard-deleted @${result.ownerHandle}/${result.name}`
+        : `Dry run OK for @${result.ownerHandle}/${result.name}: pass --apply --confirm ${result.confirmationToken}`,
+    );
+    if (options.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
 
 export async function cmdSetPackageTrustedPublisher(
   opts: GlobalOpts,

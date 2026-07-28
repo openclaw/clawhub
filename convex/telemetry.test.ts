@@ -30,13 +30,27 @@ const {
   pruneInstallTelemetryDedupesInternal,
   reportCliInstallInternal,
   reportCliLegacyInstallBatchInternal,
+  reportCliPluginInstallInternal,
 } = await import("./telemetry");
 
 const reportCliInstallHandler = (
   reportCliInstallInternal as unknown as {
     _handler: (
       ctx: unknown,
-      args: { userId: string; slug: string; version?: string },
+      args: {
+        userId: string;
+        slug: string;
+        ownerHandle?: string;
+        sourceRef?: string;
+        sourceKind?: "skills-sh";
+        sourceRepository?: string;
+        sourcePath?: string;
+        sourceUrl?: string;
+        canonicalRef?: string;
+        clawhubScan?: "unscanned" | "scanned";
+        trustLabel?: string;
+        version?: string;
+      },
     ) => Promise<void>;
   }
 )._handler;
@@ -45,7 +59,23 @@ const reportCliLegacyInstallBatchHandler = (
   reportCliLegacyInstallBatchInternal as unknown as {
     _handler: (
       ctx: unknown,
-      args: { userId: string; skills: Array<{ slug: string; version?: string }> },
+      args: {
+        userId: string;
+        skills: Array<{ slug: string; version?: string }>;
+      },
+    ) => Promise<void>;
+  }
+)._handler;
+
+const reportCliPluginInstallHandler = (
+  reportCliPluginInstallInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: {
+        userId: string;
+        packageName: string;
+        version?: string;
+      },
     ) => Promise<void>;
   }
 )._handler;
@@ -86,7 +116,13 @@ function makeInstallCtx(params: {
       (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
         callback(makeIndexBuilder());
         if (table === "skills" && indexName === "by_slug") {
-          return { unique: async () => skills.shift() ?? null };
+          return {
+            unique: async () => skills.shift() ?? null,
+            take: async () => {
+              const skill = skills.shift() ?? null;
+              return skill ? [skill] : [];
+            },
+          };
         }
         if (table === "installTelemetryDedupes" && indexName === "by_user_skill_day") {
           return { unique: async () => dedupes.shift() ?? null };
@@ -178,6 +214,446 @@ describe("telemetry install events", () => {
     );
   });
 
+  it("records the first plugin install for a canonical scoped package", async () => {
+    const insert = vi.fn(async (table: string) =>
+      table === "userPackageInstalls" ? "userPackageInstalls:one" : "packageStatEvents:one",
+    );
+    const patch = vi.fn();
+    const packageDoc = {
+      _id: "packages:voice-call",
+      normalizedName: "@openclaw/voice-call",
+    };
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "packages" && indexName === "by_name") {
+                return { unique: async () => packageDoc };
+              }
+              if (table === "userPackageInstalls" && indexName === "by_user_package") {
+                return { unique: async () => null };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch,
+      },
+    };
+
+    await reportCliPluginInstallHandler(ctx, {
+      userId: "users:one",
+      packageName: "@OpenClaw/Voice-Call",
+      version: "2026.7.23",
+    });
+
+    expect(insert).toHaveBeenCalledWith("userPackageInstalls", {
+      userId: "users:one",
+      packageId: "packages:voice-call",
+      firstSeenAt: expect.any(Number),
+      lastSeenAt: expect.any(Number),
+      lastVersion: "2026.7.23",
+    });
+    expect(insert).toHaveBeenCalledWith("packageStatEvents", {
+      packageId: "packages:voice-call",
+      kind: "install",
+      occurredAt: expect.any(Number),
+      processedAt: undefined,
+    });
+    expect(patch).toHaveBeenCalledWith("userPackageInstalls:one", {
+      metricRecordedAt: expect.any(Number),
+    });
+  });
+
+  it("updates repeated plugin installs without incrementing package metrics", async () => {
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "packages" && indexName === "by_name") {
+                return {
+                  unique: async () => ({
+                    _id: "packages:voice-call",
+                    normalizedName: "@openclaw/voice-call",
+                  }),
+                };
+              }
+              if (table === "userPackageInstalls" && indexName === "by_user_package") {
+                return {
+                  unique: async () => ({
+                    _id: "userPackageInstalls:one",
+                    lastVersion: "2026.7.22",
+                    metricRecordedAt: 123,
+                  }),
+                };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch,
+      },
+    };
+
+    await reportCliPluginInstallHandler(ctx, {
+      userId: "users:one",
+      packageName: "@openclaw/voice-call",
+      version: "2026.7.23",
+    });
+
+    expect(patch).toHaveBeenCalledWith("userPackageInstalls:one", {
+      lastSeenAt: expect.any(Number),
+      lastVersion: "2026.7.23",
+    });
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("retries a pending package metric on a repeated plugin install", async () => {
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "packages" && indexName === "by_name") {
+                return {
+                  unique: async () => ({
+                    _id: "packages:voice-call",
+                    normalizedName: "@openclaw/voice-call",
+                  }),
+                };
+              }
+              if (table === "userPackageInstalls" && indexName === "by_user_package") {
+                return {
+                  unique: async () => ({
+                    _id: "userPackageInstalls:one",
+                    lastVersion: "2026.7.22",
+                  }),
+                };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch,
+      },
+    };
+
+    await reportCliPluginInstallHandler(ctx, {
+      userId: "users:one",
+      packageName: "@openclaw/voice-call",
+      version: "2026.7.23",
+    });
+
+    expect(insert).toHaveBeenCalledWith("packageStatEvents", {
+      packageId: "packages:voice-call",
+      kind: "install",
+      occurredAt: expect.any(Number),
+      processedAt: undefined,
+    });
+    expect(patch).toHaveBeenCalledWith("userPackageInstalls:one", {
+      metricRecordedAt: expect.any(Number),
+    });
+  });
+
+  it("ignores unknown or deleted plugin packages", async () => {
+    const insert = vi.fn();
+    const packages = [
+      null,
+      {
+        _id: "packages:deleted",
+        normalizedName: "@openclaw/deleted",
+        softDeletedAt: 123,
+      },
+    ];
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(
+            (_indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              return { unique: async () => packages.shift() ?? null };
+            },
+          ),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    await reportCliPluginInstallHandler(ctx, {
+      userId: "users:one",
+      packageName: "@openclaw/missing",
+    });
+    await reportCliPluginInstallHandler(ctx, {
+      userId: "users:one",
+      packageName: "@openclaw/deleted",
+    });
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("keeps package metric queueing best-effort after persisting the install relationship", async () => {
+    const insert = vi.fn(async (table: string) => {
+      if (table === "packageStatEvents") {
+        throw new Error("metrics unavailable");
+      }
+      return "userPackageInstalls:one";
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (_indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              return {
+                unique: async () =>
+                  table === "packages"
+                    ? { _id: "packages:voice-call", normalizedName: "@openclaw/voice-call" }
+                    : null,
+              };
+            },
+          ),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      reportCliPluginInstallHandler(ctx, {
+        userId: "users:one",
+        packageName: "@openclaw/voice-call",
+      }),
+    ).resolves.toBeUndefined();
+    expect(insert).toHaveBeenCalledWith(
+      "userPackageInstalls",
+      expect.objectContaining({ packageId: "packages:voice-call" }),
+    );
+  });
+
+  it("does not attribute an unclaimed skills.sh install to a same-slug native skill", async () => {
+    const query = vi.fn();
+    const insert = vi.fn();
+    const ctx = { db: { query, insert, patch: vi.fn() } };
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "demo",
+      sourceRef: "skills-sh:alice/skills/demo",
+      sourceKind: "skills-sh",
+      sourceRepository: "alice/skills",
+      sourcePath: "skills/demo",
+      sourceUrl: "https://github.com/alice/skills/tree/abc/skills/demo",
+      clawhubScan: "unscanned",
+      trustLabel: "Not scanned by ClawHub",
+      version: "a".repeat(40),
+    });
+
+    expect(query).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("uses owner identity when recording an owner-qualified install", async () => {
+    const publisher = {
+      _id: "publishers:alice",
+      handle: "alice",
+      kind: "user",
+    };
+    const skill = {
+      _id: "skills:alice-demo",
+      slug: "demo",
+      ownerPublisherId: publisher._id,
+    };
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "publishers" && indexName === "by_handle") {
+                return { unique: async () => publisher };
+              }
+              if (table === "skills" && indexName === "by_owner_publisher_slug") {
+                return { unique: async () => skill };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_skill_day") {
+                return { unique: async () => null };
+              }
+              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
+                return { unique: async () => null };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "demo",
+      ownerHandle: "alice",
+      version: "1.0.0",
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      "userSkillInstalls",
+      expect.objectContaining({ skillId: "skills:alice-demo" }),
+    );
+  });
+
+  it("resolves an owner-qualified slug alias before recording an install", async () => {
+    const publisher = {
+      _id: "publishers:source",
+      handle: "source",
+      kind: "org",
+    };
+    const skill = {
+      _id: "skills:target-demo",
+      slug: "demo",
+      ownerPublisherId: "publishers:target",
+    };
+    const alias = {
+      _id: "skillSlugAliases:source-old-demo",
+      slug: "old-demo",
+      ownerPublisherId: publisher._id,
+      skillId: skill._id,
+    };
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === skill._id ? skill : null)),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "publishers" && indexName === "by_handle") {
+                return { unique: async () => publisher };
+              }
+              if (table === "skills" && indexName === "by_owner_publisher_slug") {
+                return { unique: async () => null };
+              }
+              if (table === "skillSlugAliases" && indexName === "by_owner_publisher_slug") {
+                return { unique: async () => alias };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_skill_day") {
+                return { unique: async () => null };
+              }
+              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
+                return { unique: async () => null };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    await reportCliInstallHandler(ctx, {
+      userId: "users:one",
+      slug: "old-demo",
+      ownerHandle: "source",
+      version: "1.0.0",
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      "userSkillInstalls",
+      expect.objectContaining({ skillId: "skills:target-demo" }),
+    );
+  });
+
+  it("skips ambiguous bare slugs instead of failing or guessing an owner", async () => {
+    const insert = vi.fn();
+    const duplicateSkills = [
+      { _id: "skills:alice-demo", slug: "demo" },
+      { _id: "skills:bob-demo", slug: "demo" },
+    ];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "skills" && indexName === "by_slug") {
+                return {
+                  unique: async () => {
+                    throw new Error("unique query matched multiple skills");
+                  },
+                  take: async () => duplicateSkills,
+                };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      reportCliLegacyInstallBatchHandler(ctx, {
+        userId: "users:one",
+        skills: [{ slug: "demo", version: "1.0.0" }],
+      }),
+    ).resolves.toBeUndefined();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("skips bare slugs when more matches exist beyond the inspection cap", async () => {
+    const insert = vi.fn();
+    const candidates = [
+      { _id: "skills:first-active", slug: "demo" },
+      ...Array.from({ length: 24 }, (_, index) => ({
+        _id: `skills:deleted-${index}`,
+        slug: "demo",
+        softDeletedAt: index + 1,
+      })),
+      { _id: "skills:second-active", slug: "demo" },
+    ];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "skills" && indexName === "by_slug") {
+                return { take: async (limit: number) => candidates.slice(0, limit) };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    await reportCliLegacyInstallBatchHandler(ctx, {
+      userId: "users:one",
+      skills: [{ slug: "demo", version: "1.0.0" }],
+    });
+
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("keeps repeated CLI install events idempotent per user and skill", async () => {
     const { ctx, insert, patch } = makeInstallCtx({
       skills: [{ _id: "skills:demo", slug: "demo" }],
@@ -222,7 +698,7 @@ describe("telemetry install events", () => {
               const builder = makeIndexBuilder();
               callback(builder);
               if (table === "skills" && indexName === "by_slug") {
-                return { unique: async () => skill };
+                return { unique: async () => skill, take: async () => [skill] };
               }
               if (table === "installTelemetryDedupes" && indexName === "by_user_skill_day") {
                 expect(builder.eq).toHaveBeenCalledWith("userId", "users:one");
@@ -256,6 +732,17 @@ describe("telemetry install events", () => {
       { _id: "installs:one", skillId: "skills:one" },
       { _id: "installs:two", skillId: "skills:two" },
     ];
+    const packageInstalls = [
+      {
+        _id: "userPackageInstalls:one",
+        packageId: "packages:one",
+        metricRecordedAt: 86_500_000,
+      },
+      {
+        _id: "userPackageInstalls:pending",
+        packageId: "packages:pending",
+      },
+    ];
     const dedupes = [{ _id: "installTelemetryDedupes:one" }];
     const ctx = {
       db: {
@@ -265,6 +752,9 @@ describe("telemetry install events", () => {
               callback(makeIndexBuilder());
               if (table === "userSkillInstalls" && indexName === "by_user_lastSeenAt") {
                 return { take: async () => installs };
+              }
+              if (table === "userPackageInstalls" && indexName === "by_user_lastSeenAt") {
+                return { take: async () => packageInstalls };
               }
               if (table === "installTelemetryDedupes" && indexName === "by_user_createdAt") {
                 return { take: async () => dedupes };
@@ -298,13 +788,28 @@ describe("telemetry install events", () => {
         delta: { allTime: -1, current: -1 },
       }),
     );
-    expect(deleteDoc).toHaveBeenCalledTimes(3);
+    expect(insert).toHaveBeenCalledWith("packageStatEvents", {
+      packageId: "packages:one",
+      kind: "install_clear",
+      occurredAt: 86_500_000,
+      processedAt: undefined,
+    });
+    expect(insert.mock.calls.filter(([table]) => table === "packageStatEvents")).toHaveLength(1);
+    expect(deleteDoc).toHaveBeenCalledTimes(5);
+    expect(deleteDoc).toHaveBeenCalledWith("userPackageInstalls:one");
+    expect(deleteDoc).toHaveBeenCalledWith("userPackageInstalls:pending");
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
   });
 
   it.each([
     {
       table: "userSkillInstalls",
+      indexName: "by_user_lastSeenAt",
+      batchSize: 5_000,
+      laterTables: ["userPackageInstalls", "installTelemetryDedupes"],
+    },
+    {
+      table: "userPackageInstalls",
       indexName: "by_user_lastSeenAt",
       batchSize: 5_000,
       laterTables: ["installTelemetryDedupes"],

@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "skills": {
+    "axiom-alerting": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/axiom-alerting/SKILL.md",
+      "computedHash": "e7946a75c50093b72be697b9459a007e14ccc2d07b6544e5dc383e0a028abefa"
+    },
+    "axiom-sre": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/sre/SKILL.md",
+      "computedHash": "36bedcba5ce07ea8192e75eee422ebbd0e96d37a02fb5c45d456b0aacce88194"
+    },
+    "building-dashboards": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/building-dashboards/SKILL.md",
+      "computedHash": "331e80b2aa6d7a8a9d5ec69c50d5a843f125534ed01d93b9cc916a5a92ca9552"
+    },
+    "controlling-costs": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/controlling-costs/SKILL.md",
+      "computedHash": "73ed9a6417283ee4029a9e61d11ee3cc9ae64268d131150c4c0f4a71f87cd549"
+    },
+    "openclaw-brand": {
+      "source": "openclaw/carapace",
+      "sourceType": "github",
+      "skillPath": "openclaw-brand/SKILL.md",
+      "computedHash": "d4bf50bb9d512dbfbcd4abde7a75d8399b0187ca9486dd7854844aab0cd02e6a"
+    },
+    "openclaw-carapace": {
+      "source": "openclaw/carapace",
+      "sourceType": "github",
+      "skillPath": "openclaw-carapace/SKILL.md",
+      "computedHash": "d499fc33a555946855c7e817833b6c67b8b25b12f6dc1c5dfb27e862ed2c5ece"
+    },
+    "openclaw-design": {
+      "source": "openclaw/carapace",
+      "sourceType": "github",
+      "skillPath": "openclaw-design/SKILL.md",
+      "computedHash": "4a9004e762b08f6c9fc836de7b4db26fc27e7b9a90342884047bbffa51c21732"
+    },
+    "openclaw-design-audit": {
+      "source": "openclaw/carapace",
+      "sourceType": "github",
+      "skillPath": "openclaw-design-audit/SKILL.md",
+      "computedHash": "aff7655c532d67205301590f76d8655a42f36d14fbd1960d4e4b9b8149291aa3"
+    },
+    "openclaw-design-system": {
+      "source": "openclaw/carapace",
+      "sourceType": "github",
+      "skillPath": "openclaw-design-system/SKILL.md",
+      "computedHash": "6d94e825c58fc5650a532e4ed8bc96208ede8a166089598d1924393cc46f3275"
+    },
+    "openclaw-marketing-pages": {
+      "source": "openclaw/carapace",
+      "sourceType": "github",
+      "skillPath": "openclaw-marketing-pages/SKILL.md",
+      "computedHash": "7da44d258d5a1e87b26535effa13cf20931fd04a884fd95225a4ff603932ef84"
+    },
+    "query-metrics": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/query-metrics/SKILL.md",
+      "computedHash": "3da9845936d9cb99f8fa6fdcdced06cc25eb9f16aa401e4838991d7f039fc177"
+    },
+    "sentry-fix-issues": {
+      "source": "getsentry/sentry-for-ai",
+      "sourceType": "github",
+      "skillPath": "skills-legacy/sentry-fix-issues/SKILL.md",
+      "computedHash": "0ef2103f20d698acc56d856a07a372a0a68cb02bad654d0dacb4e2ffe87e98b5"
+    },
+    "spl-to-apl": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/spl-to-apl/SKILL.md",
+      "computedHash": "4bc60dd19ea863e38b3f0d40a9c03e20e90451727f098c659bd48405d5744f4d"
+    },
+    "writing-evals": {
+      "source": "axiomhq/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing-evals/SKILL.md",
+      "computedHash": "37d710e47ce0a681714c54df770db6cf19481a3f7ceb566b3cc5161141396d48"
+    }
+  }
+}

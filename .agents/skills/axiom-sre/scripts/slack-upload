@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Upload file to Slack using external upload flow
+# Usage: slack-upload <workspace> <channel> <file> [--comment "text"] [--thread_ts ts]
+#
+# Use workspace names from `scripts/init` output (under "Slack Workspaces").
+#
+# Examples:
+#   slack-upload default C1234567890 ./chart.png
+#   slack-upload default C1234567890 ./diagram.png --comment "Here's what I found"
+#   slack-upload default C1234567890 ./screenshot.png --thread_ts 1234567890.123456
+#
+# Supports images, text files, and any other file type Slack accepts.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+ENV="${1:-}"
+CHANNEL="${2:-}"
+FILE_PATH="${3:-}"
+shift 3 2>/dev/null || true
+
+show_usage() {
+  echo "Usage: slack-upload <env> <channel> <file> [--comment \"text\"] [--thread_ts ts]" >&2
+  echo "" >&2
+  echo "Examples:" >&2
+  echo "  slack-upload work C1234567890 ./chart.png" >&2
+  echo "  slack-upload work C1234567890 ./diagram.png --comment \"Analysis results\"" >&2
+  echo "" >&2
+  echo "Options:" >&2
+  echo "  --comment     Initial comment with the file" >&2
+  echo "  --thread_ts   Thread timestamp to reply to" >&2
+  exit 1
+}
+
+if [[ -z "$ENV" || -z "$CHANNEL" || -z "$FILE_PATH" ]]; then
+  show_usage
+fi
+
+if [[ ! -f "$FILE_PATH" ]]; then
+  echo "Error: File not found: $FILE_PATH" >&2
+  exit 1
+fi
+
+# Parse optional args
+COMMENT=""
+THREAD_TS=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --comment)
+      COMMENT="$2"
+      shift 2
+      ;;
+    --thread_ts)
+      THREAD_TS="$2"
+      shift 2
+      ;;
+    *)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# Load token from unified config
+eval "$("$SCRIPT_DIR/config" slack "$ENV")"
+
+# Get file info
+FILENAME=$(basename "$FILE_PATH")
+FILE_SIZE=$(stat -f%z "$FILE_PATH" 2>/dev/null || stat -c%s "$FILE_PATH")
+
+# Step 1: Get upload URL
+UPLOAD_RESPONSE=$(curl -s -X POST "https://slack.com/api/files.getUploadURLExternal" \
+  -H "Authorization: Bearer $SLACK_TOKEN" \
+  -F "filename=$FILENAME" \
+  -F "length=$FILE_SIZE")
+
+UPLOAD_OK=$(echo "$UPLOAD_RESPONSE" | jq -r '.ok')
+if [[ "$UPLOAD_OK" != "true" ]]; then
+  ERROR=$(echo "$UPLOAD_RESPONSE" | jq -r '.error // "unknown error"')
+  echo "Error getting upload URL: $ERROR" >&2
+  exit 1
+fi
+
+UPLOAD_URL=$(echo "$UPLOAD_RESPONSE" | jq -r '.upload_url')
+FILE_ID=$(echo "$UPLOAD_RESPONSE" | jq -r '.file_id')
+
+# Step 2: Upload file to the URL
+UPLOAD_RESULT=$(curl -s -X POST "$UPLOAD_URL" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary "@$FILE_PATH")
+
+# Step 3: Complete the upload
+COMPLETE_BODY=$(jq -n \
+  --arg file_id "$FILE_ID" \
+  --arg channel "$CHANNEL" \
+  --arg comment "$COMMENT" \
+  --arg thread_ts "$THREAD_TS" \
+  '{
+    files: [{id: $file_id}],
+    channel_id: $channel
+  } + (if $comment != "" then {initial_comment: $comment} else {} end)
+    + (if $thread_ts != "" then {thread_ts: $thread_ts} else {} end)')
+
+COMPLETE_RESPONSE=$(curl -s -X POST "https://slack.com/api/files.completeUploadExternal" \
+  -H "Authorization: Bearer $SLACK_TOKEN" \
+  -H "Content-Type: application/json; charset=utf-8" \
+  -d "$COMPLETE_BODY")
+
+COMPLETE_OK=$(echo "$COMPLETE_RESPONSE" | jq -r '.ok')
+if [[ "$COMPLETE_OK" != "true" ]]; then
+  ERROR=$(echo "$COMPLETE_RESPONSE" | jq -r '.error // "unknown error"')
+  echo "Error completing upload: $ERROR" >&2
+  exit 1
+fi
+
+# Output file info
+echo "$COMPLETE_RESPONSE" | jq '{
+  ok: .ok,
+  file_id: .files[0].id,
+  permalink: .files[0].permalink,
+  url_private: .files[0].url_private
+}'

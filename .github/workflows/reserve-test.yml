@@ -1,0 +1,49 @@
+name: Reserve Test
+run-name: Reserve Test for ${{ inputs.dataset_version }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_version:
+        description: Ranking dataset version that will use the exclusive Test lane
+        required: true
+        type: string
+      expected_sha:
+        description: Exact current main SHA permitted to reserve Test
+        required: true
+        type: string
+
+concurrency:
+  group: deploy-test
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  reserve-test:
+    if: github.ref == 'refs/heads/main' && inputs.expected_sha == github.sha
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment:
+      name: Test
+    steps:
+      - name: Verify exact current main
+        env:
+          DATASET_VERSION: ${{ inputs.dataset_version }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" || "$GITHUB_SHA" != "$main_sha" ]]; then
+            echo "::error::Test reservation must match exact current main"
+            exit 1
+          fi
+          if [[ ! "$DATASET_VERSION" =~ ^ranking-metrics-[0-9]{4}-[0-9]{2}-[0-9]{2}-v[0-9]+$ ]]; then
+            echo "::error::Invalid ranking dataset version"
+            exit 1
+          fi
+
+      - name: Hold exclusive Test lane until canceled
+        run: sleep 20700

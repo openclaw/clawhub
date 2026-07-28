@@ -27,8 +27,8 @@ describe("SkillListItem", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
-    expect(screen.queryByText("Verified")).toBeNull();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
@@ -37,7 +37,7 @@ describe("SkillListItem", () => {
       <SkillListItem skill={makeSkill()} owner={makePublisher({ official: true })} />,
     );
 
-    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.getByLabelText("Official")).toBeTruthy();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
@@ -54,6 +54,19 @@ describe("SkillListItem", () => {
 
     expect(screen.getByText("@creator")).toBeTruthy();
     expect(container.querySelector(".skill-list-item-main img")).toBeNull();
+  });
+
+  it("previews long names without displacing the creator identity", () => {
+    const displayName = "L".repeat(71);
+    const { container } = render(
+      <SkillListItem skill={makeSkill({ displayName })} ownerHandle="creator" />,
+    );
+
+    const identity = container.querySelector(".skill-list-item-identity");
+    const name = identity?.querySelector(".skill-list-item-name");
+    expect(name?.textContent).toBe(`${"L".repeat(69)}…`);
+    expect(name?.getAttribute("title")).toBe(displayName);
+    expect(identity?.querySelector(".skill-list-item-owner")?.textContent).toBe("@creator");
   });
 });
 

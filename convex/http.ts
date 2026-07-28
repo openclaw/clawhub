@@ -1,5 +1,6 @@
 import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import { httpRouter } from "convex/server";
+import { agentSkillsHttp } from "./agentSkillsHttp";
 import { auth } from "./auth";
 import { downloadZip } from "./downloads";
 import {
@@ -23,6 +24,7 @@ import {
   listPackagesV1Http,
   listPluginsV1Http,
   listSkillsV1Http,
+  trendingV1Http,
   mintPublishTokenV1Http,
   npmMirrorGetHttp,
   packagesDeleteRouterV1Http,
@@ -46,14 +48,22 @@ import {
   starsPostRouterV1Http,
   transfersGetRouterV1Http,
   banAppealContextV1Http,
+  createPromotionV1Http,
+  listPromotionsV1Http,
+  promotionsGetRouterV1Http,
+  promotionsPostRouterV1Http,
   catalogFeedV1Http,
   catalogSkillsFeedV1Http,
+  catalogClawsFeedV1Http,
+  promotionsFeedV1Http,
   usersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
   verifyDocsSessionV1Http,
   whoamiV1Http,
   contentRightsV1Http,
+  skillsShCatalogTestV1Http,
+  skillsShCatalogPublicV1Http,
 } from "./httpApiV1";
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
@@ -62,10 +72,24 @@ import {
   packageInspectorClaimHttp,
   packageInspectorResultsHttp,
 } from "./packageInspectorHttp";
+import { skillPresentationAssetHttp } from "./skillPresentationAssetsHttp";
 
 const http = installRateLimitedRoutes(httpRouter());
 
 auth.addHttpRoutes(http);
+
+http.route({
+  pathPrefix: "/api/v1/skill-icons/",
+  method: "GET",
+  handler: skillPresentationAssetHttp,
+});
+
+// Convex routes HEAD through the matching GET action and strips the body.
+http.route({
+  pathPrefix: "/api/v1/agent-skills/",
+  method: "GET",
+  handler: agentSkillsHttp,
+});
 
 http.route({
   path: ApiRoutes.download,
@@ -95,6 +119,12 @@ http.route({
   path: ApiRoutes.skills,
   method: "GET",
   handler: listSkillsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.trending,
+  method: "GET",
+  handler: trendingV1Http,
 });
 
 http.route({
@@ -134,6 +164,30 @@ http.route({
 });
 
 http.route({
+  path: ApiRoutes.promotions,
+  method: "GET",
+  handler: listPromotionsV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.promotions}/`,
+  method: "GET",
+  handler: promotionsGetRouterV1Http,
+});
+
+http.route({
+  path: ApiRoutes.promotions,
+  method: "POST",
+  handler: createPromotionV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.promotions}/`,
+  method: "POST",
+  handler: promotionsPostRouterV1Http,
+});
+
+http.route({
   path: ApiRoutes.catalogFeed,
   method: "GET",
   handler: catalogFeedV1Http,
@@ -143,6 +197,18 @@ http.route({
   path: ApiRoutes.catalogSkillsFeed,
   method: "GET",
   handler: catalogSkillsFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.catalogClawsFeed,
+  method: "GET",
+  handler: catalogClawsFeedV1Http,
+});
+
+http.route({
+  path: ApiRoutes.promotionsFeed,
+  method: "GET",
+  handler: promotionsFeedV1Http,
 });
 
 http.route({
@@ -287,6 +353,24 @@ http.route({
   pathPrefix: `${ApiRoutes.contentRights}/`,
   method: "GET",
   handler: contentRightsV1Http,
+});
+
+http.route({
+  path: "/api/v1/operator/skills-sh/catalog-test",
+  method: "GET",
+  handler: skillsShCatalogTestV1Http,
+});
+
+http.route({
+  pathPrefix: "/api/v1/skills-sh/",
+  method: "GET",
+  handler: skillsShCatalogPublicV1Http,
+});
+
+http.route({
+  path: "/api/v1/operator/skills-sh/catalog-test",
+  method: "POST",
+  handler: skillsShCatalogTestV1Http,
 });
 
 http.route({

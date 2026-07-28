@@ -1,4 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -7,8 +9,16 @@ import {
   expectNoRuntimeErrors,
   trackRuntimeErrors,
   waitForHydration,
+  withoutRecoverableReactHydrationErrors,
 } from "../helpers/runtimeErrors";
-import { expectOwnerHandleSelected, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
+import {
+  completeMockPrePublicationChecks,
+  expectOwnerHandleSelected,
+  publishedSkillVersionExists,
+  publishSkillVersion,
+  signInAsLocalPublisher,
+  skillMd,
+} from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -32,6 +42,27 @@ type ClaimedSkillCardJob = {
   target?: { skill?: { slug?: string }; version?: { version?: string } };
 };
 
+type PrePublicationSkillAttemptState = {
+  ok: true;
+  attemptExists: boolean;
+  attempt?: {
+    status: string;
+    slug: string;
+    version: string;
+    filesCount: number;
+    hasSkillInsertArgs: boolean;
+    hasFollowup: boolean;
+    trufflehogStatus: string;
+    trufflehogRedactedFindingCount: number;
+    clawscanStatus: string;
+    blockedAt: number | null;
+  };
+  skillExists: boolean;
+  skillLatestVersionId: string | null;
+  versionExists: boolean;
+  versionPublicationStatus: string | null;
+};
+
 function convexClient() {
   const convexUrl = process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("VITE_CONVEX_URL is required");
@@ -42,6 +73,63 @@ function convexSiteUrl() {
   const url = process.env.VITE_CONVEX_SITE_URL;
   if (!url) throw new Error("VITE_CONVEX_SITE_URL is required");
   return url.replace(/\/$/u, "");
+}
+
+function localConvexDeployment() {
+  const raw = readFileSync(".convex/local/default/config.json", "utf8");
+  const parsed = JSON.parse(raw) as { deploymentName?: unknown };
+  if (typeof parsed.deploymentName !== "string" || !parsed.deploymentName) {
+    throw new Error("Local Convex deployment name was not available");
+  }
+  return `local:${parsed.deploymentName}`;
+}
+
+function extractLastJsonObject(output: string) {
+  const trimmed = output.trim();
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== "{") continue;
+    const candidate = trimmed.slice(index);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Convex can print status lines before the JSON payload.
+    }
+  }
+  throw new Error(`No JSON object in convex run output:\n${output}`);
+}
+
+function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
+  const result = spawnSync(
+    "bunx",
+    [
+      "convex",
+      "run",
+      "--typecheck",
+      "disable",
+      "--codegen",
+      "disable",
+      functionName,
+      JSON.stringify(args),
+    ],
+    {
+      cwd: process.cwd(),
+      env: { ...process.env, CONVEX_DEPLOYMENT: localConvexDeployment() },
+      encoding: "utf8",
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
+    );
+  }
+  return JSON.parse(extractLastJsonObject(result.stdout)) as T;
+}
+
+function getPrePublicationSkillAttemptState(attemptId: string) {
+  return runDevSeed<PrePublicationSkillAttemptState>("devSeed:getPrePublicationSkillAttemptState", {
+    attemptId,
+  });
 }
 
 async function sleep(ms: number) {
@@ -66,7 +154,7 @@ async function expectHealthyPublishPage(page: Page, errors: string[]) {
   await expectNoFatalErrorUi(page);
   await expectNoRuntimeErrors(
     page,
-    errors.filter(
+    withoutRecoverableReactHydrationErrors(errors).filter(
       (error) =>
         !(
           error.includes("Function execution timed out (maximum duration: 1s)") &&
@@ -166,6 +254,25 @@ async function waitForSkillCardEndpoint(page: Page, slug: string, markdown: stri
       120,
     )}`,
   );
+}
+
+async function publicSkillVersionExists(
+  request: APIRequestContext,
+  args: {
+    ownerHandle: string;
+    slug: string;
+    version: string;
+  },
+) {
+  const url = `${convexSiteUrl()}/api/v1/skills/${encodeURIComponent(args.slug)}/versions/${encodeURIComponent(
+    args.version,
+  )}?ownerHandle=${encodeURIComponent(args.ownerHandle)}`;
+  const response = await request.get(url, { timeout: 2_000 }).catch(() => null);
+  if (!response?.ok()) return false;
+  const body = (await response.json().catch(() => null)) as {
+    version?: { version?: unknown };
+  } | null;
+  return body?.version?.version === args.version;
 }
 
 async function completeScanJob(
@@ -280,6 +387,189 @@ test("publishing a skill queues scan, queues skill-card generation, and shows th
   await expectHealthyPublishPage(page, errors);
 });
 
+test("clean skill publish stays private until TruffleHog and ClawScan pass", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-staged-skill-${Date.now().toString(36)}`;
+  const displayName = "Playwright Staged Clean Skill";
+  const version = "1.0.0";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "clean staged release",
+    changelog: "Clean release should wait for both scanners.",
+    completeChecks: false,
+  });
+
+  await expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+  await expect(await publishedSkillVersionExists(page, { ownerHandle, slug, version })).toBe(false);
+
+  const result = (await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+  })) as { status?: string; result?: { versionId?: string } };
+  expect(result.status).toBe("finalized");
+  await expect
+    .poll(() => publicSkillVersionExists(request, { ownerHandle, slug, version }), {
+      timeout: 60_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toBe(true);
+
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expectCurrentVersion(page, version);
+  await expectHealthyPublishPage(page, errors);
+});
+
+test("mocked TruffleHog deletes a secret-positive pending skill upload before it becomes public", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-secret-${Date.now().toString(36)}`;
+  const displayName = "Playwright Secret Block Skill";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+  const version = "1.0.0";
+  const secretMarkdown = `${skillMd({
+    slug,
+    displayName,
+    versionLabel: "secret-positive release",
+  })}
+
+## Local secret fixture
+
+This fake token is intentionally redacted by the mocked TruffleHog worker:
+LOCAL_E2E_SECRET_MARKER=redacted-secret-marker-not-real
+`;
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "secret-positive release",
+    changelog: "Secret-positive release should remain private.",
+    skillMarkdown: secretMarkdown,
+    completeChecks: false,
+  });
+
+  const blocked = (await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    trufflehog: "blocked",
+  })) as {
+    status?: string;
+    claim?: {
+      attemptId: string;
+      files?: Array<{ url?: string | null }>;
+    };
+  };
+  expect(blocked.status).toBe("blocked");
+
+  await expect(await publicSkillVersionExists(request, { ownerHandle, slug, version })).toBe(false);
+  await expect(await publishedSkillVersionExists(page, { ownerHandle, slug, version })).toBe(false);
+
+  const attemptId = blocked.claim?.attemptId;
+  expect(attemptId).toBeTruthy();
+  const uploadedFileUrls =
+    blocked.claim?.files
+      ?.map((file) => file.url)
+      .filter((url): url is string => typeof url === "string" && url.length > 0) ?? [];
+  expect(uploadedFileUrls.length).toBeGreaterThan(0);
+
+  await expect
+    .poll(() => getPrePublicationSkillAttemptState(attemptId!), {
+      timeout: 30_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toEqual(
+      expect.objectContaining({
+        attemptExists: true,
+        attempt: expect.objectContaining({
+          status: "blocked",
+          slug,
+          version,
+          filesCount: 0,
+          hasSkillInsertArgs: false,
+          hasFollowup: false,
+          trufflehogStatus: "blocked",
+          trufflehogRedactedFindingCount: 1,
+          clawscanStatus: "clean",
+        }),
+        skillExists: false,
+        versionExists: false,
+      }),
+    );
+
+  for (const url of uploadedFileUrls) {
+    await expect
+      .poll(
+        async () => {
+          const response = await request.get(url, { timeout: 2_000 }).catch(() => null);
+          return response?.ok() ?? false;
+        },
+        { timeout: 30_000, intervals: [500, 1_000, 2_000] },
+      )
+      .toBe(false);
+  }
+
+  await expectHealthyPublishPage(page, errors);
+});
+
+test("suspicious ClawScan verdict publishes the skill with review metadata", async ({
+  page,
+  request,
+}, testInfo) => {
+  const errors = trackRuntimeErrors(page);
+  const slug = `pw-suspicious-${Date.now().toString(36)}`;
+  const displayName = "Playwright Suspicious Review Skill";
+  const version = "1.0.0";
+  const ownerHandle = await signInAsLocalPublisher(page, "admin");
+
+  await publishSkillVersion(page, testInfo, {
+    ownerHandle,
+    slug,
+    displayName,
+    version,
+    versionLabel: "suspicious review release",
+    changelog: "Suspicious review result should remain public and flagged.",
+    completeChecks: false,
+  });
+
+  const result = (await completeMockPrePublicationChecks({
+    kind: "skill",
+    slug,
+    version,
+    clawscan: "suspicious",
+  })) as { status?: string };
+  expect(result.status).toBe("finalized");
+  await expect
+    .poll(() => publicSkillVersionExists(request, { ownerHandle, slug, version }), {
+      timeout: 60_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toBe(true);
+
+  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await waitForHydration(page);
+  await expect(page.locator("h1.skill-page-title", { hasText: displayName })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expectHealthyPublishPage(page, errors);
+});
+
 test("skill publishers can create a skill and publish a new version", async ({
   page,
 }, testInfo) => {
@@ -318,9 +608,57 @@ test("skill publishers can create a skill and publish a new version", async ({
     version: "1.0.1",
     versionLabel: "second release",
     changelog: "Second release published through the owner new-version workflow.",
+    files: [
+      {
+        path: "main.tf",
+        contents: 'resource "null_resource" "demo" {}\n',
+      },
+      {
+        path: "terraform.tfvars",
+        contents: 'region = "us-east-1"\n',
+      },
+      {
+        path: "assets/payload.bin",
+        contents: Uint8Array.from([0, 1, 2, 255]),
+      },
+    ],
   });
 
   await expectCurrentVersion(page, "1.0.1");
+  await page.getByRole("tab", { name: "Files" }).click();
+  await expect(page.getByRole("button", { name: /main\.tf/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /terraform\.tfvars/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /assets\/payload\.bin/i })).toBeVisible();
+
+  await page.getByRole("button", { name: /main\.tf/i }).click();
+  await expect(page.locator("pre.file-viewer-code")).toContainText(
+    'resource "null_resource" "demo" {}',
+  );
+  await page.getByRole("button", { name: "Back to file list" }).click();
+
+  await page.getByRole("button", { name: /assets\/payload\.bin/i }).click();
+  await expect(
+    page.getByText("This file is available to download but cannot be previewed as text."),
+  ).toBeVisible();
+  const downloadLink = page.getByRole("link", { name: "Download payload.bin" });
+  const downloadHref = await downloadLink.getAttribute("href");
+  expect(downloadHref).toContain(
+    `/api/v1/skills/${slug}/file?path=assets%2Fpayload.bin&ownerHandle=${ownerHandle}`,
+  );
+
+  const rawResponse = await page.request.get(
+    `${convexSiteUrl()}/api/v1/skills/${slug}/file?path=assets%2Fpayload.bin&ownerHandle=${ownerHandle}`,
+  );
+  expect(rawResponse.status()).toBe(200);
+  expect(new Uint8Array(await rawResponse.body())).toEqual(Uint8Array.from([0, 1, 2, 255]));
+  expect(rawResponse.headers()["content-disposition"]).toContain("attachment");
+  expect(rawResponse.headers()["x-content-type-options"]).toBe("nosniff");
+  await page.screenshot({
+    path: testInfo.outputPath("mixed-skill-files.png"),
+    fullPage: true,
+  });
+
+  await page.getByRole("button", { name: "Back to file list" }).click();
   await page.getByRole("tab", { name: "Versions" }).click();
   await expect(page.getByRole("heading", { name: "Versions" })).toBeVisible();
   await expect(page.getByText(/^v1\.0\.1\b/).first()).toBeVisible();

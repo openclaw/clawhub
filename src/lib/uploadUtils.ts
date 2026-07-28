@@ -1,14 +1,8 @@
-import {
-  isTextContentType,
-  normalizeTextContentType,
-  TEXT_FILE_EXTENSION_SET,
-} from "clawhub-schema/textFiles";
+import { normalizeContentType } from "clawhub-schema/textFiles";
 import { getUserFacingConvexError } from "./convexError";
 
 export async function uploadFile(uploadUrl: string, file: File) {
-  const path = file.webkitRelativePath || file.name;
-  const contentType =
-    normalizeTextContentType(path, file.type) || file.type || "application/octet-stream";
+  const contentType = normalizeContentType(file.type) || file.type || "application/octet-stream";
   const response = await fetch(uploadUrl, {
     method: "POST",
     headers: { "Content-Type": contentType },
@@ -47,16 +41,6 @@ export function formatBytes(bytes: number) {
 
 export function formatPublishError(error: unknown) {
   return getUserFacingConvexError(error, "Publish failed. Please try again.");
-}
-
-export function isTextFile(file: File) {
-  const path = (file.webkitRelativePath || file.name).trim().toLowerCase();
-  if (!path) return false;
-  const parts = path.split(".");
-  const extension = parts.length > 1 ? (parts.at(-1) ?? "") : "";
-  if (file.type && isTextContentType(file.type)) return true;
-  if (extension && TEXT_FILE_EXTENSION_SET.has(extension)) return true;
-  return false;
 }
 
 export async function readText(blob: Blob) {
