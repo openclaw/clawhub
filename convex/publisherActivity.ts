@@ -258,6 +258,7 @@ async function hydrateVisibleGroup(ctx: QueryCtx, group: Doc<"publisherActivityG
 
   return {
     groupId: group._id,
+    activitySortKey: group.sortKey,
     eventAt: group.eventAt,
     recordedItemCount: group.itemCount,
     previewItems,

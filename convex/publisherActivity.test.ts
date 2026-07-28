@@ -30,7 +30,11 @@ const listMineInternalHandler = (
   listMineInternal as unknown as WrappedHandler<
     { userId: string; cursor?: string | null; limit?: number },
     {
-      groups: Array<{ recordedItemCount: number; previewItems: unknown[] }>;
+      groups: Array<{
+        activitySortKey: string;
+        recordedItemCount: number;
+        previewItems: unknown[];
+      }>;
       nextCursor: string | null;
     }
   >
@@ -241,6 +245,7 @@ describe("publisher activity groups", () => {
     expect(result.nextCursor).toBeNull();
     expect(result.groups).toHaveLength(2);
     expect(result.groups.map((group) => group.recordedItemCount)).toEqual([50, 1]);
+    expect(result.groups[0]?.activitySortKey).toBe(groups[0]?.sortKey);
     expect(result.groups[0]?.previewItems).toHaveLength(3);
   });
 
