@@ -276,7 +276,12 @@ async function hydrateVisibleGroup(ctx: QueryCtx, group: Doc<"publisherActivityG
 
 async function listGroupsForUser(
   ctx: QueryCtx,
-  args: { userId: Id<"users">; cursor?: string | null; limit?: number },
+  args: {
+    userId: Id<"users">;
+    cursor?: string | null;
+    limit?: number;
+    projection?: "following" | "inbox";
+  },
 ) {
   const limit = clampLimit(args.limit, DEFAULT_GROUP_LIMIT, MAX_GROUP_LIMIT);
   const groups: NonNullable<Awaited<ReturnType<typeof hydrateVisibleGroup>>>[] = [];
@@ -290,9 +295,13 @@ async function listGroupsForUser(
     throw new ConvexError(`Publisher activity supports up to ${MAX_FOLLOWED_PUBLISHERS} follows`);
   }
 
+  const projectedFollows =
+    args.projection === "inbox"
+      ? follows.filter((follow) => follow.notifications === "all")
+      : follows;
   const initialFrontier = activitySortKey(Date.now() + 1, "~");
   const beforeByPublisher = Object.fromEntries(
-    follows.map((follow) => [
+    projectedFollows.map((follow) => [
       follow.publisherId,
       decodedCursor && Object.hasOwn(decodedCursor.beforeByPublisher, follow.publisherId)
         ? decodedCursor.beforeByPublisher[follow.publisherId]
@@ -304,10 +313,12 @@ async function listGroupsForUser(
     Math.min(
       limit * 2,
       MAX_GROUP_LIMIT,
-      Math.floor(MAX_ACTIVITY_CANDIDATES_PER_QUERY / Math.max(follows.length, 1)),
+      Math.floor(MAX_ACTIVITY_CANDIDATES_PER_QUERY / Math.max(projectedFollows.length, 1)),
     ),
   );
-  const activeFollows = follows.filter((follow) => beforeByPublisher[follow.publisherId] !== null);
+  const activeFollows = projectedFollows.filter(
+    (follow) => beforeByPublisher[follow.publisherId] !== null,
+  );
   const groupBatches = await Promise.all(
     activeFollows.map(async (follow) => {
       const beforeSortKey = beforeByPublisher[follow.publisherId];
@@ -402,6 +413,7 @@ export const listMine = query({
   args: {
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
+    projection: v.optional(v.union(v.literal("following"), v.literal("inbox"))),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
@@ -426,6 +438,7 @@ export const listMineInternal = internalQuery({
     userId: v.id("users"),
     cursor: v.optional(v.union(v.string(), v.null())),
     limit: v.optional(v.number()),
+    projection: v.optional(v.union(v.literal("following"), v.literal("inbox"))),
   },
   handler: listGroupsForUser,
 });

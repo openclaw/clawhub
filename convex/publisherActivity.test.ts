@@ -28,7 +28,12 @@ type WrappedHandler<TArgs, TResult> = {
 
 const listMineInternalHandler = (
   listMineInternal as unknown as WrappedHandler<
-    { userId: string; cursor?: string | null; limit?: number },
+    {
+      userId: string;
+      cursor?: string | null;
+      limit?: number;
+      projection?: "following" | "inbox";
+    },
     {
       groups: Array<{
         activitySortKey: string;
@@ -195,6 +200,7 @@ describe("publisher activity groups", () => {
         _id: "publisherFollows:1",
         followerUserId: "users:viewer",
         publisherId: publisher._id,
+        notifications: "all",
       },
     ];
     const docs: Record<string, Row | Record<string, unknown>> = {
@@ -247,6 +253,13 @@ describe("publisher activity groups", () => {
     expect(result.groups.map((group) => group.recordedItemCount)).toEqual([50, 1]);
     expect(result.groups[0]?.activitySortKey).toBe(groups[0]?.sortKey);
     expect(result.groups[0]?.previewItems).toHaveLength(3);
+
+    follows[0] = { ...follows[0], notifications: "none" };
+    const mutedInbox = await listMineInternalHandler(
+      { db: { get, query } },
+      { userId: "users:viewer", limit: 25, projection: "inbox" },
+    );
+    expect(mutedInbox.groups).toEqual([]);
   });
 
   it("deletes granular events before scheduling group cleanup", async () => {
