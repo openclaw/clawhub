@@ -78,9 +78,11 @@ function indexedQuery(rows: Row[], build?: (query: unknown) => unknown) {
       return true;
     });
   const ordered = () =>
-    filtered().sort((left, right) =>
-      String(right.sortKey ?? right._id).localeCompare(String(left.sortKey ?? left._id)),
-    );
+    filtered().sort((left, right) => {
+      const rightSortKey = typeof right.sortKey === "string" ? right.sortKey : right._id;
+      const leftSortKey = typeof left.sortKey === "string" ? left.sortKey : left._id;
+      return rightSortKey.localeCompare(leftSortKey);
+    });
   return {
     unique: async () => filtered()[0] ?? null,
     order: () => ({
