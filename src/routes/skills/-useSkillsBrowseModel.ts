@@ -9,7 +9,7 @@ import {
   getSkillCategoryBySlug,
   getSkillCategoriesForSkill,
 } from "../../lib/categories";
-import { fetchCanonicalTrendingPage } from "../../lib/trendingApi";
+import { fetchCanonicalTrendingPage, type TrendingFeedState } from "../../lib/trendingApi";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import {
   isExternalSkillListEntry,
@@ -165,6 +165,7 @@ export function useSkillsBrowseModel({
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
   const [listCursor, setListCursor] = useState<string | null>(null);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
+  const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>();
   const [, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
   const newCutoff = useMemo(() => Date.now() - newWindowMs, [catalogTab]);
@@ -176,31 +177,27 @@ export function useSkillsBrowseModel({
       try {
         if (catalogTab === "trending") {
           const capabilities = await fetchCatalogDiscoveryCapabilities();
-          if (capabilities.canonicalTrendingEnabled) {
-            const result = await fetchCanonicalTrendingPage({
-              cursor: pageCursor,
-              limit: pageSize,
-            });
+          if (!capabilities.canonicalTrendingEnabled) {
             if (generation !== fetchGeneration.current) return;
-            const entries = result.items.map((trending) => ({ trending }));
-            setListResults((prev) => (cursor ? [...prev, ...entries] : entries));
-            setListCursor(result.nextCursor);
+            setListResults([]);
+            setListCursor(null);
             setListAutoLoadPaused(false);
-            setListStatus(result.nextCursor ? "idle" : "done");
+            setTrendingState("unavailable");
+            setListStatus("done");
             return;
           }
 
-          const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
+          const result = await fetchCanonicalTrendingPage({
+            cursor: pageCursor,
             limit: pageSize,
-            categorySlug: activeCategory?.slug,
-            topic: activeTopic,
           });
           if (generation !== fetchGeneration.current) return;
-          const entries = (result as { items: SkillListEntry[] }).items;
-          setListResults(entries);
-          setListCursor(null);
+          const entries = result.items.map((trending) => ({ trending }));
+          setListResults((prev) => (cursor ? [...prev, ...entries] : entries));
+          setListCursor(result.nextCursor);
           setListAutoLoadPaused(false);
-          setListStatus("done");
+          setTrendingState(entries.length > 0 || result.nextCursor ? "available" : "empty");
+          setListStatus(result.nextCursor ? "idle" : "done");
           return;
         }
         const capabilities =
@@ -264,6 +261,10 @@ export function useSkillsBrowseModel({
         if (!isNavigationAbortError(err)) {
           console.error("Failed to fetch skills page:", err);
         }
+        if (catalogTab === "trending" && !pageCursor) {
+          setListResults([]);
+          setTrendingState("unavailable");
+        }
         // Reset to idle so the user can retry via "Load more"
         setListCursor(pageCursor);
         setListAutoLoadPaused(Boolean(pageCursor));
@@ -294,6 +295,7 @@ export function useSkillsBrowseModel({
     setListResults([]);
     setListCursor(null);
     setListAutoLoadPaused(false);
+    setTrendingState(undefined);
     setListStatus("loading");
     void fetchPage(null, generation);
     return () => {
@@ -634,6 +636,7 @@ export function useSkillsBrowseModel({
     query,
     sort,
     sorted,
+    trendingState,
     view,
   };
 }

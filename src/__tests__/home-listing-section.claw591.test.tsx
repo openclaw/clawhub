@@ -110,6 +110,21 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("skills.sh")).toBeNull();
   });
 
+  it("shows canonical Trending as unavailable without substituting legacy skills", () => {
+    render(<HomeListingSection initialListing={initialTrending([], false, "unavailable")} />);
+
+    expect(screen.getByText("24-hour Trending unavailable")).toBeTruthy();
+    expect(screen.getByText(/canonical 24-hour feed isn't available/i)).toBeTruthy();
+    expect(screen.queryByText("Quiet shelf")).toBeNull();
+  });
+
+  it("labels an empty canonical 24-hour window honestly", () => {
+    render(<HomeListingSection initialListing={initialTrending([])} />);
+
+    expect(screen.getByText("No 24-hour activity yet")).toBeTruthy();
+    expect(screen.getByText(/eligible activity in the current 24-hour window/i)).toBeTruthy();
+  });
+
   it("shows New, Featured, and Official for plugins but never plugin Trending", async () => {
     render(<HomeListingSection initialListing={initialTrending([])} />);
 
@@ -212,7 +227,11 @@ describe("HomeListingSection", () => {
   });
 });
 
-function initialTrending(items: ReturnType<typeof makeTrending>[], hasMore = false) {
+function initialTrending(
+  items: ReturnType<typeof makeTrending>[],
+  hasMore = false,
+  trendingState: "available" | "empty" | "unavailable" = items.length ? "available" : "empty",
+) {
   return {
     kind: "skills" as const,
     tab: "trending" as const,
@@ -220,6 +239,7 @@ function initialTrending(items: ReturnType<typeof makeTrending>[], hasMore = fal
     fetchLimit: 20 as const,
     items: items.map((trending) => ({ trending })),
     hasMore,
+    trendingState,
   };
 }
 

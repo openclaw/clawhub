@@ -1,5 +1,7 @@
 import { publicApiUrl } from "./publicApiUrl";
 
+export type TrendingFeedState = "available" | "empty" | "unavailable";
+
 export type CanonicalTrendingItem = {
   id: string;
   source: "clawhub" | "skills-sh";

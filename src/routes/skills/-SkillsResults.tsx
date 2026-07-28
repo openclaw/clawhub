@@ -11,6 +11,7 @@ import { Button } from "../../components/ui/button";
 import { getSkillBadges } from "../../lib/badges";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { timeAgo } from "../../lib/timeAgo";
+import type { TrendingFeedState } from "../../lib/trendingApi";
 import { truncateText } from "../../lib/truncateText";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
@@ -35,6 +36,7 @@ type SkillsResultsProps = {
   loadMoreRef: RefObject<HTMLDivElement | null>;
   loadMore: () => void;
   catalogTab: SkillsCatalogTab;
+  trendingState?: TrendingFeedState;
 };
 
 function TrendingSkillListItem({ item }: { item: TrendingSkillListEntry }) {
@@ -194,6 +196,7 @@ export function SkillsResults({
   loadMoreRef,
   loadMore,
   catalogTab,
+  trendingState,
 }: SkillsResultsProps) {
   const isMobileBrowse = useMediaQuery("(max-width: 760px)");
   const effectiveView = isMobileBrowse ? "list" : view;
@@ -205,18 +208,30 @@ export function SkillsResults({
         <BrowseResultsSkeleton label="Skill" variant={effectiveView} />
       ) : sorted.length === 0 && listDoneLoading ? (
         <div className="empty-state">
-          <p className="empty-state-title">No skills found</p>
+          <p className="empty-state-title">
+            {!hasQuery && catalogTab === "trending"
+              ? trendingState === "unavailable"
+                ? "24-hour Trending unavailable"
+                : "No 24-hour activity yet"
+              : "No skills found"}
+          </p>
           <p className="empty-state-body">
             {hasQuery
               ? "Try a different search term or remove filters."
-              : "No skills have been published yet."}
+              : catalogTab === "trending"
+                ? trendingState === "unavailable"
+                  ? "The canonical 24-hour feed isn't available right now. Try another tab."
+                  : "No skills have eligible activity in the current 24-hour window."
+                : "No skills have been published yet."}
           </p>
-          <Button asChild size="sm" className="mt-4">
-            <Link to="/add" search={{ kind: "skill", ownerHandle: undefined, method: undefined }}>
-              <Plus className="h-4 w-4" aria-hidden="true" />
-              Add a skill
-            </Link>
-          </Button>
+          {!hasQuery && catalogTab === "trending" ? null : (
+            <Button asChild size="sm" className="mt-4">
+              <Link to="/add" search={{ kind: "skill", ownerHandle: undefined, method: undefined }}>
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Add a skill
+              </Link>
+            </Button>
+          )}
         </div>
       ) : effectiveView === "grid" ? (
         <div className="grid browse-results-grid">

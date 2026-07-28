@@ -41,6 +41,7 @@ import {
   type HomeNativeSkillListingEntry,
   type HomeListingTab as ListingTab,
   type HomeSkillListingEntry as SkillPageEntry,
+  type TrendingFeedState,
 } from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
@@ -99,25 +100,38 @@ function HomeListingEmptyPanel({
   query,
   onClearSearch,
 }: {
-  variant: "error" | "search" | "filter";
+  variant: "error" | "search" | "filter" | "trendingEmpty" | "trendingUnavailable";
   query?: string;
   onClearSearch?: () => void;
 }) {
-  const Icon = variant === "error" ? CloudOff : variant === "search" ? Binoculars : Moon;
+  const Icon =
+    variant === "error" || variant === "trendingUnavailable"
+      ? CloudOff
+      : variant === "search"
+        ? Binoculars
+        : Moon;
   const title =
-    variant === "error"
-      ? "Listings took a coffee break"
-      : variant === "search"
-        ? query
-          ? `No claws for “${query}”`
-          : "No claws in this view"
-        : "Quiet shelf";
+    variant === "trendingUnavailable"
+      ? "24-hour Trending unavailable"
+      : variant === "trendingEmpty"
+        ? "No 24-hour activity yet"
+        : variant === "error"
+          ? "Listings took a coffee break"
+          : variant === "search"
+            ? query
+              ? `No claws for “${query}”`
+              : "No claws in this view"
+            : "Quiet shelf";
   const body =
-    variant === "error"
-      ? "We couldn't load this slice of the catalog. Give it another try in a moment."
-      : variant === "search"
-        ? "Try another query or clear the search."
-        : "Nothing on this tab right now. Peek at another tab or widen the category.";
+    variant === "trendingUnavailable"
+      ? "The canonical 24-hour feed isn't available right now. Try another tab."
+      : variant === "trendingEmpty"
+        ? "No skills have eligible activity in the current 24-hour window."
+        : variant === "error"
+          ? "We couldn't load this slice of the catalog. Give it another try in a moment."
+          : variant === "search"
+            ? "Try another query or clear the search."
+            : "Nothing on this tab right now. Peek at another tab or widen the category.";
 
   return (
     <div className="home-v2-listing-empty" role="status">
@@ -436,6 +450,7 @@ function createInitialListingCache(initialListing: HomeListingInitialData | null
           kind: "skills",
           items: initialListing.items,
           hasMore: initialListing.hasMore,
+          trendingState: initialListing.trendingState,
         }
       : {
           kind: "plugins",
@@ -475,6 +490,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const [searchPlugins, setSearchPlugins] = useState<PackageListItem[]>([]);
   const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
   const [listingHasMore, setListingHasMore] = useState(initialListing?.hasMore ?? false);
+  const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>(
+    initialListing?.kind === "skills" ? initialListing.trendingState : undefined,
+  );
 
   const trimmedSearch = searchQuery.trim();
   const isSearchMode = trimmedSearch.length > 0;
@@ -541,8 +559,13 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     const cacheKey = listingCacheKey({ kind, tab, categorySlugs, fetchLimit });
     const cached = listingCache.get(cacheKey);
     if (cached) {
-      if (cached.kind === "skills") setSkills(cached.items);
-      else setPlugins(cached.items);
+      if (cached.kind === "skills") {
+        setSkills(cached.items);
+        setTrendingState(cached.trendingState);
+      } else {
+        setPlugins(cached.items);
+        setTrendingState(undefined);
+      }
       setListingHasMore(cached.hasMore);
       setStatus("idle");
       setLoadingMore(false);
@@ -569,8 +592,10 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               kind: "skills",
               items: result.page,
               hasMore: result.hasMore,
+              trendingState: result.trendingState,
             });
             setSkills(result.page);
+            setTrendingState(result.trendingState);
             setListingHasMore(result.hasMore);
             setStatus("idle");
           })
@@ -587,6 +612,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
               hasMore: result.hasMore,
             });
             setPlugins(result.items);
+            setTrendingState(undefined);
             setListingHasMore(result.hasMore);
             setStatus("idle");
           });
@@ -955,7 +981,15 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
 
       {isEmpty ? (
         <HomeListingEmptyPanel
-          variant={isSearchMode ? "search" : "filter"}
+          variant={
+            isSearchMode
+              ? "search"
+              : kind === "skills" && tab === "trending"
+                ? trendingState === "unavailable"
+                  ? "trendingUnavailable"
+                  : "trendingEmpty"
+                : "filter"
+          }
           query={isSearchMode ? trimmedSearch : undefined}
           onClearSearch={isSearchMode ? closeListingSearch : undefined}
         />

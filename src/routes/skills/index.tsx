@@ -312,6 +312,7 @@ export function SkillsIndex() {
             loadMoreRef={model.loadMoreRef}
             loadMore={model.loadMore}
             catalogTab={model.catalogTab}
+            trendingState={model.trendingState}
           />
         </div>
       </div>

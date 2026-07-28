@@ -4,10 +4,15 @@ import { fetchCatalogDiscoveryCapabilities } from "./catalogDiscoveryCapabilitie
 import { getSkillCategoriesForSkill } from "./categories";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
 import type { PublicSkill, PublicUser } from "./publicUser";
-import { fetchCanonicalTrendingPage, type CanonicalTrendingItem } from "./trendingApi";
+import {
+  fetchCanonicalTrendingPage,
+  type CanonicalTrendingItem,
+  type TrendingFeedState,
+} from "./trendingApi";
 
 export type HomeListingKind = "skills" | "plugins";
 export type HomeListingTab = "trending" | "new" | "featured" | "official";
+export type { TrendingFeedState } from "./trendingApi";
 
 export type HomeNativeSkillListingEntry = {
   skill: PublicSkill;
@@ -28,7 +33,12 @@ export function isHomeTrendingSkillEntry(
 }
 
 export type HomeListingCacheEntry =
-  | { kind: "skills"; items: HomeSkillListingEntry[]; hasMore: boolean }
+  | {
+      kind: "skills";
+      items: HomeSkillListingEntry[];
+      hasMore: boolean;
+      trendingState?: TrendingFeedState;
+    }
   | { kind: "plugins"; items: PackageListItem[]; hasMore: boolean };
 
 type HomeListingInitialDataBase = {
@@ -42,6 +52,7 @@ export type HomeListingInitialData =
   | (HomeListingInitialDataBase & {
       kind: "skills";
       items: HomeSkillListingEntry[];
+      trendingState?: TrendingFeedState;
     })
   | (HomeListingInitialDataBase & {
       kind: "plugins";
@@ -106,14 +117,7 @@ export async function fetchHomeSkillListing(
   if (tab === "trending") {
     const capabilities = await fetchCatalogDiscoveryCapabilities();
     if (!capabilities.canonicalTrendingEnabled) {
-      const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
-        limit: numItems,
-        categorySlug: categorySlugs.length === 1 ? categorySlugs[0] : undefined,
-      });
-      const page = ((result as { items?: HomeNativeSkillListingEntry[] }).items ?? []).filter(
-        (entry) => skillMatchesAnyHomeCategory(entry.skill, categorySlugs),
-      );
-      return { page, hasMore: false };
+      return { page: [], hasMore: false, trendingState: "unavailable" as const };
     }
 
     const items: HomeTrendingSkillListingEntry[] = [];
@@ -121,18 +125,27 @@ export async function fetchHomeSkillListing(
     let hasMore = false;
     const maxRequests =
       numItems < HOME_LISTING_PAGE_SIZE ? numItems : Math.ceil(numItems / HOME_LISTING_PAGE_SIZE);
-    for (let pageIndex = 0; pageIndex < maxRequests; pageIndex += 1) {
-      const result = await fetchCanonicalTrendingPage({
-        cursor,
-        limit: Math.min(HOME_LISTING_PAGE_SIZE, numItems - items.length),
-        signal,
-      });
-      items.push(...result.items.map((trending) => ({ trending })));
-      cursor = result.nextCursor;
-      hasMore = cursor !== null;
-      if (!cursor || items.length >= numItems) break;
+    try {
+      for (let pageIndex = 0; pageIndex < maxRequests; pageIndex += 1) {
+        const result = await fetchCanonicalTrendingPage({
+          cursor,
+          limit: Math.min(HOME_LISTING_PAGE_SIZE, numItems - items.length),
+          signal,
+        });
+        items.push(...result.items.map((trending) => ({ trending })));
+        cursor = result.nextCursor;
+        hasMore = cursor !== null;
+        if (!cursor || items.length >= numItems) break;
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      return { page: [], hasMore: false, trendingState: "unavailable" as const };
     }
-    return { page: items, hasMore };
+    return {
+      page: items,
+      hasMore,
+      trendingState: items.length > 0 ? ("available" as const) : ("empty" as const),
+    };
   }
 
   // highlightedOnly is a dedicated backend path ordered by skillBadges.by_kind_at;
@@ -351,6 +364,7 @@ export async function fetchInitialHomeListing(): Promise<HomeListingInitialData>
     fetchLimit: HOME_LISTING_PAGE_SIZE,
     items: result.page,
     hasMore: result.hasMore,
+    trendingState: result.trendingState ?? "unavailable",
   };
 }
 

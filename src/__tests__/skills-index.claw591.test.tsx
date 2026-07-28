@@ -134,24 +134,34 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/Not scanned by ClawHub/i)).toBeNull();
   });
 
-  it("renders legacy Trending while the canonical rollout is disabled", async () => {
+  it("shows Trending unavailable without reading the legacy leaderboard", async () => {
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
       apiVersion: 0,
       canonicalTrendingEnabled: false,
     });
-    convexHttpMock.query.mockResolvedValue({
-      items: [makeListResult("legacy-trending", "Legacy Trending")],
-      nextCursor: null,
-    });
 
     render(<SkillsIndex />);
 
-    expect(await screen.findByText("Legacy Trending")).toBeTruthy();
+    expect(await screen.findByText("24-hour Trending unavailable")).toBeTruthy();
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
-    expect(convexHttpMock.query).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ limit: 20 }),
-    );
+    expect(convexHttpMock.query).not.toHaveBeenCalled();
+  });
+
+  it("shows stale canonical Trending as unavailable without a legacy retry", async () => {
+    fetchCanonicalTrendingPageMock.mockRejectedValue(new Error("Trending snapshot expired"));
+
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("24-hour Trending unavailable")).toBeTruthy();
+    expect(convexHttpMock.query).not.toHaveBeenCalled();
+  });
+
+  it("labels an empty canonical 24-hour window honestly", async () => {
+    render(<SkillsIndex />);
+
+    expect(await screen.findByText("No 24-hour activity yet")).toBeTruthy();
+    expect(screen.getByText(/eligible activity in the current 24-hour window/i)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /add a skill/i })).toBeNull();
   });
 
   it("loads New from the native 14-day chronological feed", async () => {
