@@ -106,24 +106,14 @@ opaque `cursor` returned as `nextCursor`; `nextCursor` is `null` on the final
 page. A cursor is bound to one immutable sequence. A stale cursor returns `409`
 and the client must restart from the first page.
 
-### `GET /api/v1/publishers/{publisherId}/followers`
-
-Returns public publisher identities that follow the publisher. The underlying
-user ids are never exposed. Supports `limit` and opaque `cursor` pagination.
-
-### `GET /api/v1/publishers/{publisherId}/following`
-
-Returns public publishers followed by a personal publisher. Organization
-publishers currently return an empty list because follows are user-owned.
-Supports `limit` and opaque `cursor` pagination.
-
 ### `/api/v1/publisher-follows`
 
 API token required. `GET` lists the current user's followed publishers with
 optional `limit`, `cursor`, and `q`. `POST` accepts `{ "publisherId": "..." }`;
 `DELETE` accepts `publisherId` as a query parameter. Follow and unfollow are
 idempotent, users cannot follow their own personal publisher, and each user may
-follow up to 100 publishers.
+follow up to 100 publishers. Follow state is private; this API does not expose
+public follower or following lists.
 
 ### `GET /api/v1/search`
 
