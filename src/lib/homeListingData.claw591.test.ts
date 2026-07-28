@@ -98,6 +98,18 @@ describe("homeListingData", () => {
     });
   });
 
+  it("rejects a later canonical page failure instead of replacing loaded results", async () => {
+    const first = makeTrending("first", "First", 12);
+    fetchCanonicalTrendingPageMock
+      .mockResolvedValueOnce(canonicalPage([first], "opaque cursor 2"))
+      .mockRejectedValueOnce(new Error("second page unavailable"));
+
+    await expect(fetchHomeSkillListing("trending", [], 2)).rejects.toThrow(
+      "second page unavailable",
+    );
+    expect(convexQueryMock).not.toHaveBeenCalled();
+  });
+
   it("reports canonical Trending unavailable without reading the legacy leaderboard", async () => {
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
       apiVersion: 0,

@@ -144,6 +144,7 @@ export async function fetchHomeSkillListing(
       }
     } catch (error) {
       if (signal?.aborted) throw error;
+      if (items.length > 0) throw error;
       return { page: [], hasMore: false, trendingState: "unavailable" as const };
     }
     return {

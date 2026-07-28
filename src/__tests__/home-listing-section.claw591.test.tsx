@@ -190,6 +190,22 @@ describe("HomeListingSection", () => {
     );
   });
 
+  it("keeps loaded Trending rows when a later Load more page fails", async () => {
+    const first = makeTrending("first", "First Skill", 17, 9000);
+    fetchCanonicalTrendingPageMock
+      .mockResolvedValueOnce(canonicalPage([first], "opaque cursor 2"))
+      .mockRejectedValueOnce(new Error("second page unavailable"));
+    render(<HomeListingSection initialListing={initialTrending([first], true)} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    await waitFor(() => {
+      expect(fetchCanonicalTrendingPageMock).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTitle("First Skill")).toBeTruthy();
+    expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
+  });
+
   it("keeps search as a separate relevance-first interaction", async () => {
     convexActionMock.mockResolvedValue([
       {
