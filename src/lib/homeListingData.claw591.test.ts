@@ -124,6 +124,18 @@ describe("homeListingData", () => {
     expect(convexQueryMock).not.toHaveBeenCalled();
   });
 
+  it("reports Trending unavailable when capability discovery fails", async () => {
+    fetchCatalogDiscoveryCapabilitiesMock.mockRejectedValue(new Error("capability outage"));
+
+    await expect(fetchHomeSkillListing("trending", [], HOME_LISTING_PAGE_SIZE)).resolves.toEqual({
+      page: [],
+      hasMore: false,
+      trendingState: "unavailable",
+    });
+    expect(convexQueryMock).not.toHaveBeenCalled();
+    expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
+  });
+
   it("loads New from the native 14-day chronological feed", async () => {
     const now = Date.now();
     await fetchHomeSkillListing("new", [], HOME_LISTING_PAGE_SIZE);

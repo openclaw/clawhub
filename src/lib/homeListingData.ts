@@ -115,7 +115,12 @@ export async function fetchHomeSkillListing(
   signal?: AbortSignal,
 ) {
   if (tab === "trending") {
-    const capabilities = await fetchCatalogDiscoveryCapabilities();
+    let capabilities: Awaited<ReturnType<typeof fetchCatalogDiscoveryCapabilities>>;
+    try {
+      capabilities = await fetchCatalogDiscoveryCapabilities();
+    } catch {
+      return { page: [], hasMore: false, trendingState: "unavailable" as const };
+    }
     if (!capabilities.canonicalTrendingEnabled) {
       return { page: [], hasMore: false, trendingState: "unavailable" as const };
     }
