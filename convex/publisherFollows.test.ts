@@ -458,13 +458,9 @@ describe("publisher follows", () => {
   });
 
   it.each([
-    ["follower", deletePublisherFollowsForFollowerInternalHandler, { followerUserId: "users:1" }],
-    [
-      "publisher",
-      deletePublisherFollowsForPublisherInternalHandler,
-      { publisherId: "publishers:1" },
-    ],
-  ] as const)("deletes %s follow edges in resumable batches", async (_kind, handler, args) => {
+    ["follower", { followerUserId: "users:1" }],
+    ["publisher", { publisherId: "publishers:1" }],
+  ] as const)("deletes %s follow edges in resumable batches", async (kind, args) => {
     const deleteDoc = vi.fn();
     const runAfter = vi.fn();
     const paginate = vi.fn(async () => ({
@@ -474,10 +470,15 @@ describe("publisher follows", () => {
     }));
     const query = vi.fn(() => ({ withIndex: () => ({ paginate }) }));
 
-    const result = await handler(
-      { db: { query, delete: deleteDoc }, scheduler: { runAfter } },
-      args,
-    );
+    const ctx = { db: { query, delete: deleteDoc }, scheduler: { runAfter } };
+    const result =
+      kind === "follower"
+        ? await deletePublisherFollowsForFollowerInternalHandler(ctx, {
+            followerUserId: "users:1",
+          })
+        : await deletePublisherFollowsForPublisherInternalHandler(ctx, {
+            publisherId: "publishers:1",
+          });
 
     expect(result).toEqual({ deleted: 2, scheduled: true });
     expect(deleteDoc).toHaveBeenCalledTimes(2);
