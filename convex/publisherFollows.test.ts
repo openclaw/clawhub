@@ -14,8 +14,13 @@ vi.mock("./functions", () => ({
   query: (def: { handler: unknown }) => ({ _handler: def.handler }),
 }));
 
-const { followPublisherInternal, listFollowedPublishersInternal, unfollowPublisherInternal } =
-  await import("./publisherFollows");
+const {
+  deletePublisherFollowsForFollowerInternal,
+  deletePublisherFollowsForPublisherInternal,
+  followPublisherInternal,
+  listFollowedPublishersInternal,
+  unfollowPublisherInternal,
+} = await import("./publisherFollows");
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -41,6 +46,18 @@ const listFollowedPublishersInternalHandler = (
       continueCursor: string;
       isDone: boolean;
     }
+  >
+)._handler;
+const deletePublisherFollowsForFollowerInternalHandler = (
+  deletePublisherFollowsForFollowerInternal as unknown as WrappedHandler<
+    { followerUserId: string; cursor?: string },
+    { deleted: number; scheduled: boolean }
+  >
+)._handler;
+const deletePublisherFollowsForPublisherInternalHandler = (
+  deletePublisherFollowsForPublisherInternal as unknown as WrappedHandler<
+    { publisherId: string; cursor?: string },
+    { deleted: number; scheduled: boolean }
   >
 )._handler;
 
@@ -438,5 +455,32 @@ describe("publisher follows", () => {
       isDone: false,
     });
     expect(db.paginate).toHaveBeenCalledTimes(4);
+  });
+
+  it.each([
+    ["follower", deletePublisherFollowsForFollowerInternalHandler, { followerUserId: "users:1" }],
+    ["publisher", deletePublisherFollowsForPublisherInternalHandler, { publisherId: "publishers:1" }],
+  ] as const)("deletes %s follow edges in resumable batches", async (_kind, handler, args) => {
+    const deleteDoc = vi.fn();
+    const runAfter = vi.fn();
+    const paginate = vi.fn(async () => ({
+      page: [{ _id: "publisherFollows:1" }, { _id: "publisherFollows:2" }],
+      continueCursor: "next",
+      isDone: false,
+    }));
+    const query = vi.fn(() => ({ withIndex: () => ({ paginate }) }));
+
+    const result = await handler(
+      { db: { query, delete: deleteDoc }, scheduler: { runAfter } },
+      args,
+    );
+
+    expect(result).toEqual({ deleted: 2, scheduled: true });
+    expect(deleteDoc).toHaveBeenCalledTimes(2);
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ ...args, cursor: "next" }),
+    );
   });
 });

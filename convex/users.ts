@@ -76,6 +76,8 @@ type DeletedAccountCleanupResult = {
   githubOrgMemberships: number;
   apiTokens: number;
   personalPublisherDeleted: boolean;
+  publisherFollows: number;
+  publisherFollowsCleanupScheduled: boolean;
 };
 type AccountRecoveryPurgeEligibilityReason =
   | "self_delete_audit"
@@ -367,6 +369,11 @@ async function hardDeleteSelfDeletedAccountState(
     .collect();
   for (const membership of githubOrgMemberships) await ctx.db.delete(membership._id);
 
+  const deletedFollows = (await ctx.runMutation(
+    internal.publisherFollows.deletePublisherFollowsForFollowerInternal,
+    { followerUserId: user._id },
+  )) as { deleted: number; scheduled: boolean };
+
   const personalPublisher = user.personalPublisherId
     ? await ctx.db.get(user.personalPublisherId)
     : await getPersonalPublisherForUser(ctx, user._id);
@@ -416,6 +423,8 @@ async function hardDeleteSelfDeletedAccountState(
     githubOrgMemberships: githubOrgMemberships.length,
     apiTokens: tokens.length,
     personalPublisherDeleted,
+    publisherFollows: deletedFollows.deleted,
+    publisherFollowsCleanupScheduled: deletedFollows.scheduled,
   };
 }
 

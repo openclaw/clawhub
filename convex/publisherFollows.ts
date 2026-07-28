@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
@@ -83,7 +84,7 @@ async function followPublisherForUser(
 
   const followed = await ctx.db
     .query("publisherFollows")
-    .withIndex("by_follower_and_updatedAt", (q) => q.eq("followerUserId", args.followerUserId))
+    .withIndex("by_follower", (q) => q.eq("followerUserId", args.followerUserId))
     .order("desc")
     .take(MAX_FOLLOWED_PUBLISHERS);
   if (followed.length >= MAX_FOLLOWED_PUBLISHERS) {
@@ -285,4 +286,53 @@ export const listFollowedPublishersInternal = internalQuery({
     query: v.optional(v.string()),
   },
   handler: async (ctx, args) => await listPublisherFollowsForUser(ctx, args),
+});
+
+async function deleteFollowBatch(
+  ctx: MutationCtx,
+  args:
+    | { by: "follower"; followerUserId: Id<"users">; cursor?: string }
+    | { by: "publisher"; publisherId: Id<"publishers">; cursor?: string },
+) {
+  const page = await (
+    args.by === "follower"
+      ? ctx.db
+          .query("publisherFollows")
+          .withIndex("by_follower", (q) => q.eq("followerUserId", args.followerUserId))
+      : ctx.db
+          .query("publisherFollows")
+          .withIndex("by_publisher", (q) => q.eq("publisherId", args.publisherId))
+  ).paginate({ cursor: args.cursor ?? null, numItems: DELETE_BATCH_SIZE });
+  for (const follow of page.page) await ctx.db.delete(follow._id);
+  return page;
+}
+
+export const deletePublisherFollowsForFollowerInternal = internalMutation({
+  args: { followerUserId: v.id("users"), cursor: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ deleted: number; scheduled: boolean }> => {
+    const page = await deleteFollowBatch(ctx, { by: "follower", ...args });
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.publisherFollows.deletePublisherFollowsForFollowerInternal,
+        { followerUserId: args.followerUserId, cursor: page.continueCursor },
+      );
+    }
+    return { deleted: page.page.length, scheduled: !page.isDone };
+  },
+});
+
+export const deletePublisherFollowsForPublisherInternal = internalMutation({
+  args: { publisherId: v.id("publishers"), cursor: v.optional(v.string()) },
+  handler: async (ctx, args): Promise<{ deleted: number; scheduled: boolean }> => {
+    const page = await deleteFollowBatch(ctx, { by: "publisher", ...args });
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(
+        0,
+        internal.publisherFollows.deletePublisherFollowsForPublisherInternal,
+        { publisherId: args.publisherId, cursor: page.continueCursor },
+      );
+    }
+    return { deleted: page.page.length, scheduled: !page.isDone };
+  },
 });
