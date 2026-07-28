@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   ArrowRight,
+  Bell,
   ExternalLink,
   ChevronDown,
   Command,
@@ -656,6 +657,12 @@ export default function Header() {
                     >
                       <Plus size={14} aria-hidden="true" />
                       Add skill or plugin
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/inbox" className="flex items-center gap-2">
+                      <Bell size={14} aria-hidden="true" />
+                      Inbox
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

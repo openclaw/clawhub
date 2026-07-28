@@ -39,6 +39,7 @@ import {
   upsertReservedHandleForRightfulOwner,
 } from "./lib/reservedHandles";
 import { buildUserSearchResults } from "./lib/userSearch";
+import { deletePublisherActivityInboxStateForUser } from "./publisherActivityInbox";
 
 const DEFAULT_ROLE = "user";
 const ADMIN_HANDLE = "steipete";
@@ -368,6 +369,7 @@ async function hardDeleteSelfDeletedAccountState(
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
   for (const membership of githubOrgMemberships) await ctx.db.delete(membership._id);
+  await deletePublisherActivityInboxStateForUser(ctx, user._id);
 
   const deletedFollows = (await ctx.runMutation(
     internal.publisherFollows.deletePublisherFollowsForFollowerInternal,

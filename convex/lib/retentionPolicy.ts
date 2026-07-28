@@ -242,6 +242,7 @@ export const RETENTION_POLICIES = {
   publisherFollows: permanent("User publisher follow preference records."),
   publisherActivity: permanent("Granular public publisher release activity events."),
   publisherActivityGroups: permanent("Coalesced public publisher release activity groups."),
+  publisherActivityInboxState: permanent("Per-user following inbox read frontiers."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
   skillsShCatalogControls: permanent("Durable skills.sh catalog operator controls."),

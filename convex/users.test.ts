@@ -2013,6 +2013,13 @@ describe("users profile audit logs", () => {
           }),
         };
       }
+      if (table === "publisherActivityInboxState") {
+        return {
+          withIndex: () => ({
+            unique: vi.fn(async () => null),
+          }),
+        };
+      }
       if (table === "authAccounts" || table === "authSessions") {
         return {
           withIndex: () => ({

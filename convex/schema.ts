@@ -2992,6 +2992,12 @@ const publisherActivityGroups = defineTable({
   .index("by_publisher_and_sortKey", ["publisherId", "sortKey"])
   .index("by_publisher_and_batchKey", ["publisherId", "batchKey"]);
 
+const publisherActivityInboxState = defineTable({
+  userId: v.id("users"),
+  seenThroughSortKey: v.string(),
+  updatedAt: v.number(),
+}).index("by_user", ["userId"]);
+
 const auditLogs = defineTable({
   actorUserId: v.optional(v.id("users")),
   action: v.string(),
@@ -4232,6 +4238,7 @@ export default defineSchema({
   publisherFollows,
   publisherActivity,
   publisherActivityGroups,
+  publisherActivityInboxState,
   auditLogs,
   systemSettings,
   skillsShCatalogControls,

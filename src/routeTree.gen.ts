@@ -17,6 +17,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AuditsRouteImport } from './routes/audits'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ImportRouteImport } from './routes/import'
+import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as ManagementRouteImport } from './routes/management'
 import { Route as PublishPluginRouteImport } from './routes/publish-plugin'
 import { Route as PublishSkillRouteImport } from './routes/publish-skill'
@@ -101,6 +102,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const ImportRoute = ImportRouteImport.update({
   id: '/import',
   path: '/import',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ManagementRoute = ManagementRouteImport.update({
@@ -348,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
+  '/inbox': typeof InboxRoute
   '/management': typeof ManagementRoute
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
@@ -403,6 +410,7 @@ export interface FileRoutesByTo {
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
+  '/inbox': typeof InboxRoute
   '/management': typeof ManagementRoute
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
@@ -459,6 +467,7 @@ export interface FileRoutesById {
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
   '/import': typeof ImportRoute
+  '/inbox': typeof InboxRoute
   '/management': typeof ManagementRoute
   '/publish-plugin': typeof PublishPluginRoute
   '/publish-skill': typeof PublishSkillRoute
@@ -516,6 +525,7 @@ export interface FileRouteTypes {
     | '/audits'
     | '/dashboard'
     | '/import'
+    | '/inbox'
     | '/management'
     | '/publish-plugin'
     | '/publish-skill'
@@ -571,6 +581,7 @@ export interface FileRouteTypes {
     | '/audits'
     | '/dashboard'
     | '/import'
+    | '/inbox'
     | '/management'
     | '/publish-plugin'
     | '/publish-skill'
@@ -626,6 +637,7 @@ export interface FileRouteTypes {
     | '/audits'
     | '/dashboard'
     | '/import'
+    | '/inbox'
     | '/management'
     | '/publish-plugin'
     | '/publish-skill'
@@ -682,6 +694,7 @@ export interface RootRouteChildren {
   AuditsRoute: typeof AuditsRoute
   DashboardRoute: typeof DashboardRoute
   ImportRoute: typeof ImportRoute
+  InboxRoute: typeof InboxRoute
   ManagementRoute: typeof ManagementRoute
   PublishPluginRoute: typeof PublishPluginRoute
   PublishSkillRoute: typeof PublishSkillRoute
@@ -772,6 +785,13 @@ declare module '@tanstack/react-router' {
       path: '/import'
       fullPath: '/import'
       preLoaderRoute: typeof ImportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/management': {
@@ -1176,6 +1196,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuditsRoute: AuditsRoute,
   DashboardRoute: DashboardRoute,
   ImportRoute: ImportRoute,
+  InboxRoute: InboxRoute,
   ManagementRoute: ManagementRoute,
   PublishPluginRoute: PublishPluginRoute,
   PublishSkillRoute: PublishSkillRoute,
