@@ -18,19 +18,11 @@ function doc<T extends "users" | "publishers" | "packages" | "skills">(id: strin
 
 function makeQuery(pages: unknown[] | unknown[][]) {
   const normalizedPages = Array.isArray(pages[0]) ? (pages as unknown[][]) : [pages as unknown[]];
-  let index = 0;
+  const rows = normalizedPages.flat();
   return {
     withIndex: vi.fn(() => ({
       order: vi.fn(() => ({
-        paginate: vi.fn(async () => {
-          const page = normalizedPages[index] ?? [];
-          index += 1;
-          return {
-            page,
-            isDone: index >= normalizedPages.length,
-            continueCursor: index >= normalizedPages.length ? null : `cursor-${index}`,
-          };
-        }),
+        take: vi.fn(async (limit: number) => rows.slice(0, limit)),
       })),
     })),
   };
@@ -355,7 +347,7 @@ describe("publisher feed projection", () => {
     expect(result.status).toBe("complete");
   });
 
-  it("bounds scans when package rows keep filtering out", async () => {
+  it("fails closed when the bounded source read cannot prove completeness", async () => {
     const publisher = makePublisher();
     const privatePackage = {
       _id: doc<"packages">("packages:private"),
@@ -367,26 +359,16 @@ describe("publisher feed projection", () => {
       summary: null,
       updatedAt: 30,
     };
-    const publicPackage = {
-      _id: doc<"packages">("packages:public"),
-      family: "code-plugin",
-      channel: "community",
-      scanStatus: "clean",
-      name: "@alice/public",
-      displayName: "Public",
-      summary: null,
-      updatedAt: 10,
-    };
     const get = vi.fn(async (id: string) => (id === publisher._id ? publisher : null));
     const normalizeId = vi.fn((table: string, id: string) =>
       table === "publishers" && id.startsWith("publishers:") ? doc<"publishers">(id) : null,
     );
-    const packagesQuery = makeQuery([
-      [privatePackage],
-      [privatePackage],
-      [privatePackage],
-      [publicPackage],
-    ]);
+    const packagesQuery = makeQuery(
+      Array.from({ length: 401 }, (_, index) => ({
+        ...privatePackage,
+        _id: doc<"packages">(`packages:private-${index}`),
+      })),
+    );
     const query = vi.fn((table: string) => (table === "packages" ? packagesQuery : makeQuery([])));
 
     const result = (await getPublisherFeedHandler(

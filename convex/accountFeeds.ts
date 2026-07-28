@@ -12,7 +12,6 @@ import { isPublicSkillDoc } from "./lib/globalStats";
 import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { getPublicPublisherVisibility, normalizePublisherHandle } from "./lib/publishers";
 
-const PUBLISHER_FEED_MAX_SOURCE_PAGES = 3;
 const PUBLISHER_FEED_SNAPSHOT_MAX_ENTRIES = 400;
 const PUBLISHER_FEED_SUMMARY_MAX_CHARS = 500;
 type PublisherFeedReadCtx = Pick<QueryCtx | MutationCtx, "db">;
@@ -139,30 +138,21 @@ async function collectSkillEntries(
   limit: number,
 ): Promise<CollectedEntries> {
   const entries: PublisherFeedEntry[] = [];
-  let cursor: string | null = null;
-  let isDone = false;
-  let pagesRead = 0;
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .take(limit + 1);
 
-  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
-    const page = await ctx.db
-      .query("skills")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
-        q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: limit + 1 });
-    pagesRead += 1;
-
-    for (const skill of page.page) {
-      const entry = skillEntry(publisher, skill);
-      if (entry) entries.push(entry);
-      if (entries.length > limit) break;
-    }
-    isDone = page.isDone;
-    cursor = page.isDone ? null : page.continueCursor;
+  for (const skill of skills) {
+    const entry = skillEntry(publisher, skill);
+    if (entry) entries.push(entry);
+    if (entries.length > limit) break;
   }
 
-  return { entries, exhausted: isDone };
+  return { entries, exhausted: skills.length <= limit };
 }
 
 async function collectPackageEntries(
@@ -171,30 +161,21 @@ async function collectPackageEntries(
   limit: number,
 ): Promise<CollectedEntries> {
   const entries: PublisherFeedEntry[] = [];
-  let cursor: string | null = null;
-  let isDone = false;
-  let pagesRead = 0;
+  const packages = await ctx.db
+    .query("packages")
+    .withIndex("by_owner_publisher_active_updated", (q) =>
+      q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .take(limit + 1);
 
-  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
-    const page = await ctx.db
-      .query("packages")
-      .withIndex("by_owner_publisher_active_updated", (q) =>
-        q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: limit + 1 });
-    pagesRead += 1;
-
-    for (const pkg of page.page) {
-      const entry = packageEntry(publisher, pkg);
-      if (entry) entries.push(entry);
-      if (entries.length > limit) break;
-    }
-    isDone = page.isDone;
-    cursor = page.isDone ? null : page.continueCursor;
+  for (const pkg of packages) {
+    const entry = packageEntry(publisher, pkg);
+    if (entry) entries.push(entry);
+    if (entries.length > limit) break;
   }
 
-  return { entries, exhausted: isDone };
+  return { entries, exhausted: packages.length <= limit };
 }
 
 async function collectLegacySkillEntries(
@@ -204,29 +185,20 @@ async function collectLegacySkillEntries(
   limit: number,
 ): Promise<CollectedEntries> {
   const entries: PublisherFeedEntry[] = [];
-  let cursor: string | null = null;
-  let isDone = false;
-  let pagesRead = 0;
-
-  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
-    const page = await ctx.db
-      .query("skills")
-      .withIndex("by_owner_active_updated", (q) =>
-        q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: limit + 1 });
-    pagesRead += 1;
-    for (const skill of page.page) {
-      if (skill.ownerPublisherId && skill.ownerPublisherId !== publisher._id) continue;
-      const entry = skillEntry(publisher, skill);
-      if (entry) entries.push(entry);
-      if (entries.length > limit) break;
-    }
-    isDone = page.isDone;
-    cursor = page.isDone ? null : page.continueCursor;
+  const skills = await ctx.db
+    .query("skills")
+    .withIndex("by_owner_active_updated", (q) =>
+      q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .take(limit + 1);
+  for (const skill of skills) {
+    if (skill.ownerPublisherId && skill.ownerPublisherId !== publisher._id) continue;
+    const entry = skillEntry(publisher, skill);
+    if (entry) entries.push(entry);
+    if (entries.length > limit) break;
   }
-  return { entries, exhausted: isDone };
+  return { entries, exhausted: skills.length <= limit };
 }
 
 async function collectLegacyPackageEntries(
@@ -236,29 +208,20 @@ async function collectLegacyPackageEntries(
   limit: number,
 ): Promise<CollectedEntries> {
   const entries: PublisherFeedEntry[] = [];
-  let cursor: string | null = null;
-  let isDone = false;
-  let pagesRead = 0;
-
-  while (!isDone && pagesRead < PUBLISHER_FEED_MAX_SOURCE_PAGES && entries.length <= limit) {
-    const page = await ctx.db
-      .query("packages")
-      .withIndex("by_owner_active_updated", (q) =>
-        q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: limit + 1 });
-    pagesRead += 1;
-    for (const pkg of page.page) {
-      if (pkg.ownerPublisherId && pkg.ownerPublisherId !== publisher._id) continue;
-      const entry = packageEntry(publisher, pkg);
-      if (entry) entries.push(entry);
-      if (entries.length > limit) break;
-    }
-    isDone = page.isDone;
-    cursor = page.isDone ? null : page.continueCursor;
+  const packages = await ctx.db
+    .query("packages")
+    .withIndex("by_owner_active_updated", (q) =>
+      q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+    )
+    .order("desc")
+    .take(limit + 1);
+  for (const pkg of packages) {
+    if (pkg.ownerPublisherId && pkg.ownerPublisherId !== publisher._id) continue;
+    const entry = packageEntry(publisher, pkg);
+    if (entry) entries.push(entry);
+    if (entries.length > limit) break;
   }
-  return { entries, exhausted: isDone };
+  return { entries, exhausted: packages.length <= limit };
 }
 
 async function buildPublisherFeed(
