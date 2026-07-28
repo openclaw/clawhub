@@ -151,6 +151,10 @@ Set env vars:
 - `CONVEX_SITE_URL` (same value; used by auth provider config)
 - `SITE_URL` (web app URL)
 - `VITE_APP_BUILD_SHA` (set to the same commit SHA stamped into Convex)
+- `VITE_KRILLSWITCH_EVAL_KEY` (optional public Krill Switch environment key;
+  code defaults are used when absent)
+- `VITE_KRILLSWITCH_BASE_URL` (optional; defaults to
+  `https://flags.openclaw.ai`)
 
 Deploy order:
 
