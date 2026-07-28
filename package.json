@@ -102,6 +102,7 @@
     "@fontsource/noto-sans-sc": "5.3.0",
     "@monaco-editor/react": "4.7.0",
     "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.6.1",
+    "@openclaw/krillswitch-react": "0.0.1",
     "@openclaw/plugin-inspector": "0.3.21",
     "@radix-ui/react-avatar": "1.2.6",
     "@radix-ui/react-dialog": "1.1.23",

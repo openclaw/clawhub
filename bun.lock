@@ -14,6 +14,7 @@
         "@fontsource/noto-sans-sc": "5.3.0",
         "@monaco-editor/react": "4.7.0",
         "@openclaw/carapace": "git+https://github.com/openclaw/carapace.git#v0.6.1",
+        "@openclaw/krillswitch-react": "0.0.1",
         "@openclaw/plugin-inspector": "0.3.21",
         "@radix-ui/react-avatar": "1.2.6",
         "@radix-ui/react-dialog": "1.1.23",
@@ -453,6 +454,10 @@
     "@openclaw/carapace": ["@openclaw/carapace@github:openclaw/carapace#3a8bcfb", {}, "openclaw-carapace-3a8bcfb", "sha512-UD1qbCzSKMlvDGt4VYH41dtSf77vGZCzXkpGzmVevpanBM3flhAHU/TIedvm+eYadts49wt3+ipQK5Jmh70ZDw=="],
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
+
+    "@openclaw/krillswitch-core": ["@openclaw/krillswitch-core@0.0.1", "", {}, "sha512-bx7b2aFDKu+bWMot1iVAn4EIRZ3x2qTFxJqlcI5nu66SNiAvMNWe4SOfHbftVjgNCAsq1QGEUWQmUVKDNmDtuA=="],
+
+    "@openclaw/krillswitch-react": ["@openclaw/krillswitch-react@0.0.1", "", { "dependencies": { "@openclaw/krillswitch-core": "0.0.1" }, "peerDependencies": { "react": "^18.0.0 || ^19.0.0" } }, "sha512-hFlq6txC+W6Dfab4nHdezCU7Axaxjw1hXwdj3skriZiC0lOEuc3++fKJsnUEFpFqjQbsdDs1ZNrknGV9w16bPg=="],
 
     "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.21", "", { "dependencies": { "semver": "^7.8.5", "tar": "^7.5.22" }, "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-EKrsUSI+cYNMi90XECHNbvJ7HrlBS8XXcXFMaw3c64ZVCAVC93dF6f9OgOJ7Mli8XzTnN5vOEhg+K/gKC5l6fg=="],
 

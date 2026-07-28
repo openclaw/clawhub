@@ -10,7 +10,7 @@ import {
   routeToBannedAccountPage as navigateToBannedAccountPage,
 } from "../lib/authErrorMessage";
 import { isCliDeviceUserCode } from "../lib/cliDeviceCode";
-import { FeatureFlagProvider } from "../lib/featureFlags";
+import { FeatureFlagProvider, type FeatureFlagValues } from "../lib/featureFlags";
 import { clearAuthError, setAuthError, useAuthError } from "../lib/useAuthError";
 import { AuthErrorMessage } from "./AuthErrorMessage";
 import { ClientOnly } from "./ClientOnly";
@@ -181,10 +181,18 @@ export function AuthErrorToast() {
   return null;
 }
 
-export function AppProviders({ children }: { children: React.ReactNode }) {
+export function AppProviders({
+  children,
+  featureFlagContextKey,
+  initialFeatureFlags,
+}: {
+  children: React.ReactNode;
+  featureFlagContextKey: string;
+  initialFeatureFlags: FeatureFlagValues | null;
+}) {
   return (
     <ConvexAuthProvider client={convex} shouldHandleCode={false}>
-      <FeatureFlagProvider>
+      <FeatureFlagProvider contextKey={featureFlagContextKey} initialValues={initialFeatureFlags}>
         <TooltipProvider delayDuration={400}>
           <AuthCodeHandler />
           <AuthErrorHandler />
