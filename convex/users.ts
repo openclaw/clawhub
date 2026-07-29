@@ -39,6 +39,7 @@ import {
   upsertReservedHandleForRightfulOwner,
 } from "./lib/reservedHandles";
 import { buildUserSearchResults } from "./lib/userSearch";
+import { deletePublisherActivityInboxStateForUser } from "./publisherActivityInbox";
 
 const DEFAULT_ROLE = "user";
 const ADMIN_HANDLE = "steipete";
@@ -76,6 +77,8 @@ type DeletedAccountCleanupResult = {
   githubOrgMemberships: number;
   apiTokens: number;
   personalPublisherDeleted: boolean;
+  publisherFollows: number;
+  publisherFollowsCleanupScheduled: boolean;
 };
 type AccountRecoveryPurgeEligibilityReason =
   | "self_delete_audit"
@@ -366,6 +369,12 @@ async function hardDeleteSelfDeletedAccountState(
     .withIndex("by_user", (q) => q.eq("userId", user._id))
     .collect();
   for (const membership of githubOrgMemberships) await ctx.db.delete(membership._id);
+  await deletePublisherActivityInboxStateForUser(ctx, user._id);
+
+  const deletedFollows = (await ctx.runMutation(
+    internal.publisherFollows.deletePublisherFollowsForFollowerInternal,
+    { followerUserId: user._id },
+  )) as { deleted: number; scheduled: boolean };
 
   const personalPublisher = user.personalPublisherId
     ? await ctx.db.get(user.personalPublisherId)
@@ -416,6 +425,8 @@ async function hardDeleteSelfDeletedAccountState(
     githubOrgMemberships: githubOrgMemberships.length,
     apiTokens: tokens.length,
     personalPublisherDeleted,
+    publisherFollows: deletedFollows.deleted,
+    publisherFollowsCleanupScheduled: deletedFollows.scheduled,
   };
 }
 

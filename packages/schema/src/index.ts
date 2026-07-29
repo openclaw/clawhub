@@ -1,5 +1,6 @@
 export type { ArkValidator } from "./ark.js";
 export { formatArkErrors, parseArk } from "./ark.js";
+export * from "./accountFeed.js";
 export * from "./claws.js";
 export * from "./clawPackage.js";
 export * from "./catalogFeed.js";

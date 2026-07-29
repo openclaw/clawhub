@@ -685,6 +685,17 @@ function emptyOfficialPublishersQuery() {
   };
 }
 
+function emptyPublisherFeedPublicationsQuery() {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      if (indexName !== "by_publisher") {
+        throw new Error(`unexpected publisherFeedPublications index ${indexName}`);
+      }
+      return { unique: vi.fn(async () => null) };
+    }),
+  };
+}
+
 function emptyOwnedResourcesQuery() {
   return {
     withIndex: vi.fn(() => ({
@@ -1065,7 +1076,8 @@ describe("publishers membership controls", () => {
     const runMutation = vi
       .fn()
       .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
-      .mockResolvedValueOnce({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+      .mockResolvedValueOnce({ deletedCount: 1, revokedTokenCount: 1, scheduled: false })
+      .mockResolvedValue({ deleted: 0, scheduled: false });
     const ctx = {
       runMutation,
       db: {
@@ -1090,8 +1102,14 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
+          }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
@@ -1144,7 +1162,10 @@ describe("publishers membership controls", () => {
         deactivatedAt: expect.any(Number),
       }),
     );
-    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(4);
+    expect(runMutation).toHaveBeenLastCalledWith(expect.anything(), {
+      publisherId: "publishers:gladia",
+    });
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
@@ -1190,6 +1211,9 @@ describe("publishers membership controls", () => {
           }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
@@ -1317,10 +1341,14 @@ describe("publishers membership controls", () => {
         return emptyOwnedResourcesQuery();
       }
       if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      if (table === "publisherFeedPublications") {
+        return emptyPublisherFeedPublicationsQuery();
+      }
       throw new Error(`unexpected table ${table}`);
     });
     return {
       ctx: {
+        runMutation: vi.fn(async () => ({ deleted: 0, scheduled: false })),
         scheduler: { runAfter: vi.fn() },
         db: {
           get: vi.fn(async (id: string) => {
@@ -1448,7 +1476,8 @@ describe("publishers membership controls", () => {
     const runMutation = vi
       .fn()
       .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
-      .mockResolvedValueOnce({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
+      .mockResolvedValueOnce({ deletedCount: 1, revokedTokenCount: 1, scheduled: false })
+      .mockResolvedValue({ deleted: 0, scheduled: false });
     const actorMembership = {
       _id: "publisherMembers:owner",
       publisherId: "publishers:gladia",
@@ -1486,8 +1515,14 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
+          }
           if (table === "publisherInvites") {
             return emptyPublisherInvitesQuery();
+          }
+          if (table === "publisherFeedPublications") {
+            return emptyPublisherFeedPublicationsQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
