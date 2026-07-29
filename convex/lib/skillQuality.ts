@@ -36,8 +36,12 @@ export type QualityAssessment = {
   signals: Omit<QualitySignals, "structuralFingerprint">;
 };
 
+// Anchored to the start of the document on purpose. Frontmatter is optional,
+// and with the `m` flag `^` also matched at every line start, so a document
+// with no frontmatter that used `---` as a Markdown thematic break lost
+// everything between its first two rules.
 function stripFrontmatter(raw: string) {
-  return raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/m, "");
+  return raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "");
 }
 
 function tokenizeWords(text: string) {
