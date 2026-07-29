@@ -451,6 +451,36 @@
   cursor: pointer;
 }
 
+.publisher-profile-state-labels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.publisher-profile-state-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.publisher-profile-state-label.is-official {
+  border-color: color-mix(in srgb, var(--official-fg) 42%, var(--line));
+  background: color-mix(in srgb, var(--official-bg) 72%, transparent);
+  color: var(--official-fg);
+}
+
 .publisher-profile-members-trigger {
   display: inline-flex;
   width: fit-content;
