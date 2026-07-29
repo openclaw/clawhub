@@ -392,6 +392,19 @@ export function Upload() {
     setConfirmMigrateOwner(false);
   }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug]);
 
+  // A generated changelog only describes the bundle it was generated from. Once
+  // the selection changes it is stale, and because the effect below skips work
+  // while the field is non-empty it would otherwise stay on screen for the rest
+  // of the session. Text the user typed is never discarded.
+  useEffect(() => {
+    changelogRequestRef.current += 1;
+    changelogKeyRef.current = null;
+    if (changelogTouchedRef.current) return;
+    setChangelog("");
+    setChangelogSource(null);
+    setChangelogStatus("idle");
+  }, [normalizedPaths, trimmedSlug, trimmedVersion]);
+
   useEffect(() => {
     if (!showChangelogField) return;
     if (changelogTouchedRef.current) return;
@@ -407,7 +420,9 @@ export function Upload() {
     const requiredFile = files[requiredIndex];
     if (!requiredFile) return;
 
-    const key = `${trimmedSlug}:${trimmedVersion}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.length}`;
+    // The paths are sent to the preview action, so the key has to track their
+    // identity. Keying on the count alone let a swapped file reuse the key.
+    const key = `${trimmedSlug}:${trimmedVersion}:${requiredFile.size}:${requiredFile.lastModified}:${normalizedPaths.join("\0")}`;
     if (changelogKeyRef.current === key) return;
     changelogKeyRef.current = key;
 

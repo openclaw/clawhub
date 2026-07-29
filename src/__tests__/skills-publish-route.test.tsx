@@ -1117,4 +1117,109 @@ describe("Upload route", () => {
     expect(args).not.toBeUndefined();
     expect(Object.hasOwn(args!, "icon")).toBe(false);
   });
+
+  it("regenerates the changelog preview when the bundle swaps one file for another", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "changelog-cache-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: { slug: "changelog-cache-skill", displayName: "Changelog Cache Skill" },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+    generateChangelogPreview.mockResolvedValue({ changelog: "- Updated skill." });
+
+    render(<Upload />);
+
+    // The same SKILL.md instance is reused for both selections, so its size and
+    // lastModified stay identical. Only a sibling file is swapped, which keeps
+    // the path count at two while the paths themselves differ.
+    const readme = new File(
+      ["---\nname: changelog-cache-skill\n---\n# Changelog Cache Skill"],
+      "SKILL.md",
+      { type: "text/markdown", lastModified: 1_700_000_000_000 },
+    );
+    const alpha = new File(["echo alpha"], "scripts/alpha.sh", {
+      type: "text/plain",
+      lastModified: 1_700_000_000_000,
+    });
+    const beta = new File(["echo beta"], "scripts/beta.sh", {
+      type: "text/plain",
+      lastModified: 1_700_000_000_000,
+    });
+
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [readme, alpha] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(1);
+    });
+    expect(generateChangelogPreview).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ filePaths: ["SKILL.md", "scripts/alpha.sh"] }),
+    );
+
+    fireEvent.change(input, { target: { files: [readme, beta] } });
+
+    await waitFor(() => {
+      expect(generateChangelogPreview).toHaveBeenCalledTimes(2);
+    });
+    expect(generateChangelogPreview).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ filePaths: ["SKILL.md", "scripts/beta.sh"] }),
+    );
+  });
+
+  it("keeps a manually written changelog when the file set changes", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "changelog-manual-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: { slug: "changelog-manual-skill", displayName: "Changelog Manual Skill" },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+    generateChangelogPreview.mockResolvedValue({ changelog: "- Updated skill." });
+
+    render(<Upload />);
+
+    const readme = new File(
+      ["---\nname: changelog-manual-skill\n---\n# Changelog Manual Skill"],
+      "SKILL.md",
+      { type: "text/markdown", lastModified: 1_700_000_000_000 },
+    );
+    const alpha = new File(["echo alpha"], "scripts/alpha.sh", {
+      type: "text/plain",
+      lastModified: 1_700_000_000_000,
+    });
+    const beta = new File(["echo beta"], "scripts/beta.sh", {
+      type: "text/plain",
+      lastModified: 1_700_000_000_000,
+    });
+
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [readme, alpha] } });
+
+    const changelogField = (await screen.findByPlaceholderText(
+      "Describe what changed in this skill...",
+    )) as HTMLTextAreaElement;
+    fireEvent.change(changelogField, { target: { value: "Rotated the bundled helper script." } });
+
+    fireEvent.change(input, { target: { files: [readme, beta] } });
+    await screen.findByText("scripts/beta.sh");
+
+    expect(changelogField.value).toBe("Rotated the bundled helper script.");
+  });
 });
