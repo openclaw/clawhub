@@ -7,6 +7,7 @@ import {
   isMacJunkPath,
   parseClawdisMetadata,
   parseFrontmatter,
+  parseSkillMarkdown,
   sanitizePath,
 } from "./skills";
 
@@ -21,6 +22,34 @@ describe("skills utils", () => {
     expect(parseFrontmatter("nope")).toEqual({});
     expect(parseFrontmatter("---\nname: demo\nBody without end")).toEqual({});
   });
+
+  it.each(["\n", "\r\n", "\r"])("splits real frontmatter with %j line endings", (lineEnding) => {
+    const markdown = ["---", "name: demo", "---", "# Body"].join(lineEnding);
+
+    expect(parseSkillMarkdown(markdown)).toEqual({
+      frontmatter: { name: "demo" },
+      body: "# Body",
+    });
+  });
+
+  it("keeps a leading thematic break when its contents are not YAML frontmatter", () => {
+    const markdown = "---\n\n# Body\n\n---\n\nMore documentation.";
+
+    expect(parseSkillMarkdown(markdown)).toEqual({
+      frontmatter: {},
+      body: markdown,
+    });
+  });
+
+  it.each(["---\nname: [\n---\n# Body", "---\nname: demo\n# Body without a closing delimiter"])(
+    "keeps malformed or unterminated frontmatter as body",
+    (markdown) => {
+      expect(parseSkillMarkdown(markdown)).toEqual({
+        frontmatter: {},
+        body: markdown,
+      });
+    },
+  );
 
   it("strips quotes in frontmatter values", () => {
     const frontmatter = parseFrontmatter(`---\nname: "demo"\ndescription: 'Hello'\n---\nBody`);

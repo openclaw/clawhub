@@ -36,6 +36,18 @@ const THEMATIC_BREAK_README = [
   "Rate limits apply.",
 ].join("\n");
 
+const LEADING_THEMATIC_BREAK_README = [
+  "---",
+  "",
+  "# Weather Report Skill",
+  "",
+  ...BODY_LINES,
+  "",
+  "---",
+  "",
+  "Rate limits apply.",
+].join("\n");
+
 const FRONTMATTER_README = [
   "---",
   "name: weather-report",
@@ -76,12 +88,45 @@ describe("computeQualitySignals", () => {
     expect(withFrontmatter.bodyWords).toBe(withoutFrontmatter.bodyWords);
     expect(withFrontmatter.bodyChars).toBe(withoutFrontmatter.bodyChars);
   });
+
+  it("strips real frontmatter with CR line endings", () => {
+    const withFrontmatter = computeQualitySignals({
+      readmeText: FRONTMATTER_README.replaceAll("\n", "\r"),
+      summary: SUMMARY,
+    });
+    const withoutFrontmatter = computeQualitySignals({
+      readmeText: NO_FRONTMATTER_README,
+      summary: SUMMARY,
+    });
+
+    expect(withFrontmatter).toMatchObject({
+      bodyWords: withoutFrontmatter.bodyWords,
+      bodyChars: withoutFrontmatter.bodyChars,
+      headingCount: withoutFrontmatter.headingCount,
+      bulletCount: withoutFrontmatter.bulletCount,
+    });
+  });
 });
 
 describe("evaluateQuality", () => {
   it("does not reject a documented frontmatter-less skill from a new account", () => {
     const signals = computeQualitySignals({
       readmeText: THEMATIC_BREAK_README,
+      summary: SUMMARY,
+    });
+
+    const assessment = evaluateQuality({
+      signals,
+      trustTier: "low",
+      similarRecentCount: 0,
+    });
+
+    expect(assessment.decision).toBe("pass");
+  });
+
+  it("does not reject a frontmatter-less skill that begins with a thematic break", () => {
+    const signals = computeQualitySignals({
+      readmeText: LEADING_THEMATIC_BREAK_README,
       summary: SUMMARY,
     });
 

@@ -1,3 +1,5 @@
+import { parseSkillMarkdown } from "./skills";
+
 const TRUST_TIER_ACCOUNT_AGE_LOW_MS = 30 * 24 * 60 * 60 * 1000;
 const TRUST_TIER_ACCOUNT_AGE_MEDIUM_MS = 90 * 24 * 60 * 60 * 1000;
 const TRUST_TIER_SKILLS_LOW = 10;
@@ -41,7 +43,7 @@ export type QualityAssessment = {
 // with no frontmatter that used `---` as a Markdown thematic break lost
 // everything between its first two rules.
 function stripFrontmatter(raw: string) {
-  return raw.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, "");
+  return parseSkillMarkdown(raw).body;
 }
 
 function tokenizeWords(text: string) {

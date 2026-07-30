@@ -9,9 +9,12 @@ import {
 import { parse as parseYaml } from "yaml";
 
 export type ParsedSkillFrontmatter = Record<string, unknown>;
+export type ParsedSkillMarkdown = {
+  frontmatter: ParsedSkillFrontmatter;
+  body: string;
+};
 export type { ClawdisSkillMetadata, SkillInstallSpec };
 
-const FRONTMATTER_START = "---";
 const DEFAULT_EMBEDDING_MAX_CHARS = 12_000;
 // Each OpenAI token maps to at least one UTF-8 byte; keep publish embeddings
 // below the 8192-token model limit with conservative headroom.
@@ -19,27 +22,42 @@ const DEFAULT_EMBEDDING_MAX_BYTES = 7_500;
 
 const encoder = new TextEncoder();
 
-export function parseFrontmatter(content: string): ParsedSkillFrontmatter {
+export function parseSkillMarkdown(content: string): ParsedSkillMarkdown {
   const frontmatter: ParsedSkillFrontmatter = {};
   const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  if (!normalized.startsWith(FRONTMATTER_START)) return frontmatter;
-  const endIndex = normalized.indexOf(`\n${FRONTMATTER_START}`, 3);
-  if (endIndex === -1) return frontmatter;
-  const block = normalized.slice(4, endIndex);
+  const withoutFrontmatter = { frontmatter, body: normalized };
+  const lines = normalized.split("\n");
+  if (!isFrontmatterDelimiter(lines[0])) return withoutFrontmatter;
+  const closingLineIndex = lines.findIndex(
+    (line, index) => index > 0 && isFrontmatterDelimiter(line),
+  );
+  if (closingLineIndex === -1) return withoutFrontmatter;
+  const block = lines.slice(1, closingLineIndex).join("\n");
 
   try {
     const parsed = parseYaml(block) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return frontmatter;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return withoutFrontmatter;
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (!/^[\w-]+$/.test(key)) continue;
       const jsonValue = toJsonValue(value);
       if (jsonValue !== undefined) frontmatter[key] = jsonValue;
     }
   } catch {
-    return frontmatter;
+    return withoutFrontmatter;
   }
 
-  return frontmatter;
+  return {
+    frontmatter,
+    body: lines.slice(closingLineIndex + 1).join("\n"),
+  };
+}
+
+function isFrontmatterDelimiter(line: string | undefined) {
+  return line !== undefined && /^---[\t ]*$/.test(line);
+}
+
+export function parseFrontmatter(content: string): ParsedSkillFrontmatter {
+  return parseSkillMarkdown(content).frontmatter;
 }
 
 export function getFrontmatterValue(frontmatter: ParsedSkillFrontmatter, key: string) {
