@@ -127,6 +127,23 @@ const inspectorMetadataValidator = v.object({
   targetOpenClawVersion: v.optional(v.string()),
 });
 
+export function buildPublishInspectorRunCheckOptions(root: string, generatedAt: string) {
+  return {
+    pluginRoot: root,
+    openclawPath: false,
+    openclawVersion: "latest",
+    outDir: "reports",
+    capture: false,
+    mockSdk: true,
+    allowExecution: false,
+    authorFacing: true,
+    generatedAt,
+  } as Parameters<(typeof import("@openclaw/plugin-inspector"))["pluginRoot"]["runCheck"]>[0] & {
+    authorFacing: true;
+    generatedAt: string;
+  };
+}
+
 export const runPackageInspectorForPublishInternal = internalAction({
   args: {
     packageName: v.string(),
@@ -164,19 +181,7 @@ export const runPackageInspectorForPublishInternal = internalAction({
       await writeSyntheticInspectorConfigIfNeeded(root, args.files, args.packageName);
 
       const { pluginRoot } = await import("@openclaw/plugin-inspector");
-      const runCheckOptions = {
-        pluginRoot: root,
-        openclawPath: false,
-        outDir: "reports",
-        capture: false,
-        mockSdk: true,
-        allowExecution: false,
-        authorFacing: true,
-        generatedAt: new Date().toISOString(),
-      } as Parameters<typeof pluginRoot.runCheck>[0] & {
-        authorFacing: true;
-        generatedAt: string;
-      };
+      const runCheckOptions = buildPublishInspectorRunCheckOptions(root, new Date().toISOString());
       const { report } = await pluginRoot.runCheck(runCheckOptions);
 
       return normalizeInspectorReportForPublish(report);

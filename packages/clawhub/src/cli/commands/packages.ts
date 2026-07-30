@@ -175,6 +175,7 @@ type PackagePackOptions = {
 type PackageValidateOptions = {
   out?: string;
   openclaw?: string;
+  openclawVersion?: string;
   runtime?: boolean;
   allowExecute?: boolean;
   mockSdk?: boolean;
@@ -716,9 +717,13 @@ export async function cmdValidatePackage(
   const sourcePath = resolvedSource.path;
   const sourceStat = await stat(sourcePath).catch(() => null);
   if (!sourceStat?.isDirectory()) fail("Path must be a package folder");
+  if (options.openclaw?.trim() && options.openclawVersion?.trim()) {
+    fail("Choose either --openclaw or --openclaw-version");
+  }
 
   const outDir = options.out?.trim() || "reports";
   const openclawPath = options.openclaw?.trim() ? resolve(opts.workdir, options.openclaw) : false;
+  const openclawVersion = options.openclawVersion?.trim() || (openclawPath ? undefined : "latest");
   const generatedConfig = await createPluginInspectorConfigIfNeeded(sourcePath);
   let report: Awaited<ReturnType<typeof pluginRoot.runCheck>>["report"];
   let paths: Awaited<ReturnType<typeof pluginRoot.runCheck>>["paths"];
@@ -730,6 +735,7 @@ export async function cmdValidatePackage(
       configPath: generatedConfig?.path,
       mockSdk: options.mockSdk !== false,
       openclawPath,
+      ...(openclawVersion ? { openclawVersion } : {}),
       outDir,
       pluginRoot: sourcePath,
     } as Parameters<typeof pluginRoot.runCheck>[0] & { authorFacing: true };

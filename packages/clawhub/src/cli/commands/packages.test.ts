@@ -258,6 +258,7 @@ describe("package commands", () => {
           configPath: expect.stringContaining("plugin-inspector.config.json"),
           mockSdk: true,
           openclawPath: false,
+          openclawVersion: "latest",
           outDir: "reports",
           pluginRoot: folder,
           authorFacing: true,
@@ -271,6 +272,51 @@ describe("package commands", () => {
       expect(output).toContain("Plugin Inspector: PASS");
       expect(output).toContain("Findings: none");
       expect(output).toContain("Reports written:");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["latest", "beta", "2026.7.2-beta.4"])(
+    "validates against the requested OpenClaw target %s",
+    async (openclawVersion) => {
+      const workdir = await makeTmpWorkdir();
+      try {
+        const folder = join(workdir, "targeted-plugin");
+        await mkdir(folder, { recursive: true });
+        await writeFile(
+          join(folder, "package.json"),
+          '{"name":"targeted-plugin","version":"1.0.0"}\n',
+        );
+        inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+          report: { status: "pass", summary: { breakageCount: 0 } },
+          paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+        });
+
+        await cmdValidatePackage(makeOpts(workdir), "targeted-plugin", { openclawVersion });
+
+        expect(inspectorMocks.pluginRoot.runCheck).toHaveBeenCalledWith(
+          expect.objectContaining({ openclawVersion }),
+        );
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("rejects combining a local OpenClaw checkout with a version target", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "targeted-plugin");
+      await mkdir(folder, { recursive: true });
+
+      await expect(
+        cmdValidatePackage(makeOpts(workdir), "targeted-plugin", {
+          openclaw: "../openclaw",
+          openclawVersion: "latest",
+        }),
+      ).rejects.toThrow("Choose either --openclaw or --openclaw-version");
+      expect(inspectorMocks.pluginRoot.runCheck).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -378,6 +424,60 @@ describe("package commands", () => {
       expect(output).toContain(
         "Fix: Replace this call with an API available in the selected OpenClaw version.",
       );
+      expect(output).not.toContain("Docs:");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("surfaces Honcho-equivalent removed registrations against the affected exact beta", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "honcho-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "package.json"), '{"name":"honcho-plugin","version":"1.0.0"}\n');
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: {
+          status: "fail",
+          targetOpenClaw: {
+            requestedVersion: "2026.7.2-beta.4",
+            version: "2026.7.2-beta.4",
+            eligibilityVersion: "2026.7.2",
+          },
+          summary: { breakageCount: 1, warningCount: 0, issueCount: 1 },
+          issues: [
+            {
+              code: "unknown-registration-name",
+              level: "breakage",
+              severity: "P0",
+              issueClass: "live-issue",
+              message: "fixture calls registrars missing from target OpenClaw",
+              evidence: [
+                "registerMemoryPromptSection @ index.ts:97",
+                "registerMemoryRuntime @ runtime.ts:276",
+              ],
+              authorRemediation: {
+                summary:
+                  "Update the plugin to use APIs available in the target OpenClaw version, or narrow its declared compatibility range.",
+              },
+            },
+          ],
+        },
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await expect(
+        cmdValidatePackage(makeOpts(workdir), "honcho-plugin", {
+          openclawVersion: "2026.7.2-beta.4",
+        }),
+      ).rejects.toThrow("Plugin Inspector found 1 hard error");
+
+      expect(inspectorMocks.pluginRoot.runCheck).toHaveBeenCalledWith(
+        expect.objectContaining({ openclawVersion: "2026.7.2-beta.4" }),
+      );
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("registerMemoryPromptSection @ index.ts:97");
+      expect(output).toContain("registerMemoryRuntime @ runtime.ts:276");
       expect(output).not.toContain("Docs:");
     } finally {
       await rm(workdir, { recursive: true, force: true });

@@ -22,6 +22,7 @@ declare module "@openclaw/plugin-inspector" {
       configPath?: string;
       mockSdk?: boolean;
       openclawPath?: string | false;
+      openclawVersion?: string;
       outDir?: string;
       pluginRoot?: string;
     }): Promise<{

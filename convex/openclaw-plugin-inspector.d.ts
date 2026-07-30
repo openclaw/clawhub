@@ -19,6 +19,7 @@ declare module "@openclaw/plugin-inspector" {
     runCheck(options?: {
       pluginRoot?: string;
       openclawPath?: string | false;
+      openclawVersion?: string;
       outDir?: string;
       capture?: boolean;
       mockSdk?: boolean;

@@ -11391,6 +11391,10 @@ describe("packages public queries", () => {
             },
           },
         ],
+        metadata: {
+          inspectorVersion: "0.3.19",
+          targetOpenClawVersion: "2026.7.1-2",
+        },
       })),
       scheduler: {
         runAfter: vi.fn(),
@@ -11475,6 +11479,8 @@ describe("packages public queries", () => {
       releaseId: "packageReleases:demo-1",
       packageName: "demo-plugin",
       version: "1.0.0",
+      inspectorVersion: "0.3.19",
+      targetOpenClawVersion: "2026.7.1-2",
       findings: [
         expect.objectContaining({
           code: "legacy-before-agent-start",

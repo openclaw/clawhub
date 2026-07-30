@@ -1,9 +1,23 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
-import { normalizeInspectorReportForPublish } from "./packageInspectorNode";
+import {
+  buildPublishInspectorRunCheckOptions,
+  normalizeInspectorReportForPublish,
+} from "./packageInspectorNode";
 
 describe("package inspector publish normalization", () => {
+  it("targets latest stable OpenClaw for publish-time inspection", () => {
+    expect(buildPublishInspectorRunCheckOptions("/tmp/plugin", "2026-07-30T00:00:00.000Z")).toEqual(
+      expect.objectContaining({
+        pluginRoot: "/tmp/plugin",
+        openclawPath: false,
+        openclawVersion: "latest",
+        authorFacing: true,
+      }),
+    );
+  });
+
   it("keeps legacy author-facing hard findings without remediation metadata", () => {
     const result = normalizeInspectorReportForPublish({
       status: "fail",
@@ -157,5 +171,38 @@ describe("package inspector publish normalization", () => {
       "package-entrypoint-missing",
       "missing-openclaw-api",
     ]);
+  });
+
+  it("keeps out-of-range compatibility information non-blocking", () => {
+    const result = normalizeInspectorReportForPublish({
+      status: "pass",
+      targetOpenClaw: { version: "2026.7.2-beta.4" },
+      issues: [
+        {
+          code: "unknown-registration-name",
+          level: "suggestion",
+          severity: "P2",
+          issueClass: "compatibility-information",
+          message:
+            "plugin calls registrars missing from target OpenClaw outside its declared range",
+          authorRemediation: {
+            summary: "Widen the declared range only after updating these registrations.",
+          },
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      status: "pass",
+      summary: { breakageCount: 0, warningCount: 1 },
+      breakages: [],
+      warnings: [
+        {
+          code: "unknown-registration-name",
+          level: "suggestion",
+          issueClass: "compatibility-information",
+        },
+      ],
+    });
   });
 });
