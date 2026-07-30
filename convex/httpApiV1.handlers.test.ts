@@ -353,6 +353,45 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toContain("clawhub scan download <slug> --version <version>");
   });
 
+  it("forwards the owner namespace when submitting a published skill scan", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      expect(args).toMatchObject({
+        actorUserId: "users:owner",
+        slug: "clawtopics-link",
+        ownerHandle: "tekoai",
+        version: "1.0.2",
+      });
+      return {
+        ok: true,
+        scanId: "skillScanRequests:scan",
+        status: "queued",
+        sourceKind: "published",
+        update: false,
+      };
+    });
+    const response = await __handlers.skillScanSubmitV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/-/scan", {
+        method: "POST",
+        body: JSON.stringify({
+          source: {
+            kind: "published",
+            slug: "clawtopics-link",
+            ownerHandle: "tekoai",
+            version: "1.0.2",
+          },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(202);
+  });
+
   it("downloads stored scan reports for submitted skill versions", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:owner",
@@ -407,6 +446,49 @@ describe("httpApiV1 handlers", () => {
     expect(readme).toContain("`malicious` means ClawHub blocked the submitted version");
     expect(readme).toContain("VirusTotal results are supporting reputation telemetry");
     expect(readme).toContain("`clawscan.json`: final ClawScan verdict");
+  });
+
+  it("forwards the owner namespace when downloading a stored skill report", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:owner",
+      user: { _id: "users:owner", role: "user" },
+    } as never);
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      expect(args).toMatchObject({
+        actorUserId: "users:owner",
+        kind: "skill",
+        name: "clawtopics-link",
+        ownerHandle: "tekoai",
+        version: "1.0.2",
+      });
+      return {
+        ok: true,
+        scanId: "skill:clawtopics-link:1.0.2",
+        status: "succeeded",
+        sourceKind: "published",
+        update: false,
+        writtenBack: true,
+        artifact: { kind: "skill", slug: "clawtopics-link", version: "1.0.2" },
+        report: {
+          clawscan: { status: "clean", checkedAt: 1 },
+          skillspector: null,
+          staticAnalysis: null,
+          virustotal: null,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+        completedAt: 1,
+      };
+    });
+    const response = await __handlers.skillScanGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request(
+        "https://example.com/api/v1/skills/-/scan/download/clawtopics-link?version=1.0.2&ownerHandle=tekoai",
+      ),
+    );
+
+    expect(response.status).toBe(200);
   });
 
   it("search returns empty results for blank query", async () => {

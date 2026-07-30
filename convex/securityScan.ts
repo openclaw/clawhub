@@ -139,7 +139,11 @@ type SkillSpectorAnalysisForStorage = {
   checkedAt: number;
 };
 
-async function resolveSkillForRescan(ctx: MutationCtx, slug: string, ownerHandle?: string) {
+async function resolveSkillForRescan(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  slug: string,
+  ownerHandle?: string,
+) {
   const normalizedSlug = slug.trim().toLowerCase();
   if (!normalizedSlug) throw new ConvexError("Slug required");
 
@@ -1745,6 +1749,7 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
     slug: v.string(),
+    ownerHandle: v.optional(v.string()),
     version: v.optional(v.string()),
     update: v.optional(v.boolean()),
   },
@@ -1752,12 +1757,7 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
     const actor = await ctx.db.get(args.actorUserId);
     if (!actor) throw new ConvexError("Unauthorized");
 
-    const slug = args.slug.trim().toLowerCase();
-    if (!slug) throw new ConvexError("Slug required");
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
+    const skill = await resolveSkillForRescan(ctx, args.slug, args.ownerHandle);
     if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
 
     await assertCanManageOwnedResource(ctx, {
@@ -1866,6 +1866,7 @@ export const getStoredScanReportForUserInternal = internalQuery({
     actorUserId: v.id("users"),
     kind: v.union(v.literal("skill"), v.literal("plugin")),
     name: v.string(),
+    ownerHandle: v.optional(v.string()),
     version: v.string(),
   },
   handler: async (ctx, args) => {
@@ -1888,6 +1889,7 @@ export const getStoredScanReportForUserInternal = internalQuery({
           actor,
           kind: args.kind,
           name,
+          ownerHandle: args.ownerHandle,
           version: versionLabel,
         });
   },
@@ -1899,14 +1901,11 @@ async function getStoredSkillScanReportForUser(
     actor: Doc<"users">;
     kind: StoredScanArtifactKind;
     name: string;
+    ownerHandle?: string;
     version: string;
   },
 ) {
-  const slug = args.name.toLowerCase();
-  const skill = await ctx.db
-    .query("skills")
-    .withIndex("by_slug", (q) => q.eq("slug", slug))
-    .unique();
+  const skill = await resolveSkillForRescan(ctx, args.name, args.ownerHandle);
   if (!skill) throw new ConvexError("Skill not found");
 
   await assertCanManageOwnedResource(ctx, {

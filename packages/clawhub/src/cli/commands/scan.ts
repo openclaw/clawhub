@@ -31,6 +31,18 @@ type ScanDownloadOptions = {
 
 type ReportRecord = Record<string, unknown>;
 
+function parsePublishedSkillRef(raw: string) {
+  const value = raw.trim();
+  if (!value) fail("Skill required");
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) return { slug: value };
+  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill: ${value}`);
+  const ownerHandle = value.slice(0, slashIndex).trim().replace(/^@+/, "");
+  const slug = value.slice(slashIndex + 1).trim();
+  if (!ownerHandle || !slug) fail(`Invalid skill: ${value}`);
+  return { slug, ownerHandle };
+}
+
 export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, options: ScanOptions) {
   validateScanOptions(pathArg, options);
   if (pathArg?.trim()) rejectLocalScan();
@@ -83,6 +95,7 @@ export async function cmdScanDownload(
   if (!version) fail("--version required");
   const kind = options.kind ?? "skill";
   if (kind !== "skill" && kind !== "plugin") fail('--kind must be "skill" or "plugin"');
+  const requested = kind === "skill" ? parsePublishedSkillRef(name) : { slug: name };
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
@@ -91,8 +104,9 @@ export async function cmdScanDownload(
     options.output ?? `clawhub-scan-${safeOutputName(name)}-${safeOutputName(version)}.zip`,
   );
   const query = new URLSearchParams({ version, kind });
+  if (requested.ownerHandle) query.set("ownerHandle", requested.ownerHandle);
   const bytes = await fetchBinary(registry, {
-    path: `${ApiRoutes.skillScans}/download/${encodeURIComponent(name)}?${query.toString()}`,
+    path: `${ApiRoutes.skillScans}/download/${encodeURIComponent(requested.slug)}?${query.toString()}`,
     token,
   });
   await mkdir(dirname(output), { recursive: true });
@@ -115,8 +129,9 @@ function rejectLocalScan(): never {
 }
 
 async function submitPublishedScan(registry: string, token: string, options: ScanOptions) {
-  const slug = options.slug?.trim();
-  if (!slug) fail("--slug required");
+  const skillRef = options.slug?.trim();
+  if (!skillRef) fail("--slug required");
+  const requested = parsePublishedSkillRef(skillRef);
   const version = options.version?.trim();
   return await apiRequest(
     registry,
@@ -127,7 +142,8 @@ async function submitPublishedScan(registry: string, token: string, options: Sca
       body: {
         source: {
           kind: "published",
-          slug,
+          slug: requested.slug,
+          ...(requested.ownerHandle ? { ownerHandle: requested.ownerHandle } : {}),
           ...(version ? { version } : {}),
         },
         update: options.update === true,

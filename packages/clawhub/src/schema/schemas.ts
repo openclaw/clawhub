@@ -775,6 +775,7 @@ export const ApiV1SkillScanSourceSchema = type({
 }).or({
   kind: '"published"',
   slug: "string",
+  ownerHandle: "string?",
   version: "string?",
 });
 export type ApiV1SkillScanSource = (typeof ApiV1SkillScanSourceSchema)[inferred];

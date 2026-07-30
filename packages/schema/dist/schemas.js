@@ -538,6 +538,7 @@ export const ApiV1SkillScanSourceSchema = type({
 }).or({
     kind: '"published"',
     slug: "string",
+    ownerHandle: "string?",
     version: "string?",
 });
 export const ApiV1SkillScanSubmitRequestSchema = type({

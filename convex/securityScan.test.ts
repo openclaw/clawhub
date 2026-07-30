@@ -8,6 +8,7 @@ import {
   clearQueuedBackfillJobsForLocalDev,
   claimQueuedJobsInternal,
   completeCodexScanJob,
+  createPublishedSkillScanRequestInternal,
   enqueueBulkSkillRescanBatchForAdminInternal,
   enqueuePackageReleaseScanInternal,
   enqueueSkillVersionScanInternal,
@@ -534,12 +535,26 @@ const getSkillScanRequestForUserInternalHandler = (
   >
 )._handler;
 
+const createPublishedSkillScanRequestInternalHandler = (
+  createPublishedSkillScanRequestInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      slug: string;
+      ownerHandle?: string;
+      version?: string;
+      update?: boolean;
+    },
+    { ok: true; scanId: string; status: string; sourceKind: string }
+  >
+)._handler;
+
 const getStoredScanReportForUserInternalHandler = (
   getStoredScanReportForUserInternal as unknown as WrappedHandler<
     {
       actorUserId: string;
       kind: "skill" | "plugin";
       name: string;
+      ownerHandle?: string;
       version: string;
     },
     {
@@ -769,6 +784,11 @@ function makeTarget(llmStatus?: string) {
   };
 }
 
+type RescanRangeBuilder = {
+  eq: (field: string, value: unknown) => RescanRangeBuilder;
+  lte: (field: string, value: number) => RescanRangeBuilder;
+};
+
 function makeRescanCtx(options: {
   actorId: string;
   actorRole?: "admin" | "moderator" | "user";
@@ -800,13 +820,35 @@ function makeRescanCtx(options: {
     patches.push({ id, patch: doc });
   });
   const query = vi.fn((table: string) => ({
-    withIndex: vi.fn((_indexName: string, buildRange: (q: { eq: typeof eq }) => unknown) => {
+    withIndex: vi.fn((_indexName: string, buildRange: (q: RescanRangeBuilder) => unknown) => {
       const equals = new Map<string, unknown>();
-      function eq(field: string, value: unknown) {
-        equals.set(field, value);
-        return { eq };
-      }
-      buildRange({ eq });
+      const upperBounds = new Map<string, number>();
+      const range: RescanRangeBuilder = {
+        eq(field, value) {
+          equals.set(field, value);
+          return range;
+        },
+        lte(field, value) {
+          upperBounds.set(field, value);
+          return range;
+        },
+      };
+      buildRange(range);
+      const matchingSecurityJobs = () =>
+        Array.from(docs.values())
+          .filter(
+            (doc) =>
+              String(doc._id).startsWith("securityScanJobs:") &&
+              Array.from(equals.entries()).every(([field, value]) => doc[field] === value) &&
+              Array.from(upperBounds.entries()).every(
+                ([field, value]) => Number(doc[field] ?? Number.POSITIVE_INFINITY) <= value,
+              ),
+          )
+          .sort(
+            (a, b) =>
+              Number(a.nextRunAt ?? 0) - Number(b.nextRunAt ?? 0) ||
+              Number(a._creationTime ?? 0) - Number(b._creationTime ?? 0),
+          );
       return {
         collect: vi.fn(async () => {
           if (table === "securityScanJobs") {
@@ -817,24 +859,14 @@ function makeRescanCtx(options: {
           return [];
         }),
         order: vi.fn(() => ({
-          first: vi.fn(async () => {
-            if (table !== "securityScanJobs") return null;
-            return (
-              Array.from(docs.values())
-                .filter(
-                  (doc) =>
-                    String(doc._id).startsWith("securityScanJobs:") &&
-                    (!equals.has("status") || doc.status === equals.get("status")),
-                )
-                .sort(
-                  (a, b) =>
-                    Number(a.nextRunAt ?? 0) - Number(b.nextRunAt ?? 0) ||
-                    Number(a._creationTime ?? 0) - Number(b._creationTime ?? 0),
-                )[0] ?? null
-            );
-          }),
+          first: vi.fn(async () =>
+            table === "securityScanJobs" ? (matchingSecurityJobs()[0] ?? null) : null,
+          ),
+          take: vi.fn(async (limit: number) =>
+            table === "securityScanJobs" ? matchingSecurityJobs().slice(0, limit) : [],
+          ),
         })),
-        take: vi.fn(async () => {
+        take: vi.fn(async (limit: number) => {
           if (table === "skills") {
             return Array.from(docs.values()).filter((doc) => {
               if (!doc._id?.toString().startsWith("skills:")) return false;
@@ -843,6 +875,7 @@ function makeRescanCtx(options: {
               return !ownerPublisherId || doc.ownerPublisherId === ownerPublisherId;
             });
           }
+          if (table === "securityScanJobs") return matchingSecurityJobs().slice(0, limit);
           return [];
         }),
         unique: vi.fn(async () => {
@@ -1354,15 +1387,34 @@ function makeStoredScanReportCtx(options: {
         return { eq };
       }
       buildRange({ eq });
+      const matchingSkills = () =>
+        Array.from(docs.values()).filter(
+          (doc) =>
+            String(doc._id).startsWith("skills:") &&
+            doc.slug === equals.get("slug") &&
+            (!equals.has("ownerPublisherId") ||
+              doc.ownerPublisherId === equals.get("ownerPublisherId")),
+        );
       return {
+        take: vi.fn(async (limit: number) => {
+          if (table === "skills") return matchingSkills().slice(0, limit);
+          if (table === "skillSlugAliases") return [];
+          return [];
+        }),
         unique: vi.fn(async () => {
           if (table === "publisherMembers") return options.membership ?? null;
-          if (table === "skills") {
+          if (table === "publishers") {
             return (
               Array.from(docs.values()).find(
-                (doc) => String(doc._id).startsWith("skills:") && doc.slug === equals.get("slug"),
+                (doc) =>
+                  String(doc._id).startsWith("publishers:") && doc.handle === equals.get("handle"),
               ) ?? null
             );
+          }
+          if (table === "skills") {
+            const matches = matchingSkills();
+            if (matches.length > 1) throw new Error("unique() query returned more than one result");
+            return matches[0] ?? null;
           }
           if (table === "skillVersions") {
             return (
@@ -1561,6 +1613,59 @@ describe("securityScan", () => {
     });
     expect(inserts.filter((entry) => entry.table === "securityScanJobs")).toEqual([]);
     expect(patches).toEqual([]);
+  });
+
+  it("submits a scan for the active target when a merged source shares its bare slug", async () => {
+    const { ctx, inserts } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skills:merged-source": {
+          _id: "skills:merged-source",
+          slug: "clawtopics-link",
+          ownerUserId: "users:source-owner",
+          softDeletedAt: 1_700_000_000_000,
+          moderationStatus: "hidden",
+          moderationReason: "owner.merged",
+          canonicalSkillId: "skills:target",
+        },
+        "skills:target": {
+          _id: "skills:target",
+          slug: "clawtopics-link",
+          displayName: "Clawtopics Link",
+          ownerUserId: "users:owner",
+          latestVersionId: "skillVersions:target",
+          moderationStatus: "active",
+        },
+        "skillVersions:target": {
+          _id: "skillVersions:target",
+          skillId: "skills:target",
+          version: "1.0.2",
+          files: [],
+          createdAt: 1_700_000_100_000,
+        },
+      },
+    });
+
+    const result = await createPublishedSkillScanRequestInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      slug: "clawtopics-link",
+      version: "1.0.2",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "queued",
+      sourceKind: "published",
+    });
+    expect(inserts).toContainEqual({
+      table: "skillScanRequests",
+      doc: expect.objectContaining({
+        skillId: "skills:target",
+        skillVersionId: "skillVersions:target",
+        slug: "clawtopics-link",
+        version: "1.0.2",
+      }),
+    });
   });
 
   it("keeps an unscanned skill publish at publish priority when VirusTotal finishes", async () => {
@@ -2038,6 +2143,119 @@ describe("securityScan", () => {
           status: "malicious",
           summary: "Credential exfiltration pattern.",
         },
+      },
+    });
+  });
+
+  it("resolves a stored report from the active target when a merged source shares its slug", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: {
+        "skills:merged-source": {
+          _id: "skills:merged-source",
+          slug: "clawtopics-link",
+          displayName: "Merged Source",
+          ownerUserId: "users:source-owner",
+          softDeletedAt: 1_700_000_000_000,
+          moderationStatus: "hidden",
+          moderationReason: "owner.merged",
+          canonicalSkillId: "skills:target",
+        },
+        "skills:target": {
+          _id: "skills:target",
+          slug: "clawtopics-link",
+          displayName: "Clawtopics Link",
+          ownerUserId: "users:owner",
+          moderationStatus: "active",
+        },
+        "skillVersions:target": {
+          _id: "skillVersions:target",
+          skillId: "skills:target",
+          version: "1.0.2",
+          files: [],
+          llmAnalysis: { status: "clean", checkedAt: 1_700_000_100_000 },
+          createdAt: 1_700_000_100_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "clawtopics-link",
+      version: "1.0.2",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        slug: "clawtopics-link",
+        displayName: "Clawtopics Link",
+        version: "1.0.2",
+      },
+    });
+  });
+
+  it("downloads the requested owner's report when active publishers share a slug", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:tekoai",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:felix": {
+          _id: "publishers:felix",
+          kind: "user",
+          handle: "felixzhou2005",
+        },
+        "publishers:tekoai": {
+          _id: "publishers:tekoai",
+          kind: "org",
+          handle: "tekoai",
+        },
+        "skills:felix": {
+          _id: "skills:felix",
+          slug: "clawtopics-link",
+          displayName: "Felix Clawtopics Link",
+          ownerUserId: "users:felix",
+          ownerPublisherId: "publishers:felix",
+          moderationStatus: "active",
+        },
+        "skills:tekoai": {
+          _id: "skills:tekoai",
+          slug: "clawtopics-link",
+          displayName: "Clawtopics Link",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:tekoai",
+          moderationStatus: "active",
+        },
+        "skillVersions:tekoai": {
+          _id: "skillVersions:tekoai",
+          skillId: "skills:tekoai",
+          version: "1.0.2",
+          files: [],
+          llmAnalysis: { status: "clean", checkedAt: 1_700_000_100_000 },
+          createdAt: 1_700_000_100_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "skill",
+      name: "clawtopics-link",
+      ownerHandle: "tekoai",
+      version: "1.0.2",
+    });
+
+    expect(report).toMatchObject({
+      artifact: {
+        slug: "clawtopics-link",
+        displayName: "Clawtopics Link",
+        version: "1.0.2",
       },
     });
   });

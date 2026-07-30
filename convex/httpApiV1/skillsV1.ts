@@ -1233,7 +1233,9 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
       await request.json(),
       "Skill scan payload",
     ) as {
-      source: { kind: "upload" } | { kind: "published"; slug: string; version?: string };
+      source:
+        | { kind: "upload" }
+        | { kind: "published"; slug: string; ownerHandle?: string; version?: string };
       update?: boolean;
     };
     if (body.source.kind === "upload") {
@@ -1249,6 +1251,7 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
       {
         actorUserId: auth.userId,
         slug: body.source.slug,
+        ...(body.source.ownerHandle ? { ownerHandle: body.source.ownerHandle } : {}),
         ...(body.source.version ? { version: body.source.version } : {}),
         update: body.update === true,
       },
@@ -1280,6 +1283,7 @@ export async function skillScanGetRouterV1Handler(ctx: ActionCtx, request: Reque
       const url = new URL(request.url);
       const version = url.searchParams.get("version")?.trim() ?? "";
       const kind = url.searchParams.get("kind")?.trim() === "plugin" ? "plugin" : "skill";
+      const ownerHandle = url.searchParams.get("ownerHandle")?.trim() || undefined;
       if (!name) return text("name required", 400, rate.headers);
       if (!version) return text("version required", 400, rate.headers);
 
@@ -1290,6 +1294,7 @@ export async function skillScanGetRouterV1Handler(ctx: ActionCtx, request: Reque
           actorUserId: auth.userId,
           kind,
           name,
+          ...(ownerHandle ? { ownerHandle } : {}),
           version,
         },
       )) as Record<string, unknown>;

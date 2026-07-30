@@ -575,6 +575,7 @@ export declare const ApiV1SkillScanSourceSchema: import("arktype/internal/varian
 } | {
     kind: "published";
     slug: string;
+    ownerHandle?: string | undefined;
     version?: string | undefined;
 }, {}>;
 export type ApiV1SkillScanSource = (typeof ApiV1SkillScanSourceSchema)[inferred];
@@ -584,6 +585,7 @@ export declare const ApiV1SkillScanSubmitRequestSchema: import("arktype/internal
     } | {
         kind: "published";
         slug: string;
+        ownerHandle?: string | undefined;
         version?: string | undefined;
     };
     update?: boolean | undefined;

@@ -138,6 +138,39 @@ describe("cmdScan", () => {
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("Written back: yes"));
   });
 
+  it("submits an owner-qualified published skill without folding the owner into the slug", async () => {
+    httpMocks.apiRequest
+      .mockResolvedValueOnce({
+        ok: true,
+        scanId: "scan_123",
+        jobId: "job_123",
+        status: "queued",
+        sourceKind: "published",
+        update: false,
+      })
+      .mockResolvedValueOnce(completedScan());
+
+    await cmdScan(makeGlobalOpts(), undefined, {
+      slug: "@tekoai/clawtopics-link",
+      version: "1.0.2",
+    });
+
+    expect(httpMocks.apiRequest.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      path: ApiRoutes.skillScans,
+      token: "tkn",
+      body: {
+        source: {
+          kind: "published",
+          slug: "clawtopics-link",
+          ownerHandle: "tekoai",
+          version: "1.0.2",
+        },
+        update: false,
+      },
+    });
+  });
+
   it("downloads the canonical report zip when --output is set", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -196,6 +229,25 @@ describe("cmdScanDownload", () => {
       });
       expect(await readFile(join(workdir, "scan.zip"))).toEqual(Buffer.from([80, 75, 3, 4]));
       expect(mockLog).toHaveBeenCalledWith(`Report ZIP: ${join(workdir, "scan.zip")}`);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("downloads an owner-qualified stored skill report from the canonical slug", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      httpMocks.fetchBinary.mockResolvedValueOnce(new Uint8Array([80, 75, 3, 4]));
+
+      await cmdScanDownload(makeGlobalOpts(workdir), "@tekoai/clawtopics-link", {
+        version: "1.0.2",
+        output: "scan.zip",
+      });
+
+      expect(httpMocks.fetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+        path: `${ApiRoutes.skillScans}/download/clawtopics-link?version=1.0.2&kind=skill&ownerHandle=tekoai`,
+        token: "tkn",
+      });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
