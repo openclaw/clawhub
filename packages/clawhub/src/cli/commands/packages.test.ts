@@ -340,6 +340,50 @@ describe("package commands", () => {
     }
   });
 
+  it("keeps missing-API findings with generic remediation and no docs URL", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "removed-api-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        '{"name":"removed-api-plugin","version":"1.0.0"}\n',
+      );
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: {
+          status: "fail",
+          summary: { breakageCount: 1, warningCount: 0, issueCount: 1 },
+          issues: [
+            {
+              code: "missing-openclaw-api",
+              level: "breakage",
+              issueClass: "compatibility-error",
+              message: "registerMemoryRuntime is unavailable in the selected OpenClaw target",
+              authorRemediation: {
+                summary:
+                  "Replace this call with an API available in the selected OpenClaw version.",
+              },
+            },
+          ],
+        },
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await expect(cmdValidatePackage(makeOpts(workdir), "removed-api-plugin", {})).rejects.toThrow(
+        "Plugin Inspector found 1 hard error",
+      );
+
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("ERROR missing-openclaw-api (compatibility-error)");
+      expect(output).toContain(
+        "Fix: Replace this call with an API available in the selected OpenClaw version.",
+      );
+      expect(output).not.toContain("Docs:");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("prints author-facing package validation findings before report paths by default", async () => {
     const workdir = await makeTmpWorkdir();
     try {

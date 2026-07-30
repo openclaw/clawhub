@@ -97,4 +97,32 @@ describe("package inspector publish normalization", () => {
       ],
     });
   });
+
+  it("keeps missing-API findings with generic remediation and no docs URL", () => {
+    const result = normalizeInspectorReportForPublish({
+      status: "fail",
+      summary: { breakageCount: 1, warningCount: 0, issueCount: 1 },
+      issues: [
+        {
+          code: "missing-openclaw-api",
+          level: "breakage",
+          issueClass: "compatibility-error",
+          message: "registerMemoryRuntime is unavailable in the selected OpenClaw target",
+          authorRemediation: {
+            summary: "Replace this call with an API available in the selected OpenClaw version.",
+          },
+        },
+      ],
+    });
+
+    expect(result.breakages).toEqual([
+      expect.objectContaining({
+        code: "missing-openclaw-api",
+        authorRemediation: {
+          summary: "Replace this call with an API available in the selected OpenClaw version.",
+          docsUrl: undefined,
+        },
+      }),
+    ]);
+  });
 });
