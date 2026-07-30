@@ -3703,6 +3703,9 @@ export async function seedLocalModerationFixturesHandler(
     deprecated: true,
     message: "legacy before_agent_start hook is deprecated for the current OpenClaw plugin API",
     evidence: ["src/index.ts:4", "hook:before_agent_start"],
+    authorRemediation: {
+      summary: "Replace the legacy before_agent_start hook with the current lifecycle API.",
+    },
     inspectorFindingId: "local-scanned-runtime-plugin:legacy-before-agent-start",
     createdAt: now,
   });
@@ -3723,6 +3726,9 @@ export async function seedLocalModerationFixturesHandler(
     issueClass: "compatibility-error",
     message: "registerTool is no longer available on the target OpenClaw compatibility surface",
     evidence: ["src/index.ts:12", "target:OpenClaw 2026.4.0"],
+    authorRemediation: {
+      summary: "Replace registerTool with an API available in the selected OpenClaw version.",
+    },
     inspectorFindingId: "local-scanned-runtime-plugin:missing-expected-seam",
     createdAt: now + 1,
   });

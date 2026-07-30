@@ -1374,12 +1374,20 @@ describe("devSeed local fixtures", () => {
           packageName: scannedPluginName,
           findingKind: "warning",
           code: "legacy-before-agent-start",
+          targetOpenClawVersion: "2026.3.24-beta.2",
+          authorRemediation: {
+            summary: "Replace the legacy before_agent_start hook with the current lifecycle API.",
+          },
         }),
         expect.objectContaining({
           packageName: scannedPluginName,
           findingKind: "error",
           code: "missing-expected-seam",
           scanSource: "nightly",
+          targetOpenClawVersion: "2026.4.0",
+          authorRemediation: {
+            summary: "Replace registerTool with an API available in the selected OpenClaw version.",
+          },
         }),
       ]),
     );
