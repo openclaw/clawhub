@@ -521,7 +521,7 @@ jobs:
             .digest.repo == "clawdis" and
             .digest.githubPath == ".agents/skills/discrawl" and
             .digest.githubCommit == "690ed564419291ca6e832dc69b53061300075b62" and
-            .digest.sourceContentHash == "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d" and
+            .digest.sourceContentHash == "4d3c90262b309ee9ee0ef2f83397fc2a68e8c7d098a8a960fdcbf8908f077f10" and
             .digest.active == true and
             .digest.publicVisible == false and
             .digest.installable == false

@@ -40,6 +40,7 @@ const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS = [
     detailPath: "skills/html/SKILL.md",
     githubCommit: "050daba89f6b6636470add5cb300aac46a412cf8",
     sourceContentHash: "a47adb2c1ac33c088f664b5187971b63d2b958a7b9f01516d26005ca941a108f",
+    detailContentHash: "42d2e89358ea927441dfede45c3b0cf89a21603bc7c32246f098d24a9cbea1ff",
   },
   {
     externalId: "steipete/clawdis/discrawl",
@@ -51,7 +52,8 @@ const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS = [
     githubPath: ".agents/skills/discrawl",
     detailPath: ".agents/skills/discrawl/SKILL.md",
     githubCommit: "690ed564419291ca6e832dc69b53061300075b62",
-    sourceContentHash: "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d",
+    sourceContentHash: "4d3c90262b309ee9ee0ef2f83397fc2a68e8c7d098a8a960fdcbf8908f077f10",
+    detailContentHash: "889dc43180b210dbca12f8291e007feb231250ecfdba90c4d3938a18125efb6d",
   },
 ] as const;
 
@@ -66,6 +68,7 @@ type SkillsShMirrorControlledSupplement = {
   detailPath: string;
   githubCommit: string;
   sourceContentHash: string;
+  detailContentHash: string;
 };
 
 export const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENT_COUNT =
@@ -2389,10 +2392,13 @@ export function buildSkillsShMirrorControlledObservation(
 ) {
   assertIntegerInRange("sourceBytes", sourceBytes, 0, MAX_CONTROLLED_DETAIL_BYTES);
   assertIntegerInRange("maxDetailBytes", maxDetailBytes, 1, 64 * 1024);
-  const sourceContentHash = sha256Hex(fullContent);
-  if (sourceContentHash !== supplement.sourceContentHash) {
+  const detailContentHash = sha256Hex(fullContent);
+  if (detailContentHash !== supplement.detailContentHash) {
     throw new Error(`controlled skills.sh mirror source hash changed: ${supplement.externalId}`);
   }
+  // Mirror and claim identity use the canonical whole-folder hash. The raw
+  // detail response is verified separately because it contains only SKILL.md.
+  const sourceContentHash = supplement.sourceContentHash;
   const content = truncateUtf8(fullContent, maxDetailBytes);
   const unavailable = { status: "unavailable" as const };
   return {

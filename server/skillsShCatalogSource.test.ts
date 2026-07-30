@@ -157,8 +157,9 @@ describe("skills.sh Vercel source boundary", () => {
     });
   });
 
-  it("builds a hidden controlled observation only from exact immutable content", () => {
+  it("keeps the canonical folder hash while verifying exact controlled detail content", () => {
     const fullContent = "# Controlled\n\nThis content is longer than the retained prefix.";
+    const detailContentHash = createHash("sha256").update(fullContent).digest("hex");
     const supplement = {
       externalId: "owner/repo/controlled",
       owner: "owner",
@@ -169,7 +170,8 @@ describe("skills.sh Vercel source boundary", () => {
       githubPath: "skills/controlled",
       detailPath: "skills/controlled/SKILL.md",
       githubCommit: "0123456789abcdef0123456789abcdef01234567",
-      sourceContentHash: createHash("sha256").update(fullContent).digest("hex"),
+      sourceContentHash: "a".repeat(64),
+      detailContentHash,
     };
 
     expect(
@@ -203,7 +205,7 @@ describe("skills.sh Vercel source boundary", () => {
     });
     expect(() =>
       buildSkillsShMirrorControlledObservation(
-        { ...supplement, sourceContentHash: "0".repeat(64) },
+        { ...supplement, detailContentHash: "0".repeat(64) },
         fullContent,
         Buffer.byteLength(fullContent),
         16,
