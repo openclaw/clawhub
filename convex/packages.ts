@@ -10225,11 +10225,66 @@ type PackageReleaseTagCleanupAssignment = {
   tags: string[];
 };
 
+function resolvePackageReleaseTagsForPublish(params: {
+  family: Doc<"packages">["family"];
+  currentLatestExists: boolean;
+  currentLatestVersion?: string;
+  candidateVersion: string;
+  requestedTags: string[];
+}) {
+  const requestedLatest = params.requestedTags.some((tag) => tag.toLowerCase() === "latest");
+  const currentLatestSemver = params.currentLatestVersion
+    ? semver.valid(params.currentLatestVersion)
+    : null;
+  const candidateSemver = semver.valid(params.candidateVersion);
+  const latestUsesSemver = params.family === "code-plugin" || params.family === "claw";
+  // `latest` is reserved for the highest semver on versioned package families.
+  // Callers default to this tag, so accepting it blindly would let backports roll the catalog back.
+  const shouldPromoteLatest =
+    requestedLatest &&
+    (!latestUsesSemver ||
+      !params.currentLatestExists ||
+      (currentLatestSemver !== null &&
+        candidateSemver !== null &&
+        semver.gt(candidateSemver, currentLatestSemver)));
+  const effectiveTags = [
+    ...new Set(params.requestedTags.filter((tag) => tag.toLowerCase() !== "latest")),
+  ];
+  if (shouldPromoteLatest) effectiveTags.push("latest");
+  return { effectiveTags, shouldPromoteLatest };
+}
+
 function getPackageTagReleaseId(
   pkg: Pick<Doc<"packages">, "_id" | "latestReleaseId" | "tags">,
   tag: string,
 ) {
   return tag === "latest" ? (pkg.tags.latest ?? pkg.latestReleaseId) : pkg.tags[tag];
+}
+
+async function resolvePackageCurrentLatestForPublish(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Pick<
+    Doc<"packages">,
+    "_id" | "family" | "latestReleaseId" | "latestVersionSummary" | "tags"
+  >,
+) {
+  const latestReleaseId = getPackageTagReleaseId(pkg, "latest");
+  if (!latestReleaseId) return { exists: false, version: undefined };
+  if (pkg.family !== "code-plugin" && pkg.family !== "claw") {
+    return { exists: true, version: pkg.latestVersionSummary?.version };
+  }
+
+  const latestRelease = await ctx.db.get(latestReleaseId);
+  if (
+    latestRelease &&
+    latestRelease.packageId === pkg._id &&
+    isPublishedPackageRelease(latestRelease)
+  ) {
+    return { exists: true, version: latestRelease.version };
+  }
+  // Keep the current pointer when its release row is missing or unusable.
+  // Promotion without a comparable version could roll installs back to a backport.
+  return { exists: true, version: pkg.latestVersionSummary?.version };
 }
 
 function planPackageReleaseTagReassignment(
@@ -10399,8 +10454,14 @@ export const publishPendingReleaseInternal = internalMutation({
 
     const now = Date.now();
     const metadata = pendingPackagePublicationMetadata(release);
-    const effectiveTags = stringArrayPendingField(metadata, "tags") ?? release.distTags ?? [];
-    const shouldPromoteLatest = effectiveTags.includes("latest");
+    const currentLatest = await resolvePackageCurrentLatestForPublish(ctx, pkg);
+    const { effectiveTags, shouldPromoteLatest } = resolvePackageReleaseTagsForPublish({
+      family: pkg.family,
+      currentLatestExists: currentLatest.exists,
+      currentLatestVersion: currentLatest.version,
+      candidateVersion: release.version,
+      requestedTags: stringArrayPendingField(metadata, "tags") ?? release.distTags ?? [],
+    });
     const scanStatus = resolvePackageReleaseScanStatus(release);
     const releaseVerification = release.verification
       ? { ...release.verification, scanStatus }
@@ -10409,6 +10470,7 @@ export const publishPendingReleaseInternal = internalMutation({
       ...release,
       publicationStatus: "published" as const,
       pendingPublication: undefined,
+      distTags: effectiveTags,
       verification: releaseVerification,
     } as Doc<"packageReleases">;
 
@@ -10421,6 +10483,7 @@ export const publishPendingReleaseInternal = internalMutation({
     await ctx.db.patch(release._id, {
       publicationStatus: "published",
       pendingPublication: undefined,
+      distTags: effectiveTags,
       verification: releaseVerification,
     });
 
@@ -10738,10 +10801,16 @@ export const insertReleaseInternal = internalMutation({
         );
       }
     }
-    const shouldPromoteLatest = args.tags.includes("latest");
-    const effectiveTags = shouldPromoteLatest
-      ? Array.from(new Set([...args.tags, "latest"]))
-      : args.tags;
+    const currentLatest = existing
+      ? await resolvePackageCurrentLatestForPublish(ctx, existing)
+      : { exists: false, version: undefined };
+    const { effectiveTags, shouldPromoteLatest } = resolvePackageReleaseTagsForPublish({
+      family: args.family,
+      currentLatestExists: currentLatest.exists,
+      currentLatestVersion: currentLatest.version,
+      candidateVersion: args.version,
+      requestedTags: args.tags,
+    });
 
     const releaseId = await ctx.db.insert("packageReleases", {
       packageId: pkgId,

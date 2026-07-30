@@ -9,6 +9,7 @@
 
 ### Fixes
 
+- API: keep older code-plugin and Claw backports from replacing the highest-semver `latest` release while preserving custom distribution tags.
 - Integrations: truncate publisher-controlled Discord webhook titles to the platform's 256-character embed limit.
 - Security: recover scheduled temporal publisher-abuse scans from strict Convex payload validation failures without leaving zombie running runs (thanks @jesse-merhi).
 - CI: retry transient Convex preview provisioning failures under fresh deployment names during Vercel preview builds.

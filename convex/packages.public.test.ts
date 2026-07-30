@@ -7915,6 +7915,7 @@ describe("packages public queries", () => {
     expect(ctx.patch).toHaveBeenCalledWith("packageReleases:pending", {
       publicationStatus: "published",
       pendingPublication: undefined,
+      distTags: ["latest"],
       verification: { scanStatus: "clean" },
     });
     await flushScheduledPackageReleaseTagCleanup(ctx);
@@ -7929,6 +7930,74 @@ describe("packages public queries", () => {
         scanStatus: "clean",
       }),
     );
+  });
+
+  it("keeps the current latest when finalizing an older package release", async () => {
+    const existingPackage = makePackageDoc({
+      latestReleaseId: "packageReleases:latest",
+      latestVersionSummary: { version: "2.0.0" },
+      tags: { latest: "packageReleases:latest" },
+      summary: "current summary",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    });
+    const latestRelease = makeReleaseDoc({
+      _id: "packageReleases:latest",
+      version: "2.0.0",
+      distTags: ["latest"],
+      publicationStatus: "published",
+    });
+    const pendingRelease = makeReleaseDoc({
+      _id: "packageReleases:pending",
+      version: "1.0.1",
+      publicationStatus: "pending",
+      pendingPublication: {
+        displayName: "Demo Plugin v1",
+        tags: ["latest", "v1"],
+        channel: "community",
+        isOfficial: false,
+      },
+      distTags: ["latest", "v1"],
+      summary: "backport summary",
+      changelog: "backport",
+      integritySha256: "backport-sha",
+      verification: { scanStatus: "pending" },
+      llmAnalysis: {
+        status: "clean",
+        verdict: "clean",
+        checkedAt: 1_700_000_000_000,
+      },
+    });
+    const ctx = makeInsertReleaseCtx(existingPackage, [latestRelease, pendingRelease], {
+      "packageReleases:latest": latestRelease,
+      "packageReleases:pending": pendingRelease,
+      "packages:demo": existingPackage,
+    });
+
+    await publishPendingReleaseInternalHandler(ctx, {
+      releaseId: "packageReleases:pending",
+    });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packageReleases:pending",
+      expect.objectContaining({
+        publicationStatus: "published",
+        distTags: ["v1"],
+      }),
+    );
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:latest",
+        latestVersionSummary: { version: "2.0.0" },
+        summary: "current summary",
+        tags: {
+          latest: "packageReleases:latest",
+          v1: "packageReleases:pending",
+        },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
+      }),
+    );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("publishes a pending release without reading its file-heavy release history", async () => {
@@ -8331,6 +8400,63 @@ describe("packages public queries", () => {
     ]) {
       expect(packagePatch).toHaveProperty(field, undefined);
     }
+  });
+
+  it("uses the latest tag when the version summary and release pointer are stale", async () => {
+    const existingPackage = makePackageDoc({
+      latestReleaseId: "packageReleases:stale",
+      latestVersionSummary: undefined,
+      tags: { latest: "packageReleases:latest" },
+      summary: "current summary",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+    });
+    const staleRelease = makeReleaseDoc({
+      _id: "packageReleases:stale",
+      version: "1.0.0",
+      distTags: [],
+    });
+    const latestRelease = makeReleaseDoc({
+      _id: "packageReleases:latest",
+      version: "2.0.0",
+      distTags: ["latest"],
+    });
+    const ctx = makeInsertReleaseCtx(existingPackage, [staleRelease, latestRelease]);
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      name: "demo-plugin",
+      displayName: "Demo Plugin v1",
+      family: "code-plugin",
+      version: "1.5.0",
+      changelog: "backport",
+      tags: ["latest", "v1"],
+      summary: "backport summary",
+      files: [],
+      integritySha256: "backport-sha",
+    });
+
+    expect(ctx.insert).toHaveBeenCalledWith(
+      "packageReleases",
+      expect.objectContaining({
+        version: "1.5.0",
+        distTags: ["v1"],
+      }),
+    );
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:stale",
+        latestVersionSummary: undefined,
+        summary: "current summary",
+        tags: {
+          latest: "packageReleases:latest",
+          v1: "packageReleases:new",
+        },
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 2 },
+      }),
+    );
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("publishes suspicious prepublication plugin results with a suspicious scan status", async () => {
