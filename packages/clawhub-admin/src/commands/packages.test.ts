@@ -180,7 +180,7 @@ describe("cmdExportPackageValidationReport", () => {
   });
 
   it("fails closed when the API repeats a pagination cursor", async () => {
-    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     httpMocks.apiRequest
       .mockResolvedValueOnce({ items: [], nextCursor: "same-page", done: false })
       .mockResolvedValueOnce({ items: [], nextCursor: "same-page", done: false })
@@ -190,11 +190,11 @@ describe("cmdExportPackageValidationReport", () => {
       cmdExportPackageValidationReport(makeGlobalOpts(), { json: true }),
     ).rejects.toThrow("Validation report response repeated a pagination cursor");
     expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
-    expect(process.stdout.write).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
   });
 
   it("fails closed when pages repeat a plugin", async () => {
-    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const plugin = {
       package: { id: "packages:alpha", name: "alpha", displayName: "Alpha" },
       release: { id: "packageReleases:alpha", version: "1.0.0", createdAt: 100 },
@@ -215,19 +215,18 @@ describe("cmdExportPackageValidationReport", () => {
     await expect(
       cmdExportPackageValidationReport(makeGlobalOpts(), { json: true }),
     ).rejects.toThrow("Validation report response repeated package packages:alpha");
-    expect(process.stdout.write).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
   });
 
   it("fails closed when a truncated page omits its continuation cursor", async () => {
-    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     httpMocks.apiRequest.mockResolvedValueOnce({ items: [], nextCursor: null, done: false });
 
     await expect(
       cmdExportPackageValidationReport(makeGlobalOpts(), { json: true }),
     ).rejects.toThrow("Validation report response omitted its pagination cursor");
-    expect(process.stdout.write).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
   });
-
 });
 
 describe("cmdHardDeletePackage", () => {
