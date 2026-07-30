@@ -21,8 +21,11 @@ const internalRefs = internal as unknown as {
   canonicalTrending: { materializeInternal: unknown };
   skillsShMirrorVisibility: {
     beginActivationInternal: unknown;
+    beginDeactivationInternal: unknown;
+    beginNativeTrendingInternal: unknown;
     finalizeActivationInternal: unknown;
     releaseActivationInternal: unknown;
+    setPublicGateInternal: unknown;
   };
 };
 
@@ -298,6 +301,26 @@ function publicGateValue(args: { enabled: boolean; actor: string; reason: string
   };
 }
 
+function disabledMirrorControl(args: {
+  actor: string;
+  reason: string;
+  now: number;
+  lockToken: string;
+}) {
+  return {
+    enabled: false,
+    paused: true,
+    maxRowsPerRun: 0,
+    maxRowsPerBatch: 0,
+    maxDetailBytes: 0,
+    activationLockToken: args.lockToken,
+    activationLockedAt: args.now,
+    updatedBy: args.actor,
+    reason: args.reason,
+    updatedAt: args.now,
+  };
+}
+
 async function writePublicGate(
   ctx: Pick<MutationCtx, "db">,
   args: { enabled: boolean; actor: string; reason: string; now: number },
@@ -362,6 +385,205 @@ export const setPublicGateInternal = internalMutation({
       scansPlanned: 0 as const,
       scansAdmitted: 0 as const,
     };
+  },
+});
+
+export const beginDeactivationInternal = internalMutation({
+  args: {
+    actor: v.string(),
+    reason: v.string(),
+    confirm: v.string(),
+    lockToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShPublicVisibilityMutationAllowed({
+      activate: false,
+      confirm: args.confirm,
+    });
+    const actor = args.actor.trim();
+    const reason = args.reason.trim();
+    const lockToken = args.lockToken.trim();
+    if (!actor || !reason || !lockToken) {
+      throw new Error("skills.sh deactivation actor, reason, and lock token are required");
+    }
+    const now = Date.now();
+    const mirrorControl = await ctx.db
+      .query("skillsShMirrorControls")
+      .withIndex("by_key", (q) => q.eq("key", CONTROL_KEY))
+      .unique();
+    await writePublicGate(ctx, { enabled: false, actor, reason, now });
+    if (mirrorControl) {
+      await ctx.db.patch(mirrorControl._id, {
+        activationLockToken: lockToken,
+        activationLockedAt: now,
+        activationLeaderboardRunId: undefined,
+        activationTrendingRunId: undefined,
+        updatedBy: actor,
+        reason,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("skillsShMirrorControls", {
+        key: CONTROL_KEY,
+        ...disabledMirrorControl({ actor, reason, now, lockToken }),
+      });
+    }
+    return {
+      ok: true as const,
+      environment,
+      enabled: false as const,
+      updatedAt: now,
+      scansPlanned: 0 as const,
+      scansAdmitted: 0 as const,
+    };
+  },
+});
+
+export const beginNativeTrendingInternal = internalMutation({
+  args: {
+    actor: v.string(),
+    reason: v.string(),
+    confirm: v.string(),
+    lockToken: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const environment = assertSkillsShPublicVisibilityMutationAllowed({
+      activate: false,
+      confirm: args.confirm,
+    });
+    const actor = args.actor.trim();
+    const reason = args.reason.trim();
+    const lockToken = args.lockToken.trim();
+    if (!actor || !reason || !lockToken) {
+      throw new Error("skills.sh native Trending actor, reason, and lock token are required");
+    }
+    const now = Date.now();
+    const [catalogControl, mirrorControl] = await Promise.all([
+      ctx.db
+        .query("skillsShCatalogControls")
+        .withIndex("by_key", (q) => q.eq("key", CONTROL_KEY))
+        .unique(),
+      ctx.db
+        .query("skillsShMirrorControls")
+        .withIndex("by_key", (q) => q.eq("key", CONTROL_KEY))
+        .unique(),
+    ]);
+    if (catalogControl?.mirrorPublicVisibilityEnabled === true) {
+      throw new Error("skills.sh native Trending preflight requires a closed public gate");
+    }
+    if (
+      mirrorControl?.activationLockToken &&
+      mirrorControl.activationLockToken !== lockToken &&
+      mirrorControl.activationLockedAt !== undefined &&
+      mirrorControl.activationLockedAt > now - ACTIVATION_LOCK_LEASE_MS
+    ) {
+      throw new Error("another skills.sh public activation is in progress");
+    }
+    if (mirrorControl) {
+      await ctx.db.patch(mirrorControl._id, {
+        activationLockToken: lockToken,
+        activationLockedAt: now,
+        activationLeaderboardRunId: undefined,
+        activationTrendingRunId: undefined,
+        updatedBy: actor,
+        reason,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert("skillsShMirrorControls", {
+        key: CONTROL_KEY,
+        ...disabledMirrorControl({ actor, reason, now, lockToken }),
+      });
+    }
+    return { environment, lockToken };
+  },
+});
+
+async function materializeNativeTrending(ctx: Pick<ActionCtx, "runAction">, lockToken: string) {
+  const nativeTrending = (await ctx.runAction(
+    internalRefs.canonicalTrending.materializeInternal as never,
+    { activationLockToken: lockToken, skillsShMode: "native-only" } as never,
+  )) as {
+    status: "ready" | "unavailable";
+    snapshotId?: string;
+    sourceCounts?: { clawhubTrending: number; clawhubRising: number; skillsShTrending: number };
+  };
+  if (nativeTrending.status !== "ready" || nativeTrending.sourceCounts?.skillsShTrending !== 0) {
+    throw new Error("native-only canonical Trending did not become ready");
+  }
+  return nativeTrending;
+}
+
+async function materializeNativeTrendingWithLock(
+  ctx: Pick<ActionCtx, "runAction" | "runMutation">,
+  args: { actor: string; reason: string; confirm: string },
+) {
+  const lockToken = `skills-sh-native-trending:${crypto.randomUUID()}`;
+  const locked = (await ctx.runMutation(
+    internalRefs.skillsShMirrorVisibility.beginNativeTrendingInternal as never,
+    { ...args, lockToken } as never,
+  )) as { environment: "test" | "production" };
+  try {
+    return {
+      environment: locked.environment,
+      nativeTrending: await materializeNativeTrending(ctx, lockToken),
+    };
+  } finally {
+    await ctx.runMutation(
+      internalRefs.skillsShMirrorVisibility.releaseActivationInternal as never,
+      { lockToken } as never,
+    );
+  }
+}
+
+export const prepareNativeTrendingInternal = internalAction({
+  args: {
+    actor: v.string(),
+    reason: v.string(),
+    confirm: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { environment, nativeTrending } = await materializeNativeTrendingWithLock(ctx, args);
+    return {
+      ok: true as const,
+      environment,
+      nativeTrending,
+      scansPlanned: 0 as const,
+      scansAdmitted: 0 as const,
+    };
+  },
+});
+
+export const deactivateAndMaterializeInternal = internalAction({
+  args: {
+    actor: v.string(),
+    reason: v.string(),
+    confirm: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const lockToken = `skills-sh-native-trending:${crypto.randomUUID()}`;
+    // Close the gate and replace any activation lock atomically so an
+    // in-flight or newly starting activation cannot reopen the lane.
+    const deactivation = (await ctx.runMutation(
+      internalRefs.skillsShMirrorVisibility.beginDeactivationInternal as never,
+      { ...args, lockToken } as never,
+    )) as {
+      ok: true;
+      environment: "test" | "production";
+      enabled: false;
+      updatedAt: number;
+      scansPlanned: 0;
+      scansAdmitted: 0;
+    };
+    try {
+      const nativeTrending = await materializeNativeTrending(ctx, lockToken);
+      return { ...deactivation, nativeTrending };
+    } finally {
+      await ctx.runMutation(
+        internalRefs.skillsShMirrorVisibility.releaseActivationInternal as never,
+        { lockToken } as never,
+      );
+    }
   },
 });
 

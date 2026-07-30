@@ -198,6 +198,12 @@ describe("skills.sh production mirror route", () => {
     const handler = (await import("./routes/ops/skills-sh/mirror.post")).default;
 
     readBodyMock.mockResolvedValueOnce({
+      operation: "prepare-native-trending",
+      reason: "native-only production preflight",
+    });
+    expect(((await handler({} as never)) as Response).status).toBe(200);
+
+    readBodyMock.mockResolvedValueOnce({
       operation: "verify-activate",
       reason: "verified initial production import",
     });
@@ -211,13 +217,17 @@ describe("skills.sh production mirror route", () => {
 
     expect(forwarded).toEqual([
       {
+        operation: "mirror-prepare-native-trending",
+        reason: "native-only production preflight",
+        confirm: "deactivate-skills-sh-public-production",
+      },
+      {
         operation: "mirror-verify-activate",
         reason: "verified initial production import",
         confirm: "activate-skills-sh-public-production",
       },
       {
-        operation: "mirror-public-gate",
-        enabled: false,
+        operation: "mirror-deactivate-native-trending",
         reason: "systemic production rollback",
         confirm: "deactivate-skills-sh-public-production",
       },

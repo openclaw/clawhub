@@ -347,6 +347,51 @@ describe("skills.sh mirror visibility operations", () => {
         reason: "CLAW-603 verification test",
         updatedAt: now - 2_000,
       });
+      const nativeOwnerId = await ctx.db.insert("users", {
+        handle: "native-owner",
+        displayName: "Native owner",
+        createdAt: now - 10_000,
+        updatedAt: now,
+      });
+      const nativeSkillId = await ctx.db.insert("skills", {
+        slug: "native-ready",
+        displayName: "Native ready",
+        summary: "Native canonical Trending fixture",
+        ownerUserId: nativeOwnerId,
+        tags: {},
+        statsInstallsAllTime: 900,
+        stats: { downloads: 1_000, installsAllTime: 900, stars: 20, versions: 1, comments: 0 },
+        createdAt: now - 10_000,
+        updatedAt: now,
+      });
+      const nativeVersionId = await ctx.db.insert("skillVersions", {
+        skillId: nativeSkillId,
+        version: "1.0.0",
+        changelog: "Initial",
+        files: [],
+        parsed: { frontmatter: {} },
+        createdBy: nativeOwnerId,
+        createdAt: now - 10_000,
+      });
+      await ctx.db.insert("skillSearchDigest", {
+        skillId: nativeSkillId,
+        slug: "native-ready",
+        displayName: "Native ready",
+        summary: "Native canonical Trending fixture",
+        ownerUserId: nativeOwnerId,
+        ownerHandle: "native-owner",
+        ownerKind: "user",
+        ownerName: "Native owner",
+        ownerDisplayName: "Native owner",
+        latestVersionId: nativeVersionId,
+        latestVersionSkillId: nativeSkillId,
+        publicVersion: { status: "available", versionId: nativeVersionId },
+        tags: {},
+        statsInstallsAllTime: 900,
+        stats: { downloads: 1_000, installsAllTime: 900, stars: 20, versions: 1, comments: 0 },
+        createdAt: now - 10_000,
+        updatedAt: now,
+      });
       await ctx.db.insert("skillHourlyStatStates", {
         key: "canonical_trending",
         liveStartedAt: now - 3_600_000,
@@ -356,6 +401,16 @@ describe("skills.sh mirror visibility operations", () => {
         lastAggregationCompletedAt: window.endAt + 1,
         lastProcessedEventCreationTime: 100,
         updatedAt: now,
+      });
+      await ctx.db.insert("skillHourlyStats", {
+        skillId: nativeSkillId,
+        hour: window.endHour,
+        generation: 0,
+        downloads: 18,
+        installs: 12,
+        bookmarks: 4,
+        updatedAt: now,
+        expiresAt: now + 72 * 3_600_000,
       });
     });
 
@@ -402,6 +457,69 @@ describe("skills.sh mirror visibility operations", () => {
     }));
     expect(activationState.mirrorControl?.activationLockToken).toBeUndefined();
     expect(activationState.snapshots).toHaveLength(1);
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      page: { items: [{ source: "clawhub" }, { source: "skills-sh" }] },
+    });
+
+    await t.run(async (ctx) => {
+      const state = await ctx.db
+        .query("skillHourlyStatStates")
+        .withIndex("by_key", (q) => q.eq("key", "canonical_trending"))
+        .unique();
+      if (!state) throw new Error("hourly state missing");
+      await ctx.db.delete(state._id);
+    });
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.deactivateAndMaterializeInternal, {
+        actor: "codex-test",
+        reason: "CLAW-603 fail-closed rollback",
+        confirm: "deactivate-skills-sh-public-test",
+      }),
+    ).rejects.toThrow("native-only canonical Trending did not become ready");
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      page: { items: [{ source: "clawhub" }] },
+    });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillHourlyStatStates", {
+        key: "canonical_trending",
+        liveStartedAt: now - 3_600_000,
+        eventBackfillThroughCreationTime: 100,
+        activeGeneration: 1,
+        backfillCompletedAt: now - 1_000,
+        lastAggregationCompletedAt: window.endAt + 1,
+        lastProcessedEventCreationTime: 100,
+        updatedAt: now,
+      });
+    });
+
+    await expect(
+      t.action(internal.skillsShMirrorVisibility.deactivateAndMaterializeInternal, {
+        actor: "codex-test",
+        reason: "CLAW-603 native-only rollback",
+        confirm: "deactivate-skills-sh-public-test",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      enabled: false,
+      nativeTrending: {
+        status: "ready",
+        sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+      },
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      page: { items: [{ source: "clawhub" }] },
+    });
   });
 
   it("reclaims an abandoned activation lock after its bounded lease", async () => {
@@ -463,6 +581,39 @@ describe("skills.sh mirror visibility operations", () => {
       activationLockToken: "replacement-lock",
       updatedBy: "retrying-action",
     });
+  });
+
+  it("prepares native-only publication without enabling a missing mirror control", async () => {
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.skillsShMirrorVisibility.beginNativeTrendingInternal, {
+      actor: "codex-test",
+      reason: "prepare native-only Trending",
+      confirm: "deactivate-skills-sh-public-test",
+      lockToken: "native-only-lock",
+    });
+    await expect(
+      t.run(async (ctx) =>
+        ctx.db
+          .query("skillsShMirrorControls")
+          .withIndex("by_key", (q) => q.eq("key", "global"))
+          .unique(),
+      ),
+    ).resolves.toMatchObject({
+      enabled: false,
+      paused: true,
+      maxRowsPerRun: 0,
+      maxRowsPerBatch: 0,
+      maxDetailBytes: 0,
+      activationLockToken: "native-only-lock",
+    });
+    await expect(
+      t.mutation(internal.skillsShMirrorVisibility.beginActivationInternal, {
+        actor: "codex-test",
+        reason: "must wait for native-only snapshot",
+        confirm: "activate-skills-sh-public-test",
+        lockToken: "activation-lock",
+      }),
+    ).rejects.toThrow("skills.sh mirror control is not active");
   });
 
   it("rejects a completed Trending run older than the selected leaderboard import", async () => {
@@ -533,11 +684,11 @@ describe("skills.sh mirror visibility operations", () => {
       };
     });
 
-    await t.mutation(internal.skillsShMirrorVisibility.setPublicGateInternal, {
-      enabled: false,
+    await t.mutation(internal.skillsShMirrorVisibility.beginDeactivationInternal, {
       actor: "codex-test",
       reason: "systemic rollback",
       confirm: "deactivate-skills-sh-public-test",
+      lockToken: "native-rollback-lock",
     });
     const control = await t.run(async (ctx) =>
       ctx.db
@@ -545,8 +696,8 @@ describe("skills.sh mirror visibility operations", () => {
         .withIndex("by_key", (q) => q.eq("key", "global"))
         .unique(),
     );
-    expect(control?.activationLockToken).toBeUndefined();
-    expect(control?.activationLockedAt).toBeUndefined();
+    expect(control?.activationLockToken).toBe("native-rollback-lock");
+    expect(control?.activationLockedAt).toEqual(expect.any(Number));
     expect(control?.activationLeaderboardRunId).toBeUndefined();
     expect(control?.activationTrendingRunId).toBeUndefined();
     await expect(

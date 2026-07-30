@@ -45,6 +45,17 @@ function completedRun(sourceView: "leaderboard" | "trending", scansPlanned = 0) 
   };
 }
 
+function nativeTrendingPreparation() {
+  return response({
+    ok: true,
+    nativeTrending: {
+      status: "ready",
+      snapshotId: "skills-native-before-import",
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+    },
+  });
+}
+
 describe("skills.sh synchronization runner", () => {
   it("refreshes GitHub OIDC authorization before the cached token expires", async () => {
     let now = 1_000_000;
@@ -80,7 +91,9 @@ describe("skills.sh synchronization runner", () => {
       operations.push(String(body.operation));
       switch (body.operation) {
         case "status":
-          return response({ runs: [] });
+          return response({ runs: [], invariants: { publicVisible: false } });
+        case "prepare-native-trending":
+          return nativeTrendingPreparation();
         case "configure":
           return response({ ok: true, enabled: body.enabled });
         case "start":
@@ -121,6 +134,12 @@ describe("skills.sh synchronization runner", () => {
       }),
     ).resolves.toMatchObject({
       ok: true,
+      nativeBefore: {
+        nativeTrending: {
+          status: "ready",
+          sourceCounts: { skillsShTrending: 0 },
+        },
+      },
       leaderboard: { status: "completed" },
       trending: { status: "completed" },
       activation: { activated: true },
@@ -130,6 +149,7 @@ describe("skills.sh synchronization runner", () => {
     expect(operations).toEqual([
       "status",
       "configure",
+      "prepare-native-trending",
       "start",
       "step",
       "start-trending",
@@ -163,8 +183,11 @@ describe("skills.sh synchronization runner", () => {
                     startedAt: 1,
                   },
                 ],
+                invariants: { publicVisible: false },
               })
-            : response({ runs: [] });
+            : response({ runs: [], invariants: { publicVisible: true } });
+        case "prepare-native-trending":
+          return nativeTrendingPreparation();
         case "configure":
           return response({ ok: true, enabled: body.enabled });
         case "step":
@@ -193,6 +216,7 @@ describe("skills.sh synchronization runner", () => {
     expect(operations).toEqual([
       "status",
       "configure",
+      "prepare-native-trending",
       "step",
       "start-trending",
       "verify-activate",
@@ -224,7 +248,9 @@ describe("skills.sh synchronization runner", () => {
       );
       switch (body.operation) {
         case "status":
-          return response({ runs: [] });
+          return response({ runs: [], invariants: { publicVisible: false } });
+        case "prepare-native-trending":
+          return nativeTrendingPreparation();
         case "configure":
           return response({ ok: true, enabled: body.enabled });
         case "start":
@@ -273,6 +299,7 @@ describe("skills.sh synchronization runner", () => {
     expect(requests).toEqual([
       "status",
       "configure",
+      "prepare-native-trending",
       "start",
       "step:9:50",
       "step:9:50",
@@ -303,7 +330,9 @@ describe("skills.sh synchronization runner", () => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       switch (body.operation) {
         case "status":
-          return response({ runs: [] });
+          return response({ runs: [], invariants: { publicVisible: false } });
+        case "prepare-native-trending":
+          return nativeTrendingPreparation();
         case "configure":
           return response({ ok: true, enabled: body.enabled });
         case "start":
@@ -346,7 +375,10 @@ describe("skills.sh synchronization runner", () => {
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       operations.push(String(body.operation));
-      if (body.operation === "status") return response({ runs: [] });
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: false } });
+      }
+      if (body.operation === "prepare-native-trending") return nativeTrendingPreparation();
       if (body.operation === "configure") return response({ ok: true });
       if (body.operation === "start") {
         return response({
@@ -371,7 +403,15 @@ describe("skills.sh synchronization runner", () => {
         fetchImpl,
       }),
     ).rejects.toThrow("scheduled a ClawHub scan");
-    expect(operations).toEqual(["status", "configure", "start", "step", "deactivate", "configure"]);
+    expect(operations).toEqual([
+      "status",
+      "configure",
+      "prepare-native-trending",
+      "start",
+      "step",
+      "deactivate",
+      "configure",
+    ]);
   });
 
   it("closes the skills.sh lane when server-side activation verification fails", async () => {
@@ -379,7 +419,10 @@ describe("skills.sh synchronization runner", () => {
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       operations.push(String(body.operation));
-      if (body.operation === "status") return response({ runs: [] });
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: false } });
+      }
+      if (body.operation === "prepare-native-trending") return nativeTrendingPreparation();
       if (body.operation === "configure") return response({ ok: true });
       if (body.operation === "start") return response(completedRun("leaderboard"));
       if (body.operation === "start-trending") return response(completedRun("trending"));
@@ -401,6 +444,7 @@ describe("skills.sh synchronization runner", () => {
     expect(operations).toEqual([
       "status",
       "configure",
+      "prepare-native-trending",
       "start",
       "start-trending",
       "verify-activate",
@@ -414,7 +458,9 @@ describe("skills.sh synchronization runner", () => {
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       operations.push(String(body.operation));
-      if (body.operation === "status") return response({ runs: [] });
+      if (body.operation === "status") {
+        return response({ runs: [], invariants: { publicVisible: true } });
+      }
       if (body.operation === "configure") return response({ ok: true });
       if (body.operation === "start") return response({ error: "upstream unavailable" }, 503);
       throw new Error(`unexpected operation ${String(body.operation)}`);

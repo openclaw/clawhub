@@ -266,11 +266,29 @@ export async function runSkillsShSync(options: {
 
   const startedAt = Date.now();
   const before = await call({ operation: "status" });
+  const publicVisible = (before.invariants as Record<string, unknown> | undefined)?.publicVisible;
+  if (typeof publicVisible !== "boolean") {
+    throw new Error("skills.sh mirror status is missing the public visibility invariant");
+  }
   const recoverable = findRecoverableMirrorRun(before) as
     | (MirrorRun & { sourceView?: "leaderboard" | "trending" })
     | null;
+  let nativeBefore: Record<string, unknown> | null = null;
   await call({ operation: "configure", enabled: true, reason: options.reason });
   try {
+    nativeBefore = publicVisible
+      ? null
+      : await call({
+          operation: "prepare-native-trending",
+          reason: `${options.reason} native-only preflight`,
+        });
+    if (nativeBefore) {
+      const nativeTrending = nativeBefore.nativeTrending as Record<string, unknown> | undefined;
+      const sourceCounts = nativeTrending?.sourceCounts as Record<string, unknown> | undefined;
+      if (nativeTrending?.status !== "ready" || sourceCounts?.skillsShTrending !== 0) {
+        throw new Error("native-only canonical Trending preflight did not become ready");
+      }
+    }
     const recoveredSourceView = recoverable?.sourceView ?? "leaderboard";
     const recovered = recoverable ? await completeRun(recoverable, recoveredSourceView) : null;
     const leaderboard =
@@ -298,6 +316,7 @@ export async function runSkillsShSync(options: {
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
       before,
+      ...(nativeBefore ? { nativeBefore } : {}),
       ...(recovered ? { recovered } : {}),
       leaderboard,
       trending,

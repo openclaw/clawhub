@@ -215,7 +215,10 @@ export const getExternalSourcePageInternal = internalQuery({
 });
 
 export const getMaterializationModeInternal = internalQuery({
-  args: { activationLockToken: v.optional(v.string()) },
+  args: {
+    activationLockToken: v.optional(v.string()),
+    skillsShMode: v.optional(v.literal("native-only")),
+  },
   handler: async (ctx, args) => {
     const control = await ctx.db
       .query("skillsShMirrorControls")
@@ -331,6 +334,7 @@ export const finalizeSnapshotInternal = internalMutation({
     totalItems: v.number(),
     sourceCounts: sourceCountsValidator,
     operations: operationsValidator,
+    activationLockToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const snapshot = await ctx.db
@@ -342,6 +346,17 @@ export const finalizeSnapshotInternal = internalMutation({
     }
     if (snapshot.writtenItems !== args.totalItems) {
       throw new Error("Trending snapshot item count mismatch");
+    }
+    const mirrorControl = await ctx.db
+      .query("skillsShMirrorControls")
+      .withIndex("by_key", (q) => q.eq("key", "global"))
+      .unique();
+    if (args.activationLockToken) {
+      if (mirrorControl?.activationLockToken !== args.activationLockToken) {
+        throw new Error("skills.sh activation lock changed before Trending publication");
+      }
+    } else if (mirrorControl?.activationLockToken) {
+      throw new Error("skills.sh activation started before Trending publication");
     }
     await ctx.db.patch(snapshot._id, {
       status: "ready",
@@ -421,6 +436,7 @@ export const materializeInternal = internalAction({
   args: {
     proofSnapshotId: v.optional(v.string()),
     activationLockToken: v.optional(v.string()),
+    skillsShMode: v.optional(v.literal("native-only")),
   },
   handler: async (ctx, args) => {
     if (args.proofSnapshotId !== undefined) {
@@ -428,6 +444,9 @@ export const materializeInternal = internalAction({
       if (!/^claw-590-proof-[0-9a-f]{40}$/.test(args.proofSnapshotId)) {
         throw new Error("Invalid CLAW-590 proof snapshot ID");
       }
+    }
+    if (args.skillsShMode === "native-only" && !args.activationLockToken) {
+      throw new Error("native-only Trending materialization requires a visibility lock");
     }
     const startedAt = Date.now();
     const snapshotId = args.proofSnapshotId ?? `skills-${startedAt}`;
@@ -439,7 +458,10 @@ export const materializeInternal = internalAction({
     try {
       await ctx.runQuery(
         internalRefs.canonicalTrending.getMaterializationModeInternal as never,
-        { activationLockToken: args.activationLockToken } as never,
+        {
+          activationLockToken: args.activationLockToken,
+          skillsShMode: args.skillsShMode,
+        } as never,
       );
       functionCalls += 1;
       type HourlyWindow = {
@@ -493,7 +515,10 @@ export const materializeInternal = internalAction({
         documentsRead: 0,
         functionCalls: 0,
       };
-      if (getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+      if (
+        args.skillsShMode !== "native-only" &&
+        getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled
+      ) {
         const candidateRun = (await ctx.runQuery(
           internalRefs.canonicalTrending.getLatestCompletedTrendingRunInternal as never,
           {},
@@ -608,6 +633,7 @@ export const materializeInternal = internalAction({
           totalItems: blended.length,
           sourceCounts,
           operations,
+          activationLockToken: args.activationLockToken,
         } as never,
       );
       functionCalls += 1;

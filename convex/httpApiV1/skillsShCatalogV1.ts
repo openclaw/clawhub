@@ -72,6 +72,8 @@ const internalRefs = internal as unknown as {
     storeSourcePageInternal: unknown;
   };
   skillsShMirrorVisibility: {
+    deactivateAndMaterializeInternal: unknown;
+    prepareNativeTrendingInternal: unknown;
     setPublicGateInternal: unknown;
     verifyAndActivateInternal: unknown;
   };
@@ -684,6 +686,36 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-prepare-native-trending") {
+      return json(
+        await runActionRef(
+          ctx,
+          internalRefs.skillsShMirrorVisibility.prepareNativeTrendingInternal,
+          {
+            actor,
+            reason: requireString(body, "reason"),
+            confirm: requireString(body, "confirm"),
+          },
+        ),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-deactivate-native-trending") {
+      return json(
+        await runActionRef(
+          ctx,
+          internalRefs.skillsShMirrorVisibility.deactivateAndMaterializeInternal,
+          {
+            actor,
+            reason: requireString(body, "reason"),
+            confirm: requireString(body, "confirm"),
+          },
+        ),
         200,
         rate.headers,
       );

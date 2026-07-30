@@ -829,6 +829,15 @@ describe("canonical Trending snapshot storage", () => {
         .unique();
       if (!control) throw new Error("catalog control missing");
       await ctx.db.patch(control._id, { mirrorPublicVisibilityEnabled: true });
+      const mirrorControl = await ctx.db
+        .query("skillsShMirrorControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique();
+      if (!mirrorControl) throw new Error("mirror control missing");
+      await ctx.db.patch(mirrorControl._id, {
+        activationLockToken: "native-only-lock",
+        activationLockedAt: now,
+      });
     });
     const pageResult = await t.query(internal.canonicalTrending.getPageInternal, {
       cursor: null,
@@ -866,5 +875,21 @@ describe("canonical Trending snapshot storage", () => {
         },
       }),
     ]);
+
+    const nativeOnly = await t.action(internal.canonicalTrending.materializeInternal, {
+      activationLockToken: "native-only-lock",
+      skillsShMode: "native-only",
+    });
+    expect(nativeOnly).toMatchObject({
+      status: "ready",
+      totalItems: 1,
+      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 0 },
+    });
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, { cursor: null, limit: 20 }),
+    ).resolves.toMatchObject({
+      status: "ok",
+      page: { items: [{ source: "clawhub" }] },
+    });
   });
 });

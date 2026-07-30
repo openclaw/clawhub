@@ -49,6 +49,7 @@ type MirrorRequest = {
   operation?:
     | "configure"
     | "verify-activate"
+    | "prepare-native-trending"
     | "deactivate"
     | "start"
     | "start-trending"
@@ -295,11 +296,19 @@ export function createSkillsShMirrorRoute(target: keyof typeof ROUTE_CONFIG) {
           }),
         );
       }
+      if (operation === "prepare-native-trending") {
+        return jsonResponse(
+          await callConvexOperator(authorization, {
+            operation: "mirror-prepare-native-trending",
+            reason: requireString(body.reason, "reason"),
+            confirm: config.deactivateConfirm,
+          }),
+        );
+      }
       if (operation === "deactivate") {
         return jsonResponse(
           await callConvexOperator(authorization, {
-            operation: "mirror-public-gate",
-            enabled: false,
+            operation: "mirror-deactivate-native-trending",
             reason: requireString(body.reason, "reason"),
             confirm: config.deactivateConfirm,
           }),
