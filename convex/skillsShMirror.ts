@@ -9,12 +9,15 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./functions";
 import { tokenize } from "./lib/searchText";
-import { assertSkillsShFixtureEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
+import { assertSkillsShMirrorEnvironmentAllowed } from "./lib/skillsShCatalogEnvironment";
+import { skillsShMirrorFreshObservationFlags } from "./lib/skillsShPublicVisibility";
 
 const CONTROL_KEY = "global";
-const ENABLE_CONFIRM = "enable-skills-sh-mirror-test";
+const TEST_ENABLE_CONFIRM = "enable-skills-sh-mirror-test";
+const PRODUCTION_ENABLE_CONFIRM = "enable-skills-sh-mirror-production";
 const PAUSE_CONFIRM = "set-skills-sh-mirror-pause";
-const CANCEL_CONFIRM = "cancel-skills-sh-mirror-test-run";
+const TEST_CANCEL_CONFIRM = "cancel-skills-sh-mirror-test-run";
+const PRODUCTION_CANCEL_CONFIRM = "cancel-skills-sh-mirror-production-run";
 const MAX_ROWS_PER_RUN = 50_000;
 const MAX_ROWS_PER_BATCH = 50;
 const MAX_DETAIL_BYTES = 64 * 1024;
@@ -132,6 +135,14 @@ function assertIntegerInRange(name: string, value: number, min: number, max: num
   if (!Number.isInteger(value) || value < min || value > max) {
     throw new ConvexError(`${name} must be an integer between ${min} and ${max}`);
   }
+}
+
+function environmentConfirm(
+  environment: "local" | "test" | "production",
+  testValue: string,
+  productionValue: string,
+) {
+  return environment === "production" ? productionValue : testValue;
 }
 
 function normalizedSourceSnapshotHash(value: string) {
@@ -448,7 +459,7 @@ function newMirrorDigest(
   fingerprint: string,
   now: number,
 ) {
-  return {
+  const digest = {
     externalId: row.externalId,
     sourceType: row.sourceType,
     upstreamSourceType: row.upstreamSourceType,
@@ -479,24 +490,32 @@ function newMirrorDigest(
     observationFingerprint: fingerprint,
     sourceSnapshotId,
     lastObservedRunId: runId,
-    active: true,
-    publicVisible: false as const,
-    installable: false as const,
     firstObservedAt: now,
     lastObservedAt: now,
     createdAt: now,
     updatedAt: now,
   };
+  return {
+    ...digest,
+    ...skillsShMirrorFreshObservationFlags({
+      ...digest,
+      active: true,
+      publicVisible: false,
+      installable: false,
+    }),
+  };
 }
 
 function mirrorDigestPatch(
   row: MirrorRow,
+  existing: Doc<"skillsShMirrorDigests">,
   runId: Id<"skillsShMirrorRuns">,
   sourceSnapshotId: string,
   fingerprint: string,
   now: number,
 ) {
-  return {
+  const digest = {
+    externalId: row.externalId,
     sourceType: row.sourceType,
     upstreamSourceType: row.upstreamSourceType,
     owner: row.owner,
@@ -527,12 +546,19 @@ function mirrorDigestPatch(
     observationFingerprint: fingerprint,
     sourceSnapshotId,
     lastObservedRunId: runId,
-    active: true,
-    publicVisible: false as const,
-    installable: false as const,
     tombstonedAt: undefined,
     lastObservedAt: now,
     updatedAt: now,
+  };
+  return {
+    ...digest,
+    ...skillsShMirrorFreshObservationFlags({
+      ...existing,
+      ...digest,
+      active: true,
+      publicVisible: false,
+      installable: false,
+    }),
   };
 }
 
@@ -844,6 +870,26 @@ async function upsertHydratedMirrorRow(
   let writes = 0;
   if (
     existing?.lastObservedRunId === args.run._id &&
+    existing.sourceFreshnessStatus === "stale" &&
+    existing.staleQuarantineReason === "same-run-drift"
+  ) {
+    await ctx.db.insert("skillsShMirrorConflicts", {
+      runId: args.run._id,
+      externalId: args.row.externalId,
+      kind: "same-run-drift",
+      previousFingerprint: existing.observationFingerprint,
+      observedFingerprint: fingerprint,
+      page: args.page,
+      offset: args.offset,
+      createdAt: args.now,
+    });
+    args.counts.rejected += 1;
+    args.counts.quarantined += 1;
+    args.counts.conflicts += 1;
+    return { hydrated: false, reads, writes: writes + 1 };
+  }
+  if (
+    existing?.lastObservedRunId === args.run._id &&
     existing.sourceFreshnessStatus !== "stale" &&
     existing.observationFingerprint !== fingerprint
   ) {
@@ -857,9 +903,17 @@ async function upsertHydratedMirrorRow(
       offset: args.offset,
       createdAt: args.now,
     });
+    await ctx.db.patch(existing._id, {
+      sourceFreshnessStatus: "stale",
+      staleQuarantineReason: "same-run-drift",
+      publicVisible: false,
+      installable: false,
+      updatedAt: args.now,
+    });
     args.counts.rejected += 1;
+    args.counts.quarantined += 1;
     args.counts.conflicts += 1;
-    return { hydrated: false, reads, writes: writes + 1 };
+    return { hydrated: false, reads, writes: writes + 2 };
   }
 
   let digestId: Id<"skillsShMirrorDigests">;
@@ -877,7 +931,7 @@ async function upsertHydratedMirrorRow(
     if (!existing.active) args.counts.reactivated += 1;
     await ctx.db.patch(
       existing._id,
-      mirrorDigestPatch(args.row, args.run._id, sourceSnapshotId, fingerprint, args.now),
+      mirrorDigestPatch(args.row, existing, args.run._id, sourceSnapshotId, fingerprint, args.now),
     );
     writes += 1;
   }
@@ -951,9 +1005,14 @@ export const configureInternal = internalMutation({
     maxDetailBytes: v.number(),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
-    if (args.confirm !== ENABLE_CONFIRM) {
-      throw new ConvexError(`Pass confirm="${ENABLE_CONFIRM}" to configure the mirror.`);
+    const policy = assertSkillsShMirrorEnvironmentAllowed();
+    const expectedConfirm = environmentConfirm(
+      policy.environment,
+      TEST_ENABLE_CONFIRM,
+      PRODUCTION_ENABLE_CONFIRM,
+    );
+    if (args.confirm !== expectedConfirm) {
+      throw new ConvexError(`Pass confirm="${expectedConfirm}" to configure the mirror.`);
     }
     assertIntegerInRange("maxRowsPerRun", args.maxRowsPerRun, 1, MAX_ROWS_PER_RUN);
     assertIntegerInRange("maxRowsPerBatch", args.maxRowsPerBatch, 1, MAX_ROWS_PER_BATCH);
@@ -989,9 +1048,8 @@ export const configureInternal = internalMutation({
     else await ctx.db.insert("skillsShMirrorControls", { key: CONTROL_KEY, ...next });
     return {
       ...next,
-      environment: assertSkillsShFixtureEnvironmentAllowed().environment,
-      publicVisible: false as const,
-      installable: false as const,
+      environment: policy.environment,
+      publicGateEnabled: false as const,
       scanPlanningEnabled: false as const,
       scanAdmissionEnabled: false as const,
     };
@@ -1013,8 +1071,11 @@ export const startRunInternal = internalMutation({
     sourceDurationMs: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const control = requireActiveControl(await getControl(ctx));
+    if (control.activationLockToken) {
+      throw new ConvexError("skills.sh public activation is in progress");
+    }
     assertIntegerInRange("sourceTotal", args.sourceTotal, 1, control.maxRowsPerRun);
     assertIntegerInRange("sourcePageSize", args.sourcePageSize, 1, 500);
     if (Number.isNaN(Date.parse(args.sourceMeasuredAt))) {
@@ -1084,7 +1145,7 @@ export const storeSourcePageInternal = internalMutation({
     rows: v.array(sourceListRowValidator),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const control = requireActiveControl(await getControl(ctx));
     const snapshotHash = normalizedSourceSnapshotHash(args.snapshotHash);
     const identityHash = normalizedSourceSnapshotHash(args.identityHash);
@@ -1157,7 +1218,7 @@ export const storeSourcePageInternal = internalMutation({
 export const getSourceCaptureSummaryInternal = internalQuery({
   args: { snapshotHash: v.string() },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const snapshotHash = normalizedSourceSnapshotHash(args.snapshotHash);
     const pages = await ctx.db
       .query("skillsShMirrorSourcePages")
@@ -1190,7 +1251,7 @@ export const setPausedInternal = internalMutation({
     confirm: v.string(),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     if (args.confirm !== PAUSE_CONFIRM) {
       throw new ConvexError(`Pass confirm="${PAUSE_CONFIRM}" to change mirror pause state.`);
     }
@@ -1232,9 +1293,14 @@ export const cancelRunInternal = internalMutation({
     confirm: v.string(),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
-    if (args.confirm !== CANCEL_CONFIRM) {
-      throw new ConvexError(`Pass confirm="${CANCEL_CONFIRM}" to cancel a mirror run.`);
+    const policy = assertSkillsShMirrorEnvironmentAllowed();
+    const expectedConfirm = environmentConfirm(
+      policy.environment,
+      TEST_CANCEL_CONFIRM,
+      PRODUCTION_CANCEL_CONFIRM,
+    );
+    if (args.confirm !== expectedConfirm) {
+      throw new ConvexError(`Pass confirm="${expectedConfirm}" to cancel a mirror run.`);
     }
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
@@ -1269,7 +1335,7 @@ export const claimBatchLeaseInternal = internalMutation({
     leaseToken: v.string(),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     requireActiveControl(await getControl(ctx));
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
@@ -1336,7 +1402,7 @@ export const releaseBatchLeaseInternal = internalMutation({
     leaseToken: v.string(),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
     requireExactRunCursor(run, args.page, args.offset);
@@ -1374,7 +1440,7 @@ export const processBatchInternal = internalMutation({
     rows: v.array(v.union(rowValidator, quarantinedRowValidator)),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const [controlDoc, run] = await Promise.all([getControl(ctx), ctx.db.get(args.runId)]);
     const control = requireActiveControl(controlDoc);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
@@ -1452,6 +1518,8 @@ export const processBatchInternal = internalMutation({
               lastObservedRunId: run._id,
               sourceFreshnessStatus: "stale",
               staleQuarantineReason: row.reason,
+              publicVisible: false,
+              installable: false,
               updatedAt: now,
             });
             writes += 1;
@@ -1472,6 +1540,7 @@ export const processBatchInternal = internalMutation({
           createdAt: now,
         });
         counts.rejected += 1;
+        counts.quarantined += 1;
         counts.conflicts += 1;
         writes += 1;
         continue;
@@ -1482,6 +1551,27 @@ export const processBatchInternal = internalMutation({
         .withIndex("by_external_id", (q) => q.eq("externalId", row.externalId))
         .unique();
       reads += 1;
+      if (
+        existing?.lastObservedRunId === run._id &&
+        existing.sourceFreshnessStatus === "stale" &&
+        existing.staleQuarantineReason === "same-run-drift"
+      ) {
+        await ctx.db.insert("skillsShMirrorConflicts", {
+          runId: run._id,
+          externalId: row.externalId,
+          kind: "same-run-drift",
+          previousFingerprint: existing.observationFingerprint,
+          observedFingerprint: fingerprint,
+          page: args.page,
+          offset: args.offset + index,
+          createdAt: now,
+        });
+        counts.rejected += 1;
+        counts.quarantined += 1;
+        counts.conflicts += 1;
+        writes += 1;
+        continue;
+      }
       if (existing?.lastObservedRunId === run._id && existing.sourceFreshnessStatus === "stale") {
         counts.quarantinedPreserved = Math.max(0, counts.quarantinedPreserved - 1);
       }
@@ -1500,9 +1590,17 @@ export const processBatchInternal = internalMutation({
           offset: args.offset + index,
           createdAt: now,
         });
+        await ctx.db.patch(existing._id, {
+          sourceFreshnessStatus: "stale",
+          staleQuarantineReason: "same-run-drift",
+          publicVisible: false,
+          installable: false,
+          updatedAt: now,
+        });
         counts.rejected += 1;
+        counts.quarantined += 1;
         counts.conflicts += 1;
-        writes += 1;
+        writes += 2;
         continue;
       }
 
@@ -1528,7 +1626,7 @@ export const processBatchInternal = internalMutation({
         if (!existing.active) counts.reactivated += 1;
         await ctx.db.patch(
           existing._id,
-          mirrorDigestPatch(row, run._id, sourceSnapshotId, fingerprint, now),
+          mirrorDigestPatch(row, existing, run._id, sourceSnapshotId, fingerprint, now),
         );
         writes += 1;
       }
@@ -1651,7 +1749,7 @@ export const hydrateTrendingBatchInternal = internalMutation({
     rows: v.array(v.union(rowValidator, quarantinedRowValidator)),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const [controlDoc, run] = await Promise.all([getControl(ctx), ctx.db.get(args.runId)]);
     const control = requireActiveControl(controlDoc);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
@@ -1767,7 +1865,7 @@ export const processTrendingBatchInternal = internalMutation({
     rows: v.array(trendingRowValidator),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const [controlDoc, run] = await Promise.all([getControl(ctx), ctx.db.get(args.runId)]);
     const control = requireActiveControl(controlDoc);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
@@ -1906,7 +2004,7 @@ export const reconcileBatchInternal = internalMutation({
     limit: v.number(),
   },
   handler: async (ctx, args) => {
-    assertSkillsShFixtureEnvironmentAllowed();
+    assertSkillsShMirrorEnvironmentAllowed();
     const run = await ctx.db.get(args.runId);
     if (!run) throw new ConvexError("skills.sh mirror run not found");
     if (run.status !== "reconciling") return summarizeRun(run);
@@ -2385,8 +2483,12 @@ export const listConflictsByRunInternal = internalQuery({
 export const getStatusInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const [control, runs, sampleDigests] = await Promise.all([
+    const [control, catalogControl, runs, sampleDigests] = await Promise.all([
       getControl(ctx),
+      ctx.db
+        .query("skillsShCatalogControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique(),
       ctx.db.query("skillsShMirrorRuns").withIndex("by_started_at").order("desc").take(20),
       ctx.db.query("skillsShMirrorDigests").withIndex("by_external_id").take(50),
     ]);
@@ -2396,18 +2498,19 @@ export const getStatusInternal = internalQuery({
           .withIndex("by_run_id", (q) => q.eq("runId", runs[0]!._id))
           .take(50)
       : [];
+    const publicCatalogEnabled = Boolean(catalogControl?.mirrorPublicVisibilityEnabled);
     return {
-      environment: assertSkillsShFixtureEnvironmentAllowed(),
+      environment: assertSkillsShMirrorEnvironmentAllowed(),
       control,
       runs: runs.map(summarizeRun),
       sampleDigests,
       sampleConflicts: latestRunConflicts,
       latestRunConflicts,
       invariants: {
-        publicVisible: false,
-        installable: false,
-        scanPlanningEnabled: false,
-        scanAdmissionEnabled: false,
+        publicVisible: publicCatalogEnabled,
+        installable: publicCatalogEnabled,
+        scanPlanningEnabled: Boolean(catalogControl?.scanPlanningEnabled),
+        scanAdmissionEnabled: Boolean(catalogControl?.scanAdmissionEnabled),
         publisherAttachmentEnabled: false,
       },
     };

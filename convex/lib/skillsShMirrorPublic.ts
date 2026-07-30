@@ -38,6 +38,8 @@ export type SkillsShMirrorDigest = {
   active: boolean;
   publicVisible: boolean;
   installable: boolean;
+  claimStatus?: "pending" | "failed" | "promoted";
+  claimAttempt?: number;
   tombstonedAt?: number;
   lastObservedAt: number;
 };

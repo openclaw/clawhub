@@ -46,6 +46,7 @@ import {
   normalizeSkillSearchText,
 } from "./lib/skillSearchDigest";
 import { isSearchableSkillSlugShape, normalizeSkillSlug } from "./lib/skillSlugValidator";
+import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
 type OwnerInfo = { ownerHandle: string | null; owner: PublicPublisher | null };
 
@@ -1024,6 +1025,7 @@ export const getExternalSkillSearchCandidates = internalQuery({
     topic: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<Doc<"skillsShMirrorDigests">[]> => {
+    if (!(await getSkillsShPublicCatalogEnabledHandler(ctx))) return [];
     if (args.highlightedOnly) return [];
     const categorySlug = normalizeSkillCategoryFilter(args.categorySlug);
     if (categorySlug === null) return [];

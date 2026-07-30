@@ -3060,6 +3060,9 @@ describe("httpApiV1 handlers", () => {
         expect(args).toEqual({ externalId: "patrick-erichsen/skills/html" });
         return makePublicSkillsShDigest();
       }
+      if (Object.keys(args).length === 0) {
+        return { skillsSh: { publicCatalogEnabled: true } };
+      }
       expect(args).toEqual({ repo: "patrick-erichsen/skills", path: "skills/html" });
       return null;
     });
@@ -3089,7 +3092,7 @@ describe("httpApiV1 handlers", () => {
       trust: { clawhubScan: "unscanned", label: "Not scanned by ClawHub" },
       canonicalRef: null,
     });
-    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runQuery).toHaveBeenCalledTimes(3);
   });
 
   it("skill install resolver keeps a scanned skills.sh alias GitHub-backed", async () => {
@@ -3177,6 +3180,9 @@ describe("httpApiV1 handlers", () => {
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("externalId" in args) return makePublicSkillsShDigest();
+      if (Object.keys(args).length === 0) {
+        return { skillsSh: { publicCatalogEnabled: true } };
+      }
       expect(args).toEqual({ repo: "patrick-erichsen/skills", path: "skills/html" });
       return null;
     });
@@ -3209,7 +3215,7 @@ describe("httpApiV1 handlers", () => {
         label: "Not scanned by ClawHub",
       },
     });
-    expect(runQuery).toHaveBeenCalledTimes(2);
+    expect(runQuery).toHaveBeenCalledTimes(3);
   });
 
   it("skill verification preserves a scanned GitHub alias while failing suspicious trust", async () => {

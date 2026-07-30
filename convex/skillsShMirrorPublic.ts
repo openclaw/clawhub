@@ -16,6 +16,7 @@ const internalRefs = internal as unknown as {
     getByExternalIdInternal: unknown;
     getDetailByExternalIdInternal: unknown;
   };
+  rolloutCapabilities: { getPublicCapabilitiesInternal: unknown };
 };
 
 function normalizeRouteSegment(value: string) {
@@ -73,6 +74,11 @@ export async function getSkillsShMirrorByRoute(
       : null;
   if (alias) return { kind: "redirect" as const, ...alias };
   if (!digest) return null;
+  const capabilities = (await ctx.runQuery(
+    internalRefs.rolloutCapabilities.getPublicCapabilitiesInternal as never,
+    {} as never,
+  )) as { skillsSh: { publicCatalogEnabled: boolean } };
+  if (!capabilities.skillsSh.publicCatalogEnabled) return null;
   const entry = buildSkillsShMirrorCatalogDetail({ digest, detail });
   return entry ? { kind: "external" as const, entry } : null;
 }

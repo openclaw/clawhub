@@ -47,6 +47,12 @@ type VerifyGitHubActionsOidcOptions = {
   now?: () => number;
 };
 
+type GitHubActionsWorkflowPolicy = {
+  allowedEvents: readonly string[];
+  expectedRef?: string;
+  reusableWorkflow: { repository: string; workflowFilename: string } | null;
+};
+
 type GitHubRepositoryIdentity = {
   repository: string;
   repositoryId: string;
@@ -66,6 +72,14 @@ const CLOCK_SKEW_MS = 60_000;
 const JWKS_CACHE_TTL_MS = 5 * 60_000;
 const OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY = "openclaw/clawhub";
 const OFFICIAL_REUSABLE_WORKFLOW_FILENAME = "package-publish.yml";
+const SKILLS_SH_SYNC_WORKFLOW: TrustedGitHubActionsPublisher = {
+  repository: "openclaw/clawhub",
+  repositoryId: "1127248221",
+  repositoryOwner: "openclaw",
+  repositoryOwnerId: "252820863",
+  workflowFilename: "skills-sh-sync.yml",
+  environment: "Production",
+};
 
 let cachedJwks: { value: JwkSet; fetchedAt: number } | null = null;
 
@@ -73,6 +87,42 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   jwt: string,
   trustedPublisher: TrustedGitHubActionsPublisher,
   options: VerifyGitHubActionsOidcOptions = {},
+): Promise<VerifiedGitHubActionsIdentity> {
+  return await verifyGitHubActionsWorkflowJwt(
+    jwt,
+    trustedPublisher,
+    {
+      allowedEvents: ["workflow_dispatch"],
+      reusableWorkflow: {
+        repository: OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY,
+        workflowFilename: OFFICIAL_REUSABLE_WORKFLOW_FILENAME,
+      },
+    },
+    options,
+  );
+}
+
+export async function verifyGitHubActionsSkillsShSyncJwt(
+  jwt: string,
+  options: VerifyGitHubActionsOidcOptions = {},
+): Promise<VerifiedGitHubActionsIdentity> {
+  return await verifyGitHubActionsWorkflowJwt(
+    jwt,
+    SKILLS_SH_SYNC_WORKFLOW,
+    {
+      allowedEvents: ["schedule", "workflow_dispatch"],
+      expectedRef: "refs/heads/main",
+      reusableWorkflow: null,
+    },
+    options,
+  );
+}
+
+async function verifyGitHubActionsWorkflowJwt(
+  jwt: string,
+  trustedPublisher: TrustedGitHubActionsPublisher,
+  workflowPolicy: GitHubActionsWorkflowPolicy,
+  options: VerifyGitHubActionsOidcOptions,
 ): Promise<VerifiedGitHubActionsIdentity> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = (options.now ?? Date.now)();
@@ -163,9 +213,12 @@ export async function verifyGitHubActionsTrustedPublishJwt(
   }
   if (jobWorkflowRef) {
     const reusableWorkflow = parseWorkflowRef(jobWorkflowRef);
+    if (!workflowPolicy.reusableWorkflow) {
+      throw new Error("Reusable workflows may not run the skills.sh production sync");
+    }
     const usesOfficialReusableWorkflow =
-      reusableWorkflow.repository === OFFICIAL_REUSABLE_WORKFLOW_REPOSITORY &&
-      reusableWorkflow.workflowFilename === OFFICIAL_REUSABLE_WORKFLOW_FILENAME;
+      reusableWorkflow.repository === workflowPolicy.reusableWorkflow.repository &&
+      reusableWorkflow.workflowFilename === workflowPolicy.reusableWorkflow.workflowFilename;
     if (!usesOfficialReusableWorkflow) {
       throw new Error(
         "Only the official ClawHub reusable workflow is supported for trusted publishing",
@@ -177,17 +230,18 @@ export async function verifyGitHubActionsTrustedPublishJwt(
       `Only GitHub-hosted runners may mint trusted publish tokens, got ${runnerEnvironment}`,
     );
   }
-  // v1 keeps secretless publishing behind a manual entry point. Environment
-  // pinning is optional, but if configured it must match exactly.
-  if (eventName !== "workflow_dispatch") {
-    throw new Error(`Trusted publishing requires workflow_dispatch, got ${eventName}`);
+  if (!workflowPolicy.allowedEvents.includes(eventName)) {
+    const expected = workflowPolicy.allowedEvents.join(" or ");
+    throw new Error(`GitHub OIDC workflow requires ${expected}, got ${eventName}`);
   }
   if (trustedPublisher.environment && environment !== trustedPublisher.environment) {
     throw new Error(
       `GitHub OIDC environment mismatch: expected ${trustedPublisher.environment}, got ${formatClaimValue(environment ?? "<missing>")}`,
     );
   }
-
+  if (workflowPolicy.expectedRef && ref !== workflowPolicy.expectedRef) {
+    throw new Error(`GitHub OIDC ref mismatch: expected ${workflowPolicy.expectedRef}, got ${ref}`);
+  }
   return {
     repository,
     repositoryId,

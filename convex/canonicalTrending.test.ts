@@ -159,6 +159,8 @@ describe("canonical Trending snapshot storage", () => {
   });
 
   it("keeps pagination pinned to the snapshot encoded by the cursor", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
     const t = convexTest(schema, modules);
     const source = await insertEligibleNativeSource(t, "pagination-source");
     const now = Date.now();
@@ -181,7 +183,7 @@ describe("canonical Trending snapshot storage", () => {
         },
         {
           position: 1,
-          lane: "skills-sh-trending",
+          lane: "clawhub-trending",
           sourceRef: { kind: "clawhub", skillId: source.skillId },
           card: nativeCard("clawhub:two", 2),
         },
@@ -197,7 +199,7 @@ describe("canonical Trending snapshot storage", () => {
       snapshotId: "skills-1000",
       completedAt: now - 950,
       totalItems: 3,
-      sourceCounts: { clawhubTrending: 1, clawhubRising: 1, skillsShTrending: 1 },
+      sourceCounts: { clawhubTrending: 2, clawhubRising: 1, skillsShTrending: 0 },
       operations: { documentsRead: 12, documentsWritten: 4, functionCalls: 3 },
     });
 
@@ -216,10 +218,31 @@ describe("canonical Trending snapshot storage", () => {
       rankingVersion: "skills-trending-v2",
       items: [
         { id: "clawhub:one", rank: 1, lane: "clawhub-trending" },
-        { id: "clawhub:two", rank: 2, lane: "skills-sh-trending" },
+        { id: "clawhub:two", rank: 2, lane: "clawhub-trending" },
       ],
     });
     expect(firstPage?.nextCursor).toEqual(expect.any(String));
+
+    const beyondVisibleTotalCursor = btoa(
+      JSON.stringify({ v: 1, s: "skills-1000", o: 5, e: 4, p: false }),
+    ).replace(/=+$/g, "");
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, {
+        cursor: beyondVisibleTotalCursor,
+        limit: 2,
+      }),
+    ).resolves.toEqual({ status: "invalid-cursor" });
+
+    const ambiguousLegacyCursor = btoa(JSON.stringify({ v: 1, s: "skills-1000", o: 2 })).replace(
+      /=+$/g,
+      "",
+    );
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, {
+        cursor: ambiguousLegacyCursor,
+        limit: 2,
+      }),
+    ).resolves.toEqual({ status: "invalid-cursor" });
 
     await t.mutation(internal.canonicalTrending.startSnapshotInternal, {
       snapshotId: "skills-2000",
@@ -261,10 +284,54 @@ describe("canonical Trending snapshot storage", () => {
     expect(secondPage?.nextCursor).toBeNull();
 
     await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShCatalogControls", {
+        key: "global",
+        mode: "off",
+        discoveryEnabled: false,
+        writesEnabled: false,
+        scanPlanningEnabled: false,
+        scanAdmissionEnabled: false,
+        publicVisibilityEnabled: true,
+        mirrorPublicVisibilityEnabled: true,
+        paused: true,
+        maxEntriesPerRun: 0,
+        maxEntriesPerBatch: 0,
+        maxWritesPerBatch: 0,
+        maxPlannedScans: 0,
+        maxScanAdmissionsPerBatch: 0,
+        maxScanAdmissionsPerRun: 0,
+        maxScanAdmissionsPerDay: 0,
+        maxCatalogQueued: 0,
+        maxCatalogInFlight: 0,
+        maxNativeQueued: 0,
+        maxNativeInFlight: 0,
+        realScanAllowlist: [],
+        updatedBy: "pagination-test",
+        reason: "visibility generation changed",
+        updatedAt: now,
+      });
+    });
+    await expect(
+      t.query(internal.canonicalTrending.getPageInternal, {
+        cursor: firstPage.nextCursor,
+        limit: 2,
+      }),
+    ).resolves.toEqual({ status: "invalid-cursor" });
+
+    const postActivationResult = await t.query(internal.canonicalTrending.getPageInternal, {
+      cursor: null,
+      limit: 2,
+    });
+    expect(postActivationResult.status).toBe("ok");
+    if (postActivationResult.status !== "ok") {
+      throw new Error("Expected a fresh cursor after the visibility generation changed");
+    }
+
+    await t.run(async (ctx) => {
       await ctx.db.patch(source.digestId, { softDeletedAt: Date.now() });
     });
     const revokedResult = await t.query(internal.canonicalTrending.getPageInternal, {
-      cursor: firstPage.snapshotCursor,
+      cursor: postActivationResult.page.snapshotCursor,
       limit: 2,
     });
     expect(revokedResult.status).toBe("ok");
@@ -505,7 +572,7 @@ describe("canonical Trending snapshot storage", () => {
     expect(rows).toEqual({ snapshots: [], items: [] });
   });
 
-  it("materializes hourly native metrics with a fresh enabled skills.sh contribution", async () => {
+  it("materializes hourly native metrics with verified skills.sh rows under the activation lock", async () => {
     vi.stubEnv("CLAWHUB_ENV", "test");
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
     const t = convexTest(schema, modules);
@@ -513,6 +580,45 @@ describe("canonical Trending snapshot storage", () => {
     const window = getCompletedRolling24HourWindow(now);
 
     await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShCatalogControls", {
+        key: "global",
+        mode: "staging-live",
+        discoveryEnabled: true,
+        writesEnabled: false,
+        scanPlanningEnabled: false,
+        scanAdmissionEnabled: false,
+        publicVisibilityEnabled: false,
+        mirrorPublicVisibilityEnabled: false,
+        paused: false,
+        maxEntriesPerRun: 0,
+        maxEntriesPerBatch: 0,
+        maxWritesPerBatch: 0,
+        maxPlannedScans: 0,
+        maxScanAdmissionsPerBatch: 0,
+        maxScanAdmissionsPerRun: 0,
+        maxScanAdmissionsPerDay: 0,
+        maxCatalogQueued: 0,
+        maxCatalogInFlight: 0,
+        maxNativeQueued: 0,
+        maxNativeInFlight: 0,
+        realScanAllowlist: [],
+        updatedBy: "runtime-test",
+        reason: "canonical Trending runtime test",
+        updatedAt: now,
+      });
+      await ctx.db.insert("skillsShMirrorControls", {
+        key: "global",
+        enabled: true,
+        paused: false,
+        maxRowsPerRun: 50_000,
+        maxRowsPerBatch: 50,
+        maxDetailBytes: 65_536,
+        activationLockToken: "activation-lock",
+        activationLockedAt: now,
+        updatedBy: "runtime-test",
+        reason: "canonical Trending hidden activation test",
+        updatedAt: now,
+      });
       const userId = await ctx.db.insert("users", {
         handle: "patrick",
         displayName: "Patrick",
@@ -659,7 +765,9 @@ describe("canonical Trending snapshot storage", () => {
       });
     });
 
-    const result = await t.action(internal.canonicalTrending.materializeInternal, {});
+    const result = await t.action(internal.canonicalTrending.materializeInternal, {
+      activationLockToken: "activation-lock",
+    });
     expect(result).toMatchObject({
       status: "ready",
       totalItems: 2,
@@ -681,7 +789,47 @@ describe("canonical Trending snapshot storage", () => {
         },
       ],
     });
+    if (!result.snapshotId) throw new Error("Expected a materialized Trending snapshot ID");
+    const snapshotId = result.snapshotId;
 
+    await t.run(async (ctx) => {
+      const items = await ctx.db
+        .query("canonicalTrendingItems")
+        .withIndex("by_snapshot_id_and_position", (q) => q.eq("snapshotId", snapshotId))
+        .collect();
+      const native = items.find((item) => item.sourceRef.kind === "clawhub");
+      const external = items.find((item) => item.sourceRef.kind === "skills-sh");
+      if (!native || !external) throw new Error("mixed Trending fixture missing");
+      await ctx.db.patch(native._id, { position: 99 });
+      await ctx.db.patch(external._id, { position: 0 });
+      await ctx.db.patch(native._id, { position: 1 });
+    });
+    const hiddenPageResult = await t.query(internal.canonicalTrending.getPageInternal, {
+      cursor: null,
+      limit: 1,
+    });
+    expect(hiddenPageResult.status).toBe("ok");
+    if (hiddenPageResult.status !== "ok") throw new Error("Expected a hidden Trending page");
+    expect(hiddenPageResult.page.items.map((item) => item.source)).toEqual(["clawhub"]);
+
+    await t.run(async (ctx) => {
+      const items = await ctx.db
+        .query("canonicalTrendingItems")
+        .withIndex("by_snapshot_id_and_position", (q) => q.eq("snapshotId", snapshotId))
+        .collect();
+      const native = items.find((item) => item.sourceRef.kind === "clawhub");
+      const external = items.find((item) => item.sourceRef.kind === "skills-sh");
+      if (!native || !external) throw new Error("mixed Trending fixture missing");
+      await ctx.db.patch(native._id, { position: 99 });
+      await ctx.db.patch(external._id, { position: 1 });
+      await ctx.db.patch(native._id, { position: 0 });
+      const control = await ctx.db
+        .query("skillsShCatalogControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique();
+      if (!control) throw new Error("catalog control missing");
+      await ctx.db.patch(control._id, { mirrorPublicVisibilityEnabled: true });
+    });
     const pageResult = await t.query(internal.canonicalTrending.getPageInternal, {
       cursor: null,
       limit: 20,

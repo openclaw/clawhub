@@ -10,6 +10,14 @@ vi.mock("../lib/githubAuth", () => ({
   buildGitHubApiHeaders: vi.fn(async () => ({ Authorization: "Bearer placeholder" })),
 }));
 
+vi.mock("../lib/githubActionsOidc", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../lib/githubActionsOidc")>();
+  return {
+    ...original,
+    verifyGitHubActionsSkillsShSyncJwt: vi.fn(),
+  };
+});
+
 vi.mock("../lib/githubSkillSync", async (importOriginal) => {
   const original = await importOriginal<typeof import("../lib/githubSkillSync")>();
   return {
@@ -29,6 +37,7 @@ vi.mock("./shared", async (importOriginal) => {
 
 const { requireAdminOrResponse, requireApiTokenUserOrResponse } = await import("./shared");
 const { buildGitHubApiHeaders } = await import("../lib/githubAuth");
+const { verifyGitHubActionsSkillsShSyncJwt } = await import("../lib/githubActionsOidc");
 const { computeGitHubSkillFolderContentHash } = await import("../lib/githubSkillSync");
 const { applyRateLimit } = await import("../lib/httpRateLimit");
 const {
@@ -67,6 +76,77 @@ function artifact(externalId: string, content: string) {
 }
 
 describe("skills.sh catalog Test HTTP API", () => {
+  it("accepts only the exact GitHub Actions production sync identity", async () => {
+    const workflowSha = "a".repeat(40);
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
+    vi.mocked(verifyGitHubActionsSkillsShSyncJwt).mockResolvedValue({
+      actor: "github-actions[bot]",
+      eventName: "schedule",
+      runId: "603",
+      runAttempt: "1",
+      sha: workflowSha,
+    } as never);
+    const runQuery = vi.fn(async () => ({ runs: [], control: null }));
+    const runAction = vi.fn(async () => ({ ok: true, activated: true }));
+    const runMutation = vi.fn(async () => ({ ok: true, enabled: false }));
+
+    const response = await skillsShCatalogTestV1Handler(
+      { runQuery, runAction, runMutation } as never,
+      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
+        method: "POST",
+        headers: { Authorization: "Bearer github-oidc-token" },
+        body: JSON.stringify({ operation: "mirror-status" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(verifyGitHubActionsSkillsShSyncJwt).toHaveBeenCalledWith("github-oidc-token");
+    expect(requireApiTokenUserOrResponse).not.toHaveBeenCalled();
+    expect(requireAdminOrResponse).not.toHaveBeenCalled();
+
+    const activation = await skillsShCatalogTestV1Handler(
+      { runQuery, runAction, runMutation } as never,
+      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
+        method: "POST",
+        headers: { Authorization: "Bearer github-oidc-token" },
+        body: JSON.stringify({
+          operation: "mirror-verify-activate",
+          reason: "CLAW-603 production activation",
+          confirm: "activate-skills-sh-public-production",
+        }),
+      }),
+    );
+    expect(activation.status).toBe(200);
+    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
+      actor: "github-actions:603:1",
+      reason: "CLAW-603 production activation",
+      confirm: "activate-skills-sh-public-production",
+    });
+
+    const rollback = await skillsShCatalogTestV1Handler(
+      { runQuery, runAction, runMutation } as never,
+      new Request("https://wry-manatee-359.convex.site/api/v1/operator/skills-sh/mirror", {
+        method: "POST",
+        headers: { Authorization: "Bearer github-oidc-token" },
+        body: JSON.stringify({
+          operation: "mirror-public-gate",
+          enabled: false,
+          reason: "systemic skills.sh rollback",
+          confirm: "deactivate-skills-sh-public-production",
+        }),
+      }),
+    );
+    expect(rollback.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      enabled: false,
+      actor: "github-actions:603:1",
+      reason: "systemic skills.sh rollback",
+      confirm: "deactivate-skills-sh-public-production",
+    });
+  });
+
   it("returns 404 before rate limiting or authentication while rollout is off", async () => {
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
 
@@ -1247,7 +1327,11 @@ describe("skills.sh public HTTP API", () => {
 
   it("serves stored mirror detail from an activated row", async () => {
     const digest = makePublicMirrorDigest();
-    const runQuery = vi.fn().mockResolvedValueOnce(digest).mockResolvedValueOnce(null);
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(digest)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ skillsSh: { publicCatalogEnabled: true } });
     const ctx = { runQuery } as never;
     const response = await skillsShCatalogPublicV1Handler(
       ctx,
@@ -1267,7 +1351,8 @@ describe("skills.sh public HTTP API", () => {
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce(makePublicMirrorDigest())
-      .mockResolvedValueOnce(null);
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ skillsSh: { publicCatalogEnabled: true } });
     const response = await skillsShCatalogPublicV1Handler(
       { runQuery } as never,
       new Request(
@@ -1317,6 +1402,22 @@ describe("skills.sh public HTTP API", () => {
 
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("Skill not found");
+  });
+
+  it("returns 404 for an eligible row while the atomic public gate is off", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(makePublicMirrorDigest())
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ skillsSh: { publicCatalogEnabled: false } });
+    const response = await skillsShCatalogPublicV1Handler(
+      { runQuery } as never,
+      new Request(
+        "https://academic-chihuahua-392.convex.site/api/v1/skills-sh/patrick-erichsen/skills/html/install",
+      ),
+    );
+
+    expect(response.status).toBe(404);
   });
 });
 

@@ -20,6 +20,14 @@ function useTestEnvironment() {
   for (const [name, value] of Object.entries(TEST_ENV)) vi.stubEnv(name, value);
 }
 
+function useProductionEnvironment() {
+  vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+  vi.stubEnv("CLAWHUB_ENV", "production");
+  vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
+  vi.stubEnv("CONVEX_CLOUD_URL", "https://wry-manatee-359.convex.cloud");
+  vi.stubEnv("CONVEX_SITE_URL", "https://wry-manatee-359.convex.site");
+}
+
 async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -69,6 +77,12 @@ const githubRow = {
     sourceFileCount: 1,
     truncated: false,
   },
+};
+
+const exactGithubRow = {
+  ...githubRow,
+  githubPath: "skills/find-skills",
+  githubCommit: "c".repeat(40),
 };
 
 const wellKnownRow = {
@@ -230,6 +244,221 @@ describe("skills.sh external mirror", () => {
     vi.unstubAllEnvs();
   });
 
+  it("does not start a mirror run while atomic public activation holds the corpus lock", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    await t.run(async (ctx) => {
+      const control = await ctx.db
+        .query("skillsShMirrorControls")
+        .withIndex("by_key", (q) => q.eq("key", "global"))
+        .unique();
+      if (!control) throw new Error("mirror control missing");
+      await ctx.db.patch(control._id, {
+        activationLockToken: "activation-lock",
+        activationLockedAt: Date.now(),
+      });
+    });
+
+    await expect(startRun(t, "blocked-by-activation", 1)).rejects.toThrow(
+      "public activation is in progress",
+    );
+  });
+
+  it("reports the live public gate instead of a hard-coded hidden invariant", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      await ctx.db.insert("skillsShCatalogControls", {
+        key: "global",
+        mode: "off",
+        discoveryEnabled: false,
+        writesEnabled: false,
+        scanPlanningEnabled: false,
+        scanAdmissionEnabled: false,
+        publicVisibilityEnabled: true,
+        mirrorPublicVisibilityEnabled: true,
+        paused: true,
+        maxEntriesPerRun: 0,
+        maxEntriesPerBatch: 0,
+        maxWritesPerBatch: 0,
+        maxPlannedScans: 0,
+        maxScanAdmissionsPerBatch: 0,
+        maxScanAdmissionsPerRun: 0,
+        maxScanAdmissionsPerDay: 0,
+        maxCatalogQueued: 0,
+        maxCatalogInFlight: 0,
+        maxNativeQueued: 0,
+        maxNativeInFlight: 0,
+        realScanAllowlist: [],
+        updatedBy: "codex-test",
+        reason: "live status test",
+        updatedAt: 1,
+      });
+    });
+
+    await expect(t.query(internal.skillsShMirror.getStatusInternal, {})).resolves.toMatchObject({
+      invariants: {
+        publicVisible: true,
+        installable: true,
+        scanPlanningEnabled: false,
+        scanAdmissionEnabled: false,
+      },
+    });
+  });
+
+  it("requires a production-specific confirmation before configuring the shared importer", async () => {
+    useProductionEnvironment();
+    const t = convexTest(schema, modules);
+    const args = {
+      actor: "codex-test",
+      reason: "CLAW-603 production guard test",
+      enabled: true,
+      maxRowsPerRun: 10_000,
+      maxRowsPerBatch: 50,
+      maxDetailBytes: 64 * 1024,
+    };
+    await expect(
+      t.mutation(internal.skillsShMirror.configureInternal, {
+        ...args,
+        confirm: "enable-skills-sh-mirror-test",
+      }),
+    ).rejects.toThrow('Pass confirm="enable-skills-sh-mirror-production"');
+    await expect(
+      t.mutation(internal.skillsShMirror.configureInternal, {
+        ...args,
+        confirm: "enable-skills-sh-mirror-production",
+      }),
+    ).resolves.toMatchObject({
+      environment: "production",
+      publicGateEnabled: false,
+      scanPlanningEnabled: false,
+      scanAdmissionEnabled: false,
+    });
+  });
+
+  it("publishes every exact Test import without scheduling a ClawHub scan", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const run = await startRun(t, "snapshot:exact-public", 1);
+
+    const result = await processBatch(t, {
+      runId: run.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [exactGithubRow],
+    });
+
+    expect(result).toMatchObject({
+      counts: { scansPlanned: 0, scansAdmitted: 0 },
+    });
+    await expect(
+      t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: exactGithubRow.externalId,
+      }),
+    ).resolves.toMatchObject({
+      active: true,
+      publicVisible: true,
+      installable: true,
+      githubPath: exactGithubRow.githubPath,
+      githubCommit: exactGithubRow.githubCommit,
+      sourceContentHash: exactGithubRow.sourceContentHash,
+      upstreamScanners: {
+        snyk: { status: "warn" },
+      },
+    });
+    await expect(
+      t.run(async (ctx) => await ctx.db.query("skillsShCatalogScanAttempts").collect()),
+    ).resolves.toEqual([]);
+    await expect(
+      t.run(async (ctx) => await ctx.db.query("securityScanJobs").collect()),
+    ).resolves.toEqual([]);
+  });
+
+  it("hides an imported mirror when an exact source becomes incomplete", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const first = await startRun(t, "snapshot:exact-before-invalid", 1);
+    await processBatch(t, {
+      runId: first.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [exactGithubRow],
+    });
+    await t.mutation(internal.skillsShMirror.reconcileBatchInternal, {
+      runId: first.runId,
+      limit: 10,
+    });
+    const second = await startRun(t, "snapshot:invalid-after-exact", 1);
+    await processBatch(t, {
+      runId: second.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 1,
+      hasMore: false,
+      sourceTotal: 1,
+      sourceRequests: 2,
+      sourceBytes: 512,
+      rows: [{ ...exactGithubRow, githubCommit: undefined }],
+    });
+
+    await expect(
+      t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: exactGithubRow.externalId,
+      }),
+    ).resolves.toMatchObject({
+      active: true,
+      publicVisible: false,
+      installable: false,
+    });
+  });
+
+  it("contains a duplicate identity conflict to the affected mirror row", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const run = await startRun(t, "snapshot:duplicate-conflict", 3);
+    const result = await processBatch(t, {
+      runId: run.runId,
+      page: 0,
+      offset: 0,
+      pageLength: 3,
+      hasMore: false,
+      sourceTotal: 3,
+      sourceRequests: 3,
+      sourceBytes: 1_024,
+      rows: [
+        exactGithubRow,
+        { ...exactGithubRow, displayName: "Conflicting Name" },
+        exactGithubRow,
+      ],
+    });
+
+    expect(result).toMatchObject({ counts: { rejected: 2, conflicts: 2 } });
+    await expect(
+      t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: exactGithubRow.externalId,
+      }),
+    ).resolves.toMatchObject({
+      active: true,
+      sourceFreshnessStatus: "stale",
+      publicVisible: false,
+      installable: false,
+    });
+  });
+
   it("joins trending rank onto one mirror identity without scan work", async () => {
     useTestEnvironment();
     const t = convexTest(schema, modules);
@@ -388,6 +617,38 @@ describe("skills.sh external mirror", () => {
     expect(
       await t.run(async (ctx) => await ctx.db.query("skillsShMirrorDigests").collect()),
     ).toHaveLength(1);
+  });
+
+  it("keeps hydrated same-run drift quarantined when the first observation repeats", async () => {
+    useTestEnvironment();
+    const t = convexTest(schema, modules);
+    await configure(t);
+    const trending = await startRun(t, "skills-sh:trending:a-b-a", 1, undefined, "trending");
+    const leaseToken = await claimLease(t, trending.runId, 0, 0);
+    const hydrate = async (row: typeof githubRow) =>
+      await t.mutation(trendingRefs.hydrateTrendingBatchInternal, {
+        runId: trending.runId,
+        page: 0,
+        offset: 0,
+        leaseToken,
+        rows: [row],
+      });
+
+    await hydrate(githubRow);
+    await hydrate({ ...githubRow, displayName: "Conflicting Name" });
+    await expect(hydrate(githubRow)).resolves.toMatchObject({
+      counts: { rejected: 2, conflicts: 2, trendingHydrationFailed: 2 },
+    });
+    await expect(
+      t.query(internal.skillsShMirror.getByExternalIdInternal, {
+        externalId: githubRow.externalId,
+      }),
+    ).resolves.toMatchObject({
+      sourceFreshnessStatus: "stale",
+      staleQuarantineReason: "same-run-drift",
+      publicVisible: false,
+      installable: false,
+    });
   });
 
   it("fails closed when exceptional trending hydration exceeds the run bound", async () => {

@@ -1,6 +1,42 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
-import { getSkillsShFixtureEnvironmentPolicy } from "./skillsShCatalogEnvironment";
+import {
+  getSkillsShFixtureEnvironmentPolicy,
+  getSkillsShMirrorEnvironmentPolicy,
+} from "./skillsShCatalogEnvironment";
+
+describe("skills.sh mirror environment policy", () => {
+  it("allows the exact production deployment for the shared importer", () => {
+    expect(
+      getSkillsShMirrorEnvironmentPolicy({
+        CLAWHUB_DEPLOYMENT_NAME: "wry-manatee-359",
+        CLAWHUB_ENV: "production",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
+        CONVEX_CLOUD_URL: "https://wry-manatee-359.convex.cloud",
+        CONVEX_SITE_URL: "https://wry-manatee-359.convex.site",
+      }),
+    ).toEqual({ allowed: true, environment: "production" });
+  });
+
+  it("rejects production importer work with a mismatched deployment or rollout", () => {
+    expect(
+      getSkillsShMirrorEnvironmentPolicy({
+        CLAWHUB_DEPLOYMENT_NAME: "wry-manatee-359",
+        CLAWHUB_ENV: "production",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "off",
+        CONVEX_CLOUD_URL: "https://wry-manatee-359.convex.cloud",
+      }),
+    ).toMatchObject({ allowed: false, environment: "production" });
+    expect(
+      getSkillsShMirrorEnvironmentPolicy({
+        CLAWHUB_DEPLOYMENT_NAME: "another-deployment",
+        CLAWHUB_ENV: "production",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
+        CONVEX_CLOUD_URL: "https://another-deployment.convex.cloud",
+      }),
+    ).toMatchObject({ allowed: false, environment: "production" });
+  });
+});
 
 describe("skills.sh fixture environment policy", () => {
   it("allows only local development or the exact cron-disabled Test deployment", () => {

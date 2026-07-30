@@ -21,6 +21,7 @@ import { getRuntimeRolloutCapabilities } from "./lib/rolloutCapabilities";
 import { getCompletedRolling24HourWindow, sumRollingHourlyStats } from "./lib/skillHourlyStats";
 import { isPublicSkillsShMirrorDigest } from "./lib/skillsShMirrorPublic";
 import { assertTestSeedAllowed } from "./lib/testSeed";
+import { getSkillsShPublicCatalogEnabledHandler } from "./rolloutCapabilities";
 
 const SOURCE_PAGE_SIZE = 250;
 const WRITE_BATCH_SIZE = 100;
@@ -37,6 +38,7 @@ const internalRefs = internal as unknown as {
     finalizeSnapshotInternal: unknown;
     getExternalSourcePageInternal: unknown;
     getHourlySourcePageInternal: unknown;
+    getMaterializationModeInternal: unknown;
     getNativeSourcePageInternal: unknown;
     getLatestCompletedTrendingRunInternal: unknown;
     pruneExpiredInternal: unknown;
@@ -164,8 +166,34 @@ export const getHourlySourcePageInternal = internalQuery({
 });
 
 export const getExternalSourcePageInternal = internalQuery({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    activationLockToken: v.optional(v.string()),
+    allowHiddenProof: v.optional(v.boolean()),
+    paginationOpts: paginationOptsValidator,
+  },
   handler: async (ctx, args) => {
+    if (args.allowHiddenProof) assertTestSeedAllowed();
+    const mirrorControl = args.activationLockToken
+      ? await ctx.db
+          .query("skillsShMirrorControls")
+          .withIndex("by_key", (q) => q.eq("key", "global"))
+          .unique()
+      : null;
+    const activationAuthorized = Boolean(
+      args.activationLockToken && mirrorControl?.activationLockToken === args.activationLockToken,
+    );
+    if (
+      !activationAuthorized &&
+      !args.allowHiddenProof &&
+      !(await getSkillsShPublicCatalogEnabledHandler(ctx))
+    ) {
+      return {
+        page: [],
+        isDone: true,
+        continueCursor: "",
+        documentsRead: 1,
+      };
+    }
     const result = await ctx.db
       .query("skillsShMirrorDigests")
       .withIndex("by_active_visible_installable_fresh_slug", (q) =>
@@ -183,6 +211,26 @@ export const getExternalSourcePageInternal = internalQuery({
       ),
       documentsRead: result.page.length,
     };
+  },
+});
+
+export const getMaterializationModeInternal = internalQuery({
+  args: { activationLockToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const control = await ctx.db
+      .query("skillsShMirrorControls")
+      .withIndex("by_key", (q) => q.eq("key", "global"))
+      .unique();
+    if (args.activationLockToken) {
+      if (control?.activationLockToken !== args.activationLockToken) {
+        throw new Error("skills.sh activation lock is not current");
+      }
+      return { includeHiddenSkillsSh: true as const };
+    }
+    if (control?.activationLockToken) {
+      throw new Error("skills.sh public activation is in progress");
+    }
+    return { includeHiddenSkillsSh: false as const };
   },
 });
 
@@ -370,7 +418,10 @@ export const pruneExpiredActionInternal = internalAction({
 });
 
 export const materializeInternal = internalAction({
-  args: { proofSnapshotId: v.optional(v.string()) },
+  args: {
+    proofSnapshotId: v.optional(v.string()),
+    activationLockToken: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     if (args.proofSnapshotId !== undefined) {
       assertTestSeedAllowed();
@@ -386,6 +437,11 @@ export const materializeInternal = internalAction({
     let documentsWritten = 0;
 
     try {
+      await ctx.runQuery(
+        internalRefs.canonicalTrending.getMaterializationModeInternal as never,
+        { activationLockToken: args.activationLockToken } as never,
+      );
+      functionCalls += 1;
       type HourlyWindow = {
         startHour: number;
         endHour: number;
@@ -449,6 +505,10 @@ export const materializeInternal = internalAction({
           externalSource = (await collectSourcePages(
             ctx,
             internalRefs.canonicalTrending.getExternalSourcePageInternal,
+            {
+              activationLockToken: args.activationLockToken,
+              allowHiddenProof: args.proofSnapshotId !== undefined,
+            },
           )) as CollectedSource<Doc<"skillsShMirrorDigests">>;
         }
       }
@@ -639,37 +699,75 @@ export const getPageInternal = internalQuery({
       return { status: "expired" as const };
     }
     const offset = decoded?.offset ?? 0;
-    const rows = await ctx.db
-      .query("canonicalTrendingItems")
-      .withIndex("by_snapshot_id_and_position", (q) =>
-        q
-          .eq("snapshotId", snapshot.snapshotId)
-          .gte("position", offset)
-          .lt("position", offset + args.limit),
-      )
-      .take(args.limit);
-    const eligibility = await Promise.all(
-      rows.map(async (row) => {
-        const sourceRef = row.sourceRef;
-        if (sourceRef.kind === "clawhub") {
+    const skillsShPublicCatalogEnabled = await getSkillsShPublicCatalogEnabledHandler(ctx);
+    if (
+      decoded &&
+      ((decoded.skillsShPublic ?? false) !== skillsShPublicCatalogEnabled ||
+        // Pre-CLAW-603 page cursors did not record emitted rows, so a nonzero
+        // offset cannot be ranked correctly once hidden rows are filtered.
+        (decoded.emitted === undefined && decoded.offset > 0))
+    ) {
+      return { status: "invalid-cursor" as const };
+    }
+    const visibleTotal = skillsShPublicCatalogEnabled
+      ? snapshot.totalItems
+      : Math.max(0, snapshot.totalItems - (snapshot.sourceCounts?.skillsShTrending ?? 0));
+    if (
+      decoded &&
+      (decoded.offset > snapshot.totalItems ||
+        (decoded.emitted !== undefined && decoded.emitted > visibleTotal))
+    ) {
+      return { status: "invalid-cursor" as const };
+    }
+    const emittedBefore = decoded?.emitted ?? 0;
+    const visibleRows: Array<Doc<"canonicalTrendingItems">> = [];
+    let nextOffset = offset;
+    while (
+      emittedBefore + visibleRows.length < visibleTotal &&
+      visibleRows.length < args.limit &&
+      nextOffset < snapshot.totalItems
+    ) {
+      const batchSize = Math.min(100, snapshot.totalItems - nextOffset);
+      const rows = await ctx.db
+        .query("canonicalTrendingItems")
+        .withIndex("by_snapshot_id_and_position", (q) =>
+          q
+            .eq("snapshotId", snapshot.snapshotId)
+            .gte("position", nextOffset)
+            .lt("position", nextOffset + batchSize),
+        )
+        .take(batchSize);
+      if (rows.length === 0) break;
+      const eligibility = await Promise.all(
+        rows.map(async (row) => {
+          const sourceRef = row.sourceRef;
+          if (sourceRef.kind === "clawhub") {
+            const digest = await ctx.db
+              .query("skillSearchDigest")
+              .withIndex("by_skill", (q) => q.eq("skillId", sourceRef.skillId))
+              .unique();
+            return Boolean(
+              digest &&
+              !shouldExcludeSkillFromPublicBrowse(digest) &&
+              digest.publicVersion?.status === "available",
+            );
+          }
+          if (!skillsShPublicCatalogEnabled) return false;
           const digest = await ctx.db
-            .query("skillSearchDigest")
-            .withIndex("by_skill", (q) => q.eq("skillId", sourceRef.skillId))
+            .query("skillsShMirrorDigests")
+            .withIndex("by_external_id", (q) => q.eq("externalId", sourceRef.externalId))
             .unique();
-          return Boolean(
-            digest &&
-            !shouldExcludeSkillFromPublicBrowse(digest) &&
-            digest.publicVersion?.status === "available",
-          );
-        }
-        const digest = await ctx.db
-          .query("skillsShMirrorDigests")
-          .withIndex("by_external_id", (q) => q.eq("externalId", sourceRef.externalId))
-          .unique();
-        return Boolean(digest && isPublicSkillsShMirrorDigest(digest));
-      }),
-    );
-    const nextOffset = offset + rows.length;
+          return Boolean(digest && isPublicSkillsShMirrorDigest(digest));
+        }),
+      );
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index]!;
+        nextOffset = row.position + 1;
+        if (eligibility[index]) visibleRows.push(row);
+        if (visibleRows.length >= args.limit) break;
+      }
+    }
+    const emitted = emittedBefore + visibleRows.length;
     return {
       status: "ok" as const,
       page: {
@@ -678,17 +776,26 @@ export const getPageInternal = internalQuery({
         snapshotCursor: encodeCanonicalTrendingCursor({
           snapshotId: snapshot.snapshotId,
           offset: 0,
+          emitted: 0,
+          skillsShPublic: skillsShPublicCatalogEnabled,
         }),
         generatedAt: new Date(snapshot.generatedAt).toISOString(),
         windowHours: snapshot.windowHours,
         rankingVersion: snapshot.rankingVersion,
-        totalItems: snapshot.totalItems,
-        items: rows.flatMap((row, index) =>
-          eligibility[index] ? [{ ...row.card, rank: row.position + 1, lane: row.lane }] : [],
-        ),
+        totalItems: visibleTotal,
+        items: visibleRows.map((row, index) => ({
+          ...row.card,
+          rank: skillsShPublicCatalogEnabled ? row.position + 1 : emittedBefore + index + 1,
+          lane: row.lane,
+        })),
         nextCursor:
-          nextOffset < snapshot.totalItems
-            ? encodeCanonicalTrendingCursor({ snapshotId: snapshot.snapshotId, offset: nextOffset })
+          emitted < visibleTotal && nextOffset < snapshot.totalItems
+            ? encodeCanonicalTrendingCursor({
+                snapshotId: snapshot.snapshotId,
+                offset: nextOffset,
+                emitted,
+                skillsShPublic: skillsShPublicCatalogEnabled,
+              })
             : null,
       },
     };

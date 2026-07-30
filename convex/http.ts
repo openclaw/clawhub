@@ -374,6 +374,12 @@ http.route({
 });
 
 http.route({
+  path: "/api/v1/operator/skills-sh/mirror",
+  method: "POST",
+  handler: skillsShCatalogTestV1Http,
+});
+
+http.route({
   pathPrefix: `${ApiRoutes.contentRights}/`,
   method: "POST",
   handler: contentRightsV1Http,

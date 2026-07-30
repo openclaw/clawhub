@@ -1,6 +1,7 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { verifyGitHubActionsSkillsShSyncJwt } from "../lib/githubActionsOidc";
 import { buildGitHubApiHeaders } from "../lib/githubAuth";
 import { computeGitHubSkillFolderContentHash } from "../lib/githubSkillSync";
 import { applyRateLimit } from "../lib/httpRateLimit";
@@ -70,6 +71,11 @@ const internalRefs = internal as unknown as {
     startRunInternal: unknown;
     storeSourcePageInternal: unknown;
   };
+  skillsShMirrorVisibility: {
+    setPublicGateInternal: unknown;
+    verifyAndActivateInternal: unknown;
+  };
+  rolloutCapabilities: { getPublicCapabilitiesInternal: unknown };
 };
 const MAX_GITHUB_OWNER_RESOLUTIONS = 500;
 const GITHUB_OWNER_RESOLUTION_CONCURRENCY = 8;
@@ -124,6 +130,15 @@ async function getSkillsShResolutionState(
   return { externalId, digest, alias };
 }
 
+async function isSkillsShPublicationEnabled(ctx: ActionCtx) {
+  const capabilities = await runQueryRef<{ skillsSh: { publicCatalogEnabled: boolean } }>(
+    ctx,
+    internalRefs.rolloutCapabilities.getPublicCapabilitiesInternal,
+    {},
+  );
+  return capabilities.skillsSh.publicCatalogEnabled;
+}
+
 export async function resolveSkillsShInstall(
   ctx: ActionCtx,
   request: Request,
@@ -131,7 +146,10 @@ export async function resolveSkillsShInstall(
 ) {
   const { externalId, digest, alias } = await getSkillsShResolutionState(ctx, ref);
   const reference = `skills-sh:${externalId}`;
-  if (!alias) return digest ? buildUnclaimedSkillsShInstallResolution(digest) : null;
+  if (!alias) {
+    if (!digest || !(await isSkillsShPublicationEnabled(ctx))) return null;
+    return buildUnclaimedSkillsShInstallResolution(digest);
+  }
   const resolution = buildSkillInstallResolution({
     origin: new URL(request.url).origin,
     skill: alias.skill,
@@ -161,7 +179,7 @@ export async function resolveSkillsShVerify(
 ) {
   const { externalId, digest, alias } = await getSkillsShResolutionState(ctx, ref);
   if (!alias) {
-    return digest
+    return digest && (await isSkillsShPublicationEnabled(ctx))
       ? buildUnclaimedSkillsShVerifyResponse({ digest, origin: new URL(request.url).origin })
       : null;
   }
@@ -593,29 +611,58 @@ async function storeArtifactFiles(
 }
 
 export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Request) {
-  if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
+  const runtime = getRuntimeRolloutCapabilities();
+  if (!runtime.skillsSh.runtimeEnabled) {
     return text("Not found", 404);
   }
   const rate = await applyRateLimit(ctx, request, request.method === "GET" ? "read" : "write");
   if (!rate.ok) return rate.response;
-  const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-  if (!auth.ok) return auth.response;
-  const admin = requireAdminOrResponse(auth.user, rate.headers);
-  if (!admin.ok) return admin.response;
+  let actor: string;
+  let actorUserId: string | null = null;
+  if (runtime.environment === "production") {
+    if (new URL(request.url).pathname !== "/api/v1/operator/skills-sh/mirror") {
+      return text("Not found", 404, rate.headers);
+    }
+    const authorization = request.headers.get("authorization")?.trim() ?? "";
+    const match = /^Bearer\s+(.+)$/i.exec(authorization);
+    if (!match) return text("Unauthorized", 401, rate.headers);
+    try {
+      const identity = await verifyGitHubActionsSkillsShSyncJwt(match[1]!);
+      actor = `github-actions:${identity.runId}:${identity.runAttempt}`;
+    } catch {
+      return text("Unauthorized", 401, rate.headers);
+    }
+  } else {
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+    actor = auth.user.handle ?? String(auth.userId);
+    actorUserId = String(auth.userId);
+  }
 
   try {
-    const staging = await runQueryRef<{
-      environment: "test";
-      deploymentName: string | null;
-      buildSha: string | null;
-      control: Record<string, unknown>;
-    }>(ctx, internalRefs.skillsShCatalog.getStagingLiveControlInternal, {});
-    if (request.method === "GET") return json(staging, 200, rate.headers);
+    const staging =
+      runtime.environment === "test"
+        ? await runQueryRef<{
+            environment: "test";
+            deploymentName: string | null;
+            buildSha: string | null;
+            control: Record<string, unknown>;
+          }>(ctx, internalRefs.skillsShCatalog.getStagingLiveControlInternal, {})
+        : null;
+    if (request.method === "GET") {
+      if (!staging) return text("Not found", 404, rate.headers);
+      return json(staging, 200, rate.headers);
+    }
     if (request.method !== "POST") return text("Not found", 404, rate.headers);
 
     const body = asRecord(await request.json());
     if (!body) return text("Invalid JSON", 400, rate.headers);
     const operation = requireString(body, "operation");
+    if (runtime.environment === "production" && !operation.startsWith("mirror-")) {
+      return text("Not found", 404, rate.headers);
+    }
     if (operation === "mirror-status") {
       return json(
         await runQueryRef(ctx, internalRefs.skillsShMirror.getStatusInternal, {}),
@@ -626,6 +673,29 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
     if (operation === "mirror-isolation") {
       return json(
         await runQueryRef(ctx, internalRefs.skillsShMirror.getIsolationInternal, {}),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-verify-activate") {
+      return json(
+        await runActionRef(ctx, internalRefs.skillsShMirrorVisibility.verifyAndActivateInternal, {
+          actor,
+          reason: requireString(body, "reason"),
+          confirm: requireString(body, "confirm"),
+        }),
+        200,
+        rate.headers,
+      );
+    }
+    if (operation === "mirror-public-gate") {
+      return json(
+        await runMutationRef(ctx, internalRefs.skillsShMirrorVisibility.setPublicGateInternal, {
+          enabled: requireBoolean(body, "enabled"),
+          actor,
+          reason: requireString(body, "reason"),
+          confirm: requireString(body, "confirm"),
+        }),
         200,
         rate.headers,
       );
@@ -745,7 +815,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
     if (operation === "mirror-configure") {
       return json(
         await runMutationRef(ctx, internalRefs.skillsShMirror.configureInternal, {
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
           enabled: requireBoolean(body, "enabled"),
@@ -761,7 +831,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       const sourceView = optionalMirrorSourceView(body);
       return json(
         await runMutationRef(ctx, internalRefs.skillsShMirror.startRunInternal, {
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           snapshotId: requireString(body, "snapshotId"),
           ...(sourceView ? { sourceView } : {}),
@@ -886,7 +956,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         await runMutationRef(ctx, internalRefs.skillsShMirror.setPausedInternal, {
           runId: requireString(body, "runId"),
           paused: requireBoolean(body, "paused"),
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
@@ -898,7 +968,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       return json(
         await runMutationRef(ctx, internalRefs.skillsShMirror.cancelRunInternal, {
           runId: requireString(body, "runId"),
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
@@ -933,7 +1003,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         internalRefs.skillsShCatalog.startFixtureRunInternal,
         {
           fixtureId: CONTROLLED_CANARY_FIXTURE_ID,
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           sourceVerification,
         },
@@ -946,7 +1016,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
           ctx,
           internalRefs.skillsShCatalog.startControlledCanaryScanRunInternal,
           {
-            actor: auth.user.handle,
+            actor,
             reason: requireString(body, "reason"),
           },
         ),
@@ -958,7 +1028,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       return json(
         await runMutationRef(ctx, internalRefs.skillsShCatalog.setPublicationEnabledInternal, {
           enabled: requireBoolean(body, "enabled"),
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
@@ -970,7 +1040,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       return json(
         await runMutationRef(ctx, internalRefs.skillsShCatalog.setCatalogPausedInternal, {
           paused: requireBoolean(body, "paused"),
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
@@ -983,7 +1053,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         await runMutationRef(ctx, internalRefs.skillsShCatalog.rollbackPublicationInternal, {
           externalId: requireString(body, "externalId"),
           attemptId: requireString(body, "attemptId"),
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
@@ -1013,7 +1083,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       return json(
         await runMutationRef(ctx, internalRefs.skillsShCatalog.rollbackFixtureRunInternal, {
           runId: requireString(body, "runId"),
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           confirm: requireString(body, "confirm"),
         }),
@@ -1029,7 +1099,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         ctx,
         internalRefs.skillsShCatalog.startStagingLiveRunInternal,
         {
-          actor: auth.user.handle,
+          actor,
           reason: requireString(body, "reason"),
           snapshotId: requireString(body, "snapshotId"),
           sourceCapturedAt: requireString(body, "sourceCapturedAt"),
@@ -1053,6 +1123,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
       return json(result, 200, rate.headers);
     }
     if (operation === "admit") {
+      if (!actorUserId) throw new Error("Test operator user is required");
       if (!Array.isArray(body.externalIds)) throw new Error("externalIds is required");
       const stored = await storeArtifactFiles(ctx, body.artifacts);
       let result: {
@@ -1063,7 +1134,7 @@ export async function skillsShCatalogTestV1Handler(ctx: ActionCtx, request: Requ
         result = await runActionRef(ctx, internalRefs.skillsShCatalog.admitRealScansInternal, {
           runId: requireString(body, "runId"),
           externalIds: body.externalIds,
-          actorUserId: auth.userId,
+          actorUserId,
           artifacts: stored.artifacts,
         });
       } catch (error) {
@@ -1137,6 +1208,9 @@ export async function skillsShCatalogPublicV1Handler(ctx: ActionCtx, request: Re
       { externalId },
     ),
   ]);
+  if (!digest || !(await isSkillsShPublicationEnabled(ctx))) {
+    return text("Skill not found", 404, rate.headers);
+  }
   const entry = digest ? buildSkillsShMirrorCatalogDetail({ digest, detail }) : null;
   return entry ? json(entry, 200, rate.headers) : text("Skill not found", 404, rate.headers);
 }

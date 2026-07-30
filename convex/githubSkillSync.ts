@@ -44,6 +44,7 @@ import {
 import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
+import { getSkillsShFixtureEnvironmentPolicy } from "./lib/skillsShCatalogEnvironment";
 import {
   isDecodableSkillPresentationRaster,
   storeSkillPresentationAsset,
@@ -77,7 +78,7 @@ type SourceForSyncPage = {
   isDone: boolean;
 };
 
-type SyncOneResult = {
+export type SyncOneResult = {
   ok: true;
   skipped?: "stale-source-observation";
   repo: string;
@@ -100,6 +101,11 @@ type SyncOneResult = {
     conflicts: number;
     invalid: number;
     revived: number;
+  };
+  claim?: {
+    phase: "first-claim" | "native-followup";
+    attempt: number;
+    skillId: Id<"skills">;
   };
 };
 
@@ -249,7 +255,7 @@ const discoveredSkillContentValidator = v.object({
   contentHash: v.string(),
 });
 
-const sourceSnapshotValidator = v.object({
+export const sourceSnapshotValidator = v.object({
   repo: v.string(),
   defaultBranch: v.string(),
   commit: v.string(),
@@ -764,6 +770,7 @@ export type ApplyGitHubSkillSourceSyncArgs = {
   githubRepositoryId?: string;
   githubOwnerId?: string;
   expectedSourceUpdatedAt?: number | null;
+  skillsShClaimPath?: string;
   snapshot: GitHubSkillSourceMetadataSnapshot;
   now?: number;
 };
@@ -1192,6 +1199,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
   };
 
   for (const discovered of args.snapshot.skills) {
+    const scheduleVerification = discovered.path !== args.skillsShClaimPath;
     try {
       assertValidSkillSlug(discovered.slug);
     } catch (error) {
@@ -1277,12 +1285,14 @@ async function applyGenericGitHubSkillSourceSyncHandler(
         await syncSkillSearchDigestForSkill(ctx, insertedSkill);
         await adjustGlobalPublicCountForSkillChange(ctx, null, insertedSkill, args.now);
       }
-      await scheduleGitHubSkillVerification(ctx, {
-        skillId,
-        contentHash: discovered.contentHash,
-        scanStatus: "pending",
-        now: args.now,
-      });
+      if (scheduleVerification) {
+        await scheduleGitHubSkillVerification(ctx, {
+          skillId,
+          contentHash: discovered.contentHash,
+          scanStatus: "pending",
+          now: args.now,
+        });
+      }
       matchedSkillIds.add(skillId);
       stats.inserted += 1;
       continue;
@@ -1391,6 +1401,7 @@ async function applyGenericGitHubSkillSourceSyncHandler(
         discovered,
         commit: args.snapshot.commit,
         now: args.now,
+        scheduleVerification,
       });
       matchedCandidateIds.add(candidateId);
       if (canAutoReviveGitHubSkill(skill)) stats.revived += 1;
@@ -1436,12 +1447,14 @@ async function applyGenericGitHubSkillSourceSyncHandler(
     const nextSkill = { ...previousSkill, ...patch };
     await syncSkillSearchDigestForSkill(ctx, nextSkill);
     await adjustGlobalPublicCountForSkillChange(ctx, previousSkill, nextSkill, args.now);
-    await scheduleGitHubSkillVerification(ctx, {
-      skillId: skill._id,
-      contentHash: discovered.contentHash,
-      scanStatus: "pending",
-      now: args.now,
-    });
+    if (scheduleVerification) {
+      await scheduleGitHubSkillVerification(ctx, {
+        skillId: skill._id,
+        contentHash: discovered.contentHash,
+        scanStatus: "pending",
+        now: args.now,
+      });
+    }
     if (skill.softDeletedAt) stats.revived += 1;
     else stats.changed += 1;
   }
@@ -1520,6 +1533,7 @@ async function upsertGitHubSkillCandidate(
     discovered: GitHubSkillSourceMetadataSnapshot["skills"][number];
     commit: string;
     now: number;
+    scheduleVerification: boolean;
   },
 ) {
   const currentCandidateId = await ensureRetainedCurrentGitHubSkillCandidate(ctx, {
@@ -1553,13 +1567,15 @@ async function upsertGitHubSkillCandidate(
         githubPendingCandidateId: exactCandidate._id,
         updatedAt: args.now,
       });
-      const verdictSourceScanId = await scheduleGitHubSkillVerification(ctx, {
-        skillId: args.skill._id,
-        contentHash: exactCandidate.githubContentHash,
-        scanStatus: exactCandidate.scanStatus,
-        now: args.now,
-        candidateId: exactCandidate._id,
-      });
+      const verdictSourceScanId = args.scheduleVerification
+        ? await scheduleGitHubSkillVerification(ctx, {
+            skillId: args.skill._id,
+            contentHash: exactCandidate.githubContentHash,
+            scanStatus: exactCandidate.scanStatus,
+            now: args.now,
+            candidateId: exactCandidate._id,
+          })
+        : null;
       if (verdictSourceScanId && verdictSourceScanId !== exactCandidate.verdictSourceScanId) {
         await ctx.db.patch(exactCandidate._id, {
           verdictSourceScanId,
@@ -1651,13 +1667,15 @@ async function upsertGitHubSkillCandidate(
       : { githubPendingCandidateId: candidateId, updatedAt: args.now },
   );
   if (scanStatus === "pending" || scanStatus === "clean" || scanStatus === "suspicious") {
-    const verdictSourceScanId = await scheduleGitHubSkillVerification(ctx, {
-      skillId: args.skill._id,
-      contentHash: args.discovered.contentHash,
-      scanStatus,
-      now: args.now,
-      candidateId,
-    });
+    const verdictSourceScanId = args.scheduleVerification
+      ? await scheduleGitHubSkillVerification(ctx, {
+          skillId: args.skill._id,
+          contentHash: args.discovered.contentHash,
+          scanStatus,
+          now: args.now,
+          candidateId,
+        })
+      : null;
     if (verdictSourceScanId && verdictSourceScanId !== reusableScan?._id) {
       await ctx.db.patch(candidateId, {
         verdictSourceScanId,
@@ -2075,6 +2093,7 @@ export const applyGitHubSkillSourceSyncInternal = internalMutation({
     githubRepositoryId: v.optional(v.string()),
     githubOwnerId: v.optional(v.string()),
     expectedSourceUpdatedAt: v.optional(v.union(v.number(), v.null())),
+    skillsShClaimPath: v.optional(v.string()),
     snapshot: sourceSnapshotValidator,
     now: v.optional(v.number()),
   },
@@ -2541,6 +2560,12 @@ export async function configurePublicGitHubSkillSourceHandler(
   fetcher: typeof fetch = fetch,
   authOverride?: { userId: Id<"users"> },
 ): Promise<SyncOneResult> {
+  if (args.expectedSkillsShSource) {
+    const claimPolicy = getSkillsShFixtureEnvironmentPolicy();
+    if (!claimPolicy.allowed) {
+      throw new ConvexError("skills.sh claiming is enabled only in local development and Test");
+    }
+  }
   assertGitHubSkillSyncRuntimeEnabled();
   const actor = authOverride ?? (await requireUserFromAction(ctx));
   const metadata = await fetchPublicGitHubRepoMetadata(args.repo, fetcher);
@@ -2573,6 +2598,9 @@ export async function configurePublicGitHubSkillSourceHandler(
     throw new ConvexError("No skills were found in that public GitHub repo.");
   }
   const canonicalRepo = normalizeRepo(revalidatedMetadata.repo).toLowerCase();
+  const skillsShClaimPath = args.expectedSkillsShSource
+    ? normalizeRepoPath(args.expectedSkillsShSource.path)
+    : undefined;
   return await applyFetchedGitHubSkillSourceSnapshot(ctx, {
     sourceId: setup.existingSource?._id,
     repo: canonicalRepo,
@@ -2581,6 +2609,15 @@ export async function configurePublicGitHubSkillSourceHandler(
     githubRepositoryId: revalidatedMetadata.repositoryId,
     githubOwnerId: revalidatedMetadata.ownerId,
     expectedSourceUpdatedAt: setup.existingSource?.updatedAt ?? null,
+    ...(args.expectedSkillsShSource
+      ? {
+          skillsShClaim: {
+            ...args.expectedSkillsShSource,
+            path: normalizeRepoPath(args.expectedSkillsShSource.path),
+          },
+        }
+      : {}),
+    ...(skillsShClaimPath ? { skillsShClaimPath } : {}),
     snapshot,
   });
 }
@@ -2613,23 +2650,31 @@ async function applyFetchedGitHubSkillSourceSnapshot(
     githubRepositoryId?: string;
     githubOwnerId?: string;
     expectedSourceUpdatedAt?: number | null;
+    skillsShClaimPath?: string;
+    skillsShClaim?: ExpectedSkillsShSource;
     snapshot: GitHubSkillSourceSnapshot;
   },
 ) {
   await persistGitHubSkillPresentationAssets(ctx, args.snapshot);
-  const result = (await ctx.runMutation(
-    internal.githubSkillSync.applyGitHubSkillSourceSyncInternal,
-    {
-      sourceId: args.sourceId,
-      repo: args.repo,
-      ownerUserId: args.ownerUserId,
-      ownerPublisherId: args.ownerPublisherId,
-      githubRepositoryId: args.githubRepositoryId,
-      githubOwnerId: args.githubOwnerId,
-      expectedSourceUpdatedAt: args.expectedSourceUpdatedAt,
-      snapshot: toGitHubSkillSourceMetadataSnapshot(args.snapshot),
-    },
-  )) as SyncOneResult;
+  const syncFunction = args.skillsShClaim
+    ? (
+        internal as unknown as {
+          skillsShClaims: { applyClaimedGitHubSkillSourceSyncInternal: never };
+        }
+      ).skillsShClaims.applyClaimedGitHubSkillSourceSyncInternal
+    : internal.githubSkillSync.applyGitHubSkillSourceSyncInternal;
+  const result = (await ctx.runMutation(syncFunction, {
+    sourceId: args.sourceId,
+    repo: args.repo,
+    ownerUserId: args.ownerUserId,
+    ownerPublisherId: args.ownerPublisherId,
+    githubRepositoryId: args.githubRepositoryId,
+    githubOwnerId: args.githubOwnerId,
+    expectedSourceUpdatedAt: args.expectedSourceUpdatedAt,
+    ...(args.skillsShClaimPath ? { skillsShClaimPath: args.skillsShClaimPath } : {}),
+    ...(args.skillsShClaim ? { skillsShClaim: args.skillsShClaim } : {}),
+    snapshot: toGitHubSkillSourceMetadataSnapshot(args.snapshot),
+  })) as SyncOneResult;
   if (result.skipped === "stale-source-observation") return result;
   await persistGitHubSkillContentsForSnapshot(ctx, result, args.snapshot);
   return result;

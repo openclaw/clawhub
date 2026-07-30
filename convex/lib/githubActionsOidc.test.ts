@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   extractWorkflowFilenameFromWorkflowRef,
   fetchGitHubRepositoryIdentity,
+  verifyGitHubActionsSkillsShSyncJwt,
   verifyGitHubActionsTrustedPublishJwt,
   type TrustedGitHubActionsPublisher,
 } from "./githubActionsOidc";
@@ -549,6 +550,47 @@ describe("verifyGitHubActionsTrustedPublishJwt", () => {
       workflowFilename: trustedPublisher.workflowFilename,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("verifyGitHubActionsSkillsShSyncJwt", () => {
+  it("accepts the exact scheduled production sync identity across app deploys", async () => {
+    const workflowSha = "a".repeat(40);
+    const { token, jwks } = await createSignedToken({
+      repository: "openclaw/clawhub",
+      repository_id: "1127248221",
+      repository_owner: "openclaw",
+      repository_owner_id: "252820863",
+      workflow_ref: "openclaw/clawhub/.github/workflows/skills-sh-sync.yml@refs/heads/main",
+      runner_environment: "github-hosted",
+      environment: "Production",
+      event_name: "schedule",
+      workflow: "Skills.sh Sync",
+      sha: workflowSha,
+      ref: "refs/heads/main",
+      ref_type: "branch",
+      actor: "github-actions[bot]",
+      actor_id: "41898282",
+      run_id: "603",
+      run_attempt: "1",
+      iss: "https://token.actions.githubusercontent.com",
+      aud: "clawhub",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      iat: Math.floor(Date.now() / 1000) - 5,
+    });
+
+    await expect(
+      verifyGitHubActionsSkillsShSyncJwt(token, {
+        fetchImpl: async () => Response.json({ keys: [jwks] }),
+      }),
+    ).resolves.toMatchObject({
+      repository: "openclaw/clawhub",
+      workflowFilename: "skills-sh-sync.yml",
+      environment: "Production",
+      eventName: "schedule",
+      sha: workflowSha,
+      ref: "refs/heads/main",
+    });
   });
 });
 

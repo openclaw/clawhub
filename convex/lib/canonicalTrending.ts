@@ -416,6 +416,8 @@ export function blendCanonicalTrendingPools<T extends CanonicalTrendingCandidate
 export type CanonicalTrendingCursor = {
   snapshotId: string;
   offset: number;
+  emitted?: number;
+  skillsShPublic?: boolean;
 };
 
 export function encodeCanonicalTrendingCursor(cursor: CanonicalTrendingCursor) {
@@ -425,7 +427,21 @@ export function encodeCanonicalTrendingCursor(cursor: CanonicalTrendingCursor) {
   if (!Number.isSafeInteger(cursor.offset) || cursor.offset < 0) {
     throw new Error("Invalid cursor offset");
   }
-  return btoa(JSON.stringify({ v: 1, s: cursor.snapshotId, o: cursor.offset }))
+  if (
+    cursor.emitted !== undefined &&
+    (!Number.isSafeInteger(cursor.emitted) || cursor.emitted < 0 || cursor.emitted > cursor.offset)
+  ) {
+    throw new Error("Invalid cursor emitted count");
+  }
+  return btoa(
+    JSON.stringify({
+      v: 1,
+      s: cursor.snapshotId,
+      o: cursor.offset,
+      ...(cursor.emitted !== undefined ? { e: cursor.emitted } : {}),
+      ...(cursor.skillsShPublic !== undefined ? { p: cursor.skillsShPublic } : {}),
+    }),
+  )
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
@@ -437,17 +453,33 @@ export function decodeCanonicalTrendingCursor(value: string): CanonicalTrendingC
       .replace(/-/g, "+")
       .replace(/_/g, "/")
       .padEnd(Math.ceil(value.length / 4) * 4, "=");
-    const parsed = JSON.parse(atob(padded)) as { v?: unknown; s?: unknown; o?: unknown };
+    const parsed = JSON.parse(atob(padded)) as {
+      v?: unknown;
+      s?: unknown;
+      o?: unknown;
+      e?: unknown;
+      p?: unknown;
+    };
     if (
       parsed.v !== 1 ||
       typeof parsed.s !== "string" ||
       !/^[A-Za-z0-9:_-]+$/.test(parsed.s) ||
       !Number.isSafeInteger(parsed.o) ||
-      (parsed.o as number) < 0
+      (parsed.o as number) < 0 ||
+      (parsed.e !== undefined &&
+        (!Number.isSafeInteger(parsed.e) ||
+          (parsed.e as number) < 0 ||
+          (parsed.e as number) > (parsed.o as number))) ||
+      (parsed.p !== undefined && typeof parsed.p !== "boolean")
     ) {
       throw new Error("invalid");
     }
-    return { snapshotId: parsed.s, offset: parsed.o as number };
+    return {
+      snapshotId: parsed.s,
+      offset: parsed.o as number,
+      ...(parsed.e !== undefined ? { emitted: parsed.e as number } : {}),
+      ...(parsed.p !== undefined ? { skillsShPublic: parsed.p as boolean } : {}),
+    };
   } catch {
     throw new Error("Invalid cursor format");
   }

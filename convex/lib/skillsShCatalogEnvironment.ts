@@ -26,6 +26,9 @@ export type SkillsShFixtureEnvironmentPolicy =
 const TEST_DEPLOYMENT = "academic-chihuahua-392";
 const TEST_CLOUD_URL = `https://${TEST_DEPLOYMENT}.convex.cloud`;
 const TEST_SITE_URL = `https://${TEST_DEPLOYMENT}.convex.site`;
+const PRODUCTION_DEPLOYMENT = "wry-manatee-359";
+const PRODUCTION_CLOUD_URL = `https://${PRODUCTION_DEPLOYMENT}.convex.cloud`;
+const PRODUCTION_SITE_URL = `https://${PRODUCTION_DEPLOYMENT}.convex.site`;
 
 function populatedRuntimeUrls(env: SkillsShCatalogEnvironment) {
   return [
@@ -128,6 +131,55 @@ export function assertSkillsShFixtureEnvironmentAllowed(
   env: SkillsShCatalogEnvironment = process.env,
 ) {
   const policy = getSkillsShFixtureEnvironmentPolicy(env);
+  if (!policy.allowed) throw new Error(policy.reason);
+  return policy;
+}
+
+export function getSkillsShMirrorEnvironmentPolicy(
+  env: SkillsShCatalogEnvironment = process.env,
+): SkillsShFixtureEnvironmentPolicy | { allowed: true; environment: "production" } {
+  if (env.CLAWHUB_PREVIEW === "1") {
+    return {
+      allowed: false,
+      environment: "preview",
+      reason: "skills.sh mirror work is disabled in Preview",
+    };
+  }
+  const rollout = getClawHubRolloutCapabilities(env);
+  if (rollout.environment !== "production") return getSkillsShFixtureEnvironmentPolicy(env);
+  if (!rollout.skillsSh.runtimeEnabled) {
+    return {
+      allowed: false,
+      environment: "production",
+      reason: "skills.sh catalog rollout is disabled",
+    };
+  }
+  const configuredDeployment =
+    env.CLAWHUB_DEPLOYMENT_NAME?.trim() ||
+    env.CONVEX_DEPLOYMENT?.trim().replace(/^[^:]+:/, "") ||
+    "";
+  const urls = [
+    { actual: env.CONVEX_CLOUD_URL?.trim(), expected: PRODUCTION_CLOUD_URL },
+    { actual: env.CONVEX_SITE_URL?.trim(), expected: PRODUCTION_SITE_URL },
+  ].filter((entry): entry is { actual: string; expected: string } => Boolean(entry.actual));
+  if (
+    configuredDeployment !== PRODUCTION_DEPLOYMENT ||
+    urls.length === 0 ||
+    urls.some((entry) => entry.actual !== entry.expected)
+  ) {
+    return {
+      allowed: false,
+      environment: "production",
+      reason: `skills.sh production mirror work requires ${PRODUCTION_DEPLOYMENT}`,
+    };
+  }
+  return { allowed: true, environment: "production" };
+}
+
+export function assertSkillsShMirrorEnvironmentAllowed(
+  env: SkillsShCatalogEnvironment = process.env,
+) {
+  const policy = getSkillsShMirrorEnvironmentPolicy(env);
   if (!policy.allowed) throw new Error(policy.reason);
   return policy;
 }

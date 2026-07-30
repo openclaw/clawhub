@@ -186,6 +186,14 @@ describe("canonical Trending cursors", () => {
     });
     expect(() => decodeCanonicalTrendingCursor("not-a-cursor")).toThrow("Invalid cursor format");
   });
+
+  it("rejects emitted counts beyond their physical snapshot offset", () => {
+    expect(() =>
+      encodeCanonicalTrendingCursor({ snapshotId: "snapshot-123", offset: 3, emitted: 4 }),
+    ).toThrow("Invalid cursor emitted count");
+    const malformed = btoa(JSON.stringify({ v: 1, s: "snapshot-123", o: 3, e: 4 }));
+    expect(() => decodeCanonicalTrendingCursor(malformed)).toThrow("Invalid cursor format");
+  });
 });
 
 describe("canonical Trending cards", () => {

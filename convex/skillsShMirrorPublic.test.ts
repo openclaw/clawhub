@@ -45,4 +45,39 @@ describe("skillsShMirrorPublic.getSkillsShMirrorByRoute", () => {
     await expect(getSkillsShMirrorByRoute({ runQuery } as never, route)).resolves.toBeNull();
     expect(runQuery).not.toHaveBeenCalled();
   });
+
+  it("keeps an eligible mirror hidden while the atomic public catalog gate is off", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        externalId: "patrick-erichsen/skills/html",
+        sourceType: "github",
+        owner: "patrick-erichsen",
+        repo: "skills",
+        slug: "html",
+        displayName: "HTML",
+        sourceUrl: "https://skills.sh/patrick-erichsen/skills/html",
+        canonicalRepoUrl: "https://github.com/patrick-erichsen/skills",
+        githubPath: "skills/html",
+        githubCommit: "c".repeat(40),
+        sourceContentHash: "a".repeat(64),
+        upstreamInstalls: 1,
+        upstreamScanners: {
+          genAgentTrustHub: { status: "pass" },
+          socket: { status: "pass" },
+          snyk: { status: "warn" },
+        },
+        sourceFreshnessStatus: "observed-only",
+        detailStatus: "available",
+        active: true,
+        publicVisible: true,
+        installable: true,
+        lastObservedAt: 1,
+      })
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ skillsSh: { publicCatalogEnabled: false } });
+
+    await expect(getSkillsShMirrorByRoute({ runQuery } as never, route)).resolves.toBeNull();
+  });
 });

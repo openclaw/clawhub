@@ -1,6 +1,6 @@
 import { getClawHubRolloutCapabilities, type ClawHubRolloutEnvironment } from "clawhub-schema";
 import type { QueryCtx } from "./_generated/server";
-import { query } from "./functions";
+import { internalQuery, query } from "./functions";
 
 const CONTROL_KEY = "global";
 
@@ -18,6 +18,9 @@ export async function getPublicCapabilitiesHandler(
   const catalogActive = Boolean(
     runtime.skillsSh.runtimeEnabled && control && control.mode !== "off" && !control.paused,
   );
+  const mirrorPublicActive = Boolean(
+    runtime.skillsSh.runtimeEnabled && control?.mirrorPublicVisibilityEnabled,
+  );
   return {
     environment: runtime.environment,
     catalogDiscovery: {
@@ -30,12 +33,9 @@ export async function getPublicCapabilitiesHandler(
     skillsSh: {
       mode: runtime.skillsSh.mode,
       runtimeEnabled: runtime.skillsSh.runtimeEnabled,
-      discoveryEnabled: catalogActive && Boolean(control?.discoveryEnabled),
+      discoveryEnabled: mirrorPublicActive || (catalogActive && Boolean(control?.discoveryEnabled)),
       writesEnabled: catalogActive && Boolean(control?.writesEnabled),
-      publicCatalogEnabled:
-        catalogActive &&
-        Boolean(control?.discoveryEnabled) &&
-        Boolean(control?.publicVisibilityEnabled),
+      publicCatalogEnabled: mirrorPublicActive,
       scanPlanningEnabled: catalogActive && Boolean(control?.scanPlanningEnabled),
       scanAdmissionEnabled: catalogActive && Boolean(control?.scanAdmissionEnabled),
     },
@@ -45,6 +45,18 @@ export async function getPublicCapabilitiesHandler(
     },
   };
 }
+
+export async function getSkillsShPublicCatalogEnabledHandler(
+  ctx: Pick<QueryCtx, "db">,
+  env: ClawHubRolloutEnvironment = process.env,
+) {
+  return (await getPublicCapabilitiesHandler(ctx, env)).skillsSh.publicCatalogEnabled;
+}
+
+export const getPublicCapabilitiesInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => await getPublicCapabilitiesHandler(ctx),
+});
 
 export const getPublicCapabilities = query({
   args: {},

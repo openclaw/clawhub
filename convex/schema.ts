@@ -3023,6 +3023,7 @@ const skillsShCatalogControls = defineTable({
   scanPlanningEnabled: v.boolean(),
   scanAdmissionEnabled: v.boolean(),
   publicVisibilityEnabled: v.boolean(),
+  mirrorPublicVisibilityEnabled: v.optional(v.boolean()),
   paused: v.boolean(),
   maxEntriesPerRun: v.number(),
   maxEntriesPerBatch: v.number(),
@@ -3236,6 +3237,10 @@ const skillsShMirrorControls = defineTable({
   maxRowsPerBatch: v.number(),
   maxDetailBytes: v.number(),
   latestCompletedLeaderboardRunId: v.optional(v.id("skillsShMirrorRuns")),
+  activationLockToken: v.optional(v.string()),
+  activationLockedAt: v.optional(v.number()),
+  activationLeaderboardRunId: v.optional(v.id("skillsShMirrorRuns")),
+  activationTrendingRunId: v.optional(v.id("skillsShMirrorRuns")),
   updatedBy: v.string(),
   reason: v.string(),
   updatedAt: v.number(),
@@ -3355,6 +3360,12 @@ const skillsShMirrorClassificationConfidenceValidator = v.union(
   v.literal("low"),
 );
 
+const skillsShMirrorClaimStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("failed"),
+  v.literal("promoted"),
+);
+
 const skillsShMirrorDigests = defineTable({
   externalId: v.string(),
   sourceType: v.union(v.literal("github"), v.literal("well-known")),
@@ -3402,10 +3413,21 @@ const skillsShMirrorDigests = defineTable({
   sourceSnapshotId: v.string(),
   lastObservedRunId: v.id("skillsShMirrorRuns"),
   active: v.boolean(),
-  // Mirror ingestion always writes both flags false. Separately accepted
-  // activation work may opt an exact row into public search/install surfaces.
+  // Importer-owned row eligibility. The catalog-wide publication control is the
+  // atomic exposure/rollback gate; invalid rows keep both fields false.
   publicVisible: v.boolean(),
   installable: v.boolean(),
+  claimStatus: v.optional(skillsShMirrorClaimStatusValidator),
+  claimSkillId: v.optional(v.id("skills")),
+  claimPublisherId: v.optional(v.id("publishers")),
+  claimGithubSourceId: v.optional(v.id("githubSkillSources")),
+  claimGithubPath: v.optional(v.string()),
+  claimGithubCommit: v.optional(v.string()),
+  claimGithubContentHash: v.optional(v.string()),
+  claimAttempt: v.optional(v.number()),
+  claimStartedAt: v.optional(v.number()),
+  claimFailedAt: v.optional(v.number()),
+  claimedAt: v.optional(v.number()),
   tombstonedAt: v.optional(v.number()),
   firstObservedAt: v.number(),
   lastObservedAt: v.number(),

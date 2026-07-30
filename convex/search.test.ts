@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { getFunctionName } from "convex/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { tokenize } from "./lib/searchText";
 import {
   __test,
@@ -19,6 +19,8 @@ import {
 const { generateEmbeddingMock } = vi.hoisted(() => ({
   generateEmbeddingMock: vi.fn(),
 }));
+
+afterEach(() => vi.unstubAllEnvs());
 
 vi.mock("./lib/embeddings", () => ({
   generateEmbedding: generateEmbeddingMock,
@@ -1158,6 +1160,8 @@ describe("search helpers", () => {
   });
 
   it("filters external candidates by visibility and installability and bounds every recall index", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
     const visible = makeExternalSearchDigest({ externalId: "acme/skills/calendar" });
     const hidden = makeExternalSearchDigest({
       externalId: "acme/skills/hidden",
@@ -1187,10 +1191,21 @@ describe("search helpers", () => {
     };
     const ctx = {
       db: {
-        query: vi.fn(() => ({
+        query: vi.fn((table: string) => ({
           withIndex: (index: string, build: (q: typeof queryBuilder) => unknown) => {
             usedIndexes.push(index);
             build(queryBuilder);
+            if (table === "skillsShCatalogControls") {
+              return {
+                unique: vi.fn(async () => ({
+                  mode: "staging-live",
+                  paused: false,
+                  discoveryEnabled: true,
+                  publicVisibilityEnabled: true,
+                  mirrorPublicVisibilityEnabled: true,
+                })),
+              };
+            }
             if (index === "by_external_id") {
               return { unique: vi.fn(async () => visible) };
             }
@@ -1213,6 +1228,7 @@ describe("search helpers", () => {
     expect(result.map((row) => row.externalId)).toEqual([visible.externalId]);
     expect(takeLimits).toEqual([50, 50, 50, 50, 50]);
     expect(usedIndexes).toEqual([
+      "by_key",
       "by_external_id",
       "by_active_visible_installable_fresh_slug",
       "by_active_visible_installable_fresh_display",
@@ -1223,6 +1239,29 @@ describe("search helpers", () => {
     expect(equalityFields).toEqual(
       expect.arrayContaining(["active", "publicVisible", "installable", "sourceFreshnessStatus"]),
     );
+  });
+
+  it("returns no external candidates while the atomic public catalog gate is off", async () => {
+    vi.stubEnv("CLAWHUB_ENV", "test");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
+    const unique = vi.fn(async () => ({
+      mode: "staging-live",
+      paused: false,
+      discoveryEnabled: true,
+      publicVisibilityEnabled: false,
+      mirrorPublicVisibilityEnabled: false,
+    }));
+    const withIndex = vi.fn((_index: string, build: (q: { eq: () => unknown }) => unknown) => {
+      build({ eq: () => undefined });
+      return { unique };
+    });
+
+    await expect(
+      getExternalSkillSearchCandidatesHandler(
+        { db: { query: vi.fn(() => ({ withIndex })) } },
+        { query: "calendar" },
+      ),
+    ).resolves.toEqual([]);
   });
 
   it("aggregates only the bounded 60-day install and bookmark window", async () => {

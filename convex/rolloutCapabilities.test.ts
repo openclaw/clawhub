@@ -89,4 +89,56 @@ describe("getPublicCapabilitiesHandler", () => {
       },
     });
   });
+
+  it("treats the mirror public gate independently from preserved legacy operator controls", async () => {
+    const { db } = createControlDb({
+      mode: "off",
+      paused: true,
+      discoveryEnabled: false,
+      writesEnabled: false,
+      publicVisibilityEnabled: true,
+      mirrorPublicVisibilityEnabled: true,
+      scanPlanningEnabled: false,
+      scanAdmissionEnabled: false,
+    });
+
+    await expect(
+      getPublicCapabilitiesHandler({ db } as never, {
+        CLAWHUB_ENV: "test",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "test",
+      }),
+    ).resolves.toMatchObject({
+      skillsSh: {
+        discoveryEnabled: true,
+        publicCatalogEnabled: true,
+        writesEnabled: false,
+        scanPlanningEnabled: false,
+        scanAdmissionEnabled: false,
+      },
+    });
+  });
+
+  it("does not reinterpret the legacy visibility bit as verified mirror activation", async () => {
+    const { db } = createControlDb({
+      mode: "off",
+      paused: true,
+      discoveryEnabled: false,
+      writesEnabled: false,
+      publicVisibilityEnabled: true,
+      scanPlanningEnabled: false,
+      scanAdmissionEnabled: false,
+    });
+
+    await expect(
+      getPublicCapabilitiesHandler({ db } as never, {
+        CLAWHUB_ENV: "production",
+        CLAWHUB_SKILLS_SH_ROLLOUT_MODE: "production",
+      }),
+    ).resolves.toMatchObject({
+      skillsSh: {
+        discoveryEnabled: false,
+        publicCatalogEnabled: false,
+      },
+    });
+  });
 });

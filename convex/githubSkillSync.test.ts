@@ -26,7 +26,9 @@ import { Events } from "./lib/observabilityEvents";
 
 beforeEach(() => {
   vi.stubEnv("CONVEX_DEPLOYMENT", "local:clawhub");
+  vi.stubEnv("CONVEX_CLOUD_URL", "http://127.0.0.1:3210");
   vi.stubEnv("CLAWHUB_GITHUB_SKILL_SYNC_ROLLOUT_MODE", "test");
+  vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "test");
 });
 
 afterEach(() => {
@@ -537,6 +539,39 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("keeps production skills.sh claiming disabled before repository reads or writes", async () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
+    vi.stubEnv("CLAWHUB_ENV", "production");
+    vi.stubEnv("CLAWHUB_DEPLOYMENT_NAME", "wry-manatee-359");
+    vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "production");
+    vi.stubEnv("CONVEX_CLOUD_URL", "https://wry-manatee-359.convex.cloud");
+    const runQuery = vi.fn();
+    const runMutation = vi.fn();
+    const fetchMock = vi.fn();
+
+    await expect(
+      configurePublicGitHubSkillSourceHandler(
+        { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+        {
+          ownerPublisherId: "publishers:local" as never,
+          repo: "patrick-erichsen/skills",
+          expectedSkillsShSource: {
+            repo: "patrick-erichsen/skills",
+            externalId: "patrick-erichsen/skills/html",
+            path: "skills/html",
+            commit: "2".repeat(40),
+            contentHash: "3".repeat(64),
+          },
+        },
+        fetchMock as never,
+        { userId: "users:actor" as never },
+      ),
+    ).rejects.toThrow("skills.sh claiming is enabled only in local development and Test");
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("matches a skills.sh selection by exact slug, path, commit, and content hash", async () => {
@@ -4336,6 +4371,51 @@ description: Build HTML artifacts.
     expect(getFunctionName(scheduledFunction as Parameters<typeof getFunctionName>[0])).toBe(
       "githubSkillSyncNode:verifyGitHubSkillInternal",
     );
+  });
+
+  it("keeps the exact permanent-Test skills.sh claim pending without scheduling verification", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "2".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# HTML\n"),
+      },
+    });
+    const { db, tables } = createDb({
+      publishers: [
+        {
+          _id: "publishers:patrick",
+          kind: "org",
+          handle: "patrick",
+          displayName: "Patrick",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      repo: "patrick-erichsen/skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      skillsShClaimPath: "skills/html",
+      snapshot,
+      now: 123,
+    });
+
+    expect(tables.skills).toEqual([
+      expect.objectContaining({
+        slug: "html",
+        githubPath: "skills/html",
+        githubScanStatus: "pending",
+      }),
+    ]);
+    expect(tables.githubSkillScans ?? []).toHaveLength(0);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
   it("does not requeue heavy verification while the current content scan job is active", async () => {
