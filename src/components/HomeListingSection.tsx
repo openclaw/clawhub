@@ -471,7 +471,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "skills");
   const initialTab =
     initialListing?.kind === "skills" && initialListing.trendingState === "unavailable"
-      ? "new"
+      ? "featured"
       : (initialListing?.tab ?? "trending");
   const [tab, setTab] = useState<ListingTab>(initialTab);
   const [view, setView] = useState<ListingView>("list");
@@ -577,7 +577,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
         if (tab === "trending") {
           const unavailable = cached.trendingState === "unavailable";
           setCanonicalTrendingUnavailable(unavailable);
-          if (unavailable) setTab("new");
+          if (unavailable) setTab("featured");
         }
       } else {
         setPlugins(cached.items);
@@ -616,7 +616,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             if (tab === "trending") {
               const unavailable = result.trendingState === "unavailable";
               setCanonicalTrendingUnavailable(unavailable);
-              if (unavailable) setTab("new");
+              if (unavailable) setTab("featured");
             }
             setListingHasMore(result.hasMore);
             setStatus("idle");
@@ -795,7 +795,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     if (nextKind === kind) return;
     setKind(nextKind);
     setCategorySlugs([]);
-    setTab(nextKind === "skills" && !canonicalTrendingUnavailable ? "trending" : "new");
+    setTab(
+      nextKind === "skills" ? (canonicalTrendingUnavailable ? "featured" : "trending") : "new",
+    );
   };
 
   const removeCategory = (slug: string) => {

@@ -134,7 +134,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/Not scanned by ClawHub/i)).toBeNull();
   });
 
-  it("hides disabled Trending and falls back to the native New feed", async () => {
+  it("hides disabled Trending and falls back to the Featured feed", async () => {
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
       apiVersion: 0,
       canonicalTrendingEnabled: false,
@@ -144,10 +144,14 @@ describe("SkillsIndex", () => {
 
     await waitFor(() => expect(screen.queryByRole("radio", { name: "Trending" })).toBeNull());
     expect(tabLabels()).toEqual(["Featured", "Official", "New"]);
-    expect(screen.getByRole("radio", { name: "New" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
-    expect(convexHttpMock.query).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(getLastListPageArgs()).toEqual(expect.objectContaining({ highlightedOnly: true })),
+    );
   });
 
   it("hides stale Trending and falls back without a legacy retry", async () => {
@@ -157,9 +161,13 @@ describe("SkillsIndex", () => {
 
     await waitFor(() => expect(screen.queryByRole("radio", { name: "Trending" })).toBeNull());
     expect(tabLabels()).toEqual(["Featured", "Official", "New"]);
-    expect(screen.getByRole("radio", { name: "New" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Featured" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
-    expect(convexHttpMock.query).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(getLastListPageArgs()).toEqual(expect.objectContaining({ highlightedOnly: true })),
+    );
   });
 
   it("labels an empty canonical 24-hour window honestly", async () => {

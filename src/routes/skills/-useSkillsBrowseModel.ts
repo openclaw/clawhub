@@ -130,7 +130,7 @@ export function useSkillsBrowseModel({
   const requestedCatalogTab = normalizeSkillsCatalogTab(search.tab, search);
   const catalogTab =
     requestedCatalogTab === "trending" && canonicalTrendingUnavailable
-      ? "new"
+      ? "featured"
       : requestedCatalogTab;
   const requestedSort = hasQuery
     ? search.sort === "default"

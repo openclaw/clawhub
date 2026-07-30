@@ -117,7 +117,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("skills.sh")).toBeNull();
   });
 
-  it("hides unavailable Trending and falls back to the native New feed", async () => {
+  it("hides unavailable Trending and falls back to the Featured feed", async () => {
     render(<HomeListingSection initialListing={initialTrending([], false, "unavailable")} />);
 
     expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull();
@@ -126,12 +126,14 @@ describe("HomeListingSection", () => {
       "Official",
       "New",
     ]);
-    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     await waitFor(() =>
       expect(convexQueryMock).toHaveBeenCalledWith(
         "skills:listPublicPageV4",
-        expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
+        expect.objectContaining({ highlightedOnly: true }),
       ),
     );
   });
@@ -150,12 +152,26 @@ describe("HomeListingSection", () => {
       "Official",
       "New",
     ]);
-    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
     expect(convexQueryMock).toHaveBeenCalledWith(
       "skills:listPublicPageV4",
-      expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
+      expect.objectContaining({ highlightedOnly: true }),
+    );
+  });
+
+  it("returns from Plugins to Featured when Trending is unavailable", async () => {
+    render(<HomeListingSection initialListing={initialTrending([], false, "unavailable")} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Skills" }));
+    expect(screen.getByRole("tab", { name: "Featured" }).getAttribute("aria-selected")).toBe(
+      "true",
     );
   });
 
