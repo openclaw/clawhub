@@ -57,6 +57,12 @@ type PluginInspectorFinding = {
 
 const PLUGIN_VALIDATE_CLI = "clawhub package validate <path-to-plugin>";
 
+function pluginValidateCommand(openClawVersion?: string) {
+  return openClawVersion
+    ? `${PLUGIN_VALIDATE_CLI} --openclaw-version ${openClawVersion}`
+    : PLUGIN_VALIDATE_CLI;
+}
+
 export function DashboardNeedsAttention({ items }: DashboardNeedsAttentionProps) {
   const [selectedGroup, setSelectedGroup] = useState<DashboardAttentionGroup | null>(null);
   const reviewScrollRef = useRef<HTMLDivElement>(null);
@@ -353,7 +359,16 @@ function PluginValidationSheetReview({
   const errors = displayedFindings.filter((finding) => finding.findingKind === "error");
   const warnings = displayedFindings.filter((finding) => finding.findingKind !== "error");
   const version = displayedFindings.find((finding) => finding.version)?.version ?? null;
-  const instructions = buildValidationInstructions(group.title, version, displayedFindings);
+  const targetOpenClawVersion = displayedFindings.find(
+    (finding) => finding.targetOpenClawVersion,
+  )?.targetOpenClawVersion;
+  const validateCommand = pluginValidateCommand(targetOpenClawVersion);
+  const instructions = buildValidationInstructions(
+    group.title,
+    version,
+    displayedFindings,
+    validateCommand,
+  );
 
   return (
     <>
@@ -385,9 +400,9 @@ function PluginValidationSheetReview({
               </span>
               <div className="plugin-validation-toolbar">
                 <div className="plugin-validation-toolbar-cli">
-                  <code className="plugin-validation-command">{PLUGIN_VALIDATE_CLI}</code>
+                  <code className="plugin-validation-command">{validateCommand}</code>
                   <InstallCopyButton
-                    text={PLUGIN_VALIDATE_CLI}
+                    text={validateCommand}
                     ariaLabel="Copy validate command"
                     showLabel={false}
                     className="plugin-validation-toolbar-copy"
@@ -542,6 +557,7 @@ function buildValidationInstructions(
   packageName: string,
   version: string | null,
   findings: PluginInspectorFinding[],
+  validateCommand: string,
 ) {
   const lines = [
     `Fix the following OpenClaw plugin validation findings for package "${packageName}".`,
@@ -549,7 +565,7 @@ function buildValidationInstructions(
     "",
     "Make the minimum code and manifest changes needed to resolve every issue below.",
     "After editing, run locally:",
-    PLUGIN_VALIDATE_CLI,
+    validateCommand,
     "",
   ];
   for (const finding of findings) {

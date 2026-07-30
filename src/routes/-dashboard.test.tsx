@@ -687,21 +687,43 @@ describe("Dashboard rows", () => {
   });
 
   it("links public plugin finding counts to the plugin validation tab", () => {
-    arrangeDashboard({
-      packages: [
-        createPackage({
-          inspectorWarningCount: 2,
-          scanStatus: "clean",
-          stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
-          latestRelease: {
+    const packages = [
+      createPackage({
+        inspectorWarningCount: 2,
+        scanStatus: "clean",
+        stats: { downloads: 42, installs: 9, stars: 0, versions: 1 },
+        latestRelease: {
+          version: "1.0.0",
+          createdAt: 1,
+          vtStatus: "clean",
+          llmStatus: "clean",
+          staticScanStatus: "clean",
+        },
+      }),
+    ];
+    arrangeDashboard({ packages });
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return publishers;
+      if (name === "packages:list") return packages;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
+      if (name === "packages:listPackageInspectorWarningsForManager") {
+        return [
+          {
+            _id: "packageInspectorWarnings:1",
+            packageName: "local-scanned-runtime-plugin",
             version: "1.0.0",
-            createdAt: 1,
-            vtStatus: "clean",
-            llmStatus: "clean",
-            staticScanStatus: "clean",
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            severity: "P2",
+            message: "legacy before_agent_start hook is deprecated",
+            targetOpenClawVersion: "0.9.0",
           },
-        }),
-      ],
+        ];
+      }
+      return [];
     });
 
     renderDashboard();
@@ -715,6 +737,9 @@ describe("Dashboard rows", () => {
       screen.getByRole("dialog", { name: "Local Flagged Runtime Plugin review" }),
     ).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Validation" })).toBeTruthy();
+    expect(
+      screen.getByText("clawhub package validate <path-to-plugin> --openclaw-version 0.9.0"),
+    ).toBeTruthy();
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {

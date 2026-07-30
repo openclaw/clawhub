@@ -324,8 +324,9 @@ async function renderSecretBlockedPublishTemplate(args: {
   return rendered.html;
 }
 
-function buildPluginValidateCommand() {
-  return "clawhub package validate <path-to-plugin>";
+function buildPluginValidateCommand(openClawVersion?: string) {
+  const command = "clawhub package validate <path-to-plugin>";
+  return openClawVersion ? `${command} --openclaw-version ${openClawVersion}` : command;
 }
 
 function normalizeEmailFindingSummary(value: string | undefined) {
@@ -537,7 +538,7 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
   const targetOpenClawVersion = args.findings.find(
     (finding) => finding.targetOpenClawVersion,
   )?.targetOpenClawVersion;
-  const validateCommand = buildPluginValidateCommand();
+  const validateCommand = buildPluginValidateCommand(targetOpenClawVersion);
   const subject = `Plugin Inspector findings for ${args.packageName}@${args.version}`;
   const findingCount = args.findings.length;
   const intro = `We found ${findingCount} ${findingCount === 1 ? "issue" : "issues"} with version ${args.version} of ${args.packageName}.`;
