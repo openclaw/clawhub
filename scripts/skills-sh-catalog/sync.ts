@@ -13,6 +13,7 @@ import {
 const MAX_STEPS = 2_000;
 const MAX_RATE_LIMIT_RETRIES = 30;
 const MAX_RATE_LIMIT_WAIT_MS = 30 * 60 * 1_000;
+const MAX_TRANSPORT_TIMEOUTS = 3;
 
 type MirrorRun = Record<string, unknown>;
 type SyncFetch = (input: string, init: RequestInit) => Promise<Response>;
@@ -21,6 +22,12 @@ type SyncAuthorization = string | (() => Promise<string>);
 const OIDC_REFRESH_SKEW_MS = 2 * 60_000;
 
 class UnsafeSkillsShCorpusError extends Error {}
+
+function isTransportTimeout(error: unknown) {
+  return (
+    typeof error === "object" && error !== null && "name" in error && error.name === "TimeoutError"
+  );
+}
 
 function requireEnv(name: string) {
   const value = process.env[name]?.trim();
@@ -168,6 +175,7 @@ export async function runSkillsShSync(options: {
     let steps = 0;
     let rateLimitRetries = 0;
     let rateLimitWaitMs = 0;
+    let transportTimeouts = 0;
     if (run.status === "paused") {
       run = mirrorRunFromPayload(
         await call({
@@ -187,7 +195,36 @@ export async function runSkillsShSync(options: {
         page: requiredInteger(run.page, "page"),
         offset: requiredInteger(run.offset, "offset"),
       };
-      const result = await callRaw(request);
+      let result: Awaited<ReturnType<typeof callRaw>>;
+      try {
+        result = await callRaw(request);
+      } catch (error) {
+        if (!isTransportTimeout(error)) throw error;
+        transportTimeouts += 1;
+        const authoritativeRun = mirrorRunFromPayload(
+          await call({ operation: "run", runId: request.runId }),
+          "run",
+        );
+        if (
+          requiredString(authoritativeRun.runId, "runId") !== request.runId ||
+          (authoritativeRun.sourceView ?? "leaderboard") !== sourceView
+        ) {
+          throw new Error(`timed-out ${request.operation} reconciled to a different durable run`);
+        }
+        run = authoritativeRun;
+        const cursorAdvanced = run.page !== request.page || run.offset !== request.offset;
+        if (cursorAdvanced) steps += 1;
+        if (
+          transportTimeouts >= MAX_TRANSPORT_TIMEOUTS &&
+          run.status === "running" &&
+          !cursorAdvanced
+        ) {
+          throw new Error(
+            `${request.operation} timed out ${transportTimeouts} times at durable cursor ${request.page}:${request.offset}`,
+          );
+        }
+        continue;
+      }
       if (!result.response.ok) {
         const delayMs = mirrorRateLimitRetryDelayMs(
           result.response.status,
@@ -222,6 +259,7 @@ export async function runSkillsShSync(options: {
         reconciliationBatches: reconciled.reconciliationBatches,
         rateLimitRetries,
         rateLimitWaitMs,
+        transportTimeouts,
       },
     };
   };

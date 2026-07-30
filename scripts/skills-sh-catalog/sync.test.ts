@@ -201,6 +201,146 @@ describe("skills.sh synchronization runner", () => {
     ]);
   });
 
+  it("retries the exact durable cursor after a rate-limit backoff and ambiguous timeout", async () => {
+    const requests: string[] = [];
+    const sleep = vi.fn(async () => undefined);
+    let stepAttempts = 0;
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:durable",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-07-30T06:00:00.000Z",
+      page: 9,
+      offset: 50,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      requests.push(
+        `${String(body.operation)}${body.page === undefined ? "" : `:${body.page}:${body.offset}`}`,
+      );
+      switch (body.operation) {
+        case "status":
+          return response({ runs: [] });
+        case "configure":
+          return response({ ok: true, enabled: body.enabled });
+        case "start":
+          return response(running);
+        case "step":
+          stepAttempts += 1;
+          if (stepAttempts === 1) {
+            return new Response(JSON.stringify({ error: "rate_limited" }), {
+              status: 429,
+              headers: { "retry-after": "1" },
+            });
+          }
+          if (stepAttempts === 2) {
+            throw new DOMException("The operation timed out.", "TimeoutError");
+          }
+          return response(completedRun("leaderboard"));
+        case "run":
+          return response(running);
+        case "start-trending":
+          return response(completedRun("trending"));
+        case "verify-activate":
+          return response({ ok: true, activated: true });
+        default:
+          throw new Error(`unexpected operation ${String(body.operation)}`);
+      }
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled recovery",
+        fetchImpl,
+        sleep,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      leaderboard: {
+        runId: "run-leaderboard",
+        syncProof: { rateLimitRetries: 1, transportTimeouts: 1 },
+      },
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(sleep).toHaveBeenCalledExactlyOnceWith(1_000);
+    expect(requests).toEqual([
+      "status",
+      "configure",
+      "start",
+      "step:9:50",
+      "step:9:50",
+      "run",
+      "step:9:50",
+      "start-trending",
+      "verify-activate",
+      "configure",
+      "status",
+    ]);
+  });
+
+  it("continues from the authoritative cursor when a timed-out step already committed", async () => {
+    const stepCursors: string[] = [];
+    const running = {
+      runId: "run-leaderboard",
+      snapshotId: "skills-sh:leaderboard:durable",
+      sourceView: "leaderboard",
+      sourceTotal: 1,
+      sourcePageSize: 500,
+      sourceMeasuredAt: "2026-07-30T06:00:00.000Z",
+      page: 9,
+      offset: 50,
+      status: "running",
+      startedAt: 1,
+    };
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      switch (body.operation) {
+        case "status":
+          return response({ runs: [] });
+        case "configure":
+          return response({ ok: true, enabled: body.enabled });
+        case "start":
+          return response(running);
+        case "step":
+          stepCursors.push(`${body.page}:${body.offset}`);
+          if (body.offset === 50) {
+            throw new DOMException("The operation timed out.", "TimeoutError");
+          }
+          return response(completedRun("leaderboard"));
+        case "run":
+          return response({ ...running, offset: 100 });
+        case "start-trending":
+          return response(completedRun("trending"));
+        case "verify-activate":
+          return response({ ok: true, activated: true });
+        default:
+          throw new Error(`unexpected operation ${String(body.operation)}`);
+      }
+    });
+
+    await expect(
+      runSkillsShSync({
+        targetUrl: "https://clawhub.ai/ops/skills-sh/mirror",
+        authorization: "github-oidc",
+        reason: "scheduled recovery",
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      leaderboard: { syncProof: { steps: 2, transportTimeouts: 1 } },
+      scansPlanned: 0,
+      scansAdmitted: 0,
+    });
+    expect(stepCursors).toEqual(["9:50", "9:100"]);
+  });
+
   it("closes only the skills.sh lane when a systemic invariant fails", async () => {
     const operations: string[] = [];
     const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
