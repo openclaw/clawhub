@@ -1,0 +1,142 @@
+name: Repair Kitchen Sink Latest Pointer
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_sha:
+        description: "Exact main SHA containing the repair mutation"
+        required: true
+        type: string
+      apply:
+        description: "Apply the repair after the dry-run"
+        required: true
+        default: false
+        type: boolean
+      confirm:
+        description: "Required confirmation token when apply is true"
+        required: false
+        type: string
+
+concurrency:
+  group: repair-kitchen-sink-latest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: Production
+      url: https://clawhub.ai/packages/%40openclaw%2Fkitchen-sink
+    steps:
+      - name: Require exact main revision
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::The repair must run from main."
+            exit 1
+          fi
+          if [[ "$GITHUB_SHA" != "$EXPECTED_SHA" ]]; then
+            echo "::error::Main moved: expected $EXPECTED_SHA, got $GITHUB_SHA."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.10
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Dry-run repair
+        id: preflight
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then
+            echo "::error::Missing Production environment secret CONVEX_DEPLOY_KEY"
+            exit 1
+          fi
+          result="$(bunx convex run maintenance:repairPackageLatestPointer \
+            '{"name":"@openclaw/kitchen-sink"}' --prod)"
+          if jq -e '
+            .dryRun == true and
+            .previousLatestVersion == "0.2.11" and
+            .selectedVersion == "0.2.12" and
+            .eligibleReleaseCount >= 2
+          ' <<< "$result" >/dev/null; then
+            {
+              echo "already_repaired=false"
+              echo "plan_token=$(jq -r '.planToken' <<< "$result")"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if jq -e '
+            .dryRun == true and
+            .previousLatestVersion == "0.2.12" and
+            .selectedVersion == "0.2.12" and
+            (.releaseTagChanges | length) == 0
+          ' <<< "$result" >/dev/null; then
+            echo "already_repaired=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::error::Production package state did not match the expected pre- or post-repair state."
+          exit 1
+
+      - name: Require apply confirmation
+        if: inputs.apply
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [[ "$CONFIRM" != "repair-package-latest-pointer-2026-07-30" ]]; then
+            echo "::error::The exact repair confirmation token is required."
+            exit 1
+          fi
+
+      - name: Apply repair
+        if: inputs.apply && steps.preflight.outputs.already_repaired != 'true'
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          EXPECTED_PLAN_TOKEN: ${{ steps.preflight.outputs.plan_token }}
+        run: |
+          set -euo pipefail
+          required_confirm="repair-package-latest-pointer-2026-07-30"
+          args="$(jq -nc \
+            --arg name "@openclaw/kitchen-sink" \
+            --arg confirm "$required_confirm" \
+            --arg planToken "$EXPECTED_PLAN_TOKEN" \
+            '{
+              name: $name,
+              dryRun: false,
+              confirm: $confirm,
+              expectedPlanToken: $planToken
+            }')"
+          result="$(bunx convex run maintenance:repairPackageLatestPointer "$args" --prod)"
+          jq -e '
+            .dryRun == false and
+            .selectedVersion == "0.2.12"
+          ' <<< "$result"
+
+      - name: Verify repaired state
+        if: inputs.apply
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          readback="$(bunx convex run maintenance:repairPackageLatestPointer \
+            '{"name":"@openclaw/kitchen-sink"}' --prod)"
+          jq -e '
+            .dryRun == true and
+            .previousLatestVersion == "0.2.12" and
+            .selectedVersion == "0.2.12" and
+            (.releaseTagChanges | length) == 0
+          ' <<< "$readback"

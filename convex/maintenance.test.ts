@@ -2104,6 +2104,7 @@ describe("maintenance package latest pointer repair", () => {
       previousLatestVersion: "0.2.11",
       selectedVersion: "0.2.12",
       eligibleReleaseCount: 2,
+      planToken: expect.stringMatching(/^[a-f\d]{64}$/),
       releaseTagChanges: [
         {
           releaseId: "packageReleases:old",
@@ -2134,13 +2135,34 @@ describe("maintenance package latest pointer repair", () => {
     expect(fixture.patch).not.toHaveBeenCalled();
   });
 
+  it("requires the applied repair to match the dry-run plan", async () => {
+    const fixture = makePackageLatestPointerRepairDb();
+
+    await expect(
+      repairPackageLatestPointerHandler(fixture as never, {
+        name: "@openclaw/kitchen-sink",
+        dryRun: false,
+        confirm: "repair-package-latest-pointer-2026-07-30",
+        expectedPlanToken: "wrong",
+      }),
+    ).rejects.toThrow(
+      "Package latest repair plan changed after dry-run; rerun the dry-run before applying.",
+    );
+    expect(fixture.patch).not.toHaveBeenCalled();
+    expect(fixture.insert).not.toHaveBeenCalled();
+  });
+
   it("repoints the package, normalizes release tags, and audits the repair", async () => {
     const fixture = makePackageLatestPointerRepairDb();
+    const preflight = await repairPackageLatestPointerHandler(fixture as never, {
+      name: "@openclaw/kitchen-sink",
+    });
 
     const result = await repairPackageLatestPointerHandler(fixture as never, {
       name: "@openclaw/kitchen-sink",
       dryRun: false,
       confirm: "repair-package-latest-pointer-2026-07-30",
+      expectedPlanToken: preflight.planToken,
     });
 
     expect(result.selectedVersion).toBe("0.2.12");

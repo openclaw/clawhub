@@ -11,6 +11,7 @@ import {
   syncPackageSearchDigestForPackageId,
 } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { sha256Hex } from "./lib/clawpack";
 import { summarizePackageReleaseArtifact } from "./lib/packageArtifacts";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
@@ -3304,12 +3305,35 @@ function comparePackageLatestCandidates(
   return a._id.localeCompare(b._id);
 }
 
+async function buildPackageLatestPointerPlanToken(params: {
+  pkg: Doc<"packages">;
+  releases: Doc<"packageReleases">[];
+  selectedRelease: Doc<"packageReleases">;
+  releaseTagChanges: Array<{
+    releaseId: Id<"packageReleases">;
+    version: string;
+    action: "add" | "remove";
+  }>;
+}) {
+  const payload = JSON.stringify({
+    packageLatestReleaseId: params.pkg.latestReleaseId ?? null,
+    packageTags: params.pkg.tags,
+    selectedRelease: params.selectedRelease,
+    releaseTags: params.releases
+      .map((release) => ({ releaseId: release._id, distTags: release.distTags }))
+      .sort((a, b) => a.releaseId.localeCompare(b.releaseId)),
+    releaseTagChanges: params.releaseTagChanges,
+  });
+  return await sha256Hex(new TextEncoder().encode(payload));
+}
+
 export async function repairPackageLatestPointerHandler(
   ctx: Pick<MutationCtx, "db">,
   args: {
     name: string;
     dryRun?: boolean;
     confirm?: string;
+    expectedPlanToken?: string;
   },
 ) {
   const dryRun = args.dryRun !== false;
@@ -3356,6 +3380,12 @@ export async function repairPackageLatestPointerHandler(
   const previousLatestRelease = pkg.latestReleaseId
     ? (releases.find((release) => release._id === pkg.latestReleaseId) ?? null)
     : null;
+  const planToken = await buildPackageLatestPointerPlanToken({
+    pkg,
+    releases,
+    selectedRelease,
+    releaseTagChanges,
+  });
 
   const result = {
     dryRun,
@@ -3371,8 +3401,14 @@ export async function repairPackageLatestPointerHandler(
     selectedReleaseId: selectedRelease._id,
     selectedVersion: selectedRelease.version,
     releaseTagChanges,
+    planToken,
   };
   if (dryRun) return result;
+  if (!args.expectedPlanToken || args.expectedPlanToken !== planToken) {
+    throw new ConvexError(
+      "Package latest repair plan changed after dry-run; rerun the dry-run before applying.",
+    );
+  }
 
   for (const change of releaseTagChanges) {
     const release = releases.find((candidate) => candidate._id === change.releaseId);
@@ -3435,6 +3471,7 @@ export const repairPackageLatestPointer = internalMutation({
     name: v.string(),
     dryRun: v.optional(v.boolean()),
     confirm: v.optional(v.string()),
+    expectedPlanToken: v.optional(v.string()),
   },
   handler: repairPackageLatestPointerHandler,
 });
