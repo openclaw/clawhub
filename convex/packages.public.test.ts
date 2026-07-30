@@ -30,6 +30,7 @@ import {
   insertPackageInspectorWarningsInternal,
   ingestPackageInspectorScanResultsInternal,
   claimPackageInspectorScanBatchInternal,
+  acknowledgePackageInspectorScanBatchInternal,
   previewPackageInspectorScanBatchInternal,
   getPackageInspectorEmailContextInternal,
   markPackageInspectorFindingsEmailedInternal,
@@ -654,7 +655,15 @@ const ingestPackageInspectorScanResultsInternalHandler = (
 )._handler;
 const claimPackageInspectorScanBatchInternalHandler = (
   claimPackageInspectorScanBatchInternal as unknown as WrappedHandler<
-    { batchSize?: number; leaseMs?: number },
+    {
+      batchSize?: number;
+      leaseMs?: number;
+      cursor?: string | null;
+      runId?: string;
+      inspectorVersion?: string;
+      targetOpenClawVersion?: string;
+      notifyOwners?: boolean;
+    },
     {
       ok: true;
       leased: boolean;
@@ -669,13 +678,30 @@ const claimPackageInspectorScanBatchInternalHandler = (
     }
   >
 )._handler;
+const acknowledgePackageInspectorScanBatchInternalHandler = (
+  acknowledgePackageInspectorScanBatchInternal as unknown as WrappedHandler<
+    {
+      runId: string;
+      cursor: string | null;
+      leaseMs?: number;
+    },
+    { ok: true; cursor: string | null; completed: boolean }
+  >
+)._handler;
 const previewPackageInspectorScanBatchInternalHandler = (
   previewPackageInspectorScanBatchInternal as unknown as WrappedHandler<
-    { batchSize?: number; cursor?: string | null },
+    {
+      batchSize?: number;
+      cursor?: string | null;
+      inspectorVersion?: string;
+      targetOpenClawVersion?: string;
+      notifyOwners?: boolean;
+    },
     {
       ok: true;
       leased: false;
       nextCursor: string | null;
+      skippedUnchanged: number;
       items: Array<{
         packageId: string;
         releaseId: string;
@@ -690,7 +716,12 @@ const previewPackageInspectorScanBatchInternalHandler = (
 )._handler;
 const getPackageInspectorEmailContextInternalHandler = (
   getPackageInspectorEmailContextInternal as unknown as WrappedHandler<
-    { packageId: string; releaseId: string },
+    {
+      packageId: string;
+      releaseId: string;
+      inspectorVersion?: string;
+      targetOpenClawVersion?: string;
+    },
     {
       packageName: string;
       version: string;
@@ -712,6 +743,8 @@ const markPackageInspectorFindingsEmailedInternalHandler = (
       version: string;
       findingCount: number;
       email: string;
+      inspectorVersion?: string;
+      targetOpenClawVersion?: string;
     },
     { ok: true; created: boolean }
   >
@@ -8255,6 +8288,7 @@ describe("packages public queries", () => {
     const release = makeReleaseDoc({ integritySha256: "abc123" });
     const ctx = {
       db: {
+        get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packages") {
             return {
@@ -8277,6 +8311,11 @@ describe("packages public queries", () => {
           }
           throw new Error(`Unexpected table ${table}`);
         }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
       },
     };
 
@@ -8302,6 +8341,7 @@ describe("packages public queries", () => {
     });
     const ctx = {
       db: {
+        get: vi.fn(),
         query: vi.fn((table: string) => {
           if (table === "packages") {
             return {
@@ -11743,7 +11783,58 @@ describe("packages public queries", () => {
     );
   });
 
-  it("records a clean beta scan identity without overwriting a previous target", async () => {
+  it("does not notify for preserved publish findings after a clean nightly scan", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorWarnings") {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([
+                  {
+                    _id: "packageInspectorWarnings:publish",
+                    scanSource: "publish",
+                    code: "manifest-name-missing",
+                    message: "manifest name is missing",
+                    authorRemediation: { summary: "Add a manifest name." },
+                  },
+                ]),
+              })),
+            };
+          }
+          if (table === "packageInspectorScanStates") {
+            return {
+              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      insertPackageInspectorWarningsInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        ownerUserId: "users:owner",
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        scanSource: "nightly",
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        notifyOwners: true,
+        findings: [],
+      }),
+    ).resolves.toEqual({ ok: true, inserted: 0, shouldEmailOwner: false });
+  });
+
+  it("records a clean beta scan identity and completes a no-op notification", async () => {
     const insert = vi.fn().mockResolvedValue("packageInspectorScanStates:demo");
     const deleteRow = vi.fn();
     const scanStateWithIndex = vi.fn((indexName: string) => ({
@@ -11813,6 +11904,7 @@ describe("packages public queries", () => {
         releaseId: "packageReleases:demo-1",
         inspectorVersion: "0.6.0",
         targetOpenClawVersion: "2026.8.0-beta.1",
+        notifyOwners: true,
         findings: [],
       }),
     ).resolves.toEqual({ ok: true, inserted: 0, shouldEmailOwner: false });
@@ -11828,18 +11920,25 @@ describe("packages public queries", () => {
       inspectorVersion: "0.6.0",
       targetOpenClawVersion: "2026.8.0-beta.1",
       completedAt: expect.any(Number),
+      notificationCompletedAt: expect.any(Number),
     });
   });
 
-  it("stores nightly plugin inspector errors as public findings", async () => {
+  it("stores nightly errors and does not reuse an earlier target's email dedupe", async () => {
     const insert = vi.fn();
     const ctx = {
       db: {
         get: vi.fn(),
-        query: vi.fn(() => ({
+        query: vi.fn((table: string) => ({
           withIndex: vi.fn(() => ({
             collect: vi.fn().mockResolvedValue([]),
-            unique: vi.fn().mockResolvedValue(null),
+            unique: vi
+              .fn()
+              .mockResolvedValue(
+                table === "packageInspectorFindingNotifications"
+                  ? { _id: "packageInspectorFindingNotifications:old-target" }
+                  : null,
+              ),
           })),
         })),
         insert,
@@ -11862,6 +11961,7 @@ describe("packages public queries", () => {
         scanSource: "nightly",
         inspectorVersion: "0.5.0",
         targetOpenClawVersion: "0.10.0",
+        notifyOwners: true,
         findings: [
           {
             id: "demo:missing-expected-seam",
@@ -11878,7 +11978,7 @@ describe("packages public queries", () => {
           },
         ],
       }),
-    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: false });
+    ).resolves.toMatchObject({ ok: true, inserted: 1, shouldEmailOwner: true });
 
     expect(insert).toHaveBeenCalledWith(
       "packageInspectorWarnings",
@@ -12018,6 +12118,11 @@ describe("packages public queries", () => {
             message: "legacy before_agent_start hook is deprecated",
             evidence: ["src/index.ts:4"],
             fixture: "demo",
+            authorRemediation: {
+              summary: "Move prompt mutation work to before_prompt_build.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
           },
         ],
       }),
@@ -12247,6 +12352,49 @@ describe("packages public queries", () => {
     expect(insert).toHaveBeenCalledTimes(1);
   });
 
+  it("marks the exact scan notification complete after owner email succeeds", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(() => ({
+            unique: vi
+              .fn()
+              .mockResolvedValue(
+                table === "packageInspectorScanStates"
+                  ? { _id: "packageInspectorScanStates:demo" }
+                  : null,
+              ),
+          })),
+        })),
+        insert: vi.fn(),
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      markPackageInspectorFindingsEmailedInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        ownerUserId: "users:owner",
+        packageName: "demo-plugin",
+        version: "1.0.0",
+        findingCount: 2,
+        email: "owner@example.com",
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+      }),
+    ).resolves.toEqual({ ok: true, created: true });
+    expect(patch).toHaveBeenCalledWith(
+      "packageInspectorScanStates:demo",
+      expect.objectContaining({ notificationCompletedAt: expect.any(Number) }),
+    );
+  });
+
   it("excludes internal package inspector findings from owner emails", async () => {
     const ctx = {
       db: {
@@ -12329,7 +12477,140 @@ describe("packages public queries", () => {
     });
   });
 
-  it("claims only the scan page it can safely advance past", async () => {
+  it("builds email context for a new exact target despite an older release notification", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packages:demo") {
+            return makePackageDoc({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              ownerUserId: "users:owner",
+            });
+          }
+          if (id === "packageReleases:demo-1") {
+            return makeReleaseDoc({
+              _id: "packageReleases:demo-1",
+              packageId: "packages:demo",
+              version: "1.0.0",
+            });
+          }
+          if (id === "users:owner") {
+            return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorWarnings") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      code: "missing-api",
+                      scanSource: "nightly",
+                      inspectorVersion: "0.6.0",
+                      targetOpenClawVersion: "2026.8.0-beta.1",
+                      message: "API removed",
+                      authorRemediation: { summary: "Use the replacement API." },
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }
+          if (table === "packageInspectorScanStates") {
+            return {
+              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+            };
+          }
+          if (table === "packageInspectorFindingNotifications") {
+            throw new Error("Exact-target email context must not use release-wide dedupe");
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      getPackageInspectorEmailContextInternalHandler(ctx as never, {
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+      }),
+    ).resolves.toMatchObject({ packageName: "demo-plugin" });
+  });
+
+  it("limits exact-target email context to findings from the current nightly scan", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "packages:demo") {
+            return makePackageDoc({
+              _id: "packages:demo",
+              name: "demo-plugin",
+              ownerUserId: "users:owner",
+            });
+          }
+          if (id === "packageReleases:demo-1") {
+            return makeReleaseDoc({
+              _id: "packageReleases:demo-1",
+              packageId: "packages:demo",
+              version: "1.0.0",
+            });
+          }
+          if (id === "users:owner") {
+            return { _id: "users:owner", handle: "owner", email: "owner@example.com" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorWarnings") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      code: "publish-warning",
+                      scanSource: "publish",
+                      message: "Static package warning",
+                      authorRemediation: { summary: "Fix the package metadata." },
+                    },
+                    {
+                      code: "missing-api",
+                      scanSource: "nightly",
+                      inspectorVersion: "0.6.0",
+                      targetOpenClawVersion: "2026.8.0-beta.1",
+                      message: "API removed",
+                      authorRemediation: { summary: "Use the replacement API." },
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }
+          if (table === "packageInspectorScanStates") {
+            return {
+              withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await getPackageInspectorEmailContextInternalHandler(ctx as never, {
+      packageId: "packages:demo",
+      releaseId: "packageReleases:demo-1",
+      inspectorVersion: "0.6.0",
+      targetOpenClawVersion: "2026.8.0-beta.1",
+    });
+
+    expect(result?.findings.map((finding) => finding.code)).toEqual(["missing-api"]);
+  });
+
+  it("leases a scan page without advancing past unprocessed releases", async () => {
     const paginate = vi.fn(async () => ({
       page: [
         {
@@ -12401,6 +12682,7 @@ describe("packages public queries", () => {
       claimPackageInspectorScanBatchInternalHandler(ctx as never, {
         batchSize: 2,
         leaseMs: 60_000,
+        runId: "run-42",
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -12414,7 +12696,327 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 2 });
     expect(insert).toHaveBeenCalledWith(
       "packageInspectorScanCursors",
-      expect.objectContaining({ cursor: "cursor-after-returned-page" }),
+      expect.objectContaining({
+        cursor: null,
+        pendingCursor: "cursor-after-returned-page",
+      }),
+    );
+  });
+
+  it("advances a leased scan page only after the owning run acknowledges it", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table !== "packageInspectorScanCursors") {
+            throw new Error(`Unexpected table ${table}`);
+          }
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue({
+                _id: "packageInspectorScanCursors:nightly",
+                name: "nightly",
+                cursor: null,
+                pendingCursor: "page-2",
+                runId: "run-42",
+                leaseExpiresAt: Date.now() + 60_000,
+              }),
+            })),
+          };
+        }),
+        patch,
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      acknowledgePackageInspectorScanBatchInternalHandler(ctx as never, {
+        runId: "  run-42  ",
+        cursor: "page-2",
+        leaseMs: 60_000,
+      }),
+    ).resolves.toEqual({ ok: true, cursor: "page-2", completed: false });
+    expect(patch).toHaveBeenCalledWith(
+      "packageInspectorScanCursors:nightly",
+      expect.objectContaining({
+        cursor: "page-2",
+        pendingCursor: undefined,
+        runId: "run-42",
+      }),
+    );
+  });
+
+  it("rejects acknowledgement from a different scan run", async () => {
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn().mockResolvedValue({
+              _id: "packageInspectorScanCursors:nightly",
+              cursor: null,
+              pendingCursor: "page-2",
+              runId: "run-42",
+            }),
+          })),
+        })),
+        patch,
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      acknowledgePackageInspectorScanBatchInternalHandler(ctx as never, {
+        runId: "run-other",
+        cursor: "page-2",
+      }),
+    ).rejects.toThrow("does not own the active lease");
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("continues only from the cursor owned by the same nightly scan run", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [],
+      isDone: true,
+      continueCursor: null,
+    }));
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorScanCursors") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packageInspectorScanCursors:nightly",
+                  name: "nightly",
+                  runId: "run-42",
+                  cursor: "page-2",
+                  leaseExpiresAt: Date.now() + 60_000,
+                }),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert: vi.fn(),
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      claimPackageInspectorScanBatchInternalHandler(ctx as never, {
+        batchSize: 25,
+        leaseMs: 60_000,
+        cursor: "page-2",
+        runId: "run-42",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      leased: false,
+      nextCursor: null,
+      items: [],
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "page-2", numItems: 25 });
+    expect(patch).toHaveBeenCalledWith(
+      "packageInspectorScanCursors:nightly",
+      expect.objectContaining({ cursor: "page-2", pendingCursor: null, runId: "run-42" }),
+    );
+  });
+
+  it("reclaims an unacknowledged page immediately for the same nightly scan run", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [],
+      isDone: true,
+      continueCursor: null,
+    }));
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorScanCursors") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packageInspectorScanCursors:nightly",
+                  name: "nightly",
+                  runId: "run-42",
+                  cursor: "page-1",
+                  pendingCursor: "page-2",
+                  leaseExpiresAt: Date.now() + 60_000,
+                }),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert: vi.fn(),
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      claimPackageInspectorScanBatchInternalHandler(ctx as never, {
+        batchSize: 25,
+        leaseMs: 60_000,
+        cursor: "page-1",
+        runId: "run-42",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      leased: false,
+      nextCursor: null,
+    });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "page-1", numItems: 25 });
+    expect(patch).toHaveBeenCalledWith(
+      "packageInspectorScanCursors:nightly",
+      expect.objectContaining({
+        cursor: "page-1",
+        pendingCursor: null,
+        runId: "run-42",
+      }),
+    );
+  });
+
+  it("resumes the persisted cursor when the same nightly run restarts", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [],
+      isDone: true,
+      continueCursor: null,
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorScanCursors") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packageInspectorScanCursors:nightly",
+                  runId: "run-42",
+                  cursor: "page-3",
+                  leaseExpiresAt: Date.now() + 60_000,
+                }),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      claimPackageInspectorScanBatchInternalHandler(ctx as never, {
+        cursor: "page-2",
+        runId: "run-42",
+      }),
+    ).resolves.toMatchObject({ ok: true, leased: false, nextCursor: null, items: [] });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "page-3", numItems: 25 });
+  });
+
+  it("resumes the persisted cursor when a replacement nightly run acquires an expired lease", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          _id: "packageReleases:current",
+          packageId: "packages:current",
+          version: "1.0.0",
+          artifactKind: "legacy-zip",
+        },
+      ],
+      isDone: false,
+      continueCursor: "page-3",
+    }));
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "packages:current"
+            ? {
+                _id: "packages:current",
+                name: "current-plugin",
+                family: "code-plugin",
+                channel: "community",
+                ownerUserId: "users:owner",
+                latestReleaseId: "packageReleases:current",
+              }
+            : null,
+        ),
+        query: vi.fn((table: string) => {
+          if (table === "packageInspectorScanCursors") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packageInspectorScanCursors:nightly",
+                  runId: "run-old",
+                  cursor: "page-2",
+                  leaseExpiresAt: Date.now() - 1,
+                }),
+              })),
+            };
+          }
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        patch,
+        insert: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+      },
+    };
+
+    await expect(
+      claimPackageInspectorScanBatchInternalHandler(ctx as never, {
+        batchSize: 1,
+        cursor: null,
+        runId: "run-new",
+      }),
+    ).resolves.toMatchObject({ ok: true, leased: false, nextCursor: "page-3" });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "page-2", numItems: 1 });
+    expect(patch).toHaveBeenCalledWith(
+      "packageInspectorScanCursors:nightly",
+      expect.objectContaining({ cursor: "page-2", pendingCursor: "page-3", runId: "run-new" }),
     );
   });
 
@@ -12498,6 +13100,7 @@ describe("packages public queries", () => {
       claimPackageInspectorScanBatchInternalHandler(ctx as never, {
         batchSize: 3,
         leaseMs: 60_000,
+        runId: "run-42",
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -12507,6 +13110,182 @@ describe("packages public queries", () => {
         { releaseId: "packageReleases:legacy-latest", packageName: "legacy-plugin" },
       ],
     });
+  });
+
+  it("skips latest releases already scanned by the same beta target and inspector", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [
+        {
+          _id: "packageReleases:current",
+          packageId: "packages:modern",
+          version: "2.0.0",
+          artifactKind: "npm-pack",
+        },
+      ],
+      isDone: true,
+      continueCursor: null,
+    }));
+    const scanStateWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue({
+        releaseId: "packageReleases:current",
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+      }),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "packages:modern"
+            ? {
+                _id: "packages:modern",
+                name: "modern-plugin",
+                family: "code-plugin",
+                channel: "community",
+                ownerUserId: "users:owner",
+                latestReleaseId: "packageReleases:current",
+              }
+            : null,
+        ),
+        query: vi.fn((table: string) => {
+          if (table === "packageReleases") {
+            return {
+              withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+            };
+          }
+          if (table === "packageInspectorScanStates") {
+            return { withIndex: scanStateWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      previewPackageInspectorScanBatchInternalHandler(ctx as never, {
+        batchSize: 1,
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      items: [],
+      skippedUnchanged: 1,
+    });
+    expect(scanStateWithIndex).toHaveBeenCalledWith(
+      "by_release_and_inspector_version_and_target_openclaw_version",
+      expect.any(Function),
+    );
+
+    await expect(
+      previewPackageInspectorScanBatchInternalHandler(ctx as never, {
+        batchSize: 1,
+        inspectorVersion: "0.6.0",
+        targetOpenClawVersion: "2026.8.0-beta.1",
+        notifyOwners: true,
+      }),
+    ).resolves.toMatchObject({
+      items: [{ releaseId: "packageReleases:current" }],
+      skippedUnchanged: 0,
+    });
+  });
+
+  it("continues through filtered source pages until the requested plugin batch is full", async () => {
+    const paginate = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [
+          {
+            _id: "packageReleases:old",
+            packageId: "packages:modern",
+            version: "1.0.0",
+            artifactKind: "legacy-zip",
+          },
+          {
+            _id: "packageReleases:current",
+            packageId: "packages:modern",
+            version: "2.0.0",
+            artifactKind: "npm-pack",
+          },
+        ],
+        isDone: false,
+        continueCursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        page: [
+          {
+            _id: "packageReleases:other",
+            packageId: "packages:other",
+            version: "1.0.0",
+            artifactKind: "npm-pack",
+          },
+        ],
+        isDone: true,
+        continueCursor: null,
+      });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "packages:modern"
+            ? {
+                _id: "packages:modern",
+                name: "modern-plugin",
+                family: "code-plugin",
+                channel: "community",
+                ownerUserId: "users:owner",
+                latestReleaseId: "packageReleases:current",
+              }
+            : {
+                _id: "packages:other",
+                name: "other-plugin",
+                family: "bundle-plugin",
+                channel: "community",
+                ownerUserId: "users:owner",
+                latestReleaseId: "packageReleases:other",
+              },
+        ),
+        query: vi.fn((table: string) => {
+          if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+          return { withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })) };
+        }),
+      },
+    };
+
+    await expect(
+      previewPackageInspectorScanBatchInternalHandler(ctx as never, { batchSize: 2 }),
+    ).resolves.toMatchObject({
+      nextCursor: null,
+      items: [
+        { releaseId: "packageReleases:current", packageName: "modern-plugin" },
+        { releaseId: "packageReleases:other", packageName: "other-plugin" },
+      ],
+    });
+    expect(paginate).toHaveBeenNthCalledWith(1, { cursor: null, numItems: 2 });
+    expect(paginate).toHaveBeenNthCalledWith(2, { cursor: "page-2", numItems: 1 });
+  });
+
+  it("rejects a non-advancing nightly scan pagination cursor", async () => {
+    const paginate = vi.fn(async () => ({
+      page: [],
+      isDone: false,
+      continueCursor: "stuck-cursor",
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+          return { withIndex: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })) };
+        }),
+      },
+    };
+
+    await expect(
+      previewPackageInspectorScanBatchInternalHandler(ctx as never, {
+        cursor: "stuck-cursor",
+        batchSize: 25,
+      }),
+    ).rejects.toThrow("Package Inspector scan pagination cursor did not advance");
+    expect(paginate).toHaveBeenCalledTimes(1);
   });
 
   it("previews nightly plugin inspector batches without leasing or advancing the cursor", async () => {
@@ -12569,7 +13348,7 @@ describe("packages public queries", () => {
     await expect(
       previewPackageInspectorScanBatchInternalHandler(ctx as never, {
         cursor: "cursor-before-preview",
-        batchSize: 2,
+        batchSize: 1,
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -12584,7 +13363,7 @@ describe("packages public queries", () => {
         },
       ],
     });
-    expect(paginate).toHaveBeenCalledWith({ cursor: "cursor-before-preview", numItems: 2 });
+    expect(paginate).toHaveBeenCalledWith({ cursor: "cursor-before-preview", numItems: 1 });
     expect(insert).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
   });
@@ -12681,6 +13460,7 @@ describe("packages public queries", () => {
       claimPackageInspectorScanBatchInternalHandler(ctx as never, {
         batchSize: 3,
         leaseMs: 60_000,
+        runId: "run-42",
       }),
     ).resolves.toMatchObject({
       ok: true,

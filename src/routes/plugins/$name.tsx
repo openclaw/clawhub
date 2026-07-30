@@ -696,6 +696,14 @@ function pluginValidateCommand(openClawVersion?: string) {
     ? `${PLUGIN_VALIDATE_CLI} --openclaw-version ${openClawVersion}`
     : PLUGIN_VALIDATE_CLI;
 }
+
+function buildPluginValidateCommand(findings: PluginInspectorFinding[]) {
+  const exactTarget =
+    findings.find((finding) => finding.scanSource === "nightly" && finding.targetOpenClawVersion)
+      ?.targetOpenClawVersion ??
+    findings.find((finding) => finding.targetOpenClawVersion)?.targetOpenClawVersion;
+  return pluginValidateCommand(exactTarget);
+}
 const PLUGIN_VALIDATE_TOOLBAR_LABEL = "Validate locally before publishing";
 
 const INSPECTOR_ISSUE_CLASS_LABELS: Record<string, string> = {
@@ -768,7 +776,7 @@ function buildValidationAgentFixPrompt(args: {
     "",
     "Make the minimum code and manifest changes needed to resolve every issue below.",
     "After editing, run locally:",
-    PLUGIN_VALIDATE_CLI,
+    buildPluginValidateCommand(args.findings),
     "",
   );
 
@@ -1325,6 +1333,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     displayInspectorFindings?.filter((finding) => finding.findingKind !== "error") ?? []
   ).sort(compareInspectorFindings);
   const validationIssueCount = validationErrors.length + validationWarnings.length;
+  const validationCliCommand = buildPluginValidateCommand(displayInspectorFindings ?? []);
   const validationReleaseVersion = latestRelease?.version ?? pkg.latestVersion ?? null;
   const showValidationGroups = validationErrors.length > 0 && validationWarnings.length > 0;
   const validationAgentFixPrompt =
@@ -1396,9 +1405,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     className="plugin-validation-toolbar-cli"
                     aria-labelledby="validation-toolbar-label"
                   >
-                    <code className="plugin-validation-command">{PLUGIN_VALIDATE_CLI}</code>
+                    <code className="plugin-validation-command">{validationCliCommand}</code>
                     <InstallCopyButton
-                      text={PLUGIN_VALIDATE_CLI}
+                      text={validationCliCommand}
                       ariaLabel="Copy validate command"
                       showLabel={false}
                       className="plugin-validation-toolbar-copy"

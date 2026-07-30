@@ -68,6 +68,7 @@ import {
 import { preflightHandler } from "./httpPreflight";
 import { installRateLimitedRoutes } from "./lib/httpRouteRateLimit";
 import {
+  packageInspectorAcknowledgeHttp,
   packageInspectorArtifactHttp,
   packageInspectorClaimHttp,
   packageInspectorResultsHttp,
@@ -275,6 +276,12 @@ http.route({
   path: "/api/v1/package-inspector/claim",
   method: "POST",
   handler: packageInspectorClaimHttp,
+});
+
+http.route({
+  path: "/api/v1/package-inspector/acknowledge",
+  method: "POST",
+  handler: packageInspectorAcknowledgeHttp,
 });
 
 http.route({

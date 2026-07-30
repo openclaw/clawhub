@@ -1980,6 +1980,8 @@ const packageInspectorFindingNotifications = defineTable({
 const packageInspectorScanCursors = defineTable({
   name: v.string(),
   cursor: v.optional(v.union(v.string(), v.null())),
+  pendingCursor: v.optional(v.union(v.string(), v.null())),
+  runId: v.optional(v.string()),
   leaseExpiresAt: v.optional(v.number()),
   updatedAt: v.number(),
 }).index("by_name", ["name"]);
@@ -1990,6 +1992,7 @@ const packageInspectorScanStates = defineTable({
   inspectorVersion: v.string(),
   targetOpenClawVersion: v.string(),
   completedAt: v.number(),
+  notificationCompletedAt: v.optional(v.number()),
 }).index("by_release_and_inspector_version_and_target_openclaw_version", [
   "releaseId",
   "inspectorVersion",

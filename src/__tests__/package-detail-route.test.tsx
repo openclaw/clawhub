@@ -1976,8 +1976,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
     expect(screen.getByText("Validate locally before publishing")).toBeTruthy();
-    expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
-    expect(screen.getByRole("toolbar", { name: "Validation actions" })).toBeTruthy();
     expect(document.getElementById("validation-toolbar-cli")?.getAttribute("aria-labelledby")).toBe(
       "validation-toolbar-label",
     );
@@ -1987,6 +1985,11 @@ describe("plugin detail route", () => {
     expect(titleActions?.textContent).toMatch(/1 warning/);
     expect(titleActions?.querySelector(".plugin-validation-panel-agent")).toBeNull();
     const validationToolbar = screen.getByRole("toolbar", { name: "Validation actions" });
+    expect(
+      within(validationToolbar).getByText(
+        "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+      ),
+    ).toBeTruthy();
     const commandBlock = validationToolbar.querySelector(".plugin-validation-command-block");
     expect(commandBlock?.querySelector(".plugin-validation-toolbar-label")).toBeTruthy();
     expect(validationToolbar.querySelector(":scope > .plugin-validation-toolbar-label")).toBeNull();
@@ -2017,10 +2020,10 @@ describe("plugin detail route", () => {
     expect(within(validationRegion).getByText("Target")).toBeTruthy();
     expect(within(validationRegion).getByText("OpenClaw 0.9.0")).toBeTruthy();
     expect(
-      within(validationRegion).getByText(
+      within(validationRegion).getAllByText(
         "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
       ),
-    ).toBeTruthy();
+    ).toHaveLength(2);
     expect(screen.getByText(/Legacy before_agent_start hook is deprecated\./)).toBeTruthy();
     expect(screen.getByText(/We found/)).toBeTruthy();
     expect(screen.queryByText(/Hey,/)).toBeNull();

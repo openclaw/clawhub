@@ -1,6 +1,8 @@
 name: Plugin Inspector Bulk Scan
 
 on:
+  schedule:
+    - cron: "17 7 * * *"
   workflow_dispatch:
     inputs:
       batch_size:
@@ -16,6 +18,11 @@ on:
         description: "Maximum preview batches to scan when dry_run is enabled"
         required: false
         default: "20"
+      notify_owners:
+        description: "Email plugin owners when a manual scan finds issues"
+        required: false
+        default: true
+        type: boolean
       package_names:
         description: "Optional comma or newline separated package names to scan instead of the rolling cursor"
         required: false
@@ -62,6 +69,8 @@ jobs:
           PLUGIN_INSPECTOR_DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
           PLUGIN_INSPECTOR_DRY_RUN_MAX_BATCHES: ${{ inputs.dry_run_max_batches || '20' }}
           PLUGIN_INSPECTOR_PACKAGE_NAMES: ${{ inputs.package_names || '' }}
+          PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta
+          PLUGIN_INSPECTOR_NOTIFY_OWNERS: ${{ github.event_name == 'schedule' && '0' || (inputs.notify_owners && '1' || '0') }}
           PLUGIN_INSPECTOR_SOURCE_PR: ${{ inputs.source_pr || '' }}
           PLUGIN_INSPECTOR_SOURCE_SHA: ${{ inputs.source_sha || '' }}
           PLUGIN_INSPECTOR_ARTIFACT_DIR: plugin-inspector-bulk-scan-reports

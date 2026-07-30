@@ -1,10 +1,16 @@
 /* @vitest-environment node */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  acknowledgeBatch,
+  prepareBulkOpenClawTarget,
+  resolveNightlyOpenClawTarget,
+  resolveScanRunId,
+  renderImpactMarkdown,
   normalizeFindings,
   parsePackageNames,
   resolveArtifactKind,
+  summarizeImpact,
 } from "./package-inspector-nightly-scan";
 
 describe("package-inspector-nightly-scan", () => {
@@ -90,5 +96,83 @@ describe("package-inspector-nightly-scan", () => {
       ),
     ).toBe("legacy-zip");
     expect(resolveArtifactKind("npm-pack", new Headers())).toBe("npm-pack");
+  });
+
+  it("reports the exact beta target and unchanged releases in the run summary", () => {
+    const summary = summarizeImpact({
+      claimed: 2,
+      scanned: 1,
+      skippedUnchanged: 1,
+      batches: 1,
+      truncated: false,
+      nextCursor: null,
+      inspectorVersion: "0.6.0",
+      targetOpenClawVersion: "2026.8.0-beta.1",
+      entries: [],
+    });
+
+    expect(summary).toMatchObject({
+      inspectorVersion: "0.6.0",
+      targetOpenClawVersion: "2026.8.0-beta.1",
+      skippedUnchangedReleases: 1,
+    });
+    expect(renderImpactMarkdown(summary)).toContain("- Target OpenClaw: 2026.8.0-beta.1");
+    expect(renderImpactMarkdown(summary)).toContain("- Skipped unchanged releases: 1");
+  });
+
+  it("resolves and prepares the beta target once for reuse across the bulk run", async () => {
+    const resolved = { requestedVersion: "beta", version: "2026.8.0-beta.1" };
+    const prepared = { ...resolved, status: "ok", cache: { hit: false, key: "beta-key" } };
+    const resolveVersion = vi.fn().mockResolvedValue(resolved);
+    const prepare = vi.fn().mockResolvedValue(prepared);
+
+    await expect(
+      prepareBulkOpenClawTarget("beta", {
+        openClawTargets: { resolveVersion, prepare },
+      }),
+    ).resolves.toEqual({
+      exactVersion: "2026.8.0-beta.1",
+      target: prepared,
+    });
+    expect(resolveVersion).toHaveBeenCalledTimes(1);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(resolveNightlyOpenClawTarget(undefined)).toBe("beta");
+    expect(() => resolveNightlyOpenClawTarget("latest")).toThrow(
+      "Nightly plugin scans only support the OpenClaw beta target",
+    );
+  });
+
+  it("keeps the scan run identity stable across GitHub workflow reruns", () => {
+    expect(
+      resolveScanRunId({
+        GITHUB_RUN_ID: "12345",
+        GITHUB_RUN_ATTEMPT: "2",
+      }),
+    ).toBe("12345");
+    expect(
+      resolveScanRunId({
+        PLUGIN_INSPECTOR_RUN_ID: "manual-run",
+        GITHUB_RUN_ID: "12345",
+      }),
+    ).toBe("manual-run");
+  });
+
+  it("acknowledges a processed batch before the runner advances its cursor", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, cursor: "page-2", completed: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(acknowledgeBatch("page-2", "run-42")).resolves.toMatchObject({
+      ok: true,
+      cursor: "page-2",
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toContain(
+      "/api/v1/package-inspector/acknowledge?runId=run-42&cursor=page-2",
+    );
+    vi.unstubAllGlobals();
   });
 });

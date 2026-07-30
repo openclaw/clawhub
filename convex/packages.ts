@@ -9770,6 +9770,34 @@ export const insertPackageInspectorWarningsInternal = internalMutation({
   },
 });
 
+async function hasCompletedPackageInspectorNotification(
+  ctx: DbReaderCtx,
+  args: {
+    releaseId: Id<"packageReleases">;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    exactScanIdentity: boolean;
+  },
+) {
+  if (args.exactScanIdentity && args.inspectorVersion && args.targetOpenClawVersion) {
+    const scanState = await ctx.db
+      .query("packageInspectorScanStates")
+      .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+        q
+          .eq("releaseId", args.releaseId)
+          .eq("inspectorVersion", args.inspectorVersion as string)
+          .eq("targetOpenClawVersion", args.targetOpenClawVersion as string),
+      )
+      .unique();
+    return Boolean(scanState?.notificationCompletedAt);
+  }
+  const notification = await ctx.db
+    .query("packageInspectorFindingNotifications")
+    .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
+    .unique();
+  return Boolean(notification);
+}
+
 async function insertPackageInspectorFindings(
   ctx: Pick<MutationCtx, "db">,
   args: {
@@ -9819,10 +9847,15 @@ async function insertPackageInspectorFindings(
       }),
     ),
   );
-  const existingNotification = await ctx.db
-    .query("packageInspectorFindingNotifications")
-    .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
-    .unique();
+  const shouldNotifyOwner = args.notifyOwners ?? args.scanSource !== "nightly";
+  const notificationCompleted = shouldNotifyOwner
+    ? await hasCompletedPackageInspectorNotification(ctx, {
+        releaseId: args.releaseId,
+        inspectorVersion: args.inspectorVersion,
+        targetOpenClawVersion: args.targetOpenClawVersion,
+        exactScanIdentity: args.scanSource === "nightly",
+      })
+    : false;
   const now = Date.now();
   let inserted = 0;
   for (const warning of findings.slice(0, 100)) {
@@ -9868,9 +9901,11 @@ async function insertPackageInspectorFindings(
     ok: true as const,
     inserted,
     shouldEmailOwner:
-      (args.notifyOwners ?? args.scanSource !== "nightly") &&
-      !existingNotification &&
-      (inserted > 0 || existingAuthorWarnings.length > 0),
+      shouldNotifyOwner &&
+      !notificationCompleted &&
+      (args.scanSource === "nightly"
+        ? findings.length > 0
+        : inserted > 0 || existingAuthorWarnings.length > 0),
   };
 }
 
@@ -9884,25 +9919,42 @@ export const markPackageInspectorFindingsEmailedInternal = internalMutation({
     version: v.string(),
     findingCount: v.number(),
     email: v.string(),
+    inspectorVersion: v.optional(v.string()),
+    targetOpenClawVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query("packageInspectorFindingNotifications")
       .withIndex("by_release", (q) => q.eq("releaseId", args.releaseId))
       .unique();
-    if (existing) return { ok: true as const, created: false };
-    await ctx.db.insert("packageInspectorFindingNotifications", {
-      packageId: args.packageId,
-      releaseId: args.releaseId,
-      ownerUserId: args.ownerUserId,
-      ownerPublisherId: args.ownerPublisherId,
-      packageName: args.packageName,
-      version: args.version,
-      email: args.email,
-      findingCount: Math.max(0, Math.round(args.findingCount)),
-      sentAt: Date.now(),
-    });
-    return { ok: true as const, created: true };
+    const now = Date.now();
+    if (!existing) {
+      await ctx.db.insert("packageInspectorFindingNotifications", {
+        packageId: args.packageId,
+        releaseId: args.releaseId,
+        ownerUserId: args.ownerUserId,
+        ownerPublisherId: args.ownerPublisherId,
+        packageName: args.packageName,
+        version: args.version,
+        email: args.email,
+        findingCount: Math.max(0, Math.round(args.findingCount)),
+        sentAt: now,
+      });
+    }
+    const { inspectorVersion, targetOpenClawVersion } = args;
+    if (inspectorVersion && targetOpenClawVersion) {
+      const scanState = await ctx.db
+        .query("packageInspectorScanStates")
+        .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+          q
+            .eq("releaseId", args.releaseId)
+            .eq("inspectorVersion", inspectorVersion)
+            .eq("targetOpenClawVersion", targetOpenClawVersion),
+        )
+        .unique();
+      if (scanState) await ctx.db.patch(scanState._id, { notificationCompletedAt: now });
+    }
+    return { ok: true as const, created: !existing };
   },
 });
 
@@ -9910,6 +9962,8 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
   args: {
     packageId: v.id("packages"),
     releaseId: v.id("packageReleases"),
+    inspectorVersion: v.optional(v.string()),
+    targetOpenClawVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const [pkg, release] = await Promise.all([
@@ -9919,13 +9973,24 @@ export const getPackageInspectorEmailContextInternal = internalQuery({
     if (!pkg || pkg.softDeletedAt || !release || release.softDeletedAt) return null;
     const owner = await ctx.db.get(pkg.ownerUserId);
     if (!owner || owner.deletedAt || owner.deactivatedAt || !owner.email) return null;
-    const findings = await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
+    const allFindings = await takeAuthorRemediationWarningsByRelease(ctx, release._id, 100);
+    const exactScanIdentity = Boolean(args.inspectorVersion && args.targetOpenClawVersion);
+    const findings = exactScanIdentity
+      ? allFindings.filter(
+          (finding) =>
+            finding.scanSource === "nightly" &&
+            finding.inspectorVersion === args.inspectorVersion &&
+            finding.targetOpenClawVersion === args.targetOpenClawVersion,
+        )
+      : allFindings;
     if (findings.length === 0) return null;
-    const notification = await ctx.db
-      .query("packageInspectorFindingNotifications")
-      .withIndex("by_release", (q) => q.eq("releaseId", release._id))
-      .unique();
-    if (notification) return null;
+    const notificationCompleted = await hasCompletedPackageInspectorNotification(ctx, {
+      releaseId: release._id,
+      inspectorVersion: args.inspectorVersion,
+      targetOpenClawVersion: args.targetOpenClawVersion,
+      exactScanIdentity,
+    });
+    if (notificationCompleted) return null;
     return {
       packageId: pkg._id,
       releaseId: release._id,
@@ -9944,6 +10009,8 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
   args: {
     packageId: v.id("packages"),
     releaseId: v.id("packageReleases"),
+    inspectorVersion: v.optional(v.string()),
+    targetOpenClawVersion: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const context = await runQueryRef<{
@@ -9992,6 +10059,8 @@ export const sendPackageInspectorFindingsEmailInternal = internalAction({
         version: context.version,
         findingCount: context.findings.length,
         email: context.ownerEmail,
+        inspectorVersion: args.inspectorVersion,
+        targetOpenClawVersion: args.targetOpenClawVersion,
       });
     }
     return { ok: true as const, sent };
@@ -10010,50 +10079,97 @@ type PackageInspectorScanBatchItem = {
 
 async function listPackageInspectorScanBatch(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
-  args: { cursor?: string | null; batchSize?: number },
+  args: {
+    cursor?: string | null;
+    batchSize?: number;
+    inspectorVersion?: string;
+    targetOpenClawVersion?: string;
+    notifyOwners?: boolean;
+  },
 ) {
   const batchSize = Math.max(1, Math.min(Math.round(args.batchSize ?? 25), 50));
-  const page = await ctx.db
-    .query("packageReleases")
-    .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
-    .order("asc")
-    .paginate({
-      cursor: args.cursor ?? null,
-      numItems: batchSize,
-    });
   const items: PackageInspectorScanBatchItem[] = [];
-  for (const release of page.page) {
-    if (items.length >= batchSize) break;
-    if (!isPublishedPackageRelease(release)) continue;
-    const pkg = await ctx.db.get(release.packageId);
-    if (
-      !pkg ||
-      pkg.softDeletedAt ||
-      (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
-      pkg.channel === "private" ||
-      isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
-    ) {
-      continue;
+  let skippedUnchanged = 0;
+  let sourceCursor = args.cursor ?? null;
+  let nextCursor: string | null = sourceCursor;
+  let sourceReleasesRead = 0;
+  // Amortize filtered/unchanged releases without risking an unbounded Convex transaction.
+  const maxSourceReleases = 500;
+  while (items.length < batchSize && sourceReleasesRead < maxSourceReleases) {
+    const pageSize = Math.min(batchSize - items.length, maxSourceReleases - sourceReleasesRead);
+    const page = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .order("asc")
+      .paginate({
+        cursor: sourceCursor,
+        numItems: pageSize,
+      });
+    if (!page.isDone && page.continueCursor === sourceCursor) {
+      throw new Error("Package Inspector scan pagination cursor did not advance");
     }
-    const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
-    if (latestReleaseId !== release._id) continue;
-    items.push({
-      packageId: pkg._id,
-      releaseId: release._id,
-      ownerUserId: pkg.ownerUserId,
-      ownerPublisherId: pkg.ownerPublisherId,
-      packageName: pkg.name,
-      version: release.version,
-      artifactKind: release.artifactKind ?? "legacy-zip",
-    });
+    // Count the requested page budget as consumed even when Convex returns an
+    // empty split page, so filtered releases remain transaction-bounded.
+    sourceReleasesRead += pageSize;
+    for (const release of page.page) {
+      if (items.length >= batchSize) break;
+      if (!isPublishedPackageRelease(release)) continue;
+      const pkg = await ctx.db.get(release.packageId);
+      if (
+        !pkg ||
+        pkg.softDeletedAt ||
+        (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin") ||
+        pkg.channel === "private" ||
+        isPackageBlockedFromPublic(resolvePublicPackageScanStatus(pkg, release))
+      ) {
+        continue;
+      }
+      const latestReleaseId = pkg.latestReleaseId ?? pkg.tags?.latest;
+      if (latestReleaseId !== release._id) continue;
+      const { inspectorVersion, targetOpenClawVersion } = args;
+      if (inspectorVersion && targetOpenClawVersion) {
+        const scanState = await ctx.db
+          .query("packageInspectorScanStates")
+          .withIndex("by_release_and_inspector_version_and_target_openclaw_version", (q) =>
+            q
+              .eq("releaseId", release._id)
+              .eq("inspectorVersion", inspectorVersion)
+              .eq("targetOpenClawVersion", targetOpenClawVersion),
+          )
+          .unique();
+        if (scanState && (!args.notifyOwners || scanState.notificationCompletedAt)) {
+          skippedUnchanged += 1;
+          continue;
+        }
+      }
+      items.push({
+        packageId: pkg._id,
+        releaseId: release._id,
+        ownerUserId: pkg.ownerUserId,
+        ownerPublisherId: pkg.ownerPublisherId,
+        packageName: pkg.name,
+        version: release.version,
+        artifactKind: release.artifactKind ?? "legacy-zip",
+      });
+    }
+    nextCursor = page.isDone ? null : page.continueCursor;
+    if (page.isDone || items.length >= batchSize) break;
+    sourceCursor = page.continueCursor;
   }
-  return { items, nextCursor: page.isDone ? null : page.continueCursor };
+  return {
+    items,
+    nextCursor,
+    skippedUnchanged,
+  };
 }
 
 export const previewPackageInspectorScanBatchInternal = internalQuery({
   args: {
     batchSize: v.optional(v.number()),
     cursor: v.optional(v.union(v.string(), v.null())),
+    inspectorVersion: v.optional(v.string()),
+    targetOpenClawVersion: v.optional(v.string()),
+    notifyOwners: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const result = await listPackageInspectorScanBatch(ctx, args);
@@ -10065,9 +10181,16 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),
     leaseMs: v.optional(v.number()),
+    cursor: v.optional(v.union(v.string(), v.null())),
+    runId: v.string(),
+    inspectorVersion: v.optional(v.string()),
+    targetOpenClawVersion: v.optional(v.string()),
+    notifyOwners: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const runId = args.runId.trim();
+    if (!runId) throw new Error("Package Inspector scan runId is required");
     const leaseMs = Math.max(
       60_000,
       Math.min(Math.round(args.leaseMs ?? 30 * 60_000), 2 * 60 * 60_000),
@@ -10077,34 +10200,89 @@ export const claimPackageInspectorScanBatchInternal = internalMutation({
       .query("packageInspectorScanCursors")
       .withIndex("by_name", (q) => q.eq("name", cursorName))
       .unique();
-    if (cursorDoc?.leaseExpiresAt && cursorDoc.leaseExpiresAt > now) {
+    const expectedCursor = cursorDoc?.cursor ?? null;
+    const hasPendingBatch = Boolean(cursorDoc && Object.hasOwn(cursorDoc, "pendingCursor"));
+    // A GitHub workflow rerun keeps its run id. Let it reclaim an unacknowledged
+    // page immediately so a failed attempt does not strand the cursor until expiry.
+    const continuingSameRun = cursorDoc?.runId === runId;
+    if (cursorDoc?.leaseExpiresAt && cursorDoc.leaseExpiresAt > now && !continuingSameRun) {
       return {
         ok: true as const,
         leased: true as const,
         items: [],
-        nextCursor: cursorDoc.cursor ?? null,
+        nextCursor: hasPendingBatch ? (cursorDoc.pendingCursor ?? null) : expectedCursor,
       };
     }
 
-    const { items, nextCursor } = await listPackageInspectorScanBatch(ctx, {
-      cursor: cursorDoc?.cursor ?? null,
+    const { items, nextCursor, skippedUnchanged } = await listPackageInspectorScanBatch(ctx, {
+      cursor: expectedCursor,
       batchSize: args.batchSize,
+      inspectorVersion: args.inspectorVersion,
+      targetOpenClawVersion: args.targetOpenClawVersion,
+      notifyOwners: args.notifyOwners,
     });
     if (cursorDoc) {
       await ctx.db.patch(cursorDoc._id, {
-        cursor: nextCursor,
+        cursor: expectedCursor,
+        pendingCursor: nextCursor,
+        runId,
         leaseExpiresAt: now + leaseMs,
         updatedAt: now,
       });
     } else {
       await ctx.db.insert("packageInspectorScanCursors", {
         name: cursorName,
-        cursor: nextCursor,
+        cursor: expectedCursor,
+        pendingCursor: nextCursor,
+        runId,
         leaseExpiresAt: now + leaseMs,
         updatedAt: now,
       });
     }
-    return { ok: true as const, leased: false as const, items, nextCursor };
+    return {
+      ok: true as const,
+      leased: false as const,
+      items,
+      nextCursor,
+      skippedUnchanged,
+    };
+  },
+});
+
+export const acknowledgePackageInspectorScanBatchInternal = internalMutation({
+  args: {
+    runId: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    leaseMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const runId = args.runId.trim();
+    if (!runId) throw new Error("Package Inspector scan runId is required");
+    const leaseMs = Math.max(
+      60_000,
+      Math.min(Math.round(args.leaseMs ?? 30 * 60_000), 2 * 60 * 60_000),
+    );
+    const cursorDoc = await ctx.db
+      .query("packageInspectorScanCursors")
+      .withIndex("by_name", (q) => q.eq("name", "nightly"))
+      .unique();
+    if (!cursorDoc || cursorDoc.runId !== runId) {
+      throw new Error("Package Inspector scan run does not own the active lease");
+    }
+    if (!Object.hasOwn(cursorDoc, "pendingCursor") || cursorDoc.pendingCursor !== args.cursor) {
+      throw new Error("Package Inspector scan acknowledgement cursor does not match the lease");
+    }
+
+    const completed = args.cursor === null;
+    await ctx.db.patch(cursorDoc._id, {
+      cursor: args.cursor,
+      pendingCursor: undefined,
+      runId: completed ? undefined : runId,
+      leaseExpiresAt: completed ? now : now + leaseMs,
+      updatedAt: now,
+    });
+    return { ok: true as const, cursor: args.cursor, completed };
   },
 });
 
@@ -10196,9 +10374,17 @@ export const ingestPackageInspectorScanResultsInternal = internalMutation({
         inspectorVersion,
         targetOpenClawVersion,
         completedAt,
+        ...(args.notifyOwners === true && !result.shouldEmailOwner
+          ? { notificationCompletedAt: completedAt }
+          : {}),
       };
       if (existingState) {
-        await ctx.db.patch(existingState._id, { completedAt });
+        await ctx.db.patch(existingState._id, {
+          completedAt,
+          ...(state.notificationCompletedAt
+            ? { notificationCompletedAt: state.notificationCompletedAt }
+            : {}),
+        });
       } else {
         await ctx.db.insert("packageInspectorScanStates", state);
       }

@@ -37,13 +37,14 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("actions/upload-artifact");
   });
 
-  it("runs manual plugin inspector bulk scans with the bundled CLI validator", () => {
+  it("runs nightly beta plugin scans while preserving manual dispatch", () => {
     const workflow = readFileSync(
       resolve(".github/workflows/plugin-inspector-bulk-scan.yml"),
       "utf8",
     );
     const parsedWorkflow = parseYaml(workflow) as {
       on?: {
+        schedule?: Array<{ cron?: string }>;
         workflow_dispatch?: {
           inputs?: {
             dry_run?: { default?: string };
@@ -56,6 +57,7 @@ describe("package publish workflow", () => {
     const http = readFileSync(resolve("convex/packageInspectorHttp.ts"), "utf8");
 
     expect(workflow).toContain("workflow_dispatch:");
+    expect(parsedWorkflow.on?.schedule).toEqual([{ cron: "17 7 * * *" }]);
     expect(workflow).toContain("Maximum plugin releases to scan");
     expect(workflow).toContain("Plugin Inspector Bulk Scan");
     expect(workflow).toContain("plugin-inspector-bulk-scan-reports");
@@ -64,14 +66,21 @@ describe("package publish workflow", () => {
     expect(workflow).toContain(
       "concurrency:\n  group: clawhub-plugin-inspector-bulk-scan\n  cancel-in-progress: false",
     );
-    expect(workflow).not.toMatch(/^\s*schedule:/m);
-    expect(workflow).not.toMatch(/^\s*-\s*cron:/m);
+    expect(workflow).toContain("PLUGIN_INSPECTOR_OPENCLAW_VERSION: beta");
+    expect(workflow).toContain("notify_owners:");
+    expect(workflow).toContain("default: true");
+    expect(workflow).toContain(
+      "PLUGIN_INSPECTOR_NOTIFY_OWNERS: ${{ github.event_name == 'schedule' && '0' || (inputs.notify_owners && '1' || '0') }}",
+    );
     expect(workflow).toContain("ref: main");
     expect(workflow).toContain("if: ${{ github.ref == 'refs/heads/main' }}");
     expect(workflow).toContain("bun install --frozen-lockfile");
     expect(workflow).toContain("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN");
     expect(script).toContain("package-inspector/claim");
-    expect(script).toContain('"package", "validate"');
+    expect(script).toContain("prepareBulkOpenClawTarget");
+    expect(script).toContain("targetOpenClaw: preparedTarget.target");
+    expect(script).toContain("targetOpenClawVersion");
+    expect(script).toContain("skippedUnchanged");
     expect(script).toContain("resolveBundledPluginInspectorVersion");
     expect(http).toContain("package-inspector/artifact");
     expect(script).toContain("package-inspector/results");

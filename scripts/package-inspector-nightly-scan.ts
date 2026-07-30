@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -21,6 +22,7 @@ type ClaimResponse = {
   leased: boolean;
   dryRun?: boolean;
   nextCursor?: string | null;
+  skippedUnchanged?: number;
   items: ClaimItem[];
 };
 
@@ -60,10 +62,33 @@ type UploadResult = {
   shouldEmailOwner: boolean;
 };
 
+type PluginInspectorModule = {
+  openClawTargets?: {
+    resolveVersion: (requestedVersion: string) => Promise<Record<string, unknown>>;
+    prepare: (resolvedTarget: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  };
+  pluginRoot?: {
+    runCheck: (options: Record<string, unknown>) => Promise<{
+      report: Record<string, unknown>;
+      paths: { jsonPath: string };
+    }>;
+  };
+  ci?: {
+    writeOutputs: (
+      report: Record<string, unknown>,
+      options: { cwd: string; outDir: string },
+    ) => Promise<unknown>;
+  };
+  reports?: {
+    sanitizeArtifact: (report: Record<string, unknown>) => unknown;
+  };
+};
+
 const siteUrl = (process.env.CLAWHUB_SITE_URL ?? "https://clawhub.ai").replace(/\/+$/, "");
 const token = process.env.CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN;
 const batchSize = process.env.PLUGIN_INSPECTOR_BATCH_SIZE ?? "25";
 const dryRun = parseBoolean(process.env.PLUGIN_INSPECTOR_DRY_RUN);
+const notifyOwners = parseBoolean(process.env.PLUGIN_INSPECTOR_NOTIFY_OWNERS);
 const targetPackageNames = parsePackageNames(process.env.PLUGIN_INSPECTOR_PACKAGE_NAMES);
 const dryRunMaxBatches = Math.max(
   1,
@@ -74,19 +99,58 @@ const dryRunMaxBatches = Math.max(
 );
 const artifactRoot =
   process.env.PLUGIN_INSPECTOR_ARTIFACT_DIR ?? "plugin-inspector-bulk-scan-reports";
-const repoRoot = path.resolve(process.env.GITHUB_WORKSPACE ?? process.cwd());
-const clawhubCliEntry = path.join(repoRoot, "packages", "clawhub", "src", "cli.ts");
+const scanRunId = resolveScanRunId(process.env);
+
+export function resolveScanRunId(env: Record<string, string | undefined>) {
+  return env.PLUGIN_INSPECTOR_RUN_ID?.trim() || env.GITHUB_RUN_ID?.trim() || randomUUID();
+}
+
+export function resolveNightlyOpenClawTarget(value: string | undefined) {
+  const requested = value?.trim() || "beta";
+  if (requested !== "beta") {
+    throw new Error("Nightly plugin scans only support the OpenClaw beta target");
+  }
+  return requested;
+}
+
+export async function prepareBulkOpenClawTarget(
+  requestedVersion: string,
+  inspectorModule?: PluginInspectorModule,
+) {
+  const inspector =
+    inspectorModule ??
+    ((await import("@openclaw/plugin-inspector")) as unknown as PluginInspectorModule);
+  if (!inspector.openClawTargets) {
+    throw new Error(
+      "The bundled Plugin Inspector does not support version-resolved OpenClaw targets",
+    );
+  }
+  const resolved = await inspector.openClawTargets.resolveVersion(requestedVersion);
+  const target = await inspector.openClawTargets.prepare(resolved);
+  const exactVersion = stringValue(target.version) ?? stringValue(resolved.version);
+  if (!exactVersion) {
+    throw new Error("Plugin Inspector did not return an exact OpenClaw target version");
+  }
+  return { exactVersion, target };
+}
 
 export async function runPackageInspectorNightlyScan() {
   if (!token) throw new Error("CLAWHUB_PLUGIN_INSPECTOR_WORKER_TOKEN is required");
 
   const inspectorVersion = getInspectorVersion();
+  const inspectorModule =
+    (await import("@openclaw/plugin-inspector")) as unknown as PluginInspectorModule;
+  const requestedOpenClawVersion = resolveNightlyOpenClawTarget(
+    process.env.PLUGIN_INSPECTOR_OPENCLAW_VERSION,
+  );
+  const preparedTarget = await prepareBulkOpenClawTarget(requestedOpenClawVersion, inspectorModule);
   await mkdir(artifactRoot, { recursive: true });
 
   let hadWorkerFailure = false;
   const impactEntries: ImpactEntry[] = [];
   let claimed = 0;
   let scanned = 0;
+  let skippedUnchanged = 0;
   let cursor: string | null = null;
   let batches = 0;
   let truncated = false;
@@ -96,59 +160,105 @@ export async function runPackageInspectorNightlyScan() {
     batches = 1;
     claimed = items.length;
     for (const item of items) {
-      const result = await inspectPackageItem(item, inspectorVersion);
+      const result = await inspectPackageItem(
+        item,
+        inspectorVersion,
+        preparedTarget,
+        inspectorModule,
+      );
       if (result.failed) hadWorkerFailure = true;
       if (result.impactEntry) impactEntries.push(result.impactEntry);
       if (result.scanned) scanned += 1;
     }
   } else {
     do {
-      const claim = await claimBatch(cursor);
+      const claimCursor = cursor;
+      const claim = await claimBatch(
+        cursor,
+        inspectorVersion,
+        preparedTarget.exactVersion,
+        scanRunId,
+      );
+      if (claim.leased) {
+        throw new Error("Plugin Inspector bulk scan lease is owned by another run");
+      }
       batches += 1;
-      cursor = claim.nextCursor ?? null;
+      const nextCursor = claim.nextCursor ?? null;
       claimed += claim.items.length;
+      skippedUnchanged += claim.skippedUnchanged ?? 0;
+      let batchFailed = false;
 
       for (const item of claim.items) {
-        const result = await inspectPackageItem(item, inspectorVersion);
-        if (result.failed) hadWorkerFailure = true;
+        const result = await inspectPackageItem(
+          item,
+          inspectorVersion,
+          preparedTarget,
+          inspectorModule,
+        );
+        if (result.failed) {
+          hadWorkerFailure = true;
+          batchFailed = true;
+        }
         if (result.impactEntry) impactEntries.push(result.impactEntry);
         if (result.scanned) scanned += 1;
       }
 
-      if (!dryRun) break;
-      if (cursor && batches >= dryRunMaxBatches) {
-        truncated = true;
-        break;
+      if (!dryRun) {
+        if (batchFailed) {
+          cursor = claimCursor;
+          break;
+        }
+        await acknowledgeBatch(nextCursor, scanRunId);
       }
-    } while (dryRun && cursor);
+      cursor = nextCursor;
+
+      if (cursor && batches >= dryRunMaxBatches) {
+        if (dryRun) {
+          truncated = true;
+          break;
+        }
+      }
+    } while (cursor);
   }
 
+  const summary = summarizeImpact({
+    claimed,
+    scanned,
+    skippedUnchanged,
+    batches,
+    truncated,
+    nextCursor: cursor,
+    inspectorVersion,
+    targetOpenClawVersion: preparedTarget.exactVersion,
+    entries: impactEntries,
+  });
+  await writeFile(
+    path.join(artifactRoot, "run-summary.json"),
+    `${JSON.stringify(summary, null, 2)}\n`,
+  );
+  await writeFile(path.join(artifactRoot, "run-summary.md"), renderImpactMarkdown(summary));
   if (dryRun) {
-    const summary = summarizeImpact({
-      claimed,
-      scanned,
-      batches,
-      truncated,
-      nextCursor: cursor,
-      inspectorVersion,
-      entries: impactEntries,
-    });
     await writeFile(
       path.join(artifactRoot, "impact-summary.json"),
       `${JSON.stringify(summary, null, 2)}\n`,
     );
     await writeFile(path.join(artifactRoot, "impact-summary.md"), renderImpactMarkdown(summary));
-    console.log(
-      `Dry run scanned ${summary.scannedReleases} latest plugin releases: ${summary.pluginsWithErrors} with errors, ${summary.pluginsWithWarnings} with warnings, ${summary.impactedOwners} owner(s) impacted.`,
-    );
   }
+  console.log(
+    `Bulk scan target OpenClaw ${summary.targetOpenClawVersion}: scanned=${summary.scannedReleases}, skippedUnchanged=${summary.skippedUnchangedReleases}, errors=${summary.pluginsWithErrors}, warnings=${summary.pluginsWithWarnings}.`,
+  );
 
   if (hadWorkerFailure) {
     process.exitCode = 1;
   }
 }
 
-async function inspectPackageItem(item: ClaimItem, inspectorVersion: string) {
+async function inspectPackageItem(
+  item: ClaimItem,
+  inspectorVersion: string,
+  preparedTarget: { exactVersion: string; target: Record<string, unknown> },
+  inspectorModule: PluginInspectorModule,
+) {
   const workRoot = path.join(
     tmpdir(),
     `clawhub-plugin-inspector-bulk-scan-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -183,22 +293,37 @@ async function inspectPackageItem(item: ClaimItem, inspectorVersion: string) {
         ? path.join(pluginRoot, "package")
         : pluginRoot;
     await writeSyntheticConfigIfNeeded(scanRoot, item.packageName);
-    const scan = spawnSync(
-      "bun",
-      [clawhubCliEntry, "package", "validate", scanRoot, "--out", reportDir, "--json"],
-      { cwd: repoRoot, encoding: "utf8" },
-    );
-    await writeFile(path.join(reportDir, "stdout.txt"), scan.stdout ?? "");
-    await writeFile(path.join(reportDir, "stderr.txt"), scan.stderr ?? "");
-    const reportPath = path.join(reportDir, "plugin-inspector-report.json");
-    if (!existsSync(reportPath)) {
-      throw new Error(
-        scan.stderr || scan.stdout || `clawhub package validate exited ${scan.status}`,
-      );
+    if (!inspectorModule.pluginRoot || !inspectorModule.ci || !inspectorModule.reports) {
+      throw new Error("The bundled Plugin Inspector bulk APIs are unavailable");
     }
-    const report = JSON.parse(await readFile(reportPath, "utf8"));
+    const scan = await inspectorModule.pluginRoot.runCheck({
+      allowExecution: false,
+      authorFacing: true,
+      capture: false,
+      configPath: resolveInspectorConfigPath(scanRoot),
+      mockSdk: true,
+      outDir: reportDir,
+      pluginRoot: scanRoot,
+      targetOpenClaw: preparedTarget.target,
+    });
+    const report = scan.report;
+    await writeFile(scan.paths.jsonPath, `${JSON.stringify(report, null, 2)}\n`);
+    await inspectorModule.ci.writeOutputs(report, {
+      cwd: path.dirname(scan.paths.jsonPath),
+      outDir: ".",
+    });
+    await writeFile(
+      path.join(reportDir, "stdout.txt"),
+      `${JSON.stringify(inspectorModule.reports.sanitizeArtifact(report), null, 2)}\n`,
+    );
+    await writeFile(path.join(reportDir, "stderr.txt"), "");
     const findings = normalizeFindings(report);
     const targetOpenClawVersion = extractTargetOpenClawVersion(report.targetOpenClaw);
+    if (targetOpenClawVersion !== preparedTarget.exactVersion) {
+      throw new Error(
+        `Plugin Inspector reported OpenClaw ${targetOpenClawVersion ?? "unknown"}; expected ${preparedTarget.exactVersion}`,
+      );
+    }
     if (!dryRun) {
       const uploadResult = await postJson<UploadResult>(
         `${siteUrl}/api/v1/package-inspector/results`,
@@ -207,6 +332,7 @@ async function inspectPackageItem(item: ClaimItem, inspectorVersion: string) {
           releaseId: item.releaseId,
           inspectorVersion,
           targetOpenClawVersion,
+          notifyOwners,
           findings,
         },
       );
@@ -221,7 +347,7 @@ async function inspectPackageItem(item: ClaimItem, inspectorVersion: string) {
     return {
       failed: false,
       scanned: true,
-      impactEntry: dryRun ? toImpactEntry(item, findings, targetOpenClawVersion) : undefined,
+      impactEntry: toImpactEntry(item, findings, targetOpenClawVersion),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -246,12 +372,39 @@ if (import.meta.main) {
   await runPackageInspectorNightlyScan();
 }
 
-async function claimBatch(cursor: string | null) {
+async function claimBatch(
+  cursor: string | null,
+  inspectorVersion: string,
+  targetOpenClawVersion: string,
+  runId: string,
+) {
   const url = new URL(`${siteUrl}/api/v1/package-inspector/claim`);
   url.searchParams.set("batchSize", batchSize);
   url.searchParams.set("dryRun", dryRun ? "true" : "false");
-  if (dryRun && cursor) url.searchParams.set("cursor", cursor);
+  url.searchParams.set("inspectorVersion", inspectorVersion);
+  url.searchParams.set("targetOpenClawVersion", targetOpenClawVersion);
+  url.searchParams.set("notifyOwners", notifyOwners ? "true" : "false");
+  if (!dryRun) url.searchParams.set("runId", runId);
+  if (cursor) url.searchParams.set("cursor", cursor);
   return await postJson<ClaimResponse>(url.toString(), {});
+}
+
+export async function acknowledgeBatch(cursor: string | null, runId: string) {
+  const url = new URL(`${siteUrl}/api/v1/package-inspector/acknowledge`);
+  url.searchParams.set("runId", runId);
+  if (cursor) url.searchParams.set("cursor", cursor);
+  return await postJson<{ ok: true; cursor: string | null; completed: boolean }>(
+    url.toString(),
+    {},
+  );
+}
+
+function resolveInspectorConfigPath(root: string) {
+  for (const filename of ["plugin-inspector.config.json", ".plugin-inspector.json"]) {
+    const candidate = path.join(root, filename);
+    if (existsSync(candidate)) return candidate;
+  }
+  return undefined;
 }
 
 async function resolveTargetPackageItems(packageNames: string[]): Promise<ClaimItem[]> {
@@ -433,13 +586,15 @@ function isErrorFinding(finding: Pick<NormalizedFinding, "level" | "severity">) 
   return finding.level === "breakage" || finding.level === "error" || finding.severity === "P0";
 }
 
-function summarizeImpact(args: {
+export function summarizeImpact(args: {
   claimed: number;
   scanned: number;
+  skippedUnchanged?: number;
   batches: number;
   truncated: boolean;
   nextCursor: string | null;
   inspectorVersion: string;
+  targetOpenClawVersion?: string;
   entries: ImpactEntry[];
 }) {
   const impactedOwners = new Set<string>();
@@ -475,12 +630,14 @@ function summarizeImpact(args: {
     generatedAt: new Date().toISOString(),
     siteUrl,
     inspectorVersion: args.inspectorVersion,
+    targetOpenClawVersion: args.targetOpenClawVersion,
     batchSize: Number.parseInt(batchSize, 10) || batchSize,
     batches: args.batches,
     truncated: args.truncated,
     nextCursor: args.nextCursor,
     claimedReleases: args.claimed,
     scannedReleases: args.scanned,
+    skippedUnchangedReleases: args.skippedUnchanged ?? 0,
     pluginsWithFindings: args.entries.filter((entry) => entry.findingCount > 0).length,
     pluginsWithErrors,
     pluginsWithWarnings,
@@ -496,14 +653,16 @@ function getInspectorVersion() {
   return process.env.PLUGIN_INSPECTOR_VERSION ?? resolveBundledPluginInspectorVersion();
 }
 
-function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>) {
+export function renderImpactMarkdown(summary: ReturnType<typeof summarizeImpact>) {
   const lines = [
-    "# Plugin Inspector Bulk Scan Dry Run",
+    "# Plugin Inspector Bulk Scan Run",
     "",
     `- Generated: ${summary.generatedAt}`,
     `- Site: ${summary.siteUrl}`,
     `- Inspector: ${summary.inspectorVersion}`,
+    `- Target OpenClaw: ${summary.targetOpenClawVersion ?? "unknown"}`,
     `- Scanned latest releases: ${summary.scannedReleases}`,
+    `- Skipped unchanged releases: ${summary.skippedUnchangedReleases}`,
     `- Plugins with errors: ${summary.pluginsWithErrors}`,
     `- Plugins with warnings: ${summary.pluginsWithWarnings}`,
     `- Impacted owners: ${summary.impactedOwners}`,

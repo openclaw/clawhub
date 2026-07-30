@@ -8,6 +8,7 @@ import { buildDeterministicPackageZip } from "./lib/skillZip";
 const internalRefs = internal as unknown as {
   packages: {
     claimPackageInspectorScanBatchInternal: unknown;
+    acknowledgePackageInspectorScanBatchInternal: unknown;
     previewPackageInspectorScanBatchInternal: unknown;
     getPackageInspectorArtifactInternal: unknown;
     ingestPackageInspectorScanResultsInternal: unknown;
@@ -62,7 +63,12 @@ export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {
   const url = new URL(request.url);
   const batchSize = Number(url.searchParams.get("batchSize") ?? "25");
   const cursor = url.searchParams.get("cursor");
+  const runId = url.searchParams.get("runId")?.trim() || undefined;
   const dryRun = isTruthyParam(url.searchParams.get("dryRun"));
+  const inspectorVersion = url.searchParams.get("inspectorVersion")?.trim() || undefined;
+  const targetOpenClawVersion = url.searchParams.get("targetOpenClawVersion")?.trim() || undefined;
+  const notifyOwners = isTruthyParam(url.searchParams.get("notifyOwners"));
+  if (!dryRun && !runId) return text("Missing runId", 400);
   type ClaimResult = {
     ok: true;
     leased: boolean;
@@ -79,7 +85,11 @@ export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {
   };
   const claimArgs = {
     batchSize: Number.isFinite(batchSize) ? batchSize : undefined,
-    ...(dryRun ? { cursor } : {}),
+    ...(dryRun || cursor ? { cursor } : {}),
+    ...(runId ? { runId } : {}),
+    ...(inspectorVersion ? { inspectorVersion } : {}),
+    ...(targetOpenClawVersion ? { targetOpenClawVersion } : {}),
+    ...(notifyOwners ? { notifyOwners: true } : {}),
   };
   const result = dryRun
     ? await runQueryRef<ClaimResult>(
@@ -100,6 +110,24 @@ export const packageInspectorClaimHttp = httpAction(async (ctx, request) => {
       downloadUrl: absolutePackageArtifactUrl(request, item.releaseId),
     })),
   });
+});
+
+export const packageInspectorAcknowledgeHttp = httpAction(async (ctx, request) => {
+  const auth = requireWorkerToken(request);
+  if (!auth.ok) return auth.response;
+  const url = new URL(request.url);
+  const runId = url.searchParams.get("runId")?.trim();
+  if (!runId) return text("Missing runId", 400);
+  const cursor = url.searchParams.get("cursor")?.trim() || null;
+  const result = await runMutationRef<{
+    ok: true;
+    cursor: string | null;
+    completed: boolean;
+  }>(ctx, internalRefs.packages.acknowledgePackageInspectorScanBatchInternal, {
+    runId,
+    cursor,
+  });
+  return json(result);
 });
 
 export const packageInspectorArtifactHttp = httpAction(async (ctx, request) => {
@@ -175,13 +203,16 @@ export const packageInspectorResultsHttp = httpAction(async (ctx, request) => {
     releaseId: payload.releaseId,
     inspectorVersion: payload.inspectorVersion,
     targetOpenClawVersion: payload.targetOpenClawVersion,
+    notifyOwners: payload.notifyOwners === true,
     findings: Array.isArray(payload.findings) ? payload.findings : [],
   });
-  if (result.shouldEmailOwner) {
+  if (payload.notifyOwners === true && result.shouldEmailOwner) {
     try {
       await runActionRef(ctx, internalRefs.packages.sendPackageInspectorFindingsEmailInternal, {
         packageId: payload.packageId,
         releaseId: payload.releaseId,
+        inspectorVersion: payload.inspectorVersion,
+        targetOpenClawVersion: payload.targetOpenClawVersion,
       });
     } catch (error) {
       console.error("Package Inspector findings email failed", error);
