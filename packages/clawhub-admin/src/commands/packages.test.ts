@@ -103,6 +103,82 @@ describe("cmdExportPackageValidationReport", () => {
     expect(stderr).not.toHaveBeenCalled();
   });
 
+  it("returns an explicit all-zero report for an empty catalog", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-30T20:00:00.000Z"));
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    httpMocks.apiRequest.mockResolvedValueOnce({ items: [], nextCursor: null, done: true });
+
+    const report = await cmdExportPackageValidationReport(makeGlobalOpts(), { json: true });
+
+    expect(report).toEqual({
+      schemaVersion: 1,
+      generatedAt: "2026-07-30T20:00:00.000Z",
+      source: { registry: "https://clawhub.ai", pages: 1 },
+      totals: {
+        plugins: 0,
+        byScanStatus: { notScanned: 0, skipped: 0, clean: 0, warning: 0, error: 0 },
+        findings: { total: 0, bySeverity: { info: 0, warning: 0, error: 0 } },
+      },
+      plugins: [],
+    });
+    expect(stdout).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts explicit missing, skipped, warning, and mixed-severity scan results", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const makePlugin = (
+      id: string,
+      status: "not-scanned" | "skipped" | "warning",
+      findings: Array<{ severity: "info" | "warning" | "error"; code: string; message: string }>,
+    ) => ({
+      package: { id: `packages:${id}`, name: id, displayName: id },
+      release: { id: `packageReleases:${id}`, version: "1.0.0", createdAt: 100 },
+      references: { packagePage: `/plugins/${id}`, release: `${id}@1.0.0` },
+      scan: {
+        status,
+        scannedAt: status === "not-scanned" ? null : 200,
+        target: status === "not-scanned" ? null : { channel: "beta", version: "beta.1" },
+        inspectorVersion: status === "not-scanned" ? null : "0.5.0",
+        skipReason: status === "skipped" ? "unchanged" : null,
+      },
+      findings,
+    });
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      items: [
+        makePlugin("missing", "not-scanned", []),
+        makePlugin("skipped", "skipped", []),
+        makePlugin("warning", "warning", [
+          { severity: "info", code: "info", message: "Informational" },
+          { severity: "warning", code: "warning", message: "Warning" },
+          { severity: "error", code: "error", message: "Error" },
+        ]),
+      ],
+      nextCursor: null,
+      done: true,
+    });
+
+    const report = await cmdExportPackageValidationReport(makeGlobalOpts(), { json: true });
+
+    expect(report.totals).toEqual({
+      plugins: 3,
+      byScanStatus: { notScanned: 1, skipped: 1, clean: 0, warning: 1, error: 0 },
+      findings: { total: 3, bySeverity: { info: 1, warning: 1, error: 1 } },
+    });
+  });
+
+  it("does not write stdout when authentication fails", async () => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    authTokenMocks.requireAuthToken.mockRejectedValueOnce(new Error("Authentication required"));
+
+    await expect(
+      cmdExportPackageValidationReport(makeGlobalOpts(), { json: true }),
+    ).rejects.toThrow("Authentication required");
+
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
+  });
+
   it("fails closed when the API repeats a pagination cursor", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     httpMocks.apiRequest
@@ -151,6 +227,7 @@ describe("cmdExportPackageValidationReport", () => {
     ).rejects.toThrow("Validation report response omitted its pagination cursor");
     expect(process.stdout.write).not.toHaveBeenCalled();
   });
+
 });
 
 describe("cmdHardDeletePackage", () => {

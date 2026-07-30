@@ -71,6 +71,29 @@ describe("packed admin CLI", () => {
     expect(packagesHelp.status).toBe(0);
     expect(packagesHelp.stdout).toContain("validation-report");
     expect(packagesHelp.stdout).toContain("Export current plugin validation results as JSON");
+    const authFailure = spawnSync(
+      process.execPath,
+      [
+        join(installDir, "package", "bin", "clawhub-admin.js"),
+        "--registry",
+        "https://example.invalid",
+        "packages",
+        "validation-report",
+        "--json",
+      ],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CLAWHUB_CONFIG_PATH: join(tempDir, "missing-auth.json"),
+          FORCE_COLOR: "0",
+        },
+      },
+    );
+    expect(authFailure.status).not.toBe(0);
+    expect(authFailure.stdout).toBe("");
+    expect(authFailure.stderr).toMatch(/not logged in|login/i);
     await expect(
       readFile(join(installDir, "package", "dist", "clawhub-admin", "src", "cli.js")),
     ).resolves.toBeTruthy();
