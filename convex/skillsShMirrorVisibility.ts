@@ -532,7 +532,11 @@ export const finalizeActivationInternal = internalMutation({
 });
 
 export const getAuditPageInternal = internalQuery({
-  args: { paginationOpts: paginationOptsValidator },
+  args: {
+    paginationOpts: paginationOptsValidator,
+    leaderboardRunId: v.optional(v.id("skillsShMirrorRuns")),
+    trendingRunId: v.optional(v.id("skillsShMirrorRuns")),
+  },
   handler: async (ctx, args) => {
     if (args.paginationOpts.numItems < 1 || args.paginationOpts.numItems > MAX_BATCH_SIZE) {
       throw new Error(`audit batch size must be between 1 and ${MAX_BATCH_SIZE}`);
@@ -555,6 +559,7 @@ export const getAuditPageInternal = internalQuery({
       unsafePublished: 0,
       stale: 0,
       tombstoned: 0,
+      activationRunAccepted: 0,
     };
     for (const digest of page.page) {
       const sourceEligible = isSkillsShMirrorSourceEligible(digest);
@@ -574,12 +579,28 @@ export const getAuditPageInternal = internalQuery({
       if (!eligible && (digest.publicVisible || digest.installable)) counts.unsafePublished += 1;
       if (digest.sourceFreshnessStatus === "stale") counts.stale += 1;
       if (digest.tombstonedAt !== undefined) counts.tombstoned += 1;
+      // beginActivation selects the latest completed runs and its lock makes
+      // startRunInternal reject new imports, so this provenance is stable for the audit.
+      if (
+        ((args.leaderboardRunId !== undefined &&
+          digest.lastObservedRunId === args.leaderboardRunId) ||
+          (args.trendingRunId !== undefined && digest.lastObservedRunId === args.trendingRunId)) &&
+        digest.sourceFreshnessStatus === "observed-only"
+      ) {
+        counts.activationRunAccepted += 1;
+      }
     }
     return { ...page, page: counts };
   },
 });
 
-async function audit(ctx: Pick<ActionCtx, "runQuery">) {
+async function audit(
+  ctx: Pick<ActionCtx, "runQuery">,
+  activationRuns?: {
+    leaderboardRunId: Doc<"skillsShMirrorRuns">["_id"];
+    trendingRunId: Doc<"skillsShMirrorRuns">["_id"];
+  },
+) {
   let cursor: string | null = null;
   let batches = 0;
   const counts = {
@@ -596,10 +617,12 @@ async function audit(ctx: Pick<ActionCtx, "runQuery">) {
     unsafePublished: 0,
     stale: 0,
     tombstoned: 0,
+    activationRunAccepted: 0,
   };
   while (true) {
     const result = (await ctx.runQuery(internal.skillsShMirrorVisibility.getAuditPageInternal, {
       paginationOpts: { cursor, numItems: MAX_BATCH_SIZE },
+      ...activationRuns,
     })) as {
       continueCursor: string;
       isDone: boolean;
@@ -657,12 +680,18 @@ export const verifyAndActivateInternal = internalAction({
         throw new Error("skills.sh stored conflict accounting differs from rejected rows");
       }
       await reconcileEligibility(ctx, args.confirm);
-      const corpusAudit = await audit(ctx);
+      const corpusAudit = await audit(ctx, {
+        leaderboardRunId: leaderboardRun._id,
+        trendingRunId: trendingRun._id,
+      });
+      if (corpusAudit.counts.activationRunAccepted !== leaderboard.accepted + trending.hydrated) {
+        throw new Error("skills.sh stored corpus count differs from accepted rows");
+      }
       if (
-        corpusAudit.counts.eligible + corpusAudit.counts.claimExcluded !==
-        leaderboard.accepted + trending.hydrated
+        corpusAudit.counts.sourceEligible !==
+        corpusAudit.counts.eligible + corpusAudit.counts.claimExcluded
       ) {
-        throw new Error("skills.sh eligible corpus count differs from accepted rows");
+        throw new Error("skills.sh eligible corpus partition is inconsistent");
       }
       if (
         corpusAudit.counts.hiddenEligible !== 0 ||

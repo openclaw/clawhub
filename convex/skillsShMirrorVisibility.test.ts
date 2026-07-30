@@ -132,7 +132,7 @@ describe("skills.sh mirror visibility operations", () => {
     expect(catalogControl).toBeNull();
   });
 
-  it("keeps the global lane closed when the eligible corpus does not match accepted rows", async () => {
+  it("keeps the global lane closed when an accepted row has no stored digest", async () => {
     const t = convexTest(schema, modules);
     await t.run(async (ctx) => {
       const leaderboardRunId = await ctx.db.insert(
@@ -175,7 +175,7 @@ describe("skills.sh mirror visibility operations", () => {
         reason: "CLAW-603 must remain hidden",
         confirm: "activate-skills-sh-public-test",
       }),
-    ).rejects.toThrow("eligible corpus count differs from accepted rows");
+    ).rejects.toThrow("stored corpus count differs from accepted rows");
   });
 
   it("verifies the complete imported corpus before opening the global lane", async () => {
@@ -188,20 +188,20 @@ describe("skills.sh mirror visibility operations", () => {
         sourceView: "leaderboard",
         sourceSnapshotHash: "a".repeat(64),
         status: "completed",
-        sourceTotal: 3,
+        sourceTotal: 4,
         sourcePageSize: 500,
         sourceMeasuredAt: new Date(now - 2_000).toISOString(),
         page: 1,
         offset: 0,
         counts: {
-          observed: 3,
-          inserted: 2,
+          observed: 4,
+          inserted: 3,
           updated: 0,
           unchanged: 0,
           rejected: 1,
           quarantined: 1,
           conflicts: 1,
-          detailsInserted: 2,
+          detailsInserted: 3,
           detailsUpdated: 0,
           detailsUnchanged: 0,
           detailsMissing: 0,
@@ -214,7 +214,7 @@ describe("skills.sh mirror visibility operations", () => {
         operations: {
           functionCalls: 1,
           dbReads: 2,
-          dbWrites: 2,
+          dbWrites: 3,
           sourceRequests: 2,
           sourceBytes: 100,
         },
@@ -285,6 +285,24 @@ describe("skills.sh mirror visibility operations", () => {
       await ctx.db.insert(
         "skillsShMirrorDigests",
         digest({
+          externalId: "patrick/skills/ineligible",
+          slug: "ineligible",
+          normalizedSlug: "ineligible",
+          normalizedSlugFirstToken: "ineligible",
+          displayName: "Ineligible",
+          normalizedDisplayName: "ineligible",
+          normalizedDisplayNameFirstToken: "ineligible",
+          searchText: "ineligible",
+          sourceUrl: "https://skills.sh/patrick/skills/ineligible",
+          githubPath: undefined,
+          githubCommit: undefined,
+          sourceContentHash: undefined,
+          lastObservedRunId: leaderboardRunId,
+        }),
+      );
+      await ctx.db.insert(
+        "skillsShMirrorDigests",
+        digest({
           externalId: "patrick/skills/failed-claim",
           slug: "failed-claim",
           normalizedSlug: "failed-claim",
@@ -347,10 +365,12 @@ describe("skills.sh mirror visibility operations", () => {
       ok: true,
       environment: "test",
       activated: true,
-      leaderboard: { sourceTotal: 3, accepted: 2, rejected: 1 },
+      leaderboard: { sourceTotal: 4, accepted: 3, rejected: 1 },
       trending: { sourceTotal: 1, joined: 1, missing: 0 },
       corpus: {
-        total: 2,
+        total: 3,
+        sourceEligible: 2,
+        activationRunAccepted: 3,
         eligible: 1,
         claimExcluded: 1,
         eligiblePublished: 1,
