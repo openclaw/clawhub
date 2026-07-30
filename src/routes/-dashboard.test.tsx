@@ -49,6 +49,8 @@ const mocks = vi.hoisted(() => ({
   rerenderDashboard: null as null | (() => void),
 }));
 
+const writeTextMock = vi.fn();
+
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => mocks.useQuery(...args),
   usePaginatedQuery: (...args: unknown[]) => mocks.usePaginatedQuery(...args),
@@ -366,6 +368,12 @@ describe("Dashboard rows", () => {
     mocks.dashboardSearch = {};
     mocks.rerenderDashboard = null;
     window.localStorage.clear();
+    writeTextMock.mockReset();
+    writeTextMock.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: writeTextMock },
+    });
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "LoadingFirstPage",
@@ -740,6 +748,68 @@ describe("Dashboard rows", () => {
     expect(
       screen.getByText("clawhub package validate <path-to-plugin> --openclaw-version 0.9.0"),
     ).toBeTruthy();
+  });
+
+  it("copies one exact validation command per recorded OpenClaw target", async () => {
+    const packages = [
+      createPackage({
+        inspectorWarningCount: 2,
+        scanStatus: "clean",
+        latestRelease: {
+          version: "1.0.0",
+          createdAt: 1,
+          vtStatus: "clean",
+          llmStatus: "clean",
+          staticScanStatus: "clean",
+        },
+      }),
+    ];
+    arrangeDashboard({ packages });
+    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query as never);
+      if (name === "publishers:listMine") return publishers;
+      if (name === "packages:list") return packages;
+      if (name === "dashboard:getDownloadMetrics") return downloadMetrics;
+      if (name === "packages:listPackageInspectorWarningsForManager") {
+        return [
+          {
+            _id: "packageInspectorWarnings:1",
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            message: "legacy hook is deprecated",
+            targetOpenClawVersion: "0.9.0",
+          },
+          {
+            _id: "packageInspectorWarnings:2",
+            findingKind: "error",
+            code: "missing-expected-seam",
+            message: "registerTool is no longer available",
+            targetOpenClawVersion: "0.10.0",
+          },
+        ];
+      }
+      return [];
+    });
+
+    renderDashboard();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Local Flagged Runtime Plugin\. 1 issue/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy fix instructions" }));
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+        ),
+      );
+      expect(writeTextMock).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
+        ),
+      );
+    });
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {

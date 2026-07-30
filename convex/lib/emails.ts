@@ -535,10 +535,16 @@ export async function buildSecretBlockedPublishEmail(args: SecretBlockedPublishE
 }
 
 export async function buildPackageInspectorFindingsEmail(args: PackageInspectorFindingsEmailArgs) {
-  const targetOpenClawVersion = args.findings.find(
-    (finding) => finding.targetOpenClawVersion,
-  )?.targetOpenClawVersion;
-  const validateCommand = buildPluginValidateCommand(targetOpenClawVersion);
+  const targetOpenClawVersions = Array.from(
+    new Set(
+      args.findings
+        .map((finding) => finding.targetOpenClawVersion?.trim())
+        .filter((target): target is string => Boolean(target)),
+    ),
+  );
+  const validateCommands = targetOpenClawVersions.length
+    ? targetOpenClawVersions.map(buildPluginValidateCommand)
+    : [buildPluginValidateCommand()];
   const subject = `Plugin Inspector findings for ${args.packageName}@${args.version}`;
   const findingCount = args.findings.length;
   const intro = `We found ${findingCount} ${findingCount === 1 ? "issue" : "issues"} with version ${args.version} of ${args.packageName}.`;
@@ -550,7 +556,9 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
   const findingLines = formatPackageInspectorFindingsText(args.findings);
   const metadataLines = [
     `Plugin: ${args.packageName}@${args.version}`,
-    targetOpenClawVersion ? `OpenClaw Version: ${targetOpenClawVersion}` : null,
+    targetOpenClawVersions.length
+      ? `OpenClaw Version${targetOpenClawVersions.length === 1 ? "" : "s"}: ${targetOpenClawVersions.join(", ")}`
+      : null,
   ].filter((line): line is string => line !== null);
   const lines = [
     greeting(args.handle),
@@ -566,14 +574,16 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
     ...findingLines,
     "",
     "Validate a local fix:",
-    validateCommand,
+    ...validateCommands,
   ];
 
   const { renderPluginInspectorFindingsEmail } = await import("./emailRendering");
   const rendered = await renderPluginInspectorFindingsEmail({
     packageName: args.packageName,
     version: args.version,
-    ...(targetOpenClawVersion ? { openClawVersion: targetOpenClawVersion } : {}),
+    ...(targetOpenClawVersions.length
+      ? { openClawVersion: targetOpenClawVersions.join(", ") }
+      : {}),
     findings: args.findings.map((finding) => ({
       code: finding.code,
       kind: finding.findingKind,
@@ -582,7 +592,7 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
       ...(finding.authorRemediation?.summary ? { fix: finding.authorRemediation.summary } : {}),
       ...(finding.authorRemediation?.docsUrl ? { docsUrl: finding.authorRemediation.docsUrl } : {}),
     })),
-    validateCommand,
+    validateCommands,
     preheader: intro,
   });
 

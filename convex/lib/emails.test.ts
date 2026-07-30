@@ -354,6 +354,41 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("published successfully");
   });
 
+  it("includes one exact validation command per recorded OpenClaw target", async () => {
+    const email = await buildPackageInspectorFindingsEmail({
+      packageName: "demo-plugin",
+      version: "1.0.0",
+      findings: [
+        {
+          findingKind: "warning",
+          code: "legacy-before-agent-start",
+          message: "legacy hook is deprecated",
+          targetOpenClawVersion: "0.9.0",
+        },
+        {
+          findingKind: "error",
+          code: "missing-expected-seam",
+          message: "registerTool is no longer available",
+          targetOpenClawVersion: "0.10.0",
+        },
+      ],
+    });
+
+    expect(email.text).toContain("OpenClaw Versions: 0.9.0, 0.10.0");
+    expect(email.text).toContain(
+      "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+    );
+    expect(email.text).toContain(
+      "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
+    );
+    expect(email.html).toContain(
+      "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.9.0",
+    );
+    expect(email.html).toContain(
+      "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.10.0",
+    );
+  });
+
   it("builds plugin inspector error copy without publish-time wording", async () => {
     const email = await buildPackageInspectorFindingsEmail({
       packageName: "demo-plugin",

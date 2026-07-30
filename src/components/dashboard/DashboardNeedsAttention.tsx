@@ -359,15 +359,22 @@ function PluginValidationSheetReview({
   const errors = displayedFindings.filter((finding) => finding.findingKind === "error");
   const warnings = displayedFindings.filter((finding) => finding.findingKind !== "error");
   const version = displayedFindings.find((finding) => finding.version)?.version ?? null;
-  const targetOpenClawVersion = displayedFindings.find(
-    (finding) => finding.targetOpenClawVersion,
-  )?.targetOpenClawVersion;
-  const validateCommand = pluginValidateCommand(targetOpenClawVersion);
+  const targetOpenClawVersions = Array.from(
+    new Set(
+      displayedFindings
+        .map((finding) => finding.targetOpenClawVersion?.trim())
+        .filter((target): target is string => Boolean(target)),
+    ),
+  );
+  const validateCommands = targetOpenClawVersions.length
+    ? targetOpenClawVersions.map(pluginValidateCommand)
+    : [pluginValidateCommand()];
+  const validateCommand = validateCommands[0];
   const instructions = buildValidationInstructions(
     group.title,
     version,
     displayedFindings,
-    validateCommand,
+    validateCommands,
   );
 
   return (
@@ -557,15 +564,17 @@ function buildValidationInstructions(
   packageName: string,
   version: string | null,
   findings: PluginInspectorFinding[],
-  validateCommand: string,
+  validateCommands: string[],
 ) {
   const lines = [
     `Fix the following OpenClaw plugin validation findings for package "${packageName}".`,
     ...(version ? [`Validated release: v${version}.`] : []),
     "",
     "Make the minimum code and manifest changes needed to resolve every issue below.",
-    "After editing, run locally:",
-    validateCommand,
+    validateCommands.length === 1
+      ? "After editing, run locally:"
+      : "After editing, run locally against every recorded OpenClaw target:",
+    ...validateCommands,
     "",
   ];
   for (const finding of findings) {
