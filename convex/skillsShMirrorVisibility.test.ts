@@ -178,7 +178,7 @@ describe("skills.sh mirror visibility operations", () => {
     ).rejects.toThrow("stored corpus count differs from accepted rows");
   });
 
-  it("verifies the complete imported corpus before opening the global lane", async () => {
+  it("verifies the imported corpus and only publishable Trending joins before opening", async () => {
     const t = convexTest(schema, modules);
     const now = Date.now();
     const window = getCompletedRolling24HourWindow(now);
@@ -229,13 +229,13 @@ describe("skills.sh mirror visibility operations", () => {
         sourceView: "trending",
         sourceSnapshotHash: "b".repeat(64),
         status: "completed",
-        sourceTotal: 1,
+        sourceTotal: 2,
         sourcePageSize: 500,
         sourceMeasuredAt: new Date(now - 1_000).toISOString(),
         page: 1,
         offset: 0,
         counts: {
-          observed: 1,
+          observed: 2,
           inserted: 0,
           updated: 0,
           unchanged: 0,
@@ -248,9 +248,9 @@ describe("skills.sh mirror visibility operations", () => {
           detailsTruncated: 0,
           tombstoned: 0,
           reactivated: 0,
-          trendingJoined: 1,
+          trendingJoined: 2,
           trendingUpdated: 0,
-          trendingUnchanged: 1,
+          trendingUnchanged: 2,
           trendingMissing: 0,
           trendingStaleRejected: 0,
           trendingHydrationAttempts: 0,
@@ -298,6 +298,10 @@ describe("skills.sh mirror visibility operations", () => {
           githubCommit: undefined,
           sourceContentHash: undefined,
           lastObservedRunId: leaderboardRunId,
+          trendingObservedRunId: trendingRunId,
+          trendingRank: 2,
+          trendingLifetimeInstalls: 8,
+          trendingObservedAt: now - 1_000,
         }),
       );
       await ctx.db.insert(
@@ -366,11 +370,12 @@ describe("skills.sh mirror visibility operations", () => {
       environment: "test",
       activated: true,
       leaderboard: { sourceTotal: 4, accepted: 3, rejected: 1 },
-      trending: { sourceTotal: 1, joined: 1, missing: 0 },
+      trending: { sourceTotal: 2, joined: 2, missing: 0 },
       corpus: {
         total: 3,
         sourceEligible: 2,
         activationRunAccepted: 3,
+        activationRunTrendingEligible: 1,
         eligible: 1,
         claimExcluded: 1,
         eligiblePublished: 1,

@@ -560,6 +560,7 @@ export const getAuditPageInternal = internalQuery({
       stale: 0,
       tombstoned: 0,
       activationRunAccepted: 0,
+      activationRunTrendingEligible: 0,
     };
     for (const digest of page.page) {
       const sourceEligible = isSkillsShMirrorSourceEligible(digest);
@@ -588,6 +589,16 @@ export const getAuditPageInternal = internalQuery({
         digest.sourceFreshnessStatus === "observed-only"
       ) {
         counts.activationRunAccepted += 1;
+      }
+      if (
+        args.trendingRunId !== undefined &&
+        digest.trendingObservedRunId === args.trendingRunId &&
+        publicationFlags.publicVisible &&
+        publicationFlags.installable &&
+        Number.isSafeInteger(digest.trendingRank) &&
+        (digest.trendingRank ?? 0) >= 1
+      ) {
+        counts.activationRunTrendingEligible += 1;
       }
     }
     return { ...page, page: counts };
@@ -618,6 +629,7 @@ async function audit(
     stale: 0,
     tombstoned: 0,
     activationRunAccepted: 0,
+    activationRunTrendingEligible: 0,
   };
   while (true) {
     const result = (await ctx.runQuery(internal.skillsShMirrorVisibility.getAuditPageInternal, {
@@ -710,7 +722,8 @@ export const verifyAndActivateInternal = internalAction({
       };
       if (
         trendingSnapshot.status !== "ready" ||
-        trendingSnapshot.sourceCounts.skillsShTrending !== trending.joined
+        trendingSnapshot.sourceCounts.skillsShTrending !==
+          corpusAudit.counts.activationRunTrendingEligible
       ) {
         throw new Error("skills.sh Trending activation snapshot failed source verification");
       }
