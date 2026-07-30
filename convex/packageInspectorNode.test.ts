@@ -125,4 +125,37 @@ describe("package inspector publish normalization", () => {
       }),
     ]);
   });
+
+  it("keeps static and compatibility findings with the exact resolved target", () => {
+    const result = normalizeInspectorReportForPublish({
+      status: "fail",
+      targetOpenClaw: {
+        requested: "beta",
+        version: "2026.8.0-beta.4",
+      },
+      issues: [
+        {
+          code: "package-entrypoint-missing",
+          level: "breakage",
+          issueClass: "package-integrity",
+          message: "declared OpenClaw entrypoint does not exist",
+        },
+        {
+          code: "missing-openclaw-api",
+          level: "breakage",
+          issueClass: "compatibility-error",
+          message: "registerMemoryRuntime is unavailable in the selected OpenClaw target",
+          authorRemediation: {
+            summary: "Replace this call with an API available in the selected OpenClaw version.",
+          },
+        },
+      ],
+    });
+
+    expect(result.metadata.targetOpenClawVersion).toBe("2026.8.0-beta.4");
+    expect(result.breakages.map((finding) => finding.code)).toEqual([
+      "package-entrypoint-missing",
+      "missing-openclaw-api",
+    ]);
+  });
 });
