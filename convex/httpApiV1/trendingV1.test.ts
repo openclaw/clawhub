@@ -20,19 +20,20 @@ afterEach(() => {
 });
 
 describe("canonical Trending HTTP API", () => {
-  it("stays dark before rate limiting while the skills.sh rollout is disabled", async () => {
+  it("serves native Trending independently while the skills.sh rollout is disabled", async () => {
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
-    const runQuery = vi.fn();
+    const page = { kind: "skills", items: [] };
+    const runQuery = vi.fn(async () => ({ status: "ok", page }));
 
     const response = await trendingV1Handler(
       { runQuery } as never,
       new Request("https://clawhub.ai/api/v1/trending?kind=skills"),
     );
 
-    expect(response.status).toBe(404);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(applyRateLimit).not.toHaveBeenCalled();
-    expect(runQuery).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(page);
+    expect(applyRateLimit).toHaveBeenCalledOnce();
+    expect(runQuery).toHaveBeenCalledOnce();
   });
 
   it("returns the materialized snapshot envelope without reordering cards", async () => {

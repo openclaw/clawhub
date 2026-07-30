@@ -115,6 +115,8 @@ export async function fetchHomeSkillListing(
   signal?: AbortSignal,
 ) {
   if (tab === "trending") {
+    // Trending is one global canonical feed. The homepage clears and hides category
+    // controls before selecting it, so filtering here would silently rerank that feed.
     let capabilities: Awaited<ReturnType<typeof fetchCatalogDiscoveryCapabilities>>;
     try {
       capabilities = await fetchCatalogDiscoveryCapabilities();

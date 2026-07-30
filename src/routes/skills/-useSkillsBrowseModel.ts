@@ -176,6 +176,8 @@ export function useSkillsBrowseModel({
       let consecutiveEmptyPages = 0;
       try {
         if (catalogTab === "trending") {
+          // Trending selection clears category/topic URL state and hides those controls.
+          // Consume the one canonical order instead of constructing filtered variants.
           const capabilities = await fetchCatalogDiscoveryCapabilities();
           if (!capabilities.canonicalTrendingEnabled) {
             if (generation !== fetchGeneration.current) return;

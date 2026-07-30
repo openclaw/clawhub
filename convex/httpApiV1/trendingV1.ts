@@ -1,7 +1,6 @@
 import { internal } from "../_generated/api";
 import type { ActionCtx } from "../_generated/server";
 import { applyRateLimit } from "../lib/httpRateLimit";
-import { getRuntimeRolloutCapabilities } from "../lib/rolloutCapabilities";
 import { json, text } from "./shared";
 
 const internalRefs = internal as unknown as {
@@ -27,10 +26,6 @@ function parseLimit(value: string | null) {
 }
 
 export async function trendingV1Handler(ctx: ActionCtx, request: Request) {
-  if (!getRuntimeRolloutCapabilities().skillsSh.runtimeEnabled) {
-    return text("Not found", 404, { "cache-control": "no-store" });
-  }
-
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
 
