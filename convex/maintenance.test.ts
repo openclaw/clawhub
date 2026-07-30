@@ -83,6 +83,7 @@ const {
   applySkillLineageCycleRepairInternalHandler,
   inspectSkillLineageCycleInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  repairPackageLatestPointerHandler,
   repairLegacyPluginSkillSpectorBatchInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
   repairSkillLineageCyclesInternalHandler,
@@ -2004,5 +2005,178 @@ describe("maintenance empty skill nominations", () => {
         sampleSlugs: ["spam-a", "spam-b"],
       },
     ]);
+  });
+});
+
+function makePackageLatestPointerRepairDb() {
+  const pkg = {
+    _id: "packages:kitchen-sink",
+    name: "@openclaw/kitchen-sink",
+    normalizedName: "@openclaw/kitchen-sink",
+    family: "code-plugin",
+    tags: { latest: "packageReleases:old" },
+    latestReleaseId: "packageReleases:old",
+  };
+  const releases = [
+    {
+      _id: "packageReleases:old",
+      packageId: pkg._id,
+      version: "0.2.11",
+      publicationStatus: "published",
+      changelog: "old",
+      summary: "old summary",
+      icon: "old-icon",
+      distTags: ["latest"],
+      compatibility: {},
+      verification: {},
+      runtimeId: "old-runtime",
+      sourceRepo: "https://github.com/openclaw/kitchen-sink",
+      artifactKind: "npm-pack",
+      clawpackSha256: "old-sha",
+      clawpackSize: 10,
+      clawpackFormat: "tgz",
+      createdAt: 100,
+    },
+    {
+      _id: "packageReleases:new",
+      packageId: pkg._id,
+      version: "0.2.12",
+      publicationStatus: "published",
+      changelog: "new",
+      summary: "new summary",
+      icon: "new-icon",
+      distTags: [],
+      compatibility: {},
+      verification: {},
+      runtimeId: "new-runtime",
+      sourceRepo: "https://github.com/openclaw/kitchen-sink",
+      artifactKind: "npm-pack",
+      clawpackSha256: "new-sha",
+      clawpackSize: 20,
+      clawpackFormat: "tgz",
+      createdAt: 200,
+    },
+    {
+      _id: "packageReleases:pending",
+      packageId: pkg._id,
+      version: "0.2.13",
+      publicationStatus: "pending",
+      changelog: "pending",
+      distTags: [],
+      compatibility: {},
+      verification: {},
+      artifactKind: "npm-pack",
+      clawpackSha256: "pending-sha",
+      createdAt: 300,
+    },
+  ];
+  const patch = vi.fn();
+  const insert = vi.fn();
+  const query = vi.fn((table: string) => ({
+    withIndex: (_index: string, applyIndex: (q: QueryEq) => unknown) => {
+      const q = { eq: vi.fn() } as unknown as QueryEq;
+      vi.mocked(q.eq).mockReturnValue(q);
+      applyIndex(q);
+      if (table === "packages") {
+        return { unique: async () => pkg };
+      }
+      if (table === "packageReleases") {
+        return { collect: async () => releases };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    },
+  }));
+
+  return { db: { query, patch, insert }, pkg, releases, patch, insert };
+}
+
+describe("maintenance package latest pointer repair", () => {
+  it("dry-runs the canonical published release without writing", async () => {
+    const fixture = makePackageLatestPointerRepairDb();
+
+    const result = await repairPackageLatestPointerHandler(fixture as never, {
+      name: "@openclaw/kitchen-sink",
+    });
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      confirmRequired: "repair-package-latest-pointer-2026-07-30",
+      previousLatestVersion: "0.2.11",
+      selectedVersion: "0.2.12",
+      eligibleReleaseCount: 2,
+      releaseTagChanges: [
+        {
+          releaseId: "packageReleases:old",
+          version: "0.2.11",
+          action: "remove",
+        },
+        {
+          releaseId: "packageReleases:new",
+          version: "0.2.12",
+          action: "add",
+        },
+      ],
+    });
+    expect(fixture.patch).not.toHaveBeenCalled();
+    expect(fixture.insert).not.toHaveBeenCalled();
+  });
+
+  it("requires the exact confirmation token before applying", async () => {
+    const fixture = makePackageLatestPointerRepairDb();
+
+    await expect(
+      repairPackageLatestPointerHandler(fixture as never, {
+        name: "@openclaw/kitchen-sink",
+        dryRun: false,
+        confirm: "wrong",
+      }),
+    ).rejects.toThrow('Pass confirm="repair-package-latest-pointer-2026-07-30" to apply.');
+    expect(fixture.patch).not.toHaveBeenCalled();
+  });
+
+  it("repoints the package, normalizes release tags, and audits the repair", async () => {
+    const fixture = makePackageLatestPointerRepairDb();
+
+    const result = await repairPackageLatestPointerHandler(fixture as never, {
+      name: "@openclaw/kitchen-sink",
+      dryRun: false,
+      confirm: "repair-package-latest-pointer-2026-07-30",
+    });
+
+    expect(result.selectedVersion).toBe("0.2.12");
+    expect(fixture.patch).toHaveBeenCalledWith("packageReleases:old", { distTags: [] });
+    expect(fixture.patch).toHaveBeenCalledWith("packageReleases:new", {
+      distTags: ["latest"],
+    });
+    expect(fixture.patch).toHaveBeenCalledWith(
+      fixture.pkg._id,
+      expect.objectContaining({
+        tags: { latest: "packageReleases:new" },
+        latestReleaseId: "packageReleases:new",
+        summary: "new summary",
+        icon: "new-icon",
+        runtimeId: "new-runtime",
+        scanStatus: "not-run",
+        latestVersionSummary: expect.objectContaining({
+          version: "0.2.12",
+          artifact: expect.objectContaining({
+            kind: "npm-pack",
+            sha256: "new-sha",
+          }),
+        }),
+      }),
+    );
+    expect(fixture.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "package.latest_pointer.repair",
+        targetType: "package",
+        targetId: fixture.pkg._id,
+        metadata: expect.objectContaining({
+          previousLatestVersion: "0.2.11",
+          selectedVersion: "0.2.12",
+        }),
+      }),
+    );
   });
 });

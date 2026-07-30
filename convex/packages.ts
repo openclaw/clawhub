@@ -68,7 +68,10 @@ import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
-import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
+import {
+  getPackageReleaseArtifactSha256,
+  summarizePackageReleaseArtifact,
+} from "./lib/packageArtifacts";
 import {
   assertPackageVersion,
   derivePluginManifestSummary,
@@ -1216,7 +1219,7 @@ function toPublicPackage(
       latestRelease === undefined
         ? pkg.latestVersionSummary?.artifact
         : isPublishedPackageRelease(latestRelease)
-          ? packageArtifactSummary(latestRelease)
+          ? summarizePackageReleaseArtifact(latestRelease)
           : undefined,
     clawManifestSummary:
       pkg.family === "claw" && isPublishedPackageRelease(latestRelease)
@@ -1343,41 +1346,6 @@ async function paginatePublishedPackageReleases(
   }
 
   return { page, isDone, continueCursor: isDone ? "" : continueCursor };
-}
-
-function packageArtifactSummary(
-  release: Pick<
-    Doc<"packageReleases">,
-    | "artifactKind"
-    | "clawpackSha256"
-    | "sha256hash"
-    | "clawpackSize"
-    | "clawpackFormat"
-    | "npmIntegrity"
-    | "npmShasum"
-    | "npmTarballName"
-    | "npmUnpackedSize"
-    | "npmFileCount"
-  >,
-): PackageArtifactSummary {
-  if (release.artifactKind === "npm-pack") {
-    return {
-      kind: "npm-pack",
-      sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
-      size: release.clawpackSize,
-      format: release.clawpackFormat ?? "tgz",
-      npmIntegrity: release.npmIntegrity,
-      npmShasum: release.npmShasum,
-      npmTarballName: release.npmTarballName,
-      npmUnpackedSize: release.npmUnpackedSize,
-      npmFileCount: release.npmFileCount,
-    };
-  }
-  return {
-    kind: "legacy-zip",
-    sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
-    format: "zip",
-  };
 }
 
 function digestMatchesFilters(
@@ -5772,7 +5740,7 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
         icon: release.icon,
         compatibility: release.compatibility,
         verification: release.verification,
-        artifact: packageArtifactSummary(release),
+        artifact: summarizePackageReleaseArtifact(release),
       }
     : undefined;
 }
@@ -5873,7 +5841,7 @@ async function restorePackageDoc(
           icon: nextLatest.icon,
           compatibility: nextLatest.compatibility,
           verification: nextLatest.verification,
-          artifact: packageArtifactSummary(nextLatest),
+          artifact: summarizePackageReleaseArtifact(nextLatest),
         }
       : undefined,
     summary: nextLatest?.summary,
@@ -10921,7 +10889,7 @@ export const insertReleaseInternal = internalMutation({
             icon: args.icon,
             compatibility: args.compatibility,
             verification: releaseVerification,
-            artifact: packageArtifactSummary(args),
+            artifact: summarizePackageReleaseArtifact(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,
