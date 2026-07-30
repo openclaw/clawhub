@@ -333,16 +333,244 @@ describe("public skill list deterministic cursors", () => {
       ],
     });
 
-    const result = await listPublicPageV4Handler({} as never, {
-      officialOnly: true,
-      createdAfter: 100,
-      sort: "newest",
-      numItems: 10,
-    });
+    const result = await listPublicPageV4Handler(
+      makeOfficialFirstCategoryCtx([officialNew, communityNew, officialOld]) as never,
+      {
+        officialOnly: true,
+        createdAfter: 100,
+        sort: "newest",
+        numItems: 10,
+      },
+    );
 
     expect(
       (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
     ).toEqual(["official-new"]);
+  });
+
+  it("reads Official pages from the indexed curated projection", async () => {
+    const official = makeSearchDigest({
+      skillId: "skills:official",
+      slug: "official",
+      badges: { official: { byUserId: "users:admin", at: 2 } },
+      createdAt: 2,
+      updatedAt: 2,
+    });
+    const highlighted = makeSearchDigest({
+      skillId: "skills:highlighted",
+      slug: "highlighted",
+      badges: { highlighted: { byUserId: "users:admin", at: 1 } },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const ctx = makeOfficialFirstCategoryCtx([official, highlighted]);
+    getPageMock.mockResolvedValueOnce({
+      page: [official, highlighted],
+      hasMore: false,
+      indexKeys: [
+        [undefined, official.createdAt, official.updatedAt, "curatedSkillSearchDigest:official"],
+        [
+          undefined,
+          highlighted.createdAt,
+          highlighted.updatedAt,
+          "curatedSkillSearchDigest:highlighted",
+        ],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler(ctx as never, {
+      officialOnly: true,
+      sort: "newest",
+      dir: "desc",
+      numItems: 10,
+    });
+
+    expect(getPageMock).toHaveBeenCalledTimes(1);
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      table: "curatedSkillSearchDigest",
+      index: "by_active_created",
+    });
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["official"]);
+  });
+
+  it("continues through highlighted-only curated windows to reach Official rows", async () => {
+    const highlighted = makeSearchDigest({
+      skillId: "skills:highlighted",
+      slug: "highlighted",
+      badges: { highlighted: { byUserId: "users:admin", at: 2 } },
+      createdAt: 2,
+      updatedAt: 2,
+    });
+    const official = makeSearchDigest({
+      skillId: "skills:official",
+      slug: "official",
+      badges: { official: { byUserId: "users:admin", at: 1 } },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const highlightedIndexKey = [
+      undefined,
+      highlighted.createdAt,
+      highlighted.updatedAt,
+      "curatedSkillSearchDigest:highlighted",
+    ];
+    const ctx = makeOfficialFirstCategoryCtx([highlighted, official]);
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [highlighted],
+        hasMore: true,
+        indexKeys: [highlightedIndexKey],
+      })
+      .mockResolvedValueOnce({
+        page: [official],
+        hasMore: false,
+        indexKeys: [
+          [undefined, official.createdAt, official.updatedAt, "curatedSkillSearchDigest:official"],
+        ],
+      });
+
+    const result = await listPublicPageV4Handler(ctx as never, {
+      officialOnly: true,
+      sort: "newest",
+      numItems: 1,
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["official"]);
+    expect(getPageMock).toHaveBeenCalledTimes(2);
+    expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
+      table: "curatedSkillSearchDigest",
+      startIndexKey: highlightedIndexKey,
+      startInclusive: false,
+    });
+  });
+
+  it("tags Official projection cursors before continuing on the curated index", async () => {
+    const official = makeSearchDigest({
+      skillId: "skills:official",
+      slug: "official",
+      badges: { official: { byUserId: "users:admin", at: 2 } },
+      createdAt: 2,
+      updatedAt: 2,
+    });
+    const indexKey = [
+      undefined,
+      official.createdAt,
+      official.updatedAt,
+      "curatedSkillSearchDigest:official",
+    ];
+    const ctx = makeOfficialFirstCategoryCtx([official]);
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [official],
+        hasMore: true,
+        indexKeys: [indexKey],
+      })
+      .mockResolvedValueOnce({ page: [], hasMore: false, indexKeys: [] });
+
+    const first = await listPublicPageV4Handler(ctx as never, {
+      officialOnly: true,
+      sort: "newest",
+      numItems: 1,
+    });
+    const second = await listPublicPageV4Handler(ctx as never, {
+      cursor: first.nextCursor!,
+      officialOnly: true,
+      sort: "newest",
+      numItems: 1,
+    });
+
+    expect(first.nextCursor).toMatch(/^skillofficial:/);
+    expect(second.nextCursor).toBeNull();
+    expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
+      table: "curatedSkillSearchDigest",
+      startIndexKey: indexKey,
+      startInclusive: false,
+    });
+  });
+
+  it("keeps pre-deploy Official cursors on the legacy projection", async () => {
+    const indexKey = [undefined, 2, 2, "skillSearchDigest:official"];
+    const legacyOfficialCursor = cursorForIndex("by_active_created", [
+      { __undef: 1 },
+      2,
+      2,
+      "skillSearchDigest:official",
+    ]);
+
+    await listPublicPageV4Handler({} as never, {
+      cursor: legacyOfficialCursor,
+      officialOnly: true,
+      sort: "newest",
+      numItems: 1,
+    });
+
+    expect(getPageMock).toHaveBeenCalledTimes(1);
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      table: "skillSearchDigest",
+      startIndexKey: indexKey,
+      startInclusive: false,
+    });
+  });
+
+  it("preserves the Official creation cutoff for non-creation sorts", async () => {
+    const recent = makeSearchDigest({
+      skillId: "skills:recent-official",
+      slug: "recent-official",
+      badges: { official: { byUserId: "users:admin", at: 2 } },
+      createdAt: 200,
+      updatedAt: 1,
+    });
+    const old = makeSearchDigest({
+      skillId: "skills:old-official",
+      slug: "old-official",
+      badges: { official: { byUserId: "users:admin", at: 1 } },
+      createdAt: 50,
+      updatedAt: 2,
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [old, recent],
+      hasMore: false,
+      indexKeys: [
+        [undefined, old.updatedAt, old._id],
+        [undefined, recent.updatedAt, recent._id],
+      ],
+    });
+
+    const result = await listPublicPageV4Handler(
+      makeOfficialFirstCategoryCtx([recent, old]) as never,
+      {
+        officialOnly: true,
+        createdAfter: 100,
+        sort: "updated",
+        numItems: 10,
+      },
+    );
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["recent-official"]);
+  });
+
+  it("starts ascending Official creation scans at the requested cutoff", async () => {
+    await listPublicPageV4Handler({} as never, {
+      officialOnly: true,
+      createdAfter: 100,
+      sort: "newest",
+      dir: "asc",
+      numItems: 10,
+    });
+
+    expect(getPageMock).toHaveBeenCalledTimes(1);
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      table: "curatedSkillSearchDigest",
+      index: "by_active_created",
+      startIndexKey: [undefined, 100],
+      startInclusive: true,
+    });
   });
 
   it("ends descending New pagination when the creation window boundary is reached", async () => {

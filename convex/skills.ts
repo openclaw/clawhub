@@ -5252,6 +5252,7 @@ type PublicSkillListPage = {
   nextCursor: string | null;
 };
 const OFFICIAL_FIRST_SKILL_CATEGORY_CURSOR_PREFIX = "skillofficialfirst:";
+const OFFICIAL_SKILL_CURSOR_PREFIX = "skillofficial:";
 
 const SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
   recommended: 3,
@@ -5429,6 +5430,21 @@ function decodeOfficialFirstSkillCategoryCursor(
   }
 }
 
+function encodeOfficialSkillCursor(cursor: string) {
+  return `${OFFICIAL_SKILL_CURSOR_PREFIX}${cursor}`;
+}
+
+function decodeOfficialSkillCursor(raw: string | undefined) {
+  if (!raw) return { projection: "curated" as const, cursor: null };
+  if (!raw.startsWith(OFFICIAL_SKILL_CURSOR_PREFIX)) {
+    // Untagged cursors were emitted by the legacy projection. Keep that session on
+    // the same table; fresh curated sessions tag every continuation cursor.
+    return { projection: "legacy" as const, cursor: raw };
+  }
+  const cursor = raw.slice(OFFICIAL_SKILL_CURSOR_PREFIX.length);
+  return { projection: "curated" as const, cursor: cursor || null };
+}
+
 /**
  * V4 of listPublicPage using convex-helpers `getPage()` for deterministic,
  * cacheable cursors. Two users requesting the same page produce identical
@@ -5476,6 +5492,7 @@ export const listPublicPageV4 = query({
         ? decodeOfficialFirstSkillCategoryCursor(args.cursor)
         : null;
     const publicListCursor = args.cursor;
+    const officialCursor = args.officialOnly ? decodeOfficialSkillCursor(args.cursor) : null;
     const requestedSort = normalizePublicListSort(args.sort);
     const dir = resolvePublicListDir(requestedSort, args.dir);
     const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
@@ -5536,6 +5553,26 @@ export const listPublicPageV4 = query({
         excludeCategoryKeywords,
         nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       });
+    }
+
+    if (args.officialOnly && officialCursor?.projection === "curated") {
+      const result = await listCuratedSkillPage(ctx, {
+        cursor: officialCursor.cursor,
+        sort: requestedSort,
+        dir,
+        numItems,
+        topic,
+        categorySlug,
+        categoryKeywords,
+        excludeCategoryKeywords,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        officialOnly: true,
+        createdAfter: args.createdAfter,
+      });
+      return {
+        ...result,
+        nextCursor: result.nextCursor ? encodeOfficialSkillCursor(result.nextCursor) : null,
+      };
     }
 
     if (topic && !officialFirstCursor) {
@@ -7228,9 +7265,15 @@ type OfficialFirstSkillCategoryPageOptions = {
   nonSuspiciousOnly: boolean;
 };
 
-async function listCuratedSkillCategoryPage(
+type CuratedSkillPageOptions = Omit<OfficialFirstSkillCategoryPageOptions, "categorySlug"> & {
+  categorySlug: ServerSkillCategorySlug | null;
+  officialOnly?: boolean;
+  createdAfter?: number;
+};
+
+async function listCuratedSkillPage(
   ctx: QueryCtx,
-  opts: OfficialFirstSkillCategoryPageOptions & { cursor: string | null },
+  opts: CuratedSkillPageOptions & { cursor: string | null },
 ): Promise<PublicSkillListPage> {
   const indexName = opts.nonSuspiciousOnly
     ? NONSUSPICIOUS_CURATED_SORT_INDEXES[opts.sort]
@@ -7245,7 +7288,11 @@ async function listCuratedSkillCategoryPage(
     allowLegacyArray: false,
   });
   const items: PublicSkillEntry[] = [];
-  let scanCursor = decodedCursor ?? eqPrefix;
+  const ascendingCreatedAfterCursor: IndexKey | null =
+    opts.sort === "newest" && opts.dir === "asc" && typeof opts.createdAfter === "number"
+      ? [...eqPrefix, opts.createdAfter]
+      : null;
+  let scanCursor = decodedCursor ?? ascendingCreatedAfterCursor ?? eqPrefix;
   let scanInclusive = !decodedCursor;
   let hasMore = false;
   let nextCursor: string | null = null;
@@ -7279,6 +7326,15 @@ async function listCuratedSkillCategoryPage(
       const curatedDigest = result.page[index];
       const cursor = result.indexKeys[index];
       if (
+        opts.sort === "newest" &&
+        opts.dir === "desc" &&
+        typeof opts.createdAfter === "number" &&
+        curatedDigest.createdAt < opts.createdAfter
+      ) {
+        return { page: items, hasMore: false, nextCursor: null };
+      }
+      if (
+        (typeof opts.createdAfter !== "number" || curatedDigest.createdAt >= opts.createdAfter) &&
         digestPassesPublicListFilters(curatedDigest, {
           topic: opts.topic,
           categorySlug: opts.categorySlug,
@@ -7286,6 +7342,8 @@ async function listCuratedSkillCategoryPage(
           excludeCategoryKeywords: opts.excludeCategoryKeywords,
         })
       ) {
+        // The compact projection contains official and highlighted rows but omits badge kind,
+        // so hydrate before applying officialOnly and appending a result.
         const digest = await ctx.db
           .query("skillSearchDigest")
           .withIndex("by_skill", (q) => q.eq("skillId", curatedDigest.skillId))
@@ -7293,6 +7351,8 @@ async function listCuratedSkillCategoryPage(
         if (
           digest &&
           isCuratedSkillDigest(digest) &&
+          (!opts.officialOnly || isSkillCatalogOfficial(digest)) &&
+          (typeof opts.createdAfter !== "number" || digest.createdAt >= opts.createdAfter) &&
           (!opts.nonSuspiciousOnly || !digest.isSuspicious) &&
           digestPassesPublicListFilters(digest, {
             topic: opts.topic,
@@ -7306,6 +7366,16 @@ async function listCuratedSkillCategoryPage(
         }
       }
       if (items.length >= opts.numItems) {
+        const nextDigest = result.page[index + 1];
+        if (
+          opts.sort === "newest" &&
+          opts.dir === "desc" &&
+          typeof opts.createdAfter === "number" &&
+          nextDigest &&
+          nextDigest.createdAt < opts.createdAfter
+        ) {
+          return { page: items, hasMore: false, nextCursor: null };
+        }
         hasMore = result.hasMore || index < result.page.length - 1;
         nextCursor = hasMore ? encodeIndexKey(indexName, cursor) : null;
         return { page: items, hasMore, nextCursor };
@@ -7432,7 +7502,7 @@ async function listOfficialFirstSkillCategoryPage(
 ): Promise<PublicSkillListPage> {
   const items: PublicSkillEntry[] = [];
   if (opts.state.phase === "curated") {
-    const curatedPage = await listCuratedSkillCategoryPage(ctx, {
+    const curatedPage = await listCuratedSkillPage(ctx, {
       ...opts,
       cursor: opts.state.cursor,
     });
