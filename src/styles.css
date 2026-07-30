@@ -7045,7 +7045,7 @@ code {
 .skill-hero-taxonomy-row {
   display: inline-flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-5);
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 12px;
@@ -7055,7 +7055,7 @@ code {
 .skill-category-meta-list {
   display: inline-flex;
   align-items: center;
-  gap: 16px;
+  gap: var(--space-5);
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
