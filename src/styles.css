@@ -7045,7 +7045,7 @@ code {
 .skill-hero-taxonomy-row {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 12px;
@@ -7053,10 +7053,9 @@ code {
 }
 
 .skill-category-meta-list {
-  --skill-category-meta-gap: 6px;
   display: inline-flex;
   align-items: center;
-  gap: var(--skill-category-meta-gap);
+  gap: 16px;
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
@@ -7064,7 +7063,7 @@ code {
 .skill-category-meta-link {
   display: inline-flex;
   align-items: center;
-  gap: var(--skill-category-meta-gap);
+  gap: 6px;
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 12px;
@@ -7112,6 +7111,22 @@ code {
 .skill-hero-topic:focus-visible {
   color: var(--ink);
   text-decoration: none;
+}
+
+@media (max-width: 600px) {
+  .skill-hero-taxonomy-row {
+    display: flex;
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+
+  .skill-hero-taxonomy-separator {
+    display: none;
+  }
+
+  .skill-hero-topic-list {
+    flex-basis: 100%;
+  }
 }
 
 .skill-settings-link {

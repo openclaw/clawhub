@@ -2017,7 +2017,8 @@ describe("plugin detail route", () => {
     expect(within(validationRegion).getByText("Target")).toBeTruthy();
     expect(within(validationRegion).getByText("OpenClaw 0.9.0")).toBeTruthy();
     expect(screen.getByText(/Legacy before_agent_start hook is deprecated\./)).toBeTruthy();
-    expect(screen.getByText(/Hey, we found/)).toBeTruthy();
+    expect(screen.getByText(/We found/)).toBeTruthy();
+    expect(screen.queryByText(/Hey,/)).toBeNull();
     expect(screen.getByText("1 issue")).toBeTruthy();
     expect(
       within(screen.getByRole("region", { name: "Validation" })).getByText("demo-plugin"),

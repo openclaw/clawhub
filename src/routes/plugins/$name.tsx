@@ -737,9 +737,8 @@ function ValidationSummaryHint({
 
   return (
     <>
-      Hey, we found <strong>{issueLabel}</strong> with {versionLabel} of{" "}
-      <strong>{packageName}</strong>. Review the findings below, apply the fix, and upload a new
-      version.
+      We found <strong>{issueLabel}</strong> with {versionLabel} of <strong>{packageName}</strong>.
+      Review the findings below, apply the fix, and upload a new version.
     </>
   );
 }
