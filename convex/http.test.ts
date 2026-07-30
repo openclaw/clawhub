@@ -97,22 +97,15 @@ describe("HTTP route rate limit defaults", () => {
     vi.unstubAllEnvs();
   });
 
-  it("keeps the dark canonical Trending route ahead of rate limiting", async () => {
+  it("keeps native Trending rate limited while the skills.sh lane is off", async () => {
     vi.stubEnv("CLAWHUB_ENV", "production");
     vi.stubEnv("CLAWHUB_SKILLS_SH_ROLLOUT_MODE", "off");
-    const route = http.lookup(ApiRoutes.trending, "GET");
-    if (!route) throw new Error("Expected canonical Trending route");
-    const [action] = route;
-    const { ctx, runMutation } = makeDeniedRateLimitCtx();
-
-    const response = await (action as unknown as WrappedHttpAction)._handler(
-      ctx,
-      new Request(`https://example.com${ApiRoutes.trending}`),
-    );
-
-    expect(response.status).toBe(404);
-    expect(response.headers.get("cache-control")).toBe("no-store");
-    expect(runMutation).not.toHaveBeenCalled();
+    await expectRouteUsesIpBucket({
+      path: ApiRoutes.trending,
+      method: "GET",
+      bucket: "readIp",
+      rate: RATE_LIMITS.read.ip,
+    });
   });
 
   it("registers package version downloads behind the download limit", async () => {
