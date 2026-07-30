@@ -589,6 +589,9 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
       kind: finding.findingKind,
       meta: [finding.code, finding.issueClass, finding.severity].filter(Boolean).join(" · "),
       message: finding.message,
+      ...(finding.targetOpenClawVersion
+        ? { targetOpenClawVersion: finding.targetOpenClawVersion }
+        : {}),
       ...(finding.authorRemediation?.summary ? { fix: finding.authorRemediation.summary } : {}),
       ...(finding.authorRemediation?.docsUrl ? { docsUrl: finding.authorRemediation.docsUrl } : {}),
     })),
@@ -683,6 +686,9 @@ function formatPackageInspectorFindingsText(findings: PackageInspectorEmailFindi
       `- **${finding.findingKind.toUpperCase()}** \`${finding.code}\`${formatFindingMetaText(finding)}`,
       `  ${finding.message}`,
     ];
+    if (finding.targetOpenClawVersion) {
+      lines.push(`  OpenClaw target: ${finding.targetOpenClawVersion}`);
+    }
     if (finding.authorRemediation?.summary) {
       lines.push("  Fix:");
       lines.push(`  ${finding.authorRemediation.summary}`);

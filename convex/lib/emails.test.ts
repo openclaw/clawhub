@@ -381,12 +381,20 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain(
       "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
     );
+    expect(email.text).toContain(
+      "`legacy-before-agent-start`\n  legacy hook is deprecated\n  OpenClaw target: 0.9.0",
+    );
+    expect(email.text).toContain(
+      "`missing-expected-seam`\n  registerTool is no longer available\n  OpenClaw target: 0.10.0",
+    );
     expect(email.html).toContain(
       "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.9.0",
     );
     expect(email.html).toContain(
       "clawhub package validate &lt;path-to-plugin&gt; --openclaw-version 0.10.0",
     );
+    expect(email.html).toContain("legacy-before-agent-start · OpenClaw 0.9.0");
+    expect(email.html).toContain("missing-expected-seam · OpenClaw 0.10.0");
   });
 
   it("builds plugin inspector error copy without publish-time wording", async () => {

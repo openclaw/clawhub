@@ -12,6 +12,7 @@ import {
 
 export type PluginInspectorFindingEmailItem = FindingCardProps & {
   code: string;
+  targetOpenClawVersion?: string;
 };
 
 export type PluginInspectorFindingsEmailProps = {
@@ -44,8 +45,16 @@ export default function PluginInspectorFindingsEmail({
         ]}
       />
       <HeadingLabel>Findings</HeadingLabel>
-      {findings.map((finding) => (
-        <FindingCard key={finding.code} {...finding} />
+      {findings.map((finding, index) => (
+        <FindingCard
+          key={`${finding.code}:${finding.targetOpenClawVersion ?? index}`}
+          {...finding}
+          meta={
+            finding.targetOpenClawVersion
+              ? `${finding.meta} · OpenClaw ${finding.targetOpenClawVersion}`
+              : finding.meta
+          }
+        />
       ))}
       <HeadingLabel>Validate a local fix</HeadingLabel>
       {validateCommands.map((command) => (
