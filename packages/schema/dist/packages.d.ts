@@ -389,6 +389,78 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
     nextCursor: string | null;
 }, {}>;
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
+export declare const PackageValidationReportScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"clean" | "error" | "not-scanned" | "skipped" | "warning", {}>;
+export type PackageValidationReportScanStatus = (typeof PackageValidationReportScanStatusSchema)[inferred];
+export declare const PackageValidationReportFindingSeveritySchema: import("arktype/internal/variants/string.ts").StringType<"error" | "info" | "warning", {}>;
+export type PackageValidationReportFindingSeverity = (typeof PackageValidationReportFindingSeveritySchema)[inferred];
+export declare const PackageValidationReportItemSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    package: {
+        id: string;
+        name: string;
+        displayName: string;
+    };
+    release: {
+        id: string;
+        version: string;
+        createdAt: number;
+    };
+    references: {
+        packagePage: string;
+        release: string;
+    };
+    scan: {
+        status: "clean" | "error" | "not-scanned" | "skipped" | "warning";
+        scannedAt: number | null;
+        target: {
+            channel: string;
+            version: string;
+        } | null;
+        inspectorVersion: string | null;
+        skipReason: string | null;
+    };
+    findings: {
+        severity: "error" | "info" | "warning";
+        code: string;
+        message: string;
+    }[];
+}, {}>;
+export type PackageValidationReportItem = (typeof PackageValidationReportItemSchema)[inferred];
+export declare const ApiV1PackageValidationReportPageSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    items: {
+        package: {
+            id: string;
+            name: string;
+            displayName: string;
+        };
+        release: {
+            id: string;
+            version: string;
+            createdAt: number;
+        };
+        references: {
+            packagePage: string;
+            release: string;
+        };
+        scan: {
+            status: "clean" | "error" | "not-scanned" | "skipped" | "warning";
+            scannedAt: number | null;
+            target: {
+                channel: string;
+                version: string;
+            } | null;
+            inspectorVersion: string | null;
+            skipReason: string | null;
+        };
+        findings: {
+            severity: "error" | "info" | "warning";
+            code: string;
+            message: string;
+        }[];
+    }[];
+    nextCursor: string | null;
+    done: boolean;
+}, {}>;
+export type ApiV1PackageValidationReportPage = (typeof ApiV1PackageValidationReportPageSchema)[inferred];
 export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;

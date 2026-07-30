@@ -135,6 +135,7 @@ const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS = 500;
 const MAX_PUBLIC_LIST_FILTER_SCAN_PAGES = 6;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
+const MAX_PLUGIN_VALIDATION_REPORT_PAGE_SIZE = 50;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES = 40;
@@ -3965,6 +3966,105 @@ export const listPluginExportPageInternal = internalQuery({
       cursor: args.cursor,
       numItems,
     });
+  },
+});
+
+function normalizePackageValidationFinding(warning: Doc<"packageInspectorWarnings">) {
+  const severity =
+    warning.findingKind === "error" ||
+    warning.level === "breakage" ||
+    warning.level === "error" ||
+    warning.severity === "P0"
+      ? ("error" as const)
+      : warning.severity?.toLowerCase() === "info"
+        ? ("info" as const)
+        : ("warning" as const);
+  return { severity, code: warning.code, message: warning.message };
+}
+
+export const listPluginValidationReportPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    numItems: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const numItems = Math.max(
+      1,
+      Math.min(
+        args.numItems ?? MAX_PLUGIN_VALIDATION_REPORT_PAGE_SIZE,
+        MAX_PLUGIN_VALIDATION_REPORT_PAGE_SIZE,
+      ),
+    );
+    const result = await listMergedPluginExportPage(ctx, {
+      startDate: 0,
+      endDate: Number.MAX_SAFE_INTEGER,
+      cursor: args.cursor,
+      numItems,
+    });
+    const items = [];
+    for (const digest of result.page) {
+      if (!digest.latestReleaseId) continue;
+      const release = await ctx.db.get(digest.latestReleaseId);
+      if (!release || release.softDeletedAt || release.packageId !== digest.packageId) continue;
+      const scanState = await ctx.db
+        .query("packageInspectorScanStates")
+        .withIndex("by_release_and_completed_at", (q) => q.eq("releaseId", release._id))
+        .order("desc")
+        .first();
+      // CLAW-626 reconciles nightly findings per release and preserves publish/static findings.
+      // Matching the selected tuple also fails closed if stale nightly rows survive a partial rollout.
+      const storedWarnings = await ctx.db
+        .query("packageInspectorWarnings")
+        .withIndex("by_release_created", (q) => q.eq("releaseId", release._id))
+        .order("asc")
+        .collect();
+      const warnings = storedWarnings.filter(
+        (warning) =>
+          warning.scanSource !== "nightly" ||
+          (scanState !== null &&
+            warning.inspectorVersion === scanState.inspectorVersion &&
+            warning.targetOpenClawVersion === scanState.targetOpenClawVersion),
+      );
+      const findings = warnings.map(normalizePackageValidationFinding);
+      const status = findings.some((finding) => finding.severity === "error")
+        ? ("error" as const)
+        : findings.length > 0
+          ? ("warning" as const)
+          : !scanState
+            ? ("not-scanned" as const)
+            : ("clean" as const);
+      items.push({
+        package: {
+          id: String(digest.packageId),
+          name: digest.name,
+          displayName: digest.displayName,
+        },
+        release: {
+          id: String(release._id),
+          version: release.version,
+          createdAt: release.createdAt,
+        },
+        references: {
+          packagePage: `/plugins/${encodeURIComponent(digest.name)}`,
+          release: `${digest.name}@${release.version}`,
+        },
+        scan: {
+          status,
+          scannedAt: scanState?.completedAt ?? null,
+          target: scanState
+            ? { channel: "beta" as const, version: scanState.targetOpenClawVersion }
+            : null,
+          inspectorVersion: scanState?.inspectorVersion ?? null,
+          skipReason: null,
+        },
+        findings,
+      });
+    }
+    return {
+      items,
+      nextCursor: result.nextCursor,
+      done: !result.hasMore,
+    };
   },
 });
 

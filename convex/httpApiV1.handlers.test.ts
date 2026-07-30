@@ -8302,6 +8302,83 @@ describe("httpApiV1 handlers", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
   });
 
+  it("returns a paginated plugin validation report to moderators", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const page = {
+      items: [
+        {
+          package: { id: "packages:demo", name: "demo", displayName: "Demo" },
+          release: { id: "packageReleases:demo", version: "1.0.0", createdAt: 100 },
+          references: { packagePage: "/plugins/demo", release: "demo@1.0.0" },
+          scan: {
+            status: "clean",
+            scannedAt: 200,
+            target: { channel: "beta", version: "2026.7.30-beta.1" },
+            inspectorVersion: "0.3.19",
+            skipReason: null,
+          },
+          findings: [],
+        },
+      ],
+      nextCursor: "page-2",
+      done: false,
+    };
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return page;
+    });
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/validation-report?limit=40&cursor=page-1", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual(page);
+    expect(runQuery).toHaveBeenCalledWith(
+      (internal as unknown as { packages: Record<string, unknown> }).packages
+        .listPluginValidationReportPageInternal,
+      { cursor: "page-1", numItems: 40 },
+    );
+  });
+
+  it("rejects unauthenticated plugin validation report requests", async () => {
+    vi.mocked(requireApiTokenUser).mockRejectedValue(new Error("Unauthorized"));
+    const runQuery = vi.fn();
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/validation-report"),
+    );
+
+    expect(response.status).toBe(401);
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("forbids ordinary users from reading the plugin validation report", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:viewer",
+      user: { _id: "users:viewer", role: "user" },
+    } as never);
+    const runQuery = vi.fn();
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery }),
+      new Request("https://example.com/api/v1/packages/validation-report", {
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    await expect(response.text()).resolves.toBe("Moderator role required.");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
   it("package hard-delete dry-runs through the admin-only API", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

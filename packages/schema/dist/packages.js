@@ -301,6 +301,41 @@ export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
     nextCursor: "string|null",
 });
+export const PackageValidationReportScanStatusSchema = type('"not-scanned"|"skipped"|"clean"|"warning"|"error"');
+export const PackageValidationReportFindingSeveritySchema = type('"info"|"warning"|"error"');
+export const PackageValidationReportItemSchema = type({
+    package: {
+        id: "string",
+        name: "string",
+        displayName: "string",
+    },
+    release: {
+        id: "string",
+        version: "string",
+        createdAt: "number",
+    },
+    references: {
+        packagePage: "string",
+        release: "string",
+    },
+    scan: {
+        status: PackageValidationReportScanStatusSchema,
+        scannedAt: "number|null",
+        target: type({ channel: "string", version: "string" }).or("null"),
+        inspectorVersion: "string|null",
+        skipReason: "string|null",
+    },
+    findings: type({
+        severity: PackageValidationReportFindingSeveritySchema,
+        code: "string",
+        message: "string",
+    }).array(),
+});
+export const ApiV1PackageValidationReportPageSchema = type({
+    items: PackageValidationReportItemSchema.array(),
+    nextCursor: "string|null",
+    done: "boolean",
+});
 export const ApiV1PackageSearchResponseSchema = type({
     results: type({
         score: "number",

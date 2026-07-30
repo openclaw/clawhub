@@ -1993,11 +1993,13 @@ const packageInspectorScanStates = defineTable({
   targetOpenClawVersion: v.string(),
   completedAt: v.number(),
   notificationCompletedAt: v.optional(v.number()),
-}).index("by_release_and_inspector_version_and_target_openclaw_version", [
-  "releaseId",
-  "inspectorVersion",
-  "targetOpenClawVersion",
-]);
+})
+  .index("by_release_and_inspector_version_and_target_openclaw_version", [
+    "releaseId",
+    "inspectorVersion",
+    "targetOpenClawVersion",
+  ])
+  .index("by_release_and_completed_at", ["releaseId", "completedAt"]);
 
 const securityScanJobs = defineTable({
   targetKind: securityScanTargetKindValidator,

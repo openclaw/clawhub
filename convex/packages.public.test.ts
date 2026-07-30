@@ -50,6 +50,7 @@ import {
   findPackagePublishResultInternal,
   listPackageModerationQueueInternal,
   listPluginExportPageInternal,
+  listPluginValidationReportPageInternal,
   reservePackageNameInternal,
   listPublicPage,
   listPublicNewPluginsPage,
@@ -215,6 +216,20 @@ const listPluginExportPageInternalHandler = (
       page: Array<{ name: string; family: "code-plugin" | "bundle-plugin" }>;
       nextCursor: string | null;
       hasMore: boolean;
+    }
+  >
+)._handler;
+const listPluginValidationReportPageInternalHandler = (
+  listPluginValidationReportPageInternal as unknown as WrappedHandler<
+    { cursor?: string; numItems?: number },
+    {
+      items: Array<{
+        package: { id: string; name: string; displayName: string };
+        scan: { status: string; scannedAt: number | null };
+        findings: Array<{ severity: string; code: string; message: string }>;
+      }>;
+      nextCursor: string | null;
+      done: boolean;
     }
   >
 )._handler;
@@ -2051,6 +2066,95 @@ function makePluginExportCtx(
   };
 }
 
+function makePluginValidationReportCtx(
+  digests: Array<Record<string, unknown>>,
+  options: {
+    statesByRelease?: Record<string, Array<Record<string, unknown>>>;
+    findingsByRelease?: Record<string, Array<Record<string, unknown>>>;
+  } = {},
+) {
+  const base = makePluginExportCtx(digests);
+  const releasesById = new Map(
+    digests.map((digest) => {
+      const name = String(digest.name);
+      const packageId = String(digest.packageId);
+      return [
+        `packageReleases:${name}-1`,
+        {
+          _id: `packageReleases:${name}-1`,
+          packageId,
+          version: typeof digest.latestVersion === "string" ? digest.latestVersion : "1.0.0",
+          createdAt: Number(digest.createdAt),
+        },
+      ];
+    }),
+  );
+  return {
+    db: {
+      get: vi.fn(async (id: string) => (await base.db.get(id)) ?? releasesById.get(id) ?? null),
+      query: vi.fn((table: string) => {
+        if (table === "packageSearchDigest" || table === "packages") {
+          return base.db.query(table);
+        }
+        if (table === "packageInspectorScanStates") {
+          let releaseId = "";
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const queryBuilder = {
+                  eq: (field: string, value: unknown) => {
+                    if (field === "releaseId") releaseId = String(value);
+                    return queryBuilder;
+                  },
+                };
+                builder(queryBuilder);
+                return {
+                  order: vi.fn(() => ({
+                    first: vi.fn(
+                      async () =>
+                        [...(options.statesByRelease?.[releaseId] ?? [])].sort(
+                          (a, b) => Number(b.completedAt) - Number(a.completedAt),
+                        )[0] ?? null,
+                    ),
+                  })),
+                };
+              },
+            ),
+          };
+        }
+        if (table === "packageInspectorWarnings") {
+          let releaseId = "";
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                const queryBuilder = {
+                  eq: (field: string, value: unknown) => {
+                    if (field === "releaseId") releaseId = String(value);
+                    return queryBuilder;
+                  },
+                };
+                builder(queryBuilder);
+                return {
+                  order: vi.fn(() => ({
+                    collect: vi.fn(async () => options.findingsByRelease?.[releaseId] ?? []),
+                  })),
+                };
+              },
+            ),
+          };
+        }
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    },
+  };
+}
+
 function makeInsertReleaseCtx(
   existing: Record<string, unknown> | null,
   priorReleases: Array<Record<string, unknown>> = [],
@@ -3045,6 +3149,121 @@ describe("packages public queries", () => {
     expect(third.page.map((entry) => entry.name)).toEqual(["older-bundle-b"]);
     expect(third.hasMore).toBe(false);
     expect(third.nextCursor).toBeNull();
+  });
+
+  it("exports the latest scan state and normalized current findings", async () => {
+    const digest = makePluginExportDigest("demo", "code-plugin", 300);
+    const releaseId = "packageReleases:demo-1";
+    const ctx = makePluginValidationReportCtx([digest], {
+      statesByRelease: {
+        [releaseId]: [
+          {
+            releaseId,
+            inspectorVersion: "0.3.18",
+            targetOpenClawVersion: "2026.7.29-beta.1",
+            completedAt: 100,
+          },
+          {
+            releaseId,
+            inspectorVersion: "0.3.19",
+            targetOpenClawVersion: "2026.7.30-beta.1",
+            completedAt: 200,
+          },
+        ],
+      },
+      findingsByRelease: {
+        [releaseId]: [
+          {
+            scanSource: "nightly",
+            inspectorVersion: "0.3.18",
+            targetOpenClawVersion: "2026.7.29-beta.1",
+            findingKind: "error",
+            code: "stale-missing-api",
+            message: "Old target API is unavailable",
+          },
+          {
+            scanSource: "publish",
+            findingKind: "warning",
+            code: "deprecated-api",
+            message: "API is deprecated",
+          },
+          {
+            scanSource: "nightly",
+            inspectorVersion: "0.3.19",
+            targetOpenClawVersion: "2026.7.30-beta.1",
+            findingKind: "error",
+            code: "missing-api",
+            message: "Required API is unavailable",
+          },
+        ],
+      },
+    });
+
+    const result = await listPluginValidationReportPageInternalHandler(ctx, { numItems: 20 });
+
+    expect(result).toEqual({
+      items: [
+        expect.objectContaining({
+          package: { id: "packages:demo", name: "demo", displayName: "demo" },
+          scan: expect.objectContaining({
+            status: "error",
+            scannedAt: 200,
+            target: { channel: "beta", version: "2026.7.30-beta.1" },
+            inspectorVersion: "0.3.19",
+          }),
+          findings: [
+            { severity: "warning", code: "deprecated-api", message: "API is deprecated" },
+            { severity: "error", code: "missing-api", message: "Required API is unavailable" },
+          ],
+        }),
+      ],
+      nextCursor: null,
+      done: true,
+    });
+  });
+
+  it("represents missing scans and preserves plugin pagination continuity", async () => {
+    const ctx = makePluginValidationReportCtx(
+      [
+        makePluginExportDigest("newer-code", "code-plugin", 300),
+        makePluginExportDigest("older-bundle", "bundle-plugin", 200),
+      ],
+      {
+        findingsByRelease: {
+          "packageReleases:newer-code-1": [
+            {
+              scanSource: "publish",
+              findingKind: "error",
+              code: "publish-error",
+              message: "Publish-time validation failed",
+            },
+          ],
+        },
+      },
+    );
+
+    const first = await listPluginValidationReportPageInternalHandler(ctx, { numItems: 1 });
+    const second = await listPluginValidationReportPageInternalHandler(ctx, {
+      cursor: first.nextCursor ?? undefined,
+      numItems: 1,
+    });
+
+    expect(first.items).toHaveLength(1);
+    expect(first.items[0]).toMatchObject({
+      package: { name: "newer-code" },
+      scan: { status: "error", scannedAt: null },
+      findings: [{ severity: "error", code: "publish-error" }],
+    });
+    expect(first.done).toBe(false);
+    expect(first.nextCursor).toBeTruthy();
+    expect(second.items).toHaveLength(1);
+    expect(second.items[0]).toMatchObject({
+      package: { name: "older-bundle" },
+      scan: { status: "not-scanned", scannedAt: null },
+      findings: [],
+    });
+    expect(second.done).toBe(true);
+    expect(second.nextCursor).toBeNull();
   });
 
   it("keeps buffered cursor items aligned across paginated public pages", async () => {

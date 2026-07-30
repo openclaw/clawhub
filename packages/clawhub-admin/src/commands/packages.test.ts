@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiV1PackageValidationReportPageSchema } from "../../../clawhub/src/schema/index.js";
 import {
   createAuthTokenModuleMocks,
   createHttpModuleMocks,
@@ -84,6 +85,7 @@ describe("cmdExportPackageValidationReport", () => {
     expect(httpMocks.apiRequest.mock.calls[0]?.[1]?.url).toBe(
       "https://clawhub.ai/api/v1/packages/validation-report?limit=100",
     );
+    expect(httpMocks.apiRequest.mock.calls[0]?.[2]).toBe(ApiV1PackageValidationReportPageSchema);
     expect(httpMocks.apiRequest.mock.calls[1]?.[1]?.url).toBe(
       "https://clawhub.ai/api/v1/packages/validation-report?limit=100&cursor=page-2",
     );

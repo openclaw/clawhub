@@ -15,6 +15,7 @@ import {
 import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
+  ApiV1PackageValidationReportPageSchema,
   ApiV1PackageHardDeleteResponseSchema,
   ApiV1PackageModerationQueueResponseSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
@@ -32,6 +33,8 @@ import {
   type PackageReportStatus,
   type PackageReleaseModerationState,
   type PackageTrustedPublisher,
+  type ApiV1PackageValidationReportPage,
+  type PackageValidationReportItem,
 } from "../../../clawhub/src/schema/index.js";
 
 type PackageTrustedPublisherSetOptions = {
@@ -134,33 +137,6 @@ type PackageValidationReportOptions = {
   json?: boolean;
 };
 
-type PackageValidationReportScanStatus = "not-scanned" | "skipped" | "clean" | "warning" | "error";
-type PackageValidationReportFindingSeverity = "info" | "warning" | "error";
-
-type PackageValidationReportItem = {
-  package: { id: string; name: string; displayName: string };
-  release: { id: string; version: string; createdAt: number };
-  references: { packagePage: string; release: string };
-  scan: {
-    status: PackageValidationReportScanStatus;
-    scannedAt: number | null;
-    target: { channel: string; version: string } | null;
-    inspectorVersion: string | null;
-    skipReason: string | null;
-  };
-  findings: Array<{
-    severity: PackageValidationReportFindingSeverity;
-    code: string;
-    message: string;
-  }>;
-};
-
-type PackageValidationReportPage = {
-  items: PackageValidationReportItem[];
-  nextCursor: string | null;
-  done: boolean;
-};
-
 export async function cmdExportPackageValidationReport(
   opts: GlobalOpts,
   options: PackageValidationReportOptions = {},
@@ -177,11 +153,15 @@ export async function cmdExportPackageValidationReport(
     const url = registryUrl(`${ApiRoutes.packages}/validation-report`, registry);
     url.searchParams.set("limit", "100");
     if (cursor) url.searchParams.set("cursor", cursor);
-    const page = await apiRequest<PackageValidationReportPage>(registry, {
-      method: "GET",
-      url: url.toString(),
-      token,
-    });
+    const page = await apiRequest<ApiV1PackageValidationReportPage>(
+      registry,
+      {
+        method: "GET",
+        url: url.toString(),
+        token,
+      },
+      ApiV1PackageValidationReportPageSchema,
+    );
     pages += 1;
     for (const plugin of page.items) {
       if (seenPackageIds.has(plugin.package.id)) {

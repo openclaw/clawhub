@@ -404,6 +404,54 @@ export const ApiV1PackageListResponseSchema = type({
 });
 export type ApiV1PackageListResponse = (typeof ApiV1PackageListResponseSchema)[inferred];
 
+export const PackageValidationReportScanStatusSchema = type(
+  '"not-scanned"|"skipped"|"clean"|"warning"|"error"',
+);
+export type PackageValidationReportScanStatus =
+  (typeof PackageValidationReportScanStatusSchema)[inferred];
+
+export const PackageValidationReportFindingSeveritySchema = type('"info"|"warning"|"error"');
+export type PackageValidationReportFindingSeverity =
+  (typeof PackageValidationReportFindingSeveritySchema)[inferred];
+
+export const PackageValidationReportItemSchema = type({
+  package: {
+    id: "string",
+    name: "string",
+    displayName: "string",
+  },
+  release: {
+    id: "string",
+    version: "string",
+    createdAt: "number",
+  },
+  references: {
+    packagePage: "string",
+    release: "string",
+  },
+  scan: {
+    status: PackageValidationReportScanStatusSchema,
+    scannedAt: "number|null",
+    target: type({ channel: "string", version: "string" }).or("null"),
+    inspectorVersion: "string|null",
+    skipReason: "string|null",
+  },
+  findings: type({
+    severity: PackageValidationReportFindingSeveritySchema,
+    code: "string",
+    message: "string",
+  }).array(),
+});
+export type PackageValidationReportItem = (typeof PackageValidationReportItemSchema)[inferred];
+
+export const ApiV1PackageValidationReportPageSchema = type({
+  items: PackageValidationReportItemSchema.array(),
+  nextCursor: "string|null",
+  done: "boolean",
+});
+export type ApiV1PackageValidationReportPage =
+  (typeof ApiV1PackageValidationReportPageSchema)[inferred];
+
 export const ApiV1PackageSearchResponseSchema = type({
   results: type({
     score: "number",

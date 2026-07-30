@@ -2,6 +2,7 @@ import {
   ApiRoutes,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
+  ApiV1PackageValidationReportPageSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackageSecurityResponseSchema,
   PackageHardDeleteRequestSchema,
@@ -84,6 +85,7 @@ import {
   resolveTagsBatch,
   requireApiTokenUserOrResponse,
   requireAdminOrResponse,
+  requireModeratorOrResponse,
   requirePackagePublishAuthOrResponse,
   safeStoredFilePreviewResponse,
   safeStoredFileResponse,
@@ -113,6 +115,7 @@ const internalRefs = internal as unknown as {
     getByNameForViewerInternal: unknown;
     hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
+    listPluginValidationReportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
@@ -3631,6 +3634,36 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   if (segments.length === 0) return text("Not found", 404);
   if (segments[0] === "search" && segments.length === 1) {
     return await searchPackages(ctx, request, { includeSkills: true });
+  }
+
+  if (segments[0] === "validation-report" && segments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "read");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const moderator = requireModeratorOrResponse(auth.user, rate.headers);
+    if (!moderator.ok) return moderator.response;
+
+    const url = new URL(request.url);
+    const limit = Math.max(
+      1,
+      Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 100, 100),
+    );
+    const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+    const result = await runQueryRef(
+      ctx,
+      internalRefs.packages.listPluginValidationReportPageInternal,
+      { cursor, numItems: limit },
+    );
+    return json(
+      parseArk(
+        ApiV1PackageValidationReportPageSchema,
+        result,
+        "Package validation report response",
+      ),
+      200,
+      rate.headers,
+    );
   }
 
   if (segments[0] === "moderation" && segments[1] === "queue" && segments.length === 2) {

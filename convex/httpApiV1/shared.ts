@@ -7,7 +7,7 @@ import {
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-import { assertAdmin } from "../lib/access";
+import { assertAdmin, assertModerator } from "../lib/access";
 import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
@@ -258,6 +258,15 @@ export function requireAdminOrResponse(user: Doc<"users">, headers: HeadersInit)
     return { ok: true as const };
   } catch {
     return { ok: false as const, response: text("Admin role required.", 403, headers) };
+  }
+}
+
+export function requireModeratorOrResponse(user: Doc<"users">, headers: HeadersInit) {
+  try {
+    assertModerator(user);
+    return { ok: true as const };
+  } catch {
+    return { ok: false as const, response: text("Moderator role required.", 403, headers) };
   }
 }
 
