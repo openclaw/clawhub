@@ -1,5 +1,4 @@
 import { ConvexError, v } from "convex/values";
-import semver from "semver";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
@@ -11,11 +10,7 @@ import {
   syncPackageSearchDigestForPackageId,
 } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
-import { sha256Hex } from "./lib/clawpack";
-import { summarizePackageReleaseArtifact } from "./lib/packageArtifacts";
-import { normalizePackageName } from "./lib/packageRegistry";
 import { extractPackageDigestFields } from "./lib/packageSearchDigest";
-import { resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
@@ -51,7 +46,6 @@ const PUBLISHER_ABUSE_SIGNAL_SMOKE_OWNER_KEY =
 const PUBLISHER_ABUSE_SIGNAL_SMOKE_CONFIRM =
   "create-publisher-abuse-hermit-digest-smoke-2026-07-03" as const;
 const SKILL_LINEAGE_CYCLE_REPAIR_CONFIRM = "repair-skill-lineage-cycles-2026-07-23" as const;
-const PACKAGE_LATEST_POINTER_REPAIR_CONFIRM = "repair-package-latest-pointer-2026-07-30" as const;
 const legacyPluginSkillSpectorRepairFamilyValidator = v.union(
   v.literal("code-plugin"),
   v.literal("bundle-plugin"),
@@ -3277,203 +3271,6 @@ export const repairLegacyPublisherOwnershipForUser = internalMutation({
     scheduleNext: v.optional(v.boolean()),
   },
   handler: repairLegacyPublisherOwnershipForUserHandler,
-});
-
-function isPublishedPackageRelease(release: Doc<"packageReleases">) {
-  return (
-    !release.softDeletedAt &&
-    release.ownerDeletedAt === undefined &&
-    (release.publicationStatus === undefined || release.publicationStatus === "published")
-  );
-}
-
-function comparePackageLatestCandidates(
-  family: Doc<"packages">["family"],
-  a: Doc<"packageReleases">,
-  b: Doc<"packageReleases">,
-) {
-  if (family === "bundle-plugin") {
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-    return a._id.localeCompare(b._id);
-  }
-  const aSemver = semver.valid(a.version);
-  const bSemver = semver.valid(b.version);
-  if (aSemver && bSemver) return semver.compare(aSemver, bSemver);
-  if (aSemver) return 1;
-  if (bSemver) return -1;
-  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-  return a._id.localeCompare(b._id);
-}
-
-async function buildPackageLatestPointerPlanToken(params: {
-  pkg: Doc<"packages">;
-  releases: Doc<"packageReleases">[];
-  selectedRelease: Doc<"packageReleases">;
-  releaseTagChanges: Array<{
-    releaseId: Id<"packageReleases">;
-    version: string;
-    action: "add" | "remove";
-  }>;
-}) {
-  const payload = JSON.stringify({
-    packageLatestReleaseId: params.pkg.latestReleaseId ?? null,
-    packageTags: params.pkg.tags,
-    selectedRelease: params.selectedRelease,
-    releaseTags: params.releases
-      .map((release) => ({ releaseId: release._id, distTags: release.distTags }))
-      .sort((a, b) => a.releaseId.localeCompare(b.releaseId)),
-    releaseTagChanges: params.releaseTagChanges,
-  });
-  return await sha256Hex(new TextEncoder().encode(payload));
-}
-
-export async function repairPackageLatestPointerHandler(
-  ctx: Pick<MutationCtx, "db">,
-  args: {
-    name: string;
-    dryRun?: boolean;
-    confirm?: string;
-    expectedPlanToken?: string;
-  },
-) {
-  const dryRun = args.dryRun !== false;
-  if (!dryRun && args.confirm !== PACKAGE_LATEST_POINTER_REPAIR_CONFIRM) {
-    throw new ConvexError(`Pass confirm="${PACKAGE_LATEST_POINTER_REPAIR_CONFIRM}" to apply.`);
-  }
-
-  const normalizedName = normalizePackageName(args.name);
-  const pkg = await ctx.db
-    .query("packages")
-    .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
-    .unique();
-  if (!pkg || pkg.softDeletedAt) {
-    throw new ConvexError(`Active package not found: ${normalizedName}`);
-  }
-
-  const releases = await ctx.db
-    .query("packageReleases")
-    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
-    .collect();
-  const eligibleReleases = releases.filter(isPublishedPackageRelease);
-  const selectedRelease = eligibleReleases.reduce<Doc<"packageReleases"> | null>(
-    (best, release) =>
-      !best || comparePackageLatestCandidates(pkg.family, best, release) < 0 ? release : best,
-    null,
-  );
-  if (!selectedRelease) {
-    throw new ConvexError(`No published releases found for package: ${normalizedName}`);
-  }
-
-  const releaseTagChanges = releases.flatMap((release) => {
-    const hadLatest = release.distTags.includes("latest");
-    const shouldHaveLatest = release._id === selectedRelease._id;
-    return hadLatest === shouldHaveLatest
-      ? []
-      : [
-          {
-            releaseId: release._id,
-            version: release.version,
-            action: shouldHaveLatest ? ("add" as const) : ("remove" as const),
-          },
-        ];
-  });
-  const previousLatestRelease = pkg.latestReleaseId
-    ? (releases.find((release) => release._id === pkg.latestReleaseId) ?? null)
-    : null;
-  const planToken = await buildPackageLatestPointerPlanToken({
-    pkg,
-    releases,
-    selectedRelease,
-    releaseTagChanges,
-  });
-
-  const result = {
-    dryRun,
-    confirmRequired: dryRun ? PACKAGE_LATEST_POINTER_REPAIR_CONFIRM : undefined,
-    packageId: pkg._id,
-    packageName: pkg.name,
-    normalizedName,
-    family: pkg.family,
-    releasesScanned: releases.length,
-    eligibleReleaseCount: eligibleReleases.length,
-    previousLatestReleaseId: pkg.latestReleaseId,
-    previousLatestVersion: previousLatestRelease?.version,
-    selectedReleaseId: selectedRelease._id,
-    selectedVersion: selectedRelease.version,
-    releaseTagChanges,
-    planToken,
-  };
-  if (dryRun) return result;
-  if (!args.expectedPlanToken || args.expectedPlanToken !== planToken) {
-    throw new ConvexError(
-      "Package latest repair plan changed after dry-run; rerun the dry-run before applying.",
-    );
-  }
-
-  for (const change of releaseTagChanges) {
-    const release = releases.find((candidate) => candidate._id === change.releaseId);
-    if (!release) continue;
-    await ctx.db.patch(release._id, {
-      distTags:
-        change.action === "add"
-          ? [...release.distTags, "latest"]
-          : release.distTags.filter((tag) => tag !== "latest"),
-    });
-  }
-
-  const now = Date.now();
-  const packagePatch: Partial<Doc<"packages">> = {
-    tags: { ...pkg.tags, latest: selectedRelease._id },
-    latestReleaseId: selectedRelease._id,
-    latestVersionSummary: {
-      version: selectedRelease.version,
-      createdAt: selectedRelease.createdAt,
-      changelog: selectedRelease.changelog,
-      icon: selectedRelease.icon,
-      compatibility: selectedRelease.compatibility,
-      verification: selectedRelease.verification,
-      artifact: summarizePackageReleaseArtifact(selectedRelease),
-    },
-    summary: selectedRelease.summary,
-    icon: selectedRelease.icon,
-    sourceRepo: selectedRelease.sourceRepo ?? selectedRelease.verification?.sourceRepo,
-    runtimeId: selectedRelease.runtimeId,
-    compatibility: selectedRelease.compatibility,
-    verification: selectedRelease.verification,
-    scanStatus: resolvePackageReleaseScanStatus(selectedRelease),
-    updatedAt: now,
-  };
-  // The wrapped internal mutation DB runs the package trigger in functions.ts,
-  // which refreshes package search digests from this patched document.
-  await ctx.db.patch(pkg._id, packagePatch);
-  await ctx.db.insert("auditLogs", {
-    action: "package.latest_pointer.repair",
-    targetType: "package",
-    targetId: pkg._id,
-    metadata: {
-      normalizedName,
-      previousLatestReleaseId: pkg.latestReleaseId,
-      previousLatestVersion: previousLatestRelease?.version,
-      selectedReleaseId: selectedRelease._id,
-      selectedVersion: selectedRelease.version,
-      releaseTagChanges,
-    },
-    createdAt: now,
-  });
-
-  return result;
-}
-
-// One-off production repair. Run dry first, then pass the exact confirmation token.
-// npx convex run maintenance:repairPackageLatestPointer '{"name":"@scope/package"}' --prod
-export const repairPackageLatestPointer = internalMutation({
-  args: {
-    name: v.string(),
-    dryRun: v.optional(v.boolean()),
-    confirm: v.optional(v.string()),
-    expectedPlanToken: v.optional(v.string()),
-  },
-  handler: repairPackageLatestPointerHandler,
 });
 
 function clampInt(value: number, min: number, max: number) {
