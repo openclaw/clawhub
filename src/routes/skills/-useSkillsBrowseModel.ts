@@ -108,6 +108,7 @@ export function useSkillsBrowseModel({
   searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
   const [query, setQuery] = useState(search.q ?? "");
+  const [canonicalTrendingUnavailable, setCanonicalTrendingUnavailable] = useState(false);
   const searchRequest = useRef(0);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
   const loadMoreInFlightRef = useRef(false);
@@ -126,7 +127,11 @@ export function useSkillsBrowseModel({
   const excludeCategoryKeywords =
     activeCategory?.slug === "other" ? ALL_CATEGORY_KEYWORDS : undefined;
   const hasQuery = trimmedQuery.length > 0;
-  const catalogTab = normalizeSkillsCatalogTab(search.tab, search);
+  const requestedCatalogTab = normalizeSkillsCatalogTab(search.tab, search);
+  const catalogTab =
+    requestedCatalogTab === "trending" && canonicalTrendingUnavailable
+      ? "new"
+      : requestedCatalogTab;
   const requestedSort = hasQuery
     ? search.sort === "default"
       ? "recommended"
@@ -181,6 +186,7 @@ export function useSkillsBrowseModel({
           const capabilities = await fetchCatalogDiscoveryCapabilities();
           if (!capabilities.canonicalTrendingEnabled) {
             if (generation !== fetchGeneration.current) return;
+            setCanonicalTrendingUnavailable(true);
             setListResults([]);
             setListCursor(null);
             setListAutoLoadPaused(false);
@@ -195,6 +201,7 @@ export function useSkillsBrowseModel({
           });
           if (generation !== fetchGeneration.current) return;
           const entries = result.items.map((trending) => ({ trending }));
+          setCanonicalTrendingUnavailable(false);
           setListResults((prev) => (cursor ? [...prev, ...entries] : entries));
           setListCursor(result.nextCursor);
           setListAutoLoadPaused(false);
@@ -264,6 +271,7 @@ export function useSkillsBrowseModel({
           console.error("Failed to fetch skills page:", err);
         }
         if (catalogTab === "trending" && !pageCursor) {
+          setCanonicalTrendingUnavailable(true);
           setListResults([]);
           setTrendingState("unavailable");
         }
@@ -618,6 +626,7 @@ export function useSkillsBrowseModel({
     activeFilters,
     activeCategory: activeCategory?.slug,
     activeTopic,
+    canonicalTrendingUnavailable,
     catalogTab,
     canAutoLoad,
     canLoadMore,

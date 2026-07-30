@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
@@ -103,7 +103,7 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("radio", { name: "Trending" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect(tabLabels()).toEqual(["Trending", "New", "Featured", "Official"]);
+    expect(tabLabels()).toEqual(["Trending", "Featured", "Official", "New"]);
     expect(screen.queryByRole("radio", { name: "Top" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "All" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Sort" })).toBeNull();
@@ -134,7 +134,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/Not scanned by ClawHub/i)).toBeNull();
   });
 
-  it("shows Trending unavailable without reading the legacy leaderboard", async () => {
+  it("hides disabled Trending and falls back to the native New feed", async () => {
     fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
       apiVersion: 0,
       canonicalTrendingEnabled: false,
@@ -142,18 +142,24 @@ describe("SkillsIndex", () => {
 
     render(<SkillsIndex />);
 
-    expect(await screen.findByText("24-hour Trending unavailable")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole("radio", { name: "Trending" })).toBeNull());
+    expect(tabLabels()).toEqual(["Featured", "Official", "New"]);
+    expect(screen.getByRole("radio", { name: "New" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
     expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
-    expect(convexHttpMock.query).not.toHaveBeenCalled();
+    expect(convexHttpMock.query).toHaveBeenCalled();
   });
 
-  it("shows stale canonical Trending as unavailable without a legacy retry", async () => {
+  it("hides stale Trending and falls back without a legacy retry", async () => {
     fetchCanonicalTrendingPageMock.mockRejectedValue(new Error("Trending snapshot expired"));
 
     render(<SkillsIndex />);
 
-    expect(await screen.findByText("24-hour Trending unavailable")).toBeTruthy();
-    expect(convexHttpMock.query).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByRole("radio", { name: "Trending" })).toBeNull());
+    expect(tabLabels()).toEqual(["Featured", "Official", "New"]);
+    expect(screen.getByRole("radio", { name: "New" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
+    expect(convexHttpMock.query).toHaveBeenCalled();
   });
 
   it("labels an empty canonical 24-hour window honestly", async () => {

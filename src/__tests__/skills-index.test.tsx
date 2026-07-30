@@ -120,7 +120,7 @@ describe("SkillsIndex", () => {
     const tabs = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(tabs).toEqual(["Trending", "New", "Featured", "Official"]);
+    expect(tabs).toEqual(["Trending", "Featured", "Official", "New"]);
   });
 
   it("renders desktop category navigation and keeps the responsive category dropdown", async () => {
@@ -432,7 +432,7 @@ describe("SkillsIndex", () => {
     const tabs = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(tabs).toEqual(["Trending", "New", "Featured", "Official"]);
+    expect(tabs).toEqual(["Trending", "Featured", "Official", "New"]);
   });
 
   it("keeps the skills sort option list stable while typing a search", async () => {

@@ -157,9 +157,9 @@ describe("HomeListingSection", () => {
       "true",
     );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "New",
       "Featured",
       "Official",
+      "New",
     ]);
     expect(screen.getByText("Demo Plugin")).toBeTruthy();
     expect(document.querySelector(".home-v2-listing-list")).toBeTruthy();

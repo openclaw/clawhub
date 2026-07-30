@@ -58,18 +58,18 @@ type ListingView = "list" | "grid";
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "trending", label: "Trending" },
-  { id: "new", label: "New" },
   { id: "featured", label: "Featured" },
   { id: "official", label: "Official" },
+  { id: "new", label: "New" },
 ];
 
 const PLUGIN_LISTING_TABS: Array<{
   id: Exclude<ListingTab, "trending">;
   label: string;
 }> = [
-  { id: "new", label: "New" },
   { id: "featured", label: "Featured" },
   { id: "official", label: "Official" },
+  { id: "new", label: "New" },
 ];
 
 const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
@@ -469,7 +469,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const listingCache = listingCacheRef.current;
 
   const [kind, setKind] = useState<ListingKind>(initialListing?.kind ?? "skills");
-  const [tab, setTab] = useState<ListingTab>(initialListing?.tab ?? "trending");
+  const initialTab =
+    initialListing?.kind === "skills" && initialListing.trendingState === "unavailable"
+      ? "new"
+      : (initialListing?.tab ?? "trending");
+  const [tab, setTab] = useState<ListingTab>(initialTab);
   const [view, setView] = useState<ListingView>("list");
   const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
@@ -493,6 +497,9 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
   const [trendingState, setTrendingState] = useState<TrendingFeedState | undefined>(
     initialListing?.kind === "skills" ? initialListing.trendingState : undefined,
   );
+  const [canonicalTrendingUnavailable, setCanonicalTrendingUnavailable] = useState(
+    initialListing?.kind === "skills" && initialListing.trendingState === "unavailable",
+  );
 
   const trimmedSearch = searchQuery.trim();
   const isSearchMode = trimmedSearch.length > 0;
@@ -506,7 +513,12 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     [categorySlugs, listingCategories],
   );
 
-  const visibleTabs = kind === "skills" ? SKILL_LISTING_TABS : PLUGIN_LISTING_TABS;
+  const visibleTabs =
+    kind === "skills"
+      ? SKILL_LISTING_TABS.filter(
+          (candidate) => candidate.id !== "trending" || !canonicalTrendingUnavailable,
+        )
+      : PLUGIN_LISTING_TABS;
 
   const activeItems = isSearchMode
     ? kind === "skills"
@@ -562,6 +574,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
       if (cached.kind === "skills") {
         setSkills(cached.items);
         setTrendingState(cached.trendingState);
+        if (tab === "trending") {
+          const unavailable = cached.trendingState === "unavailable";
+          setCanonicalTrendingUnavailable(unavailable);
+          if (unavailable) setTab("new");
+        }
       } else {
         setPlugins(cached.items);
         setTrendingState(undefined);
@@ -596,6 +613,11 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
             });
             setSkills(result.page);
             setTrendingState(result.trendingState);
+            if (tab === "trending") {
+              const unavailable = result.trendingState === "unavailable";
+              setCanonicalTrendingUnavailable(unavailable);
+              if (unavailable) setTab("new");
+            }
             setListingHasMore(result.hasMore);
             setStatus("idle");
           })
@@ -773,7 +795,7 @@ export function HomeListingSection({ initialListing = null }: HomeListingSection
     if (nextKind === kind) return;
     setKind(nextKind);
     setCategorySlugs([]);
-    setTab(nextKind === "skills" ? "trending" : "new");
+    setTab(nextKind === "skills" && !canonicalTrendingUnavailable ? "trending" : "new");
   };
 
   const removeCategory = (slug: string) => {

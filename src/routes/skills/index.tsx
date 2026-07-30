@@ -39,9 +39,9 @@ import {
 
 const SKILLS_VIEW_OPTIONS = [
   { value: "trending", label: "Trending" },
-  { value: "new", label: "New" },
   { value: "featured", label: "Featured" },
   { value: "official", label: "Official" },
+  { value: "new", label: "New" },
 ];
 const SKILLS_INITIAL_SEARCH_LIMIT = 25;
 
@@ -140,6 +140,9 @@ export function SkillsIndex() {
   });
 
   const activeView = model.catalogTab;
+  const viewOptions = model.canonicalTrendingUnavailable
+    ? SKILLS_VIEW_OPTIONS.filter((option) => option.value !== "trending")
+    : SKILLS_VIEW_OPTIONS;
   const hasActiveFilters =
     model.catalogTab !== "trending" ||
     model.hasQuery ||
@@ -244,7 +247,7 @@ export function SkillsIndex() {
         <BrowseControlsRow>
           <BrowseTabs
             ariaLabel="Skill view"
-            options={SKILLS_VIEW_OPTIONS}
+            options={viewOptions}
             value={activeView}
             onChange={(value) => {
               if (value) handleViewChange(value);

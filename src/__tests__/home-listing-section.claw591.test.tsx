@@ -98,9 +98,9 @@ describe("HomeListingSection", () => {
     );
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
       "Trending",
-      "New",
       "Featured",
       "Official",
+      "New",
     ]);
     expect(screen.queryByRole("tab", { name: "Top" })).toBeNull();
     expect(screen.queryByRole("combobox", { name: "Category" })).toBeNull();
@@ -117,12 +117,46 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("skills.sh")).toBeNull();
   });
 
-  it("shows canonical Trending as unavailable without substituting legacy skills", () => {
+  it("hides unavailable Trending and falls back to the native New feed", async () => {
     render(<HomeListingSection initialListing={initialTrending([], false, "unavailable")} />);
 
-    expect(screen.getByText("24-hour Trending unavailable")).toBeTruthy();
-    expect(screen.getByText(/canonical 24-hour feed isn't available/i)).toBeTruthy();
-    expect(screen.queryByText("Quiet shelf")).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Featured",
+      "Official",
+      "New",
+    ]);
+    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
+    await waitFor(() =>
+      expect(convexQueryMock).toHaveBeenCalledWith(
+        "skills:listPublicPageV4",
+        expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
+      ),
+    );
+  });
+
+  it("falls back when Trending becomes unavailable after mount", async () => {
+    fetchCatalogDiscoveryCapabilitiesMock.mockResolvedValue({
+      apiVersion: 1,
+      canonicalTrendingEnabled: false,
+    });
+
+    render(<HomeListingSection />);
+
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull());
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "Featured",
+      "Official",
+      "New",
+    ]);
+    expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.queryByText("24-hour Trending unavailable")).toBeNull();
+    expect(fetchCanonicalTrendingPageMock).not.toHaveBeenCalled();
+    expect(convexQueryMock).toHaveBeenCalledWith(
+      "skills:listPublicPageV4",
+      expect.objectContaining({ sort: "newest", createdAfter: expect.any(Number) }),
+    );
   });
 
   it("labels an empty canonical 24-hour window honestly", () => {
@@ -132,16 +166,16 @@ describe("HomeListingSection", () => {
     expect(screen.getByText(/eligible activity in the current 24-hour window/i)).toBeTruthy();
   });
 
-  it("shows New, Featured, and Official for plugins but never plugin Trending", async () => {
+  it("shows Featured, Official, and New for plugins but never plugin Trending", async () => {
     render(<HomeListingSection initialListing={initialTrending([])} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
 
     expect(screen.getByRole("tab", { name: "New" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "New",
       "Featured",
       "Official",
+      "New",
     ]);
     expect(screen.queryByRole("tab", { name: "Trending" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Top" })).toBeNull();
