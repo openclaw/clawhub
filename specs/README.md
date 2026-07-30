@@ -28,6 +28,7 @@ into `docs/` and leave only the design record here.
 - `manual-testing.md`: maintainer CLI smoke checklist.
 - `dev-worktrees.md`: disposable Worktrunk/Codex worktree lifecycle contract.
 - `dev-seeding.md`: local development fixture seeding ownership rules.
+- `feature-flags.md`: Krill Switch SSR, hydration, identity, and fallback contract.
 - `mintlify.md`: docs publishing setup notes.
 - `openclaw-docs-extraction.md`: CLAW-89 extraction classification.
 - `deploy.md`: maintainer deploy checklist for the ClawHub project.

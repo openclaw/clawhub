@@ -4,6 +4,7 @@ import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
+import { useFeatureFlag } from "../lib/featureFlags";
 import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
 export const Route = createFileRoute("/")({
@@ -22,6 +23,7 @@ async function loadInitialHomeListing(): Promise<HomeListingInitialData | null> 
 
 function SkillsHome() {
   const initialListing = Route.useLoaderData();
+  const hasSoul = useFeatureFlag("souls");
 
   return (
     <main className="home-v2-main oc-app-surface">
@@ -35,7 +37,11 @@ function SkillsHome() {
           <span className="home-v2-action-word home-v2-static-headline">Claws for your Claws</span>
         </h1>
 
-        <p className="home-v2-sub oc-hero-lede">Discover skills and plugins from top creators</p>
+        <p className="home-v2-sub oc-hero-lede">
+          {hasSoul
+            ? "Discover skills and plugins built with soul"
+            : "Discover skills and plugins from top creators"}
+        </p>
       </section>
 
       <HomeListingSection initialListing={initialListing} />
