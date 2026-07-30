@@ -50,18 +50,21 @@ skills:
 This table is not an install artifact store. OpenClaw must not install from
 `githubSkillContents`.
 
-`githubSkillCandidates` stores an exact pending replacement for a canonical
-skill while its currently allowed source remains active:
+`githubSkillCandidates` stores immutable exact replacement history for a
+canonical skill while its currently allowed source remains active:
 
 - canonical `skillId`
 - immutable source repository, path, commit, and folder content hash
 - bounded display Markdown fetched from that exact commit
-- the ClawHub scan state for that exact content
+- the ClawHub scan state and durable verdict-source scan identity for that
+  exact content
+- lifecycle state for pending, promoted, superseded, rejected, failed,
+  canceled, and rolled-back observations
 
 Candidates do not create `skillVersions`. A clean or suspicious exact verdict
-promotes the candidate onto the existing skill row and then deletes the
-candidate. Failed, malicious, stale, removed, or disconnected candidates never
-replace the active source.
+promotes only the active candidate bound to that verdict onto the existing skill
+row. Candidate rows are retained for audit and rollback. Failed, malicious,
+stale, removed, or disconnected candidates never replace the active source.
 
 ## Dark skills.sh discovery metadata
 
@@ -111,6 +114,7 @@ duplicated alias/adoption row is created for GitHub-backed content.
 
 - `installKind: "github"`
 - `githubSourceId`
+- `githubCurrentRepo`
 - `githubPath`
 - `githubHasSkillCard`
 - `githubCurrentCommit`
@@ -271,6 +275,17 @@ allowed. Promotion patches the existing canonical skill row in place, preserving
 its slug, routes, ClawHub metrics, bookmarks, prior hosted versions, and audit
 relationships.
 
+Repository redirects, commit-only moves, and path-only moves use the same
+candidate boundary even when the folder content hash is unchanged. The active
+skill keeps its previously allowed repository/path/commit until the replacement
+candidate can reuse or receive an allowed verdict. Source mutations carry the
+source row version observed before fetching, so a slower stale observation
+cannot overwrite a newer synchronized state. Before the first replacement is
+created, an older allowed GitHub pointer is materialized into retained candidate
+history so it remains available for audit, pinned archive resolution, and
+rollback. Late content persistence also rechecks the active pointer before
+writing, preventing same-content races from restoring an older commit.
+
 When verification succeeds cleanly:
 
 - persist the completed ClawScan, SkillSpector, and static findings on a durable
@@ -321,12 +336,13 @@ If the upstream path disappears:
 The row may remain for audit/history, but users must not silently install an old
 ClawHub-cached revision after upstream removed or changed it.
 
-Removing a selected repository also removes its pending candidates before
-deleting the source, so an in-flight callback cannot promote disconnected
-content. Active source-backed skills become missing and hidden. Re-enrollment or
-upstream reappearance may revive the same canonical skill row, but the
-reappeared exact content returns to pending and must pass scanning before
-installation.
+Disconnecting a selected repository cancels its pending candidates and revokes
+the source, so an in-flight callback cannot promote disconnected content. The
+source, candidates, and verdict rows remain as audit history while the publisher
+ownership link is cleared. Active source-backed skills become missing and
+hidden. Re-enrollment or upstream reappearance may revive the same canonical
+skill row; unchanged previously allowed content can reactivate idempotently,
+while changed content returns through the candidate gate before installation.
 
 ## Install Resolver
 
@@ -354,7 +370,10 @@ returns:
 ```
 
 OpenClaw downloads the GitHub archive for that commit and extracts only the skill
-path. The local lock/origin version is the commit SHA.
+path. The local lock/origin version is the commit SHA. Current descriptors and
+detail links use the skill's promoted repository pointer, not a newer repository
+name still waiting on candidate promotion. Pinned historical archives resolve
+repository and path from retained promoted candidate history.
 
 Controlled unclaimed skills.sh catalog entries use the repository-qualified
 reference `skills-sh/<owner>/<repo>/<slug>`. The colon form

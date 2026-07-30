@@ -1824,6 +1824,9 @@ describe("securityScan", () => {
         "githubSkillScans:github": {
           _id: "githubSkillScans:github",
           skillId: "skills:github",
+          githubSourceId: "githubSkillSources:github",
+          commit: "a".repeat(40),
+          path: "skills/github-skill",
           contentHash: "content-hash",
           status: "pending",
           skillScanRequestId: "skillScanRequests:github",
@@ -2815,12 +2818,17 @@ describe("securityScan", () => {
         "githubSkillScans:github": {
           _id: "githubSkillScans:github",
           skillId: "skills:github",
+          githubSourceId: "githubSkillSources:github",
           contentHash: "content-hash",
+          commit: "a".repeat(40),
+          path: "skills/github-skill",
           status: "failed",
         },
         "skills:github": {
           _id: "skills:github",
           installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-skill",
           githubCurrentStatus: "present",
           githubCurrentCommit: "a".repeat(40),
           githubCurrentContentHash: "content-hash",

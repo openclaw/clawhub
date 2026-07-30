@@ -202,10 +202,12 @@ async function resolveSkill(
       internal.githubSkillSync.getArchiveScanBySkillAndContentHashInternal,
       {
         skillId: skill._id,
+        commit: archivePin.commit,
         contentHash: archivePin.contentHash,
       },
     )) as {
       githubSourceId: Id<"githubSkillSources">;
+      repo: string;
       contentHash: string;
       commit: string;
       path: string;
@@ -213,15 +215,10 @@ async function resolveSkill(
     } | null;
     if (
       !scan ||
+      scan.commit !== archivePin.commit ||
       scan.contentHash !== archivePin.contentHash ||
       (scan.status !== "clean" && scan.status !== "suspicious")
     ) {
-      return { ok: false, status: 404, message: "GitHub skill archive not available" };
-    }
-    const source = (await ctx.runQuery(internal.githubSkillSources.getByIdInternal, {
-      sourceId: scan.githubSourceId,
-    })) as InstallResolverSource | null;
-    if (!source) {
       return { ok: false, status: 404, message: "GitHub skill archive not available" };
     }
     const moderationBlock = getPublicSkillFileAccessBlock(publicResult.moderationInfo);
@@ -237,11 +234,11 @@ async function resolveSkill(
       slug: skill.slug,
       installKind: "github",
       github: {
-        repo: source.repo,
+        repo: scan.repo,
         path: scan.path,
         commit: archivePin.commit,
         contentHash: scan.contentHash,
-        sourceUrl: `https://github.com/${source.repo}/tree/${archivePin.commit}/${scan.path}`,
+        sourceUrl: `https://github.com/${scan.repo}/tree/${archivePin.commit}/${scan.path}`,
       },
     };
   } else {

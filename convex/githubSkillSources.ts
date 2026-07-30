@@ -71,6 +71,7 @@ export const getSkillsShAliasTargetInternal = internalQuery({
     const matches = skills.filter(
       (skill) =>
         skill.githubPath === path &&
+        (skill.githubCurrentRepo ?? source.repo).toLowerCase() === repo &&
         skill.installKind === "github" &&
         skill.githubCurrentStatus === "present" &&
         (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious") &&
@@ -231,6 +232,7 @@ export async function deleteForPublisherHandler(
   assertGenericGitHubSkillSyncEnabled(source.repo);
 
   const now = args.now ?? Date.now();
+  const sourceUpdatedAt = Math.max(now, source.updatedAt + 1);
   const contents = await ctx.db
     .query("githubSkillContents")
     .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
@@ -238,10 +240,27 @@ export async function deleteForPublisherHandler(
   for (const content of contents) {
     await ctx.db.delete(content._id);
   }
-  const candidates = await ctx.db
-    .query("githubSkillCandidates")
-    .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
-    .collect();
+  const [pendingCandidates, failedCandidates, legacyCandidates] = await Promise.all([
+    ctx.db
+      .query("githubSkillCandidates")
+      .withIndex("by_github_source_and_lifecycle_status", (q) =>
+        q.eq("githubSourceId", args.sourceId).eq("lifecycleStatus", "pending"),
+      )
+      .collect(),
+    ctx.db
+      .query("githubSkillCandidates")
+      .withIndex("by_github_source_and_lifecycle_status", (q) =>
+        q.eq("githubSourceId", args.sourceId).eq("lifecycleStatus", "failed"),
+      )
+      .collect(),
+    ctx.db
+      .query("githubSkillCandidates")
+      .withIndex("by_github_source_and_lifecycle_status", (q) =>
+        q.eq("githubSourceId", args.sourceId).eq("lifecycleStatus", undefined),
+      )
+      .collect(),
+  ]);
+  const candidates = [...pendingCandidates, ...failedCandidates, ...legacyCandidates];
   for (const candidate of candidates) {
     const skill = await ctx.db.get(candidate.skillId);
     if (skill?.githubPendingCandidateId === candidate._id) {
@@ -249,13 +268,14 @@ export async function deleteForPublisherHandler(
         githubPendingCandidateId: undefined,
         updatedAt: now,
       });
+      await ctx.db.patch(candidate._id, {
+        lifecycleStatus: "canceled",
+        canceledAt: now,
+        cancellationReason: "github.source.disconnected",
+        updatedAt: now,
+      });
     }
-    await ctx.db.delete(candidate._id);
   }
-  await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
-    sourceId: args.sourceId,
-  });
-
   const skills = await ctx.db
     .query("skills")
     .withIndex("by_github_source", (q) => q.eq("githubSourceId", args.sourceId))
@@ -286,7 +306,14 @@ export async function deleteForPublisherHandler(
   if (publicSkillDelta !== 0) {
     await adjustGlobalPublicSkillsCount(ctx, publicSkillDelta, now);
   }
-  await ctx.db.delete(args.sourceId);
+  await ctx.db.patch(args.sourceId, {
+    ownerPublisherId: undefined,
+    disconnectedOwnerPublisherId: args.ownerPublisherId,
+    authorizationStatus: "revoked",
+    authorizationCheckedAt: now,
+    authorizationError: "GitHub source disconnected by publisher.",
+    updatedAt: sourceUpdatedAt,
+  });
 
   return { ok: true as const, deletedSkills };
 }

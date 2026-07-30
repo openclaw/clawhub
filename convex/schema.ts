@@ -384,6 +384,9 @@ const githubSkillSourceIssueValidator = v.object({
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
+  // Retains the last owner across disconnects so generic sync cannot silently
+  // transfer a source by reconnecting its ownerless row.
+  disconnectedOwnerPublisherId: v.optional(v.id("publishers")),
   githubRepositoryId: v.optional(v.string()),
   githubOwnerId: v.optional(v.string()),
   authorizationStatus: v.optional(v.union(v.literal("active"), v.literal("revoked"))),
@@ -503,6 +506,8 @@ const githubSkillCurrentStatusValidator = v.union(
 const githubSkillCandidates = defineTable({
   skillId: v.id("skills"),
   githubSourceId: v.id("githubSkillSources"),
+  // Optional only for rows created before version-safe candidate history landed.
+  githubRepo: v.optional(v.string()),
   githubPath: v.string(),
   githubHasSkillCard: v.boolean(),
   githubCommit: v.string(),
@@ -516,12 +521,43 @@ const githubSkillCandidates = defineTable({
   skillCardMarkdownPath: v.optional(v.string()),
   skillCardMarkdown: v.optional(v.string()),
   scanStatus: githubSkillScanStatusValidator,
+  lifecycleStatus: v.optional(
+    v.union(
+      v.literal("pending"),
+      v.literal("promoted"),
+      v.literal("superseded"),
+      v.literal("rejected"),
+      v.literal("failed"),
+      v.literal("canceled"),
+      v.literal("rolled_back"),
+    ),
+  ),
+  verdictSourceScanId: v.optional(v.id("githubSkillScans")),
+  previousCandidateId: v.optional(v.id("githubSkillCandidates")),
+  supersededByCandidateId: v.optional(v.id("githubSkillCandidates")),
+  promotedAt: v.optional(v.number()),
+  supersededAt: v.optional(v.number()),
+  rejectedAt: v.optional(v.number()),
+  failedAt: v.optional(v.number()),
+  canceledAt: v.optional(v.number()),
+  rolledBackAt: v.optional(v.number()),
+  cancellationReason: v.optional(v.string()),
   createdAt: v.number(),
   updatedAt: v.number(),
 })
   .index("by_skill", ["skillId"])
   .index("by_skill_and_content_hash", ["skillId", "githubContentHash"])
-  .index("by_github_source", ["githubSourceId"]);
+  .index("by_skill_and_commit_and_content_hash", ["skillId", "githubCommit", "githubContentHash"])
+  .index("by_skill_and_repo_source_commit_path_hash", [
+    "skillId",
+    "githubRepo",
+    "githubSourceId",
+    "githubCommit",
+    "githubPath",
+    "githubContentHash",
+  ])
+  .index("by_github_source", ["githubSourceId"])
+  .index("by_github_source_and_lifecycle_status", ["githubSourceId", "lifecycleStatus"]);
 
 const githubSkillScans = defineTable({
   skillId: v.id("skills"),
@@ -842,6 +878,7 @@ const skills = defineTable({
   forkOf: forkOfValidator,
   installKind: v.optional(v.literal("github")),
   githubSourceId: v.optional(v.id("githubSkillSources")),
+  githubCurrentRepo: v.optional(v.string()),
   githubPath: v.optional(v.string()),
   githubHasSkillCard: v.optional(v.boolean()),
   githubCurrentCommit: v.optional(v.string()),
@@ -850,6 +887,7 @@ const skills = defineTable({
   githubCurrentCheckedAt: v.optional(v.number()),
   githubScanStatus: v.optional(githubSkillScanStatusValidator),
   githubRemovedAt: v.optional(v.number()),
+  githubCurrentCandidateId: v.optional(v.id("githubSkillCandidates")),
   githubPendingCandidateId: v.optional(v.id("githubSkillCandidates")),
   latestVersionId: v.optional(v.id("skillVersions")),
   latestVersionSummary: v.optional(

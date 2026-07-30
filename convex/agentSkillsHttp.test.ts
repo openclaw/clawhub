@@ -326,12 +326,12 @@ describe("Agent Skills discovery HTTP handler", () => {
       })
       .mockResolvedValueOnce({
         githubSourceId: "githubSkillSources:demo",
+        repo: "openclaw/openclaw",
         contentHash,
-        commit: "def456",
+        commit: "abc123",
         path: "skills/demo",
         status: "clean",
-      })
-      .mockResolvedValueOnce({ repo: "openclaw/openclaw", defaultBranch: "main" });
+      });
 
     const response = await agentSkillsHttpHandler(
       makeCtx({ runQuery, storage: { get: vi.fn() } }),

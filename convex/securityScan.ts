@@ -2335,6 +2335,7 @@ export const recordGitHubSkillScanResultInternal = internalMutation({
     return await applyGitHubSkillVerificationResultHandler(ctx, {
       skillId: scan.skillId,
       contentHash: scan.contentHash,
+      githubSkillScanId: scan._id,
       scanStatus: args.scanStatus,
       now,
     });
@@ -3385,6 +3386,7 @@ export const requeueFailedSecurityScanJobsInternal = internalMutation({
             await applyGitHubSkillVerificationResultHandler(ctx, {
               skillId: scan.skillId,
               contentHash: scan.contentHash,
+              githubSkillScanId: scan._id,
               scanStatus: "pending",
               now,
             });

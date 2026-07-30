@@ -2675,7 +2675,7 @@ export const getBySlug = query({
     const forkOf = await loadPublicSkillReference(ctx, skill.forkOf?.skillId);
     const canonical = await loadPublicSkillReference(ctx, skill.canonicalSkillId);
     const githubSource = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
-    const githubSourceRepo = githubSource?.repo;
+    const githubSourceRepo = skill.githubCurrentRepo ?? githubSource?.repo;
 
     const publicSkill = toPublicSkill({ ...skill, badges });
 
@@ -2844,7 +2844,7 @@ export const getGitHubDownloadTargetInternal = internalQuery({
 
     return {
       installKind: "github" as const,
-      repo: source?.repo ?? null,
+      repo: skill.githubCurrentRepo ?? source?.repo ?? null,
       path: skill.githubPath ?? null,
       commit: skill.githubCurrentCommit ?? null,
       contentHash: skill.githubCurrentContentHash ?? null,
@@ -10289,7 +10289,11 @@ export const getGitHubSkillContent = query({
 
     const source = await ctx.db.get(content.githubSourceId);
     const resultSource = source
-      ? buildGitHubMarkdownSourceBaseUrl(source.repo, content.githubCommit, content.githubPath)
+      ? buildGitHubMarkdownSourceBaseUrl(
+          skill.githubCurrentRepo ?? source.repo,
+          content.githubCommit,
+          content.githubPath,
+        )
       : undefined;
 
     if (args.kind === "skill-card") {

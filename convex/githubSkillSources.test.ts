@@ -40,7 +40,11 @@ type WrappedHandler<TArgs, TResult = unknown> = {
 const listForManageableOfficialPublishersHandler = (
   listForManageableOfficialPublishers as unknown as WrappedHandler<
     Record<string, never>,
-    Array<{ _id: string; repo: string; ownerPublisher: { handle: string } | null }>
+    Array<{
+      _id: string;
+      repo: string;
+      ownerPublisher: { handle: string } | null;
+    }>
   >
 )._handler;
 
@@ -210,7 +214,9 @@ function makeAliasSkill(id: string, githubPath = "skills/html"): Row {
 
 describe("githubSkillSources.deleteForPublisherHandler", () => {
   beforeEach(() => {
-    vi.mocked(requireUser).mockResolvedValue({ userId: "users:owner" } as never);
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:owner",
+    } as never);
     vi.mocked(requirePublisherRole).mockResolvedValue(undefined as never);
   });
 
@@ -240,7 +246,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 
-  it("deletes a source and removes only GitHub-backed skills from that source", async () => {
+  it("disconnects a source and removes only GitHub-backed skills from that source", async () => {
     const { db, tables } = createDb({
       githubSkillSources: [
         {
@@ -248,7 +254,7 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           repo: "mattpocock/skills",
           ownerPublisherId: "publishers:openclaw",
           createdAt: 1,
-          updatedAt: 2,
+          updatedAt: 123,
         },
       ],
       githubSkillContents: [
@@ -280,7 +286,9 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           githubPath: "skills/hosted-candidate",
           githubCommit: "c".repeat(40),
           githubContentHash: "hash-hosted-candidate",
-          scanStatus: "pending",
+          scanStatus: "failed",
+          lifecycleStatus: "failed",
+          failedAt: 100,
         },
       ],
       skills: [
@@ -367,13 +375,27 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
         allowed: ["admin"],
       }),
     );
-    expect(tables.githubSkillSources).toHaveLength(0);
+    expect(tables.githubSkillSources).toEqual([
+      expect.objectContaining({
+        _id: "githubSkillSources:matt",
+        disconnectedOwnerPublisherId: "publishers:openclaw",
+        authorizationStatus: "revoked",
+        authorizationCheckedAt: 123,
+        updatedAt: 124,
+      }),
+    ]);
+    expect(tables.githubSkillSources[0]).not.toHaveProperty("ownerPublisherId");
     expect(tables.githubSkillContents).toHaveLength(0);
-    expect(tables.githubSkillCandidates).toHaveLength(0);
+    expect(tables.githubSkillCandidates).toEqual([
+      expect.objectContaining({
+        _id: "githubSkillCandidates:hosted",
+        lifecycleStatus: "canceled",
+        canceledAt: 123,
+        cancellationReason: "github.source.disconnected",
+      }),
+    ]);
     expect(tables.githubSkillScans).toHaveLength(2);
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
-      sourceId: "githubSkillSources:matt",
-    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
     const deletedSkill = tables.skills.find((skill) => skill._id === "skills:github");
     expect(deletedSkill).toMatchObject({
       softDeletedAt: 123,
@@ -469,7 +491,9 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     expect(tables.skillScanRequests?.[0]).not.toHaveProperty("githubSkillScanId");
     expect(tables.skillScanRequests?.[0]).not.toHaveProperty("securityScanJobId");
     expect(tables.skillScanRequests?.[0]?.expiresAt).toBeLessThan(Number.MAX_SAFE_INTEGER);
-    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 10 });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      batchSize: 10,
+    });
   });
 
   it("rejects deleting a source from another publisher", async () => {

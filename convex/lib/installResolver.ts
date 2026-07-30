@@ -13,6 +13,7 @@ export type InstallResolverSkill = {
   displayName: string;
   latestVersionSummary?: { version: string } | null;
   installKind?: "github";
+  githubCurrentRepo?: string;
   githubPath?: string;
   githubCurrentCommit?: string;
   githubCurrentContentHash?: string;
@@ -106,7 +107,8 @@ export function buildSkillInstallResolution({
   if (isSecurityScanStatusBlockedFromPublic(skill.githubScanStatus)) {
     return block(skill.slug, "github_scan_failed", 403);
   }
-  if (!source || !skill.githubPath) {
+  const repo = skill.githubCurrentRepo ?? source?.repo;
+  if (!repo || !skill.githubPath) {
     return block(skill.slug, "github_source_missing", 409);
   }
   if (
@@ -128,11 +130,11 @@ export function buildSkillInstallResolution({
     slug: skill.slug,
     installKind: "github",
     github: {
-      repo: source.repo,
+      repo,
       path: skill.githubPath,
       commit: skill.githubCurrentCommit,
       contentHash: skill.githubCurrentContentHash,
-      sourceUrl: buildGitHubTreeUrl(source.repo, skill.githubCurrentCommit, skill.githubPath),
+      sourceUrl: buildGitHubTreeUrl(repo, skill.githubCurrentCommit, skill.githubPath),
     },
   };
 }

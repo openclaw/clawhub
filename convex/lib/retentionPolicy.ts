@@ -108,8 +108,10 @@ export const RETENTION_POLICIES = {
   officialPublishers: permanent("Manual official publisher assignments."),
   githubSkillSources: permanent("Tracked GitHub source configuration."),
   githubSkillContents: derived("Cached GitHub source content snapshots.", "githubSkillSources"),
-  githubSkillCandidates: derived("Pending exact GitHub source candidates.", "githubSkillSources"),
-  githubSkillScans: derived("Cached GitHub source scan state.", "githubSkillSources"),
+  githubSkillCandidates: permanent(
+    "Immutable GitHub source candidate, promotion, rejection, and rollback history.",
+  ),
+  githubSkillScans: permanent("Durable exact-content GitHub security verdict history."),
   skills: permanent("Canonical skill records."),
   skillSlugAliases: permanent("Historical slug routing aliases."),
   packages: permanent("Canonical package records."),

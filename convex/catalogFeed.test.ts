@@ -469,10 +469,19 @@ describe("catalog feed projection", () => {
 
   it("projects current GitHub-backed skills into public GitHub install candidates", async () => {
     const result = (await listOfficialSkillEntriesHandler(
-      makeCtx([makeGitHubSkill({ slug: "aiq-deploy", displayName: "AIQ Deploy" })], {
-        "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
-        "githubSkillSources:1": makeGitHubSource(),
-      }),
+      makeCtx(
+        [
+          makeGitHubSkill({
+            slug: "aiq-deploy",
+            displayName: "AIQ Deploy",
+            githubCurrentRepo: "NVIDIA/skills-archive",
+          }),
+        ],
+        {
+          "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+          "githubSkillSources:1": makeGitHubSource({ repo: "NVIDIA/renamed-skills" }),
+        },
+      ),
       { publisherId: "publishers:1", cursor: null },
     )) as { entries: unknown[]; isDone: boolean };
 
@@ -494,7 +503,7 @@ describe("catalog feed projection", () => {
                 version: "1111111111111111111111111111111111111111",
                 integrity: "sha256:hash-aiq-deploy",
                 github: {
-                  repo: "NVIDIA/skills",
+                  repo: "NVIDIA/skills-archive",
                   path: "skills/aiq-deploy",
                   commit: "1111111111111111111111111111111111111111",
                   contentHash: "hash-aiq-deploy",

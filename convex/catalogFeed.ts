@@ -295,7 +295,7 @@ async function buildSkillEntry(
     const source = await ctx.db.get(skill.githubSourceId);
     if (!source || source.ownerPublisherId !== skill.ownerPublisherId) return null;
 
-    const repo = source.repo.trim();
+    const repo = (skill.githubCurrentRepo ?? source.repo).trim();
     const path = skill.githubPath.trim();
     const commit = skill.githubCurrentCommit.trim();
     const contentHash = skill.githubCurrentContentHash.trim();

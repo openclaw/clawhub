@@ -8,9 +8,11 @@ import {
   applyGitHubSkillSourceSyncHandler,
   applyGitHubSkillVerificationResultHandler,
   configurePublicGitHubSkillSourceHandler,
+  getArchiveScanBySkillAndContentHashHandler,
   listSourcesForSyncHandler,
   recordGitHubSkillSourceSyncAttemptHandler,
   revokeGitHubSkillSourceAuthorizationHandler,
+  rollbackGitHubSkillCandidateHandler,
   resolveOwnerUserIdForPublisherHandler,
   syncGitHubSkillSourcesHandler,
   upsertGitHubSkillCandidateContentHandler,
@@ -182,7 +184,9 @@ function createFakeGitHubSkillsRepo() {
         ]),
       );
       const zip = zipSync(prefixedEntries);
-      return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+      return new Response(zip, {
+        headers: { "content-length": String(zip.byteLength) },
+      });
     }
 
     return new Response("not found", { status: 404 });
@@ -381,7 +385,10 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
         existingSource: null,
       };
     });
-    const runMutation = vi.fn(async () => ({ ok: true, stats: { discovered: 1 } }));
+    const runMutation = vi.fn(async () => ({
+      ok: true,
+      stats: { discovered: 1 },
+    }));
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -578,7 +585,10 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
       ownerUserId: "users:publisher-owner",
       existingSource: null,
     }));
-    const runMutation = vi.fn(async () => ({ ok: true, stats: { discovered: 1 } }));
+    const runMutation = vi.fn(async () => ({
+      ok: true,
+      stats: { discovered: 1 },
+    }));
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -884,7 +894,10 @@ describe("syncGitHubSkillSourcesHandler", () => {
     });
 
     await expect(
-      listSourcesForSyncHandler({ db } as never, { batchSize: 20, legacyOnly: true }),
+      listSourcesForSyncHandler({ db } as never, {
+        batchSize: 20,
+        legacyOnly: true,
+      }),
     ).resolves.toEqual({
       sources: [
         expect.objectContaining({
@@ -920,9 +933,11 @@ describe("syncGitHubSkillSourcesHandler", () => {
 
   it("emits structured sync lifecycle events", async () => {
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
-    const runQuery = vi
-      .fn()
-      .mockResolvedValueOnce({ sources: [], continueCursor: null, isDone: true });
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      sources: [],
+      continueCursor: null,
+      isDone: true,
+    });
     const runMutation = vi.fn();
 
     try {
@@ -932,7 +947,12 @@ describe("syncGitHubSkillSourcesHandler", () => {
         vi.fn() as never,
       );
 
-      expect(result).toMatchObject({ ok: true, synced: 0, skipped: 0, errors: 0 });
+      expect(result).toMatchObject({
+        ok: true,
+        synced: 0,
+        skipped: 0,
+        errors: 0,
+      });
       const events = consoleLog.mock.calls.map(([message]) => JSON.parse(String(message)));
       expect(events).toEqual(
         expect.arrayContaining([
@@ -961,9 +981,11 @@ describe("syncGitHubSkillSourcesHandler", () => {
           undefined,
       ),
     };
-    const runQuery = vi
-      .fn()
-      .mockResolvedValueOnce({ sources: [], continueCursor: "next-page", isDone: false });
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      sources: [],
+      continueCursor: "next-page",
+      isDone: false,
+    });
 
     const result = await syncGitHubSkillSourcesHandler(
       { runQuery, runMutation: vi.fn(), scheduler } as never,
@@ -971,7 +993,11 @@ describe("syncGitHubSkillSourcesHandler", () => {
       vi.fn() as never,
     );
 
-    expect(result).toMatchObject({ scheduledNext: true, cursor: "next-page", isDone: false });
+    expect(result).toMatchObject({
+      scheduledNext: true,
+      cursor: "next-page",
+      isDone: false,
+    });
     const scheduledFunction = scheduler.runAfter.mock.calls[0]?.[1];
     expect(getFunctionName(scheduledFunction as Parameters<typeof getFunctionName>[0])).toBe(
       "githubSkillSyncNode:syncGitHubSkillSourcesInternal",
@@ -1136,7 +1162,11 @@ description: Invalid because the folder name is too long.
       },
     );
 
-    expect(result.stats).toMatchObject({ discovered: 1, inserted: 0, invalid: 1 });
+    expect(result.stats).toMatchObject({
+      discovered: 1,
+      inserted: 0,
+      invalid: 1,
+    });
     expect(result.invalidSkills).toEqual([
       {
         slug: longSlug,
@@ -1427,7 +1457,9 @@ description: Install from a GitHub-backed source.
       );
       expect(contentSyncCalls).toHaveLength(1);
       expect(contentSyncCalls[0]?.[1]).toMatchObject({
-        discovered: { skillMarkdown: expect.stringContaining("# Demo Source A") },
+        discovered: {
+          skillMarkdown: expect.stringContaining("# Demo Source A"),
+        },
       });
 
       let skill = getSkill(tables, "demo-source");
@@ -1539,7 +1571,10 @@ description: Install from a GitHub-backed source.
         skillMarkdown: expect.stringContaining("# Demo Source A"),
         githubCommit: "a".repeat(40),
       });
-      const candidate = tables.githubSkillCandidates[0];
+      const candidate = tables.githubSkillCandidates.find(
+        (row) => row._id === skill.githubPendingCandidateId,
+      );
+      if (!candidate) throw new Error("expected pending GitHub candidate");
       expect(candidate).toMatchObject({
         skillId: skill._id,
         githubCommit: "b".repeat(40),
@@ -1566,9 +1601,14 @@ description: Install from a GitHub-backed source.
         ok: true,
         github: { commit: "a".repeat(40), contentHash: commitAContentHash },
       });
+      const completedScan = tables.githubSkillScans.find(
+        (row) => row._id === candidate.verdictSourceScanId,
+      );
+      Object.assign(completedScan ?? {}, { status: "clean" });
       await applyGitHubSkillVerificationResultHandler({ db } as never, {
         skillId: skill._id as never,
         contentHash: candidate.githubContentHash as string,
+        githubSkillScanId: candidate.verdictSourceScanId as never,
         scanStatus: "clean",
         now,
       });
@@ -1641,11 +1681,11 @@ description: Install from a GitHub-backed source.
       const reappeared = getSkill(tables, "demo-source");
       expect(reappeared).toMatchObject({
         _id: skill._id,
-        githubCurrentCommit: "d".repeat(40),
-        githubCurrentStatus: "present",
-        githubScanStatus: "pending",
-        moderationStatus: "active",
-        moderationReason: "pending.scan",
+        githubCurrentCommit: "b".repeat(40),
+        githubCurrentStatus: "missing",
+        githubScanStatus: "clean",
+        moderationStatus: "hidden",
+        moderationReason: "github.upstream.removed",
         statsDownloads: 41,
         statsStars: 7,
         statsInstallsCurrent: 3,
@@ -1653,23 +1693,35 @@ description: Install from a GitHub-backed source.
         statsSkillsShInstalls: 29,
         statsGithubStars: 701,
       });
-      expect(reappeared).not.toHaveProperty("softDeletedAt");
+      const reappearanceCandidate = tables.githubSkillCandidates.find(
+        (row) => row._id === reappeared.githubPendingCandidateId,
+      );
+      expect(reappearanceCandidate).toMatchObject({
+        githubCommit: "d".repeat(40),
+        lifecycleStatus: "pending",
+      });
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: false,
-        reason: "github_verification_pending",
-        status: 423,
+        reason: "github_upstream_removed",
+        status: 410,
       });
+      const completedReappearanceScan = tables.githubSkillScans.find(
+        (row) => row._id === reappearanceCandidate?.verdictSourceScanId,
+      );
+      Object.assign(completedReappearanceScan ?? {}, { status: "clean" });
       await applyGitHubSkillVerificationResultHandler({ db } as never, {
         skillId: reappeared._id as never,
-        contentHash: reappeared.githubCurrentContentHash as string,
+        contentHash: reappearanceCandidate?.githubContentHash as string,
+        githubSkillScanId: reappearanceCandidate?.verdictSourceScanId as never,
         scanStatus: "clean",
         now: 410,
       });
+      expect(getSkill(tables, "demo-source")).not.toHaveProperty("softDeletedAt");
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: true,
         github: {
           commit: "d".repeat(40),
-          contentHash: reappeared.githubCurrentContentHash,
+          contentHash: reappearanceCandidate?.githubContentHash,
         },
       });
     } finally {
@@ -1860,7 +1912,9 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
           githubPath: "skills/html",
           githubCommit: "5".repeat(40),
           githubContentHash: "next-hash",
-          scanStatus: "pending",
+          scanStatus: "failed",
+          lifecycleStatus: "failed",
+          failedAt: 150,
         },
       ],
       skills: [
@@ -1901,7 +1955,14 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       now: 200,
     });
 
-    expect(tables.githubSkillCandidates).toEqual([]);
+    expect(tables.githubSkillCandidates).toEqual([
+      expect.objectContaining({
+        _id: "githubSkillCandidates:html",
+        lifecycleStatus: "canceled",
+        canceledAt: 200,
+        cancellationReason: "github.authorization.revoked",
+      }),
+    ]);
     expect(tables.githubSkillSources[0]).toMatchObject({
       authorizationStatus: "revoked",
       authorizationCheckedAt: 200,
@@ -1990,7 +2051,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     });
 
     const candidate = tables.githubSkillCandidates[0];
-    expect(candidate).toMatchObject({ scanStatus: "clean", githubContentHash: contentHash });
+    expect(candidate).toMatchObject({
+      scanStatus: "clean",
+      githubContentHash: contentHash,
+    });
     expect(scheduler.runAfter).not.toHaveBeenCalled();
 
     await upsertGitHubSkillCandidateContentHandler({ db } as never, {
@@ -2000,13 +2064,1495 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       now: 110,
     });
 
-    expect(tables.githubSkillCandidates).toEqual([]);
+    expect(tables.githubSkillCandidates).toEqual([
+      expect.objectContaining({
+        _id: candidate?._id,
+        lifecycleStatus: "promoted",
+        promotedAt: 110,
+        verdictSourceScanId: "githubSkillScans:html",
+      }),
+    ]);
     expect(tables.skills[0]).toMatchObject({
       _id: "skills:html",
       installKind: "github",
       githubCurrentCommit: snapshot.commit,
       githubCurrentContentHash: contentHash,
       githubScanStatus: "clean",
+      githubCurrentCandidateId: candidate?._id,
+    });
+  });
+
+  it("records pointer-only GitHub changes as immutable candidates without rescanning", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "b".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# HTML\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash ?? "";
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          ownerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      publishers: [
+        {
+          _id: "publishers:patrick",
+          kind: "user",
+          handle: "patrick",
+          displayName: "Patrick",
+          linkedUserId: "users:patrick",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML",
+          ownerUserId: "users:patrick",
+          ownerPublisherId: "publishers:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:html",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash,
+          commit: "a".repeat(40),
+          path: "skills/html",
+          status: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:current" as never,
+      repo: "patrick-erichsen/skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      snapshot,
+      now: 2,
+    });
+
+    const candidate = tables.githubSkillCandidates.find(
+      (row) => row._id === tables.skills[0]?.githubPendingCandidateId,
+    );
+    const retainedCurrent = tables.githubSkillCandidates.find(
+      (row) => row.githubCommit === "a".repeat(40),
+    );
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubCurrentCandidateId: retainedCurrent?._id,
+      githubPendingCandidateId: candidate?._id,
+    });
+    expect(retainedCurrent).toMatchObject({
+      githubRepo: "patrick-erichsen/skills",
+      githubPath: "skills/html",
+      githubContentHash: contentHash,
+      scanStatus: "clean",
+      lifecycleStatus: "promoted",
+      verdictSourceScanId: "githubSkillScans:html",
+    });
+    expect(candidate).toMatchObject({
+      githubRepo: "patrick-erichsen/skills",
+      githubCommit: "b".repeat(40),
+      githubContentHash: contentHash,
+      lifecycleStatus: "pending",
+      verdictSourceScanId: "githubSkillScans:html",
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+
+    await upsertGitHubSkillCandidateContentHandler({ db } as never, {
+      candidateId: candidate?._id as never,
+      discovered: snapshot.skills[0]!,
+      commit: snapshot.commit,
+      now: 3,
+    });
+
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "b".repeat(40),
+      githubCurrentContentHash: contentHash,
+      githubCurrentCandidateId: candidate?._id,
+    });
+    expect(candidate).toMatchObject({
+      lifecycleStatus: "promoted",
+      promotedAt: 3,
+    });
+
+    const snapshotA = { ...snapshot, commit: "a".repeat(40) };
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:current" as never,
+      repo: "patrick-erichsen/skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      snapshot: snapshotA,
+      now: 4,
+    });
+    const candidateA = tables.githubSkillCandidates.find(
+      (row) => row._id === tables.skills[0]?.githubPendingCandidateId,
+    );
+    await upsertGitHubSkillCandidateContentHandler({ db } as never, {
+      candidateId: candidateA?._id as never,
+      discovered: snapshotA.skills[0]!,
+      commit: snapshotA.commit,
+      now: 5,
+    });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubCurrentCandidateId: candidateA?._id,
+    });
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:current" as never,
+      repo: "patrick-erichsen/skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      snapshot,
+      now: 6,
+    });
+    expect(tables.githubSkillCandidates).toHaveLength(2);
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "b".repeat(40),
+      githubCurrentCandidateId: candidate?._id,
+    });
+
+    const redirectedSnapshot = {
+      ...snapshot,
+      repo: "patrick-erichsen/renamed-skills",
+    };
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:current" as never,
+      repo: "patrick-erichsen/renamed-skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      snapshot: redirectedSnapshot,
+      now: 7,
+    });
+    const redirectCandidate = tables.githubSkillCandidates.find(
+      (row) => row._id === tables.skills[0]?.githubPendingCandidateId,
+    );
+    expect(resolveInstallFromTables(tables, "html")).toMatchObject({
+      ok: true,
+      github: { repo: "patrick-erichsen/skills" },
+    });
+    expect(redirectCandidate).toMatchObject({
+      githubRepo: "patrick-erichsen/renamed-skills",
+      lifecycleStatus: "pending",
+    });
+    await upsertGitHubSkillCandidateContentHandler({ db } as never, {
+      candidateId: redirectCandidate?._id as never,
+      discovered: redirectedSnapshot.skills[0]!,
+      commit: redirectedSnapshot.commit,
+      now: 8,
+    });
+    expect(resolveInstallFromTables(tables, "html")).toMatchObject({
+      ok: true,
+      github: { repo: "patrick-erichsen/renamed-skills" },
+    });
+  });
+
+  it("rejects allowed candidate promotion without the candidate's bound scan identity", async () => {
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML A",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "a".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubPendingCandidateId: "githubSkillCandidates:b",
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML B",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML B\n",
+          scanStatus: "clean",
+          lifecycleStatus: "pending",
+          verdictSourceScanId: "githubSkillScans:b",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "b".repeat(64),
+          commit: "b".repeat(40),
+          path: "skills/html",
+          status: "clean",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        contentHash: "b".repeat(64),
+        scanStatus: "clean",
+        now: 3,
+      }),
+    ).resolves.toEqual({ ok: true, skipped: "stale-candidate-verdict" });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubPendingCandidateId: "githubSkillCandidates:b",
+    });
+  });
+
+  it("rejects allowed promotion when a legacy candidate has no durable verdict", async () => {
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML A",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "a".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubPendingCandidateId: "githubSkillCandidates:b",
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML B",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML B\n",
+          scanStatus: "clean",
+          lifecycleStatus: "pending",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        contentHash: "b".repeat(64),
+        scanStatus: "clean",
+        now: 3,
+      }),
+    ).resolves.toEqual({ ok: true, skipped: "missing-candidate-verdict" });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubPendingCandidateId: "githubSkillCandidates:b",
+    });
+  });
+
+  it("rejects late current-content persistence after a newer pointer wins", async () => {
+    const staleSnapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# HTML\n"),
+      },
+    });
+    const discovered = staleSnapshot.skills[0]!;
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:html",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: discovered.path,
+          githubCurrentCommit: "b".repeat(40),
+          githubCurrentContentHash: discovered.contentHash,
+          githubCurrentStatus: "present",
+        },
+      ],
+      githubSkillContents: [
+        {
+          _id: "githubSkillContents:html",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: discovered.path,
+          skillMarkdownPath: discovered.skillMarkdownPath,
+          skillMarkdown: "# HTML newer pointer\n",
+          githubCommit: "b".repeat(40),
+          githubContentHash: discovered.contentHash,
+          fetchedAt: 2,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      upsertGitHubSkillContentHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        sourceId: "githubSkillSources:current" as never,
+        discovered,
+        commit: staleSnapshot.commit,
+        now: 3,
+      }),
+    ).resolves.toEqual({ ok: true, skipped: "stale-current-pointer" });
+    expect(tables.githubSkillContents[0]).toMatchObject({
+      skillMarkdown: "# HTML newer pointer\n",
+      githubCommit: "b".repeat(40),
+    });
+  });
+
+  it("resolves an archived candidate from its retained repository after a redirect", async () => {
+    const { db } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/renamed-skills",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 3,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubCurrentRepo: "patrick-erichsen/renamed-skills",
+          githubPath: "skills/html",
+          githubCurrentCommit: "b".repeat(40),
+          githubCurrentContentHash: "b".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubCurrentCandidateId: "githubSkillCandidates:b",
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:a",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "a".repeat(40),
+          githubContentHash: "a".repeat(64),
+          displayName: "HTML A",
+          scanStatus: "clean",
+          lifecycleStatus: "superseded",
+          verdictSourceScanId: "githubSkillScans:a",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        {
+          _id: "githubSkillCandidates:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/renamed-skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML B",
+          scanStatus: "clean",
+          lifecycleStatus: "promoted",
+          verdictSourceScanId: "githubSkillScans:b",
+          createdAt: 2,
+          updatedAt: 3,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:a",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "a".repeat(64),
+          commit: "a".repeat(40),
+          path: "skills/html",
+          status: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          _id: "githubSkillScans:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "b".repeat(64),
+          commit: "b".repeat(40),
+          path: "skills/html",
+          status: "clean",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      getArchiveScanBySkillAndContentHashHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        commit: "a".repeat(40),
+        contentHash: "a".repeat(64),
+      }),
+    ).resolves.toMatchObject({
+      repo: "patrick-erichsen/skills",
+      path: "skills/html",
+      commit: "a".repeat(40),
+      contentHash: "a".repeat(64),
+      status: "clean",
+    });
+  });
+
+  it("refuses a legacy current archive without a durable verdict row", async () => {
+    const { db } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "a".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+        },
+      ],
+    });
+
+    await expect(
+      getArchiveScanBySkillAndContentHashHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        commit: "a".repeat(40),
+        contentHash: "a".repeat(64),
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("resolves a deterministic retained archive when redirects share a commit and content hash", async () => {
+    const commit = "a".repeat(40);
+    const contentHash = "a".repeat(64);
+    const { db } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/current-skills",
+          createdAt: 1,
+          updatedAt: 4,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          githubCurrentCandidateId: "githubSkillCandidates:current",
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:old",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/old-skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: commit,
+          githubContentHash: contentHash,
+          displayName: "HTML old",
+          scanStatus: "clean",
+          lifecycleStatus: "superseded",
+          verdictSourceScanId: "githubSkillScans:html",
+          promotedAt: 1,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        {
+          _id: "githubSkillCandidates:redirected",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/redirected-skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: commit,
+          githubContentHash: contentHash,
+          displayName: "HTML redirected",
+          scanStatus: "clean",
+          lifecycleStatus: "superseded",
+          verdictSourceScanId: "githubSkillScans:html",
+          promotedAt: 3,
+          createdAt: 2,
+          updatedAt: 3,
+        },
+        {
+          _id: "githubSkillCandidates:current",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/current-skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML current",
+          scanStatus: "clean",
+          lifecycleStatus: "promoted",
+          verdictSourceScanId: "githubSkillScans:current",
+          promotedAt: 4,
+          createdAt: 3,
+          updatedAt: 4,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:html",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash,
+          commit,
+          path: "skills/html",
+          status: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    await expect(
+      getArchiveScanBySkillAndContentHashHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        commit,
+        contentHash,
+      }),
+    ).resolves.toMatchObject({
+      repo: "patrick-erichsen/redirected-skills",
+      commit,
+      contentHash,
+    });
+  });
+
+  it("keeps a missing skill hidden when it reappears through a repository redirect", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/renamed-skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# HTML\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash ?? "";
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          ownerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      publishers: [
+        {
+          _id: "publishers:patrick",
+          kind: "user",
+          handle: "patrick",
+          linkedUserId: "users:patrick",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML",
+          ownerUserId: "users:patrick",
+          ownerPublisherId: "publishers:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubCurrentRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubCurrentCommit: snapshot.commit,
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "missing",
+          githubScanStatus: "clean",
+          githubRemovedAt: 2,
+          softDeletedAt: 2,
+          moderationStatus: "hidden",
+          moderationReason: "github.upstream.removed",
+          tags: {},
+          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:html",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash,
+          commit: snapshot.commit,
+          path: "skills/html",
+          status: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:current" as never,
+      repo: "patrick-erichsen/renamed-skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      snapshot,
+      now: 3,
+    });
+
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentRepo: "patrick-erichsen/skills",
+      githubCurrentStatus: "missing",
+      moderationStatus: "hidden",
+    });
+    expect(tables.githubSkillCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          githubRepo: "patrick-erichsen/skills",
+          githubCommit: snapshot.commit,
+          githubContentHash: contentHash,
+          lifecycleStatus: "promoted",
+          verdictSourceScanId: "githubSkillScans:html",
+        }),
+        expect.objectContaining({
+          githubRepo: "patrick-erichsen/renamed-skills",
+          lifecycleStatus: "pending",
+        }),
+      ]),
+    );
+  });
+
+  it("rejects stale source observations before they can replace a newer source state", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "b".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# stale HTML\n"),
+      },
+    });
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          ownerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "active",
+          displayManifestCommit: "c".repeat(40),
+          createdAt: 1,
+          updatedAt: 20,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillSourceSyncHandler({ db } as never, {
+        sourceId: "githubSkillSources:current" as never,
+        repo: "patrick-erichsen/skills",
+        ownerUserId: "users:patrick" as never,
+        ownerPublisherId: "publishers:patrick" as never,
+        githubRepositoryId: "100",
+        githubOwnerId: "200",
+        expectedSourceUpdatedAt: 10,
+        snapshot,
+        now: 30,
+      }),
+    ).resolves.toMatchObject({ ok: true, skipped: "stale-source-observation" });
+    expect(tables.githubSkillSources[0]).toMatchObject({
+      displayManifestCommit: "c".repeat(40),
+      updatedAt: 20,
+    });
+    expect(tables.githubSkillCandidates ?? []).toEqual([]);
+  });
+
+  it("rejects an observation that expected to create a source after another writer created it", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "b".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# stale HTML\n"),
+      },
+    });
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          ownerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "active",
+          displayManifestCommit: "c".repeat(40),
+          createdAt: 20,
+          updatedAt: 20,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillSourceSyncHandler({ db } as never, {
+        repo: "patrick-erichsen/skills",
+        ownerUserId: "users:patrick" as never,
+        ownerPublisherId: "publishers:patrick" as never,
+        githubRepositoryId: "100",
+        githubOwnerId: "200",
+        expectedSourceUpdatedAt: null,
+        snapshot,
+        now: 30,
+      }),
+    ).resolves.toMatchObject({ ok: true, skipped: "stale-source-observation" });
+    expect(tables.githubSkillSources[0]).toMatchObject({
+      displayManifestCommit: "c".repeat(40),
+      updatedAt: 20,
+    });
+  });
+
+  it("rejects reassignment of a disconnected source to a different publisher", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "b".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# HTML\n"),
+      },
+    });
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          disconnectedOwnerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "revoked",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillSourceSyncHandler({ db } as never, {
+        sourceId: "githubSkillSources:current" as never,
+        repo: "patrick-erichsen/skills",
+        ownerUserId: "users:other" as never,
+        ownerPublisherId: "publishers:other" as never,
+        githubRepositoryId: "100",
+        githubOwnerId: "200",
+        expectedSourceUpdatedAt: 2,
+        snapshot,
+        now: 3,
+      }),
+    ).rejects.toThrow(/explicit ownership transfer/i);
+    expect(tables.githubSkillSources[0]).toMatchObject({
+      disconnectedOwnerPublisherId: "publishers:patrick",
+      authorizationStatus: "revoked",
+      updatedAt: 2,
+    });
+  });
+
+  it("rejects a repository redirect that collides with a retained source row", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/retained-skills",
+      defaultBranch: "main",
+      commit: "b".repeat(40),
+      entries: {},
+    });
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/current-skills",
+          ownerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        {
+          _id: "githubSkillSources:retained",
+          repo: "patrick-erichsen/retained-skills",
+          disconnectedOwnerPublisherId: "publishers:other",
+          githubRepositoryId: "300",
+          githubOwnerId: "400",
+          authorizationStatus: "revoked",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillSourceSyncHandler({ db } as never, {
+        sourceId: "githubSkillSources:current" as never,
+        repo: "patrick-erichsen/retained-skills",
+        ownerUserId: "users:patrick" as never,
+        ownerPublisherId: "publishers:patrick" as never,
+        githubRepositoryId: "100",
+        githubOwnerId: "200",
+        expectedSourceUpdatedAt: 2,
+        snapshot,
+        now: 3,
+      }),
+    ).rejects.toThrow(/retained by another source/i);
+    expect(tables.githubSkillSources).toHaveLength(2);
+    expect(tables.githubSkillSources[0]).toMatchObject({
+      repo: "patrick-erichsen/current-skills",
+      updatedAt: 2,
+    });
+  });
+
+  it("rejects a stale same-hash callback from a superseded source pointer", async () => {
+    const contentHash = "a".repeat(64);
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML A",
+          ownerUserId: "users:patrick",
+          ownerPublisherId: "publishers:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: "1".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubPendingCandidateId: "githubSkillCandidates:return-a",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:return-a",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html-renamed",
+          githubHasSkillCard: false,
+          githubCommit: "3".repeat(40),
+          githubContentHash: contentHash,
+          displayName: "HTML A again",
+          skillMarkdownPath: "skills/html-renamed/SKILL.md",
+          skillMarkdown: "# HTML A again\n",
+          scanStatus: "clean",
+          lifecycleStatus: "pending",
+          verdictSourceScanId: "githubSkillScans:return-a",
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:stale-b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash,
+          commit: "2".repeat(40),
+          path: "skills/html-old-pointer",
+          status: "clean",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+        {
+          _id: "githubSkillScans:return-a",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash,
+          commit: "3".repeat(40),
+          path: "skills/html-renamed",
+          status: "clean",
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        contentHash,
+        githubSkillScanId: "githubSkillScans:stale-b" as never,
+        scanStatus: "clean",
+        now: 10,
+      }),
+    ).resolves.toEqual({ ok: true, skipped: "stale-candidate-verdict" });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "1".repeat(40),
+      githubPendingCandidateId: "githubSkillCandidates:return-a",
+    });
+
+    await expect(
+      applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        contentHash,
+        githubSkillScanId: "githubSkillScans:return-a" as never,
+        scanStatus: "clean",
+        now: 11,
+      }),
+    ).resolves.toMatchObject({ ok: true, promoted: true });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "3".repeat(40),
+      githubPath: "skills/html-renamed",
+      githubCurrentCandidateId: "githubSkillCandidates:return-a",
+    });
+  });
+
+  it("retains a rejected candidate without replacing the allowed GitHub version", async () => {
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML A",
+          ownerUserId: "users:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "a".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubPendingCandidateId: "githubSkillCandidates:b",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML B",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML B\n",
+          scanStatus: "pending",
+          lifecycleStatus: "pending",
+          verdictSourceScanId: "githubSkillScans:b",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "b".repeat(64),
+          commit: "b".repeat(40),
+          path: "skills/html",
+          status: "malicious",
+          createdAt: 2,
+          updatedAt: 3,
+        },
+      ],
+    });
+
+    await expect(
+      applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        contentHash: "b".repeat(64),
+        githubSkillScanId: "githubSkillScans:b" as never,
+        scanStatus: "malicious",
+        now: 3,
+      }),
+    ).resolves.toEqual({ ok: true, promoted: false });
+
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubCurrentContentHash: "a".repeat(64),
+      githubScanStatus: "clean",
+    });
+    expect(tables.skills[0]).not.toHaveProperty("githubPendingCandidateId");
+    expect(tables.githubSkillCandidates[0]).toMatchObject({
+      lifecycleStatus: "rejected",
+      rejectedAt: 3,
+      scanStatus: "malicious",
+    });
+  });
+
+  it("keeps a failed candidate addressable so the exact scan can be retried", async () => {
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML A",
+          ownerUserId: "users:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "a".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubPendingCandidateId: "githubSkillCandidates:b",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML B",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML B\n",
+          scanStatus: "pending",
+          lifecycleStatus: "pending",
+          verdictSourceScanId: "githubSkillScans:b",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "b".repeat(64),
+          commit: "b".repeat(40),
+          path: "skills/html",
+          status: "failed",
+          createdAt: 2,
+          updatedAt: 3,
+        },
+      ],
+    });
+
+    await applyGitHubSkillVerificationResultHandler({ db } as never, {
+      skillId: "skills:html" as never,
+      contentHash: "b".repeat(64),
+      githubSkillScanId: "githubSkillScans:b" as never,
+      scanStatus: "failed",
+      now: 3,
+    });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubPendingCandidateId: "githubSkillCandidates:b",
+    });
+
+    Object.assign(tables.githubSkillScans[0] ?? {}, { status: "pending" });
+    await applyGitHubSkillVerificationResultHandler({ db } as never, {
+      skillId: "skills:html" as never,
+      contentHash: "b".repeat(64),
+      githubSkillScanId: "githubSkillScans:b" as never,
+      scanStatus: "pending",
+      now: 4,
+    });
+    expect(tables.githubSkillCandidates[0]).toMatchObject({
+      lifecycleStatus: "pending",
+      scanStatus: "pending",
+    });
+
+    Object.assign(tables.githubSkillScans[0] ?? {}, { status: "clean" });
+    await applyGitHubSkillVerificationResultHandler({ db } as never, {
+      skillId: "skills:html" as never,
+      contentHash: "b".repeat(64),
+      githubSkillScanId: "githubSkillScans:b" as never,
+      scanStatus: "clean",
+      now: 5,
+    });
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "b".repeat(40),
+      githubCurrentCandidateId: "githubSkillCandidates:b",
+    });
+  });
+
+  it("retains a known-malicious replacement as rejected without making it pending", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "patrick-erichsen/skills",
+      defaultBranch: "main",
+      commit: "b".repeat(40),
+      entries: {
+        "skills/html/SKILL.md": new TextEncoder().encode("# HTML B\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash ?? "";
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          ownerPublisherId: "publishers:patrick",
+          githubRepositoryId: "100",
+          githubOwnerId: "200",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      publishers: [
+        {
+          _id: "publishers:patrick",
+          kind: "user",
+          handle: "patrick",
+          displayName: "Patrick",
+          linkedUserId: "users:patrick",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML A",
+          ownerUserId: "users:patrick",
+          ownerPublisherId: "publishers:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubCurrentRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "a".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash,
+          commit: "b".repeat(40),
+          path: "skills/html",
+          status: "malicious",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:current" as never,
+      repo: "patrick-erichsen/skills",
+      ownerUserId: "users:patrick" as never,
+      ownerPublisherId: "publishers:patrick" as never,
+      githubRepositoryId: "100",
+      githubOwnerId: "200",
+      snapshot,
+      now: 3,
+    });
+
+    expect(tables.skills[0]).toMatchObject({
+      githubCurrentCommit: "a".repeat(40),
+      githubCurrentContentHash: "a".repeat(64),
+    });
+    expect(tables.skills[0]).not.toHaveProperty("githubPendingCandidateId");
+    expect(tables.githubSkillCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          githubCommit: "b".repeat(40),
+          scanStatus: "malicious",
+          lifecycleStatus: "rejected",
+          rejectedAt: 3,
+        }),
+      ]),
+    );
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("rolls back to a retained candidate with its own allowed verdict", async () => {
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:current",
+          repo: "patrick-erichsen/skills",
+          authorizationStatus: "active",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:html",
+          slug: "html",
+          displayName: "HTML B",
+          ownerUserId: "users:patrick",
+          ownerPublisherId: "publishers:patrick",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          githubCurrentCommit: "b".repeat(40),
+          githubCurrentContentHash: "b".repeat(64),
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          githubCurrentCandidateId: "githubSkillCandidates:b",
+          githubPendingCandidateId: "githubSkillCandidates:c",
+          tags: {},
+          stats: { downloads: 0, stars: 0, versions: 0, comments: 0 },
+          moderationStatus: "active",
+          moderationFlags: [],
+          isSuspicious: false,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      githubSkillCandidates: [
+        {
+          _id: "githubSkillCandidates:a",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "a".repeat(40),
+          githubContentHash: "a".repeat(64),
+          displayName: "HTML A",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML A\n",
+          scanStatus: "clean",
+          lifecycleStatus: "superseded",
+          verdictSourceScanId: "githubSkillScans:a",
+          promotedAt: 1,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+        {
+          _id: "githubSkillCandidates:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          displayName: "HTML B",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML B\n",
+          scanStatus: "clean",
+          lifecycleStatus: "promoted",
+          verdictSourceScanId: "githubSkillScans:b",
+          previousCandidateId: "githubSkillCandidates:a",
+          promotedAt: 2,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+        {
+          _id: "githubSkillCandidates:c",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubRepo: "patrick-erichsen/skills",
+          githubPath: "skills/html",
+          githubHasSkillCard: false,
+          githubCommit: "c".repeat(40),
+          githubContentHash: "c".repeat(64),
+          displayName: "HTML C",
+          scanStatus: "pending",
+          lifecycleStatus: "pending",
+          previousCandidateId: "githubSkillCandidates:b",
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+      githubSkillContents: [
+        {
+          _id: "githubSkillContents:html",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          githubPath: "skills/html",
+          skillMarkdownPath: "skills/html/SKILL.md",
+          skillMarkdown: "# HTML B\n",
+          githubCommit: "b".repeat(40),
+          githubContentHash: "b".repeat(64),
+          fetchedAt: 2,
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:a",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "a".repeat(64),
+          commit: "a".repeat(40),
+          path: "skills/html",
+          status: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          _id: "githubSkillScans:b",
+          skillId: "skills:html",
+          githubSourceId: "githubSkillSources:current",
+          contentHash: "b".repeat(64),
+          commit: "b".repeat(40),
+          path: "skills/html",
+          status: "clean",
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    await expect(
+      rollbackGitHubSkillCandidateHandler({ db } as never, {
+        skillId: "skills:html" as never,
+        targetCandidateId: "githubSkillCandidates:a" as never,
+        confirm: "rollback-github-skill-candidate",
+        now: 3,
+      }),
+    ).resolves.toMatchObject({ ok: true, rolledBack: true });
+
+    expect(tables.skills[0]).toMatchObject({
+      displayName: "HTML A",
+      githubCurrentCommit: "a".repeat(40),
+      githubCurrentContentHash: "a".repeat(64),
+      githubCurrentCandidateId: "githubSkillCandidates:a",
+    });
+    expect(tables.githubSkillCandidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          _id: "githubSkillCandidates:a",
+          lifecycleStatus: "promoted",
+        }),
+        expect.objectContaining({
+          _id: "githubSkillCandidates:b",
+          lifecycleStatus: "rolled_back",
+          rolledBackAt: 3,
+        }),
+        expect.objectContaining({
+          _id: "githubSkillCandidates:c",
+          lifecycleStatus: "canceled",
+          canceledAt: 3,
+          cancellationReason: "github.rollback",
+        }),
+      ]),
+    );
+    expect(tables.githubSkillContents[0]).toMatchObject({
+      skillMarkdown: "# HTML A\n",
+      githubCommit: "a".repeat(40),
+      githubContentHash: "a".repeat(64),
     });
   });
 
@@ -2113,7 +3659,11 @@ description: Build HTML artifacts.
       now: 100,
     });
 
-    expect(applied.stats).toMatchObject({ changed: 1, inserted: 0, conflicts: 0 });
+    expect(applied.stats).toMatchObject({
+      changed: 1,
+      inserted: 0,
+      conflicts: 0,
+    });
     const pendingSkill = tables.skills[0];
     const candidate = tables.githubSkillCandidates[0];
     expect(pendingSkill).toMatchObject({
@@ -2140,6 +3690,10 @@ description: Build HTML artifacts.
       skillMarkdownPath: snapshot.skills[0]?.skillMarkdownPath,
       skillMarkdown: snapshot.skills[0]?.skillMarkdown,
     });
+    const completedScan = tables.githubSkillScans.find(
+      (row) => row._id === candidate?.verdictSourceScanId,
+    );
+    Object.assign(completedScan ?? {}, { status: "clean" });
     Object.assign(pendingSkill ?? {}, {
       softDeletedAt: 105,
       moderationStatus: "hidden",
@@ -2149,6 +3703,7 @@ description: Build HTML artifacts.
       applyGitHubSkillVerificationResultHandler({ db } as never, {
         skillId: "skills:html" as never,
         contentHash: snapshot.skills[0]?.contentHash ?? "",
+        githubSkillScanId: candidate?.verdictSourceScanId as never,
         scanStatus: "clean",
         now: 106,
       }),
@@ -2167,6 +3722,7 @@ description: Build HTML artifacts.
     await applyGitHubSkillVerificationResultHandler({ db } as never, {
       skillId: "skills:html" as never,
       contentHash: snapshot.skills[0]?.contentHash ?? "",
+      githubSkillScanId: candidate?.verdictSourceScanId as never,
       scanStatus: "clean",
       now: 110,
     });
@@ -2188,15 +3744,30 @@ description: Build HTML artifacts.
     });
     expect(tables.skills[0]).not.toHaveProperty("latestVersionId");
     expect(tables.skills[0]).not.toHaveProperty("githubPendingCandidateId");
-    expect(tables.githubSkillCandidates).toEqual([]);
+    expect(tables.githubSkillCandidates).toEqual([
+      expect.objectContaining({
+        _id: candidate?._id,
+        lifecycleStatus: "promoted",
+        promotedAt: 110,
+      }),
+    ]);
     expect(tables.skillVersions).toEqual([
-      expect.objectContaining({ _id: "skillVersions:html-v1", skillId: "skills:html" }),
+      expect.objectContaining({
+        _id: "skillVersions:html-v1",
+        skillId: "skills:html",
+      }),
     ]);
     expect(tables.bookmarks).toEqual([
-      expect.objectContaining({ _id: "bookmarks:html", skillId: "skills:html" }),
+      expect.objectContaining({
+        _id: "bookmarks:html",
+        skillId: "skills:html",
+      }),
     ]);
     expect(tables.auditLogs).toEqual([
-      expect.objectContaining({ _id: "auditLogs:html", targetId: "skills:html" }),
+      expect.objectContaining({
+        _id: "auditLogs:html",
+        targetId: "skills:html",
+      }),
     ]);
     expect(tables.skillVersions).toHaveLength(1);
   });
@@ -2238,7 +3809,13 @@ description: Build HTML artifacts.
           moderationStatus: "active",
           moderationVerdict: "clean",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 1,
         },
@@ -2277,7 +3854,9 @@ description: Build HTML artifacts.
         "skills/aiq-deploy/skill-card.md": new TextEncoder().encode("# AIQ Card v2\n"),
         "skills/vision-helper/SKILL.md": new TextEncoder().encode("# Vision Helper\n"),
         "skills.sh.json": new TextEncoder().encode(
-          JSON.stringify({ groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }] }),
+          JSON.stringify({
+            groupings: [{ title: "Agentic AI", skills: ["aiq-deploy"] }],
+          }),
         ),
       },
     });
@@ -2322,7 +3901,13 @@ description: Build HTML artifacts.
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 1,
         },
@@ -2333,7 +3918,13 @@ description: Build HTML artifacts.
           ownerUserId: "users:someone-else",
           ownerPublisherId: "publishers:someone-else",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 1 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 1,
+          },
           createdAt: 1,
           updatedAt: 1,
         },
@@ -2451,7 +4042,13 @@ description: Build HTML artifacts.
           softDeletedAt: 40,
           githubScanStatus: "clean",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 60,
         },
@@ -2513,7 +4110,11 @@ description: Build HTML artifacts.
       now: 123,
     });
 
-    expect(result.stats).toMatchObject({ inserted: 1, conflicts: 0, invalid: 0 });
+    expect(result.stats).toMatchObject({
+      inserted: 1,
+      conflicts: 0,
+      invalid: 0,
+    });
     expect(tables.skills).toHaveLength(1);
     expect(tables.skillVersions ?? []).toEqual([]);
     expect(tables.githubSkillContents).toEqual([
@@ -2580,7 +4181,13 @@ description: Build HTML artifacts.
           statsInstallsAllTime: 5,
           statsSkillsShInstalls: 17,
           statsGithubStars: 321,
-          stats: { downloads: 7, stars: 3, installsCurrent: 2, installsAllTime: 5, versions: 0 },
+          stats: {
+            downloads: 7,
+            stars: 3,
+            installsCurrent: 2,
+            installsAllTime: 5,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 60,
         },
@@ -2849,7 +4456,13 @@ description: Build HTML artifacts.
           githubCurrentStatus: "present",
           githubScanStatus: "pending",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 1,
         },
@@ -2926,7 +4539,13 @@ description: Build HTML artifacts.
           githubCurrentStatus: "present",
           githubScanStatus: "clean",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 1,
         },
@@ -3001,7 +4620,13 @@ description: Build HTML artifacts.
           githubCurrentContentHash: "old-hash",
           githubScanStatus: "clean",
           tags: {},
-          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          stats: {
+            downloads: 0,
+            stars: 0,
+            installsCurrent: 0,
+            installsAllTime: 0,
+            versions: 0,
+          },
           createdAt: 1,
           updatedAt: 1,
         },
@@ -3213,7 +4838,9 @@ describe("verifyGitHubSkillHandler", () => {
         });
       }
       if (url.startsWith("https://codeload.github.com/")) {
-        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+        return new Response(zip, {
+          headers: { "content-length": String(zip.byteLength) },
+        });
       }
       return new Response("not found", { status: 404 });
     });
@@ -3331,7 +4958,9 @@ describe("verifyGitHubSkillHandler", () => {
         });
       }
       if (url.startsWith("https://codeload.github.com/")) {
-        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+        return new Response(zip, {
+          headers: { "content-length": String(zip.byteLength) },
+        });
       }
       return new Response("not found", { status: 404 });
     });
@@ -3417,7 +5046,9 @@ describe("verifyGitHubSkillHandler", () => {
         });
       }
       if (url.startsWith("https://codeload.github.com/")) {
-        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+        return new Response(zip, {
+          headers: { "content-length": String(zip.byteLength) },
+        });
       }
       return new Response("not found", { status: 404 });
     });

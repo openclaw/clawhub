@@ -59,6 +59,15 @@ describe("retention policies", () => {
     });
   });
 
+  it("keeps GitHub Skill Sync candidates and verdicts as durable rollback history", () => {
+    expect(getRetentionPolicy("githubSkillCandidates")).toMatchObject({
+      classification: "permanent",
+    });
+    expect(getRetentionPolicy("githubSkillScans")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
   it("documents publisher abuse signals as durable review evidence", () => {
     expect(getRetentionPolicy("publisherAbuseSignals")).toMatchObject({
       classification: "permanent",
