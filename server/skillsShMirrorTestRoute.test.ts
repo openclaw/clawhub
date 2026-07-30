@@ -778,7 +778,8 @@ describe("skills.sh permanent Test mirror route", () => {
     const handler = (await import("./routes/ops/skills-sh/mirror-test.post")).default;
     const response = (await handler({} as never)) as Response;
 
-    expect(response.status).toBe(200);
+    const responsePayload = await response.clone().json();
+    expect(response.status, JSON.stringify(responsePayload)).toBe(200);
     const claims = convexFetch.mock.calls
       .map(([, init]) => JSON.parse(String(init?.body)))
       .filter((body) => body.operation === "mirror-batch-claim");

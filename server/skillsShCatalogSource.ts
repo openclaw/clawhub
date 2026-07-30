@@ -26,6 +26,7 @@ const MAX_INLINE_RETRY_AFTER_MS = 30_000;
 const CLAWHUB_VERCEL_OWNER_ID = "team_pLdjXbfy0XvPRiNmAygTjTSH";
 const CLAWHUB_VERCEL_PROJECT_ID = "prj_UVAJPNPYrBwTEkPJwkpEySsge8Mc";
 const CLAWHUB_TEST_CONVEX_URL = "https://academic-chihuahua-392.convex.cloud";
+const CLAWHUB_PRODUCTION_CONVEX_URL = "https://wry-manatee-359.convex.cloud";
 
 const SKILLS_SH_MIRROR_CONTROLLED_SUPPLEMENTS = [
   {
@@ -2458,6 +2459,23 @@ export function getSkillsShCatalogTestSourcePolicy(env: SkillsShCatalogSourceEnv
     maxDiscoveryRows: MAX_SOURCE_PAGE_SIZE,
     maxRealScanAdmissions: MAX_TEST_SCAN_ADMISSIONS,
   };
+}
+
+export function getSkillsShCatalogProductionSourcePolicy(
+  env: SkillsShCatalogSourceEnv = process.env,
+) {
+  if (
+    env.VITE_CLAWHUB_DEPLOY_ENV !== "production" ||
+    env.VERCEL_ENV?.trim().toLowerCase() !== "production" ||
+    env.VITE_CONVEX_URL !== CLAWHUB_PRODUCTION_CONVEX_URL
+  ) {
+    return {
+      allowed: false as const,
+      environment: "production",
+      reason: "skills.sh production discovery requires the exact ClawHub production runtime",
+    };
+  }
+  return { allowed: true as const, environment: "production" };
 }
 
 type VerifyVercelOidc = (

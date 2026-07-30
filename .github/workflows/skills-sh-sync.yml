@@ -1,0 +1,55 @@
+name: skills.sh Production Sync
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: skills-sh-production-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
+    environment:
+      name: Production
+    steps:
+      - name: Require main
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "::error::skills.sh production sync must run from refs/heads/main"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Synchronize and automatically verify the production corpus
+        env:
+          CLAWHUB_SKILLS_SH_SYNC_OUTPUT: skills-sh-sync-proof.json
+          CLAWHUB_SKILLS_SH_SYNC_REASON: skills.sh production sync ${{ github.run_id }} attempt ${{ github.run_attempt }}
+          CLAWHUB_SKILLS_SH_SYNC_URL: https://clawhub.ai/ops/skills-sh/mirror
+        run: |
+          set -euo pipefail
+          bun scripts/skills-sh-catalog/sync.ts
+
+      - name: Upload skills.sh synchronization proof
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: skills-sh-sync-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          path: skills-sh-sync-proof.json
