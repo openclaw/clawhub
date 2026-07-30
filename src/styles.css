@@ -5192,6 +5192,20 @@ code {
   width: 100%;
 }
 
+.plugin-validation-toolbar.is-multi-target {
+  height: auto;
+  align-items: flex-start;
+}
+
+.plugin-validation-toolbar.is-multi-target .plugin-validation-toolbar-cli {
+  align-items: flex-start;
+}
+
+.plugin-validation-toolbar.is-multi-target .plugin-validation-command {
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+
 .plugin-validation-toolbar-copy.skill-install-copy-button {
   flex: 0 0 auto;
   width: 2rem;

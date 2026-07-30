@@ -369,7 +369,7 @@ function PluginValidationSheetReview({
   const validateCommands = targetOpenClawVersions.length
     ? targetOpenClawVersions.map(pluginValidateCommand)
     : [pluginValidateCommand()];
-  const validateCommand = validateCommands[0];
+  const validateCommand = validateCommands.join("\n");
   const instructions = buildValidationInstructions(
     group.title,
     version,
@@ -405,12 +405,20 @@ function PluginValidationSheetReview({
               <span className="plugin-validation-toolbar-label">
                 Validate locally before publishing
               </span>
-              <div className="plugin-validation-toolbar">
+              <div
+                className={`plugin-validation-toolbar${
+                  validateCommands.length > 1 ? " is-multi-target" : ""
+                }`}
+              >
                 <div className="plugin-validation-toolbar-cli">
                   <code className="plugin-validation-command">{validateCommand}</code>
                   <InstallCopyButton
                     text={validateCommand}
-                    ariaLabel="Copy validate command"
+                    ariaLabel={
+                      validateCommands.length === 1
+                        ? "Copy validate command"
+                        : "Copy validate commands"
+                    }
                     showLabel={false}
                     className="plugin-validation-toolbar-copy"
                   />

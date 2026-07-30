@@ -796,6 +796,21 @@ describe("Dashboard rows", () => {
     fireEvent.click(
       screen.getByRole("button", { name: /Local Flagged Runtime Plugin\. 1 issue/i }),
     );
+    expect(document.querySelector(".plugin-validation-command")?.textContent).toContain(
+      "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+    );
+    expect(document.querySelector(".plugin-validation-command")?.textContent).toContain(
+      "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Copy validate commands" }));
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        [
+          "clawhub package validate <path-to-plugin> --openclaw-version 0.9.0",
+          "clawhub package validate <path-to-plugin> --openclaw-version 0.10.0",
+        ].join("\n"),
+      );
+    });
     fireEvent.click(screen.getByRole("button", { name: "Copy fix instructions" }));
 
     await waitFor(() => {
